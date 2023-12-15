@@ -160,7 +160,7 @@ def test_mysql_client(started_cluster):
         ),
         demux=True,
     )
-    logging.debug(f"test_mysql_client code:{code} stdout:{stdout}, stderr:{stderr}")
+    logging.debug("test_mysql_client code:%s stdout:%s, stderr:%s", code, stdout, stderr)
     assert stdout.decode() == "\n".join(["1", "1", ""])
 
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
@@ -605,7 +605,7 @@ def test_mysql_boolean_format(started_cluster):
         demux=True,
     )
     logging.debug(
-        f"test_mysql_boolean_format code:{code} stdout:{stdout}, stderr:{stderr}"
+        "test_mysql_boolean_format code:%s stdout:%s, stderr:%s", code, stdout, stderr
     )
     assert stdout.decode() == "a\tb\tc\n" + "0\t1\t0\n" + "1\t0\t1\n"
 

@@ -39,7 +39,7 @@ def run_echo_server():
             ["curl", "-s", f"http://localhost:8000/health"],
             nothrow=True,
         )
-        logging.debug(f"Reply1: {ping_response}")
+        logging.debug("Reply1: %s", ping_response)
         if ping_response == "OK":
             return
 

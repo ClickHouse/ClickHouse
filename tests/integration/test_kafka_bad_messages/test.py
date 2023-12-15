@@ -43,7 +43,7 @@ def kafka_create_topic(
             retries += 1
             time.sleep(0.5)
             if retries < max_retries:
-                logging.warning(f"Failed to create topic {e}")
+                logging.warning("Failed to create topic %s", e)
             else:
                 raise
 
@@ -52,14 +52,14 @@ def kafka_delete_topic(admin_client, topic, max_retries=50):
     result = admin_client.delete_topics([topic])
     for topic, e in result.topic_error_codes:
         if e == 0:
-            logging.debug(f"Topic {topic} deleted")
+            logging.debug("Topic %s deleted", topic)
         else:
-            logging.error(f"Failed to delete topic {topic}: {e}")
+            logging.error("Failed to delete topic %s: %s", topic, e)
 
     retries = 0
     while True:
         topics_listed = admin_client.list_topics()
-        logging.debug(f"TOPICS LISTED: {topics_listed}")
+        logging.debug("TOPICS LISTED: %s", topics_listed)
         if topic not in topics_listed:
             return
         else:
@@ -77,7 +77,7 @@ def get_kafka_producer(port, serializer, retries):
                 bootstrap_servers="localhost:{}".format(port),
                 value_serializer=serializer,
             )
-            logging.debug("Kafka Connection establised: localhost:{}".format(port))
+            logging.debug("Kafka Connection establised: localhost:%s", port)
             return producer
         except Exception as e:
             errors += [str(e)]
@@ -94,9 +94,7 @@ def kafka_produce(
     kafka_cluster, topic, messages, timestamp=None, retries=15, partition=None
 ):
     logging.debug(
-        "kafka_produce server:{}:{} topic:{}".format(
-            "localhost", kafka_cluster.kafka_port, topic
-        )
+        "kafka_produce server:localhost:%s topic:%s", kafka_cluster.kafka_port, topic
     )
     producer = get_kafka_producer(
         kafka_cluster.kafka_port, producer_serializer, retries

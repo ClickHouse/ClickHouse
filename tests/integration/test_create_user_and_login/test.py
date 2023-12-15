@@ -93,10 +93,10 @@ EOF""",
                 if (expected_error in err)
             ]
             if found_error:
-                logging.debug(f"Got error '{found_error}' just as expected")
+                logging.debug("Got error '%s' just as expected", found_error)
                 break
             if out == "1\n":
-                logging.debug(f"Got output '1', retrying...")
+                logging.debug("Got output '1', retrying...")
                 time.sleep(0.5)
                 continue
             raise Exception(

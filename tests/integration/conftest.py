@@ -32,14 +32,15 @@ def tune_local_port_range():
 def cleanup_environment():
     try:
         if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) == 1:
-            logging.debug(f"Cleaning all iptables rules")
+            logging.debug("Cleaning all iptables rules")
             _NetworkManager.clean_all_user_iptables_rules()
         result = run_and_check(["docker ps | wc -l"], shell=True)
         if int(result) > 1:
             if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) != 1:
                 logging.warning(
-                    f"Docker containters({int(result)}) are running before tests run. They can be left from previous pytest run and cause test failures.\n"
-                    "You can set env PYTEST_CLEANUP_CONTAINERS=1 or use runner with --cleanup-containers argument to enable automatic containers cleanup."
+                    "Docker containters(%d) are running before tests run. They can be left from previous pytest run and cause test failures.\n"
+                    "You can set env PYTEST_CLEANUP_CONTAINERS=1 or use runner with --cleanup-containers argument to enable automatic containers cleanup.",
+                    int(result),
                 )
             else:
                 logging.debug("Trying to kill unstopped containers...")
@@ -54,10 +55,10 @@ def cleanup_environment():
                     nothrow=True,
                 )
                 logging.debug("Unstopped containers killed")
-                r = run_and_check(["docker-compose", "ps", "--services", "--all"])
-                logging.debug(f"Docker ps before start:{r.stdout}")
+                out = run_and_check(["docker-compose", "ps", "--services", "--all"])
+                logging.debug("Docker ps before start: %s", out)
         else:
-            logging.debug(f"No running containers")
+            logging.debug("No running containers")
 
         logging.debug("Pruning Docker networks")
         run_and_check(
@@ -66,7 +67,7 @@ def cleanup_environment():
             nothrow=True,
         )
     except Exception as e:
-        logging.exception(f"cleanup_environment:{str(e)}")
+        logging.exception("cleanup_environment: %s", str(e))
         pass
 
     yield

@@ -72,7 +72,7 @@ def list_objects(cluster, path="data/", hint="list_objects"):
     objects = list(minio.list_objects(cluster.minio_bucket, path, recursive=True))
     names = [x.object_name for x in objects]
     names.sort()
-    logging.info(f"{hint} ({len(objects)}): {names}")
+    logging.info("%s (%s): %s", hint, len(objects), names)
     return names
 
 

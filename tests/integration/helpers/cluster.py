@@ -36,7 +36,7 @@ try:
     )
     from .hdfs_api import HDFSApi  # imports requests_kerberos
 except Exception as e:
-    logging.warning(f"Cannot import some modules, some tests may not work: {e}")
+    logging.warning("Cannot import some modules, some tests may not work: %s", e)
 
 from dict2xml import dict2xml
 from kazoo.client import KazooClient
@@ -73,7 +73,7 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
-    logging.debug(f"Env {variables} stored in {path}")
+    logging.debug("Env %s stored in %s", variables, path)
     with open(path, "w") as f:
         for var, value in list(variables.items()):
             f.write("=".join([var, value]) + "\n")
@@ -100,7 +100,7 @@ def run_and_check(
         )
         return
 
-    logging.debug(f"Command:{args}")
+    logging.debug("Command: %s", args)
     res = subprocess.run(
         args, stdout=stdout, stderr=stderr, env=env, shell=shell, timeout=timeout
     )
@@ -108,13 +108,13 @@ def run_and_check(
     err = res.stderr.decode("utf-8")
     # check_call(...) from subprocess does not print stderr, so we do it manually
     for outline in out.splitlines():
-        logging.debug(f"Stdout:{outline}")
+        logging.debug("Stdout: %s", outline)
     for errline in err.splitlines():
-        logging.debug(f"Stderr:{errline}")
+        logging.debug("Stderr: %s", errline)
     if res.returncode != 0:
-        logging.debug(f"Exitcode:{res.returncode}")
+        logging.debug("Exitcode: %s", res.returncode)
         if env:
-            logging.debug(f"Env:{env}")
+            logging.debug("Env: %s", env)
         if not nothrow:
             raise Exception(
                 f"Command {args} return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
@@ -189,7 +189,8 @@ def get_docker_compose_path():
             return os.path.dirname("/compose/")  # default in docker runner container
         else:
             logging.debug(
-                f"Fallback docker_compose_path to LOCAL_DOCKER_COMPOSE_DIR: {LOCAL_DOCKER_COMPOSE_DIR}"
+                "Fallback docker_compose_path to LOCAL_DOCKER_COMPOSE_DIR: %s",
+                LOCAL_DOCKER_COMPOSE_DIR,
             )
             return LOCAL_DOCKER_COMPOSE_DIR
 
@@ -397,7 +398,7 @@ class ClickHouseCluster:
         with_spark=False,
     ):
         for param in list(os.environ.keys()):
-            logging.debug("ENV %40s %s" % (param, os.environ[param]))
+            logging.debug("ENV %40s %s", param, os.environ[param])
         self.base_path = base_path
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else extract_test_name(base_path)
@@ -692,10 +693,10 @@ class ClickHouseCluster:
         self.docker_client = None
         self.is_up = False
         self.env = os.environ.copy()
-        logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
+        logging.debug("CLUSTER INIT base_config_dir: %s", self.base_config_dir)
         if p.exists(self.instances_dir):
             shutil.rmtree(self.instances_dir, ignore_errors=True)
-            logging.debug(f"Removed :{self.instances_dir}")
+            logging.debug("Removed : %s", self.instances_dir)
 
         if with_spark:
             import pyspark
@@ -777,7 +778,9 @@ class ClickHouseCluster:
             universal_newlines=True,
         )
         logging.debug(
-            f"Docker networks for project {self.project_name} are {res_networks}"
+            "Docker networks for project %s are %s",
+            self.project_name,
+            res_networks,
         )
         res_containers = subprocess.check_output(
             f"docker container ls -a --filter name='{self.project_name}*'",
@@ -785,7 +788,9 @@ class ClickHouseCluster:
             universal_newlines=True,
         )
         logging.debug(
-            f"Docker containers for project {self.project_name} are {res_containers}"
+            "Docker containers for project %s are %s",
+            self.project_name,
+            res_containers,
         )
         res_volumes = subprocess.check_output(
             f"docker volume ls --filter name='{self.project_name}*'",
@@ -793,7 +798,9 @@ class ClickHouseCluster:
             universal_newlines=True,
         )
         logging.debug(
-            f"Docker volumes for project {self.project_name} are {res_volumes}"
+            "Docker volumes for project %s are %s",
+            self.project_name,
+            res_volumes,
         )
 
     def cleanup(self):
@@ -811,23 +818,26 @@ class ClickHouseCluster:
         # Just in case kill unstopped containers from previous launch
         try:
             unstopped_containers = self.get_running_containers()
-            logging.debug(f"Unstopped containers: {unstopped_containers}")
+            logging.debug("Unstopped containers: %s", unstopped_containers)
             if len(unstopped_containers):
                 logging.debug(
-                    f"Trying to kill unstopped containers: {unstopped_containers}"
+                    "Trying to kill unstopped containers: %s",
+                    unstopped_containers,
                 )
                 for id in unstopped_containers:
                     run_and_check(f"docker kill {id}", shell=True, nothrow=True)
                     run_and_check(f"docker rm {id}", shell=True, nothrow=True)
                 unstopped_containers = self.get_running_containers()
                 if unstopped_containers:
-                    logging.debug(f"Left unstopped containers: {unstopped_containers}")
+                    logging.debug("Left unstopped containers: %s", unstopped_containers)
                 else:
-                    logging.debug(f"Unstopped containers killed.")
+                    logging.debug("Unstopped containers killed.")
             else:
-                logging.debug(f"No running containers for project: {self.project_name}")
+                logging.debug(
+                    "No running containers for project: %s", self.project_name
+                )
         except Exception as ex:
-            logging.debug(f"Got exception removing containers {str(ex)}")
+            logging.debug("Got exception removing containers %s", str(ex))
 
         # # Just in case remove unused networks
         try:
@@ -839,9 +849,9 @@ class ClickHouseCluster:
                 universal_newlines=True,
             ).splitlines()
             if list_networks:
-                logging.debug(f"Trying to remove networks: {list_networks}")
+                logging.debug("Trying to remove networks: %s", list_networks)
                 run_and_check(f"docker network rm {' '.join(list_networks)}")
-                logging.debug(f"Networks removed: {list_networks}")
+                logging.debug("Networks removed: %s", list_networks)
         except:
             pass
 
@@ -859,9 +869,9 @@ class ClickHouseCluster:
             logging.debug("Trying to prune unused volumes...")
 
             result = run_and_check(["docker volume ls | wc -l"], shell=True)
-            if int(result > 0):
+            if int(result) > 0:
                 run_and_check(["docker", "volume", "prune", "-f"])
-            logging.debug(f"Volumes pruned: {result}")
+            logging.debug("Volumes pruned: %s", result)
         except:
             pass
 
@@ -930,7 +940,7 @@ class ClickHouseCluster:
             env_variables["ZK_DATA" + str(i)] = zk_data_path
             env_variables["ZK_DATA_LOG" + str(i)] = zk_log_path
             self.zookeeper_dirs_to_create += [zk_data_path, zk_log_path]
-            logging.debug(f"DEBUG ZK: {self.zookeeper_dirs_to_create}")
+            logging.debug("DEBUG ZK: %s", self.zookeeper_dirs_to_create)
 
         self.with_zookeeper_secure = True
         self.base_cmd.extend(["--file", zookeeper_docker_compose_path])
@@ -962,7 +972,7 @@ class ClickHouseCluster:
             env_variables["ZK_DATA" + str(i)] = zk_data_path
             env_variables["ZK_DATA_LOG" + str(i)] = zk_log_path
             self.zookeeper_dirs_to_create += [zk_data_path, zk_log_path]
-            logging.debug(f"DEBUG ZK: {self.zookeeper_dirs_to_create}")
+            logging.debug("DEBUG ZK: %s", self.zookeeper_dirs_to_create)
 
         self.with_zookeeper = True
         self.base_cmd.extend(["--file", zookeeper_docker_compose_path])
@@ -1200,7 +1210,7 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_hdfs.yml"),
         ]
-        logging.debug("HDFS BASE CMD:{self.base_hdfs_cmd)}")
+        logging.debug("HDFS BASE CMD: %s", self.base_hdfs_cmd)
         return self.base_hdfs_cmd
 
     def setup_kerberized_hdfs_cmd(
@@ -1660,7 +1670,7 @@ class ClickHouseCluster:
             clickhouse_start_command += " --log-file=" + clickhouse_log_file
         if clickhouse_error_log_file:
             clickhouse_start_command += " --errorlog-file=" + clickhouse_error_log_file
-        logging.debug(f"clickhouse_start_command: {clickhouse_start_command}")
+        logging.debug("clickhouse_start_command: %s", clickhouse_start_command)
 
         instance = ClickHouseInstance(
             cluster=self,
@@ -1942,7 +1952,7 @@ class ClickHouseCluster:
             )
 
         logging.debug(
-            "Cluster name:{} project_name:{}. Added instance name:{} tag:{} base_cmd:{} docker_compose_yml_dir:{}".format(
+            "Cluster name:%s project_name:%s. Added instance name:%s tag:%s base_cmd:%s docker_compose_yml_dir:%s",
                 self.name,
                 self.project_name,
                 name,
@@ -1987,7 +1997,7 @@ class ClickHouseCluster:
         # In builds with sanitizer the server can take a long time to start
         node.wait_for_start(start_timeout=180.0, connection_timeout=600.0)  # seconds
         res = node.client.query("SELECT 30")
-        logging.debug(f"Read '{res}'")
+        logging.debug("Read %r", res)
         assert "30\n" == res
         logging.info("Restarted")
 
@@ -2007,7 +2017,7 @@ class ClickHouseCluster:
         ]
 
     def get_instance_global_ipv6(self, instance_name):
-        logging.debug("get_instance_ip instance_name={}".format(instance_name))
+        logging.debug("get_instance_ip instance_name=%s", instance_name)
         docker_id = self.get_instance_docker_id(instance_name)
         # for cont in self.docker_client.containers.list():
         # logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
@@ -2031,7 +2041,11 @@ class ClickHouseCluster:
     ):
         if use_cli:
             logging.debug(
-                f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}"
+                "run container_id: %s detach:%s nothrow:%s cmd: %s",
+                container_id,
+                detach,
+                nothrow,
+                cmd,
             )
             exec_cmd = ["docker", "exec"]
             if "user" in kwargs:
@@ -2051,14 +2065,10 @@ class ClickHouseCluster:
                 container_info = self.docker_client.api.inspect_container(container_id)
                 image_id = container_info.get("Image")
                 image_info = self.docker_client.api.inspect_image(image_id)
-                logging.debug(("Command failed in container {}: ".format(container_id)))
-                pprint.pprint(container_info)
-                logging.debug("")
-                logging.debug(
-                    ("Container {} uses image {}: ".format(container_id, image_id))
-                )
-                pprint.pprint(image_info)
-                logging.debug("")
+                logging.debug("Command failed in container %s: ", container_id)
+                logging.debug("%s", pprint.pformat(container_info))
+                logging.debug("Container %s uses image %s: ", container_id, image_id)
+                logging.debug("%s", pprint.pformat(image_info))
                 message = 'Cmd "{}" failed in container {}. Return code {}. Output: {}'.format(
                     " ".join(cmd), container_id, exit_code, output
                 )
@@ -2103,21 +2113,20 @@ class ClickHouseCluster:
                     url, allow_redirects=True, timeout=conn_timeout, verify=False
                 ).raise_for_status()
                 logging.debug(
-                    "{} is available after {} seconds".format(url, time.time() - start)
+                    "%s is available after %s seconds", url, time.time() - start
                 )
                 return
             except Exception as ex:
                 logging.debug(
-                    "{} Attempt {} failed, retrying in {} seconds".format(
+                    "%s Attempt %s failed, retrying in %s seconds",
                         ex, attempts, interval
-                    )
                 )
                 attempts += 1
                 errors += [str(ex)]
                 time.sleep(interval)
 
         run_and_check(["docker", "ps", "--all"])
-        logging.error("Can't connect to URL:{}".format(errors))
+        logging.error("Can't connect to URL:%s", errors)
         raise Exception(
             "Cannot wait URL {}(interval={}, timeout={}, attempts={})".format(
                 url, interval, timeout, attempts
@@ -2145,7 +2154,7 @@ class ClickHouseCluster:
                 time.sleep(1)
 
         run_and_check(["docker", "ps", "--all"])
-        logging.error("Can't connect to MySQL Client:{}".format(errors))
+        logging.error("Can't connect to MySQL Client:%s", errors)
         raise Exception("Cannot wait MySQL Client container")
 
     def wait_mysql_to_start(self, timeout=180):
@@ -2168,7 +2177,7 @@ class ClickHouseCluster:
                 time.sleep(0.5)
 
         run_and_check(["docker", "ps", "--all"])
-        logging.error("Can't connect to MySQL:{}".format(errors))
+        logging.error("Can't connect to MySQL:%s", errors)
         raise Exception("Cannot wait MySQL container")
 
     def wait_mysql8_to_start(self, timeout=180):
@@ -2186,7 +2195,7 @@ class ClickHouseCluster:
                 logging.debug("Mysql 8 Started")
                 return
             except Exception as ex:
-                logging.debug("Can't connect to MySQL 8 " + str(ex))
+                logging.debug("Can't connect to MySQL 8: %s", str(ex))
                 time.sleep(0.5)
 
         run_and_check(["docker", "ps", "--all"])
@@ -2208,14 +2217,14 @@ class ClickHouseCluster:
                         port=self.mysql_port,
                     )
                     conn.close()
-                    logging.debug(f"Mysql Started {ip}")
+                    logging.debug("Mysql Started %s", ip)
                 return
             except Exception as ex:
                 errors += [str(ex)]
                 time.sleep(0.5)
 
         run_and_check(["docker", "ps", "--all"])
-        logging.error("Can't connect to MySQL:{}".format(errors))
+        logging.error("Can't connect to MySQL:%s", errors)
         raise Exception("Cannot wait MySQL container")
 
     def wait_postgres_to_start(self, timeout=260):
@@ -2275,7 +2284,7 @@ class ClickHouseCluster:
                 logging.debug("Postgres Cluster host 3 started")
                 break
             except Exception as ex:
-                logging.debug("Can't connect to Postgres host 3" + str(ex))
+                logging.debug("Can't connect to Postgres host 3: %s", str(ex))
                 time.sleep(0.5)
         while time.time() - start < timeout:
             try:
@@ -2291,7 +2300,7 @@ class ClickHouseCluster:
                 logging.debug("Postgres Cluster host 4 started")
                 return
             except Exception as ex:
-                logging.debug("Can't connect to Postgres host 4" + str(ex))
+                logging.debug("Can't connect to Postgres host 4: %s", str(ex))
                 time.sleep(0.5)
 
         raise Exception("Cannot wait Postgres container")
@@ -2307,7 +2316,7 @@ class ClickHouseCluster:
                     return True
                 time.sleep(0.5)
             except Exception as ex:
-                logging.debug("Can't find PostgreSQL Java Client" + str(ex))
+                logging.debug("Can't find PostgreSQL Java Client: %s", str(ex))
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
@@ -2329,7 +2338,7 @@ class ClickHouseCluster:
                     return True
                 time.sleep(0.5)
             except Exception as ex:
-                logging.debug("Can't connect to RabbitMQ " + str(ex))
+                logging.debug("Can't connect to RabbitMQ: %s", str(ex))
                 time.sleep(0.5)
 
         try:
@@ -2368,7 +2377,7 @@ class ClickHouseCluster:
                 logging.debug("All instances of ZooKeeper Secure started")
                 return
             except Exception as ex:
-                logging.debug("Can't connect to ZooKeeper secure " + str(ex))
+                logging.debug("Can't connect to ZooKeeper secure: %s", str(ex))
                 time.sleep(0.5)
 
         raise Exception("Cannot wait ZooKeeper secure container")
@@ -2385,7 +2394,7 @@ class ClickHouseCluster:
                 logging.debug("All instances of ZooKeeper started")
                 return
             except Exception as ex:
-                logging.debug(f"Can't connect to ZooKeeper {instance}: {ex}")
+                logging.debug("Can't connect to ZooKeeper %s: %s", instance, ex)
                 time.sleep(0.5)
 
         raise Exception(
@@ -2472,7 +2481,7 @@ class ClickHouseCluster:
                 return
             except Exception as ex:
                 logging.exception(
-                    "Can't connect to HDFS or preparations are not done yet " + str(ex)
+                    "Can't connect to HDFS or preparations are not done yet: %s", str(ex)
                 )
                 time.sleep(1)
 
@@ -2489,10 +2498,10 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 connection.list_database_names()
-                logging.debug(f"Connected to Mongo dbs: {connection.database_names()}")
+                logging.debug("Connected to Mongo dbs: %s", connection.database_names())
                 return
             except Exception as ex:
-                logging.debug("Can't connect to Mongo " + str(ex))
+                logging.debug("Can't connect to Mongo: %s", str(ex))
                 time.sleep(1)
 
     def wait_minio_to_start(self, timeout=180, secure=False):
@@ -2526,7 +2535,7 @@ class ClickHouseCluster:
                         )
                         errors = minio_client.remove_objects(bucket, delete_object_list)
                         for error in errors:
-                            logging.error(f"Error occured when deleting object {error}")
+                            logging.error("Error occured when deleting object: %s", error)
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
@@ -2562,7 +2571,7 @@ class ClickHouseCluster:
                 blob_service_client = BlobServiceClient.from_connection_string(
                     connection_string
                 )
-                logging.debug(blob_service_client.get_account_information())
+                logging.debug("%s", blob_service_client.get_account_information())
                 self.blob_service_client = blob_service_client
                 return
             except Exception as ex:
@@ -2588,7 +2597,7 @@ class ClickHouseCluster:
                     sr_started = True
                     break
                 except Exception as ex:
-                    logging.debug(("Can't connect to SchemaRegistry: %s", str(ex)))
+                    logging.debug("Can't connect to SchemaRegistry: %s", str(ex))
                     time.sleep(1)
 
             if not sr_started:
@@ -2605,7 +2614,10 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 logging.info(
-                    f"Check Cassandra Online {self.cassandra_id} {self.cassandra_ip} {self.cassandra_port}"
+                    "Check Cassandra Online %s %s %s",
+                    self.cassandra_id,
+                    self.cassandra_ip,
+                    self.cassandra_port
                 )
                 check = self.exec_in_container(
                     self.cassandra_id,
@@ -2631,7 +2643,7 @@ class ClickHouseCluster:
         start = time.time()
         while time.time() - start < timeout:
             try:
-                logging.info(f"Check LDAP Online {self.ldap_host} {self.ldap_port}")
+                logging.info("Check LDAP Online %s %s", self.ldap_host, self.ldap_port)
                 self.exec_in_container(
                     self.ldap_id,
                     [
@@ -2651,14 +2663,14 @@ class ClickHouseCluster:
 
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
-        logging.info("Running tests in {}".format(self.base_path))
+        logging.info("Running tests in %s", self.base_path)
         if not os.path.exists(self.instances_dir):
             os.mkdir(self.instances_dir)
         else:
             logging.warning(
                 "Instance directory already exists. Did you call cluster.start() for second time?"
             )
-        logging.debug(f"Cluster start called. is_up={self.is_up}")
+        logging.debug("Cluster start called. is_up=%s", self.is_up)
         self.print_all_docker_pieces()
 
         if self.is_up:
@@ -2667,11 +2679,11 @@ class ClickHouseCluster:
         try:
             self.cleanup()
         except Exception as e:
-            logging.warning("Cleanup failed:{e}")
+            logging.warning("Cleanup failed: %s", e)
 
         try:
             for instance in list(self.instances.values()):
-                logging.debug(f"Setup directory for instance: {instance.name}")
+                logging.debug("Setup directory for instance: %s", instance.name)
                 instance.create_dir()
 
             _create_env_file(os.path.join(self.env_file), self.env_variables)
@@ -2698,7 +2710,7 @@ class ClickHouseCluster:
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper Secure")
                 logging.debug(
-                    f"Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}"
+                    "Creating internal ZooKeeper dirs: %s", self.zookeeper_dirs_to_create
                 )
                 for i in range(1, 3):
                     if os.path.exists(self.zookeeper_instance_dir_prefix + f"{i}"):
@@ -2715,7 +2727,7 @@ class ClickHouseCluster:
             if self.with_zookeeper and self.base_zookeeper_cmd:
                 logging.debug("Setup ZooKeeper")
                 logging.debug(
-                    f"Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}"
+                    "Creating internal ZooKeeper dirs: %s", self.zookeeper_dirs_to_create
                 )
                 if self.use_keeper:
                     for i in range(1, 4):
@@ -2862,7 +2874,7 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
                 time.sleep(2)
-                logging.debug(f"RabbitMQ checking container try")
+                logging.debug("RabbitMQ checking container try")
                 self.wait_rabbitmq_to_start()
 
             if self.with_nats and self.base_nats_cmd:
@@ -3010,10 +3022,12 @@ class ClickHouseCluster:
                 instance.ip_address = self.get_instance_ip(instance.name)
 
                 logging.debug(
-                    f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}..."
+                    "Waiting for ClickHouse start in %s, ip: %s...",
+                    instance.name,
+                    instance.ip_address
                 )
                 instance.wait_for_start(start_timeout)
-                logging.debug(f"ClickHouse {instance.name} started")
+                logging.debug("ClickHouse %s started", instance.name)
 
                 instance.client = Client(
                     instance.ip_address, command=self.client_bin_path
@@ -3050,9 +3064,7 @@ class ClickHouseCluster:
                 try:
                     run_and_check(self.base_cmd + ["stop", "--timeout", "20"])
                 except Exception as e:
-                    logging.debug(
-                        "Kill command failed during shutdown. {}".format(repr(e))
-                    )
+                    logging.debug("Kill command failed during shutdown. %r", e)
                     logging.debug("Trying to kill forcefully")
                     run_and_check(self.base_cmd + ["kill"])
 
@@ -3086,9 +3098,7 @@ class ClickHouseCluster:
             try:
                 subprocess_check_call(self.base_cmd + ["down", "--volumes"])
             except Exception as e:
-                logging.debug(
-                    "Down + remove orphans failed during shutdown. {}".format(repr(e))
-                )
+                logging.debug("Down + remove orphans failed during shutdown. %r", e)
         else:
             logging.warning(
                 "docker-compose up was not called. Trying to export docker.log for running containers"
@@ -3135,7 +3145,11 @@ class ClickHouseCluster:
 
         ip = self.get_instance_ip(zoo_instance_name)
         logging.debug(
-            f"get_kazoo_client: {zoo_instance_name}, ip:{ip}, port:{port}, use_ssl:{use_ssl}"
+            "get_kazoo_client: %s, ip:%s, port:%s, use_ssl:%s",
+            zoo_instance_name,
+            ip,
+            port,
+            use_ssl
         )
         zk = KazooClient(
             hosts=f"{ip}:{port}",
@@ -3152,14 +3166,14 @@ class ClickHouseCluster:
     ):
         zk = self.get_kazoo_client(zoo_instance_name)
         logging.debug(
-            f"run_kazoo_commands_with_retries: {zoo_instance_name}, {kazoo_callback}"
+            "run_kazoo_commands_with_retries: %s, %s", zoo_instance_name, kazoo_callback
         )
         for i in range(repeats - 1):
             try:
                 kazoo_callback(zk)
                 return
             except KazooException as e:
-                logging.debug(repr(e))
+                logging.debug("%r", e)
                 time.sleep(sleep_for)
         kazoo_callback(zk)
         zk.stop()
@@ -3494,7 +3508,7 @@ class ClickHouseInstance:
 
     # As query() but doesn't wait response and returns response handler
     def get_query_request(self, sql, *args, **kwargs):
-        logging.debug(f"Executing query {sql} on {self.name}")
+        logging.debug("Executing query %s on %s", sql, self.name)
         return self.client.get_query_request(sql, *args, **kwargs)
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument), expects an error and return its code
@@ -3509,7 +3523,7 @@ class ClickHouseInstance:
         database=None,
         query_id=None,
     ):
-        logging.debug(f"Executing query {sql} on {self.name}")
+        logging.debug("Executing query %s on %s", sql, self.name)
         return self.client.query_and_get_error(
             sql,
             stdin=stdin,
@@ -3533,7 +3547,7 @@ class ClickHouseInstance:
         retry_count=20,
         sleep_time=0.5,
     ):
-        logging.debug(f"Executing query {sql} on {self.name}")
+        logging.debug("Executing query %s on %s", sql, self.name)
         result = None
         for i in range(retry_count):
             try:
@@ -3551,7 +3565,7 @@ class ClickHouseInstance:
                 if result is not None:
                     return result
             except QueryRuntimeException as ex:
-                logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                logging.debug("Retry %s got exception %s", i + 1, ex)
                 time.sleep(sleep_time)
 
         raise Exception("Query {} did not fail".format(sql))
@@ -3568,7 +3582,7 @@ class ClickHouseInstance:
         database=None,
         query_id=None,
     ):
-        logging.debug(f"Executing query {sql} on {self.name}")
+        logging.debug("Executing query %s on %s", sql, self.name)
         return self.client.query_and_get_answer_with_error(
             sql,
             stdin=stdin,
@@ -3677,7 +3691,7 @@ class ClickHouseInstance:
         retry_strategy=None,
         content=False,
     ):
-        logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
+        logging.debug("Executing query %s on %s via HTTP interface", sql, self.name)
         if params is None:
             params = {}
         else:
@@ -3716,7 +3730,7 @@ class ClickHouseInstance:
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
     def http_request(self, url, method="GET", params=None, data=None, headers=None):
-        logging.debug(f"Sending HTTP request {url} to {self.name}")
+        logging.debug("Sending HTTP request %s to %s", url, self.name)
         url = "http://" + self.ip_address + ":8123/" + url
         return requests.request(
             method=method, url=url, params=params, data=data, headers=headers
@@ -3754,7 +3768,7 @@ class ClickHouseInstance:
                 pid = self.get_process_pid("clickhouse")
                 if pid is not None:
                     logging.warning(
-                        f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
+                        "Force kill clickhouse in stop_clickhouse. ps:%s", pid
                     )
                     self.exec_in_container(
                         [
@@ -3769,12 +3783,11 @@ class ClickHouseInstance:
                     ps_all = self.exec_in_container(
                         ["bash", "-c", "ps aux"], nothrow=True, user="root"
                     )
-                    logging.warning(
-                        f"We want force stop clickhouse, but no clickhouse-server is running\n{ps_all}"
-                    )
+                    logging.warning("We want force stop clickhouse, but no clickhouse-server is running")
+                    logging.warning(ps_all)
                     return
         except Exception as e:
-            logging.warning(f"Stop ClickHouse raised an error {e}")
+            logging.warning("Stop ClickHouse raised an error: %s", e)
 
     def start_clickhouse(self, start_wait_sec=60, retry_start=True):
         if not self.stay_alive:
@@ -3803,7 +3816,7 @@ class ClickHouseInstance:
                     return
                 except Exception as e:
                     logging.warning(
-                        f"Current start attempt failed. Will kill {pid} just in case."
+                        "Current start attempt failed. Will kill %s just in case.", pid
                     )
                     self.exec_in_container(
                         ["bash", "-c", f"kill -9 {pid}"], user="root", nothrow=True
@@ -3828,18 +3841,18 @@ class ClickHouseInstance:
                 last_err = err
                 pid = self.get_process_pid("clickhouse")
                 if pid is not None:
-                    logging.warning(f"ERROR {err}")
+                    logging.warning("ERROR %s", err)
                 else:
                     raise Exception("ClickHouse server is not running. Check logs.")
             if time.time() > start_time + start_wait_sec:
                 break
         logging.error(
-            f"No time left to start. But process is still running. Will dump threads."
+            "No time left to start. But process is still running. Will dump threads."
         )
         ps_clickhouse = self.exec_in_container(
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
         )
-        logging.info(f"PS RESULT:\n{ps_clickhouse}")
+        logging.info("PS RESULT:\n%s", ps_clickhouse)
         pid = self.get_process_pid("clickhouse")
         if pid is not None:
             self.exec_in_container(
@@ -3889,7 +3902,7 @@ class ClickHouseInstance:
     def grep_in_log(
         self, substring, from_host=False, filename="clickhouse-server.log", after=None
     ):
-        logging.debug(f"grep in log called %s", substring)
+        logging.debug("grep in log called %s", substring)
         if after is not None:
             after_opt = "-A{}".format(after)
         else:
@@ -3952,9 +3965,8 @@ class ClickHouseInstance:
         # if repetitions>1 grep will return success even if not enough lines were collected,
         if repetitions > 1 and len(result.splitlines()) < repetitions:
             logging.debug(
-                "wait_for_log_line: those lines were found during {} seconds:".format(
-                    timeout
-                )
+                "wait_for_log_line: those lines were found during %s seconds:",
+                timeout
             )
             logging.debug(result)
             raise Exception(
@@ -3966,9 +3978,8 @@ class ClickHouseInstance:
         wait_duration = time.time() - start_time
 
         logging.debug(
-            '{} log line(s) matching "{}" appeared in a {:.3f} seconds'.format(
-                repetitions, regexp, wait_duration
-            )
+            '%s log line(s) matching "%s" appeared in a %.3f seconds',
+            repetitions, regexp, wait_duration
         )
         return wait_duration
 
@@ -4401,7 +4412,7 @@ class ClickHouseInstance:
                 base_secrets_dir = self.path
             from_dir = self.secrets_dir
             to_dir = p.abspath(p.join(base_secrets_dir, "secrets"))
-            logging.debug(f"Copy secret from {from_dir} to {to_dir}")
+            logging.debug("Copy secret from %s to %s", from_dir, to_dir)
             shutil.copytree(
                 self.secrets_dir,
                 p.abspath(p.join(base_secrets_dir, "secrets")),
@@ -4415,7 +4426,9 @@ class ClickHouseInstance:
 
         # Copy config.d configs
         logging.debug(
-            f"Copy custom test config files {self.custom_main_config_paths} to {self.config_d_dir}"
+            "Copy custom test config files %s to %s",
+            self.custom_main_config_paths,
+            self.config_d_dir
         )
         for path in self.custom_main_config_paths:
             shutil.copy(path, self.config_d_dir)
@@ -4431,18 +4444,18 @@ class ClickHouseInstance:
             shutil.copy(path, extra_conf_dir)
 
         db_dir = p.abspath(p.join(self.path, "database"))
-        logging.debug(f"Setup database dir {db_dir}")
+        logging.debug("Setup database dir %s", db_dir)
         if self.clickhouse_path_dir is not None:
-            logging.debug(f"Database files taken from {self.clickhouse_path_dir}")
+            logging.debug("Database files taken from %s", self.clickhouse_path_dir)
             shutil.copytree(self.clickhouse_path_dir, db_dir)
             logging.debug(
-                f"Database copied from {self.clickhouse_path_dir} to {db_dir}"
+                "Database copied from %s to %s", self.clickhouse_path_dir, db_dir
             )
         else:
             os.mkdir(db_dir)
 
         logs_dir = p.abspath(p.join(self.path, "logs"))
-        logging.debug(f"Setup logs dir {logs_dir}")
+        logging.debug("Setup logs dir %s", logs_dir)
         os.mkdir(logs_dir)
         self.logs_dir = logs_dir
 
@@ -4527,7 +4540,7 @@ class ClickHouseInstance:
                 + "]"
             )
 
-        logging.debug("Entrypoint cmd: {}".format(entrypoint_cmd))
+        logging.debug("Entrypoint cmd: %s", entrypoint_cmd)
 
         networks = app_net = ipv4_address = ipv6_address = net_aliases = net_alias1 = ""
         if (
@@ -4574,7 +4587,7 @@ class ClickHouseInstance:
                 external_dir_abs_path = p.abspath(
                     p.join(self.cluster.instances_dir, external_dir.lstrip("/"))
                 )
-                logging.info(f"external_dir_abs_path={external_dir_abs_path}")
+                logging.info("external_dir_abs_path=%s", external_dir_abs_path)
                 os.makedirs(external_dir_abs_path, exist_ok=True)
                 external_dirs_volumes += (
                     "- " + external_dir_abs_path + ":" + external_dir + "\n"

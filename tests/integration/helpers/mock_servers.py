@@ -15,7 +15,7 @@ def start_mock_servers(cluster, script_dir, mocks, timeout=100):
     server_names_with_desc = (
         f"{'server' if len(server_names) == 1 else 'servers'} {','.join(server_names)}"
     )
-    logging.info(f"Starting mock {server_names_with_desc}")
+    logging.info("Starting mock %s", server_names_with_desc)
 
     start_time = time.time()
     mocks_to_check = {}
@@ -51,7 +51,10 @@ def start_mock_servers(cluster, script_dir, mocks, timeout=100):
 
             if ping_response == "OK":
                 logging.debug(
-                    f"{server_name} answered {ping_response} on attempt {attempt}"
+                    "%s answered %s on attempt %s",
+                    server_name,
+                    ping_response,
+                    attempt
                 )
                 del mocks_to_check[server_name]
             elif time.time() - start_time > timeout:
@@ -65,7 +68,7 @@ def start_mock_servers(cluster, script_dir, mocks, timeout=100):
             time.sleep(1)
             attempt += 1
 
-    logging.info(f"Mock {server_names_with_desc} started")
+    logging.info("Mock %s started", server_names_with_desc)
 
 
 # The same as start_mock_servers, but

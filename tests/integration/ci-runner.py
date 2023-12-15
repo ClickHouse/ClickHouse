@@ -195,7 +195,7 @@ def clear_ip_tables_and_restart_daemons():
             shell=True,
         )
     except subprocess.CalledProcessError as err:
-        logging.info("docker kill excepted: " + str(err))
+        logging.info("docker kill excepted: %s", str(err))
 
     try:
         logging.info("Removing all docker containers")
@@ -204,7 +204,7 @@ def clear_ip_tables_and_restart_daemons():
             shell=True,
         )
     except subprocess.CalledProcessError as err:
-        logging.info("docker rm excepted: " + str(err))
+        logging.info("docker rm excepted: %s", str(err))
 
     # don't restart docker if it's disabled
     if os.environ.get("CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER", "1") == "1":
@@ -212,7 +212,7 @@ def clear_ip_tables_and_restart_daemons():
             logging.info("Stopping docker daemon")
             subprocess.check_output("service docker stop", shell=True)
         except subprocess.CalledProcessError as err:
-            logging.info("docker stop excepted: " + str(err))
+            logging.info("docker stop excepted: %s", str(err))
 
         try:
             for i in range(200):
@@ -227,7 +227,7 @@ def clear_ip_tables_and_restart_daemons():
             else:
                 raise Exception("Docker daemon doesn't responding")
         except subprocess.CalledProcessError as err:
-            logging.info("Can't reload docker: " + str(err))
+            logging.info("Can't reload docker: %s", str(err))
 
     iptables_iter = 0
     try:
@@ -340,7 +340,7 @@ class ClickhouseIntegrationTestsRunner:
                 )
                 return
             except subprocess.CalledProcessError as err:
-                logging.info("docker-compose pull failed: " + str(err))
+                logging.info("docker-compose pull failed: %s", str(err))
                 continue
         logging.error("Pulling images failed for 5 attempts. Will fail the worker.")
         # We pass specific retcode to to ci/integration_test_check.py to skip status reporting and restart job
@@ -376,7 +376,7 @@ class ClickhouseIntegrationTestsRunner:
                         if retcode == 0:
                             logging.info("Installation of %s successfull", full_path)
                         else:
-                            raise Exception("Installation of %s failed", full_path)
+                            raise Exception(f"Installation of {full_path} failed")
                     break
             else:
                 raise Exception("Package with {} not found".format(package))
@@ -587,7 +587,7 @@ class ClickhouseIntegrationTestsRunner:
                 broken_tests,
             )
         except Exception as e:
-            logging.info("Failed to run {}:\n{}".format(str(test_group), str(e)))
+            logging.info("Failed to run %s:\n%s", str(test_group), str(e))
             counters = {
                 "ERROR": [],
                 "PASSED": [],
@@ -931,7 +931,7 @@ class ClickhouseIntegrationTestsRunner:
         if self.use_analyzer:
             with open(f"{repo_path}/tests/analyzer_integration_broken_tests.txt") as f:
                 broken_tests = f.read().splitlines()
-            logging.info(f"Broken tests in the list: {len(broken_tests)}")
+            logging.info("Broken tests in the list: %s", len(broken_tests))
 
         for group, tests in items_to_run:
             logging.info("Running test group %s containing %s tests", group, len(tests))

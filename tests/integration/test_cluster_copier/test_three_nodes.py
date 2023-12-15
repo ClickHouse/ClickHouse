@@ -240,7 +240,7 @@ def execute_task(started_cluster, task, cmd_options):
     ]
     cmd += cmd_options
 
-    logging.debug(f"execute_task cmd: {cmd}")
+    logging.debug("execute_task cmd: %s", cmd)
 
     for instance_name in started_cluster.instances.keys():
         instance = started_cluster.instances[instance_name]
@@ -249,13 +249,13 @@ def execute_task(started_cluster, task, cmd_options):
             os.path.join(CURRENT_TEST_DIR, "configs_three_nodes/config-copier.xml"),
             "/etc/clickhouse-server/config-copier.xml",
         )
-        logging.info("Copied copier config to {}".format(instance.name))
+        logging.info("Copied copier config to %s", instance.name)
         exec_id = docker_api.exec_create(container.id, cmd, stderr=True)
         output = docker_api.exec_start(exec_id).decode("utf8")
         logging.info(output)
         copiers_exec_ids.append(exec_id)
         logging.info(
-            "Copier for {} ({}) has started".format(instance.name, instance.ip_address)
+            "Copier for %s (%s) has started", instance.name, instance.ip_address
         )
 
     # time.sleep(1000)

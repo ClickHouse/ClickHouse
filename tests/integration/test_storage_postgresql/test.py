@@ -518,7 +518,7 @@ def test_datetime_with_timezone(started_cluster):
     )
     cursor.execute("select * from test_timezone")
     result = cursor.fetchall()[0]
-    logging.debug(f"{result[0]}, {str(result[1])[:-6]}")
+    logging.debug("%s, %s", result[0], str(result[1])[:-6])
     node1.query(
         "create table test.test_timezone ( ts DateTime, ts_z DateTime('America/New_York')) ENGINE PostgreSQL('postgres1:5432', 'postgres', 'test_timezone', 'postgres', 'mysecretpassword');"
     )

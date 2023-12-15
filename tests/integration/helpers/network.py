@@ -173,10 +173,9 @@ class _NetworkManager:
 
             if res.returncode != 0:
                 logging.info(
-                    "All iptables rules cleared, "
-                    + str(iptables_iter)
-                    + " iterations, last error: "
-                    + str(res.stderr)
+                    "All iptables rules cleared, %s iterations, last error: %s",
+                    str(iptables_iter),
+                    str(res.stderr)
                 )
                 return
 
@@ -296,7 +295,7 @@ class _NetworkManager:
             try:
                 self._exec_run(cmd, **kwargs)
             except subprocess.CalledProcessError as e:
-                logging.error(f"_exec_run failed for {cmd}, {e}")
+                logging.error("_exec_run failed for %s, %s", cmd, e)
 
     def _exec_run(self, cmd, **kwargs):
         container = self._ensure_container()

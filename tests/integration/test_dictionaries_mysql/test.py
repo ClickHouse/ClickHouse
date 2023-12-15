@@ -378,7 +378,9 @@ def get_mysql_conn(started_cluster):
             else:
                 conn.ping(reconnect=True)
             logging.debug(
-                f"MySQL Connection establised: {started_cluster.mysql_ip}:{started_cluster.mysql_port}"
+                "MySQL Connection establised: %s:%s",
+                started_cluster.mysql_ip,
+                started_cluster.mysql_port
             )
             return conn
         except Exception as e:
@@ -389,7 +391,7 @@ def get_mysql_conn(started_cluster):
 
 
 def execute_mysql_query(connection, query):
-    logging.debug("Execute MySQL query:{}".format(query))
+    logging.debug("Execute MySQL query:%s", query)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         with connection.cursor() as cursor:

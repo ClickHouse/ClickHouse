@@ -76,7 +76,7 @@ def check_data(nodes, detached_parts):
         for other in nodes:
             if other != node:
                 logging.debug(
-                    f"> Checking data consistency, {other.name} vs {node.name}"
+                    "> Checking data consistency, %s vs %s", other.name, node.name
                 )
                 assert_eq_with_retry(other, "SELECT * FROM test ORDER BY n", res)
 
@@ -124,7 +124,7 @@ def test_attach_without_fetching(start_cluster):
         ],
         privileged=True,
     )
-    logging.debug(f"Before deleting: {to_delete}")
+    logging.debug("Before deleting: %s", to_delete)
 
     node_2.exec_in_container(
         [

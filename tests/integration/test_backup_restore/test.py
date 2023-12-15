@@ -54,7 +54,7 @@ def get_last_backup_path(instance, database, table):
 def copy_backup_to_detached(instance, database, src_table, dst_table):
     fp_backup = os.path.join(path_to_data, "shadow", "*", "data", database, src_table)
     fp_detached = os.path.join(path_to_data, "data", database, dst_table, "detached")
-    logging.debug(f"copy from {fp_backup} to {fp_detached}")
+    logging.debug("copy from %s to %s", fp_backup, fp_detached)
     instance.exec_in_container(["bash", "-c", f"cp -r {fp_backup} -T {fp_detached}"])
 
 

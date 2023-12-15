@@ -122,7 +122,7 @@ def run_s3_mocks(cluster):
 def list_objects(cluster, path="data/", hint="list_objects"):
     minio = cluster.minio_client
     objects = list(minio.list_objects(cluster.minio_bucket, path, recursive=True))
-    logging.info(f"{hint} ({len(objects)}): {[x.object_name for x in objects]}")
+    logging.info("%s (%s): %s", hint, len(objects), [x.object_name for x in objects])
     return objects
 
 

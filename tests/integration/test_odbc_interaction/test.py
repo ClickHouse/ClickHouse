@@ -61,7 +61,7 @@ def get_mysql_conn():
             else:
                 conn.ping(reconnect=True)
             logging.debug(
-                f"MySQL Connection establised: {cluster.mysql_ip}:{cluster.mysql_port}"
+                "MySQL Connection establised: %s:%s", cluster.mysql_ip, cluster.mysql_port
             )
             return conn
         except Exception as e:
@@ -95,7 +95,7 @@ def get_postgres_conn(started_cluster):
     for _ in range(15):
         try:
             conn = psycopg2.connect(conn_string)
-            logging.debug("Postgre Connection establised: {}".format(conn_string))
+            logging.debug("Postgre Connection establised: %s", conn_string)
             conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
             conn.autocommit = True
             return conn
@@ -119,7 +119,7 @@ def started_cluster():
         cluster.start()
         sqlite_db = node1.odbc_drivers["SQLite3"]["Database"]
 
-        logging.debug(f"sqlite data received: {sqlite_db}")
+        logging.debug("sqlite data received: %s", sqlite_db)
         node1.exec_in_container(
             [
                 "sqlite3",
@@ -461,7 +461,7 @@ def test_sqlite_odbc_hashed_dictionary(started_cluster):
     first_update_time = node1.query(
         "SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'"
     )
-    logging.debug(f"First update time {first_update_time}")
+    logging.debug("First update time %s", first_update_time)
 
     assert_eq_with_retry(
         node1, "select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(1))", "3"
@@ -474,7 +474,7 @@ def test_sqlite_odbc_hashed_dictionary(started_cluster):
         "SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'"
     )
     # Reloaded with new data
-    logging.debug(f"Second update time {second_update_time}")
+    logging.debug("Second update time %s", second_update_time)
     while first_update_time == second_update_time:
         second_update_time = node1.query(
             "SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'"
@@ -492,7 +492,7 @@ def test_sqlite_odbc_hashed_dictionary(started_cluster):
     third_update_time = node1.query(
         "SELECT last_successful_update_time FROM system.dictionaries WHERE name = 'sqlite3_odbc_hashed'"
     )
-    logging.debug(f"Third update time {second_update_time}")
+    logging.debug("Third update time %s", third_update_time)
     counter = 0
     while third_update_time == second_update_time:
         third_update_time = node1.query(

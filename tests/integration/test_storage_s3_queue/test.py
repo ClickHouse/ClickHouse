@@ -138,7 +138,7 @@ def started_cluster():
 def run_query(instance, query, stdin=None, settings=None):
     # type: (ClickHouseInstance, str, object, dict) -> str
 
-    logging.info("Running query '{}'...".format(query))
+    logging.info("Running query '%s'...", query)
     result = instance.query(query, stdin=stdin, settings=settings)
     logging.info("Query finished")
 

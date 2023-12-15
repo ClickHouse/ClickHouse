@@ -31,10 +31,10 @@ def check_query(
             if result_set == latest_result:
                 return
 
-            logging.debug(f"latest_result {latest_result}")
+            logging.debug("latest_result %s", latest_result)
             time.sleep(interval_seconds)
         except Exception as e:
-            logging.debug(f"check_query retry {i+1} exception {e}")
+            logging.debug("check_query retry %s exception %s", i + 1, e)
             time.sleep(interval_seconds)
     else:
         latest_result = clickhouse_node.query(query)

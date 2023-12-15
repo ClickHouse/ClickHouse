@@ -59,7 +59,7 @@ def wait_rabbitmq_to_start(rabbitmq_docker_id, cookie, timeout=180):
                 return
             time.sleep(0.5)
         except Exception as ex:
-            logging.debug("Can't connect to RabbitMQ " + str(ex))
+            logging.debug("Can't connect to RabbitMQ %s", str(ex))
             time.sleep(0.5)
 
 
@@ -82,7 +82,7 @@ def revive_rabbitmq(rabbitmq_id, cookie):
 def rabbitmq_cluster():
     try:
         cluster.start()
-        logging.debug("rabbitmq_id is {}".format(instance.cluster.rabbitmq_docker_id))
+        logging.debug("rabbitmq_id is %s", instance.cluster.rabbitmq_docker_id)
         instance.query("CREATE DATABASE test")
 
         yield cluster
@@ -415,7 +415,7 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
 
     while time.monotonic() < deadline:
         result = instance.query("SELECT * FROM test.view2 ORDER BY key")
-        logging.debug(f"Result: {result}")
+        logging.debug("Result: %s", result)
         if rabbitmq_check_result(result):
             break
         time.sleep(1)
@@ -647,7 +647,7 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
         expected = messages_num * threads_num
         if int(result1) == expected:
             break
-        logging.debug(f"Result {result1} / {expected}")
+        logging.debug("Result %s / %s", result1, expected)
 
     result2 = instance.query("SELECT count(DISTINCT channel_id) FROM test.view")
 
@@ -741,7 +741,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster):
         expected = messages_num * threads_num * NUM_MV
         if int(result) == expected:
             break
-        logging.debug(f"Result: {result} / {expected}")
+        logging.debug("Result: %s / %s", result, expected)
         time.sleep(1)
 
     for thread in threads:
@@ -1046,7 +1046,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
         expected = messages_num * threads_num
         if int(result) == expected:
             break
-        logging.debug(f"Result: {result} / {expected}")
+        logging.debug("Result: %s / %s", result, expected)
         time.sleep(1)
 
     instance.query(
@@ -1077,7 +1077,7 @@ def test_rabbitmq_direct_exchange(rabbitmq_cluster):
 
     num_tables = 5
     for consumer_id in range(num_tables):
-        logging.debug(("Setting up table {}".format(consumer_id)))
+        logging.debug("Setting up table %s", consumer_id)
         instance.query(
             """
             DROP TABLE IF EXISTS test.direct_exchange_{0};
@@ -1170,7 +1170,7 @@ def test_rabbitmq_fanout_exchange(rabbitmq_cluster):
 
     num_tables = 5
     for consumer_id in range(num_tables):
-        logging.debug(("Setting up table {}".format(consumer_id)))
+        logging.debug("Setting up table %s", consumer_id)
         instance.query(
             """
             DROP TABLE IF EXISTS test.fanout_exchange_{0};
@@ -1258,7 +1258,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
 
     num_tables = 5
     for consumer_id in range(num_tables):
-        logging.debug(("Setting up table {}".format(consumer_id)))
+        logging.debug("Setting up table %s", consumer_id)
         instance.query(
             """
             DROP TABLE IF EXISTS test.topic_exchange_{0};
@@ -1283,7 +1283,7 @@ def test_rabbitmq_topic_exchange(rabbitmq_cluster):
         )
 
     for consumer_id in range(num_tables):
-        logging.debug(("Setting up table {}".format(num_tables + consumer_id)))
+        logging.debug("Setting up table %s", num_tables + consumer_id)
         instance.query(
             """
             DROP TABLE IF EXISTS test.topic_exchange_{0};
@@ -1383,7 +1383,7 @@ def test_rabbitmq_hash_exchange(rabbitmq_cluster):
     num_tables = 4
     for consumer_id in range(num_tables):
         table_name = "rabbitmq_consumer{}".format(consumer_id)
-        logging.debug(("Setting up {}".format(table_name)))
+        logging.debug("Setting up %s", table_name)
         instance.query(
             """
             DROP TABLE IF EXISTS test.{0};
@@ -1574,7 +1574,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     num_tables_to_receive = 2
     for consumer_id in range(num_tables_to_receive):
-        logging.debug(("Setting up table {}".format(consumer_id)))
+        logging.debug("Setting up table %s", consumer_id)
         instance.query(
             """
             DROP TABLE IF EXISTS test.headers_exchange_{0};
@@ -1599,9 +1599,7 @@ def test_rabbitmq_headers_exchange(rabbitmq_cluster):
 
     num_tables_to_ignore = 2
     for consumer_id in range(num_tables_to_ignore):
-        logging.debug(
-            ("Setting up table {}".format(consumer_id + num_tables_to_receive))
-        )
+        logging.debug("Setting up table %s", consumer_id + num_tables_to_receive)
         instance.query(
             """
             DROP TABLE IF EXISTS test.headers_exchange_{0};
@@ -1833,7 +1831,7 @@ def test_rabbitmq_many_consumers_to_each_queue(rabbitmq_cluster):
 
     num_tables = 4
     for table_id in range(num_tables):
-        logging.debug(("Setting up table {}".format(table_id)))
+        logging.debug("Setting up table %s", table_id)
         instance.query(
             """
             DROP TABLE IF EXISTS test.many_consumers_{0};
@@ -2077,7 +2075,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
         result = instance.query("SELECT count(DISTINCT key) FROM test.view").strip()
         if int(result) == messages_num:
             break
-        logging.debug(f"Result: {result} / {messages_num}")
+        logging.debug("Result: %s / %s", result, messages_num)
         time.sleep(1)
 
     instance.query(
@@ -2672,11 +2670,11 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
 
     while True:
         res = instance.query("SELECT COUNT(*) FROM test.view")
-        logging.debug(f"Current count (1): {res}")
+        logging.debug("Current count (1): %s", res)
         if int(res) == 20:
             break
         else:
-            logging.debug(f"Number of rows in test.view: {res}")
+            logging.debug("Number of rows in test.view: %s", res)
 
     instance.query("DROP VIEW test.consumer SYNC")
     for i in range(20, 40):
@@ -2697,7 +2695,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
 
     while True:
         result = instance.query("SELECT count() FROM test.view")
-        logging.debug(f"Current count (2): {result}")
+        logging.debug("Current count (2): %s", result)
         if int(result) == 50:
             break
         time.sleep(1)
@@ -2944,7 +2942,7 @@ def test_format_with_prefix_and_suffix(rabbitmq_cluster):
     def onReceived(channel, method, properties, body):
         message = body.decode()
         insert_messages.append(message)
-        logging.debug(f"Received {len(insert_messages)} message: {message}")
+        logging.debug("Received %s message: %s", len(insert_messages), message)
         if len(insert_messages) == 2:
             channel.stop_consuming()
 
@@ -3414,13 +3412,13 @@ def test_rabbitmq_flush_by_time(rabbitmq_cluster):
         count = instance.query(
             "SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view'"
         )
-        logging.debug(f"kssenii total count: {count}")
+        logging.debug("kssenii total count: %s", count)
         count = int(
             instance.query(
                 "SELECT count() FROM system.parts WHERE database = 'test' AND table = 'view' AND name = 'all_1_1_0'"
             )
         )
-        logging.debug(f"kssenii count: {count}")
+        logging.debug("kssenii count: %s", count)
         if count > 0:
             break
 

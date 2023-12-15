@@ -28,7 +28,7 @@ node3 = cluster.add_instance(
 def create_zk_roots(zk):
     zk.ensure_path("/root_a")
     zk.ensure_path("/root_b")
-    logging.debug(f"Create ZK roots:{zk.get_children('/')}")
+    logging.debug("Create ZK roots:%s", zk.get_children('/'))
 
 
 @pytest.fixture(scope="module", autouse=True)

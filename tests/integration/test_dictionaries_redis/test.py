@@ -121,7 +121,7 @@ def generate_dict_configs():
             for layout in LAYOUTS:
                 if not source.compatible_with_layout(layout):
                     logging.debug(
-                        f"Source {source.name} incompatible with layout {layout.name}"
+                        "Source %s incompatible with layout %s", source.name, layout.name
                     )
                     continue
 
@@ -132,7 +132,7 @@ def generate_dict_configs():
     dictionaries = []
     for fname in os.listdir(dict_configs_path):
         path = os.path.join(dict_configs_path, fname)
-        logging.debug(f"Found dictionary {path}")
+        logging.debug("Found dictionary %s", path)
         dictionaries.append(path)
 
     node = cluster.add_instance(
@@ -149,9 +149,9 @@ def started_cluster():
         assert len(FIELDS) == len(VALUES)
         for dicts in DICTIONARIES:
             for dictionary in dicts:
-                logging.debug(f"Preparing {dictionary.name}")
+                logging.debug("Preparing %s", dictionary.name)
                 dictionary.prepare_source(cluster)
-                logging.debug(f"Prepared {dictionary.name}")
+                logging.debug(f"Prepared %s", dictionary.name)
 
         yield cluster
 
@@ -165,7 +165,7 @@ def get_entity_id(entity):
 
 @pytest.mark.parametrize("id", list(range(len(FIELDS))), ids=get_entity_id)
 def test_redis_dictionaries(started_cluster, id):
-    logging.debug(f"Run test with id: {id}")
+    logging.debug("Run test with id: %s", id)
 
     dicts = DICTIONARIES[id]
     values = VALUES[id]

@@ -48,7 +48,8 @@ def count_ttl_merges_in_background_pool(node, table, level):
     count = len(result)
     if count >= level:
         logging.debug(
-            f"count_ttl_merges_in_background_pool: merges more than warn level:\n{result}"
+            "count_ttl_merges_in_background_pool: merges more than warn level:\n%s",
+            result
         )
     return count
 
@@ -89,7 +90,7 @@ def test_no_ttl_merges_in_busy_pool(started_cluster):
     node1.query("ALTER TABLE test_ttl UPDATE data = data + 1 WHERE sleepEachRow(1) = 0")
 
     while count_running_mutations(node1, "test_ttl") < 6:
-        logging.debug(f"Mutations count {count_running_mutations(node1, 'test_ttl')}")
+        logging.debug("Mutations count %s", count_running_mutations(node1, 'test_ttl'))
         assert count_ttl_merges_in_background_pool(node1, "test_ttl", 1) == 0
         time.sleep(0.5)
 
@@ -98,7 +99,7 @@ def test_no_ttl_merges_in_busy_pool(started_cluster):
     rows_count = []
     while count_running_mutations(node1, "test_ttl") == 6:
         logging.debug(
-            f"Mutations count after start TTL{count_running_mutations(node1, 'test_ttl')}"
+            "Mutations count after start TTL%s", count_running_mutations(node1, 'test_ttl')
         )
         rows_count.append(int(node1.query("SELECT count() FROM test_ttl").strip()))
         time.sleep(0.5)

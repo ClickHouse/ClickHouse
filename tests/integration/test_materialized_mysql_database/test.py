@@ -79,9 +79,7 @@ class MySQLConnection:
                 else:
                     self.mysql_connection.ping(reconnect=True)
                 logging.debug(
-                    "MySQL Connection established: {}:{}".format(
-                        self.ip_address, self.port
-                    )
+                    "MySQL Connection established: %s:%s", self.ip_address, self.port
                 )
                 return self.mysql_connection
             except Exception as e:

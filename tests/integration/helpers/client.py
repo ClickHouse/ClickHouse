@@ -230,7 +230,7 @@ class CommandRequest:
             and not self.process_finished_before_timeout
             and not self.ignore_error
         ):
-            logging.debug(f"Timed out. Last stdout:{stdout}, stderr:{stderr}")
+            logging.debug("Timed out. Last stdout: %s, stderr: %s", stdout, stderr)
             raise QueryTimeoutExceedException("Client timed out!")
 
         if (

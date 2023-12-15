@@ -26,7 +26,7 @@ def query_from_one_node_to_another(client_node, server_node, query):
     res3 = client_node.exec_in_container(["host", "clientA2.com"])
     res4 = client_node.exec_in_container(["host", "clientA3.com"])
 
-    logging.debug(f"IP: {res1}, A1 {res2}, A2 {res3}, A3 {res4}")
+    logging.debug("IP: %s, A1 %s, A2 %s, A3 %s", res1, res2, res3, res4)
 
     return client_node.exec_in_container(
         [
@@ -59,7 +59,7 @@ def setup_nodes():
         a2 = query(clientA2, "SELECT fqdn(), hostName()")
         a3 = query(clientA3, "SELECT fqdn(), hostName()")
 
-        logging.debug(f"s:{s}, a1:{a1}, a2:{a2}, a3:{a3}")
+        logging.debug("s:%s, a1:%s, a2:%s, a3:%s", s, a1, a2, a3)
 
         yield cluster
 

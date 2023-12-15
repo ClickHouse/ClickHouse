@@ -87,7 +87,7 @@ class HDFSApi(object):
             raise Exception("kerberos principal and keytab are required")
 
         with mk_krb_conf(self.krb_conf, self.kdc_ip) as instantiated_krb_conf:
-            logging.debug("instantiated_krb_conf {}".format(instantiated_krb_conf))
+            logging.debug("instantiated_krb_conf %s", instantiated_krb_conf)
 
             os.environ["KRB5_CONFIG"] = instantiated_krb_conf
 
@@ -105,12 +105,12 @@ class HDFSApi(object):
                     if res.returncode != 0:
                         # check_call(...) from subprocess does not print stderr, so we do it manually
                         logging.debug(
-                            "Stderr:\n{}\n".format(res.stderr.decode("utf-8"))
+                            "Stderr:\n%s\n", res.stderr.decode("utf-8")
                         )
                         logging.debug(
-                            "Stdout:\n{}\n".format(res.stdout.decode("utf-8"))
+                            "Stdout:\n%s\n", res.stdout.decode("utf-8")
                         )
-                        logging.debug("Env:\n{}\n".format(env))
+                        logging.debug("Env:\n%s\n", env)
                         raise Exception(
                             "Command {} return non-zero code {}: {}".format(
                                 args, res.returncode, res.stderr.decode("utf-8")
@@ -120,7 +120,7 @@ class HDFSApi(object):
                     logging.debug("KDC started, kinit successfully run")
                     return
                 except Exception as ex:
-                    logging.debug("Can't run kinit ... waiting {}".format(str(ex)))
+                    logging.debug("Can't run kinit ... waiting %s", str(ex))
                     time.sleep(1)
 
         raise Exception("Kinit running failure")
@@ -128,30 +128,29 @@ class HDFSApi(object):
     @staticmethod
     def req_wrapper(func, expected_code, cnt=2, **kwargs):
         for i in range(0, cnt):
-            logging.debug(f"CALL: {str(kwargs)}")
+            logging.debug("CALL: %s", str(kwargs))
             response_data = func(**kwargs)
             logging.debug(
-                f"response_data:{response_data.content} headers:{response_data.headers}"
+                "response_data:%s headers:%s", response_data.content, response_data.headers
             )
             if response_data.status_code == expected_code:
                 return response_data
             else:
                 logging.error(
-                    f"unexpected response_data.status_code {response_data.status_code} != {expected_code}"
+                    "unexpected response_data.status_code %s != %s", response_data.status_code, expected_code
                 )
                 time.sleep(1)
         response_data.raise_for_status()
 
     def read_data(self, path, universal_newlines=True):
         logging.debug(
-            "read_data protocol:{} host:{} ip:{} proxy port:{} data port:{} path: {}".format(
-                self.protocol,
-                self.host,
-                self.hdfs_ip,
-                self.proxy_port,
-                self.data_port,
-                path,
-            )
+            "read_data protocol:%s host:%s ip:%s proxy port:%s data port:%s path: %s",
+            self.protocol,
+            self.host,
+            self.hdfs_ip,
+            self.proxy_port,
+            self.data_port,
+            path,
         )
         response = self.req_wrapper(
             requests.get,
@@ -174,7 +173,7 @@ class HDFSApi(object):
             location = response.headers["Location"].replace(
                 "hdfs1:50075", "{}:{}".format(self.hdfs_ip, self.data_port)
             )
-        logging.debug("redirected to {}".format(location))
+        logging.debug("redirected to %s", location)
 
         response_data = self.req_wrapper(
             requests.get,
@@ -192,14 +191,13 @@ class HDFSApi(object):
 
     def write_data(self, path, content):
         logging.debug(
-            "write_data protocol:{} host:{} port:{} path: {} user:{}, principal:{}".format(
-                self.protocol,
-                self.host,
-                self.proxy_port,
-                path,
-                self.user,
-                self.principal,
-            )
+            "write_data protocol:%s host:%s port:%s path: %s user:%s, principal:%s",
+            self.protocol,
+            self.host,
+            self.proxy_port,
+            path,
+            self.user,
+            self.principal,
         )
         named_file = NamedTemporaryFile(mode="wb+")
         fpath = named_file.name
@@ -225,7 +223,7 @@ class HDFSApi(object):
             auth=self.kerberos_auth,
         )
 
-        logging.debug("HDFS api response:{}".format(response.headers))
+        logging.debug("HDFS api response:%s", response.headers)
 
         # additional_params = '&'.join(
         #     response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
@@ -252,7 +250,7 @@ class HDFSApi(object):
                 verify=False,
                 auth=self.kerberos_auth,
             )
-            logging.debug(f"{response.content} {response.headers}")
+            logging.debug("%s %s", response.content, response.headers)
 
     def write_gzip_data(self, path, content):
         if isinstance(content, str):

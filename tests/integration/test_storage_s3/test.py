@@ -106,7 +106,7 @@ def started_cluster():
 
 
 def run_query(instance, query, *args, **kwargs):
-    logging.info("Running query '{}'...".format(query))
+    logging.info("Running query '%s'...", query)
     result = instance.query(query, *args, **kwargs)
     logging.info("Query finished")
 

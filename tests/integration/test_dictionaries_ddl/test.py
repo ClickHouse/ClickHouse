@@ -50,15 +50,14 @@ node4 = cluster.add_instance(
 
 def create_mysql_conn(user, password, hostname, port):
     logging.debug(
-        "Created MySQL connection user:{}, password:{}, host:{}, port{}".format(
-            user, password, hostname, port
-        )
+        "Created MySQL connection user:%s, password:%s, host:%s, port:%s",
+        user, password, hostname, port
     )
     return pymysql.connect(user=user, password=password, host=hostname, port=port)
 
 
 def execute_mysql_query(connection, query):
-    logging.debug("Execute MySQL query:{}".format(query))
+    logging.debug("Execute MySQL query:%s", query)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         with connection.cursor() as cursor:

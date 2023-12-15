@@ -32,14 +32,14 @@ def test_check_file_names(started_cluster):
     now = datetime.now()
     log_file = log_dir + f"clickhouse-server-{now.strftime('%Y-%m')}.log"
     err_log_file = log_dir + f"clickhouse-server-{now.strftime('%Y-%m')}.err.log"
-    logging.debug(f"log_file {log_file} err_log_file {err_log_file}")
+    logging.debug("log_file %s err_log_file %s", log_file, err_log_file)
 
     for name, instance in started_cluster.instances.items():
         files = instance.exec_in_container(
             ["bash", "-c", f"ls -lh {log_dir}"], nothrow=True
         )
 
-        logging.debug(f"check instance '{name}': {log_dir} contains: {files}")
+        logging.debug("check instance '%s': %s contains: %s", name, log_dir, files)
 
         assert (
             instance.exec_in_container(["bash", "-c", f"ls {log_file}"], nothrow=True)

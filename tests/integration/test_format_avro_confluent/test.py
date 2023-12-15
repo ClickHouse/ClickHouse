@@ -29,7 +29,7 @@ def started_cluster():
 def run_query(instance, query, data=None, settings=None):
     # type: (ClickHouseInstance, str, object, dict) -> str
 
-    logging.info("Running query '{}'...".format(query))
+    logging.info("Running query '%s'...", query)
     # use http to force parsing on server
     if not data:
         data = " "  # make POST request

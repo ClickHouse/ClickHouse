@@ -41,7 +41,7 @@ def check_stat_file_on_disk(node, table, part_name, column_name, exist):
         privileged=True,
     )
     logging.debug(
-        f"Checking stat file in {part_path} for column {column_name}, got {output}"
+        "Checking stat file in %s for column %s, got %s", part_path, column_name, output
     )
     if exist:
         assert len(output) != 0

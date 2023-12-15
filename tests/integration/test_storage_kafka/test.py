@@ -72,7 +72,7 @@ def get_kafka_producer(port, serializer, retries):
                 bootstrap_servers="localhost:{}".format(port),
                 value_serializer=serializer,
             )
-            logging.debug("Kafka Connection establised: localhost:{}".format(port))
+            logging.debug("Kafka Connection establised: localhost:%s", port)
             return producer
         except Exception as e:
             errors += [str(e)]
@@ -94,7 +94,10 @@ def kafka_create_topic(
     config=None,
 ):
     logging.debug(
-        f"Kafka create topic={topic_name}, num_partitions={num_partitions}, replication_factor={replication_factor}"
+        "Kafka create topic=%s, num_partitions=%s, replication_factor=%s",
+        topic_name,
+        num_partitions,
+        replication_factor,
     )
     topics_list = [
         NewTopic(
@@ -114,7 +117,7 @@ def kafka_create_topic(
             retries += 1
             time.sleep(0.5)
             if retries < max_retries:
-                logging.warning(f"Failed to create topic {e}")
+                logging.warning("Failed to create topic %s", e)
             else:
                 raise
 
@@ -123,14 +126,14 @@ def kafka_delete_topic(admin_client, topic, max_retries=50):
     result = admin_client.delete_topics([topic])
     for topic, e in result.topic_error_codes:
         if e == 0:
-            logging.debug(f"Topic {topic} deleted")
+            logging.debug("Topic %s deleted", topic)
         else:
-            logging.error(f"Failed to delete topic {topic}: {e}")
+            logging.error("Failed to delete topic %s: %s", topic, e)
 
     retries = 0
     while True:
         topics_listed = admin_client.list_topics()
-        logging.debug(f"TOPICS LISTED: {topics_listed}")
+        logging.debug("TOPICS LISTED: %s", topics_listed)
         if topic not in topics_listed:
             return
         else:
@@ -142,8 +145,7 @@ def kafka_delete_topic(admin_client, topic, max_retries=50):
 
 def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
     logging.debug(
-        "kafka_produce server:{}:{} topic:{}".format(
-            "localhost", kafka_cluster.kafka_port, topic
+        "kafka_produce server:localhost:%s topic:%s", kafka_cluster.kafka_port, topic
         )
     )
     producer = get_kafka_producer(
@@ -191,7 +193,7 @@ def kafka_produce_protobuf_messages(kafka_cluster, topic, start_index, num_messa
     )
     producer.send(topic=topic, value=data)
     producer.flush()
-    logging.debug(("Produced {} messages for topic {}".format(num_messages, topic)))
+    logging.debug("Produced %s messages for topic %s", num_messages, topic)
 
 
 def kafka_produce_protobuf_messages_no_delimeters(
@@ -208,7 +210,7 @@ def kafka_produce_protobuf_messages_no_delimeters(
         serialized_msg = msg.SerializeToString()
         producer.send(topic=topic, value=serialized_msg)
     producer.flush()
-    logging.debug("Produced {} messages for topic {}".format(num_messages, topic))
+    logging.debug("Produced %s messages for topic %s", num_messages, topic)
 
 
 def kafka_produce_protobuf_social(kafka_cluster, topic, start_index, num_messages):
@@ -225,7 +227,7 @@ def kafka_produce_protobuf_social(kafka_cluster, topic, start_index, num_message
     )
     producer.send(topic=topic, value=data)
     producer.flush()
-    logging.debug(("Produced {} messages for topic {}".format(num_messages, topic)))
+    logging.debug("Produced %s messages for topic %s", num_messages, topic)
 
 
 def avro_message(value):
@@ -836,7 +838,7 @@ def test_kafka_formats(kafka_cluster):
     }
 
     for format_name, format_opts in list(all_formats.items()):
-        logging.debug(("Set up {}".format(format_name)))
+        logging.debug("Set up %s", format_name)
         topic_name = "format_tests_{}".format(format_name)
         data_sample = format_opts["data_sample"]
         data_prefix = []
@@ -900,7 +902,7 @@ def test_kafka_formats(kafka_cluster):
     )
 
     for format_name, format_opts in list(all_formats.items()):
-        logging.debug(("Checking {}".format(format_name)))
+        logging.debug("Checking %s", format_name)
         topic_name = f"format_tests_{format_name}"
         # shift offsets by 1 if format supports empty value
         offsets = (
@@ -1170,7 +1172,7 @@ def test_kafka_consumer_hang(kafka_cluster):
     )
 
     num_read = int(instance.query("SELECT count() FROM test.kafka"))
-    logging.debug(f"read {num_read} from {topic_name} before delete")
+    logging.debug("read %s from %s before delete", num_read, topic_name)
     instance.query("DROP TABLE test.kafka")
     kafka_delete_topic(admin_client, topic_name)
 
@@ -1751,7 +1753,7 @@ def test_librdkafka_compression(kafka_cluster):
     expected = "\n".join(expected)
 
     for compression_type in supported_compression_types:
-        logging.debug(("Check compression {}".format(compression_type)))
+        logging.debug("Check compression %s", compression_type)
 
         topic_name = "test_librdkafka_compression_{}".format(compression_type)
         admin_client = KafkaAdminClient(
@@ -2789,7 +2791,7 @@ def test_kafka_rebalance(kafka_cluster):
 
     for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS):
         table_name = "kafka_consumer{}".format(consumer_index)
-        logging.debug(("Setting up {}".format(table_name)))
+        logging.debug("Setting up %s", table_name)
 
         instance.query(
             """
@@ -2828,7 +2830,7 @@ def test_kafka_rebalance(kafka_cluster):
 
     # I leave last one working by intent (to finish consuming after all rebalances)
     for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS - 1):
-        logging.debug(("Dropping test.kafka_consumer{}".format(consumer_index)))
+        logging.debug(("Dropping test.kafka_consumer%s", consumer_index))
         instance.query(
             "DROP TABLE IF EXISTS test.kafka_consumer{} SYNC".format(consumer_index)
         )
@@ -2844,11 +2846,9 @@ def test_kafka_rebalance(kafka_cluster):
             break
         time.sleep(1)
         logging.debug(
-            (
-                "Waiting for finishing consuming (have {}, should be {})".format(
-                    messages_consumed, msg_index[0]
-                )
-            )
+            "Waiting for finishing consuming (have %s, should be %s)",
+            messages_consumed,
+            msg_index[0]
         )
 
     logging.debug(
@@ -2884,8 +2884,8 @@ def test_kafka_rebalance(kafka_cluster):
     )
 
     for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS):
-        logging.debug(("kafka_consumer{}".format(consumer_index)))
         table_name = "kafka_consumer{}".format(consumer_index)
+        logging.debug(table_name)
         instance.query(
             """
             DROP TABLE IF EXISTS test.{0};
@@ -3741,7 +3741,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
 
     topic_name_prefix = "format_tests_4_stream_"
     for format_name, format_opts in list(all_formats.items()):
-        logging.debug(f"Set up {format_name}")
+        logging.debug("Set up %s", format_name)
         topic_name = f"{topic_name_prefix}{format_name}"
         data_sample = format_opts["data_sample"]
         data_prefix = []
@@ -3816,7 +3816,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
     )
 
     for format_name, format_opts in list(all_formats.items()):
-        logging.debug(f"Checking {format_name}")
+        logging.debug("Checking %s", format_name)
         topic_name = f"{topic_name_prefix}{format_name}"
         # shift offsets by 1 if format supports empty value
         offsets = (
@@ -4594,7 +4594,7 @@ def test_system_kafka_consumers(kafka_cluster):
           FROM system.kafka_consumers WHERE database='test' and table='kafka' format Vertical;
         """
     )
-    logging.debug(f"result_system_kafka_consumers: {result_system_kafka_consumers}")
+    logging.debug("result_system_kafka_consumers: %s", result_system_kafka_consumers)
     assert (
         result_system_kafka_consumers
         == """Row 1:
@@ -4694,7 +4694,7 @@ def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
           FROM system.kafka_consumers WHERE database='test' and table IN ('kafka', 'kafka2') format Vertical;
         """
     )
-    logging.debug(f"result_system_kafka_consumers: {result_system_kafka_consumers}")
+    logging.debug("result_system_kafka_consumers: %s", result_system_kafka_consumers)
     assert (
         result_system_kafka_consumers
         == """Row 1:

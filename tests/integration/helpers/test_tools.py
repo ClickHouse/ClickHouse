@@ -95,7 +95,7 @@ def assert_eq_with_retry(
                 break
             time.sleep(sleep_time)
         except Exception as ex:
-            logging.exception(f"assert_eq_with_retry retry {i+1} exception {ex}")
+            logging.exception("assert_eq_with_retry retry %s exception %s", i + 1, ex)
             time.sleep(sleep_time)
     else:
         val = TSV(
@@ -132,7 +132,7 @@ def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_ti
                 break
             time.sleep(sleep_time)
         except Exception as ex:
-            logging.exception(f"contains_in_log_with_retry retry {i+1} exception {ex}")
+            logging.exception("contains_in_log_with_retry retry %s exception %s", i + 1, ex)
             time.sleep(sleep_time)
     else:
         raise AssertionError("'{}' not found in logs".format(substring))
@@ -146,13 +146,16 @@ def exec_query_with_retry(
         try:
             res = instance.query(query, timeout=30, settings=settings)
             if not silent:
-                logging.debug(f"Result of {query} on {cnt} try is {res}")
+                logging.debug("Result of %s on %s try is %s", query, cnt, res)
             break
         except Exception as ex:
             exception = ex
             if not silent:
                 logging.exception(
-                    f"Failed to execute query '{query}' on  {cnt} try on instance '{instance.name}' will retry"
+                    "Failed to execute query '%s' on  %s try on instance '%s' will retry",
+                    query,
+                    cnt,
+                    instance.name
                 )
             time.sleep(sleep_time)
     else:

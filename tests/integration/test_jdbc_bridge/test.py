@@ -34,12 +34,12 @@ def started_cluster():
             datasources = instance.query("select * from jdbc('', 'show datasources')")
             if "self" in datasources:
                 logging.debug(
-                    f"JDBC Driver self datasource initialized.\n{datasources}"
+                    "JDBC Driver self datasource initialized.\n%s", datasources
                 )
                 break
             else:
                 logging.debug(
-                    f"Waiting JDBC Driver to initialize 'self' datasource.\n{datasources}"
+                    "Waiting JDBC Driver to initialize 'self' datasource.\n%s", datasources
                 )
         yield cluster
     finally:
@@ -88,7 +88,7 @@ def test_jdbc_insert(started_cluster):
         """
         CREATE TABLE test.test_insert ENGINE = Memory AS
         SELECT * FROM test.ClickHouseTable;
-        SELECT * 
+        SELECT *
         FROM jdbc('{0}?mutation', 'INSERT INTO test.test_insert VALUES({1}, ''{1}'', ''{1}'')');
     """.format(
             datasource, records
@@ -112,7 +112,7 @@ def test_jdbc_update(started_cluster):
         """
         CREATE TABLE test.test_update ENGINE = Memory AS
         SELECT * FROM test.ClickHouseTable;
-        SELECT * 
+        SELECT *
         FROM jdbc(
             '{}?mutation',
             'SET mutations_sync = 1; ALTER TABLE test.test_update UPDATE Str=''{}'' WHERE Num = {} - 1;'
@@ -142,7 +142,7 @@ def test_jdbc_delete(started_cluster):
         """
         CREATE TABLE test.test_delete ENGINE = Memory AS
         SELECT * FROM test.ClickHouseTable;
-        SELECT * 
+        SELECT *
         FROM jdbc(
             '{}?mutation',
             'SET mutations_sync = 1; ALTER TABLE test.test_delete DELETE WHERE Num < {} - 1;'

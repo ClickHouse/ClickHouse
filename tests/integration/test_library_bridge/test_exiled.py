@@ -88,7 +88,7 @@ def test_bridge_dies_with_parent(ch_cluster):
             privileged=True,
             user="root",
         )
-        logging.debug(f"Bridge is running, gdb output:\n{out}")
+        logging.debug("Bridge is running, gdb output:\n%s", out)
 
     try:
         assert clickhouse_pid is None

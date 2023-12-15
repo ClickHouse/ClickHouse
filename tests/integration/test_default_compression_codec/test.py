@@ -436,7 +436,7 @@ def test_default_codec_version_update(start_cluster):
     old_version = node3.query("SELECT version()")
     node3.restart_with_latest_version(fix_metadata=True)
     new_version = node3.query("SELECT version()")
-    logging.debug(f"Updated from {old_version} to {new_version}")
+    logging.debug("Updated from %s to %s", old_version, new_version)
     assert (
         node3.query(
             "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_0'"
@@ -492,7 +492,7 @@ def test_default_codec_version_update(start_cluster):
     node3.restart_with_original_version(callback_onstop=callback)
 
     cur_version = node3.query("SELECT version()")
-    logging.debug(f"End with {cur_version}")
+    logging.debug("End with %s", cur_version)
 
 
 def test_default_codec_for_compact_parts(start_cluster):

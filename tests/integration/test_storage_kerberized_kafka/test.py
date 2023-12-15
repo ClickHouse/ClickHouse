@@ -40,7 +40,7 @@ def get_kafka_producer(port, serializer):
                 bootstrap_servers="localhost:{}".format(port),
                 value_serializer=serializer,
             )
-            logging.debug("Kafka Connection establised: localhost:{}".format(port))
+            logging.debug("Kafka Connection establised: localhost:%s", port)
             return producer
         except Exception as e:
             errors += [str(e)]
@@ -51,9 +51,9 @@ def get_kafka_producer(port, serializer):
 
 def kafka_produce(kafka_cluster, topic, messages, timestamp=None):
     logging.debug(
-        "kafka_produce server:{}:{} topic:{}".format(
-            "localhost", kafka_cluster.kerberized_kafka_port, topic
-        )
+        "kafka_produce server:localhost:%s topic:%s",
+        kafka_cluster.kerberized_kafka_port,
+        topic
     )
     producer = get_kafka_producer(
         kafka_cluster.kerberized_kafka_port, producer_serializer

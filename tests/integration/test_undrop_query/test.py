@@ -26,9 +26,7 @@ def test_undrop_drop_and_undrop_loop(started_cluster):
     while count < 10:
         random_sec = random.randint(0, 10)
         table_uuid = uuid.uuid1().__str__()
-        logging.info(
-            "random_sec: " + random_sec.__str__() + ", table_uuid: " + table_uuid
-        )
+        logging.info("random_sec: %s, table_uuid: %s", str(random_sec), table_uuid)
         node.query(
             "create table test_undrop_loop"
             + count.__str__()

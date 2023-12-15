@@ -120,7 +120,7 @@ class Runner:
                 i += 1
 
             try:
-                logging.debug(f"thread {thread_num}: insert for {date_str}: {xs}")
+                logging.debug("thread %s: insert for %s: %s", thread_num, date_str, xs)
                 random.choice(self.nodes).query(
                     "INSERT INTO test_mutations FORMAT TSV", payload
                 )
@@ -132,7 +132,7 @@ class Runner:
                     self.total_inserted_rows += len(xs)
 
             except Exception as e:
-                logging.debug(f"Exception while inserting: {e}")
+                logging.debug("Exception while inserting: %s", e)
                 self.exceptions.append(e)
             finally:
                 with self.mtx:
@@ -163,7 +163,7 @@ class Runner:
                 continue
 
             try:
-                logging.debug(f"thread {thread_num}: delete {to_delete_count} * {x}")
+                logging.debug("thread %s: delete %s * %s", thread_num, to_delete_count, x)
                 random.choice(self.nodes).query(
                     "ALTER TABLE test_mutations DELETE WHERE x = {}".format(x)
                 )
@@ -175,7 +175,7 @@ class Runner:
                     self.total_deleted_rows += to_delete_count
 
             except Exception as e:
-                logging.debug(f"Exception while deleting: {e}")
+                logging.debug("Exception while deleting: %s", e)
             finally:
                 with self.mtx:
                     self.currently_deleting_xs.remove(x)
@@ -228,7 +228,7 @@ def test_mutations(started_cluster):
     assert runner.total_mutations > 0
 
     all_done = wait_for_mutations(nodes, runner.total_mutations)
-    logging.debug(f"Total mutations: {runner.total_mutations}")
+    logging.debug("Total mutations: %s", runner.total_mutations)
     for node in nodes:
         logging.debug(
             node.query(

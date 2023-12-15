@@ -27,7 +27,7 @@ def started_cluster():
         cluster.start()
 
         sqlite_db = node1.odbc_drivers["SQLite3"]["Database"]
-        logging.debug(f"sqlite data received: {sqlite_db}")
+        logging.debug("sqlite data received: %s", sqlite_db)
         node1.exec_in_container(
             [
                 "sqlite3",
@@ -102,7 +102,7 @@ def test_bridge_dies_with_parent(started_cluster):
             privileged=True,
             user="root",
         )
-        logging.debug(f"Bridge is running, gdb output:\n{out}")
+        logging.debug("Bridge is running, gdb output:\n%s", out)
 
     try:
         assert clickhouse_pid is None

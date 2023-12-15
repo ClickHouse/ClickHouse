@@ -43,7 +43,7 @@ ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
         demux=True,
     )
     logging.debug(
-        f"test_ldap_external_user_directory code:{code} stdout:{stdout}, stderr:{stderr}"
+        "test_ldap_external_user_directory code:%s stdout:%s, stderr:%s", code, stdout, stderr
     )
     assert code == 0
 
