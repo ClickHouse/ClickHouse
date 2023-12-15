@@ -84,9 +84,9 @@ public:
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
 
-protected:
-    void attachTableUnlocked(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) TSA_REQUIRES(mutex) override;
+    void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
+protected:
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
 
 private:

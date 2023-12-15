@@ -101,10 +101,10 @@ void DatabaseMaterializedMySQL::dropTable(ContextPtr context_, const String & na
     DatabaseAtomic::dropTable(context_, name, sync);
 }
 
-void DatabaseMaterializedMySQL::attachTableUnlocked(ContextPtr context_, const String & name, const StoragePtr & table, const String & relative_table_path)
+void DatabaseMaterializedMySQL::attachTable(ContextPtr context_, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     checkIsInternalQuery(context_, "ATTACH TABLE");
-    DatabaseAtomic::attachTableUnlocked(context_, name, table, relative_table_path);
+    DatabaseAtomic::attachTable(context_, name, table, relative_table_path);
 }
 
 StoragePtr DatabaseMaterializedMySQL::detachTable(ContextPtr context_, const String & name)

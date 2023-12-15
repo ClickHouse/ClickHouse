@@ -165,7 +165,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     std::optional<MergeTreeDataPartBuilder> builder;
     if (global_ctx->parent_part)
     {
-        auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename);
+        auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename,  /* use parent transaction */ false);
         builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage);
         builder->withParentPart(global_ctx->parent_part);
     }
@@ -185,11 +185,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (data_part_storage->exists())
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
 
+    data_part_storage->beginTransaction();
+    /// Background temp dirs cleaner will not touch tmp projection directory because
+    /// it's located inside part's directory
     if (!global_ctx->parent_part)
-    {
-        data_part_storage->beginTransaction();
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
-    }
 
     global_ctx->all_column_names = global_ctx->metadata_snapshot->getColumns().getNamesOfPhysical();
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();

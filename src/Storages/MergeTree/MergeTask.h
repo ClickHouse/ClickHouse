@@ -113,6 +113,13 @@ public:
         return global_ctx->promise.get_future();
     }
 
+    MergeTreeData::MutableDataPartPtr getUnfinishedPart()
+    {
+        if (global_ctx)
+            return global_ctx->new_data_part;
+        return nullptr;
+    }
+
     bool execute();
 
 private:
