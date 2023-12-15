@@ -3,13 +3,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <IO/WriteBuffer.h>
 
+
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
 
 ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     const Block & header_,
