@@ -175,10 +175,6 @@ struct StorageKafkaInterceptors
 
 namespace
 {
-    const auto RESCHEDULE_MS = 500;
-    const auto CLEANUP_TIMEOUT_MS = 3000;
-    const auto MAX_THREAD_WORK_DURATION_MS = 60000;  // once per minute leave do reschedule (we can't lock threads in pool forever)
-
     const String CONFIG_KAFKA_TAG = "kafka";
     const String CONFIG_KAFKA_TOPIC_TAG = "kafka_topic";
     const String CONFIG_NAME_TAG = "name";
@@ -270,11 +266,14 @@ StorageKafka::StorageKafka(
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
     , collection_name(collection_name_)
 {
+    kafka_settings->sanityCheck();
+
     if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         kafka_settings->input_format_allow_errors_num = 0;
         kafka_settings->input_format_allow_errors_ratio = 0;
     }
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
@@ -455,8 +454,8 @@ void StorageKafka::shutdown(bool)
     {
         LOG_TRACE(log, "Waiting for final cleanup");
         Stopwatch watch;
-        rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
-        LOG_TRACE(log, "Final cleanup finished in {} ms (timeout {} ms).", watch.elapsedMilliseconds(), CLEANUP_TIMEOUT_MS);
+        rd_kafka_wait_destroyed(KAFKA_CLEANUP_TIMEOUT_MS);
+        LOG_TRACE(log, "Final cleanup finished in {} ms (timeout {} ms).", watch.elapsedMilliseconds(), KAFKA_CLEANUP_TIMEOUT_MS);
     }
 }
 
@@ -616,7 +615,7 @@ cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_n
 
 void StorageKafka::cleanConsumers()
 {
-    static const UInt64 CONSUMER_TTL_USEC = 60'000'000;
+    UInt64 ttl_usec = kafka_settings->kafka_consumers_pool_ttl_ms * 1'000;
     UInt64 now_usec = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     /// Copy consumers for closing to a new vector to close them without a lock
@@ -637,7 +636,7 @@ void StorageKafka::cleanConsumers()
             if (consumer_ptr->isInUse())
                 continue;
 
-            if (now_usec - consumer_last_used_usec > CONSUMER_TTL_USEC)
+            if (now_usec - consumer_last_used_usec > ttl_usec)
             {
                 LOG_TRACE(log, "Closing #{} consumer (id: {})", i, consumer_ptr->getMemberId());
                 consumers_to_close.push_back(consumer_ptr->moveConsumer());
@@ -651,7 +650,7 @@ void StorageKafka::cleanConsumers()
         size_t closed = consumers_to_close.size();
         consumers_to_close.clear();
         LOG_TRACE(log, "{} consumers had been closed (due to {} usec timeout). Took {} ms.",
-            closed, CONSUMER_TTL_USEC, watch.elapsedMilliseconds());
+            closed, ttl_usec, watch.elapsedMilliseconds());
     }
 }
 
@@ -862,7 +861,7 @@ void StorageKafka::threadFunc(size_t idx)
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
-                if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+                if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
                 {
                     LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
                     break;
@@ -895,7 +894,7 @@ void StorageKafka::threadFunc(size_t idx)
 
     // Wait for attached views
     if (!task->stream_cancelled)
-        task->holder->scheduleAfter(RESCHEDULE_MS);
+        task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS);
 }
 
 
