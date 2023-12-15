@@ -45,6 +45,7 @@
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
 #include <Server/waitServersToFinish.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -1471,6 +1472,8 @@ try
             CertificateReloader::instance().tryLoad(*config);
 #endif
             NamedCollectionUtils::reloadFromConfig(*config);
+
+            FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
