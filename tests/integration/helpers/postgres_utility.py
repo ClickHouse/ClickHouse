@@ -280,9 +280,15 @@ class PostgresManager:
             f"INSERT INTO {database_name}.{table_name} SELECT number, number from numbers(50)"
         )
 
-    def create_and_fill_postgres_tables(self, tables_num, numbers=50, database_name=""):
+    def create_and_fill_postgres_tables(
+        self,
+        tables_num,
+        numbers=50,
+        database_name="",
+        table_name_base="postgresql_replica",
+    ):
         for i in range(tables_num):
-            table_name = f"postgresql_replica_{i}"
+            table_name = f"{table_name_base}_{i}"
             create_postgres_table(self.cursor, table_name, database_name)
             if numbers > 0:
                 db = self.database_or_default(database_name)

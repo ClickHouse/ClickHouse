@@ -18,6 +18,13 @@
 
 namespace fs = std::filesystem;
 
+
+namespace CurrentMetrics
+{
+    extern const Metric AttachedTable;
+}
+
+
 namespace DB
 {
 
@@ -161,9 +168,10 @@ bool DatabaseLazy::empty() const
     return tables_cache.empty();
 }
 
-void DatabaseLazy::attachTableUnlocked(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
+void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
 {
     LOG_DEBUG(log, "Attach table {}.", backQuote(table_name));
+    std::lock_guard lock(mutex);
     time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
     auto [it, inserted] = tables_cache.emplace(std::piecewise_construct,
@@ -173,6 +181,7 @@ void DatabaseLazy::attachTableUnlocked(ContextPtr /* context_ */, const String &
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists.", backQuote(database_name), backQuote(table_name));
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
+    CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
@@ -188,6 +197,7 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
+        CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
     }
     return res;
 }

@@ -16,6 +16,7 @@
 #include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/QueryLimit.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
 #include <filesystem>
 
 
@@ -153,14 +154,15 @@ public:
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func);
 
+    void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
     const size_t max_file_segment_size;
-    const size_t bypass_cache_threshold = 0;
+    const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
-    const size_t background_download_threads; /// 0 means background download is disabled.
-    const size_t metadata_download_threads;
+    size_t load_metadata_threads;
 
     Poco::Logger * log;
 
@@ -168,6 +170,9 @@ private:
     std::atomic<bool> is_initialized = false;
     mutable std::mutex init_mutex;
     std::unique_ptr<StatusFile> status_file;
+    std::atomic<bool> shutdown = false;
+
+    std::mutex apply_settings_mutex;
 
     CacheMetadata metadata;
 
@@ -198,12 +203,6 @@ private:
      * then allowed loaded cache size is std::min(n - k, max_query_cache_size).
      */
     FileCacheQueryLimitPtr query_limit;
-    /**
-     * A background cleanup task.
-     * Clears removed cache entries from metadata.
-     */
-    std::vector<ThreadFromGlobalPool> download_threads;
-    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
     void assertInitialized() const;
     void assertCacheCorrectness();

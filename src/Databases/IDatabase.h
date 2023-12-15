@@ -125,6 +125,7 @@ public:
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
 
+
 /** Database engine.
   * It is responsible for:
   * - initialization of set of known tables and dictionaries;
@@ -137,12 +138,8 @@ using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
 class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
-    using LazyTableCreator = std::function<StoragePtr()>;
-    /// Map{table_name, Pair{relative_table_path, LazyTableCreator}}
-    using LazyTables = std::map<String, std::pair<String, LazyTableCreator>>;
-
     IDatabase() = delete;
-    explicit IDatabase(String database_name_) : database_name(std::move(database_name_)) {}
+    explicit IDatabase(String database_name_);
 
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
@@ -272,17 +269,11 @@ public:
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///
-    /// @param relative_table_path - only for Atomic engine
-    ///
-    /// Note:
-    /// - ATTACH TABLE statement actually uses createTable method.
-    /// - Instead of overriding this method you should override attachTableUnlocked()
-    ///   (This method is only for DatabasesOverlay to override)
-    virtual void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path = {}); /// NOLINT
-
-    /// Register tables lazily (attach will be done only when the table will be used) instead of attaching it.
-    /// This is needed to improve startup time of clickhouse-local.
-    virtual void registerLazyTable(ContextPtr context, const String & table_name, LazyTableCreator table_creator, const String & relative_table_path = {});
+    /// Note: ATTACH TABLE statement actually uses createTable method.
+    virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {}) /// NOLINT
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
+    }
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
     virtual StoragePtr detachTable(ContextPtr /* context */, const String & /*name*/)
@@ -429,7 +420,7 @@ public:
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
 
-    virtual ~IDatabase() = default;
+    virtual ~IDatabase();
 
 protected:
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const
@@ -437,16 +428,6 @@ protected:
         if (throw_on_error)
             throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "There is no SHOW CREATE TABLE query for Database{}", getEngineName());
         return nullptr;
-    }
-
-    virtual void attachTableUnlocked(ContextPtr /*context*/, const String & /*name*/, const StoragePtr & /*table*/, const String & /*relative_table_path*/ = {}) TSA_REQUIRES(mutex) /// NOLINT
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
-    }
-
-    virtual void registerLazyTableUnlocked(const String & /* table_name */, LazyTableCreator /* table_creator */, const String & /* relative_table_path */) TSA_REQUIRES(mutex) /// NOLINT
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There lazy table initialization support for Database{}", getEngineName());
     }
 
     mutable std::mutex mutex;

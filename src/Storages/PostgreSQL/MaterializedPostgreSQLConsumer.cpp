@@ -138,15 +138,35 @@ MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
         columns_ast.children.emplace_back(std::make_shared<ASTIdentifier>(name));
 }
 
-MaterializedPostgreSQLConsumer::StorageData::Buffer & MaterializedPostgreSQLConsumer::StorageData::getBuffer()
+MaterializedPostgreSQLConsumer::StorageData::Buffer & MaterializedPostgreSQLConsumer::StorageData::getLastBuffer()
 {
-    if (!buffer)
+    if (buffers.empty())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data buffer not initialized for {}",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No data buffer for {}",
                         storage->getStorageID().getNameForLogs());
     }
 
-    return *buffer;
+    return *buffers.back();
+}
+
+MaterializedPostgreSQLConsumer::StorageData::BufferPtr MaterializedPostgreSQLConsumer::StorageData::popBuffer()
+{
+    if (buffers.empty())
+        return nullptr;
+
+    auto buffer = std::move(buffers.front());
+    buffers.pop_front();
+    return buffer;
+}
+
+void MaterializedPostgreSQLConsumer::StorageData::addBuffer(BufferPtr buffer)
+{
+    buffers.push_back(std::move(buffer));
+}
+
+void MaterializedPostgreSQLConsumer::StorageData::returnBuffer(BufferPtr buffer)
+{
+    buffers.push_front(std::move(buffer));
 }
 
 void MaterializedPostgreSQLConsumer::StorageData::Buffer::assertInsertIsPossible(size_t col_idx) const
@@ -163,7 +183,7 @@ void MaterializedPostgreSQLConsumer::StorageData::Buffer::assertInsertIsPossible
 
 void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, const std::string & value, size_t column_idx)
 {
-    auto & buffer = storage_data.getBuffer();
+    auto & buffer = storage_data.getLastBuffer();
     buffer.assertInsertIsPossible(column_idx);
 
     const auto & column_type_and_name = buffer.sample_block.getByPosition(column_idx);
@@ -203,7 +223,7 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
 
 void MaterializedPostgreSQLConsumer::insertDefaultValue(StorageData & storage_data, size_t column_idx)
 {
-    auto & buffer = storage_data.getBuffer();
+    auto & buffer = storage_data.getLastBuffer();
     buffer.assertInsertIsPossible(column_idx);
 
     const auto & column_type_and_name = buffer.sample_block.getByPosition(column_idx);
@@ -346,7 +366,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
         }
     }
 
-    auto & columns = storage_data.getBuffer().columns;
+    auto & columns = storage_data.getLastBuffer().columns;
     switch (type)
     {
         case PostgreSQLQuery::INSERT:
@@ -637,7 +657,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 }
             }
 
-            storage_data.setBuffer(std::make_unique<StorageData::Buffer>(std::move(columns), description));
+            storage_data.addBuffer(std::make_unique<StorageData::Buffer>(std::move(columns), description));
             tables_to_sync.insert(table_name);
             break;
         }
@@ -660,43 +680,45 @@ void MaterializedPostgreSQLConsumer::syncTables()
     {
         auto table_name = *tables_to_sync.begin();
         auto & storage_data = storages.find(table_name)->second;
-        auto & buffer = storage_data.getBuffer();
-        Block result_rows = buffer.sample_block.cloneWithColumns(std::move(buffer.columns));
 
-        try
+        while (auto buffer = storage_data.popBuffer())
         {
-            if (result_rows.rows())
+            Block result_rows = buffer->sample_block.cloneWithColumns(std::move(buffer->columns));
+            try
             {
-                auto storage = storage_data.storage;
+                if (result_rows.rows())
+                {
+                    auto storage = storage_data.storage;
 
-                auto insert_context = Context::createCopy(context);
-                insert_context->setInternalQuery(true);
+                    auto insert_context = Context::createCopy(context);
+                    insert_context->setInternalQuery(true);
 
-                auto insert = std::make_shared<ASTInsertQuery>();
-                insert->table_id = storage->getStorageID();
-                insert->columns = std::make_shared<ASTExpressionList>(buffer.columns_ast);
+                    auto insert = std::make_shared<ASTInsertQuery>();
+                    insert->table_id = storage->getStorageID();
+                    insert->columns = std::make_shared<ASTExpressionList>(buffer->columns_ast);
 
-                InterpreterInsertQuery interpreter(insert, insert_context, true);
-                auto io = interpreter.execute();
-                auto input = std::make_shared<SourceFromSingleChunk>(
-                    result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
+                    InterpreterInsertQuery interpreter(insert, insert_context, true);
+                    auto io = interpreter.execute();
+                    auto input = std::make_shared<SourceFromSingleChunk>(
+                        result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
 
-                assertBlocksHaveEqualStructure(input->getPort().getHeader(), io.pipeline.getHeader(), "postgresql replica table sync");
-                io.pipeline.complete(Pipe(std::move(input)));
+                    assertBlocksHaveEqualStructure(input->getPort().getHeader(), io.pipeline.getHeader(), "postgresql replica table sync");
+                    io.pipeline.complete(Pipe(std::move(input)));
 
-                CompletedPipelineExecutor executor(io.pipeline);
-                executor.execute();
-                ++synced_tables;
+                    CompletedPipelineExecutor executor(io.pipeline);
+                    executor.execute();
+                    ++synced_tables;
+                }
+            }
+            catch (...)
+            {
+                /// Retry this buffer later.
+                buffer->columns = result_rows.mutateColumns();
+                storage_data.returnBuffer(std::move(buffer));
+                throw;
             }
         }
-        catch (...)
-        {
-            /// Retry this buffer later.
-            buffer.columns = result_rows.mutateColumns();
-            throw;
-        }
 
-        storage_data.setBuffer(nullptr);
         tables_to_sync.erase(tables_to_sync.begin());
     }
 
