@@ -33,19 +33,19 @@ std::function<Priority(size_t index)> GetPriorityForLoadBalancing::getPriorityFu
             get_priority = [offset](size_t i) { return i != offset ? Priority{1} : Priority{0}; };
             break;
         case LoadBalancing::ROUND_ROBIN:
-            if (last_used >= pool_size)
-                last_used = 0;
-            ++last_used;
-            /* Consider pool_size equals to 5
-             * last_used = 1 -> get_priority: 0 1 2 3 4
-             * last_used = 2 -> get_priority: 4 0 1 2 3
-             * last_used = 3 -> get_priority: 4 3 0 1 2
-             * ...
-             * */
-            get_priority = [this, pool_size](size_t i)
+            auto local_last_used = last_used.fetch_add(1);
+            --local_last_used;
+            local_last_used = (pool_size - 1) - local_last_used % pool_size;
+
+            get_priority = [pool_size, local_last_used](size_t i)
             {
-                ++i; // To make `i` indexing start with 1 instead of 0 as `last_used` does
-                return Priority{static_cast<Int64>(i < last_used ? pool_size - i : i - last_used)};
+                size_t priority = pool_size - 1;
+                if (i < local_last_used)
+                    priority = pool_size - 1 - (local_last_used - i);
+                if (i > local_last_used)
+                    priority = i - local_last_used - 1;
+
+                return Priority{static_cast<Int64>(priority)};
             };
             break;
     }
