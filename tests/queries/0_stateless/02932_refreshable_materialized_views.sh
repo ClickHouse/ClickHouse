@@ -59,14 +59,16 @@ $CLICKHOUSE_CLIENT -nq "
 
 # Switch to fake clock, change refresh schedule, change query.
 $CLICKHOUSE_CLIENT -nq "
-    system test view a set fake time '2050-01-01 00:00:01';
-    alter table a modify refresh every 2 year;
-    alter table a modify query select x*2 as x from src;"
-$CLICKHOUSE_CLIENT -nq "show create a"
-while [ "`$CLICKHOUSE_CLIENT -nq "select status, next_refresh_time from refreshes -- $LINENO" | xargs`" != 'Scheduled 2052-01-01 00:00:00' ]
+    system test view a set fake time '2050-01-01 00:00:01';"
+while [ "`$CLICKHOUSE_CLIENT -nq "select status, last_refresh_time, next_refresh_time from refreshes -- $LINENO" | xargs`" != 'Scheduled 2050-01-01 00:00:01 2050-01-01 00:00:02' ]
 do
     sleep 0.1
 done
+$CLICKHOUSE_CLIENT -nq "
+    alter table a modify refresh every 2 year;
+    alter table a modify query select x*2 as x from src;
+    select '<4.5: altered>', status, last_refresh_result, next_refresh_time from refreshes;
+    show create a;"
 # Advance time to trigger the refresh.
 $CLICKHOUSE_CLIENT -nq "
     select '<5: no refresh>', count() from a;
