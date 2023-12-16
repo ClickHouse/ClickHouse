@@ -260,10 +260,6 @@ public:
 
         void rollback(DataPartsLock * lock = nullptr);
 
-        /// Immediately remove parts from table's data_parts set and change part
-        /// state to temporary. Useful for new parts which not present in table.
-        void rollbackPartsToTemporaryState();
-
         size_t size() const { return precommitted_parts.size(); }
         bool isEmpty() const { return precommitted_parts.empty(); }
 
@@ -348,9 +344,6 @@ public:
 
         /// For Collapsing and VersionedCollapsing mode.
         String sign_column;
-
-        /// For Replacing mode. Can be empty for Replacing.
-        String is_deleted_column;
 
         /// For Summing mode. If empty - columns_to_sum is determined automatically.
         Names columns_to_sum;
@@ -600,11 +593,6 @@ public:
         Transaction & out_transaction,
         DataPartsLock & lock,
         DataPartsVector * out_covered_parts = nullptr);
-
-    /// Remove parts from working set immediately (without wait for background
-    /// process). Transfer part state to temporary. Have very limited usage only
-    /// for new parts which aren't already present in table.
-    void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove);
 
     /// Removes parts from the working set parts.
     /// Parts in add must already be in data_parts with PreActive, Active, or Outdated states.

@@ -28,7 +28,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
 }
 
@@ -63,36 +62,49 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         ColumnPtr array_ptr = arguments[0].column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
 
         const IColumn & src_data = array->getData();
+        const ColumnArray::Offsets & offsets = array->getOffsets();
 
-        auto res = ColumnFloat64::create(1);
+        auto res = ColumnFloat64::create(input_rows_count);
         auto & res_data = res->getData();
 
-        Float64 period;
+        ColumnArray::Offset prev_src_offset = 0;
 
-        if (executeNumber<UInt8>(src_data, period) || executeNumber<UInt16>(src_data, period) || executeNumber<UInt32>(src_data, period)
-            || executeNumber<UInt64>(src_data, period) || executeNumber<Int8>(src_data, period) || executeNumber<Int16>(src_data, period)
-            || executeNumber<Int32>(src_data, period) || executeNumber<Int64>(src_data, period) || executeNumber<Float32>(src_data, period)
-            || executeNumber<Float64>(src_data, period))
+        Float64 period;
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res_data[0] = period;
-            return res;
+            ColumnArray::Offset curr_offset = offsets[i];
+            if (executeNumbers<UInt8>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<UInt16>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<UInt32>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<UInt64>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<Int8>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<Int16>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<Int32>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<Int64>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<Float32>(src_data, period, prev_src_offset, curr_offset)
+                || executeNumbers<Float64>(src_data, period, prev_src_offset, curr_offset))
+            {
+                res_data[i] = period;
+                prev_src_offset = curr_offset;
+            }
+            else
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(),
+                    getName());
         }
-        else
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(),
-                getName());
+        return res;
     }
 
     template <typename T>
-    bool executeNumber(const IColumn & src_data, Float64 & period) const
+    bool executeNumbers(const IColumn & src_data, Float64 & period, ColumnArray::Offset & start, ColumnArray::Offset & end) const
     {
         const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
         if (!src_data_concrete)
@@ -100,11 +112,15 @@ public:
 
         const PaddedPODArray<T> & src_vec = src_data_concrete->getData();
 
-        size_t len = src_vec.size();
+        chassert(start <= end);
+        size_t len = end - start;
         if (len < 4)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least four data points are needed for function {}", getName());
+        {
+            period = NAN; // At least four data points are required to detect period
+            return true;
+        }
 
-        std::vector<Float64> src(src_vec.begin(), src_vec.end());
+        std::vector<Float64> src((src_vec.begin() + start), (src_vec.begin() + end));
         std::vector<std::complex<double>> out((len / 2) + 1);
 
         pocketfft::shape_t shape{len};
@@ -157,7 +173,54 @@ REGISTER_FUNCTION(SeriesPeriodDetectFFT)
 {
     factory.registerFunction<FunctionSeriesPeriodDetectFFT>(FunctionDocumentation{
         .description = R"(
-Detects period in time series data using FFT.)",
+Finds the period of the given time series data using FFT
+FFT - Fast Fourier transform (https://en.wikipedia.org/wiki/Fast_Fourier_transform)
+
+**Syntax**
+
+``` sql
+seriesPeriodDetectFFT(series);
+```
+
+**Arguments**
+
+- `series` - An array of numeric values
+
+**Returned value**
+
+- A real value equal to the period of time series
+- Returns NAN when number of data points are less than four.
+
+Type: [Float64](../../sql-reference/data-types/float.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT seriesPeriodDetectFFT([1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6]) AS print_0;
+```
+
+Result:
+
+``` text
+┌───────────print_0──────┐
+│                      3 │
+└────────────────────────┘
+```
+
+``` sql
+SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000))) AS print_0;
+```
+
+Result:
+
+``` text
+┌─print_0─┐
+│       6 │
+└─────────┘
+```
+)",
         .categories{"Time series analysis"}});
 }
 }
