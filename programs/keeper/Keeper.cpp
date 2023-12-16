@@ -33,6 +33,7 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/TCPServer.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Server/KeeperReadinessHandler.h>
 
 #include "Core/Defines.h"
 #include "config.h"
@@ -493,6 +494,29 @@ try
                 "Prometheus: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
                     std::move(my_http_context), createPrometheusMainHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+        });
+
+        /// HTTP control endpoints
+        port_name = "keeper_server.http_control.port";
+        createServer(listen_host, port_name, listen_try, [&](UInt16 port) mutable
+        {
+            auto my_http_context = httpContext();
+            Poco::Timespan my_keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
+            Poco::Net::HTTPServerParams::Ptr my_http_params = new Poco::Net::HTTPServerParams;
+            my_http_params->setTimeout(my_http_context->getReceiveTimeout());
+            my_http_params->setKeepAliveTimeout(my_keep_alive_timeout);
+
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port);
+            socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
+            socket.setSendTimeout(my_http_context->getSendTimeout());
+            servers->emplace_back(
+                listen_host,
+                port_name,
+                "HTTP Control: http://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    std::move(my_http_context), createKeeperHTTPControlMainHandlerFactory(config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params)
+                    );
         });
     }
 

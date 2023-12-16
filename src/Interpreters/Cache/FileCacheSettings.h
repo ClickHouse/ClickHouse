@@ -38,6 +38,8 @@ struct FileCacheSettings
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
     void loadFromCollection(const NamedCollection & collection);
 
+    bool operator ==(const FileCacheSettings &) const = default;
+
 private:
     using FuncHas = std::function<bool(std::string_view)>;
     using FuncGetUInt = std::function<size_t(std::string_view)>;
