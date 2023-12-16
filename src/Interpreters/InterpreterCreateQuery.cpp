@@ -1254,7 +1254,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (database && database->getEngineName() == "Replicated" && create.select)
     {
-        bool allow_create_select_for_replicated = create.isView() || create.is_create_empty;
+        bool is_storage_replicated = false;
+        if (create.storage && create.storage->engine)
+        {
+            const auto & storage_name = create.storage->engine->name;
+            if (storage_name.starts_with("Replicated") || storage_name.starts_with("Shared"))
+                is_storage_replicated = true;
+        }
+
+        const bool allow_create_select_for_replicated = create.isView() || create.is_create_empty || !is_storage_replicated;
         if (!allow_create_select_for_replicated)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
