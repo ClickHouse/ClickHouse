@@ -67,11 +67,13 @@ def create_tables(cluster, table_name):
 @pytest.mark.parametrize("use_hedged_requests", [1, 0])
 @pytest.mark.parametrize("custom_key", ["sipHash64(key)", "key"])
 @pytest.mark.parametrize("filter_type", ["default", "range"])
+@pytest.mark.parametrize("prefer_localhost_replica", [0, 1])
 def test_parallel_replicas_custom_key_failover(
     start_cluster,
     use_hedged_requests,
     custom_key,
     filter_type,
+    prefer_localhost_replica,
 ):
     filter_type = "default"
     cluster = "test_single_shard_multiple_replicas"
@@ -89,7 +91,7 @@ def test_parallel_replicas_custom_key_failover(
             f"SELECT key, count() FROM {table}_d GROUP BY key ORDER BY key",
             settings={
                 "log_comment": log_comment,
-                "prefer_localhost_replica": 0,
+                "prefer_localhost_replica": prefer_localhost_replica,
                 "max_parallel_replicas": 4,
                 "parallel_replicas_custom_key": custom_key,
                 "parallel_replicas_custom_key_filter_type": filter_type,
@@ -111,16 +113,17 @@ def test_parallel_replicas_custom_key_failover(
     assert query_id != ""
     query_id = query_id[:-1]
 
-    assert (
-        node1.query(
-            f"SELECT 'subqueries', count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id SETTINGS skip_unavailable_shards=1"
+    if prefer_localhost_replica == 0:
+        assert (
+            node1.query(
+                f"SELECT 'subqueries', count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id SETTINGS skip_unavailable_shards=1"
+            )
+            == "subqueries\t4\n"
         )
-        == "subqueries\t4\n"
-    )
 
-    assert (
-        node1.query(
-            f"SELECT h, count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h SETTINGS skip_unavailable_shards=1"
+        assert (
+            node1.query(
+                f"SELECT h, count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h SETTINGS skip_unavailable_shards=1"
+            )
+            == "n1\t3\nn3\t2\n"
         )
-        == "n1\t3\nn3\t2\n"
-    )

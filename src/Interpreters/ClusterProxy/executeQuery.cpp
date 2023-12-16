@@ -150,9 +150,9 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
         new_settings.timeout_overflow_mode = settings.timeout_overflow_mode_leaf;
     }
 
-    /// in case of parallel replicas custom key w/o hedged connenctions use round robing load balancing
-    /// load_balancing setting doesn't affect hedged connections
-    if (context->canUseParallelReplicasCustomKey(cluster) && !settings.load_balancing.changed && !settings.use_hedged_requests)
+    /// in case of parallel replicas custom key use round robing load balancing
+    /// so custom key partitions will be spread over nodes in round-robin fasion
+    if (context->canUseParallelReplicasCustomKey(cluster) && !settings.load_balancing.changed)
     {
         new_settings.load_balancing = LoadBalancing::ROUND_ROBIN;
     }
