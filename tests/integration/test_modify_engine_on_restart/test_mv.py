@@ -15,6 +15,7 @@ ch1 = cluster.add_instance(
 
 database_name = "modify_engine_with_mv"
 
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -24,23 +25,22 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+
 def q(node, query):
-    return node.query(
-                    database=database_name,
-                    sql=query
-                    )
+    return node.query(database=database_name, sql=query)
+
 
 def create_tables():
     q(
         ch1,
-        "CREATE TABLE hourly_data(`domain_name` String, `event_time` DateTime, `count_views` UInt64) ENGINE = MergeTree ORDER BY (domain_name, event_time)"
+        "CREATE TABLE hourly_data(`domain_name` String, `event_time` DateTime, `count_views` UInt64) ENGINE = MergeTree ORDER BY (domain_name, event_time)",
     )
 
     q(
         ch1,
         "CREATE TABLE monthly_aggregated_data\
             (`domain_name` String, `month` Date, `sumCountViews` AggregateFunction(sum, UInt64))\
-            ENGINE = AggregatingMergeTree ORDER BY (domain_name, month)"
+            ENGINE = AggregatingMergeTree ORDER BY (domain_name, month)",
     )
 
     q(
@@ -55,7 +55,7 @@ def create_tables():
             FROM hourly_data\
             GROUP BY\
                 domain_name,\
-                month"
+                month",
     )
 
     q(
@@ -64,32 +64,36 @@ def create_tables():
             VALUES ('clickhouse.com', '2019-01-01 10:00:00', 1),\
                 ('clickhouse.com', '2019-02-02 00:00:00', 2),\
                 ('clickhouse.com', '2019-02-01 00:00:00', 3),\
-                ('clickhouse.com', '2020-01-01 00:00:00', 6)"
+                ('clickhouse.com', '2020-01-01 00:00:00', 6)",
     )
+
 
 def check_tables(converted):
     engine_prefix = ""
-    if (converted): 
+    if converted:
         engine_prefix = "Replicated"
 
     # Check engines
-    assert q(
-        ch1,
-        f"SELECT name, engine FROM system.tables WHERE database = '{database_name}'",
-    ).strip() == f"hourly_data\t{engine_prefix}MergeTree\nmonthly_aggregated_data\t{engine_prefix}AggregatingMergeTree\nmonthly_aggregated_data_mv\tMaterializedView"
+    assert (
+        q(
+            ch1,
+            f"SELECT name, engine FROM system.tables WHERE database = '{database_name}'",
+        ).strip()
+        == f"hourly_data\t{engine_prefix}MergeTree\nmonthly_aggregated_data\t{engine_prefix}AggregatingMergeTree\nmonthly_aggregated_data_mv\tMaterializedView"
+    )
 
     # Check values
-    assert q(
-        ch1,
-        "SELECT sumMerge(sumCountViews) as sumCountViews\
-            FROM monthly_aggregated_data_mv"
-    ).strip() == "12"
-    assert q(
-        ch1,
-        "SELECT count() FROM hourly_data"
-    ).strip() == "4"
+    assert (
+        q(
+            ch1,
+            "SELECT sumMerge(sumCountViews) as sumCountViews\
+            FROM monthly_aggregated_data_mv",
+        ).strip()
+        == "12"
+    )
+    assert q(ch1, "SELECT count() FROM hourly_data").strip() == "4"
 
-    if (converted):
+    if converted:
         # Insert new values to check if new dependencies are set correctly
         q(
             ch1,
@@ -97,28 +101,37 @@ def check_tables(converted):
                 VALUES ('clickhouse.com', '2019-01-01 10:00:00', 1),\
                     ('clickhouse.com', '2019-02-02 00:00:00', 2),\
                     ('clickhouse.com', '2019-02-01 00:00:00', 3),\
-                    ('clickhouse.com', '2020-01-01 00:00:00', 6)"
+                    ('clickhouse.com', '2020-01-01 00:00:00', 6)",
         )
 
-        assert q(
-            ch1,
-            "SELECT sumMerge(sumCountViews) as sumCountViews\
-                FROM monthly_aggregated_data_mv"
-        ).strip() == "24"
-        assert q(
-            ch1,
-            "SELECT count() FROM hourly_data"
-        ).strip() == "8"
+        assert (
+            q(
+                ch1,
+                "SELECT sumMerge(sumCountViews) as sumCountViews\
+                FROM monthly_aggregated_data_mv",
+            ).strip()
+            == "24"
+        )
+        assert q(ch1, "SELECT count() FROM hourly_data").strip() == "8"
+
 
 def set_convert_flags():
-
     for table in ["hourly_data", "monthly_aggregated_data"]:
         ch1.exec_in_container(
-            ["bash", "-c", f"mkdir /var/lib/clickhouse/data/{database_name}/{table}/flags"]
+            [
+                "bash",
+                "-c",
+                f"mkdir /var/lib/clickhouse/data/{database_name}/{table}/flags",
+            ]
         )
         ch1.exec_in_container(
-            ["bash", "-c", f"touch /var/lib/clickhouse/data/{database_name}/{table}/flags/convert_to_replicated"]
+            [
+                "bash",
+                "-c",
+                f"touch /var/lib/clickhouse/data/{database_name}/{table}/flags/convert_to_replicated",
+            ]
         )
+
 
 def test_modify_engine_on_restart_with_materialized_view(started_cluster):
     ch1.query(f"CREATE DATABASE {database_name}")
@@ -132,4 +145,3 @@ def test_modify_engine_on_restart_with_materialized_view(started_cluster):
     ch1.restart_clickhouse()
 
     check_tables(True)
-    
