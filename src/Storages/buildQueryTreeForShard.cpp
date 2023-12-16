@@ -374,7 +374,7 @@ QueryTreeNodePtr buildQueryTreeForShard(SelectQueryInfo & query_info, QueryTreeN
     removeGroupingFunctionSpecializations(query_tree_to_modify);
 
     // std::cerr << "====================== build 1 \n" << query_tree_to_modify->dumpTree() << std::endl;
-    // createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
+    createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
     // std::cerr << "====================== build 2 \n" << query_tree_to_modify->dumpTree() << std::endl;
 
     return query_tree_to_modify;

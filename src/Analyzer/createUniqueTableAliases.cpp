@@ -109,7 +109,12 @@ public:
         {
             auto * function_node = node->as<FunctionNode>();
             if (isNameOfInFunction(function_node->getFunctionName()))
-                CreateUniqueTableAliasesVisitor(getContext()).visit(function_node->getArguments().getNodes().back());
+            {
+                auto arg = function_node->getArguments().getNodes().back();
+                /// Avoid aliasing IN `table`
+                if (arg->getNodeType() != QueryTreeNodeType::TABLE)
+                    CreateUniqueTableAliasesVisitor(getContext()).visit(function_node->getArguments().getNodes().back());
+            }
         }
     }
 
