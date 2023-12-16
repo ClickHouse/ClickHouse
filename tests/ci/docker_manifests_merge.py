@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
         "--missing-images",
         type=str,
         required=True,
-        help="json string or json file with images to build {IMAGE: TAG} or type all to build all",
+        help="json (array) string or json file with images to create manifest for",
     )
     parser.add_argument(
         "--image-tags",
@@ -144,13 +144,21 @@ def main():
         if not os.path.isfile(args.image_tags)
         else json.load(open(args.image_tags))
     )
-
+    missing_images = (
+        list(image_tags)
+        if args.missing_images == "all"
+        else json.loads(args.missing_images)
+        if not os.path.isfile(args.missing_images)
+        else json.load(open(args.missing_images))
+    )
     test_results = []
     status = "success"
 
     ok_cnt, fail_cnt = 0, 0
     images = get_images_oredered_list()
     for image_obj in images:
+        if image_obj.repo not in missing_images:
+            continue
         tag = image_tags[image_obj.repo]
         if image_obj.only_amd64:
             # FIXME: WA until full arm support
