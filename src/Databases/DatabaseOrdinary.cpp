@@ -114,9 +114,9 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 if (create_query->storage && create_query->storage->engine->name.ends_with("MergeTree") && !create_query->storage->engine->name.starts_with("Replicated"))
                 {
                     auto convert_to_replicated_flag_path = fs::path(getContext()->getPath()) / "data" / qualified_name.database / qualified_name.table / "flags" / "convert_to_replicated";
-                
+
                     LOG_INFO(log, "Searching for convert_to_replicated flag at {}.", backQuote(convert_to_replicated_flag_path.string()));
-                    
+
                     if (fs::exists(convert_to_replicated_flag_path))
                     {
                         LOG_INFO(log, "Found convert_to_replicated flag for table {}. Will try to load it as replicated table.", backQuote(qualified_name.getFullName()));
@@ -157,8 +157,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                         LOG_INFO
                         (
-                            log, 
-                            "Table {} is loaded as replicated. Not removing convert_to_replicated flag until metadata in zookeeper is restored.", 
+                            log,
+                            "Table {} is loaded as replicated. Not removing convert_to_replicated flag until metadata in zookeeper is restored.",
                             backQuote(qualified_name.getFullName())
                         );
                     }
@@ -278,23 +278,23 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
                             rmt->restoreMetadataInZooKeeper();
                             LOG_INFO
                             (
-                                log, 
-                                "Metadata in zookeeper for {} is restored. Removing convert_to_replicated flag.", 
+                                log,
+                                "Metadata in zookeeper for {} is restored. Removing convert_to_replicated flag.",
                                 backQuote(name.getFullName())
                             );
                         }
-                        else 
+                        else
                         {
                             LOG_INFO
                             (
-                                log, 
-                                "Table {} is not in readonly mode but convert_to_replicated flag is set. Removing flag.", 
+                                log,
+                                "Table {} is not in readonly mode but convert_to_replicated flag is set. Removing flag.",
                                 backQuote(name.getFullName())
                             );
                         }
                         fs::remove(convert_to_replicated_flag_path);
                     }
-                } 
+                }
                 logAboutProgress(log, ++tables_started, total_tables_to_startup, startup_watch);
             }
             else
