@@ -14,6 +14,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -49,6 +50,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_having("HAVING");
     ParserKeyword s_window("WINDOW");
     ParserKeyword s_order_by("ORDER BY");
+    ParserKeyword ascending("ASCENDING");
+    ParserKeyword descending("DESCENDING");
+    ParserKeyword asc("ASC");
+    ParserKeyword desc("DESC");
+    ParserKeyword nulls("NULLS");
+    ParserKeyword first("FIRST");
+    ParserKeyword last("LAST");
     ParserKeyword s_limit("LIMIT");
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_by("BY");
@@ -268,31 +276,31 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// ORDER BY expr ASC|DESC COLLATE 'locale' list
     if (s_order_by.ignore(pos, expected))
     {
-        if (s_all.ignore(pos, expected))
-        {
-            select_query->order_by_all = true;
-        }
-        else
-        {
-            if (!order_list.parse(pos, order_expression_list, expected))
-                return false;
+        if (!order_list.parse(pos, order_expression_list, expected))
+            return false;
 
-            /// if any WITH FILL parse possible INTERPOLATE list
-            if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
-                            [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
+        /// if any WITH FILL parse possible INTERPOLATE list
+        if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
+                        [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
+        {
+            if (s_interpolate.ignore(pos, expected))
             {
-                if (s_interpolate.ignore(pos, expected))
+                if (open_bracket.ignore(pos, expected))
                 {
-                    if (open_bracket.ignore(pos, expected))
-                    {
-                        if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
-                            return false;
-                        if (!close_bracket.ignore(pos, expected))
-                            return false;
-                    } else
-                        interpolate_expression_list = std::make_shared<ASTExpressionList>();
-                }
+                    if (!interpolate_list.parse(pos, interpolate_expression_list, expected))
+                        return false;
+                    if (!close_bracket.ignore(pos, expected))
+                        return false;
+                } else
+                    interpolate_expression_list = std::make_shared<ASTExpressionList>();
             }
+        }
+        else if (order_expression_list->children.size() == 1)
+        {
+            /// ORDER BY ALL [ASC|DESC] [NULLS [FIRST|LAST]]
+            auto * identifier = order_expression_list->children[0]->as<ASTOrderByElement>()->children[0]->as<ASTIdentifier>();
+            if (Poco::toUpper(identifier->name()) == "ALL")
+                select_query->order_by_all = true;
         }
     }
 

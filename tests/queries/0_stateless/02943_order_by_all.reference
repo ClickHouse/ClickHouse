@@ -1,11 +1,20 @@
-abc1	3	2
-abc2	1	1
-abc2	3	2
-abc3	2	3
-1	abc1	1
-1	abc3	1
-2	abc2	2
-abc	1	1
-abc	2	3
-abc	3	2
-abc	3	2
+A	3
+B	1
+B	3
+C	\N
+B	1	1
+A	3	2
+B	3	2
+C	\N	3
+B	1	1
+B	3	2
+A	3	2
+C	\N	3
+C	\N
+B	3
+B	1
+A	3
+\N	C
+1	B
+3	A
+3	B

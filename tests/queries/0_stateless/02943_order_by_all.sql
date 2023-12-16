@@ -3,14 +3,19 @@ DROP TABLE IF EXISTS order_by_all;
 CREATE TABLE order_by_all
 (
     a String,
-    b int,
-    c int
+    b Nullable(Int32),
+    all int,
 )
-engine = Memory;
+    engine = Memory;
 
-insert into order_by_all values ('abc2', 3, 2), ('abc3', 2, 3), ('abc2', 1, 1), ('abc1', 3, 2);
+INSERT INTO order_by_all VALUES ('B', 3, 2), ('C', NULL, 3), ('B', 1, 1), ('A', 3, 2);
 
-select a, b, c from order_by_all order by all;
-select count(b), a, count(c) from order_by_all group by all order by all;
-select substring(a, 1, 3), b, c from order_by_all order by all;
+SELECT a, b FROM order_by_all ORDER BY ALL;
+SELECT a, b, all FROM order_by_all ORDER BY all;  -- { serverError UNEXPECTED_EXPRESSION }
+SELECT a, b, all FROM order_by_all ORDER BY all, a;
+SELECT a, b, all FROM order_by_all ORDER BY all settings enable_order_by_all = false;
+SELECT a, b FROM order_by_all ORDER BY ALL DESC;
+SELECT b, a FROM order_by_all ORDER BY ALL NULLS FIRST;
+
+DROP TABLE IF EXISTS order_by_all;
 
