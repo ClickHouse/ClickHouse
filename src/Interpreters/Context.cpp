@@ -213,8 +213,6 @@ struct ContextSharedPart : boost::noncopyable
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
 
-    ConfigurationPtr sensitive_data_masker_config;
-
 #if USE_NURAFT
     mutable std::mutex keeper_dispatcher_mutex;
     mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
@@ -1094,7 +1092,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
     if (shared->root_temp_data_on_disk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
 
-    auto file_cache = FileCacheFactory::instance().getByName(disk_ptr->getCacheName()).cache;
+    auto file_cache = FileCacheFactory::instance().getByName(disk_ptr->getCacheName())->cache;
     if (!file_cache)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", disk_ptr->getCacheName());
 
@@ -3333,16 +3331,6 @@ bool Context::hasZooKeeper() const
 bool Context::hasAuxiliaryZooKeeper(const String & name) const
 {
     return getConfigRef().has("auxiliary_zookeepers." + name);
-}
-
-void Context::reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const
-{
-    const auto old_config = shared->sensitive_data_masker_config;
-    if (old_config && isSameConfiguration(*config, *old_config, "query_masking_rules"))
-        return;
-
-    SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(*config, "query_masking_rules"));
-    shared->sensitive_data_masker_config = config;
 }
 
 InterserverCredentialsPtr Context::getInterserverCredentials() const

@@ -431,7 +431,11 @@ def test_many_concurrent_queries(started_cluster):
 
             # random update / delete query
             cursor.execute(query_pool[query_id].format(random_table_name))
-            print("table {} query {} ok".format(random_table_name, query_id))
+            print(
+                "Executing for table {} query: {}".format(
+                    random_table_name, query_pool[query_id]
+                )
+            )
 
             # allow some thread to do inserts (not to violate key constraints)
             if thread_id < 5:
