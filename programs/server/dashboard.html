@@ -1365,7 +1365,7 @@ async function reloadAll(do_search) {
         }
         await drawAll();
     } catch (e) {
-        showError(e.toString());
+        showError(e.message);
     }
     enableButtons();
 }
@@ -1472,7 +1472,7 @@ async function start() {
             drawAll();
         }
     } catch (e) {
-        showError(e.toString());
+        showError(e.message);
     }
 }
 
