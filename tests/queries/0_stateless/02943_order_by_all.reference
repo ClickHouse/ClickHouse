@@ -1,20 +1,28 @@
-A	3
-B	1
+A	2
 B	3
 C	\N
-B	1	1
-A	3	2
-B	3	2
-C	\N	3
-B	1	1
-B	3	2
-A	3	2
-C	\N	3
-C	\N
-B	3
-B	1
-A	3
+D	1
+1	D
+2	A
+3	B
 \N	C
-1	B
-3	A
+B	3	10
+D	1	20
+A	2	30
+C	\N	40
+D	1
+A	2
+B	3
+C	\N
+B	3	10
+D	1	20
+A	2	30
+C	\N	40
+D	1
+C	\N
+B	3
+A	2
+\N	C
+1	D
+2	A
 3	B

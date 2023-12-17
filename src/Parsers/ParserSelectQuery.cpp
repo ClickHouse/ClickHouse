@@ -50,13 +50,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_having("HAVING");
     ParserKeyword s_window("WINDOW");
     ParserKeyword s_order_by("ORDER BY");
-    ParserKeyword ascending("ASCENDING");
-    ParserKeyword descending("DESCENDING");
-    ParserKeyword asc("ASC");
-    ParserKeyword desc("DESC");
-    ParserKeyword nulls("NULLS");
-    ParserKeyword first("FIRST");
-    ParserKeyword last("LAST");
     ParserKeyword s_limit("LIMIT");
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_by("BY");
@@ -281,7 +274,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         /// if any WITH FILL parse possible INTERPOLATE list
         if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
-                        [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
+                [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
         {
             if (s_interpolate.ignore(pos, expected))
             {
