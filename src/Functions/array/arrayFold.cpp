@@ -246,7 +246,7 @@ public:
 
             /// Perform the actual calculation and copy the result into the accumulator
             ColumnWithTypeAndName res_with_type_and_name = lambda->reduce();
-            accumulator_col = res_with_type_and_name.column;
+            accumulator_col = res_with_type_and_name.column->convertToFullColumnIfConst();
 
             unfinished_rows = accumulator_col->size();
             lambda_col = lambda_col_filtered;
