@@ -787,15 +787,15 @@ void expandOrderByAll(ASTSelectQuery * select_query)
 
     for (const auto & expr : select_query->select()->children)
     {
-        if (auto * identifier = expr->as<ASTIdentifier>(); identifier)
+        if (auto * identifier = expr->as<ASTIdentifier>(); identifier != nullptr)
             if (Poco::toUpper(identifier->name()) == "ALL" || Poco::toUpper(identifier->alias) == "ALL")
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                "The column name (all/ALL) conflicts with `ORDER BY ALL`, try to disable setting `enable_order_by_all`.");
+                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
 
-        if (auto * function = expr->as<ASTFunction>(); function)
+        if (auto * function = expr->as<ASTFunction>(); function != nullptr)
             if (Poco::toUpper(function->alias) == "ALL")
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                "The column name (all/ALL) conflicts with `ORDER BY ALL`, try to disable setting `enable_order_by_all`.");
+                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
 
         auto elem = std::make_shared<ASTOrderByElement>();
         elem->direction = all_elem->direction;
