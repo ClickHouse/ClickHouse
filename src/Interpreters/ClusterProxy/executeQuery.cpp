@@ -151,7 +151,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     }
 
     /// in case of parallel replicas custom key use round robing load balancing
-    /// so custom key partitions will be spread over nodes in round-robin fasion
+    /// so custom key partitions will be spread over nodes in round-robin fashion
     if (context->canUseParallelReplicasCustomKey(cluster) && !settings.load_balancing.changed)
     {
         new_settings.load_balancing = LoadBalancing::ROUND_ROBIN;
