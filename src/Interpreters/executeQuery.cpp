@@ -79,6 +79,8 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/queryNormalization.h>
+
 
 namespace ProfileEvents
 {
@@ -299,7 +301,7 @@ QueryLogElement logQueryStart(
     elem.query = query_for_logging;
     if (settings.log_formatted_queries)
         elem.formatted_query = queryToString(query_ast);
-    elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
+    elem.normalized_query_hash = normalizedQueryHash(query_for_logging, false);
     elem.query_kind = query_ast->getQueryKind();
 
     elem.client_info = context->getClientInfo();
@@ -573,7 +575,7 @@ void logExceptionBeforeStart(
 
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
-    elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
+    elem.normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
     // Log query_kind if ast is valid
     if (ast)
