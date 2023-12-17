@@ -8,20 +8,20 @@ SET prefer_localhost_replica=0;
 
 -- { echoOn }
 SELECT y, count()
-FROM cluster(parallel_replicas_custom_key_unavailable_replica, currentDatabase(), 02918_parallel_replicas)
+FROM cluster(test_cluster_1_shard_3_replicas_1_unavailable, currentDatabase(), 02918_parallel_replicas)
 GROUP BY y
 ORDER BY y
 SETTINGS max_parallel_replicas=3, parallel_replicas_custom_key='cityHash64(y)', parallel_replicas_custom_key_filter_type='default';
 
 SELECT y, count()
-FROM cluster(parallel_replicas_custom_key_unavailable_replica, currentDatabase(), 02918_parallel_replicas)
+FROM cluster(test_cluster_1_shard_3_replicas_1_unavailable, currentDatabase(), 02918_parallel_replicas)
 GROUP BY y
 ORDER BY y
 SETTINGS max_parallel_replicas=3, parallel_replicas_custom_key='cityHash64(y)', parallel_replicas_custom_key_filter_type='range';
 
 SET use_hedged_requests=0;
 SELECT y, count()
-FROM cluster(parallel_replicas_custom_key_unavailable_replica, currentDatabase(), 02918_parallel_replicas)
+FROM cluster(test_cluster_1_shard_3_replicas_1_unavailable, currentDatabase(), 02918_parallel_replicas)
 GROUP BY y
 ORDER BY y
 SETTINGS max_parallel_replicas=3, parallel_replicas_custom_key='cityHash64(y)', parallel_replicas_custom_key_filter_type='default';

@@ -144,7 +144,7 @@
                 </replica>
             </shard>
         </parallel_replicas>
-        <parallel_replicas_custom_key_unavailable_replica>
+        <test_cluster_1_shard_3_replicas_1_unavailable>
             <shard>
                 <internal_replication>false</internal_replication>
                 <replica>
@@ -161,7 +161,7 @@
                     <port>1234</port>
                 </replica>
             </shard>
-        </parallel_replicas_custom_key_unavailable_replica>
+        </test_cluster_1_shard_3_replicas_1_unavailable>
         <test_cluster_one_shard_three_replicas_localhost>
             <shard>
                 <internal_replication>false</internal_replication>
