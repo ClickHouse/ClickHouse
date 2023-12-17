@@ -290,9 +290,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (order_expression_list->children.size() == 1)
         {
-            /// ORDER BY ALL [ASC|DESC] [NULLS [FIRST|LAST]]
+            /// ORDER BY ALL
             auto * identifier = order_expression_list->children[0]->as<ASTOrderByElement>()->children[0]->as<ASTIdentifier>();
-            if (Poco::toUpper(identifier->name()) == "ALL")
+            if (identifier != nullptr && Poco::toUpper(identifier->name()) == "ALL")
                 select_query->order_by_all = true;
         }
     }
