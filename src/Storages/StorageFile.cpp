@@ -10,7 +10,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -26,8 +25,6 @@
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -39,7 +36,6 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
-#include <Processors/ResizeProcessor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Common/escapeForFileName.h>
@@ -56,7 +52,6 @@
 #include <unistd.h>
 #include <filesystem>
 #include <shared_mutex>
-#include <cmath>
 #include <algorithm>
 
 #ifdef __clang__
