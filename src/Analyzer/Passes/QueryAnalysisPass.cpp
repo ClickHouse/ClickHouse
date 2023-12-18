@@ -5333,7 +5333,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         AggregateFunctionProperties properties;
         auto aggregate_function
             = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, parameters, properties);
-
+        parameters_nodes.clear();
+        for (const auto & param : aggregate_function->getParameters())
+            parameters_nodes.push_back(std::make_shared<ConstantNode>(param));
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 
         return result_projection_names;

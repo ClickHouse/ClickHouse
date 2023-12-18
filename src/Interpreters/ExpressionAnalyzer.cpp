@@ -580,9 +580,9 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
         }
 
         AggregateFunctionProperties properties;
-        aggregate.parameters = (node.parameters) ? getAggregateFunctionParametersArray(node.parameters, "", getContext()) : Array();
+        auto aggregate_parameters = (node.parameters) ? getAggregateFunctionParametersArray(node.parameters, "", getContext()) : Array();
         aggregate.function
-            = AggregateFunctionFactory::instance().get(node.name, node.nulls_action, types, aggregate.parameters, properties);
+            = AggregateFunctionFactory::instance().get(node.name, node.nulls_action, types, aggregate_parameters, properties);
 
         descriptions.push_back(aggregate);
     }

@@ -110,10 +110,21 @@ public:
               *
               * To address this, we handle `nothing` in a special way in `FunctionNode::toASTImpl`.
               */
+
+            if (nested_function && nested_function->getName() == AggregateFunctionNothing::name && !params.empty())
+            {
+                auto type_string = params[0].safeGet<String>();
+                auto result_type = DataTypeFactory::instance().get(type_string);
+                return std::make_shared<AggregateFunctionNothing>(arguments, params, result_type);
+            }
+
+            DataTypePtr result_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             if (properties.returns_default_when_only_null)
-                return std::make_shared<AggregateFunctionNothing>(arguments, params, std::make_shared<DataTypeUInt64>());
-            else
-                return std::make_shared<AggregateFunctionNothing>(arguments, params, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()));
+                result_type = std::make_shared<DataTypeUInt64>();
+
+            Array new_params(params);
+            new_params.insert(new_params.begin(), result_type->getName());
+            return std::make_shared<AggregateFunctionNothing>(arguments, new_params, result_type);
         }
 
         assert(nested_function);

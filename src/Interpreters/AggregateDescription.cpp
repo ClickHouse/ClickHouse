@@ -58,6 +58,7 @@ void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
     else
         out << prefix << "  Function: nullptr\n";
 
+    const auto & parameters = function->getParameters();
     if (!parameters.empty())
     {
         out << prefix << "  Parameters: ";

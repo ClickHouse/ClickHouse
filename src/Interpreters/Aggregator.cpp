@@ -472,7 +472,7 @@ Block Aggregator::Params::getHeader(
             if (final)
                 type = aggregate.function->getResultType();
             else
-                type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
+                type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.getParameters());
 
             res.insert({ type, aggregate.column_name });
         }

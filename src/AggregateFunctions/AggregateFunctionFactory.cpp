@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/AggregateFunctionNothing.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -203,7 +204,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? case_insensitive_name : name);
 
         /// The case when aggregate function should return NULL on NULL arguments. This case is handled in "get" method.
-        if (!out_properties.returns_default_when_only_null && has_null_arguments)
+        if (!out_properties.returns_default_when_only_null && has_null_arguments && name != AggregateFunctionNothing::name)
             return nullptr;
 
         const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;

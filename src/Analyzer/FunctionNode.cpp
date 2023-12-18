@@ -219,7 +219,14 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
         const auto & original_ast = getOriginalAST();
         const auto & original_function_ast = original_ast ? original_ast->as<ASTFunction>() : nullptr;
         if (original_function_ast)
+        {
             function_ast->name = original_function_ast->name;
+            if (original_function_ast->parameters)
+            {
+                function_ast->children.push_back(original_function_ast->parameters);
+                function_ast->parameters = function_ast->children.back();
+            }
+        }
     }
 
     if (isWindowFunction())
@@ -241,11 +248,15 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 &&  argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT)
         new_options.add_cast_for_constants = false;
 
-    const auto & parameters = getParameters();
-    if (!parameters.getNodes().empty())
+    if (function_name != "nothing")
     {
-        function_ast->children.push_back(parameters.toAST(new_options));
-        function_ast->parameters = function_ast->children.back();
+        /// For `nothing` we use parameters of original function (see above)
+        const auto & parameters = getParameters();
+        if (!parameters.getNodes().empty())
+        {
+            function_ast->children.push_back(parameters.toAST(new_options));
+            function_ast->parameters = function_ast->children.back();
+        }
     }
 
     function_ast->children.push_back(arguments.toAST(new_options));

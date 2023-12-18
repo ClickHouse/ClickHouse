@@ -24,12 +24,14 @@ namespace ErrorCodes
 class AggregateFunctionNothing final : public IAggregateFunctionHelper<AggregateFunctionNothing>
 {
 public:
+    inline static const String name = "nothing";
+
     AggregateFunctionNothing(const DataTypes & arguments, const Array & params, const DataTypePtr & result_type_)
         : IAggregateFunctionHelper<AggregateFunctionNothing>(arguments, params, result_type_) {}
 
     String getName() const override
     {
-        return "nothing";
+        return name;
     }
 
     bool allocatesMemoryInArena() const override { return false; }

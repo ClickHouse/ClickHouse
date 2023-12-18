@@ -1,7 +1,13 @@
 #!/usr/bin/env -S ${HOME}/clickhouse-client --progress --queries-file
 
+select sum(NULL);
+select quantile(0.5)(NULL);
+select quantiles(0.1, 0.2)(NULL :: Nullable(UInt32));
+select quantile(0.5)(NULL), quantiles(0.1, 0.2)(NULL :: Nullable(UInt32)), count(NULL), sum(NULL);
 
 SELECT count(NULL) FROM remote('127.0.0.{1,2}', numbers(3)) GROUP BY number % 2 WITH TOTALS;
+SELECT quantile(0.5)(NULL) FROM remote('127.0.0.{1,2}', numbers(3)) GROUP BY number % 2 WITH TOTALS;
+SELECT quantiles(0.1, 0.2)(NULL :: Nullable(UInt32)) FROM remote('127.0.0.{1,2}', numbers(3)) GROUP BY number % 2 WITH TOTALS;
 
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (`n` UInt64) ENGINE = MergeTree ORDER BY tuple();
@@ -18,7 +24,7 @@ SET
 SELECT count(NULL) FROM t1 WITH TOTALS;
 SELECT count(NULL as a), a FROM t1 WITH TOTALS;
 
--- result differs in old and new analyzer:
--- SELECT count(NULL as a), sum(a) FROM t1 WITH TOTALS;
+SELECT count(NULL as a), sum(a) FROM t1 WITH TOTALS;
 
 SELECT uniq(NULL) FROM t1 WITH TOTALS;
+SELECT quantile(0.5)(NULL), quantile(0.9)(NULL), quantiles(0.1, 0.2)(NULL :: Nullable(UInt32)) FROM t1 WITH TOTALS;

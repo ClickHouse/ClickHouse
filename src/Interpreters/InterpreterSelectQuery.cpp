@@ -1103,7 +1103,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             for (size_t j = 0; j < arguments_size; ++j)
                 argument_types[j] = header.getByName(aggregate.argument_names[j]).type;
 
-            DataTypePtr type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
+            DataTypePtr type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.getParameters());
 
             res.insert({nullptr, type, aggregate.column_name});
         }
@@ -2399,7 +2399,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             argument_types[j] = header.getByName(desc.argument_names[j]).type;
 
         Block block_with_count{
-            {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc.parameters), desc.column_name}};
+            {std::move(column), std::make_shared<DataTypeAggregateFunction>(func, argument_types, desc.getParameters()), desc.column_name}};
 
         auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
         auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
