@@ -172,12 +172,13 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType, bool is_nullable, typename ValueSetter>
+    template <typename AttributeType, bool is_nullable, typename DictionaryAttributeType, typename ValueSetter>
     void getItemsShortCircuitImpl(
         const Attribute & attribute,
         const PaddedPODArray<UInt64> & keys,
         ValueSetter && set_value,
         const ColumnWithTypeAndName & default_argument,
+        const DictionaryAttribute & dictionary_attribute,
         const DataTypePtr & result_type_short_circuit) const;
 
     template <typename T>

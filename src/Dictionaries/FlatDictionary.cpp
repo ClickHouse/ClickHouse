@@ -159,11 +159,6 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
         const ColumnWithTypeAndName & default_argument,
         const DataTypePtr & result_type_short_circuit) const
 {
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wunused-value"
-                attribute_name;result_type;key_columns;default_argument;
-    #pragma clang diagnostic pop
-
     ColumnPtr result;
 
     PaddedPODArray<UInt64> backup_storage;
@@ -178,12 +173,12 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
 
     bool is_attribute_nullable = attribute.is_nullable_set.has_value();
     ColumnUInt8::MutablePtr col_null_map_to;
-    // ColumnUInt8::Container * vec_null_map_to = nullptr;
+    ColumnUInt8::Container * vec_null_map_to = nullptr;
 
     if (is_attribute_nullable)
     {
         col_null_map_to = ColumnUInt8::create(size, false);
-        // vec_null_map_to = &col_null_map_to->getData();
+        vec_null_map_to = &col_null_map_to->getData();
     }
 
     auto type_call = [&](const auto & dictionary_attribute_type)
@@ -195,59 +190,68 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
-        // if constexpr (std::is_same_v<ValueType, Array>)
-        // {
-        //     auto * out = column.get();
-
-        //     getItemsImpl<ValueType, false>(
-        //         attribute,
-        //         ids,
-        //         [&](size_t, const Array & value, bool) { out->insert(value); },
-        //         default_value_extractor);
-        // }
-        /*else*/ if constexpr (std::is_same_v<ValueType, StringRef>)
+        if constexpr (std::is_same_v<ValueType, Array>)
         {
             auto * out = column.get();
 
-            // if (is_attribute_nullable)
-            //     getItemsImpl<ValueType, true>(
-            //         attribute,
-            //         ids,
-            //         [&](size_t row, StringRef value, bool is_null)
-            //         {
-            //             (*vec_null_map_to)[row] = is_null;
-            //             out->insertData(value.data, value.size);
-            //         },
-            //         default_value_extractor);
-            // else
-                getItemsShortCircuitImpl<ValueType, false>(
+            getItemsShortCircuitImpl<ValueType, false, AttributeType>(
+                attribute,
+                ids,
+                [&](size_t, const Array & value, bool) { out->insert(value); },
+                default_argument,
+                dictionary_attribute,
+                result_type_short_circuit);
+        }
+        else if constexpr (std::is_same_v<ValueType, StringRef>)
+        {
+            auto * out = column.get();
+
+            if (is_attribute_nullable)
+                getItemsShortCircuitImpl<ValueType, true, AttributeType>(
+                    attribute,
+                    ids,
+                    [&](size_t row, StringRef value, bool is_null)
+                    {
+                        (*vec_null_map_to)[row] = is_null;
+                        out->insertData(value.data, value.size);
+                    },
+                    default_argument,
+                    dictionary_attribute,
+                    result_type_short_circuit);
+            else
+                getItemsShortCircuitImpl<ValueType, false, AttributeType>(
                     attribute,
                     ids,
                     [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
                     default_argument,
+                    dictionary_attribute,
                     result_type_short_circuit);
         }
-        // else
-        // {
-        //     auto & out = column->getData();
+        else
+        {
+            auto & out = column->getData();
 
-        //     if (is_attribute_nullable)
-        //         getItemsImpl<ValueType, true>(
-        //             attribute,
-        //             ids,
-        //             [&](size_t row, const auto value, bool is_null)
-        //             {
-        //                 (*vec_null_map_to)[row] = is_null;
-        //                 out[row] = value;
-        //             },
-        //             default_value_extractor);
-        //     else
-        //         getItemsImpl<ValueType, false>(
-        //             attribute,
-        //             ids,
-        //             [&](size_t row, const auto value, bool) { out[row] = value; },
-        //             default_value_extractor);
-        // }
+            if (is_attribute_nullable)
+                getItemsShortCircuitImpl<ValueType, true, AttributeType>(
+                    attribute,
+                    ids,
+                    [&](size_t row, const auto value, bool is_null)
+                    {
+                        (*vec_null_map_to)[row] = is_null;
+                        out[row] = value;
+                    },
+                    default_argument,
+                    dictionary_attribute,
+                    result_type_short_circuit);
+            else
+                getItemsShortCircuitImpl<ValueType, false, AttributeType>(
+                    attribute,
+                    ids,
+                    [&](size_t row, const auto value, bool) { out[row] = value; },
+                    default_argument,
+                    dictionary_attribute,
+                    result_type_short_circuit);
+        }
 
         result = std::move(column);
     };
@@ -678,22 +682,42 @@ void FlatDictionary::getItemsImpl(
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
-template <typename AttributeType, bool is_nullable, typename ValueSetter>
+template <typename AttributeType, bool is_nullable, typename DictionaryAttributeType,
+          typename ValueSetter>
 void FlatDictionary::getItemsShortCircuitImpl(
     const Attribute & attribute,
     const PaddedPODArray<UInt64> & keys,
     ValueSetter && set_value,
     const ColumnWithTypeAndName & default_argument,
+    const DictionaryAttribute & dictionary_attribute,
     const DataTypePtr & result_type_short_circuit) const
 {
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wunused-value"
-                attribute;set_value;result_type_short_circuit;
-    #pragma clang diagnostic pop
-
     const auto rows = keys.size();
     auto cond_col = ColumnVector<UInt8>::create(rows);
     auto & cond = cond_col->getData();
+
+    for (size_t row = 0; row < rows; ++row)
+    {
+        const auto key = keys[row];
+        cond[row] = (key < loaded_keys.size() && loaded_keys[key]) ? 1 : 0;
+    }
+
+    IColumn::Filter mask(rows, 1);
+    auto mask_info = extractMask(mask, std::move(cond_col));
+    inverseMask(mask, mask_info);
+    ColumnWithTypeAndName column_before_cast = default_argument;
+    maskedExecute(column_before_cast, mask, mask_info);
+
+    ColumnWithTypeAndName column_to_cast = {
+        column_before_cast.column->convertToFullColumnIfConst(),
+        column_before_cast.type,
+        column_before_cast.name};
+    auto result = castColumnAccurate(column_to_cast, result_type_short_circuit);
+
+    DictionaryDefaultValueExtractor<DictionaryAttributeType> default_value_extractor(
+        dictionary_attribute.null_value, result);
+
+    const auto & container = std::get<ContainerType<AttributeType>>(attribute.container);
 
     size_t keys_found = 0;
 
@@ -701,41 +725,23 @@ void FlatDictionary::getItemsShortCircuitImpl(
     {
         const auto key = keys[row];
 
-        if (key < loaded_keys.size() && loaded_keys[key])
-            cond[row] = 1;
+        if (cond[row])
+        {
+            if constexpr (is_nullable)
+                set_value(row, container[key], attribute.is_nullable_set->find(key) != nullptr);
+            else
+                set_value(row, container[key], false);
+
+            ++keys_found;
+        }
         else
-            cond[row] = 0;
+        {
+            if constexpr (is_nullable)
+                set_value(row, default_value_extractor[row], default_value_extractor.isNullAt(row));
+            else
+                set_value(row, default_value_extractor[row], false);
+        }
     }
-
-    IColumn::Filter mask(rows, 1);
-    auto mask_info = extractMask(mask, std::move(cond_col));
-    inverseMask(mask, mask_info);
-    ColumnWithTypeAndName arg = default_argument;
-    maskedExecute(arg, mask, mask_info);
-
-    // const auto & container = std::get<ContainerType<AttributeType>>(attribute.container);
-
-    // for (size_t row = 0; row < rows; ++row)
-    // {
-    //     const auto key = keys[row];
-
-    //     if (key < loaded_keys.size() && loaded_keys[key])
-    //     {
-    //         // if constexpr (is_nullable)
-    //         //     set_value(row, container[key], attribute.is_nullable_set->find(key) != nullptr);
-    //         // else
-    //             set_value(row, container[key], false);
-
-    //         ++keys_found;
-    //     }
-    //     else
-    //     {
-    //         // if constexpr (is_nullable)
-    //         //     set_value(row, default_value_extractor[row], default_value_extractor.isNullAt(row));
-    //         // else
-    //             set_value(row, default_value_extractor[row], false);
-    //     }
-    // }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
