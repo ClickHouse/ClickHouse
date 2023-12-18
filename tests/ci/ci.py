@@ -1,30 +1,30 @@
 import argparse
+import concurrent.futures
 import json
 import os
-import concurrent.futures
-from pathlib import Path
 import re
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from github import Github
-from s3_helper import S3Helper
-from digest_helper import DockerDigester, JobDigester
 import docker_images_helper
-from env_helper import (
-    CI,
-    ROOT_DIR,
-    S3_BUILDS_BUCKET,
-    TEMP_PATH,
-    REPORT_PATH,
-)
-from commit_status_helper import CommitStatusData, get_commit, set_status_comment
-from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
 from ci_config import CI_CONFIG
-from git_helper import Git, Runner as GitRunner, GIT_PREFIX
+from commit_status_helper import (
+    CommitStatusData,
+    format_description,
+    get_commit,
+    set_status_comment,
+)
+from digest_helper import DockerDigester, JobDigester
+from env_helper import CI, REPORT_PATH, ROOT_DIR, S3_BUILDS_BUCKET, TEMP_PATH
+from get_robot_token import get_best_robot_token
+from git_helper import GIT_PREFIX, Git
+from git_helper import Runner as GitRunner
+from github import Github
+from pr_info import PRInfo
 from report import BuildResult
+from s3_helper import S3Helper
 from version_helper import get_version_from_repo
 
 
@@ -462,7 +462,10 @@ def _update_gh_statuses(indata: Dict, s3: S3Helper) -> None:
             commit.create_status(
                 state=job_status.status,
                 target_url=job_status.report_url,
-                description=f"Reused from [{job_status.pr_num}-{job_status.sha[0:8]}]: {job_status.description}",
+                description=format_description(
+                    f"Reused from [{job_status.pr_num}-{job_status.sha[0:8]}]: "
+                    f"{job_status.description}"
+                ),
                 context=get_check_name(job, batch=batch, num_batches=num_batches),
             )
             print(f"GH status re-created from file [{success_flag_name}]")
