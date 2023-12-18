@@ -86,10 +86,10 @@ public:
 
 SensitiveDataMasker::~SensitiveDataMasker() = default;
 
-std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
+std::shared_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
 std::mutex SensitiveDataMasker::instance_mutex;
 
-void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
+void SensitiveDataMasker::setInstance(std::shared_ptr<SensitiveDataMasker> sensitive_data_masker_)
 {
 
     if (!sensitive_data_masker_)
@@ -106,10 +106,10 @@ void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensi
     }
 }
 
-SensitiveDataMasker * SensitiveDataMasker::getInstance()
+std::shared_ptr<SensitiveDataMasker> SensitiveDataMasker::getInstance()
 {
     std::lock_guard lock(instance_mutex);
-    return sensitive_data_masker.get();
+    return sensitive_data_masker;
 }
 
 SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
@@ -206,7 +206,7 @@ std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_
 {
     std::string res = str;
 
-    if (auto * masker = SensitiveDataMasker::getInstance())
+    if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
     size_t length = res.length();

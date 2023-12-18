@@ -47,7 +47,7 @@ private:
     class MaskingRule;
     std::vector<std::unique_ptr<MaskingRule>> all_masking_rules;
     static std::mutex instance_mutex;
-    static std::unique_ptr<SensitiveDataMasker> sensitive_data_masker;
+    static std::shared_ptr<SensitiveDataMasker> sensitive_data_masker;
 
 public:
     SensitiveDataMasker(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
@@ -58,8 +58,8 @@ public:
 
     /// setInstance is not thread-safe and should be called once in single-thread mode.
     /// https://github.com/ClickHouse/ClickHouse/pull/6810#discussion_r321183367
-    static void setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_);
-    static SensitiveDataMasker * getInstance();
+    static void setInstance(std::shared_ptr<SensitiveDataMasker> sensitive_data_masker_);
+    static std::shared_ptr<SensitiveDataMasker> getInstance();
 
     /// Used in tests.
     void addMaskingRule(const std::string & name, const std::string & regexp_string, const std::string & replacement_string);
