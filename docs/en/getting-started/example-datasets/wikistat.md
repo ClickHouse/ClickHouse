@@ -4,15 +4,15 @@ sidebar_label: WikiStat
 
 # WikiStat
 
-The dataset contains 0.5 trillion records.
+Набор данных о статистике просмотров страниц Википедии содержит 0,5 трлн записей.
 
-See the video from FOSDEM 2023: https://www.youtube.com/watch?v=JlcI2Vfz_uk
+Доклад на FOSDEM—2023: https://www.youtube.com/watch?v=JlcI2Vfz_uk
 
-And the presentation: https://presentations.clickhouse.com/fosdem2023/
+Презентация: https://presentations.clickhouse.com/fosdem2023/
 
-Data source: https://dumps.wikimedia.org/other/pageviews/
+Источник: https://dumps.wikimedia.org/other/pageviews/
 
-Getting the list of links:
+Получение списка ссылок:
 ```
 for i in {2015..2023}; do
   for j in {01..12}; do
@@ -23,16 +23,15 @@ for i in {2015..2023}; do
 done | sort | uniq | tee links.txt
 ```
 
-Downloading the data:
+Загрузка данных:
 ```
 sed -r 's!pageviews-([0-9]{4})([0-9]{2})[0-9]{2}-[0-9]+\.gz!https://dumps.wikimedia.org/other/pageviews/\1/\1-\2/\0!' \
   links.txt | xargs -P3 wget --continue
 ```
 
-(it will take about 3 days)
+(эта процедура может занять до трёх дней)
 
-Creating a table:
-
+Создание таблицы:
 ``` sql
 CREATE TABLE wikistat
 (
@@ -47,7 +46,7 @@ ENGINE = MergeTree
 ORDER BY (path, time);
 ```
 
-Loading the data:
+Загрузка данных:
 
 ```
 clickhouse-local --query "
