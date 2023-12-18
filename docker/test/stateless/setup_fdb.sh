@@ -11,10 +11,8 @@ FDBCLI_BIN_SHA256="8519a398676e5e27dc6f19c949c22878eb810964b8127bbd37b2d270fb6b7
 FDB_PORT="4511"
 
 FDB_HOME=/tmp/foundationdb
-FDB_CONF_PATH="$FDB_HOME/foundationdb.conf"
-FDB_CLUSTER="$FDB_HOME/fdb.cluster"
+FDB_CLUSTER="/etc/foundationdb/fdb.cluster"
 export FDB_CLUSTER
-export FDB_CONF_PATH
 FDBSERVER="$FDB_HOME/fdbserver"
 FDBCLI="$FDB_HOME/fdbcli"
 
