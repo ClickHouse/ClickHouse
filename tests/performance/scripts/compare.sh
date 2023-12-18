@@ -236,7 +236,7 @@ function run_tests
         fi
     fi
 
-    # For PRs w/o changes in test definitons, test only a subset of queries,
+    # For PRs w/o changes in test definitions, test only a subset of queries,
     # and run them less times. If the corresponding environment variables are
     # already set, keep those values.
     #

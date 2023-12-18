@@ -3790,6 +3790,25 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
         resetObjectColumnsFromActiveParts(acquired_lock);
 }
 
+void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove)
+{
+    auto lock = lockParts();
+
+    for (const auto & part : remove)
+    {
+        auto it_part = data_parts_by_info.find(part->info);
+        if (it_part == data_parts_by_info.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} not found in data_parts", part->getNameWithState());
+
+        assert(part->getState() == MergeTreeDataPartState::PreActive);
+
+        modifyPartState(part, MergeTreeDataPartState::Temporary);
+        /// Erase immediately
+        LOG_TEST(log, "removePartsFromWorkingSetImmediatelyAndSetTemporaryState: removing {} from data_parts_indexes", part->getNameWithState());
+        data_parts_indexes.erase(it_part);
+    }
+}
+
 void MergeTreeData::removePartsFromWorkingSet(
         MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock)
 {
@@ -6300,6 +6319,24 @@ MergeTreeData::Transaction::Transaction(MergeTreeData & data_, MergeTreeTransact
 {
     if (txn)
         data.transactions_enabled.store(true);
+}
+
+void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
+{
+    if (!isEmpty())
+    {
+        WriteBufferFromOwnString buf;
+        buf << " Rollbacking parts state to temporary and removing from working set:";
+        for (const auto & part : precommitted_parts)
+            buf << " " << part->getDataPartStorage().getPartDirectory();
+        buf << ".";
+        LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
+
+        data.removePartsFromWorkingSetImmediatelyAndSetTemporaryState(
+            DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()));
+    }
+
+    clear();
 }
 
 TransactionID MergeTreeData::Transaction::getTID() const
