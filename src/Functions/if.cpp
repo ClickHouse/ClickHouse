@@ -52,6 +52,7 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
     bool a_is_short = a.size() < size;
     bool b_is_short = b.size() < size;
 
+    /// Below code attempts to use a branch-free check (multiply with the condition) for better performance instead of conditional evaluation.
     if (a_is_short && b_is_short)
     {
         size_t a_index = 0, b_index = 0;
@@ -106,6 +107,7 @@ inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Ar
 {
     size_t size = cond.size();
     bool a_is_short = a.size() < size;
+    /// Below code attempts to use a branch-free check (multiply with the condition) for better performance instead of conditional evaluation.
     if (a_is_short)
     {
         size_t a_index = 0;
@@ -133,6 +135,7 @@ inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, Ar
 {
     size_t size = cond.size();
     bool b_is_short = b.size() < size;
+    /// Below code attempts to use a branch-free check (multiply with the condition) for better performance instead of conditional evaluation.
     if (b_is_short)
     {
         size_t b_index = 0;
