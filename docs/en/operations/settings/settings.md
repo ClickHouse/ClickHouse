@@ -4694,7 +4694,6 @@ If reading `sample.csv` is successful, file will be renamed to `processed_sample
 
 
 
-
 ## function_json_value_return_type_allow_complex
 
 Control whether allow to return complex type (such as: struct, array, map) for json_value function.
