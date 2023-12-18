@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Data preparation.
 
-CLICKHOUSE_USER_FILES_PATH=$(clickhouse-client --query "select _path, _file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
+CLICKHOUSE_USER_FILES_PATH=$($CLICKHOUSE_CLIENT_BINARY --query "select _path, _file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
 mkdir -p ${CLICKHOUSE_USER_FILES_PATH}/
 echo -e "1,1\n2,a\nb,3\n4,4\n5,c\n6,6" > ${CLICKHOUSE_USER_FILES_PATH}/a.csv
@@ -32,4 +32,3 @@ ${CLICKHOUSE_CLIENT} --query "drop table if exists data;"
 rm ${CLICKHOUSE_USER_FILES_PATH}/a.csv
 rm ${CLICKHOUSE_USER_FILES_PATH}/errors_server
 rm ${CLICKHOUSE_USER_FILES_PATH}/errors_client
-

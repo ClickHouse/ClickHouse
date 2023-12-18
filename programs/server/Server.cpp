@@ -45,6 +45,7 @@
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
 #include <Server/waitServersToFinish.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -66,7 +67,7 @@
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
@@ -1450,8 +1451,6 @@ try
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
-                global_context->reloadQueryMaskingRulesIfChanged(config);
-
                 std::lock_guard lock(servers_lock);
                 updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
             }
@@ -1471,6 +1470,8 @@ try
             CertificateReloader::instance().tryLoad(*config);
 #endif
             NamedCollectionUtils::reloadFromConfig(*config);
+
+            FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
@@ -1755,7 +1756,7 @@ try
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
-        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
+        global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     catch (...)
     {
