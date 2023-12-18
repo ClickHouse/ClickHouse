@@ -1,7 +1,9 @@
-============== SKIP 3 GRANUS ============
-============== Required String: Hello ============
-============== Alternative String: Hello ClickHouse ============
-============== Required String: Hello World ============
+========================================
+| SKIP 3 GRANUS                        |
+| Required String: Hello               |
+| Alternative String: Hello ClickHouse |
+| Alternative String: Hello World      |
+========================================
 Expression ((Projection + Before ORDER BY))
   ReadFromMergeTree (test_tokenbf_match.test_tokenbf)
   Indexes:
@@ -16,10 +18,12 @@ Expression ((Projection + Before ORDER BY))
       Granules: 2/5
 
 
-============== SKIP 3 GRANUS ============
-============== No Required String ============
-============== Alternative String: ClickHouse ============
-============== Alternative String: World ============
+========================================
+| SKIP 3 GRANUS                        |
+| No Required String                   |
+| Alternative String: ClickHouse       |
+| Alternative String: World            |
+========================================
 Expression ((Projection + Before ORDER BY))
   ReadFromMergeTree (test_tokenbf_match.test_tokenbf)
   Indexes:
@@ -34,9 +38,11 @@ Expression ((Projection + Before ORDER BY))
       Granules: 2/5
 
 
-============== SKIP 4 GRANUS ============
-============== Required String: OLAP============
-============== No Alternative String============
+========================================
+| SKIP 4 GRANUS                        |
+| Required String: OLAP                |
+| No Alternative String                |
+========================================
 Expression ((Projection + Before ORDER BY))
   ReadFromMergeTree (test_tokenbf_match.test_tokenbf)
   Indexes:
