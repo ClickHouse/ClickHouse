@@ -16,7 +16,8 @@
         <postgres3>
             <user>postgres</user>
             <password>mysecretpassword</password>
-            <addresses_expr>postgres1:1111</addresses_expr>
+            <host>postgres1</host>
+            <port>1111</port>
             <database>postgres</database>
             <table>test_table</table>
         </postgres3>
@@ -28,5 +29,12 @@
             <database>postgres</database>
             <table>test_replicas</table>
         </postgres4>
+        <postgres5>
+            <user>postgres</user>
+            <password>mysecretpassword</password>
+            <addresses_expr>postgres1:5432</addresses_expr>
+            <database>postgres</database>
+            <table>test_table</table>
+        </postgres5>
     </named_collections>
 </clickhouse>
