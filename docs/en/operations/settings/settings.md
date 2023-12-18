@@ -2647,7 +2647,7 @@ Default value: 0.
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
-Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TKSV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
 
 Possible values:
 
@@ -2658,7 +2658,7 @@ Default value: `1`.
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
-Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TKSV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
 
 Possible values:
 
@@ -4349,6 +4349,8 @@ Default value: `1GiB`.
 
 ## Schema Inference settings
 
+See [schema inference](../../interfaces/schema-inference.md#schema-inference-modes) documentation for more details.
+
 ### schema_inference_use_cache_for_file {schema_inference_use_cache_for_file}
 
 Enable schemas cache for schema inference in `file` table function.
@@ -4389,6 +4391,13 @@ Possible values:
 - 2 - auto
 
 Default value: 2.
+
+### schema_inference_mode {schema_inference_mode}
+
+The mode of schema inference. Possible values: `default` and `union`.
+See [schema inference modes](../../interfaces/schema-inference.md#schema-inference-modes) section for more details.
+
+Default value: `default`.
 
 ## compatibility {#compatibility}
 
