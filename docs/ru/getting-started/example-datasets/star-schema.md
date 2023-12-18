@@ -6,7 +6,7 @@ sidebar_label: Star Schema Benchmark
 
 # Star Schema Benchmark {#star-schema-benchmark}
 
-Компиляция dbgen:
+Star Schema Benchmark (SSB) — упрощённый вариант эталонного теста TPC-H, ориентированного на оценку производительности хранилищ данных. Для генерации набора данных утилита dbgen, которую предварительно необходимо скомпилировать:
 
 ``` bash
 $ git clone git@github.com:vadimtk/ssb-dbgen.git
@@ -27,7 +27,7 @@ $ ./dbgen -s 1000 -T l
 $ ./dbgen -s 1000 -T p
 ```
 
-Создание таблиц в Кликхауз:
+Создание таблиц в Clickhouse:
 
 ``` sql
 CREATE TABLE customer
@@ -101,7 +101,7 @@ $ clickhouse-client --query "INSERT INTO supplier FORMAT CSV" < supplier.tbl
 $ clickhouse-client --query "INSERT INTO lineorder FORMAT CSV" < lineorder.tbl
 ```
 
-Конвертация схемы-звезда в денормализованную плоскую схему:
+Поскольку изначально тест ориентирован на классические реляционные СУБД для хранилищ данных, эффективными с нормализованными схемами типа «звезда», то для эффективного применения в Clickhouse можно денормализовать таблицу фактов — создать одну «плоскую» таблицу, в которую вместить все значения измерений в качестве значений столбцов:
 
 ``` sql
 SET max_memory_usage = 20000000000;
