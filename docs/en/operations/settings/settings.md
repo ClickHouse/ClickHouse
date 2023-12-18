@@ -1578,9 +1578,15 @@ Default value: `default`.
 
 ## allow_experimental_parallel_reading_from_replicas
 
-If true, ClickHouse will send a SELECT query to all replicas of a table (up to `max_parallel_replicas`) . It will work for any kind of MergeTree table.
+Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
 
-Default value: `false`.
+Possible values:
+
+- 0 - Disabled.
+- 1 - Enabled, silently disabled in case of failure.
+- 2 - Enabled, throws an exception in case of failure.
+
+Default value: `0`.
 
 ## compile_expressions {#compile-expressions}
 
