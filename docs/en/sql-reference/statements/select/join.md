@@ -34,6 +34,7 @@ All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supp
 - `RIGHT OUTER JOIN`, non-matching rows from right table are returned in addition to matching rows.
 - `FULL OUTER JOIN`, non-matching rows from both tables are returned in addition to matching rows.
 - `CROSS JOIN`, produces cartesian product of whole tables, “join keys” are **not** specified.
+- `PASTE JOIN`, allow to join tables without using of `ON` clause.
 
 `JOIN` without specified type implies `INNER`. Keyword `OUTER` can be safely omitted. Alternative syntax for `CROSS JOIN` is specifying multiple tables in [FROM clause](../../../sql-reference/statements/select/from.md) separated by commas.
 
