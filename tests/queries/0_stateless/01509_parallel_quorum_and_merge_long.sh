@@ -20,10 +20,9 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE parallel_q2 (x UInt64) ENGINE=ReplicatedMerg
 
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP REPLICATION QUEUES parallel_q2"
 
-$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0  -q "INSERT INTO parallel_q1 VALUES (1)"
-
-# disable keeper fault injection during insert since test checks part names. Part names can differ in case of retries during insert
-$CLICKHOUSE_CLIENT --insert_quorum 2 --insert_quorum_parallel 1 --insert_keeper_fault_injection_probability=0 --query="INSERT INTO parallel_q1 VALUES (2)" &
+# This test depends on part names and those aren't deterministic with faults
+$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "INSERT INTO parallel_q1 VALUES (1)"
+$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --insert_quorum 2 --insert_quorum_parallel 1 --query="INSERT INTO parallel_q1 VALUES (2)" &
 
 part_count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT() FROM system.parts WHERE table='parallel_q1' and database='${CLICKHOUSE_DATABASE}'")
 
