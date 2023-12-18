@@ -24,6 +24,8 @@ public:
     String getEngineName() const override { return "Overlay"; }
 
 public:
+    bool supportsDetachingTables() const override;
+
     bool isTableExist(const String & table_name, ContextPtr context) const override;
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;

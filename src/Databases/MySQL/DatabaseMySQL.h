@@ -78,6 +78,8 @@ public:
 
     void loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/) override;
 
+    bool supportsDetachingTables() const override { return true; }
+
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;

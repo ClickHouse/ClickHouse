@@ -34,6 +34,7 @@ public:
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
     bool shouldBeEmptyOnDetach() const override { return false; } /// Contains only temporary tables.
+    bool supportsDetachingTables() const override { return true; }
 
     bool empty() const override;
 

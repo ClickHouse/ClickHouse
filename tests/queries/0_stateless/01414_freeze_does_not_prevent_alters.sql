@@ -1,3 +1,7 @@
+-- Tags: no-random-detach
+-- Tag no-random-detach: flag is_frozen is not persisted.
+-- Since, it's almost useless, there is no reason to fix it.
+
 -- In previous ClickHouse versions, parts were not 100% immutable and FREEZE may prevent subsequent ALTERs.
 -- It's not longer the case. Let's prove it.
 

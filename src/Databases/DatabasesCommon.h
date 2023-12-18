@@ -30,6 +30,8 @@ public:
 
     bool empty() const override;
 
+    bool supportsDetachingTables() const override { return true; }
+
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
