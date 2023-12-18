@@ -1,7 +1,7 @@
 ---
-slug: /en/operations/system-tables/async_loader
+slug: /en/operations/system-tables/asynchronous_loader
 ---
-# async_loader
+# asynchronous_loader
 
 Contains information and status for recent asynchronous jobs (e.g. for tables loading). The table contains a row for every job. There is a tool for visualizing information from this table `utils/async_loader_graph`.
 
@@ -9,7 +9,7 @@ Example:
 
 ``` sql
 SELECT *
-FROM system.async_loader
+FROM system.asynchronous_loader
 FORMAT Vertical
 LIMIT 1
 ```

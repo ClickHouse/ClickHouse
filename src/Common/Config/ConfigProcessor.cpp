@@ -519,8 +519,9 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_zk"]) /// we have zookeeper subst
     {
-        if (node->hasChildNodes()) /// only allow substitution for nodes with no value
-            throw Poco::Exception("Element <" + node->nodeName() + "> has value, can't process from_zk substitution");
+        /// only allow substitution for nodes with no value and without "replace"
+        if (node->hasChildNodes() && !replace)
+            throw Poco::Exception("Element <" + node->nodeName() + "> has value and does not have 'replace' attribute, can't process from_zk substitution");
 
         contributing_zk_paths.insert(attr_nodes["from_zk"]->getNodeValue());
 
@@ -544,8 +545,9 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_env"]) /// we have env subst
     {
-        if (node->hasChildNodes()) /// only allow substitution for nodes with no value
-            throw Poco::Exception("Element <" + node->nodeName() + "> has value, can't process from_env substitution");
+        /// only allow substitution for nodes with no value and without "replace"
+        if (node->hasChildNodes() && !replace)
+            throw Poco::Exception("Element <" + node->nodeName() + "> has value and does not have 'replace' attribute, can't process from_env substitution");
 
         XMLDocumentPtr env_document;
         auto get_env_node = [&](const std::string & name) -> const Node *

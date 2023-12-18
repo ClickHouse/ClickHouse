@@ -216,8 +216,10 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
 }
 
 
-void DatabasePostgreSQL::attachTableUnlocked(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
+void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
+    std::lock_guard lock{mutex};
+
     if (!checkPostgresTable(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE,
                         "Cannot attach PostgreSQL table {} because it does not exist in PostgreSQL (database: {})",

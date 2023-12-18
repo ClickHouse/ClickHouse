@@ -15,7 +15,6 @@
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Coordination/KeeperDispatcher.h>
@@ -33,7 +32,6 @@
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <IO/SynchronousReader.h>
@@ -45,7 +43,6 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
-#include <Interpreters/PreparedSets.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -212,8 +209,6 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
-
-    ConfigurationPtr sensitive_data_masker_config;
 
 #if USE_NURAFT
     mutable std::mutex keeper_dispatcher_mutex;
@@ -1094,7 +1089,7 @@ void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t 
     if (shared->root_temp_data_on_disk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
 
-    auto file_cache = FileCacheFactory::instance().getByName(disk_ptr->getCacheName()).cache;
+    auto file_cache = FileCacheFactory::instance().getByName(disk_ptr->getCacheName())->cache;
     if (!file_cache)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", disk_ptr->getCacheName());
 
@@ -3335,16 +3330,6 @@ bool Context::hasAuxiliaryZooKeeper(const String & name) const
     return getConfigRef().has("auxiliary_zookeepers." + name);
 }
 
-void Context::reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const
-{
-    const auto old_config = shared->sensitive_data_masker_config;
-    if (old_config && isSameConfiguration(*config, *old_config, "query_masking_rules"))
-        return;
-
-    SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(*config, "query_masking_rules"));
-    shared->sensitive_data_masker_config = config;
-}
-
 InterserverCredentialsPtr Context::getInterserverCredentials() const
 {
     return shared->interserver_io_credentials.get();
@@ -5020,7 +5005,7 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     if (!settings_ref.parallel_replicas_custom_key.value.empty())
         return CUSTOM_KEY;
 
-    if (settings_ref.allow_experimental_parallel_reading_from_replicas > 0 && !settings_ref.use_hedged_requests)
+    if (settings_ref.allow_experimental_parallel_reading_from_replicas > 0)
         return READ_TASKS;
 
     return SAMPLE_KEY;

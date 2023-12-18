@@ -203,6 +203,7 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
              || element.function == RPNElement::FUNCTION_NOT_IN
              || element.function == RPNElement::FUNCTION_MULTI_SEARCH
              || element.function == RPNElement::FUNCTION_MATCH
+             || element.function == RPNElement::FUNCTION_HAS_ANY
              || element.function == RPNElement::ALWAYS_FALSE)
         {
             rpn_stack.push_back(false);
@@ -290,7 +291,8 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
             if (element.function == RPNElement::FUNCTION_NOT_IN)
                 rpn_stack.back() = !rpn_stack.back();
         }
-        else if (element.function == RPNElement::FUNCTION_MULTI_SEARCH)
+        else if (element.function == RPNElement::FUNCTION_MULTI_SEARCH
+            || element.function == RPNElement::FUNCTION_HAS_ANY)
         {
             multi_funtion_processor(element);
         }
@@ -416,7 +418,8 @@ bool MergeTreeConditionFullText::extractAtomFromTree(const RPNBuilderTreeNode & 
                  function_name.starts_with("hasToken") ||
                  function_name == "startsWith" ||
                  function_name == "endsWith" ||
-                 function_name == "multiSearchAny")
+                 function_name == "multiSearchAny" ||
+                 function_name == "hasAny")
         {
             Field const_value;
             DataTypePtr const_type;
@@ -628,10 +631,13 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
         token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
-    else if (function_name == "multiSearchAny")
+    else if (function_name == "multiSearchAny"
+        || function_name == "hasAny")
     {
         out.key_column = *key_index;
-        out.function = RPNElement::FUNCTION_MULTI_SEARCH;
+        out.function = function_name == "multiSearchAny" ?
+            RPNElement::FUNCTION_MULTI_SEARCH :
+            RPNElement::FUNCTION_HAS_ANY;
 
         /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
         std::vector<std::vector<BloomFilter>> bloom_filters;
