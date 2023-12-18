@@ -4065,9 +4065,12 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
 
         auto is_appropriate_state = [] (const DataPartPtr & part_)
         {
-            if (part_->getState() != DataPartState::Outdated)
+            /// In rare cases, we may have a chain of unexpected parts that cover common source parts, e.g. all_1_2_3, all_1_3_4
+            /// It may happen as a result of interrupted cloneReplica
+            bool already_active = part_->getState() == DataPartState::Active;
+            if (!already_active && part_->getState() != DataPartState::Outdated)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to restore a part {} from unexpected state: {}", part_->name, part_->getState());
-            return true;
+            return !already_active;
         };
 
         auto activate_part = [this, &restored_active_part](auto it)
