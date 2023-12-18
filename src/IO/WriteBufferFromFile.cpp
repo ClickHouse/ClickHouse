@@ -46,7 +46,8 @@ WriteBufferFromFile::WriteBufferFromFile(
     fd = ::open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC, mode);
 
     if (-1 == fd)
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot open file {}", file_name);
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot open file {}", file_name);
 
 #ifdef OS_DARWIN
     if (o_direct)

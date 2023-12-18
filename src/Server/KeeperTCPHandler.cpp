@@ -92,7 +92,7 @@ struct SocketInterruptablePollWrapper
             int err = ::close(epollfd);
             chassert(!err || errno == EINTR);
 
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot epoll_create");
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot insert socket into epoll queue");
         }
         pipe_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         pipe_event.data.fd = pipe.fds_rw[0];

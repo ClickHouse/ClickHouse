@@ -52,11 +52,7 @@ AsynchronousReadBufferFromFile::AsynchronousReadBufferFromFile(
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)
-            ErrnoException::throwFromPath(
-                errno == ENOENT ? ErrorCodes::CANNOT_OPEN_FILE : ErrorCodes::CANNOT_OPEN_FILE,
-                file_name,
-                "Cannot set F_NOCACHE on file {}",
-                file_name);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_name, "Cannot set F_NOCACHE on file {}", file_name);
     }
 #endif
 }

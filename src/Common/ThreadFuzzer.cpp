@@ -269,7 +269,7 @@ void ThreadFuzzer::setup() const
 #endif
 
     if (sigaction(SIGPROF, &sa, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to setup signal handler for thread fuzzer");
+        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for thread fuzzer");
 
     static constexpr UInt32 timer_precision = 1000000;
 

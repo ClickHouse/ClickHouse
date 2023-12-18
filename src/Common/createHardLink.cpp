@@ -33,7 +33,7 @@ void createHardLink(const String & source_path, const String & destination_path)
 
             if (source_descr.st_ino != destination_descr.st_ino)
                 ErrnoException::throwFromPathWithErrno(
-                    ErrorCodes::CANNOT_STAT,
+                    ErrorCodes::CANNOT_LINK,
                     destination_path,
                     link_errno,
                     "Destination file {} already exists and has a different inode",

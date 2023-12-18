@@ -244,7 +244,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add signal to mask for query profiler");
 
     if (sigaction(pause_signal, &sa, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to setup signal handler for query profiler");
+        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for query profiler");
 
     try
     {

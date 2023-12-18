@@ -137,7 +137,7 @@ void WriteBufferFromFileDescriptor::sync()
     ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
 
     if (-1 == res)
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, getFileName(), "Cannot fsync {}", getFileName());
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, getFileName(), "Cannot fsync {}", getFileName());
 }
 
 
