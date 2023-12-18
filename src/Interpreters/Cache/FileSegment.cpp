@@ -786,32 +786,38 @@ bool FileSegment::assertCorrectness() const
 
 bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock) const
 {
-    auto check_iterator = [this](const Priority::Iterator & it)
+    auto throw_logical = [&](const std::string & error)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}. File segment info: {}", error, getInfoForLogUnlocked(lock));
+    };
+
+    auto check_iterator = [&](const Priority::Iterator & it)
     {
         UNUSED(this);
         if (!it)
             return;
 
         const auto & entry = it->getEntry();
-        UNUSED(entry);
-        chassert(entry.size == reserved_size);
+        if (entry.size != reserved_size)
+            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry.size, reserved_size));
+
         chassert(entry.key == key());
         chassert(entry.offset == offset());
     };
 
     const auto file_path = getPathInLocalCache();
+    if (segment_kind != FileSegmentKind::Temporary)
     {
         std::lock_guard lk(write_mutex);
         if (downloaded_size == 0)
         {
             if (fs::exists(file_path))
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected file {} not to exist ({})",
-                                file_path, getInfoForLogUnlocked(lock));
-            }
+                throw_logical("Expected file " + file_path + " not to exist");
         }
-        else
-            chassert(fs::exists(file_path));
+        else if (!fs::exists(file_path))
+        {
+            throw_logical("Expected file " + file_path + " to exist");
+        }
     }
 
     if (download_state == State::DOWNLOADED)
