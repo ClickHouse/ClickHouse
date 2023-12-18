@@ -44,7 +44,7 @@ public:
 
     void shuffle(const CacheGuard::Lock &) override;
 
-    std::vector<FileSegmentInfo> dump(FileCache & cache, const CacheGuard::Lock &) override;
+    std::vector<FileSegmentInfo> dump(const CacheGuard::Lock &) override;
 
     void pop(const CacheGuard::Lock & lock) { remove(queue.begin(), lock); }
 

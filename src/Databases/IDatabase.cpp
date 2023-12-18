@@ -27,12 +27,21 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
 {
     if (auto storage = tryGetTable(name, context))
         return storage;
+
     TableNameHints hints(this->shared_from_this(), context);
-    std::vector<String> names = hints.getHints(name);
-    if (names.empty())
+    /// hint is a pair which holds a single database_name and table_name suggestion for the given table name.
+    auto hint = hints.getHintForTable(name);
+
+    if (hint.first.empty())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} does not exist", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name));
     else
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} does not exist. Maybe you meant {}?", backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(name), backQuoteIfNeed(names[0]));
+        throw Exception(
+            ErrorCodes::UNKNOWN_TABLE,
+            "Table {}.{} does not exist. Maybe you meant {}.{}?",
+            backQuoteIfNeed(getDatabaseName()),
+            backQuoteIfNeed(name),
+            backQuoteIfNeed(hint.first),
+            backQuoteIfNeed(hint.second));
 }
 
 IDatabase::IDatabase(String database_name_) : database_name(std::move(database_name_))

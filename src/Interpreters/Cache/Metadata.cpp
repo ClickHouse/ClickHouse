@@ -1007,7 +1007,7 @@ std::string LockedKey::toString() const
 }
 
 
-std::vector<FileSegment::Info> LockedKey::sync(FileCache & cache)
+std::vector<FileSegment::Info> LockedKey::sync()
 {
     std::vector<FileSegment::Info> broken;
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
@@ -1040,7 +1040,7 @@ std::vector<FileSegment::Info> LockedKey::sync(FileCache & cache)
                 "File segment has DOWNLOADED state, but file does not exist ({})",
                 file_segment->getInfoForLog());
 
-            broken.push_back(FileSegment::getInfo(file_segment, cache));
+            broken.push_back(FileSegment::getInfo(file_segment));
             it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */true);
             continue;
         }
@@ -1059,7 +1059,7 @@ std::vector<FileSegment::Info> LockedKey::sync(FileCache & cache)
             "File segment has unexpected size. Having {}, expected {} ({})",
             actual_size, expected_size, file_segment->getInfoForLog());
 
-        broken.push_back(FileSegment::getInfo(file_segment, cache));
+        broken.push_back(FileSegment::getInfo(file_segment));
         it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */false);
     }
     return broken;

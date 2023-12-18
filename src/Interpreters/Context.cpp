@@ -15,7 +15,6 @@
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Coordination/KeeperDispatcher.h>
@@ -33,7 +32,6 @@
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <IO/SynchronousReader.h>
@@ -45,7 +43,6 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
-#include <Interpreters/PreparedSets.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -212,8 +209,6 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
-
-    ConfigurationPtr sensitive_data_masker_config;
 
 #if USE_NURAFT
     mutable std::mutex keeper_dispatcher_mutex;
@@ -3333,16 +3328,6 @@ bool Context::hasZooKeeper() const
 bool Context::hasAuxiliaryZooKeeper(const String & name) const
 {
     return getConfigRef().has("auxiliary_zookeepers." + name);
-}
-
-void Context::reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const
-{
-    const auto old_config = shared->sensitive_data_masker_config;
-    if (old_config && isSameConfiguration(*config, *old_config, "query_masking_rules"))
-        return;
-
-    SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(*config, "query_masking_rules"));
-    shared->sensitive_data_masker_config = config;
 }
 
 InterserverCredentialsPtr Context::getInterserverCredentials() const
