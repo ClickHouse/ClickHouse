@@ -29,17 +29,6 @@
                 <background_download_threads>0</background_download_threads>
                 <background_download_queue_size_limit>0</background_download_queue_size_limit>
             </s3_cache_02933>
-            <s3_cache_02944>
-                <type>cache</type>
-                <disk>s3_disk</disk>
-                <path>s3_cache_02944/</path>
-                <max_size>100</max_size>
-                <max_elements>100</max_elements>
-                <max_file_segment_size>10</max_file_segment_size>
-                <boundary_alignment>10</boundary_alignment>
-                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
-                <cache_on_write_operations>0</cache_on_write_operations>
-            </s3_cache_02944>
             <!-- local disks -->
             <local_disk>
                 <type>local_blob_storage</type>
