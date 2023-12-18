@@ -1,4 +1,3 @@
-#include <type_traits>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -24,7 +23,7 @@
 #include <Functions/FunctionIfBase.h>
 #include <Interpreters/castColumn.h>
 #include <Functions/FunctionFactory.h>
-
+#include <type_traits>
 
 namespace DB
 {
