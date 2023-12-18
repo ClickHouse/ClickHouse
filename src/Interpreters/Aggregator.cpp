@@ -1062,8 +1062,8 @@ void NO_INLINE Aggregator::executeImpl(
     AggregateDataPtr overflow_row) const
 {
     UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
-    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / (total_rows) : 1.0;
-    bool use_cache = cache_hit_rate >= 0.5;
+    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / total_rows : 1.0;
+    bool use_cache = cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
 
     if (use_cache)
     {
@@ -3013,8 +3013,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     Arena * arena_for_keys) const
 {
     UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
-    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / (total_rows) : 1.0;
-    bool use_cache = cache_hit_rate >= 0.5;
+    double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / total_rows : 1.0;
+    bool use_cache = cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
 
     if (use_cache)
     {
@@ -3198,9 +3198,11 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
             for (Block & block : bucket_to_blocks[bucket])
             {
+                /// Copy to avoid race.
+                auto consecutive_keys_cache_stats_copy = result.consecutive_keys_cache_stats;
             #define M(NAME) \
                 else if (result.type == AggregatedDataVariants::Type::NAME) \
-                    mergeStreamsImpl(std::move(block), aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, result.consecutive_keys_cache_stats, false);
+                    mergeStreamsImpl(std::move(block), aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, consecutive_keys_cache_stats_copy, false);
 
                 if (false) {} // NOLINT
                     APPLY_FOR_VARIANTS_TWO_LEVEL(M)

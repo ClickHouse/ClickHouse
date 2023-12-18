@@ -637,7 +637,8 @@ struct AggregatedDataVariants : private boost::noncopyable
       */
     AggregatedDataWithoutKey without_key = nullptr;
 
-    /// TODO:
+    /// Stats of a cache for consecutive keys optimization.
+    /// Stats can be used to disable the cache in case of a lot of misses.
     LastElementCacheStats consecutive_keys_cache_stats;
 
     // Disable consecutive key optimization for Uint8/16, because they use a FixedHashMap
@@ -1066,6 +1067,8 @@ public:
 
         bool optimize_group_by_constant_keys;
 
+        const double min_hit_rate_to_use_consecutive_keys_optimization;
+
         struct StatsCollectingParams
         {
             StatsCollectingParams();
@@ -1083,6 +1086,7 @@ public:
             const size_t max_entries_for_hash_table_stats = 0;
             const size_t max_size_to_preallocate_for_aggregation = 0;
         };
+
         StatsCollectingParams stats_collecting_params;
 
         Params(
@@ -1104,7 +1108,8 @@ public:
             bool enable_prefetch_,
             bool only_merge_, // true for projections
             bool optimize_group_by_constant_keys_,
-            const StatsCollectingParams & stats_collecting_params_ = {})
+            double min_hit_rate_to_use_consecutive_keys_optimization_,
+            const StatsCollectingParams & stats_collecting_params_)
             : keys(keys_)
             , aggregates(aggregates_)
             , keys_size(keys.size())
@@ -1125,14 +1130,15 @@ public:
             , only_merge(only_merge_)
             , enable_prefetch(enable_prefetch_)
             , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
+            , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
             , stats_collecting_params(stats_collecting_params_)
         {
         }
 
         /// Only parameters that matter during merge.
-        Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_, size_t max_block_size_)
+        Params(const Names & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_, size_t max_block_size_, double min_hit_rate_to_use_consecutive_keys_optimization_)
             : Params(
-                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, false, true, {})
+                keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false, 0, max_block_size_, false, true, false, min_hit_rate_to_use_consecutive_keys_optimization_, {})
         {
         }
 
