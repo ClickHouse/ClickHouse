@@ -16,7 +16,7 @@
 #include <xxhash.h>
 
 #if USE_BLAKE3
-#    include <blake3.h>
+#    include <llvm/Support/BLAKE3.h>
 #endif
 
 #include <Common/SipHash.h>
@@ -833,13 +833,13 @@ struct ImplBLAKE3
 #else
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
-        auto err_msg = blake3_apply_shim(begin, safe_cast<uint32_t>(size), out_char_data);
-        if (err_msg != nullptr)
-        {
-            auto err_st = std::string(err_msg);
-            blake3_free_char_pointer(err_msg);
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function returned error message: {}", err_st);
-        }
+        static_assert(LLVM_BLAKE3_OUT_LEN == ImplBLAKE3::length);
+        auto & result = *reinterpret_cast<std::array<uint8_t, LLVM_BLAKE3_OUT_LEN> *>(out_char_data);
+
+        llvm::BLAKE3 hasher;
+        if (size > 0)
+            hasher.update(llvm::StringRef(begin, size));
+        hasher.final(result);
     }
 #endif
 };
