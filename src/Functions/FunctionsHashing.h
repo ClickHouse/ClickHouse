@@ -825,10 +825,10 @@ struct ImplBLAKE3
     static constexpr auto name = "BLAKE3";
     enum { length = 32 };
 
-#if !USE_BLAKE3
+#ifndef USE_BLAKE3
     [[noreturn]] static void apply(const char * /*begin*/, const size_t /*size*/, unsigned char * /*out_char_data*/)
     {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "BLAKE3 is not available. Rust code or BLAKE3 itself may be disabled.");
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "BLAKE3 is not available");
     }
 #else
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
