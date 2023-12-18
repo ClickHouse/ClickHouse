@@ -2,12 +2,9 @@
 #include "Common/ZooKeeper/ZooKeeper.h"
 #include "DiskObjectStorageTransaction.h"
 #include "VFSTraits.h"
-#include "VFSTransactionLog.h"
 
 namespace DB
 {
-
-
 struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransaction
 {
     DiskObjectStorageVFSTransaction(
@@ -46,8 +43,8 @@ struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransacti
 private:
     zkutil::ZooKeeperPtr zookeeper;
     Poco::Logger const * const log;
-    VFSTraits traits;
+    const VFSTraits & traits;
 
-    void addStoredObjectsOp(VFSTransactionLogItem::Type type, StoredObjects && objects);
+    void addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink);
 };
 }

@@ -6,11 +6,10 @@
 
 namespace DB
 {
-
 // A wrapper for object storage which counts references to objects using a transaction log in Keeper.
 // Disk operations don't remove data from object storage immediately, a garbage collector is responsible
 // for that.
-class DiskObjectStorageVFS final: public DiskObjectStorage
+class DiskObjectStorageVFS final : public DiskObjectStorage
 {
 public:
     // TODO myrrc should just "using DiskObjectStorage::DiskObjectStorage" and fill zookeeper

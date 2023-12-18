@@ -1,14 +1,16 @@
 #include "DiskObjectStorageVFSTransaction.h"
 #include "Disks/IO/WriteBufferWithFinalizeCallback.h"
 #include "Disks/ObjectStorages/DiskObjectStorageTransactionOperation.h"
-#include "Disks/ObjectStorages/VFSTransactionLog.h"
-#include "VFSTraits.h"
+#include "VFSLogItem.h"
 #include "base/FnTraits.h"
+
+static void pushVFSLogItem(const DB::VFSTraits & traits, const zkutil::ZooKeeperPtr & zk, const String & item)
+{
+    zk->create(traits.log_item, item, zkutil::CreateMode::PersistentSequential);
+}
 
 namespace DB
 {
-using enum VFSTransactionLogItem::Type;
-
 DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(
     IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_, zkutil::ZooKeeperPtr zookeeper_, const VFSTraits & traits_)
     : DiskObjectStorageTransaction(object_storage_, metadata_storage_, nullptr)
@@ -21,8 +23,10 @@ DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(
 void DiskObjectStorageVFSTransaction::replaceFile(const String & from_path, const String & to_path)
 {
     DiskObjectStorageTransaction::replaceFile(from_path, to_path);
+    if (!metadata_storage.exists(to_path))
+        return;
     // Remote file at from_path isn't changed, we just move it
-    addStoredObjectsOp(Unlink, metadata_storage.exists(to_path) ? metadata_storage.getStorageObjects(to_path) : StoredObjects{});
+    addStoredObjectsOp({}, metadata_storage.getStorageObjects(to_path));
 }
 
 void DiskObjectStorageVFSTransaction::removeFileIfExists(const String & path)
@@ -33,7 +37,7 @@ void DiskObjectStorageVFSTransaction::removeFileIfExists(const String & path)
 void DiskObjectStorageVFSTransaction::removeSharedFile(const String & path, bool)
 {
     DiskObjectStorageTransaction::removeSharedFile(path, /*keep_shared_data=*/true);
-    addStoredObjectsOp(Unlink, metadata_storage.getStorageObjects(path));
+    addStoredObjectsOp({}, metadata_storage.getStorageObjects(path));
 }
 
 void DiskObjectStorageVFSTransaction::removeSharedFileIfExists(const String & path, bool)
@@ -41,13 +45,13 @@ void DiskObjectStorageVFSTransaction::removeSharedFileIfExists(const String & pa
     if (!metadata_storage.exists(path))
         return;
     DiskObjectStorageTransaction::removeSharedFileIfExists(path, /*keep_shared_data=*/true);
-    addStoredObjectsOp(Unlink, metadata_storage.getStorageObjects(path));
+    addStoredObjectsOp({}, metadata_storage.getStorageObjects(path));
 }
 
 struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectStorageOperation
 {
     zkutil::ZooKeeperPtr zookeeper;
-    VFSTraits traits; // not clear if it is safe to have reference, so lets copy so far
+    const VFSTraits & traits;
 
     RemoveRecursiveObjectStorageVFSOperation(
         IObjectStorage & object_storage_,
@@ -69,10 +73,10 @@ struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectSto
     void execute(MetadataTransactionPtr tx) override
     {
         RemoveRecursiveObjectStorageOperation::execute(tx);
-        Coordination::Requests requests;
-        for (const auto & [_, objects_to_remove] : objects_to_remove_by_path)
-            getStoredObjectsVFSLogOps(Unlink, objects_to_remove.objects, requests, traits);
-        zookeeper->multi(requests);
+        StoredObjects unlink;
+        for (auto && [_, unlink_by_path] : objects_to_remove_by_path)
+            std::ranges::move(unlink_by_path.objects, std::back_inserter(unlink));
+        pushVFSLogItem(traits, zookeeper, VFSLogItem::getSerialised({}, std::move(unlink)));
     }
 };
 
@@ -97,10 +101,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
 
     LOG_TRACE(log, "writeFile(is_metadata={})", is_metadata_file_for_vfs);
 
-    StoredObjects currently_existing_blobs
-        = metadata_storage.exists(path_without_tag) ? metadata_storage.getStorageObjects(path_without_tag) : StoredObjects{};
-    StoredObject blob;
-
     // This is a metadata file we got from some replica, we need to load it on local metadata disk
     // and add a Link entry
     if (is_metadata_file_for_vfs)
@@ -112,18 +112,17 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
             std::make_unique<WriteBufferFromFile>(path_without_tag, buf_size),
             [tx = shared_from_this(), path_without_tag](size_t)
             {
-                tx->addStoredObjectsOp(Link, tx->metadata_storage.getStorageObjects(path_without_tag));
+                tx->addStoredObjectsOp(tx->metadata_storage.getStorageObjects(path_without_tag), {});
                 tx->commit();
             },
             "");
 
+    StoredObjects currently_existing_blobs
+        = metadata_storage.exists(path_without_tag) ? metadata_storage.getStorageObjects(path_without_tag) : StoredObjects{};
+    StoredObject blob;
+
     auto buffer = writeFileOps(path_without_tag, buf_size, mode, settings, autocommit, blob);
-
-    // TODO myrrc this possibly should be grouped in a single Keeper transaction instead of three
-    addStoredObjectsOp(CreateInode, {blob});
-    addStoredObjectsOp(Link, {blob});
-    addStoredObjectsOp(Unlink, std::move(currently_existing_blobs));
-
+    addStoredObjectsOp({std::move(blob)}, std::move(currently_existing_blobs));
     return buffer;
 }
 
@@ -136,17 +135,13 @@ void DiskObjectStorageVFSTransaction::writeFileUsingBlobWritingFunction(
     StoredObject blob;
 
     writeFileUsingBlobWritingFunctionOps(path, mode, std::move(write_blob_function), blob);
-
-    // TODO myrrc this possibly should be grouped in a single Keeper transaction instead of three
-    addStoredObjectsOp(CreateInode, {blob});
-    addStoredObjectsOp(Link, {blob});
-    addStoredObjectsOp(Unlink, std::move(currently_existing_blobs));
+    addStoredObjectsOp({std::move(blob)}, std::move(currently_existing_blobs));
 }
 
 void DiskObjectStorageVFSTransaction::createHardLink(const String & src_path, const String & dst_path)
 {
     DiskObjectStorageTransaction::createHardLink(src_path, dst_path);
-    addStoredObjectsOp(Link, metadata_storage.getStorageObjects(src_path));
+    addStoredObjectsOp(metadata_storage.getStorageObjects(src_path), {});
 }
 
 // Unfortunately, knowledge of object storage blob path doesn't go beyond
@@ -156,7 +151,7 @@ void DiskObjectStorageVFSTransaction::createHardLink(const String & src_path, co
 struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
 {
     zkutil::ZooKeeperPtr zookeeper;
-    VFSTraits traits;
+    const VFSTraits & traits;
 
     CopyFileObjectStorageVFSOperation(
         IObjectStorage & object_storage_,
@@ -176,10 +171,7 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
     void execute(MetadataTransactionPtr tx) override
     {
         CopyFileObjectStorageOperation::execute(tx);
-        Coordination::Requests requests;
-        getStoredObjectsVFSLogOps(CreateInode, created_objects, requests, traits);
-        getStoredObjectsVFSLogOps(Link, created_objects, requests, traits);
-        zookeeper->multi(requests);
+        pushVFSLogItem(traits, zookeeper, VFSLogItem::getSerialised(std::move(created_objects), {}));
     }
 };
 
@@ -190,21 +182,17 @@ void DiskObjectStorageVFSTransaction::copyFile(
         object_storage, metadata_storage, read_settings, write_settings, from_file_path, to_file_path, zookeeper, traits));
 }
 
-void DiskObjectStorageVFSTransaction::addStoredObjectsOp(VFSTransactionLogItem::Type type, StoredObjects && objects)
+void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink)
 {
-    // TODO myrrc support multiple objects per Link/Unlink transaction
-    // Alternate: support multi-action log items e.g. multiple Link/Unlink/CreateInode actions per item
-    if (objects.empty()) [[unlikely]]
+    if (link.empty() && unlink.empty()) [[unlikely]]
         return;
-    LOG_TRACE(log, "Pushing {} {}", type, fmt::join(objects, ", "));
+    String entry = VFSLogItem::getSerialised(std::move(link), std::move(unlink));
+    LOG_TRACE(log, "Pushing {}", entry);
 
-    auto callback
-        = [zk = this->zookeeper, type, objects_captured = std::move(objects), log_captured = this->log, &traits_captured = this->traits]
+    auto callback = [zk = this->zookeeper, entry_captured = std::move(entry), log_captured = this->log, &traits_captured = this->traits]
     {
-        LOG_TRACE(log_captured, "Executing {} {}", type, fmt::join(objects_captured, "\n"));
-        Coordination::Requests requests;
-        getStoredObjectsVFSLogOps(type, objects_captured, requests, traits_captured);
-        zk->multi(requests);
+        LOG_TRACE(log_captured, "Executing {}", entry_captured);
+        pushVFSLogItem(traits_captured, zk, entry_captured);
     };
 
     operations_to_execute.emplace_back(

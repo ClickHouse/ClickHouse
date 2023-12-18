@@ -1,9 +1,8 @@
 #pragma once
 #include "Poco/Logger.h"
-#include "Common/Stopwatch.h"
 #include "Common/ZooKeeper/ZooKeeperLock.h"
 #include "Core/BackgroundSchedulePool.h"
-#include "Disks/ObjectStorages/VFSTransactionLog.h"
+#include "VFSLogItem.h"
 #include "base/types.h"
 
 namespace DB
@@ -30,10 +29,14 @@ private:
 
     void run();
 
-    // Given a pair of log pointers, load a snapshot before start_logpointer and apply [start_logpointer;
-    // end_logpointer] updates to it
-    VFSSnapshotWithObsoleteObjects getSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer);
-    String writeSnapshot(VFSSnapshot && snapshot, const String & snapshot_name);
+    // @returns new snapshot remote path
+    String updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer);
+
+    VFSLogItem getBatch(size_t start_logpointer, size_t end_logpointer) const;
+
+    /// @returns Obsolete objects
+    StoredObjects mergeSnapshotWithLogBatch(ReadBuffer & snapshot, VFSLogItem && batch, WriteBuffer & new_snapshot);
+
     void onBatchProcessed(size_t start_logpointer, size_t end_logpointer, const String & snapshot_remote_path);
 
     String getNode(size_t id) const;
