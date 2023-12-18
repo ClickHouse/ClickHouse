@@ -278,6 +278,7 @@ def need_retry(args, stdout, stderr, total_time):
         msg in stderr for msg in MESSAGES_TO_RETRY
     )
 
+
 def get_processlist_size(args):
     if args.replicated_database:
         return int(
@@ -286,26 +287,25 @@ def get_processlist_size(args):
                 """
                 SELECT
                     count()
-                FROM 
+                FROM
                     FROM system.processes
                 WHERE query NOT LIKE '%system.processes%'
-                FORMAT Vertical
                 """,
-                ).strip()
+            ).strip()
         )
     else:
         return int(
-                clickhouse_execute(
+            clickhouse_execute(
                 args,
                 """
-            SELECT
-                count()
-            FROM system.processes 
-            WHERE query NOT LIKE '%system.processes%'
-            FORMAT Vertical
-            """,
+                SELECT
+                    count()
+                FROM system.processes
+                WHERE query NOT LIKE '%system.processes%'
+                """,
             ).strip()
         )
+
 
 def get_processlist_with_stacktraces(args):
     if args.replicated_database:
@@ -354,7 +354,6 @@ def get_processlist_with_stacktraces(args):
             },
             timeout=120,
         )
-
 
 
 def get_transactions_list(args):
@@ -2448,7 +2447,7 @@ def main(args):
 
     if args.hung_check:
         # Some queries may execute in background for some time after test was finished. This is normal.
-        print("Checking the hung queries: ", end='')
+        print("Checking the hung queries: ", end="")
         hung_count = 0
         try:
             deadline = datetime.now() + timedelta(seconds=90)
@@ -2457,15 +2456,17 @@ def main(args):
                 if hung_count == 0:
                     print(" done")
                     break
-                print(". ", end='')
+                print(". ", end="")
         except Exception as e:
             print(
                 colored(
-                    "\nHung check failed. Failed to get processlist size: " + str(e), args, "red", attrs=["bold"]
+                    "\nHung check failed. Failed to get processlist size: " + str(e),
+                    args,
+                    "red",
+                    attrs=["bold"],
                 )
             )
             exit_code.value = 1
-
 
         processlist = ""
         if hung_count > 0:
@@ -2474,7 +2475,11 @@ def main(args):
             except Exception as e:
                 print(
                     colored(
-                        "\nHung check failed. Failed to get processlist with stacktraces: " + str(e), args, "red", attrs=["bold"]
+                        "\nHung check failed. Failed to get processlist with stacktraces: "
+                        + str(e),
+                        args,
+                        "red",
+                        attrs=["bold"],
                     )
                 )
                 exit_code.value = 1
