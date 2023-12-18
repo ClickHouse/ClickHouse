@@ -140,6 +140,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                         auto new_ast = parseQuery(parser_create_query, create_query_string, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
                         ast = new_ast;
+                        create_query = ast->as<ASTCreateQuery>();
 
                         /// Write changes to metadata
                         String table_metadata_path = full_path;
