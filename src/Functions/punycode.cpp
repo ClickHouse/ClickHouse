@@ -1,6 +1,6 @@
 #include "config.h"
 
-#ifdef USE_IDNA
+#if USE_IDNA
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>

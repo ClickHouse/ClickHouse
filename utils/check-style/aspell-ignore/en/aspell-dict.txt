@@ -711,6 +711,7 @@ Promtail
 Protobuf
 ProtobufSingle
 ProxySQL
+Punycode
 PyArrow
 PyCharm
 QEMU
@@ -2069,6 +2070,8 @@ pseudorandom
 pseudorandomize
 psql
 ptrs
+punycodeDecode
+punycodeEncode
 pushdown
 pwrite
 py
