@@ -539,7 +539,7 @@ def main() -> int:
 
     if args.configure:
         GR = GitRunner()
-        pr_info = PRInfo()
+        pr_info = PRInfo(need_changed_files=True)
 
         docker_data = {}
         git_ref = GR.run(f"{GIT_PREFIX} rev-parse HEAD")
