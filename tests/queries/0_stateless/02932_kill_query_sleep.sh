@@ -8,6 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function wait_query_started()
 {
     local query_id="$1"
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
     while [[ $($CLICKHOUSE_CLIENT --query="SELECT count() FROM system.query_log WHERE query_id='$query_id' AND current_database = currentDatabase()") == 0 ]]; do
         sleep 0.1;
         $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS;"

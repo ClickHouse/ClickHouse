@@ -221,10 +221,10 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
     iterator.is_protected = true;
 }
 
-std::vector<FileSegmentInfo> SLRUFileCachePriority::dump(FileCache & cache, const CacheGuard::Lock & lock)
+std::vector<FileSegmentInfo> SLRUFileCachePriority::dump(const CacheGuard::Lock & lock)
 {
-    auto res = probationary_queue.dump(cache, lock);
-    auto part_res = protected_queue.dump(cache, lock);
+    auto res = probationary_queue.dump(lock);
+    auto part_res = protected_queue.dump(lock);
     res.insert(res.end(), part_res.begin(), part_res.end());
     return res;
 }
