@@ -783,7 +783,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(KeyMetadata::iterator it,
     try
     {
         const auto path = key_metadata->getFileSegmentPath(*file_segment);
-        if (file_segment->downloaded_size == 0)
+        if (file_segment->downloaded_size == 0 && file_segment->segment_kind != FileSegmentKind::Temporary)
         {
             chassert(!fs::exists(path));
         }
