@@ -259,6 +259,13 @@ def _check_and_update_for_early_style_check(run_config: dict) -> None:
         jobs_to_do[index] = "Style check early"
 
 
+def _update_config_for_docs_only(run_config: dict) -> None:
+    DOCS_CHECK_JOBS = ["Docs check", "Style check"]
+    print(f"NOTE: Will keep only docs related jobs: [{DOCS_CHECK_JOBS}]")
+    jobs_to_do = run_config.get("jobs_data", {}).get("jobs_to_do", [])
+    run_config["jobs_data"]["jobs_to_do"] = [job for job in jobs_to_do if job in DOCS_CHECK_JOBS]
+
+
 def _configure_docker_jobs(
     rebuild_all_dockers: bool, docker_digest_or_latest: bool = False
 ) -> Dict:
@@ -587,6 +594,8 @@ def main() -> int:
         result["docker_data"] = docker_data
         if not args.docker_digest_or_latest:
             _check_and_update_for_early_style_check(result)
+        if pr_info.has_changes_in_documentation_only():
+            _update_config_for_docs_only(result)
 
     elif args.update_gh_statuses:
         assert indata, "Run config must be provided via --infile"
@@ -611,7 +620,7 @@ def main() -> int:
                 f"Pre action done. Report files [{files}] have been downloaded from [{path}] to [{report_path}]"
             )
         else:
-            print("Pre action done. Nothing to do for [{args.job_name}]")
+            print(f"Pre action done. Nothing to do for [{args.job_name}]")
 
     elif args.run:
         assert CI_CONFIG.get_job_config(

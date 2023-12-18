@@ -311,6 +311,21 @@ class PRInfo:
                 return True
         return False
 
+    def has_changes_in_documentation_only(self) -> bool:
+        if not self.changed_files:
+            return False
+
+        for f in self.changed_files:
+            _, ext = os.path.splitext(f)
+            path_in_docs = f.startswith("docs/")
+            if (
+                ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs
+            ) or "docker/docs" in f or 'docs_check.py' in f:
+                continue
+            else:
+                return False
+        return True
+
     def has_changes_in_submodules(self):
         if self.changed_files is None or not self.changed_files:
             return True
