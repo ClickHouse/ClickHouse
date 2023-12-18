@@ -8,6 +8,7 @@ namespace DB
 {
 
 struct Settings;
+struct DistributedSettings;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 struct SelectQueryInfo;
@@ -42,7 +43,8 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     const Settings & settings,
     const StorageID & main_table,
     ASTPtr additional_filter_ast = nullptr,
-    Poco::Logger * log = nullptr);
+    Poco::Logger * log = nullptr,
+    const DistributedSettings * distributed_settings = nullptr);
 
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
@@ -62,6 +64,7 @@ void executeQuery(
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
     const ClusterPtr & not_optimized_cluster,
+    const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator = {});
 
 
@@ -71,8 +74,7 @@ void executeQueryWithParallelReplicas(
     SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits,
-    const ClusterPtr & not_optimized_cluster);
+    std::shared_ptr<const StorageLimitsList> storage_limits);
 }
 
 }

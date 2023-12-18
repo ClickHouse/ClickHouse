@@ -109,6 +109,7 @@ class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
 class IAsynchronousReader;
+class IOUringReader;
 struct MergeTreeSettings;
 struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
@@ -841,6 +842,9 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
+    void setMaxTableNumToWarn(size_t max_table_to_warn);
+    void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
+    void setMaxPartNumToWarn(size_t max_part_to_warn);
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
@@ -950,8 +954,6 @@ public:
     void resetZooKeeper() const;
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
-
-    void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
@@ -1210,6 +1212,9 @@ public:
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
+#if USE_LIBURING
+    IOUringReader & getIOURingReader() const;
+#endif
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
 

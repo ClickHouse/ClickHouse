@@ -30,6 +30,7 @@ AppleClang
 Approximative
 ArrayJoin
 ArrowStream
+AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
 AsynchronousHeavyMetricsUpdateInterval
 AsynchronousInsert
@@ -38,11 +39,6 @@ AsynchronousInsertThreadsActive
 AsynchronousMetricsCalculationTimeSpent
 AsynchronousMetricsUpdateInterval
 AsynchronousReadWait
-AsyncInsertCacheSize
-TablesLoaderBackgroundThreads
-TablesLoaderBackgroundThreadsActive
-TablesLoaderForegroundThreads
-TablesLoaderForegroundThreadsActive
 Authenticator
 Authenticators
 AutoFDO
@@ -877,6 +873,7 @@ TLSv
 TPCH
 TSDB
 TSVRaw
+TSVWithNames
 TSVs
 TSan
 TThe
@@ -888,6 +885,10 @@ TabSeparatedRawWithNamesAndTypes
 TabSeparatedWithNames
 TabSeparatedWithNamesAndTypes
 Tabix
+TablesLoaderBackgroundThreads
+TablesLoaderBackgroundThreadsActive
+TablesLoaderForegroundThreads
+TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Telegraf
@@ -1234,6 +1235,7 @@ changelogs
 charset
 charsets
 chconn
+cheatsheet
 checkouting
 checksummed
 checksumming
@@ -2234,6 +2236,7 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
 serverUUID

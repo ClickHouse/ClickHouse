@@ -128,17 +128,17 @@ Reading data from `table.csv`, located in `archive1.zip` or/and `archive2.zip`:
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-## Globbing {#globs_in_path}
+## Globs in path {#globs_in_path}
 
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
 - `*` — Represents arbitrarily many characters except `/` but including the empty string.
 - `?` — Represents an arbitrary single character.
-- `{some_string,another_string,yet_another_one}` — Represents any of alternative strings `'some_string', 'another_string', 'yet_another_one'`. The strings may contain `/`.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
 - `{N..M}` — Represents any number `>= N` and `<= M`.
 - `**` - Represents all files inside a folder recursively.
 
-Constructions with `{}` are similar to the [remote](remote.md) table function.
+Constructions with `{}` are similar to the [remote](remote.md) and [hdfs](hdfs.md) table functions.
 
 **Example**
 

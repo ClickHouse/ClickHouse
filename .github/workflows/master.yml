@@ -205,6 +205,12 @@ jobs:
     with:
       build_name: binary_amd64_compat
       checkout_depth: 0
+  BuilderBinAmd64Musl:
+    needs: [DockerHubPush]
+    uses: ./.github/workflows/reusable_build.yml
+    with:
+      build_name: binary_amd64_musl
+      checkout_depth: 0
   BuilderBinAarch64V80Compat:
     needs: [DockerHubPush]
     uses: ./.github/workflows/reusable_build.yml
@@ -548,6 +554,27 @@ jobs:
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
+##############################################################################################
+########################### ClickBench #######################################################
+##############################################################################################
+  ClickBenchAMD64:
+    needs: [BuilderDebRelease]
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: ClickBench (amd64)
+      runner_type: func-tester
+      run_command: |
+        cd "$REPO_COPY/tests/ci"
+        python3 clickbench.py "$CHECK_NAME"
+  ClickBenchAarch64:
+    needs: [BuilderDebAarch64]
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: ClickBench (aarch64)
+      runner_type: func-tester-aarch64
+      run_command: |
+        cd "$REPO_COPY/tests/ci"
+        python3 clickbench.py "$CHECK_NAME"
 ##############################################################################################
 ######################################### STRESS TESTS #######################################
 ##############################################################################################

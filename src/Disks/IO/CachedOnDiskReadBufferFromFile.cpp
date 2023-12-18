@@ -177,22 +177,13 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
     }
 
     ReadSettings local_read_settings{settings};
-    local_read_settings.local_fs_prefetch = false;
-    if (local_read_settings.local_fs_method != LocalFSReadMethod::pread_threadpool)
-        local_read_settings.local_fs_method = LocalFSReadMethod::pread;
+    local_read_settings.local_fs_method = LocalFSReadMethod::pread;
 
     if (use_external_buffer)
         local_read_settings.local_fs_buffer_size = 0;
 
-    cache_file_reader = createReadBufferFromFileBase(
-        path,
-        local_read_settings,
-        std::nullopt,
-        std::nullopt,
-        file_segment.getFlagsForLocalRead(),
-        /*existing_memory=*/nullptr,
-        /*alignment=*/0,
-        /*use_external_buffer=*/true);
+    cache_file_reader
+        = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
 
     if (getFileSizeFromReadBuffer(*cache_file_reader) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
@@ -540,7 +531,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
         return false;
 
     current_file_segment = &file_segments->front();
-    current_file_segment->use();
+    current_file_segment->increasePriority();
     implementation_buffer = getImplementationBuffer(*current_file_segment);
 
     LOG_TEST(
@@ -868,7 +859,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     else
     {
         implementation_buffer = getImplementationBuffer(file_segments->front());
-        file_segments->front().use();
+        file_segments->front().increasePriority();
     }
 
     chassert(!internal_buffer.empty());
