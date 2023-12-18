@@ -4,6 +4,7 @@ DROP TABLE IF EXISTS test_distributed;
 DROP TABLE IF EXISTS test_local;
 
 SET prefer_localhost_replica = 1;
+SET optimize_move_to_prewhere = 0;
 
 -- https://github.com/ClickHouse/ClickHouse/issues/36279
 CREATE TABLE test_local (text String, text2 String) ENGINE = MergeTree() ORDER BY text;

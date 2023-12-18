@@ -1,3 +1,4 @@
+SET allow_experimental_analyzer = 1;
 SET join_use_nulls = 1;
 
 select 'left asof using';

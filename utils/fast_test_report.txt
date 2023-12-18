@@ -1,0 +1,16 @@
+Report url https://s3.amazonaws.com/clickhouse-test-reports/45461/52a2bf9d14269e3a8d752802ec37d200f094bf74/fast_test.html
+Previous report url https://s3.amazonaws.com/clickhouse-test-reports/45461/5846592f396df6a79ace4fbef8cef8d10a4877de/fast_test.html
+New fixed tests size 10
+00712_prewhere_with_alias
+01055_prewhere_bugs
+01917_prewhere_column_type
+02165_replicated_grouping_sets
+02293_grouping_function
+02293_grouping_function_group_by
+02315_grouping_constant_folding
+02416_grouping_function_compatibility
+02473_prewhere_with_bigint
+02559_multiple_read_steps_in_prewhere_missing_columns
+New failed tests size 0
+New tests 1
+6.

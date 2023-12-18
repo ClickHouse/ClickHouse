@@ -1,5 +1,8 @@
 -- Tags: zookeeper, no-replicated-database, no-parallel, no-ordinary-database
 
+-- Backward compatibility check
+-- https://s3.amazonaws.com/clickhouse-test-reports/45461/81166c0cadf42af09d09450159c6f62b698f8af1/stress_test__asan_.html
+
 DROP TABLE IF EXISTS rmt;
 DROP TABLE IF EXISTS rmt1;
 DROP TABLE IF EXISTS rmt2;

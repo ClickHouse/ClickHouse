@@ -1,10 +1,6 @@
 1
 1
 1
-1
-1
-1
-1
 - ON NULL -
 - inner -
 - left -
@@ -20,11 +16,7 @@
 2	0
 - inner -
 - left -
-1	\N
-2	\N
 - right -
-\N	2
-\N	3
 - full -
 \N	2
 \N	3

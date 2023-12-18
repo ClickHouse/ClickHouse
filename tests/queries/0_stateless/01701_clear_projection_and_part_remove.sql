@@ -16,4 +16,6 @@ alter table tp_1 attach partition '0';
 -- Make this part obsolete
 optimize table tp_1 final;
 -- Now, DROP TABLE triggers part removal
+-- Hung check
+-- https://s3.amazonaws.com/clickhouse-test-reports/45461/81166c0cadf42af09d09450159c6f62b698f8af1/stress_test__msan_.html
 drop table tp_1;
