@@ -86,7 +86,7 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
     parser.add_argument(
         "--mark-success",
         action="store_true",
-        help="Action that marks job provided in --job-name (with batch provided in --batch) as successfull",
+        help="Action that marks job provided in --job-name (with batch provided in --batch) as successful",
     )
     parser.add_argument(
         "--job-name",
@@ -111,13 +111,13 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         default="",
         type=str,
         required=False,
-        help="otput file to write json result to, if not set - stdout",
+        help="output file to write json result to, if not set - stdout",
     )
     parser.add_argument(
         "--pretty",
         action="store_true",
         default=False,
-        help="makes json output pretty formated",
+        help="makes json output pretty formatted",
     )
     parser.add_argument(
         "--skip-docker",
@@ -370,12 +370,12 @@ def _configure_jobs(
         batches_to_do: List[int] = []
 
         if job_config.run_by_label:
-            # this job controled by label, add to todo if it's labe is set in pr
+            # this job controlled by label, add to todo if it's labe is set in pr
             if job_config.run_by_label in pr_labels:
                 for batch in range(num_batches):  # type: ignore
                     batches_to_do.append(batch)
         else:
-            # this job controled by digest, add to todo if it's not successfully done before
+            # this job controlled by digest, add to todo if it's not successfully done before
             for batch in range(num_batches):  # type: ignore
                 success_flag_name = get_file_flag_name(job, digest, batch, num_batches)
                 if success_flag_name not in done_files or (
@@ -424,7 +424,7 @@ def _configure_jobs(
 
 
 def _update_gh_statuses(indata: Dict, s3: S3Helper) -> None:
-    # This action is required to re-create all GH statuses for skiped jobs, so that ci report can be generated afterwards
+    # This action is required to re-create all GH statuses for skipped jobs, so that ci report can be generated afterwards
     temp_path = Path(TEMP_PATH)
     if not temp_path.exists():
         temp_path.mkdir(parents=True, exist_ok=True)
@@ -592,7 +592,7 @@ def main() -> int:
         result["docs"] = docs_digest
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
-        if not args.docker_digest_or_latest:
+        if pr_info.number != 0 and not args.docker_digest_or_latest:
             _check_and_update_for_early_style_check(result)
         if pr_info.has_changes_in_documentation_only():
             _update_config_for_docs_only(result)
@@ -690,7 +690,7 @@ def main() -> int:
             )
         else:
             if not CommitStatusData.is_present():
-                # apperently exit after rerun-helper check
+                # apparently exit after rerun-helper check
                 # do nothing, exit without failure
                 print("ERROR: no status file for job [{job}]")
                 job_status = CommitStatusData(
