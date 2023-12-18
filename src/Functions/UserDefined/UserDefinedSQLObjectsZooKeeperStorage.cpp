@@ -1,4 +1,4 @@
-#include <Functions/UserDefined/UserDefinedSQLObjectsLoaderFromZooKeeper.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsZooKeeperStorage.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
@@ -47,7 +47,7 @@ namespace
 }
 
 
-UserDefinedSQLObjectsLoaderFromZooKeeper::UserDefinedSQLObjectsLoaderFromZooKeeper(
+UserDefinedSQLObjectsZooKeeperStorage::UserDefinedSQLObjectsZooKeeperStorage(
     const ContextPtr & global_context_, const String & zookeeper_path_)
     : global_context{global_context_}
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
@@ -66,20 +66,20 @@ UserDefinedSQLObjectsLoaderFromZooKeeper::UserDefinedSQLObjectsLoaderFromZooKeep
         zookeeper_path = "/" + zookeeper_path;
 }
 
-UserDefinedSQLObjectsLoaderFromZooKeeper::~UserDefinedSQLObjectsLoaderFromZooKeeper()
+UserDefinedSQLObjectsZooKeeperStorage::~UserDefinedSQLObjectsZooKeeperStorage()
 {
     SCOPE_EXIT_SAFE(stopWatchingThread());
 }
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::startWatchingThread()
+void UserDefinedSQLObjectsZooKeeperStorage::startWatchingThread()
 {
     if (!watching_flag.exchange(true))
     {
-        watching_thread = ThreadFromGlobalPool(&UserDefinedSQLObjectsLoaderFromZooKeeper::processWatchQueue, this);
+        watching_thread = ThreadFromGlobalPool(&UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue, this);
     }
 }
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::stopWatchingThread()
+void UserDefinedSQLObjectsZooKeeperStorage::stopWatchingThread()
 {
     if (watching_flag.exchange(false))
     {
@@ -89,7 +89,7 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::stopWatchingThread()
     }
 }
 
-zkutil::ZooKeeperPtr UserDefinedSQLObjectsLoaderFromZooKeeper::getZooKeeper()
+zkutil::ZooKeeperPtr UserDefinedSQLObjectsZooKeeperStorage::getZooKeeper()
 {
     auto [zookeeper, session_status] = zookeeper_getter.getZooKeeper();
 
@@ -106,18 +106,18 @@ zkutil::ZooKeeperPtr UserDefinedSQLObjectsLoaderFromZooKeeper::getZooKeeper()
     return zookeeper;
 }
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::initZooKeeperIfNeeded()
+void UserDefinedSQLObjectsZooKeeperStorage::initZooKeeperIfNeeded()
 {
     getZooKeeper();
 }
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::resetAfterError()
+void UserDefinedSQLObjectsZooKeeperStorage::resetAfterError()
 {
     zookeeper_getter.resetCache();
 }
 
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::loadObjects()
+void UserDefinedSQLObjectsZooKeeperStorage::loadObjects()
 {
     /// loadObjects() is called at start from Server::main(), so it's better not to stop here on no connection to ZooKeeper or any other error.
     /// However the watching thread must be started anyway in case the connection will be established later.
@@ -136,7 +136,7 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::loadObjects()
 }
 
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::processWatchQueue()
+void UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue()
 {
     LOG_DEBUG(log, "Started watching thread");
     setThreadName("UserDefObjWatch");
@@ -173,13 +173,13 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::processWatchQueue()
 }
 
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::stopWatching()
+void UserDefinedSQLObjectsZooKeeperStorage::stopWatching()
 {
     stopWatchingThread();
 }
 
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::reloadObjects()
+void UserDefinedSQLObjectsZooKeeperStorage::reloadObjects()
 {
     auto zookeeper = getZooKeeper();
     refreshAllObjects(zookeeper);
@@ -187,23 +187,24 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::reloadObjects()
 }
 
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::reloadObject(UserDefinedSQLObjectType object_type, const String & object_name)
+void UserDefinedSQLObjectsZooKeeperStorage::reloadObject(UserDefinedSQLObjectType object_type, const String & object_name)
 {
     auto zookeeper = getZooKeeper();
     refreshObject(zookeeper, object_type, object_name);
 }
 
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::createRootNodes(const zkutil::ZooKeeperPtr & zookeeper)
+void UserDefinedSQLObjectsZooKeeperStorage::createRootNodes(const zkutil::ZooKeeperPtr & zookeeper)
 {
     zookeeper->createAncestors(zookeeper_path);
     zookeeper->createIfNotExists(zookeeper_path, "");
 }
 
-bool UserDefinedSQLObjectsLoaderFromZooKeeper::storeObject(
+bool UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl(
+    const ContextPtr & /*current_context*/,
     UserDefinedSQLObjectType object_type,
     const String & object_name,
-    const IAST & create_object_query,
+    ASTPtr create_object_query,
     bool throw_if_exists,
     bool replace_if_exists,
     const Settings &)
@@ -212,7 +213,7 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::storeObject(
     LOG_DEBUG(log, "Storing user-defined object {} at zk path {}", backQuote(object_name), path);
 
     WriteBufferFromOwnString create_statement_buf;
-    formatAST(create_object_query, create_statement_buf, false);
+    formatAST(*create_object_query, create_statement_buf, false);
     writeChar('\n', create_statement_buf);
     String create_statement = create_statement_buf.str();
 
@@ -252,8 +253,11 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::storeObject(
 }
 
 
-bool UserDefinedSQLObjectsLoaderFromZooKeeper::removeObject(
-    UserDefinedSQLObjectType object_type, const String & object_name, bool throw_if_not_exists)
+bool UserDefinedSQLObjectsZooKeeperStorage::removeObjectImpl(
+    const ContextPtr & /*current_context*/,
+    UserDefinedSQLObjectType object_type,
+    const String & object_name,
+    bool throw_if_not_exists)
 {
     String path = getNodePath(zookeeper_path, object_type, object_name);
     LOG_DEBUG(log, "Removing user-defined object {} at zk path {}", backQuote(object_name), path);
@@ -276,7 +280,7 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::removeObject(
     return true;
 }
 
-bool UserDefinedSQLObjectsLoaderFromZooKeeper::getObjectDataAndSetWatch(
+bool UserDefinedSQLObjectsZooKeeperStorage::getObjectDataAndSetWatch(
     const zkutil::ZooKeeperPtr & zookeeper,
     String & data,
     const String & path,
@@ -298,7 +302,7 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::getObjectDataAndSetWatch(
     return zookeeper->tryGetWatch(path, data, &entity_stat, object_watcher);
 }
 
-ASTPtr UserDefinedSQLObjectsLoaderFromZooKeeper::parseObjectData(const String & object_data, UserDefinedSQLObjectType object_type)
+ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & object_data, UserDefinedSQLObjectType object_type)
 {
     switch (object_type)
     {
@@ -317,7 +321,7 @@ ASTPtr UserDefinedSQLObjectsLoaderFromZooKeeper::parseObjectData(const String & 
     UNREACHABLE();
 }
 
-ASTPtr UserDefinedSQLObjectsLoaderFromZooKeeper::tryLoadObject(
+ASTPtr UserDefinedSQLObjectsZooKeeperStorage::tryLoadObject(
     const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type, const String & object_name)
 {
     String path = getNodePath(zookeeper_path, object_type, object_name);
@@ -343,7 +347,7 @@ ASTPtr UserDefinedSQLObjectsLoaderFromZooKeeper::tryLoadObject(
     }
 }
 
-Strings UserDefinedSQLObjectsLoaderFromZooKeeper::getObjectNamesAndSetWatch(
+Strings UserDefinedSQLObjectsZooKeeperStorage::getObjectNamesAndSetWatch(
     const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type)
 {
     auto object_list_watcher = [my_watch_queue = watch_queue, object_type](const Coordination::WatchResponse &)
@@ -371,7 +375,7 @@ Strings UserDefinedSQLObjectsLoaderFromZooKeeper::getObjectNamesAndSetWatch(
     return object_names;
 }
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::refreshAllObjects(const zkutil::ZooKeeperPtr & zookeeper)
+void UserDefinedSQLObjectsZooKeeperStorage::refreshAllObjects(const zkutil::ZooKeeperPtr & zookeeper)
 {
     /// It doesn't make sense to keep the old watch events because we will reread everything in this function.
     watch_queue->clear();
@@ -380,7 +384,7 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::refreshAllObjects(const zkutil::Z
     objects_loaded = true;
 }
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::refreshObjects(const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type)
+void UserDefinedSQLObjectsZooKeeperStorage::refreshObjects(const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type)
 {
     LOG_DEBUG(log, "Refreshing all user-defined {} objects", object_type);
     Strings object_names = getObjectNamesAndSetWatch(zookeeper, object_type);
@@ -393,21 +397,20 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::refreshObjects(const zkutil::ZooK
             function_names_and_asts.emplace_back(function_name, ast);
     }
 
-    UserDefinedSQLFunctionFactory::instance().setAllFunctions(function_names_and_asts);
+    setAllObjects(function_names_and_asts);
 
     LOG_DEBUG(log, "All user-defined {} objects refreshed", object_type);
 }
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::syncObjects(const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type)
+void UserDefinedSQLObjectsZooKeeperStorage::syncObjects(const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type)
 {
     LOG_DEBUG(log, "Syncing user-defined {} objects", object_type);
     Strings object_names = getObjectNamesAndSetWatch(zookeeper, object_type);
 
-    auto & factory = UserDefinedSQLFunctionFactory::instance();
-    auto lock = factory.getLock();
+    getLock();
 
     /// Remove stale objects
-    factory.removeAllFunctionsExcept(object_names);
+    removeAllObjectsExcept(object_names);
     /// Read & parse only new SQL objects from ZooKeeper
     for (const auto & function_name : object_names)
     {
@@ -418,16 +421,15 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::syncObjects(const zkutil::ZooKeep
     LOG_DEBUG(log, "User-defined {} objects synced", object_type);
 }
 
-void UserDefinedSQLObjectsLoaderFromZooKeeper::refreshObject(
+void UserDefinedSQLObjectsZooKeeperStorage::refreshObject(
     const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type, const String & object_name)
 {
     auto ast = tryLoadObject(zookeeper, object_type, object_name);
-    auto & factory = UserDefinedSQLFunctionFactory::instance();
 
     if (ast)
-        factory.setFunction(object_name, *ast);
+        setObject(object_name, *ast);
     else
-        factory.removeFunction(object_name);
+        removeObject(object_name);
 }
 
 }
