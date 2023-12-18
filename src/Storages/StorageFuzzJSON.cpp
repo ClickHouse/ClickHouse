@@ -719,6 +719,11 @@ void registerStorageFuzzJSON(StorageFactory & factory)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage FuzzJSON must have arguments.");
 
             StorageFuzzJSON::Configuration configuration = StorageFuzzJSON::getConfiguration(engine_args, args.getLocalContext());
+
+            for (const auto& col : args.columns)
+                if (col.type->getTypeId() != TypeIndex::String)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "'StorageFuzzJSON' supports only columns of String type, got {}.", col.type->getName());
+
             return std::make_shared<StorageFuzzJSON>(args.table_id, args.columns, args.comment, configuration);
         });
 }
