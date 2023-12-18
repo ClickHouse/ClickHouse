@@ -1081,6 +1081,10 @@ Result:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**See also**
+
+- [arrayFold](#arrayfold)
+
 ## arrayReduceInRanges
 
 Applies an aggregate function to array elements in given ranges and returns an array containing the result corresponding to each range. The function will return the same result as multiple `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
@@ -1122,6 +1126,56 @@ Result:
 │ [1234500,234000,34560,4567] │
 └─────────────────────────────┘
 ```
+
+## arrayFold
+
+Applies a lambda function to one or more equally-sized arrays and collects the result in an accumulator.
+
+**Syntax**
+
+``` sql
+arrayFold(lambda_function, arr1, arr2, ..., accumulator)
+```
+
+**Example**
+
+Query:
+
+``` sql
+SELECT arrayFold( acc,x -> acc + x*2,  [1, 2, 3, 4], toInt64(3)) AS res;
+```
+
+Result:
+
+``` text
+┌─res─┐
+│  23 │
+└─────┘
+```
+
+**Example with the Fibonacci sequence**
+
+```sql
+SELECT arrayFold( acc,x -> (acc.2, acc.2 + acc.1), range(number), (1::Int64, 0::Int64)).1 AS fibonacci
+FROM numbers(1,10);
+
+┌─fibonacci─┐
+│         0 │
+│         1 │
+│         1 │
+│         2 │
+│         3 │
+│         5 │
+│         8 │
+│        13 │
+│        21 │
+│        34 │
+└───────────┘
+```
+
+**See also**
+
+- [arrayReduce](#arrayreduce)
 
 ## arrayReverse(arr)
 

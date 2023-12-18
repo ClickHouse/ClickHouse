@@ -12,7 +12,7 @@ from
       -- quantiles of randomization distributions
       -- note that for small number of runs, the exact quantile might not make
       -- sense, because the last possible value of randomization distribution
-      -- might take a larger percentage of distirbution (i.e. the distribution
+      -- might take a larger percentage of distribution (i.e. the distribution
       -- actually has discrete values, and the last step can be large).
       select quantileExactForEach(0.99)(
         arrayMap(x, y -> abs(x - y), metrics_by_label[1], metrics_by_label[2]) as d
@@ -44,7 +44,7 @@ from
                               -- for each virtual run, randomly reorder measurements
                               order by virtual_run, rand()
                            ) virtual_runs
-                     ) relabeled 
+                     ) relabeled
                   group by virtual_run, random_label
                ) virtual_medians
             group by virtual_run -- aggregate by random_label
