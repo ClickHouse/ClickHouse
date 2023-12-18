@@ -915,7 +915,6 @@ void addWindowSteps(QueryPlan & query_plan,
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window_description.full_sort_description,
-                window_description.partition_by,
                 0 /*limit*/,
                 sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
@@ -1341,26 +1340,51 @@ void Planner::buildPlanForQueryNode()
 
     const auto & settings = query_context->getSettingsRef();
 
-    /// Check support for JOIN for parallel replicas with custom key
-    if (planner_context->getTableExpressionNodeToData().size() > 1)
+    if (settings.allow_experimental_parallel_reading_from_replicas > 0)
     {
-        if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
+        const auto & table_expression_nodes = planner_context->getTableExpressionNodeToData();
+        for (const auto & it : table_expression_nodes)
         {
-            LOG_DEBUG(
-                &Poco::Logger::get("Planner"),
-                "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+            auto * table_node = it.first->as<TableNode>();
+            if (!table_node)
+                continue;
 
-            auto & mutable_context = planner_context->getMutableQueryContext();
-            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            mutable_context->setSetting("parallel_replicas_custom_key", String{""});
-        }
-        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+            const auto & modifiers = table_node->getTableExpressionModifiers();
+            if (modifiers.has_value() && modifiers->hasFinal())
+            {
+                if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
+                else
+                {
+                    LOG_DEBUG(
+                        &Poco::Logger::get("Planner"),
+                        "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+                    auto & mutable_context = planner_context->getMutableQueryContext();
+                    mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                }
+            }
         }
     }
 
-    /// TODO: Also disable parallel replicas in case of FINAL
+    if (settings.allow_experimental_parallel_reading_from_replicas > 0 || !settings.parallel_replicas_custom_key.value.empty())
+    {
+        /// Check support for JOIN for parallel replicas with custom key
+        if (planner_context->getTableExpressionNodeToData().size() > 1)
+        {
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+            else
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("Planner"),
+                    "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+
+                auto & mutable_context = planner_context->getMutableQueryContext();
+                mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                mutable_context->setSetting("parallel_replicas_custom_key", String{""});
+            }
+        }
+    }
 
     auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
     auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,

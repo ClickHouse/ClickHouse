@@ -870,11 +870,11 @@ TCPConnection
 TCPThreads
 TDigest
 TINYINT
-TKSV
 TLSv
 TPCH
 TSDB
 TSVRaw
+TSVWithNames
 TSVs
 TSan
 TThe
@@ -886,8 +886,10 @@ TabSeparatedRawWithNamesAndTypes
 TabSeparatedWithNames
 TabSeparatedWithNamesAndTypes
 Tabix
-TablesLoaderThreads
-TablesLoaderThreadsActive
+TablesLoaderBackgroundThreads
+TablesLoaderBackgroundThreadsActive
+TablesLoaderForegroundThreads
+TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Telegraf
@@ -1234,6 +1236,7 @@ changelogs
 charset
 charsets
 chconn
+cheatsheet
 checkouting
 checksummed
 checksumming
@@ -1386,6 +1389,7 @@ denormalized
 denormalizing
 denormals
 dequeued
+dequeues
 deserialization
 deserialized
 deserializing
@@ -1445,6 +1449,7 @@ endian
 endianness
 endsWith
 endsWithUTF
+enqueued
 enum
 enum's
 enums
@@ -1540,7 +1545,6 @@ geohashEncode
 geohashesInBox
 geoip
 geospatial
-getClientHTTPHeader
 getMacro
 getOSKernelVersion
 getServerPort
@@ -1571,7 +1575,6 @@ groupArrayLast
 groupArrayMovingAvg
 groupArrayMovingSum
 groupArraySample
-groupArraySorted
 groupBitAnd
 groupBitOr
 groupBitXor
@@ -1586,7 +1589,6 @@ grouparraylast
 grouparraymovingavg
 grouparraymovingsum
 grouparraysample
-grouparraysorted
 groupbitand
 groupbitmap
 groupbitmapand
@@ -1790,6 +1792,7 @@ logTrace
 logagent
 loghouse
 london
+lookups
 lowcardinality
 lowerUTF
 lowercased
@@ -2276,6 +2279,7 @@ splitByRegexp
 splitByString
 splitByWhitespace
 splitby
+sqid
 sql
 sqlalchemy
 sqlinsert

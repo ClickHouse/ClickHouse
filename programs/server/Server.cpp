@@ -20,6 +20,7 @@
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
+#include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
@@ -44,6 +45,7 @@
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
 #include <Server/waitServersToFinish.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -91,6 +93,7 @@
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
+#include <Server/KeeperReadinessHandler.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Core/ServerSettings.h>
@@ -656,6 +659,11 @@ try
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
+    Poco::ThreadPool server_pool(3, server_settings.max_connections);
+    std::mutex servers_lock;
+    std::vector<ProtocolServerAdapter> servers;
+    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
+
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
@@ -696,6 +704,68 @@ try
         server_settings.max_thread_pool_size,
         server_settings.max_thread_pool_free_size,
         server_settings.thread_pool_queue_size);
+    /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
+    SCOPE_EXIT({
+        Stopwatch watch;
+        LOG_INFO(log, "Waiting for background threads");
+        GlobalThreadPool::instance().shutdown();
+        LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
+    });
+
+    /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
+    /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
+    SCOPE_EXIT({
+        /** Ask to cancel background jobs all table engines,
+          *  and also query_log.
+          * It is important to do early, not in destructor of Context, because
+          *  table engines could use Context on destroy.
+          */
+        LOG_INFO(log, "Shutting down storages.");
+
+        global_context->shutdown();
+
+        LOG_DEBUG(log, "Shut down storages.");
+
+        if (!servers_to_start_before_tables.empty())
+        {
+            LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
+            size_t current_connections = 0;
+            {
+                std::lock_guard lock(servers_lock);
+                for (auto & server : servers_to_start_before_tables)
+                {
+                    server.stop();
+                    current_connections += server.currentConnections();
+                }
+            }
+
+            if (current_connections)
+                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
+            else
+                LOG_INFO(log, "Closed all listening sockets.");
+
+            if (current_connections > 0)
+                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, server_settings.shutdown_wait_unfinished);
+
+            if (current_connections)
+                LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
+            else
+                LOG_INFO(log, "Closed connections to servers for tables.");
+        }
+
+        global_context->shutdownKeeperDispatcher();
+
+        /// Wait server pool to avoid use-after-free of destroyed context in the handlers
+        server_pool.joinAll();
+
+        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
+          * At this moment, no one could own shared part of Context.
+          */
+        global_context.reset();
+        shared_context.reset();
+        LOG_DEBUG(log, "Destroyed global context.");
+    });
+
 
 #if USE_AZURE_BLOB_STORAGE
     /// It makes sense to deinitialize libxml after joining of all threads
@@ -754,10 +824,6 @@ try
         }
     }
 
-    Poco::ThreadPool server_pool(3, server_settings.max_connections);
-    std::mutex servers_lock;
-    std::vector<ProtocolServerAdapter> servers;
-    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
         global_context,
@@ -1279,9 +1345,10 @@ try
             global_context->setHTTPHeaderFilter(*config);
 
             global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
-            global_context->setClientHTTPHeaderForbiddenHeaders(server_settings_.get_client_http_header_forbidden_headers);
-            global_context->setAllowGetHTTPHeaderFunction(server_settings_.allow_get_client_http_header);
             global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);
+            global_context->setMaxTableNumToWarn(server_settings_.max_table_num_to_warn);
+            global_context->setMaxDatabaseNumToWarn(server_settings_.max_database_num_to_warn);
+            global_context->setMaxPartNumToWarn(server_settings_.max_part_num_to_warn);
 
             ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
             if (server_settings_.concurrent_threads_soft_limit_num > 0 && server_settings_.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
@@ -1336,6 +1403,10 @@ try
             global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
             global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
 
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, server_settings_.tables_loader_foreground_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, server_settings_.tables_loader_background_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundStartupPoolId, server_settings_.tables_loader_background_pool_size);
+
             getIOThreadPool().reloadConfiguration(
                 server_settings.max_io_thread_pool_size,
                 server_settings.max_io_thread_pool_free_size,
@@ -1380,8 +1451,6 @@ try
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
-                global_context->reloadQueryMaskingRulesIfChanged(config);
-
                 std::lock_guard lock(servers_lock);
                 updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
             }
@@ -1401,6 +1470,8 @@ try
             CertificateReloader::instance().tryLoad(*config);
 #endif
             NamedCollectionUtils::reloadFromConfig(*config);
+
+            FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
@@ -1485,6 +1556,34 @@ try
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #endif
                 });
+
+            /// HTTP control endpoints
+            port_name = "keeper_server.http_control.port";
+            createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
+            servers_to_start_before_tables,
+            [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                auto http_context = httpContext();
+                Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
+                Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+                http_params->setTimeout(http_context->getReceiveTimeout());
+                http_params->setKeepAliveTimeout(keep_alive_timeout);
+
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config(), socket, listen_host, port);
+                socket.setReceiveTimeout(http_context->getReceiveTimeout());
+                socket.setSendTimeout(http_context->getSendTimeout());
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "HTTP Control: http://" + address.toString(),
+                    std::make_unique<HTTPServer>(
+                        std::move(http_context),
+                        createKeeperHTTPControlMainHandlerFactory(
+                            config_getter(),
+                            global_context->getKeeperDispatcher(),
+                            "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params));
+            });
         }
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
@@ -1595,60 +1694,6 @@ try
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 
-    SCOPE_EXIT({
-        async_metrics.stop();
-
-        /** Ask to cancel background jobs all table engines,
-          *  and also query_log.
-          * It is important to do early, not in destructor of Context, because
-          *  table engines could use Context on destroy.
-          */
-        LOG_INFO(log, "Shutting down storages.");
-
-        global_context->shutdown();
-
-        LOG_DEBUG(log, "Shut down storages.");
-
-        if (!servers_to_start_before_tables.empty())
-        {
-            LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
-            size_t current_connections = 0;
-            {
-                std::lock_guard lock(servers_lock);
-                for (auto & server : servers_to_start_before_tables)
-                {
-                    server.stop();
-                    current_connections += server.currentConnections();
-                }
-            }
-
-            if (current_connections)
-                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
-            else
-                LOG_INFO(log, "Closed all listening sockets.");
-
-            if (current_connections > 0)
-                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, server_settings.shutdown_wait_unfinished);
-
-            if (current_connections)
-                LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
-            else
-                LOG_INFO(log, "Closed connections to servers for tables.");
-
-            global_context->shutdownKeeperDispatcher();
-        }
-
-        /// Wait server pool to avoid use-after-free of destroyed context in the handlers
-        server_pool.joinAll();
-
-        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
-          * At this moment, no one could own shared part of Context.
-          */
-        global_context.reset();
-        shared_context.reset();
-        LOG_DEBUG(log, "Destroyed global context.");
-    });
-
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
     /// and thus this object must be created after the SCOPE_EXIT object where shared
     /// context is destroyed.
@@ -1676,17 +1721,18 @@ try
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
+    LoadTaskPtrs load_metadata_tasks;
     try
     {
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
-        loadMetadataSystem(global_context);
-        maybeConvertSystemDatabase(global_context);
+        auto system_startup_tasks = loadMetadataSystem(global_context);
+        maybeConvertSystemDatabase(global_context, system_startup_tasks);
         /// This has to be done before the initialization of system logs,
         /// otherwise there is a race condition between the system database initialization
         /// and creation of new tables in the database.
-        startupSystemTables();
+        waitLoad(TablesLoaderForegroundPoolId, system_startup_tasks);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
@@ -1702,9 +1748,10 @@ try
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
         database_catalog.createBackgroundTasks();
-        /// Then, load remaining databases
-        loadMetadata(global_context, default_database);
-        convertDatabasesEnginesIfNeed(global_context);
+        /// Then, load remaining databases (some of them maybe be loaded asynchronously)
+        load_metadata_tasks = loadMetadata(global_context, default_database, server_settings.async_load_databases);
+        /// If we need to convert database engines, disable async tables loading
+        convertDatabasesEnginesIfNeed(load_metadata_tasks, global_context);
         database_catalog.startupBackgroundTasks();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
@@ -1716,6 +1763,7 @@ try
         tryLogCurrentException(log, "Caught exception while loading metadata");
         throw;
     }
+
     LOG_DEBUG(log, "Loaded metadata.");
 
     /// Init trace collector only after trace_log system table was created
@@ -1871,8 +1919,13 @@ try
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "distributed_ddl.pool_size should be greater then 0");
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
                                                                      "distributed_ddl", "DDLWorker",
-                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
+                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID),
+                                         load_metadata_tasks);
         }
+
+        /// Do not keep tasks in server, they should be kept inside databases. Used here to make dependent tasks only.
+        load_metadata_tasks.clear();
+        load_metadata_tasks.shrink_to_fit();
 
         {
             std::lock_guard lock(servers_lock);
