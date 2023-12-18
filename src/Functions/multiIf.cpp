@@ -253,19 +253,12 @@ public:
     if (which.is##TYPE()) \
     { \
         MutableColumnPtr res = ColumnVector<TYPE>::create(rows); \
+        MutableColumnPtr null_map = ColumnUInt8::create(rows); \
+        executeInstructionsColumnar<TYPE, INDEX>(instructions, rows, res, null_map, result_type->isNullable()); \
         if (!result_type->isNullable()) \
-        { \
-            executeInstructionsColumnar<TYPE, INDEX>(instructions, rows, res, instruction_use_memory_copy, \
-                settings.skew_threshold_use_memcpy_execute_multiif_columnar); \
             return std::move(res); \
-        } \
         else \
-        { \
-            MutableColumnPtr null_map = ColumnUInt8::create(rows); \
-            executeInstructionsColumnarForNullable<TYPE, INDEX>(instructions, rows, res, null_map, instruction_use_memory_copy, \
-                settings.skew_threshold_use_memcpy_execute_multiif_columnar); \
             return ColumnNullable::create(std::move(res), std::move(null_map)); \
-        } \
     }
 
 #define ENUMERATE_NUMERIC_TYPES(M, INDEX) \
@@ -305,7 +298,6 @@ public:
     }
 
 private:
-    mutable std::optional<int> instruction_use_memory_copy;
 
     static void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
@@ -385,94 +377,16 @@ private:
         }
     }
 
-    template<typename S>
-    static void calculateWhetherUseMemoryCopy(PaddedPODArray<S> & inserts, std::vector<Instruction> & instructions, std::optional<int> & instruction_use_memory_copy,
-        double threshold_use_memcpy)
-    {
-        if (!instruction_use_memory_copy.has_value())
-        {
-            std::vector<UInt64> instruction_insert_sizes(instructions.size());
-            for (size_t i = 0; i < inserts.size(); ++i)
-                instruction_insert_sizes[inserts[i]] += 1;
-            for (size_t i = 0; i < instruction_insert_sizes.size(); ++i)
-            {
-                if (!instructions[i].source_is_constant && instruction_insert_sizes[i] * 1.0 / inserts.size() >= threshold_use_memcpy)
-                    instruction_use_memory_copy.emplace(static_cast<int>(i));
-            }
-        }
-    }
-
-    template<typename T, typename S>
-    static void executeInstructionsColumnarForNullable(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res,
-        const MutableColumnPtr & null_map, std::optional<int> & instruction_use_memory_copy, double threshold_use_memcpy)
+    template <typename T, typename S>
+    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res, const MutableColumnPtr & null_map,
+        bool nullable)
     {
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
 
         PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
         PaddedPODArray<UInt8> & null_map_data = assert_cast<ColumnUInt8 &>(*null_map).getData();
-        std::vector<const T*> data_cols(instructions.size());
-        std::vector<const UInt8 *> null_map_cols(instructions.size());
-        calculateWhetherUseMemoryCopy(inserts, instructions, instruction_use_memory_copy, threshold_use_memcpy);
-        for (size_t i = 0; i < instructions.size(); ++i)
-        {
-            if (instructions[i].source->isNullable())
-            {
-                const ColumnNullable * nullable_col;
-                if (!instructions[i].source_is_constant)
-                    nullable_col = assert_cast<const ColumnNullable *>(instructions[i].source.get());
-                else
-                {
-                    const ColumnPtr data_column = assert_cast<const ColumnConst &>(*instructions[i].source).getDataColumnPtr();
-                    nullable_col = assert_cast<const ColumnNullable *>(data_column.get());
-                }
-                null_map_cols[i] = assert_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumnPtr()).getData().data();
-                data_cols[i] = assert_cast<const ColumnVector<T> &>(*nullable_col->getNestedColumnPtr()).getData().data();
-            }
-            else
-            {
-                null_map_cols[i] = ColumnUInt8::create(rows)->getData().data();
-                data_cols[i] = assert_cast<const ColumnVector<T> &>(*instructions[i].source).getData().data();
-            }
-        }
-
-        if (!instruction_use_memory_copy.has_value())
-        {
-            for (size_t row_i = 0; row_i < rows; ++row_i)
-            {
-                auto & instruction = instructions[inserts[row_i]];
-                size_t index = instruction.source_is_constant ? 0 : row_i;
-                res_data[row_i] = *(data_cols[inserts[row_i]] + index);
-                null_map_data[row_i] = *(null_map_cols[inserts[row_i]] + index);
-            }
-        }
-        else
-        {
-            int val = instruction_use_memory_copy.value();
-            memcpy(res_data.data(), data_cols[val], sizeof(T) * rows);
-            memcpy(null_map_data.data(), null_map_cols[val], sizeof(UInt8) * rows);
-            for (size_t row_i = 0; row_i < rows; ++row_i)
-            {
-                if (inserts[row_i] == val)
-                    continue;
-                auto & instruction = instructions[inserts[row_i]];
-                size_t index = instruction.source_is_constant ? 0 : row_i;
-                res_data[row_i] = *(data_cols[inserts[row_i]] + index);
-                null_map_data[row_i] = *(null_map_cols[inserts[row_i]] + index);
-            }
-        }
-    }
-
-    template <typename T, typename S>
-    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res,
-        std::optional<int> & instruction_use_memory_copy, double threshold_use_memcpy)
-    {
-        PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
-        calculateInserts(instructions, rows, inserts);
-
-        PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
-        calculateWhetherUseMemoryCopy(inserts, instructions, instruction_use_memory_copy, threshold_use_memcpy);
-        if (!instruction_use_memory_copy.has_value())
+        if (!nullable)
         {
             for (size_t row_i = 0; row_i < rows; ++row_i)
             {
@@ -484,15 +398,34 @@ private:
         else
         {
             std::vector<const T*> data_cols(instructions.size());
+            std::vector<const UInt8 *> null_map_cols(instructions.size());
             for (size_t i = 0; i < instructions.size(); ++i)
-               data_cols[i]= assert_cast<const ColumnVector<T> &>(*instructions[i].source).getData().data();
-            int val = instruction_use_memory_copy.value();
-            memcpy(res_data.data(), data_cols[val], sizeof(T) * rows);
+            {
+                if (instructions[i].source->isNullable())
+                {
+                    const ColumnNullable * nullable_col;
+                    if (!instructions[i].source_is_constant)
+                        nullable_col = assert_cast<const ColumnNullable *>(instructions[i].source.get());
+                    else
+                    {
+                        const ColumnPtr data_column = assert_cast<const ColumnConst &>(*instructions[i].source).getDataColumnPtr();
+                        nullable_col = assert_cast<const ColumnNullable *>(data_column.get());
+                    }
+                    null_map_cols[i] = assert_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumnPtr()).getData().data();
+                    data_cols[i] = assert_cast<const ColumnVector<T> &>(*nullable_col->getNestedColumnPtr()).getData().data();
+                }
+                else
+                {
+                    null_map_cols[i] = ColumnUInt8::create(rows)->getData().data();
+                    data_cols[i] = assert_cast<const ColumnVector<T> &>(*instructions[i].source).getData().data();
+                }
+            }
             for (size_t row_i = 0; row_i < rows; ++row_i)
             {
-                if (inserts[row_i] == val)
-                    continue;
-                res_data[row_i] = *(data_cols[inserts[row_i]] + row_i);
+                auto & instruction = instructions[inserts[row_i]];
+                size_t index = instruction.source_is_constant ? 0 : row_i;
+                res_data[row_i] = *(data_cols[inserts[row_i]] + index);
+                null_map_data[row_i] = *(null_map_cols[inserts[row_i]] + index);
             }
         }
     }
