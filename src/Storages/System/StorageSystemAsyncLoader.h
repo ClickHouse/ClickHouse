@@ -9,7 +9,7 @@ namespace DB
 
 class Context;
 
-/// system.async_loader table. Takes data from context.getAsyncLoader()
+/// system.asynchronous_loader table. Takes data from context.getAsyncLoader()
 class StorageSystemAsyncLoader final : public IStorageSystemOneBlock<StorageSystemAsyncLoader>
 {
 public:

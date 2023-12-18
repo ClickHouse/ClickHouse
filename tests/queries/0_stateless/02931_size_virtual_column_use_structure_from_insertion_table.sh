@@ -10,4 +10,4 @@ create table test (x UInt64, y UInt32, size UInt64) engine=Memory;
 insert into test select c1, c2, _size from file('$CLICKHOUSE_TEST_UNIQUE_NAME.csv') settings use_structure_from_insertion_table_in_table_functions=1;
 select * from test;
 "
-
+rm $CLICKHOUSE_TEST_UNIQUE_NAME.csv
