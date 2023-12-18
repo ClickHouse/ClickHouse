@@ -7,8 +7,9 @@ export CHPC_CHECK_START_TIMESTAMP
 S3_URL=${S3_URL:="https://clickhouse-builds.s3.amazonaws.com"}
 BUILD_NAME=${BUILD_NAME:-package_release}
 export S3_URL BUILD_NAME
+SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
-# Sometimes AWS responde with DNS error and it's impossible to retry it with
+# Sometimes AWS responds with DNS error and it's impossible to retry it with
 # current curl version options.
 function curl_with_retry
 {
@@ -88,19 +89,9 @@ chmod 777 workspace output
 
 cd workspace
 
-# Download the package for the version we are going to test.
-# A temporary solution for migrating into PRs directory
-for prefix in "$S3_URL/PRs" "$S3_URL";
-do
-    if curl_with_retry "$prefix/$PR_TO_TEST/$SHA_TO_TEST/$BUILD_NAME/performance.tar.zst"
-    then
-        right_path="$prefix/$PR_TO_TEST/$SHA_TO_TEST/$BUILD_NAME/performance.tar.zst"
-        break
-    fi
-done
-
-mkdir right
-wget -nv -nd -c "$right_path" -O- | tar -C right --no-same-owner --strip-components=1 --zstd --extract --verbose
+[ ! -e "/artifacts/performance.tar.zst" ] && echo "ERROR: performance.tar.zst not found" && exit 1
+mkdir -p right
+tar -xf "/artifacts/performance.tar.zst" -C right --no-same-owner --strip-components=1 --zstd --extract --verbose
 
 # Find reference revision if not specified explicitly
 if [ "$REF_SHA" == "" ]; then find_reference_sha; fi
@@ -158,7 +149,7 @@ cat /proc/sys/kernel/core_pattern
 
 # Start the main comparison script.
 {
-    time ../download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
+    time $SCRIPT_DIR/download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
     time stage=configure "$script_path"/compare.sh ; \
 } 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
 

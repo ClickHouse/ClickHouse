@@ -357,7 +357,7 @@ for query_index in queries_to_run:
             prewarm_id = f"{query_prefix}.prewarm0"
 
             try:
-                # During the warmup runs, we will also:
+                # During the warm-up runs, we will also:
                 # * detect queries that are exceedingly long, to fail fast,
                 # * collect profiler traces, which might be helpful for analyzing
                 #   test coverage. We disable profiler for normal runs because
@@ -390,7 +390,7 @@ for query_index in queries_to_run:
             query_error_on_connection[conn_index] = traceback.format_exc()
             continue
 
-    # Report all errors that ocurred during prewarm and decide what to do next.
+    # Report all errors that occurred during prewarm and decide what to do next.
     # If prewarm fails for the query on all servers -- skip the query and
     # continue testing the next query.
     # If prewarm fails on one of the servers, run the query on the rest of them.
