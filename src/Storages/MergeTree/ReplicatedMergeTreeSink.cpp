@@ -158,7 +158,12 @@ size_t ReplicatedMergeTreeSinkImpl<async_insert>::checkQuorumPrecondition(const 
 
     size_t replicas_number = 0;
 
-    ZooKeeperRetriesControl quorum_retries_ctl("checkQuorumPrecondition", zookeeper_retries_info, context->getProcessListElement());
+    const auto & settings = context->getSettingsRef();
+    ZooKeeperRetriesControl quorum_retries_ctl(
+        "checkQuorumPrecondition",
+        log,
+        {settings.insert_keeper_max_retries, settings.insert_keeper_retry_initial_backoff_ms, settings.insert_keeper_retry_max_backoff_ms},
+        context->getProcessListElement());
     quorum_retries_ctl.retryLoop(
         [&]()
         {
@@ -253,12 +258,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     const auto & settings = context->getSettingsRef();
-    zookeeper_retries_info = ZooKeeperRetriesInfo(
-        "ReplicatedMergeTreeSink::consume",
-        settings.insert_keeper_max_retries ? log : nullptr,
-        settings.insert_keeper_max_retries,
-        settings.insert_keeper_retry_initial_backoff_ms,
-        settings.insert_keeper_retry_max_backoff_ms);
 
     ZooKeeperWithFaultInjectionPtr zookeeper = ZooKeeperWithFaultInjection::createInstance(
         settings.insert_keeper_fault_injection_probability,
@@ -634,7 +633,12 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
 
     CommitRetryContext retry_context;
 
-    ZooKeeperRetriesControl retries_ctl("commitPart", zookeeper_retries_info, context->getProcessListElement());
+    const auto & settings = context->getSettingsRef();
+    ZooKeeperRetriesControl retries_ctl(
+        "commitPart",
+        log,
+        {settings.insert_keeper_max_retries, settings.insert_keeper_retry_initial_backoff_ms, settings.insert_keeper_retry_max_backoff_ms},
+        context->getProcessListElement());
 
     auto resolve_duplicate_stage = [&] () -> CommitRetryContext::Stages
     {

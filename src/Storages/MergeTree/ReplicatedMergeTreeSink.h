@@ -74,7 +74,6 @@ private:
 
     using BlockIDsType = std::conditional_t<async_insert, std::vector<String>, String>;
 
-    ZooKeeperRetriesInfo zookeeper_retries_info;
     struct QuorumInfo
     {
         String status_path;
