@@ -455,6 +455,7 @@
             <div id="username-password">
                 <input spellcheck="false" id="user" type="text" value="" placeholder="user" />
                 <input spellcheck="false" id="password" type="password" placeholder="password" />
+                <input id="hidden-submit" type="submit" hidden="true"/>
             </div>
         </div>
         <div id="button-options">
@@ -720,7 +721,7 @@ function insertChart(i) {
     query_editor_confirm.addEventListener('click', editConfirm);
 
     /// Ctrl+Enter (or Cmd+Enter on Mac) will also confirm editing.
-    query_editor.addEventListener('keydown', e => {
+    query_editor.addEventListener('keydown', event => {
         if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
             editConfirm();
         }
@@ -895,7 +896,7 @@ document.getElementById('add').addEventListener('click', e => {
 });
 
 document.getElementById('reload').addEventListener('click', e => {
-    reloadAll(false);
+    reloadAll(queries.length == 0);
 });
 
 document.getElementById('search').addEventListener('click', e => {
@@ -1291,6 +1292,7 @@ async function drawAll() {
             document.getElementById('add').style.display = 'inline-block';
             document.getElementById('edit').style.display = 'inline-block';
             document.getElementById('search-span').style.display = '';
+            hideError();
         }
         else {
             const charts = document.getElementById('charts')
@@ -1317,9 +1319,11 @@ function disableButtons() {
     reloadButton.classList.add('disabled');
 
     const runButton = document.getElementById('run');
-    runButton.value = 'Reloading…';
-    runButton.disabled = true;
-    runButton.classList.add('disabled');
+    if (runButton) {
+        runButton.value = 'Reloading…';
+        runButton.disabled = true;
+        runButton.classList.add('disabled');
+    }
 
     const searchButton = document.getElementById('search');
     searchButton.value = '…';
@@ -1334,9 +1338,11 @@ function enableButtons() {
     reloadButton.classList.remove('disabled');
 
     const runButton = document.getElementById('run');
-    runButton.value = 'Ok';
-    runButton.disabled = false;
-    runButton.classList.remove('disabled');
+    if (runButton) {
+        runButton.value = 'Ok';
+        runButton.disabled = false;
+        runButton.classList.remove('disabled');
+    }
 
     const searchButton = document.getElementById('search');
     searchButton.value = '🔎';
@@ -1359,14 +1365,17 @@ async function reloadAll(do_search) {
         }
         await drawAll();
     } catch (e) {
-        showError(e.toString());
+        showError(e.message);
     }
     enableButtons();
 }
 
 document.getElementById('params').onsubmit = function(event) {
-    let do_search = document.activeElement === document.getElementById('search-query');
-    reloadAll(do_search);
+    if (document.activeElement === document.getElementById('search-query')) {
+        reloadAll(true);
+    } else {
+        reloadAll(queries.length == 0);
+    }
     event.preventDefault();
 }
 
@@ -1405,13 +1414,15 @@ function refreshCustomized(value) {
     document.getElementById('search-span').style.opacity = customized ? 0.5 : 1.0;
 }
 
-function regenerate() {
+function updateFromState() {
     document.getElementById('url').value = host;
     document.getElementById('user').value = user;
     document.getElementById('password').value = password;
     document.getElementById('search-query').value = search_query;
     refreshCustomized();
+}
 
+function regenerate() {
     findParamsInQueries();
     buildParams();
 
@@ -1430,7 +1441,7 @@ function regenerate() {
 window.onpopstate = function(event) {
     if (!event.state) { return; }
     ({host, user, queries, params, search_query, customized} = event.state);
-
+    updateFromState();
     regenerate();
     drawAll();
 };
@@ -1447,6 +1458,7 @@ if (window.location.hash) {
 
 async function start() {
     try {
+        updateFromState();
         if (queries.length == 0) {
             await searchQueries();
         } else {
@@ -1460,7 +1472,7 @@ async function start() {
             drawAll();
         }
     } catch (e) {
-        showError(e.toString());
+        showError(e.message);
     }
 }
 
