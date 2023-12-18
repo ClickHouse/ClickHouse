@@ -177,6 +177,7 @@ public:
     bool isRetry() const { return retries_info.retry_count > 0; }
 
     Coordination::Error getLastKeeperErrorCode() const { return keeper_error.code; }
+    std::string getLastKeeperErrorMessage() const { return keeper_error.message; }
 
     /// action will be called only once and only after latest failed retry
     void actionAfterLastFailedRetry(std::function<void()> f) { action_after_last_failed_retry = std::move(f); }

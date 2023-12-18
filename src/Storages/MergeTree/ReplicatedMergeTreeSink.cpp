@@ -1073,7 +1073,27 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             if (quorum_parallel)
                 quorum_info.status_path = storage.zookeeper_path + "/quorum/parallel/" + retry_context.actual_part_name;
 
-            waitForQuorum(zookeeper, retry_context.actual_part_name, quorum_info.status_path, quorum_info.is_active_node_version, replicas_num);
+            ZooKeeperRetriesControl new_retry_controller = retries_ctl;
+            new_retry_controller.requestUnconditionalRetry();
+            new_retry_controller.actionAfterLastFailedRetry([&]
+            {
+                /// We do not know whether or not data has been inserted in other replicas
+                new_retry_controller.setUserError(
+                    ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+                    "Unknown quorum status. The data was inserted in the local replica but we could not verify quorum. Reason: {}",
+                    new_retry_controller.getLastKeeperErrorMessage());
+            });
+
+            new_retry_controller.retryLoop([&]()
+            {
+                zookeeper->setKeeper(storage.getZooKeeper());
+                waitForQuorum(
+                    zookeeper,
+                    retry_context.actual_part_name,
+                    quorum_info.status_path,
+                    quorum_info.is_active_node_version,
+                    replicas_num);
+            });
         }
     }
 
@@ -1106,48 +1126,37 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
     /// We are waiting for quorum to be satisfied.
     LOG_TRACE(log, "Waiting for quorum '{}' for part {}{}", quorum_path, part_name, quorumLogMessage(replicas_num));
 
-    try
+    fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0, { zookeeper->forceFailureBeforeOperation(); });
+
+    while (true)
     {
-        fiu_do_on(FailPoints::replicated_merge_tree_insert_quorum_fail_0, { zookeeper->forceFailureBeforeOperation(); });
+        zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
-        while (true)
-        {
-            zkutil::EventPtr event = std::make_shared<Poco::Event>();
+        std::string value;
+        /// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.
+        if (!zookeeper->tryGet(quorum_path, value, nullptr, event))
+            break;
 
-            std::string value;
-            /// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.
-            if (!zookeeper->tryGet(quorum_path, value, nullptr, event))
-                break;
+        LOG_TRACE(log, "Quorum node {} still exists, will wait for updates", quorum_path);
 
-            LOG_TRACE(log, "Quorum node {} still exists, will wait for updates", quorum_path);
+        ReplicatedMergeTreeQuorumEntry quorum_entry(value);
 
-            ReplicatedMergeTreeQuorumEntry quorum_entry(value);
+        /// If the node has time to disappear, and then appear again for the next insert.
+        if (quorum_entry.part_name != part_name)
+            break;
 
-            /// If the node has time to disappear, and then appear again for the next insert.
-            if (quorum_entry.part_name != part_name)
-                break;
+        if (!event->tryWait(quorum_timeout_ms))
+            throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Timeout while waiting for quorum");
 
-            if (!event->tryWait(quorum_timeout_ms))
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while waiting for quorum");
-
-            LOG_TRACE(log, "Quorum {} for part {} updated, will check quorum node still exists", quorum_path, part_name);
-        }
-
-        /// And what if it is possible that the current replica at this time has ceased to be active
-        /// and the quorum is marked as failed and deleted?
-        Coordination::Stat stat;
-        String value;
-        if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat)
-            || stat.version != is_active_node_version)
-            throw Exception(ErrorCodes::NO_ACTIVE_REPLICAS, "Replica become inactive while waiting for quorum");
+        LOG_TRACE(log, "Quorum {} for part {} updated, will check quorum node still exists", quorum_path, part_name);
     }
-    catch (...)
-    {
-        /// We do not know whether or not data has been inserted
-        /// - whether other replicas have time to download the part and mark the quorum as done.
-        throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Unknown status, client must retry. Reason: {}",
-            getCurrentExceptionMessage(false));
-    }
+
+    /// And what if it is possible that the current replica at this time has ceased to be active
+    /// and the quorum is marked as failed and deleted?
+    Coordination::Stat stat;
+    String value;
+    if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat) || stat.version != is_active_node_version)
+        throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Replica become inactive while waiting for quorum");
 
     LOG_TRACE(log, "Quorum '{}' for part {} satisfied", quorum_path, part_name);
 }
