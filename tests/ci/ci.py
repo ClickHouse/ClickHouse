@@ -10,7 +10,12 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import docker_images_helper
 from ci_config import CI_CONFIG
-from commit_status_helper import CommitStatusData, get_commit, set_status_comment
+from commit_status_helper import (
+    CommitStatusData,
+    format_description,
+    get_commit,
+    set_status_comment,
+)
 from digest_helper import DockerDigester, JobDigester
 from env_helper import CI, REPORT_PATH, ROOT_DIR, S3_BUILDS_BUCKET, TEMP_PATH
 from get_robot_token import get_best_robot_token
@@ -457,7 +462,10 @@ def _update_gh_statuses(indata: Dict, s3: S3Helper) -> None:
             commit.create_status(
                 state=job_status.status,
                 target_url=job_status.report_url,
-                description=f"Reused from [{job_status.pr_num}-{job_status.sha[0:8]}]: {job_status.description}",
+                description=format_description(
+                    f"Reused from [{job_status.pr_num}-{job_status.sha[0:8]}]: "
+                    f"{job_status.description}"
+                ),
                 context=get_check_name(job, batch=batch, num_batches=num_batches),
             )
             print(f"GH status re-created from file [{success_flag_name}]")
