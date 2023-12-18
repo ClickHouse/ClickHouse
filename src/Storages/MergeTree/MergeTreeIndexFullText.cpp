@@ -242,6 +242,7 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
 
     /// Check like in KeyCondition.
     std::vector<BoolMask> rpn_stack;
+
     auto multi_funtion_processor = [&rpn_stack, &granule] (const RPNElement & element)
     {
         std::vector<bool> result(element.set_bloom_filters.back().size(), true);
@@ -254,6 +255,7 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
         rpn_stack.emplace_back(
                 std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
     };
+
     for (const auto & element : rpn)
     {
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
@@ -294,11 +296,11 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
         }
         else if (element.function == RPNElement::FUNCTION_MATCH)
         {
-            // If set_bloom_filters is not empty means we got alternative substring
             if (!element.set_bloom_filters.empty())
             {
                 multi_funtion_processor(element);
             }
+            // If set_bloom_filters is not empty means we got alternative substring
             else if (element.bloom_filter)
             {
                 rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
@@ -538,12 +540,9 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
 
         auto & string_view = const_value.get<String>();
         String required_substring;
-        bool is_trivial;
-        bool required_substring_is_prefix;
         std::vector<String> alternatives;
-        OptimizedRegularExpression::analyze(string_view, required_substring, is_trivial, required_substring_is_prefix, alternatives);
-        for (const auto & alternative : alternatives)
-            std::cout<<"========= alternative string:"<<alternative<<std::endl;
+        bool tmp_var;
+        OptimizedRegularExpression::analyze(string_view, required_substring, tmp_var, tmp_var, alternatives);
 
         if (required_substring.empty() && alternatives.empty())
             return false;
@@ -559,7 +558,7 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
             }
             out.set_bloom_filters = std::move(bloom_filters);
         }
-        else if (!required_substring.empty())
+        else
            token_extractor->stringToBloomFilter(required_substring.data(), required_substring.size(), *out.bloom_filter);
 
         return true;
