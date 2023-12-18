@@ -75,7 +75,7 @@ public:
 
     virtual void shuffle(const CacheGuard::Lock &) = 0;
 
-    virtual std::vector<FileSegmentInfo> dump(FileCache & cache, const CacheGuard::Lock &) = 0;
+    virtual std::vector<FileSegmentInfo> dump(const CacheGuard::Lock &) = 0;
 
     using FinalizeEvictionFunc = std::function<void(const CacheGuard::Lock & lk)>;
     virtual bool collectCandidatesForEviction(
