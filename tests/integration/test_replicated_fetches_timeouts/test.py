@@ -10,11 +10,16 @@ from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1", with_zookeeper=True, main_configs=["configs/server.xml", "configs/timeouts_for_fetches.xml"]
+    "node1",
+    with_zookeeper=True,
+    main_configs=["configs/server.xml", "configs/timeouts_for_fetches.xml"],
 )
 
 node2 = cluster.add_instance(
-    "node2", with_zookeeper=True, stay_alive=True, main_configs=["configs/server.xml", "configs/timeouts_for_fetches.xml"]
+    "node2",
+    with_zookeeper=True,
+    stay_alive=True,
+    main_configs=["configs/server.xml", "configs/timeouts_for_fetches.xml"],
 )
 
 config = """
@@ -86,8 +91,7 @@ def test_no_stall(started_cluster):
         print("Connection timeouts tested!")
 
         node2.replace_config(
-            "/etc/clickhouse-server/config.d/timeouts_for_fetches.xml",
-            config
+            "/etc/clickhouse-server/config.d/timeouts_for_fetches.xml", config
         )
 
         node2.restart_clickhouse()
