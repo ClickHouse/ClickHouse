@@ -312,17 +312,22 @@ class PRInfo:
         return False
 
     def has_changes_in_documentation_only(self) -> bool:
+        """
+        checks if changes are docs related without other changes
+        FIXME: avoid hardcoding filenames here
+        """
         if not self.changed_files:
             return False
 
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
             path_in_docs = f.startswith("docs/")
-            if (
-                ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs
-            ) or "docker/docs" in f or 'docs_check.py' in f:
-                continue
-            else:
+            if not (
+                (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
+                or "docker/docs" in f
+                or "docs_check.py" in f
+                or ext == ".md"
+            ):
                 return False
         return True
 

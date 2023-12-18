@@ -263,7 +263,9 @@ def _update_config_for_docs_only(run_config: dict) -> None:
     DOCS_CHECK_JOBS = ["Docs check", "Style check"]
     print(f"NOTE: Will keep only docs related jobs: [{DOCS_CHECK_JOBS}]")
     jobs_to_do = run_config.get("jobs_data", {}).get("jobs_to_do", [])
-    run_config["jobs_data"]["jobs_to_do"] = [job for job in jobs_to_do if job in DOCS_CHECK_JOBS]
+    run_config["jobs_data"]["jobs_to_do"] = [
+        job for job in jobs_to_do if job in DOCS_CHECK_JOBS
+    ]
 
 
 def _configure_docker_jobs(
@@ -594,7 +596,7 @@ def main() -> int:
         result["docker_data"] = docker_data
         if pr_info.number != 0 and not args.docker_digest_or_latest:
             _check_and_update_for_early_style_check(result)
-        if pr_info.has_changes_in_documentation_only():
+        if pr_info.number != 0 and pr_info.has_changes_in_documentation_only():
             _update_config_for_docs_only(result)
 
     elif args.update_gh_statuses:
