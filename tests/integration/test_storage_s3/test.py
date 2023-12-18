@@ -626,7 +626,7 @@ def test_wrong_s3_syntax(started_cluster):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     expected_err_msg = "Code: 42"  # NUMBER_OF_ARGUMENTS_DOESNT_MATCH
 
-    query = "create table test_table_s3_syntax (id UInt32) ENGINE = S3('', '', '', '', '', '')"
+    query = "create table test_table_s3_syntax (id UInt32) ENGINE = S3('', '', '', '', '', '', '')"
     assert expected_err_msg in instance.query_and_get_error(query)
 
     expected_err_msg = "Code: 36"  # BAD_ARGUMENTS
@@ -1395,6 +1395,7 @@ def test_schema_inference_from_globs(started_cluster):
 
 
 def test_signatures(started_cluster):
+    session_token = "session token that will not be checked by MiniIO"
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
 
@@ -1418,12 +1419,32 @@ def test_signatures(started_cluster):
     assert int(result) == 1
 
     result = instance.query(
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', '{session_token}')"
+    )
+    assert int(result) == 1
+
+    result = instance.query(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'Arrow', 'x UInt64', 'auto')"
     )
     assert int(result) == 1
 
     result = instance.query(
         f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', 'Arrow')"
+    )
+    assert int(result) == 1
+
+    result = instance.query(
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', '{session_token}', 'Arrow')"
+    )
+    assert int(result) == 1
+
+    lt = instance.query(
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', '{session_token}', 'Arrow', 'x UInt64')"
+    )
+    assert int(result) == 1
+
+    lt = instance.query(
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', '{session_token}', 'Arrow', 'x UInt64', 'auto')"
     )
     assert int(result) == 1
 
