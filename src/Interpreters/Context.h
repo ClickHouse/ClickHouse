@@ -109,6 +109,7 @@ class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
 class IAsynchronousReader;
+class IOUringReader;
 struct MergeTreeSettings;
 struct InitialAllRangesAnnouncement;
 struct ParallelReadRequest;
@@ -841,6 +842,9 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
+    void setMaxTableNumToWarn(size_t max_table_to_warn);
+    void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
+    void setMaxPartNumToWarn(size_t max_part_to_warn);
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
@@ -951,8 +955,6 @@ public:
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
-    void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
-
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
     /// --- Caches ------------------------------------------------------------------------------------------
@@ -1023,6 +1025,7 @@ public:
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
     void setClustersConfig(const ConfigurationPtr & config, bool enable_discovery = false, const String & config_name = "remote_servers");
+    size_t getClustersVersion() const;
 
     void startClusterDiscovery();
 
@@ -1201,7 +1204,7 @@ public:
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
-    bool areBackgroundExecutorsInitialized();
+    bool areBackgroundExecutorsInitialized() const;
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
@@ -1209,6 +1212,9 @@ public:
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
+#if USE_LIBURING
+    IOUringReader & getIOURingReader() const;
+#endif
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
 

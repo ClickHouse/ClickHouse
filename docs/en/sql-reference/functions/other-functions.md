@@ -628,6 +628,8 @@ SELECT
     formatReadableSize(filesize_bytes) AS filesize
 ```
 
+Alias: `FORMAT_BYTES`.
+
 ``` text
 ┌─filesize_bytes─┬─filesize───┐
 │              1 │ 1.00 B     │
