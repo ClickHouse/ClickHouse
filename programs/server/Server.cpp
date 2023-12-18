@@ -45,6 +45,7 @@
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
 #include <Server/waitServersToFinish.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -1462,8 +1463,6 @@ try
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
-                global_context->reloadQueryMaskingRulesIfChanged(config);
-
                 std::lock_guard lock(servers_lock);
                 updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
             }
@@ -1483,6 +1482,8 @@ try
             CertificateReloader::instance().tryLoad(*config);
 #endif
             NamedCollectionUtils::reloadFromConfig(*config);
+
+            FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
