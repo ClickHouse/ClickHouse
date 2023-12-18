@@ -675,8 +675,11 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         if (errno == ENOENT && !throw_on_error)
             return nullptr;
 
-        throwFromErrnoWithPath("Cannot open file " + metadata_file_path, metadata_file_path,
-                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE,
+            metadata_file_path,
+            "Cannot open file {}",
+            metadata_file_path);
     }
 
     ReadBufferFromFile in(metadata_file_fd, metadata_file_path, METADATA_FILE_BUFFER_SIZE);
