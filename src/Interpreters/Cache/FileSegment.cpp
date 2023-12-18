@@ -120,6 +120,14 @@ String FileSegment::getPathInLocalCache() const
     return getKeyMetadata()->getFileSegmentPath(*this);
 }
 
+String FileSegment::tryGetPathInLocalCache() const
+{
+    auto metadata = tryGetKeyMetadata();
+    if (!metadata)
+        return "";
+    return metadata->getFileSegmentPath(*this);
+}
+
 FileSegmentGuard::Lock FileSegment::lockFileSegment() const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentLockMicroseconds);
@@ -833,13 +841,13 @@ void FileSegment::assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock)
     }
 }
 
-FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment, FileCache & cache)
+FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
 {
     auto lock = file_segment->lockFileSegment();
     return Info{
         .key = file_segment->key(),
         .offset = file_segment->offset(),
-        .path = cache.getPathInLocalCache(file_segment->key(), file_segment->offset(), file_segment->segment_kind),
+        .path = file_segment->tryGetPathInLocalCache(),
         .range_left = file_segment->range().left,
         .range_right = file_segment->range().right,
         .kind = file_segment->segment_kind,

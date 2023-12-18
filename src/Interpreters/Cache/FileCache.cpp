@@ -834,6 +834,15 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
     return true;
 }
 
+void FileCache::iterate(IterateFunc && func)
+{
+    return metadata.iterate([&](const LockedKey & locked_key)
+    {
+        for (const auto & file_segment_metadata : locked_key)
+            func(FileSegment::getInfo(file_segment_metadata.second->file_segment));
+    });
+}
+
 void FileCache::removeKey(const Key & key)
 {
     assertInitialized();
@@ -1147,7 +1156,7 @@ std::vector<FileSegment::Info> FileCache::getFileSegmentInfos()
     metadata.iterate([&](const LockedKey & locked_key)
     {
         for (const auto & [_, file_segment_metadata] : locked_key)
-            file_segments.push_back(FileSegment::getInfo(file_segment_metadata->file_segment, *this));
+            file_segments.push_back(FileSegment::getInfo(file_segment_metadata->file_segment));
     });
     return file_segments;
 }
@@ -1157,14 +1166,14 @@ std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const Key & key)
     std::vector<FileSegment::Info> file_segments;
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW_LOGICAL);
     for (const auto & [_, file_segment_metadata] : *locked_key)
-        file_segments.push_back(FileSegment::getInfo(file_segment_metadata->file_segment, *this));
+        file_segments.push_back(FileSegment::getInfo(file_segment_metadata->file_segment));
     return file_segments;
 }
 
 std::vector<FileSegment::Info> FileCache::dumpQueue()
 {
     assertInitialized();
-    return main_priority->dump(*this, lockCache());
+    return main_priority->dump(lockCache());
 }
 
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)
@@ -1201,9 +1210,7 @@ void FileCache::assertCacheCorrectness()
     {
         for (const auto & [_, file_segment_metadata] : locked_key)
         {
-            const auto & file_segment = *file_segment_metadata->file_segment;
-            UNUSED(file_segment);
-            chassert(file_segment.assertCorrectness());
+            chassert(file_segment_metadata->file_segment->assertCorrectness());
         }
     });
 }
@@ -1282,7 +1289,7 @@ std::vector<FileSegment::Info> FileCache::sync()
     std::vector<FileSegment::Info> file_segments;
     metadata.iterate([&](LockedKey & locked_key)
     {
-        auto broken = locked_key.sync(*this);
+        auto broken = locked_key.sync();
         file_segments.insert(file_segments.end(), broken.begin(), broken.end());
     });
     return file_segments;

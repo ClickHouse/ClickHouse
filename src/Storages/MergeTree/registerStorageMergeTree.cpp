@@ -138,7 +138,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         * CollapsingMergeTree(date, [sample_key], primary_key, index_granularity, sign)
         * SummingMergeTree(date, [sample_key], primary_key, index_granularity, [columns_to_sum])
         * AggregatingMergeTree(date, [sample_key], primary_key, index_granularity)
-        * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column [, is_deleted_column]])
+        * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column])
         * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, 'config_element')
         *
         * Alternatively, you can specify:
@@ -441,15 +441,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
-        // if there is args and number of optional parameter is higher than 1
-        // is_deleted is not allowed with the 'allow_deprecated_syntax_for_merge_tree' settings
-        if (arg_cnt - arg_num == 2 && !engine_args[arg_cnt - 1]->as<ASTLiteral>() && is_extended_storage_def)
-        {
-            if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.is_deleted_column))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "is_deleted column name must be an identifier {}", verbose_help_message);
-            --arg_cnt;
-        }
-
         /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {

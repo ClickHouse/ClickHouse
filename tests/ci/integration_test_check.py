@@ -24,9 +24,9 @@ from commit_status_helper import (
     post_commit_status,
     post_commit_status_to_file,
 )
-from docker_pull_helper import get_images_with_versions, DockerImage
+from docker_images_helper import DockerImage, pull_image, get_docker_image
 from download_release_packages import download_last_release
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import ERROR, TestResult, TestResults, read_test_results
@@ -166,14 +166,17 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
+    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
     post_commit_path = temp_path / "integration_commit_status.tsv"
     repo_path = Path(REPO_COPY)
-    reports_path = Path(REPORTS_PATH)
 
     args = parse_args()
-    check_name = args.check_name
+    check_name = args.check_name or os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided in --check-name input option or in CHECK_NAME env"
     validate_bugfix_check = args.validate_bugfix
 
     if "RUN_BY_HASH_NUM" in os.environ:
@@ -215,7 +218,7 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    images = get_images_with_versions(reports_path, IMAGES)
+    images = [pull_image(get_docker_image(i)) for i in IMAGES]
     result_path = temp_path / "output_dir"
     result_path.mkdir(parents=True, exist_ok=True)
 
@@ -310,7 +313,13 @@ def main():
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
         post_commit_status(
-            commit, state, report_url, description, check_name_with_group, pr_info
+            commit,
+            state,
+            report_url,
+            description,
+            check_name_with_group,
+            pr_info,
+            dump_to_file=True,
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(post_commit_path, description, state, report_url)
