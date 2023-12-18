@@ -11,6 +11,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+#include <absl/container/flat_hash_map.h>
 
 /// GinIndexStore manages the generalized inverted index ("gin") for a data part, and it is made up of one or more immutable
 /// index segments.
@@ -59,6 +60,9 @@ public:
 
 private:
     constexpr static int MIN_SIZE_FOR_ROARING_ENCODING = 16;
+
+    static constexpr auto GIN_COMPRESSION_CODEC = "ZSTD";
+    static constexpr auto GIN_COMPRESSION_LEVEL = 1;
 
     /// When the list length is no greater than MIN_SIZE_FOR_ROARING_ENCODING, array 'rowid_lst' is used
     /// As a special case, rowid_lst[0] == CONTAINS_ALL encodes that all rowids are set.
@@ -124,7 +128,7 @@ class GinIndexStore
 {
 public:
     /// Container for all term's Gin Index Postings List Builder
-    using GinIndexPostingsBuilderContainer = std::unordered_map<std::string, GinIndexPostingsBuilderPtr>;
+    using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
 
     GinIndexStore(const String & name_, DataPartStoragePtr storage_);
     GinIndexStore(const String & name_, DataPartStoragePtr storage_, MutableDataPartStoragePtr data_part_storage_builder_, UInt64 max_digestion_size_);
@@ -210,7 +214,7 @@ private:
         v1 = 1, /// Initial version
     };
 
-    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v0;
+    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v1;
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;

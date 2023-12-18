@@ -19,6 +19,7 @@ public:
     bool ephemeral_default = false;
     ASTPtr comment;
     ASTPtr codec;
+    ASTPtr stat_type;
     ASTPtr ttl;
     ASTPtr collation;
     ASTPtr per_column_settings;

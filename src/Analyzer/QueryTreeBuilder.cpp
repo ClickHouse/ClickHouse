@@ -607,6 +607,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         else
         {
             auto function_node = std::make_shared<FunctionNode>(function->name);
+            function_node->setNullsAction(function->nulls_action);
 
             if (function->parameters)
             {

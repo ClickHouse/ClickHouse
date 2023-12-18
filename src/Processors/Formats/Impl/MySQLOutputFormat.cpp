@@ -67,17 +67,17 @@ void MySQLOutputFormat::consume(Chunk chunk)
 {
     if (!use_binary_result_set)
     {
-        for (size_t i = 0; i < chunk.getNumRows(); ++i)
+        for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
-            ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), static_cast<int>(i));
+            ProtocolText::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), row);
             packet_endpoint->sendPacket(row_packet);
         }
     }
     else
     {
-        for (size_t i = 0; i < chunk.getNumRows(); ++i)
+        for (size_t row = 0; row < chunk.getNumRows(); ++row)
         {
-            ProtocolBinary::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), static_cast<int>(i));
+            ProtocolBinary::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), row);
             packet_endpoint->sendPacket(row_packet);
         }
     }

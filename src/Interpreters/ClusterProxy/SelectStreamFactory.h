@@ -6,7 +6,6 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/StorageSnapshot.h>
 
 namespace DB
@@ -80,15 +79,6 @@ public:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled);
-
-    struct ShardPlans
-    {
-        /// If a shard has local replicas this won't be nullptr
-        std::unique_ptr<QueryPlan> local_plan;
-
-        /// Contains several steps to read from all remote replicas
-        std::unique_ptr<QueryPlan> remote_plan;
-    };
 
     const Block header;
     const ColumnsDescriptionByShardNum objects_by_shard;

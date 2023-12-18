@@ -87,3 +87,4 @@ QUERY id: 0
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: a, result_type: Int32, source_id: 3
           CONSTANT id: 8, constant_value: UInt64_2, constant_value_type: UInt8
+1

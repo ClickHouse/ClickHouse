@@ -208,8 +208,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     {
         if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
         {
-            String dummy;
-            if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
+            if (storage.findReplicaHavingCoveringPart(entry.new_part_name, true))
             {
                 LOG_DEBUG(log, "Merge of part {} finished by some other replica, will fetch merged part", entry.new_part_name);
                 /// We found covering part, no checks for missing part.
@@ -259,7 +258,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                     .part_log_writer = {}
                 };
             }
-            else if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false, dummy).empty())
+            else if (storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false))
             {
                 /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually committed from other replica
                 /// and exclusive zero copy lock will be released. We will take the lock and execute merge one more time, while it was possible just to download the part from other replica.
@@ -313,7 +312,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             reserved_space,
             entry.deduplicate,
             entry.deduplicate_by_columns,
-            entry.cleanup,
             storage.merging_params,
             NO_TRANSACTION_PTR);
 
@@ -357,6 +355,13 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 
             ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
+            Strings files_with_size;
+            for (const auto & file : part->getFilesChecksums())
+            {
+                files_with_size.push_back(fmt::format("{}: {} ({})",
+                    file.first, file.second.file_size, getHexUIntLowercase(file.second.file_hash)));
+            }
+
             LOG_ERROR(log,
                 "{}. Data after merge is not byte-identical to data on another replicas. There could be several reasons:"
                 " 1. Using newer version of compression library after server update."
@@ -368,8 +373,10 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
                 " 7. Manual modification of source data after server startup."
                 " 8. Manual modification of checksums stored in ZooKeeper."
                 " 9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas."
-                " We will download merged part from replica to force byte-identical result.",
-                getCurrentExceptionMessage(false));
+                " We will download merged part from replica to force byte-identical result."
+                " List of files in local parts:\n{}",
+                getCurrentExceptionMessage(false),
+                fmt::join(files_with_size, "\n"));
 
             write_part_log(ExecutionStatus::fromCurrentException("", true));
 

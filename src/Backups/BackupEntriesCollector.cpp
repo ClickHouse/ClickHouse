@@ -20,6 +20,12 @@
 
 namespace fs = std::filesystem;
 
+namespace ProfileEvents
+{
+    extern const Event BackupEntriesCollectorMicroseconds;
+    extern const Event BackupEntriesCollectorForTablesDataMicroseconds;
+    extern const Event BackupEntriesCollectorRunPostTasksMicroseconds;
+}
 
 namespace DB
 {
@@ -82,7 +88,8 @@ BackupEntriesCollector::BackupEntriesCollector(
     const BackupSettings & backup_settings_,
     std::shared_ptr<IBackupCoordination> backup_coordination_,
     const ReadSettings & read_settings_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    ThreadPool & threadpool_)
     : backup_query_elements(backup_query_elements_)
     , backup_settings(backup_settings_)
     , backup_coordination(backup_coordination_)
@@ -101,6 +108,7 @@ BackupEntriesCollector::BackupEntriesCollector(
         context->getSettingsRef().backup_restore_keeper_max_retries,
         context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
         context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms)
+    , threadpool(threadpool_)
 {
 }
 
@@ -108,6 +116,8 @@ BackupEntriesCollector::~BackupEntriesCollector() = default;
 
 BackupEntries BackupEntriesCollector::run()
 {
+    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupEntriesCollectorMicroseconds);
+
     /// run() can be called onle once.
     if (!current_stage.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Already making backup entries");
@@ -133,11 +143,19 @@ BackupEntries BackupEntriesCollector::run()
 
     /// Make backup entries for the data of the found tables.
     setStage(Stage::EXTRACTING_DATA_FROM_TABLES);
-    makeBackupEntriesForTablesData();
+
+    {
+        auto timer2 = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupEntriesCollectorForTablesDataMicroseconds);
+        makeBackupEntriesForTablesData();
+    }
 
     /// Run all the tasks added with addPostCollectingTask().
     setStage(Stage::RUNNING_POST_TASKS);
-    runPostTasks();
+
+    {
+        auto timer2 = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupEntriesCollectorRunPostTasksMicroseconds);
+        runPostTasks();
+    }
 
     /// No more backup entries or tasks are allowed after this point.
 
@@ -433,17 +451,25 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         }
         catch (...)
         {
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Couldn't get a create query for database {}", database_name);
+            /// Probably the database has been just removed.
+            if (throw_if_database_not_found)
+                throw;
+            LOG_WARNING(log, "Couldn't get a create query for database {}", backQuoteIfNeed(database_name));
+            return;
+        }
+
+        auto * create = create_database_query->as<ASTCreateQuery>();
+        if (create->getDatabase() != database_name)
+        {
+            /// Probably the database has been just renamed. Use the older name for backup to keep the backup consistent.
+            LOG_WARNING(log, "Got a create query with unexpected name {} for database {}",
+                        backQuoteIfNeed(create->getDatabase()), backQuoteIfNeed(database_name));
+            create_database_query = create_database_query->clone();
+            create = create_database_query->as<ASTCreateQuery>();
+            create->setDatabase(database_name);
         }
 
         database_info.create_database_query = create_database_query;
-        const auto & create = create_database_query->as<const ASTCreateQuery &>();
-
-        if (create.getDatabase() != database_name)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                            "Got a create query with unexpected name {} for database {}",
-                            backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(database_name));
-
         String new_database_name = renaming_map.getNewDatabaseName(database_name);
         database_info.metadata_path_in_backup = root_path_in_backup / "metadata" / (escapeForFileName(new_database_name) + ".sql");
     }
@@ -564,26 +590,34 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     }
 
     std::unordered_set<String> found_table_names;
-    for (const auto & db_table : db_tables)
+    for (auto & db_table : db_tables)
     {
-        const auto & create_table_query = db_table.first;
-        const auto & create = create_table_query->as<const ASTCreateQuery &>();
-        found_table_names.emplace(create.getTable());
+        auto create_table_query = db_table.first;
+        auto * create = create_table_query->as<ASTCreateQuery>();
+        found_table_names.emplace(create->getTable());
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
         {
-            if (!create.temporary)
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+            if (!create->temporary)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Got a non-temporary create query for {}",
-                                tableNameWithTypeToString(database_name, create.getTable(), false));
+                                tableNameWithTypeToString(database_name, create->getTable(), false));
+            }
         }
         else
         {
-            if (create.getDatabase() != database_name)
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                                "Got a create query with unexpected database name {} for {}",
-                                backQuoteIfNeed(create.getDatabase()),
-                                tableNameWithTypeToString(database_name, create.getTable(), false));
+            if (create->getDatabase() != database_name)
+            {
+                /// Probably the table has been just renamed. Use the older name for backup to keep the backup consistent.
+                LOG_WARNING(log, "Got a create query with unexpected database name {} for {}",
+                            backQuoteIfNeed(create->getDatabase()),
+                            tableNameWithTypeToString(database_name, create->getTable(), false));
+                create_table_query = create_table_query->clone();
+                create = create_table_query->as<ASTCreateQuery>();
+                create->setDatabase(database_name);
+                db_table.first = create_table_query;
+            }
         }
     }
 
@@ -738,8 +772,20 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
+    std::vector<std::future<void>> futures;
     for (const auto & table_name : table_infos | boost::adaptors::map_keys)
-        makeBackupEntriesForTableData(table_name);
+    {
+        futures.push_back(scheduleFromThreadPool<void>([&]()
+        {
+            makeBackupEntriesForTableData(table_name);
+        }, threadpool, "BackupCollect"));
+    }
+    /// Wait for all tasks.
+    for (auto & future : futures)
+        future.wait();
+    /// Make sure there is no exception.
+    for (auto & future : futures)
+        future.get();
 }
 
 void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)
@@ -775,20 +821,28 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
     }
 }
 
-void BackupEntriesCollector::addBackupEntry(const String & file_name, BackupEntryPtr backup_entry)
+void BackupEntriesCollector::addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry)
 {
     if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding backup entries is not allowed");
     backup_entries.emplace_back(file_name, backup_entry);
 }
 
+void BackupEntriesCollector::addBackupEntry(const String & file_name, BackupEntryPtr backup_entry)
+{
+    std::lock_guard lock(mutex);
+    addBackupEntryUnlocked(file_name, backup_entry);
+}
+
 void BackupEntriesCollector::addBackupEntry(const std::pair<String, BackupEntryPtr> & backup_entry)
 {
-    addBackupEntry(backup_entry.first, backup_entry.second);
+    std::lock_guard lock(mutex);
+    addBackupEntryUnlocked(backup_entry.first, backup_entry.second);
 }
 
 void BackupEntriesCollector::addBackupEntries(const BackupEntries & backup_entries_)
 {
+    std::lock_guard lock(mutex);
     if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of backup entries is not allowed");
     insertAtEnd(backup_entries, backup_entries_);
@@ -796,6 +850,7 @@ void BackupEntriesCollector::addBackupEntries(const BackupEntries & backup_entri
 
 void BackupEntriesCollector::addBackupEntries(BackupEntries && backup_entries_)
 {
+    std::lock_guard lock(mutex);
     if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of backup entries is not allowed");
     insertAtEnd(backup_entries, std::move(backup_entries_));
@@ -803,6 +858,7 @@ void BackupEntriesCollector::addBackupEntries(BackupEntries && backup_entries_)
 
 void BackupEntriesCollector::addPostTask(std::function<void()> task)
 {
+    std::lock_guard lock(mutex);
     if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of post tasks is not allowed");
     post_tasks.push(std::move(task));
@@ -824,6 +880,7 @@ void BackupEntriesCollector::runPostTasks()
 
 size_t BackupEntriesCollector::getAccessCounter(AccessEntityType type)
 {
+    std::lock_guard lock(mutex);
     access_counters.resize(static_cast<size_t>(AccessEntityType::MAX));
     return access_counters[static_cast<size_t>(type)]++;
 }

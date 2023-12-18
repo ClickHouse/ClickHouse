@@ -132,6 +132,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_auto_increment{"AUTO_INCREMENT"};
     ParserKeyword s_comment{"COMMENT"};
     ParserKeyword s_codec{"CODEC"};
+    ParserKeyword s_stat{"STATISTIC"};
     ParserKeyword s_ttl{"TTL"};
     ParserKeyword s_remove{"REMOVE"};
     ParserKeyword s_type{"TYPE"};
@@ -143,6 +144,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserLiteral literal_parser;
     ParserCodec codec_parser;
     ParserCollation collation_parser;
+    ParserStatisticType stat_type_parser;
     ParserExpression expression_parser;
     ParserSetQuery settings_parser(true);
 
@@ -180,6 +182,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr comment_expression;
     ASTPtr codec_expression;
     ASTPtr per_column_settings;
+    ASTPtr stat_type_expression;
     ASTPtr ttl_expression;
     ASTPtr collation_expression;
     bool primary_key_specifier = false;
@@ -305,6 +308,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
     }
 
+    if (s_stat.ignore(pos, expected))
+    {
+        if (!stat_type_parser.parse(pos, stat_type_expression, expected))
+            return false;
+    }
+
     if (s_ttl.ignore(pos, expected))
     {
         if (!expression_parser.parse(pos, ttl_expression, expected))
@@ -372,6 +381,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(per_column_settings));
     }
 
+    if (stat_type_expression)
+    {
+        column_declaration->stat_type = stat_type_expression;
+        column_declaration->children.push_back(std::move(stat_type_expression));
+    }
+
     if (ttl_expression)
     {
         column_declaration->ttl = ttl_expression;
@@ -417,6 +432,16 @@ public:
 
 protected:
     const char * getName() const override { return "index declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserStatisticDeclaration : public IParserBase
+{
+public:
+    ParserStatisticDeclaration() = default;
+
+protected:
+    const char * getName() const override { return "statistics declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

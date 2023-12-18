@@ -1,5 +1,6 @@
 #include <Interpreters/SessionLog.h>
 
+#include <base/getFQDNOrHostName.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
@@ -89,9 +90,10 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSH_KEY),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::HTTP),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 9);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 10);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -119,6 +121,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
 
     return
     {
+        {"hostname", lc_string_datatype},
         {"type", std::move(event_type)},
         {"auth_id", std::make_shared<DataTypeUUID>()},
         {"session_id", std::make_shared<DataTypeString>()},
@@ -155,6 +158,7 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
 
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(type);
     columns[i++]->insert(auth_id);
     columns[i++]->insert(session_id);

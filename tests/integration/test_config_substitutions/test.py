@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -29,6 +30,19 @@ node6 = cluster.add_instance(
         "INCLUDE_FROM_ENV": "/etc/clickhouse-server/config.d/include_from_source.xml"
     },
     main_configs=["configs/include_from_source.xml"],
+)
+node7 = cluster.add_instance(
+    "node7",
+    user_configs=[
+        "configs/000-config_with_env_subst.xml",
+        "configs/010-env_subst_override.xml",
+    ],
+    env_variables={
+        # overridden with 424242
+        "MAX_QUERY_SIZE": "121212",
+        "MAX_THREADS": "2",
+    },
+    instance_env_variables=True,
 )
 
 
@@ -78,6 +92,69 @@ def test_config(start_cluster):
         node6.query("select value from system.settings where name = 'max_query_size'")
         == "99999\n"
     )
+    assert (
+        node7.query("select value from system.settings where name = 'max_query_size'")
+        == "424242\n"
+    )
+    assert (
+        node7.query("select value from system.settings where name = 'max_threads'")
+        == "2\n"
+    )
+
+
+def test_config_invalid_overrides(start_cluster):
+    node7.replace_config(
+        "/etc/clickhouse-server/users.d/000-config_with_env_subst.xml",
+        """
+<clickhouse>
+  <profiles>
+    <default>
+        <max_query_size from_env="MAX_QUERY_SIZE" />
+        <max_threads from_env="MAX_THREADS">100</max_threads>
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+
+      <include incl="users_1" />
+      <include incl="users_2" />
+  </users>
+</clickhouse>
+""",
+    )
+    with pytest.raises(
+        QueryRuntimeException,
+        match="Failed to preprocess config '/etc/clickhouse-server/users.xml': Exception: Element <max_threads> has value and does not have 'replace' attribute, can't process from_env substitution",
+    ):
+        node7.query("SYSTEM RELOAD CONFIG")
+    node7.replace_config(
+        "/etc/clickhouse-server/users.d/000-config_with_env_subst.xml",
+        """
+<clickhouse>
+  <profiles>
+    <default>
+        <max_query_size from_env="MAX_QUERY_SIZE" />
+        <max_threads replace="1" from_env="MAX_THREADS">1</max_threads>
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+
+      <include incl="users_1" />
+      <include incl="users_2" />
+  </users>
+</clickhouse>
+""",
+    )
+    node7.query("SYSTEM RELOAD CONFIG")
 
 
 def test_include_config(start_cluster):

@@ -43,12 +43,12 @@ RestoreCoordinationRemote::RestoreCoordinationRemote(
             if (my_is_internal)
             {
                 String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
-                auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
 
-                if (code == Coordination::Error::ZNODEEXISTS)
-                    zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
-                else if (code != Coordination::Error::ZOK)
-                    throw zkutil::KeeperException::fromPath(code, alive_node_path);
+                /// Delete the ephemeral node from the previous connection so we don't have to wait for keeper to do it automatically.
+                zk->tryRemove(alive_node_path);
+
+                zk->createAncestors(alive_node_path);
+                zk->create(alive_node_path, "", zkutil::CreateMode::Ephemeral);
             }
         })
 {
@@ -89,6 +89,7 @@ void RestoreCoordinationRemote::createRootNodes()
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_tables_data_acquired", "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_access_storages_acquired", "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_sql_objects_acquired", "", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/keeper_map_tables", "", zkutil::CreateMode::Persistent));
             ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/table_uuids", "", zkutil::CreateMode::Persistent));
             zk->tryMulti(ops, responses);
         });
@@ -232,6 +233,35 @@ bool RestoreCoordinationRemote::acquireReplicatedSQLObjects(const String & loade
             result =  zk->get(path) == toString(current_host_index);
         });
     return result;
+}
+
+bool RestoreCoordinationRemote::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id)
+{
+    bool lock_acquired = false;
+    auto holder = with_retries.createRetriesControlHolder("acquireInsertingDataForKeeperMap");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+
+            /// we need to remove leading '/' from root_zk_path
+            auto normalized_root_zk_path = root_zk_path.substr(1);
+            std::string restore_lock_path = fs::path(zookeeper_path) / "keeper_map_tables" / escapeForFileName(normalized_root_zk_path);
+            zk->createAncestors(restore_lock_path);
+            auto code = zk->tryCreate(restore_lock_path, table_unique_id, zkutil::CreateMode::Persistent);
+
+            if (code == Coordination::Error::ZOK)
+            {
+                lock_acquired = true;
+                return;
+            }
+
+            if (code == Coordination::Error::ZNODEEXISTS)
+                lock_acquired = table_unique_id == zk->get(restore_lock_path);
+            else
+                zkutil::KeeperException::fromPath(code, restore_lock_path);
+        });
+    return lock_acquired;
 }
 
 void RestoreCoordinationRemote::generateUUIDForTable(ASTCreateQuery & create_query)

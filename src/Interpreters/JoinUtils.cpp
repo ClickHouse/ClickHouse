@@ -120,19 +120,11 @@ bool canBecomeNullable(const DataTypePtr & type)
     return can_be_inside;
 }
 
-bool isNullable(const DataTypePtr & type)
-{
-    bool is_nullable = type->isNullable();
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-        is_nullable |= low_cardinality_type->getDictionaryType()->isNullable();
-    return is_nullable;
-}
-
 /// Add nullability to type.
 /// Note: LowCardinality(T) transformed to LowCardinality(Nullable(T))
 DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 {
-    if (isNullable(type))
+    if (isNullableOrLowCardinalityNullable(type))
         return type;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
@@ -318,20 +310,6 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
         auto & column = block.getByName(column_name).column;
         column = materializeColumn(column);
         ptrs.push_back(column.get());
-    }
-
-    return ptrs;
-}
-
-ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names)
-{
-    ColumnPtrMap ptrs;
-    ptrs.reserve(names.size());
-
-    for (const auto & column_name : names)
-    {
-        ColumnPtr column = block.getByName(column_name).column;
-        ptrs[column_name] = materializeColumn(column);
     }
 
     return ptrs;

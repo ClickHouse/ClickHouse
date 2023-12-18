@@ -37,7 +37,8 @@ namespace ErrorCodes
 }
 
 /// A left-closed and right-open interval representing the preimage of a function.
-using RangeOrNull = std::optional<std::pair<Field, Field>>;
+using FieldInterval = std::pair<Field, Field>;
+using OptionalFieldInterval = std::optional<FieldInterval>;
 
 /// The simplest executable object.
 /// Motivation:
@@ -297,7 +298,7 @@ public:
     /** Get the preimage of a function in the form of a left-closed and right-open interval. Call only if hasInformationAboutPreimage.
       * std::nullopt might be returned if the point (a single value) is invalid for this function.
       */
-    virtual RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
+    virtual OptionalFieldInterval getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
     }
@@ -498,7 +499,7 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
     }
-    virtual RangeOrNull getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
+    virtual OptionalFieldInterval getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
     }

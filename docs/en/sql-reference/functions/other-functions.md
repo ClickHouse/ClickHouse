@@ -628,6 +628,8 @@ SELECT
     formatReadableSize(filesize_bytes) AS filesize
 ```
 
+Alias: `FORMAT_BYTES`.
+
 ``` text
 ┌─filesize_bytes─┬─filesize───┐
 │              1 │ 1.00 B     │
@@ -1556,7 +1558,7 @@ initializeAggregation (aggregate_function, arg1, arg2, ..., argN)
 
 - Result of aggregation for every row passed to the function.
 
-The return type is the same as the return type of function, that `initializeAgregation` takes as first argument.
+The return type is the same as the return type of function, that `initializeAggregation` takes as first argument.
 
 **Example**
 
@@ -2754,4 +2756,78 @@ message Root
     bytes column1 = 1;
     uint32 column2 = 2;
 }
+```
+
+## formatQuery
+
+Returns a formatted, possibly multi-line, version of the given SQL query.
+
+Throws an exception if the query is not well-formed. To return `NULL` instead, function `formatQueryOrNull()` may be used.
+
+**Syntax**
+
+```sql
+formatQuery(query)
+formatQueryOrNull(query)
+```
+
+**Arguments**
+
+- `query` - The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- The formatted query. [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3');
+```
+
+Result:
+
+```result
+┌─formatQuery('select a,    b FRom tab WHERE a > 3 and  b < 3')─┐
+│ SELECT
+    a,
+    b
+FROM tab
+WHERE (a > 3) AND (b < 3)            │
+└───────────────────────────────────────────────────────────────┘
+```
+
+## formatQuerySingleLine
+
+Like formatQuery() but the returned formatted string contains no line breaks.
+
+Throws an exception if the query is not well-formed. To return `NULL` instead, function `formatQuerySingleLineOrNull()` may be used.
+
+**Syntax**
+
+```sql
+formatQuerySingleLine(query)
+formatQuerySingleLineOrNull(query)
+```
+
+**Arguments**
+
+- `query` - The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)
+
+**Returned value**
+
+- The formatted query. [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');
+```
+
+Result:
+
+```result
+┌─formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3')─┐
+│ SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```

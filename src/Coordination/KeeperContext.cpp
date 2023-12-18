@@ -3,6 +3,7 @@
 #include <Coordination/Defines.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
+#include <IO/S3/Credentials.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Coordination/KeeperConstants.h>
 #include <Common/logger_useful.h>
@@ -35,6 +36,31 @@ KeeperContext::KeeperContext(bool standalone_keeper_)
 void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_)
 {
     dispatcher = dispatcher_;
+
+    if (config.hasProperty("keeper_server.availability_zone"))
+    {
+        auto keeper_az = config.getString("keeper_server.availability_zone.value", "");
+        const auto auto_detect_for_cloud = config.getBool("keeper_server.availability_zone.enable_auto_detection_on_cloud", false);
+        if (keeper_az.empty() && auto_detect_for_cloud)
+        {
+            try
+            {
+                keeper_az = DB::S3::getRunningAvailabilityZone();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+        if (!keeper_az.empty())
+        {
+            system_nodes_with_data[keeper_availability_zone_path] = keeper_az;
+            LOG_INFO(&Poco::Logger::get("KeeperContext"), "Initialize the KeeperContext with availability zone: '{}'", keeper_az);
+        }
+    }
+
+    updateKeeperMemorySoftLimit(config);
+
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
@@ -45,7 +71,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 namespace
 {
 
-bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::string & disk_config_prefix)
+bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::string & disk_config_prefix, const std::string &)
 {
     const auto disk_type = config.getString(disk_config_prefix + ".type", "local");
 
@@ -349,6 +375,12 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
     }
 
     feature_flags.logFlags(&Poco::Logger::get("KeeperContext"));
+}
+
+void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.hasProperty("keeper_server.max_memory_usage_soft_limit"))
+        memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
 }
 
 }

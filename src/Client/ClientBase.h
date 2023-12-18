@@ -58,8 +58,6 @@ enum ProgressOption
 ProgressOption toProgressOption(std::string progress);
 std::istream& operator>> (std::istream & in, ProgressOption & progress);
 
-void interruptSignalHandler(int signum);
-
 class InternalTextLogs;
 class WriteBufferFromFileDescriptor;
 
@@ -184,7 +182,10 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    void initTtyBuffer(ProgressOption progress);
+    /// Adjust some settings after command line options and config had been processed.
+    void adjustSettings();
+
+    void initTTYBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -211,6 +212,8 @@ protected:
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     bool stderr_is_a_tty = false; /// stderr is a terminal.
     uint64_t terminal_width = 0;
+
+    String pager;
 
     String format; /// Query results output format.
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
@@ -272,21 +275,6 @@ protected:
     size_t processed_rows = 0; /// How many rows have been read or written.
     bool print_num_processed_rows = false; /// Whether to print the number of processed rows at
 
-    enum class PartialResultMode: UInt8
-    {
-        /// Query doesn't show partial result before the first block with 0 rows.
-        /// The first block with 0 rows initializes the output table format using its header.
-        NotInit,
-
-        /// Query shows partial result after the first and before the second block with 0 rows.
-        /// The second block with 0 rows indicates that that receiving blocks with partial result has been completed and next blocks will be with the full result.
-        Active,
-
-        /// Query doesn't show partial result at all.
-        Inactive,
-    };
-    PartialResultMode partial_result_mode = PartialResultMode::Inactive;
-
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
     /// return code in batch mode.
@@ -334,7 +322,8 @@ protected:
 
     bool cancelled = false;
 
-    bool logging_initialized = false;
+    /// Does log_comment has specified by user?
+    bool has_log_comment = false;
 };
 
 }
