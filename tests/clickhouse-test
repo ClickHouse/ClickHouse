@@ -288,8 +288,7 @@ def get_processlist_size(args):
                     count()
                 FROM 
                     FROM system.processes
-                    WHERE query NOT LIKE '%system.processes%'
-                ))
+                WHERE query NOT LIKE '%system.processes%'
                 FORMAT Vertical
                 """,
                 ).strip()
@@ -2475,7 +2474,7 @@ def main(args):
             except Exception as e:
                 print(
                     colored(
-                        "\nHung check failed, Failed to get processlist with stacktraces: " + str(e), args, "red", attrs=["bold"]
+                        "\nHung check failed. Failed to get processlist with stacktraces: " + str(e), args, "red", attrs=["bold"]
                     )
                 )
                 exit_code.value = 1

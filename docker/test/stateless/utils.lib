@@ -49,5 +49,3 @@ function timeout_with_logging() {
 }
 
 # vi: ft=bash
-
-}
