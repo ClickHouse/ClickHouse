@@ -113,7 +113,7 @@ std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
         auto workload_identity_credential = std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
         return std::make_unique<T>(url, workload_identity_credential);
     }
-    
+
     if (config.has(config_prefix + ".connection_string"))
     {
         String connection_str = config.getString(config_prefix + ".connection_string");
