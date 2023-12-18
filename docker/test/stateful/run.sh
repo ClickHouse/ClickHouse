@@ -78,7 +78,7 @@ function start()
             tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
             break
         fi
-        timeout 120 service clickhouse-server start
+        timeout_with_logging 120 service clickhouse-server start
         sleep 0.5
         counter=$((counter + 1))
     done
@@ -163,7 +163,7 @@ function run_tests()
 }
 
 export -f run_tests
-timeout "$MAX_RUN_TIME" bash -c run_tests ||:
+timeout_with_logging "$MAX_RUN_TIME" bash -c run_tests ||:
 
 echo "Files in current directory"
 ls -la ./
