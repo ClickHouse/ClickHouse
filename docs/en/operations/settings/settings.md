@@ -460,6 +460,12 @@ Possible values:
 
 Default value: 1048576.
 
+## http_make_head_request {#http-make-head-request}
+
+The `http_make_head_request` setting allows the execution of a `HEAD` request while reading data from HTTP to retrieve information about the file to be read, such as its size. Since it's enabled by default, it may be desirable to disable this setting in cases where the server does not support `HEAD` requests.
+
+Default value: `true`.
+
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 
 Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
