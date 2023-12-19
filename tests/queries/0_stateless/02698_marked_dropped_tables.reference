@@ -6,3 +6,71 @@ uuid	UUID
 engine	String					
 metadata_dropped_path	String					
 table_dropped_time	DateTime					
+default	25400_dropped_tables	all_1_1_0
+default	25400_dropped_tables	all_2_2_0
+partition	String					
+name	String					
+uuid	UUID					
+part_type	String					
+active	UInt8					
+marks	UInt64					
+rows	UInt64					
+bytes_on_disk	UInt64					
+data_compressed_bytes	UInt64					
+data_uncompressed_bytes	UInt64					
+primary_key_size	UInt64					
+marks_bytes	UInt64					
+secondary_indices_compressed_bytes	UInt64					
+secondary_indices_uncompressed_bytes	UInt64					
+secondary_indices_marks_bytes	UInt64					
+modification_time	DateTime					
+remove_time	DateTime					
+refcount	UInt32					
+min_date	Date					
+max_date	Date					
+min_time	DateTime					
+max_time	DateTime					
+partition_id	String					
+min_block_number	Int64					
+max_block_number	Int64					
+level	UInt32					
+data_version	UInt64					
+primary_key_bytes_in_memory	UInt64					
+primary_key_bytes_in_memory_allocated	UInt64					
+is_frozen	UInt8					
+database	String					
+table	String					
+engine	String					
+disk_name	String					
+path	String					
+hash_of_all_files	String					
+hash_of_uncompressed_files	String					
+uncompressed_hash_of_compressed_files	String					
+delete_ttl_info_min	DateTime					
+delete_ttl_info_max	DateTime					
+move_ttl_info.expression	Array(String)					
+move_ttl_info.min	Array(DateTime)					
+move_ttl_info.max	Array(DateTime)					
+default_compression_codec	String					
+recompression_ttl_info.expression	Array(String)					
+recompression_ttl_info.min	Array(DateTime)					
+recompression_ttl_info.max	Array(DateTime)					
+group_by_ttl_info.expression	Array(String)					
+group_by_ttl_info.min	Array(DateTime)					
+group_by_ttl_info.max	Array(DateTime)					
+rows_where_ttl_info.expression	Array(String)					
+rows_where_ttl_info.min	Array(DateTime)					
+rows_where_ttl_info.max	Array(DateTime)					
+projections	Array(String)					
+visible	UInt8					
+creation_tid	Tuple(UInt64, UInt64, UUID)					
+removal_tid_lock	UInt64					
+removal_tid	Tuple(UInt64, UInt64, UUID)					
+creation_csn	UInt64					
+removal_csn	UInt64					
+has_lightweight_delete	UInt8					
+last_removal_attempt_time	DateTime					
+removal_state	String					
+bytes	UInt64	ALIAS	bytes_on_disk			
+marks_size	UInt64	ALIAS	marks_bytes			
+part_name	String	ALIAS	name			
