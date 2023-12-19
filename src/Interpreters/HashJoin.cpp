@@ -1121,7 +1121,10 @@ public:
         }
 #endif
         if (has_columns_to_add)
-            lazy_right_rows.emplace_back(RowRef(&block, row_num));
+        {
+            lazy_right_blocks.emplace_back(reinterpret_cast<UInt64>(&block));
+            lazy_right_rows.emplace_back(static_cast<UInt32>(row_num));
+        }
     }
 
     ColumnsWithTypeAndName getColumns(size_t offset, size_t length)
@@ -1135,24 +1138,25 @@ public:
             chassert(end <= lazy_right_rows.size());
             for (size_t j = offset; j < end; ++j)
             {
+                const Block * block = reinterpret_cast<const Block *>(lazy_right_blocks[j]);
                 auto row = lazy_right_rows[j];
-                if (!row.block)
+                if (!block)
                 {
                     type_name[i].type->insertDefaultInto(*col);
                     continue;
                 }
-                const auto & column_from_block = row.block->getByPosition(right_indexes[i]);
+                const auto & column_from_block = block->getByPosition(right_indexes[i]);
                 /// If it's joinGetOrNull, we need to wrap not-nullable columns in StorageJoin.
                 if (is_join_get)
                 {
                     if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get());
                         nullable_col && !column_from_block.column->isNullable())
                     {
-                        nullable_col->insertFromNotNullable(*column_from_block.column, row.row_num);
+                        nullable_col->insertFromNotNullable(*column_from_block.column, row);
                         continue;
                     }
                 }
-                col->insertFrom(*column_from_block.column, row.row_num);
+                col->insertFrom(*column_from_block.column, row);
             }
             res.emplace_back(ColumnWithTypeAndName(std::move(col), type_name[i].type, type_name[i].qualified_name));
         }
@@ -1162,7 +1166,10 @@ public:
     void appendDefaultRow()
     {
         if (has_columns_to_add)
-            lazy_right_rows.emplace_back(RowRef(nullptr, 0));
+        {
+            lazy_right_blocks.emplace_back(reinterpret_cast<UInt64>(nullptr));
+            lazy_right_rows.emplace_back(static_cast<UInt32>(0));
+        }
     }
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
@@ -1183,7 +1190,8 @@ private:
     const IColumn * left_asof_key = nullptr;
     // The default row is represented by an empty RowRef, so that fixed-size blocks can be generated sequentially,
     // default_count cannot represent the position of the row
-    std::vector<RowRef> lazy_right_rows;
+    PaddedPODArray<UInt64> lazy_right_blocks;
+    PaddedPODArray<UInt32> lazy_right_rows;
     bool has_columns_to_add;
 
     bool is_join_get;
