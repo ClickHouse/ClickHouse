@@ -54,3 +54,12 @@ ENGINE = FuzzJSON('{"pet":"rat"}', NULL); -- { serverError BAD_ARGUMENTS }
 DROP TABLE IF EXISTS 02919_test_table_invalid_col_type;
 
 --
+DROP TABLE IF EXISTS 02919_test_multi_col;
+CREATE TABLE 02919_test_multi_col
+(
+    str1 String,
+    str2 String
+) ENGINE = FuzzJSON('{"pet":"rat"}', 999);
+
+SELECT count(str1), count(str2) FROM (SELECT str1, str2 FROM 02919_test_multi_col LIMIT 100);
+DROP TABLE IF EXISTS 02919_test_multi_col;

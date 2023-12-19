@@ -481,7 +481,11 @@ protected:
     {
         Columns columns;
         columns.reserve(block_header.columns());
-        columns.emplace_back(createColumn());
+        for (const auto& col : block_header)
+        {
+            chassert(col.type->getTypeId() == TypeIndex::String);
+            columns.emplace_back(createColumn());
+        }
 
         return {std::move(columns), block_size};
     }
