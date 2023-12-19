@@ -9,7 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /**
@@ -263,7 +263,7 @@ public:
     bool hasOnlyNulls() const
     {
         /// If all variants are empty, we have only NULL values.
-        return std::all_of(variants.begin(), variants.end(), [](const auto & v){ return v->empty(); } );
+        return std::all_of(variants.begin(), variants.end(), [](const WrappedPtr & v){ return v->empty(); });
     }
 
     /// Check if local and global order is the same.
