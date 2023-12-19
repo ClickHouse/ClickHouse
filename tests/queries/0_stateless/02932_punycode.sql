@@ -14,7 +14,7 @@ SELECT punycodeEncode(toFixedString('two', 3)); -- { serverError ILLEGAL_COLUMN 
 
 SELECT '-- Regular cases';
 
--- The test cases originate from the idna unit tests:
+-- The test cases originate from the ada idna unit tests:
 --- https://github.com/ada-url/idna/blob/8cd03ef867dbd06be87bd61df9cf69aa1182ea21/tests/fixtures/utf8_punycode_alternating.txt
 
 SELECT 'a' AS str, punycodeEncode(str) AS puny, punycodeDecode(puny) AS original;

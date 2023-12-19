@@ -33,12 +33,10 @@ struct PunycodeEncodeImpl
         ColumnString::Offsets & res_offsets)
     {
         const size_t rows = offsets.size();
-        res_data.resize(rows * 64); /// just a guess
-        res_offsets.resize(rows);
+        res_data.reserve(data.size()); /// just a guess, assuming the input is all-ASCII
+        res_offsets.reserve(rows);
 
         size_t prev_offset = 0;
-        size_t prev_res_offset = 0;
-        size_t res_data_bytes_written = 0;
         std::u32string value_utf32;
         std::string value_puny;
         for (size_t row = 0; row < rows; ++row)
@@ -46,37 +44,22 @@ struct PunycodeEncodeImpl
             const char * value = reinterpret_cast<const char *>(&data[prev_offset]);
             const size_t value_length = offsets[row] - prev_offset - 1;
 
-            size_t value_utf32_length = ada::idna::utf32_length_from_utf8(value, value_length);
-            value_utf32.resize(value_utf32_length, '\0');
-
+            const size_t value_utf32_length = ada::idna::utf32_length_from_utf8(value, value_length);
+            value_utf32.resize(value_utf32_length);
             ada::idna::utf8_to_utf32(value, value_length, value_utf32.data());
 
-            bool ok = ada::idna::utf32_to_punycode(value_utf32, value_puny);
+            const bool ok = ada::idna::utf32_to_punycode(value_utf32, value_puny);
             if (!ok)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Internal error during Punycode encoding");
 
-            const size_t bytes_to_write = value_puny.size() + 1;
-            if (res_data_bytes_written + bytes_to_write > res_data.size())
-            {
-                size_t new_size = std::max(res_data.size() * 2, res_data_bytes_written + bytes_to_write);
-                res_data.resize(new_size);
-            }
-
-            std::memcpy(&res_data[res_data_bytes_written], value_puny.data(), value_puny.size());
-            res_data_bytes_written += value_puny.size();
-
-            res_data[res_data_bytes_written] = '\0';
-            res_data_bytes_written += 1;
-
-            res_offsets[row] = prev_res_offset + bytes_to_write;
+            res_data.insert(value_puny.c_str(), value_puny.c_str() + value_puny.size() + 1);
+            res_offsets.push_back(res_data.size());
 
             prev_offset = offsets[row];
-            prev_res_offset = res_offsets[row];
-            value_utf32.clear();
-            value_puny.clear();
-        }
 
-        res_data.resize(res_data_bytes_written);
+            value_utf32.clear();
+            value_puny.clear(); /// utf32_to_punycode() appends to its output string
+        }
     }
 
     [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
@@ -94,12 +77,10 @@ struct PunycodeDecodeImpl
         ColumnString::Offsets & res_offsets)
     {
         const size_t rows = offsets.size();
-        res_data.resize(rows * 64); /// just a guess
-        res_offsets.resize(rows);
+        res_data.reserve(data.size()); /// just a guess, assuming the input is all-ASCII
+        res_offsets.reserve(rows);
 
         size_t prev_offset = 0;
-        size_t prev_res_offset = 0;
-        size_t res_data_bytes_written = 0;
         std::u32string value_utf32;
         std::string value_utf8;
         for (size_t row = 0; row < rows; ++row)
@@ -107,38 +88,23 @@ struct PunycodeDecodeImpl
             const char * value = reinterpret_cast<const char *>(&data[prev_offset]);
             const size_t value_length = offsets[row] - prev_offset - 1;
 
-            std::string_view value_punycode(value, value_length);
-            bool ok = ada::idna::punycode_to_utf32(value_punycode, value_utf32);
+            const std::string_view value_punycode(value, value_length);
+            const bool ok = ada::idna::punycode_to_utf32(value_punycode, value_utf32);
             if (!ok)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Internal error during Punycode decoding");
 
-            size_t utf8_length = ada::idna::utf8_length_from_utf32(value_utf32.data(), value_utf32.size());
-            value_utf8.resize(utf8_length, '\0');
-
+            const size_t utf8_length = ada::idna::utf8_length_from_utf32(value_utf32.data(), value_utf32.size());
+            value_utf8.resize(utf8_length);
             ada::idna::utf32_to_utf8(value_utf32.data(), value_utf32.size(), value_utf8.data());
 
-            const size_t bytes_to_write = value_utf8.size() + 1;
-            if (res_data_bytes_written + bytes_to_write > res_data.size())
-            {
-                size_t new_size = std::max(res_data.size() * 2, res_data_bytes_written + bytes_to_write);
-                res_data.resize(new_size);
-            }
-
-            std::memcpy(&res_data[res_data_bytes_written], value_utf8.data(), value_utf8.size());
-            res_data_bytes_written += value_utf8.size();
-
-            res_data[res_data_bytes_written] = '\0';
-            res_data_bytes_written += 1;
-
-            res_offsets[row] = prev_res_offset + bytes_to_write;
+            res_data.insert(value_utf8.c_str(), value_utf8.c_str() + value_utf8.size() + 1);
+            res_offsets.push_back(res_data.size());
 
             prev_offset = offsets[row];
-            prev_res_offset = res_offsets[row];
-            value_utf32.clear();
+
+            value_utf32.clear(); /// punycode_to_utf32() appends to its output string
             value_utf8.clear();
         }
-
-        res_data.resize(res_data_bytes_written);
     }
 
     [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
