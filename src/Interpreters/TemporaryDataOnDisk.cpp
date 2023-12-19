@@ -60,17 +60,17 @@ TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, Cu
     , current_metric_scope(metric_scope)
 {}
 
-WriteBufferPtr TemporaryDataOnDisk::createRawStream(size_t max_file_size)
+std::unique_ptr<WriteBufferFromFileBase> TemporaryDataOnDisk::createRawStream(size_t max_file_size)
 {
     if (file_cache)
     {
         auto holder = createCacheFile(max_file_size);
-        return std::make_shared<WriteBufferToFileSegment>(std::move(holder));
+        return std::make_unique<WriteBufferToFileSegment>(std::move(holder));
     }
     else if (volume)
     {
         auto tmp_file = createRegularFile(max_file_size);
-        return std::make_shared<WriteBufferFromTemporaryFile>(std::move(tmp_file));
+        return std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDiskScope has no cache and no volume");
@@ -106,7 +106,10 @@ FileSegmentsHolderPtr TemporaryDataOnDisk::createCacheFile(size_t max_file_size)
 
     const auto key = FileSegment::Key::random();
     auto holder = file_cache->set(key, 0, std::max(10_MiB, max_file_size), CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true));
-    fs::create_directories(file_cache->getPathInLocalCache(key));
+
+    chassert(holder->size() == 1);
+    holder->back().getKeyMetadata()->createBaseDirectory();
+
     return holder;
 }
 

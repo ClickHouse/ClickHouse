@@ -19,6 +19,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
+    extern const Event AsynchronousReaderIgnoredBytes;
 
     extern const Event IOUringSQEsSubmitted;
     extern const Event IOUringSQEsResubmits;
@@ -76,7 +77,7 @@ IOUringReader::IOUringReader(uint32_t entries_)
 
     int ret = io_uring_queue_init_params(entries_, &ring, &params);
     if (ret < 0)
-        throwFromErrno("Failed initializing io_uring", ErrorCodes::IO_URING_INIT_FAILED, -ret);
+        ErrnoException::throwWithErrno(ErrorCodes::IO_URING_INIT_FAILED, -ret, "Failed initializing io_uring");
 
     cq_entries = params.cq_entries;
     ring_completion_monitor = std::make_unique<ThreadFromGlobalPool>([this] { monitorRing(); });
@@ -319,6 +320,7 @@ void IOUringReader::monitorRing()
         }
         else
         {
+            ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, enqueued.request.ignore);
             enqueued.promise.set_value(Result{ .size = total_bytes_read, .offset = enqueued.request.ignore });
             finalizeRequest(it);
         }

@@ -65,7 +65,6 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ContextPtr context) override;
 
     bool supportsParallelInsert() const override { return true; }

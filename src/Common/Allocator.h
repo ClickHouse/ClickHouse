@@ -118,8 +118,11 @@ public:
             void * new_buf = ::realloc(buf, new_size);
             if (nullptr == new_buf)
             {
-                DB::throwFromErrno(
-                    fmt::format("Allocator: Cannot realloc from {} to {}.", ReadableSize(old_size), ReadableSize(new_size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                throw DB::ErrnoException(
+                    DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY,
+                    "Allocator: Cannot realloc from {} to {}",
+                    ReadableSize(old_size),
+                    ReadableSize(new_size));
             }
 
             buf = new_buf;
@@ -164,7 +167,7 @@ private:
                 buf = ::malloc(size);
 
             if (nullptr == buf)
-                DB::throwFromErrno(fmt::format("Allocator: Cannot malloc {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot malloc {}.", ReadableSize(size));
         }
         else
         {
@@ -172,8 +175,8 @@ private:
             int res = posix_memalign(&buf, alignment, size);
 
             if (0 != res)
-                DB::throwFromErrno(fmt::format("Cannot allocate memory (posix_memalign) {}.", ReadableSize(size)),
-                    DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
+                throw DB::ErrnoException(
+                    DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate memory (posix_memalign) {}.", ReadableSize(size));
 
             if constexpr (clear_memory)
                 memset(buf, 0, size);

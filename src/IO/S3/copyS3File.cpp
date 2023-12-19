@@ -655,6 +655,7 @@ namespace
 
         void performCopy()
         {
+            LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
             if (!supports_multipart_copy || size <= upload_settings.max_single_operation_copy_size)
                 performSingleOperationCopy();
             else
