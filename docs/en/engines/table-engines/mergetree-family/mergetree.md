@@ -39,8 +39,8 @@ If you need to update rows frequently, we recommend using the [`ReplacingMergeTr
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [TTL expr1] [PRIMARY KEY],
-    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [TTL expr2] [PRIMARY KEY],
+    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY],
+    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY],
     ...
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
@@ -520,7 +520,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
 | [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                             | ✔           | ✔      | ✗          | ✗          | ✗            | ✗        |
 | [has](/docs/en/sql-reference/functions/array-functions#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            | ✔        |
-| [hasAny](/docs/en/sql-reference/functions/array-functions#function-hasAny)                                 | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
+| [hasAny](/docs/en/sql-reference/functions/array-functions#function-hasAny)                                 | ✗           | ✗      | ✔          | ✔          | ✔            | ✗        |
 | [hasAll](/docs/en/sql-reference/functions/array-functions#function-hasAll)                                 | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
 | hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            | ✔        |
 | hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            | ✔        |
@@ -865,10 +865,10 @@ Tags:
 - `disk` — a disk within a volume.
 - `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
 - `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
-- `prefer_not_to_merge` — Disables merging of data parts on this volume. When this setting is enabled, merging data on this volume is not allowed. This allows controlling how ClickHouse works with slow disks.
 - `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 - `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
+- `prefer_not_to_merge` — You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation). When this setting is enabled (don't do it), merging data on this volume is not allowed (which is bad). This allows (but you don't need it) controlling (if you want to control something, you're making a mistake) how ClickHouse works with slow disks (but ClickHouse knows better, so please don't use this setting).
 
 Configuration examples:
 
@@ -905,7 +905,6 @@ Configuration examples:
                 </main>
                 <external>
                     <disk>external</disk>
-                    <prefer_not_to_merge>true</prefer_not_to_merge>
                 </external>
             </volumes>
         </small_jbod_with_external_no_merges>
@@ -1358,3 +1357,33 @@ In this sample configuration:
 - `_partition_value` — Values (a tuple) of a `partition by` expression.
 - `_sample_factor` — Sample factor (from the query).
 - `_block_number` — Block number of the row, it is persisted on merges when `allow_experimental_block_number_column` is set to true.
+
+## Column Statistics (Experimental) {#column-statistics}
+
+The statistic declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistic = 1`.
+
+``` sql
+CREATE TABLE example_table
+(
+    a Int64 STATISTIC(tdigest),
+    b Float64
+)
+ENGINE = MergeTree
+ORDER BY a
+```
+
+We can also manipulate statistics with `ALTER` statements.
+
+```sql
+ALTER TABLE example_table ADD STATISTIC b TYPE tdigest;
+ALTER TABLE example_table DROP STATISTIC a TYPE tdigest;
+```
+
+These lightweight statistics aggregate information about distribution of values in columns.
+They can be used for query optimization when we enable `set allow_statistic_optimize = 1`.
+
+#### Available Types of Column Statistics {#available-types-of-column-statistics}
+
+-   `tdigest`
+
+    Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.

@@ -18,6 +18,7 @@
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ColumnsDescription.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
@@ -626,6 +627,31 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subc
                         getDataPartStorage().getFullPath());
 
     return *minimum_size_column;
+}
+
+Statistics IMergeTreeDataPart::loadStatistics() const
+{
+    const auto & metadata_snaphost = storage.getInMemoryMetadata();
+
+    auto total_statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snaphost.getColumns());
+
+    Statistics result;
+    for (auto & stat : total_statistics)
+    {
+        String file_name = stat->getFileName() + STAT_FILE_SUFFIX;
+        String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
+
+        if (!metadata_manager->exists(file_name))
+        {
+            LOG_INFO(storage.log, "Cannot find stats file {}", file_path);
+            continue;
+        }
+        auto stat_file = metadata_manager->read(file_name);
+        CompressedReadBuffer compressed_buffer(*stat_file);
+        stat->deserialize(compressed_buffer);
+        result.push_back(stat);
+    }
+    return result;
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)

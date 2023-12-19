@@ -6,7 +6,7 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
@@ -37,9 +37,9 @@ void backupUserDefinedSQLObjects(
             escapeForFileName(object_name) + ".sql", std::make_shared<BackupEntryFromMemory>(queryToString(create_object_query)));
 
     auto context = backup_entries_collector.getContext();
-    const auto & loader = context->getUserDefinedSQLObjectsLoader();
+    const auto & storage = context->getUserDefinedSQLObjectsStorage();
 
-    if (!loader.isReplicated())
+    if (!storage.isReplicated())
     {
         fs::path data_path_in_backup_fs{data_path_in_backup};
         for (const auto & [file_name, entry] : backup_entries)
@@ -47,7 +47,7 @@ void backupUserDefinedSQLObjects(
         return;
     }
 
-    String replication_id = loader.getReplicationID();
+    String replication_id = storage.getReplicationID();
 
     auto backup_coordination = backup_entries_collector.getBackupCoordination();
     backup_coordination->addReplicatedSQLObjectsDir(replication_id, object_type, data_path_in_backup);
@@ -80,9 +80,9 @@ std::vector<std::pair<String, ASTPtr>>
 restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_path_in_backup, UserDefinedSQLObjectType object_type)
 {
     auto context = restorer.getContext();
-    const auto & loader = context->getUserDefinedSQLObjectsLoader();
+    const auto & storage = context->getUserDefinedSQLObjectsStorage();
 
-    if (loader.isReplicated() && !restorer.getRestoreCoordination()->acquireReplicatedSQLObjects(loader.getReplicationID(), object_type))
+    if (storage.isReplicated() && !restorer.getRestoreCoordination()->acquireReplicatedSQLObjects(storage.getReplicationID(), object_type))
         return {}; /// Other replica is already restoring user-defined SQL objects.
 
     auto backup = restorer.getBackup();

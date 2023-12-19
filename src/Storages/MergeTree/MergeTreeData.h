@@ -349,9 +349,6 @@ public:
         /// For Collapsing and VersionedCollapsing mode.
         String sign_column;
 
-        /// For Replacing mode. Can be empty for Replacing.
-        String is_deleted_column;
-
         /// For Summing mode. If empty - columns_to_sum is determined automatically.
         Names columns_to_sum;
 
@@ -427,6 +424,8 @@ public:
     bool isMergeTree() const override { return true; }
 
     bool supportsPrewhere() const override { return true; }
+
+    ConditionEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const override;
 
     bool supportsFinal() const override;
 

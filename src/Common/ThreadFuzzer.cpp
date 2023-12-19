@@ -258,10 +258,10 @@ void ThreadFuzzer::setup() const
 
 #if defined(OS_LINUX)
     if (sigemptyset(&sa.sa_mask))
-        throwFromErrno("Failed to clean signal mask for thread fuzzer", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to clean signal mask for thread fuzzer");
 
     if (sigaddset(&sa.sa_mask, SIGPROF))
-        throwFromErrno("Failed to add signal to mask for thread fuzzer", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add signal to mask for thread fuzzer");
 #else
     // the two following functions always return 0 under mac
     sigemptyset(&sa.sa_mask);
@@ -269,7 +269,7 @@ void ThreadFuzzer::setup() const
 #endif
 
     if (sigaction(SIGPROF, &sa, nullptr))
-        throwFromErrno("Failed to setup signal handler for thread fuzzer", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for thread fuzzer");
 
     static constexpr UInt32 timer_precision = 1000000;
 
@@ -280,7 +280,7 @@ void ThreadFuzzer::setup() const
     struct itimerval timer = {.it_interval = interval, .it_value = interval};
 
     if (0 != setitimer(ITIMER_PROF, &timer, nullptr))
-        throwFromErrno("Failed to create profiling timer", ErrorCodes::CANNOT_CREATE_TIMER);
+        throw ErrnoException(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create profiling timer");
 }
 
 

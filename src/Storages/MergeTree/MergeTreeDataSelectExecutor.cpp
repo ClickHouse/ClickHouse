@@ -779,12 +779,12 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     if (!filter_dag)
         return {};
     auto sample = data.getSampleBlockWithVirtualColumns();
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(sample, filter_dag, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), sample);
     if (!dag)
         return {};
 
     auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
-    VirtualColumnUtils::filterBlockWithQuery(dag, virtual_columns_block, context);
+    VirtualColumnUtils::filterBlockWithDAG(dag, virtual_columns_block, context);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
 

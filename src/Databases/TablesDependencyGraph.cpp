@@ -699,22 +699,6 @@ std::vector<StorageID> TablesDependencyGraph::getTablesSortedByDependency() cons
 }
 
 
-std::vector<std::vector<StorageID>> TablesDependencyGraph::getTablesSortedByDependencyForParallel() const
-{
-    std::vector<std::vector<StorageID>> res;
-    std::optional<size_t> last_level;
-    for (const auto * node : getNodesSortedByLevel())
-    {
-        if (node->level != last_level)
-            res.emplace_back();
-        auto & table_ids = res.back();
-        table_ids.emplace_back(node->storage_id);
-        last_level = node->level;
-    }
-    return res;
-}
-
-
 void TablesDependencyGraph::log() const
 {
     if (nodes.empty())

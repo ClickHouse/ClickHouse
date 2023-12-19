@@ -12,6 +12,7 @@ RUN apt-get update \
         ripgrep \
         zstd \
         locales \
+        sudo \
         --yes --no-install-recommends
 
 # Sanitizer options for services (clickhouse-server)

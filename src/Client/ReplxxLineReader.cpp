@@ -6,6 +6,7 @@
 #include <IO/copyData.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <stdexcept>
 #include <chrono>
 #include <cerrno>
@@ -21,6 +22,7 @@
 #include <fstream>
 #include <filesystem>
 #include <fmt/format.h>
+#include <Common/quoteString.h>
 #include "config.h" // USE_SKIM
 
 #if USE_SKIM
@@ -94,7 +96,14 @@ int executeCommand(char * const argv[])
         throw std::runtime_error(fmt::format("Cannot waitpid {}: {}", pid, errnoToString()));
     } while (true);
 
-    return status;
+    if (WIFEXITED(status))
+        return WEXITSTATUS(status);
+    if (WIFSIGNALED(status))
+        throw std::runtime_error(fmt::format("Child process was terminated by signal {}", WTERMSIG(status)));
+    if (WIFSTOPPED(status))
+        throw std::runtime_error(fmt::format("Child process was stopped by signal {}", WSTOPSIG(status)));
+
+    throw std::runtime_error("Child process was not exited normally by unknown reason");
 }
 
 void writeRetry(int fd, const std::string & data)
@@ -504,22 +513,29 @@ void ReplxxLineReader::addToHistory(const String & line)
 
 void ReplxxLineReader::openEditor()
 {
-    TemporaryFile editor_file("clickhouse_client_editor_XXXXXX.sql");
-    editor_file.write(rx.get_state().text());
-    editor_file.close();
-
-    char * const argv[] = {editor.data(), editor_file.getPath().data(), nullptr};
     try
     {
-        if (executeCommand(argv) == 0)
+        TemporaryFile editor_file("clickhouse_client_editor_XXXXXX.sql");
+        editor_file.write(rx.get_state().text());
+        editor_file.close();
+
+        char * const argv[] = {editor.data(), editor_file.getPath().data(), nullptr};
+
+        int editor_exit_code = executeCommand(argv);
+        if (editor_exit_code == EXIT_SUCCESS)
         {
             const std::string & new_query = readFile(editor_file.getPath());
             rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
+        }
+        else
+        {
+            rx.print(fmt::format("Editor {} terminated unsuccessfully: {}\n", backQuoteIfNeed(editor), editor_exit_code).data());
         }
     }
     catch (const std::runtime_error & e)
     {
         rx.print(e.what());
+        rx.print("\n");
     }
 
     if (bracketed_paste_enabled)
