@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tags: long
+# Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # reset --log_comment

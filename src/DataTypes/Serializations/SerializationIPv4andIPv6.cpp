@@ -15,10 +15,10 @@ void SerializationIP<IPv>::deserializeText(DB::IColumn & column, DB::ReadBuffer 
     IPv x;
     readText(x, istr);
 
+    assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
+
     if (whole && !istr.eof())
         throwUnexpectedDataAfterParsedValue(column, istr, settings, TypeName<IPv>.data());
-
-    assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
 }
 
 template <typename IPv>
@@ -77,11 +77,10 @@ void SerializationIP<IPv>::deserializeTextJSON(DB::IColumn & column, DB::ReadBuf
     /// this code looks weird, but we want to throw specific exception to match original behavior...
     if (istr.eof())
         assertChar('"', istr);
+    assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
     if (*istr.position() != '"')
         throwUnexpectedDataAfterParsedValue(column, istr, settings, TypeName<IPv>.data());
     istr.ignore();
-
-    assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
 }
 
 template <typename IPv>

@@ -582,7 +582,10 @@ TEST(ColumnVariant, PermuteAndIndexOneColumnNoNulls)
     ASSERT_EQ((*permuted_column)[2].get<UInt64>(), 2);
 
     auto index = ColumnUInt64::create();
-    index->getData() = std::move(permutation);
+    index->getData().push_back(1);
+    index->getData().push_back(3);
+    index->getData().push_back(2);
+    index->getData().push_back(0);
     auto indexed_column = column->index(*index, 3);
     ASSERT_EQ(indexed_column->size(), 3);
     ASSERT_EQ((*indexed_column)[0].get<UInt64>(), 1);
