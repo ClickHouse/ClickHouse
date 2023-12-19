@@ -489,7 +489,7 @@ When using functions with response codes or `errno`, always check the result and
 
 ``` cpp
 if (0 != close(fd))
-    throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
+    throw ErrnoException(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file {}", file_name);
 ```
 
 You can use assert to check invariant in code.

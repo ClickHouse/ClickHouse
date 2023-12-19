@@ -9,27 +9,23 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-from clickhouse_helper import (
-    ClickHouseHelper,
-    prepare_tests_results_for_clickhouse,
-)
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import (
     RerunHelper,
     get_commit,
     post_commit_status,
     update_mergeable_check,
 )
-
+from docker_images_helper import get_docker_image, pull_image
 from env_helper import REPO_COPY, TEMP_PATH
 from get_robot_token import get_best_robot_token
-from github_helper import GitHub
 from git_helper import GIT_PREFIX, git_runner
+from github_helper import GitHub
 from pr_info import PRInfo
 from report import TestResults, read_test_results
 from s3_helper import S3Helper
 from ssh import SSHKey
 from stopwatch import Stopwatch
-from docker_images_helper import get_docker_image, pull_image
 from upload_result_helper import upload_results
 
 NAME = "Style Check"
@@ -125,6 +121,15 @@ def commit_push_staged(pr_info: PRInfo) -> None:
         git_runner(push_cmd)
 
 
+def checkout_last_ref(pr_info: PRInfo) -> None:
+    # Checkout the merge commit back to avoid special effects
+    assert pr_info.number
+    if not pr_info.head_name == pr_info.base_name:
+        # We can't push to forks, sorry folks
+        return
+    git_runner("git checkout -f -")
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("git_helper").setLevel(logging.DEBUG)
@@ -139,8 +144,6 @@ def main():
     pr_info = PRInfo()
     gh = GitHub(get_best_robot_token(), create_cache_dir=False)
     commit = get_commit(gh, pr_info.sha)
-    if args.push:
-        checkout_head(pr_info)
 
     atexit.register(update_mergeable_check, gh, pr_info, NAME)
 
@@ -163,6 +166,9 @@ def main():
         f"{image}"
     )
 
+    if args.push:
+        checkout_head(pr_info)
+
     logging.info("Is going to run the command: %s", cmd)
     subprocess.check_call(
         cmd,
@@ -171,6 +177,7 @@ def main():
 
     if args.push:
         commit_push_staged(pr_info)
+        checkout_last_ref(pr_info)
 
     state, description, test_results, additional_files = process_result(temp_path)
     ch_helper = ClickHouseHelper()

@@ -22,6 +22,8 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
+          fetch-depth: 0 # to get version
+          filter: tree:0
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -214,6 +216,7 @@ jobs:
       run_command: |
         python3 build_report_check.py "$CHECK_NAME"
   MarkReleaseReady:
+    if: ${{ !failure() && !cancelled() }}
     needs:
       - BuilderBinDarwin
       - BuilderBinDarwinAarch64

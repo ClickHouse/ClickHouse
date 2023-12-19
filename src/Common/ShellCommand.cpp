@@ -145,7 +145,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 #endif
 
     if (!real_vfork)
-        throwFromErrno("Cannot find symbol vfork in myself", ErrorCodes::CANNOT_DLSYM);
+        throw ErrnoException(ErrorCodes::CANNOT_DLSYM, "Cannot find symbol vfork in myself");
 
     PipeFDs pipe_stdin;
     PipeFDs pipe_stdout;
@@ -163,7 +163,7 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
 
     if (pid == -1)
-        throwFromErrno("Cannot vfork", ErrorCodes::CANNOT_FORK);
+        throw ErrnoException(ErrorCodes::CANNOT_FORK, "Cannot vfork");
 
     if (0 == pid)
     {
@@ -305,7 +305,7 @@ int ShellCommand::tryWait()
     while (waitpid(pid, &status, 0) < 0)
     {
         if (errno != EINTR)
-            throwFromErrno("Cannot waitpid", ErrorCodes::CANNOT_WAITPID);
+            throw ErrnoException(ErrorCodes::CANNOT_WAITPID, "Cannot waitpid");
     }
 
     LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);

@@ -13,13 +13,6 @@ on:  # yamllint disable-line rule:truthy
       - opened
     branches:
       - master
-    paths-ignore:
-      - '**.md'
-      - 'docker/docs/**'
-      - 'docs/**'
-      - 'utils/check-style/aspell-ignore/**'
-      - 'tests/ci/docs_check.py'
-      - '.github/workflows/docs_check.yml'
 ##########################################################################################
 ##################################### SMALL CHECKS #######################################
 ##########################################################################################

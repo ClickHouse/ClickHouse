@@ -1,6 +1,6 @@
-#include <Functions/UserDefined/createUserDefinedSQLObjectsLoader.h>
-#include <Functions/UserDefined/UserDefinedSQLObjectsLoaderFromDisk.h>
-#include <Functions/UserDefined/UserDefinedSQLObjectsLoaderFromZooKeeper.h>
+#include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsZooKeeperStorage.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-std::unique_ptr<IUserDefinedSQLObjectsLoader> createUserDefinedSQLObjectsLoader(const ContextMutablePtr & global_context)
+std::unique_ptr<IUserDefinedSQLObjectsStorage> createUserDefinedSQLObjectsStorage(const ContextMutablePtr & global_context)
 {
     const String zookeeper_path_key = "user_defined_zookeeper_path";
     const String disk_path_key = "user_defined_path";
@@ -33,12 +33,12 @@ std::unique_ptr<IUserDefinedSQLObjectsLoader> createUserDefinedSQLObjectsLoader(
                 zookeeper_path_key,
                 disk_path_key);
         }
-        return std::make_unique<UserDefinedSQLObjectsLoaderFromZooKeeper>(global_context, config.getString(zookeeper_path_key));
+        return std::make_unique<UserDefinedSQLObjectsZooKeeperStorage>(global_context, config.getString(zookeeper_path_key));
     }
 
     String default_path = fs::path{global_context->getPath()} / "user_defined/";
     String path = config.getString(disk_path_key, default_path);
-    return std::make_unique<UserDefinedSQLObjectsLoaderFromDisk>(global_context, path);
+    return std::make_unique<UserDefinedSQLObjectsDiskStorage>(global_context, path);
 }
 
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -9,10 +9,10 @@ namespace DB
 {
 
 /// Loads user-defined sql objects from a specified folder.
-class UserDefinedSQLObjectsLoaderFromDisk : public IUserDefinedSQLObjectsLoader
+class UserDefinedSQLObjectsDiskStorage : public UserDefinedSQLObjectsStorageBase
 {
 public:
-    UserDefinedSQLObjectsLoaderFromDisk(const ContextPtr & global_context_, const String & dir_path_);
+    UserDefinedSQLObjectsDiskStorage(const ContextPtr & global_context_, const String & dir_path_);
 
     void loadObjects() override;
 
@@ -20,17 +20,22 @@ public:
 
     void reloadObject(UserDefinedSQLObjectType object_type, const String & object_name) override;
 
-    bool storeObject(
+private:
+    bool storeObjectImpl(
+        const ContextPtr & current_context,
         UserDefinedSQLObjectType object_type,
         const String & object_name,
-        const IAST & create_object_query,
+        ASTPtr create_object_query,
         bool throw_if_exists,
         bool replace_if_exists,
         const Settings & settings) override;
 
-    bool removeObject(UserDefinedSQLObjectType object_type, const String & object_name, bool throw_if_not_exists) override;
+    bool removeObjectImpl(
+        const ContextPtr & current_context,
+        UserDefinedSQLObjectType object_type,
+        const String & object_name,
+        bool throw_if_not_exists) override;
 
-private:
     void createDirectory();
     void loadObjectsImpl();
     ASTPtr tryLoadObject(UserDefinedSQLObjectType object_type, const String & object_name);

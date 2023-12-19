@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -12,11 +12,11 @@ namespace DB
 {
 
 /// Loads user-defined sql objects from ZooKeeper.
-class UserDefinedSQLObjectsLoaderFromZooKeeper : public IUserDefinedSQLObjectsLoader
+class UserDefinedSQLObjectsZooKeeperStorage : public UserDefinedSQLObjectsStorageBase
 {
 public:
-    UserDefinedSQLObjectsLoaderFromZooKeeper(const ContextPtr & global_context_, const String & zookeeper_path_);
-    ~UserDefinedSQLObjectsLoaderFromZooKeeper() override;
+    UserDefinedSQLObjectsZooKeeperStorage(const ContextPtr & global_context_, const String & zookeeper_path_);
+    ~UserDefinedSQLObjectsZooKeeperStorage() override;
 
     bool isReplicated() const override { return true; }
     String getReplicationID() const override { return zookeeper_path; }
@@ -26,16 +26,21 @@ public:
     void reloadObjects() override;
     void reloadObject(UserDefinedSQLObjectType object_type, const String & object_name) override;
 
-    bool storeObject(
+private:
+    bool storeObjectImpl(
+        const ContextPtr & current_context,
         UserDefinedSQLObjectType object_type,
         const String & object_name,
-        const IAST & create_object_query,
+        ASTPtr create_object_query,
         bool throw_if_exists,
         bool replace_if_exists,
         const Settings & settings) override;
-    bool removeObject(UserDefinedSQLObjectType object_type, const String & object_name, bool throw_if_not_exists) override;
+    bool removeObjectImpl(
+        const ContextPtr & current_context,
+        UserDefinedSQLObjectType object_type,
+        const String & object_name,
+        bool throw_if_not_exists) override;
 
-private:
     void processWatchQueue();
 
     zkutil::ZooKeeperPtr getZooKeeper();
