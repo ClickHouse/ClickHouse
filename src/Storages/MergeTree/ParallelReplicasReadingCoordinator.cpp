@@ -223,13 +223,16 @@ void DefaultCoordinator::updateReadingState(InitialAllRangesAnnouncement announc
 
 void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
-    LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
+    if (stats[replica_number].is_unavailable == false)
+    {
+        LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
 
-    ++unavailable_replicas_count;
-    stats[replica_number].is_unavailable = true;
+        stats[replica_number].is_unavailable = true;
+        ++unavailable_replicas_count;
 
-    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
-        finalizeReadingState();
+        if (sent_initial_requests == replicas_count - unavailable_replicas_count)
+            finalizeReadingState();
+    }
 }
 
 void DefaultCoordinator::finalizeReadingState()
@@ -405,12 +408,13 @@ public:
 template <CoordinationMode mode>
 void InOrderCoordinator<mode>::markReplicaAsUnavailable(size_t replica_number)
 {
-    LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
+    if (stats[replica_number].is_unavailable == false)
+    {
+        LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
 
-    stats[replica_number].is_unavailable = true;
-    ++unavailable_replicas_count;
-
-    /// There is nothing to do else.
+        stats[replica_number].is_unavailable = true;
+        ++unavailable_replicas_count;
+    }
 }
 
 template <CoordinationMode mode>
@@ -577,11 +581,9 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
     std::lock_guard lock(mutex);
 
     if (!pimpl)
-    {
-        initialize();
-    }
-
-    return pimpl->markReplicaAsUnavailable(replica_number);
+        unavailable_nodes_registered_before_initialization.push_back(replica_number);
+    else
+        pimpl->markReplicaAsUnavailable(replica_number);
 }
 
 void ParallelReplicasReadingCoordinator::initialize()
@@ -598,8 +600,12 @@ void ParallelReplicasReadingCoordinator::initialize()
             pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::ReverseOrder>>(replicas_count);
             break;
     }
+
     if (progress_callback)
         pimpl->setProgressCallback(std::move(progress_callback));
+
+    for (const auto replica : unavailable_nodes_registered_before_initialization)
+        pimpl->markReplicaAsUnavailable(replica);
 }
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_) {}
