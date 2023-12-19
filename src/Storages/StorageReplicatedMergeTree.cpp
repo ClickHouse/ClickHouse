@@ -7438,6 +7438,8 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
     if (!mutation_entry)
         return CancellationCode::NotFound;
 
+    mutation_backoff_policy.removeFromFailedByVersion(static_cast<UInt64>(mutation_entry->alter_version));
+
     /// After this point no new part mutations will start and part mutations that still exist
     /// in the queue will be skipped.
 

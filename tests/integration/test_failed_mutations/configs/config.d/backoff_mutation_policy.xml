@@ -1,0 +1,3 @@
+<clickhouse>
+    <max_postpone_time_for_failed_mutations>60000</max_postpone_time_for_failed_mutations>
+</clickhouse>

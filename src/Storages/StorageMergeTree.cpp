@@ -4,7 +4,7 @@
 
 #include <optional>
 #include <ranges>
-
+#include <Poco/Timestamp.h>
 #include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Databases/IDatabase.h>
@@ -534,6 +534,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             MergeTreeMutationEntry & entry = it->second;
+            auto failed_part = result_part->parts.at(0);
             if (is_successful)
             {
                 if (!entry.latest_failed_part.empty() && result_part->part_info.contains(entry.latest_failed_part_info))
@@ -542,14 +543,16 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                     entry.latest_failed_part_info = MergeTreePartInfo();
                     entry.latest_fail_time = 0;
                     entry.latest_fail_reason.clear();
+                    mutation_backoff_policy.removePartFromFailed(failed_part->name);
                 }
             }
             else
             {
-                entry.latest_failed_part = result_part->parts.at(0)->name;
-                entry.latest_failed_part_info = result_part->parts.at(0)->info;
+                entry.latest_failed_part = failed_part->name;
+                entry.latest_failed_part_info = failed_part->info;
                 entry.latest_fail_time = time(nullptr);
                 entry.latest_fail_reason = exception_message;
+                mutation_backoff_policy.addPartMutationFailure(failed_part->name, sources_data_version + 1);
             }
         }
     }
@@ -815,6 +818,8 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
             current_mutations_by_version.erase(it);
         }
     }
+
+    mutation_backoff_policy.removeFromFailedByVersion(mutation_version);
 
     if (!to_kill)
         return CancellationCode::NotFound;
@@ -1176,6 +1181,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
     CurrentlyMergingPartsTaggerPtr tagger;
 
+    bool exist_posponed_failed_part = false;
     auto mutations_end_it = current_mutations_by_version.end();
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
@@ -1199,6 +1205,13 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
         TransactionID first_mutation_tid = mutations_begin_it->second.tid;
         MergeTreeTransactionPtr txn;
+
+        if (!mutation_backoff_policy.partCanBeMutated(part->name))
+        {
+            exist_posponed_failed_part = true;
+            LOG_DEBUG(log, "According to exponential backoff policy, do not perform mutations for the part {} yet. Put it aside.", part->name);
+            continue;
+        }
 
         if (!first_mutation_tid.isPrehistoric())
         {
@@ -1306,7 +1319,8 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn);
         }
     }
-
+    if (exist_posponed_failed_part)
+        mutation_wait_event.notify_all();
     return {};
 }
 

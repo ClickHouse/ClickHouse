@@ -35,7 +35,7 @@
 #include <Storages/PartitionCommands.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
-
+#include <Poco/Timestamp.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -1347,6 +1347,92 @@ protected:
         const DataPartsVector & source_parts,
         const MergeListEntry * merge_entry,
         std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters);
+
+    class PartMutationBackoffPolicy : public WithContext
+    {
+        struct PartMutationInfo
+        {
+            size_t retry_count = 0ul;
+            Poco::Timestamp latest_fail_time{};
+            UInt64 mutation_failure_version = 0ul;
+
+            Poco::Timestamp getNextMinExecutionTime() const
+            {
+                return  latest_fail_time +  (1 << retry_count) * 1000ul;
+            }
+        };
+
+        using DataPartsWithRetryInfo = std::unordered_map<String, PartMutationInfo>;
+        DataPartsWithRetryInfo failed_mutation_parts;
+        size_t max_pospone_power;
+        mutable std::mutex parts_info_lock;
+
+    public:
+        explicit PartMutationBackoffPolicy(ContextPtr global_context_)
+            : WithContext(global_context_)
+        {
+            size_t max_pospone_time_ms =  global_context_->getMaxPostponeTimeForFailedMutations();
+            if (max_pospone_time_ms == 0)
+                max_pospone_power = 0;
+            else
+                max_pospone_power = static_cast<size_t>(std::log2(max_pospone_time_ms));
+        }
+
+        void removeFromFailedByVersion(UInt64 mutation_version)
+        {
+            if (max_pospone_power == 0)
+                return;
+            std::unique_lock _lock(parts_info_lock);
+
+            for (auto failed_part_it = failed_mutation_parts.begin(); failed_part_it != failed_mutation_parts.end();)
+            {
+                if (failed_part_it->second.mutation_failure_version == mutation_version)
+                    failed_part_it = failed_mutation_parts.erase(failed_part_it);
+                else
+                    ++failed_part_it;
+            }
+        }
+
+        void removePartFromFailed(const String& part_name)
+        {
+            if (max_pospone_power == 0)
+                return;
+            std::unique_lock _lock(parts_info_lock);
+            failed_mutation_parts.erase(part_name);
+        }
+
+        void addPartMutationFailure (const String& part_name, UInt64 _mutation_failure_version)
+        {
+            if (max_pospone_power == 0)
+                return;
+            std::unique_lock _lock(parts_info_lock);
+            auto part_info_it = failed_mutation_parts.find(part_name);
+            if (part_info_it == failed_mutation_parts.end())
+            {
+                auto [it, success] = failed_mutation_parts.emplace(part_name, PartMutationInfo());
+                std::swap(it, part_info_it);
+            }
+            auto& part_info = part_info_it->second;
+            part_info.retry_count = std::min(max_pospone_power, part_info.retry_count + 1);
+            part_info.latest_fail_time = Poco::Timestamp();
+            part_info.mutation_failure_version = _mutation_failure_version;
+        }
+
+        bool partCanBeMutated(const String& part_name)
+        {
+            if (max_pospone_power == 0)
+                return true;
+            std::unique_lock _lock(parts_info_lock);
+            auto iter = failed_mutation_parts.find(part_name);
+            if (iter == failed_mutation_parts.end())
+                return true;
+
+            auto current_time = Poco::Timestamp();
+            return  current_time >= iter->second.getNextMinExecutionTime();
+        }
+    };
+    /// Contolls postponing logic for failed mutations.
+    PartMutationBackoffPolicy mutation_backoff_policy;
 
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
