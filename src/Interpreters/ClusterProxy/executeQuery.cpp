@@ -135,7 +135,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     }
 
     /// disable parallel replicas if cluster contains only shards with 1 replica
-    if (context->canUseParallelReplicas())
+    if (context->canUseTaskBasedParallelReplicas())
     {
         bool disable_parallel_replicas = true;
         for (const auto & shard : cluster.getShardsInfo())
@@ -265,7 +265,7 @@ void executeQuery(
         // decide for each shard if parallel reading from replicas should be enabled
         // according to settings and number of replicas declared per shard
         const auto & addresses = cluster->getShardsAddresses().at(i);
-        bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseParallelReplicas();
+        bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseTaskBasedParallelReplicas();
 
         stream_factory.createForShard(
             shard_info,
