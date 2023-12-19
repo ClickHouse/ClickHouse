@@ -25,6 +25,7 @@ static std::vector<std::pair<String, Int8>> getTypeEnumsAndValues()
     return std::vector<std::pair<String, Int8>>{
         {"Full",            static_cast<Int8>(RuntimeReloadType::FULL)},
         {"OnlyIncrease",    static_cast<Int8>(RuntimeReloadType::ONLY_INCREASE)},
+        {"OnlyDecrease",    static_cast<Int8>(RuntimeReloadType::ONLY_DECREASE)},
         {"No",              static_cast<Int8>(RuntimeReloadType::NO)},
     };
 }
