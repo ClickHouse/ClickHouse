@@ -33,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -434,8 +435,6 @@ REGISTER_FUNCTION(HashFixedStrings)
             .categories{"Hash"}},
         FunctionFactory::CaseSensitive);
 #    endif
-
-#endif
 }
-
+#endif
 }
