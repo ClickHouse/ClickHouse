@@ -4053,7 +4053,8 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
                     "2. File '{}' intended to force DROP {}\n"
                     "How to fix this:\n"
                     "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n"
-                    "2. Either create forcing file {} and make sure that ClickHouse has write permission for it.\n"
+                    "2. Either pass a bigger (or set to zero) max_[table/partition]_size_to_drop through query settings\n"
+                    "3. Either create forcing file {} and make sure that ClickHouse has write permission for it.\n"
                     "Example:\nsudo touch '{}' && sudo chmod 666 '{}'",
                     backQuoteIfNeed(database), backQuoteIfNeed(table),
                     size_str, max_size_to_drop_str,
@@ -4081,6 +4082,10 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
     checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
 }
 
+void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size, const size_t & max_table_size_to_drop) const
+{
+    checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
+}
 
 void Context::setMaxPartitionSizeToDrop(size_t max_size)
 {
@@ -4100,6 +4105,10 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
 
+void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const
+{
+    checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
+}
 
 InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings, const std::optional<size_t> max_parsing_threads) const
 {
