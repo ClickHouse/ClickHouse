@@ -402,7 +402,9 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         const bool is_no_space_left_error = code == /* No space left on device */28 || code == /* Quota exceeded */122;
 
         auto lock = lockFileSegment();
+
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lock)));
+        setDownloadFailedUnlocked(lock);
 
         if (downloaded_size == 0 && fs::exists(file_segment_path))
         {
@@ -420,7 +422,6 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
                 downloaded_size = file_size;
         }
 
-        setDownloadFailedUnlocked(lock);
         throw;
 
     }
