@@ -40,9 +40,13 @@ public:
         bool support_storage = !table_join->isSpecialStorage();
 
         /// Key column can change nullability and it's not handled on type conversion stage, so algorithm should be aware of it
-        bool support_using_and_nulls = !table_join->hasUsing() || !table_join->joinUseNulls();
+        bool support_using = !table_join->hasUsing();
 
-        return support_using_and_nulls && support_storage;
+        bool check_strictness = table_join->strictness() == JoinStrictness::All;
+
+        bool if_has_keys = table_join->getClauses().empty();
+
+        return support_using && support_storage && check_strictness && if_has_keys;
     }
 
     void checkTypesOfKeys(const Block & /*left_block*/) const override

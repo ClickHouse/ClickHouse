@@ -62,6 +62,7 @@ private:
     Statistic stat;
 
     Poco::Logger * log;
+    UInt64 last_used_row[2] = {0, 0};
 };
 
 class PasteJoinTransform final : public IMergingTransform<PasteJoinAlgorithm>
