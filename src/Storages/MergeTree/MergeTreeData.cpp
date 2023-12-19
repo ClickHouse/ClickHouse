@@ -3790,6 +3790,25 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
         resetObjectColumnsFromActiveParts(acquired_lock);
 }
 
+void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove)
+{
+    auto lock = lockParts();
+
+    for (const auto & part : remove)
+    {
+        auto it_part = data_parts_by_info.find(part->info);
+        if (it_part == data_parts_by_info.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} not found in data_parts", part->getNameWithState());
+
+        assert(part->getState() == MergeTreeDataPartState::PreActive);
+
+        modifyPartState(part, MergeTreeDataPartState::Temporary);
+        /// Erase immediately
+        LOG_TEST(log, "removePartsFromWorkingSetImmediatelyAndSetTemporaryState: removing {} from data_parts_indexes", part->getNameWithState());
+        data_parts_indexes.erase(it_part);
+    }
+}
+
 void MergeTreeData::removePartsFromWorkingSet(
         MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock)
 {
@@ -4026,11 +4045,14 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         Strings restored;
         Strings error_parts;
 
-        auto is_appropriate_state = [] (DataPartState state)
+        auto is_appropriate_state = [] (const DataPartPtr & part_)
         {
-            if (state != DataPartState::Outdated)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to restore a part from unexpected state: {}", state);
-            return true;
+            /// In rare cases, we may have a chain of unexpected parts that cover common source parts, e.g. all_1_2_3, all_1_3_4
+            /// It may happen as a result of interrupted cloneReplica
+            bool already_active = part_->getState() == DataPartState::Active;
+            if (!already_active && part_->getState() != DataPartState::Outdated)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to restore a part {} from unexpected state: {}", part_->name, part_->getState());
+            return !already_active;
         };
 
         auto activate_part = [this, &restored_active_part](auto it)
@@ -4074,7 +4096,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         for (const auto & part_candidate_in_partition : parts_candidates | std::views::reverse)
         {
             if (part->info.contains(part_candidate_in_partition->info)
-                && is_appropriate_state(part_candidate_in_partition->getState()))
+                && is_appropriate_state(part_candidate_in_partition))
             {
                 String out_reason;
                 /// Outdated parts can itersect legally (because of DROP_PART) here it's okay, we
@@ -6300,6 +6322,24 @@ MergeTreeData::Transaction::Transaction(MergeTreeData & data_, MergeTreeTransact
 {
     if (txn)
         data.transactions_enabled.store(true);
+}
+
+void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
+{
+    if (!isEmpty())
+    {
+        WriteBufferFromOwnString buf;
+        buf << " Rollbacking parts state to temporary and removing from working set:";
+        for (const auto & part : precommitted_parts)
+            buf << " " << part->getDataPartStorage().getPartDirectory();
+        buf << ".";
+        LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
+
+        data.removePartsFromWorkingSetImmediatelyAndSetTemporaryState(
+            DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()));
+    }
+
+    clear();
 }
 
 TransactionID MergeTreeData::Transaction::getTID() const

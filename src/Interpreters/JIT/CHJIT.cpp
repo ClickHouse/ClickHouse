@@ -153,7 +153,7 @@ public:
             {
                 int res = mprotect(block.base(), block.blockSize(), protection_flags | PROT_READ);
                 if (res != 0)
-                    throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+                    throw ErrnoException(ErrorCodes::CANNOT_MPROTECT, "Cannot mprotect memory region");
 
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
                 invalidate_cache = false;
@@ -161,7 +161,7 @@ public:
 #    endif
             int res = mprotect(block.base(), block.blockSize(), protection_flags);
             if (res != 0)
-                throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+                throw ErrnoException(ErrorCodes::CANNOT_MPROTECT, "Cannot mprotect memory region");
 
             if (invalidate_cache)
                 llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
@@ -232,10 +232,12 @@ private:
         int res = posix_memalign(&buf, page_size, allocate_size);
 
         if (res != 0)
-            throwFromErrno(
-                fmt::format("Cannot allocate memory (posix_memalign) alignment {} size {}.", page_size, ReadableSize(allocate_size)),
+            ErrnoException::throwWithErrno(
                 ErrorCodes::CANNOT_ALLOCATE_MEMORY,
-                res);
+                res,
+                "Cannot allocate memory (posix_memalign) alignment {} size {}",
+                page_size,
+                ReadableSize(allocate_size));
 
         page_blocks.emplace_back(buf, pages_to_allocate_size, page_size);
         page_blocks_allocated_size.emplace_back(0);
