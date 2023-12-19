@@ -123,24 +123,27 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                         /// Get storage definition
                         /// Set uuid explicitly, because it is forbidden to use the 'uuid' macro without ON CLUSTER
-                        auto * storage = create_query->storage->as<ASTStorage>();
-                        String storage_definition = queryToString(*storage);
+                        auto * storage = create_query->storage;
 
                         String replica_path = getContext()->getConfigRef().getString("default_replica_path", "/clickhouse/tables/{uuid}/{shard}");
                         replica_path = boost::algorithm::replace_all_copy(replica_path, "{uuid}", fmt::format("{}", create_query->uuid));
                         String replica_name = getContext()->getConfigRef().getString("default_replica_name", "{replica}");
                         String replicated_args = fmt::format("('{}', '{}')", replica_path, replica_name);
-                        String replicated_engine = "Replicated" + storage->engine->name + replicated_args;
+                        String replicated_engine = "ENGINE = Replicated" + storage->engine->name + replicated_args;
 
-                        String create_query_string = queryToString(*ast);
+                        ParserStorage parser_storage{ParserStorage::TABLE_ENGINE};
+                        auto replicated_storage_ast = parseQuery(parser_storage, replicated_engine, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                        auto * replicated_storage = replicated_storage_ast->as<ASTStorage>();
 
-                        create_query_string = boost::algorithm::replace_first_copy(create_query_string, storage->engine->name, replicated_engine);
+                        /// Add old engine's arguments
+                        if (storage->engine->arguments)
+                        {
+                            for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
+                                replicated_storage->engine->arguments->children.push_back(storage->engine->arguments->children[i]->clone());
+                        }
 
-                        ParserCreateQuery parser_create_query;
-                        auto new_ast = parseQuery(parser_create_query, create_query_string, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-
-                        ast = new_ast;
-                        create_query = ast->as<ASTCreateQuery>();
+                        /// Set new engine for the old query
+                        create_query->storage->set(create_query->storage->engine, replicated_storage->engine->clone());
 
                         /// Write changes to metadata
                         String table_metadata_path = full_path;
