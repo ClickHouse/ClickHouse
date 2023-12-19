@@ -78,7 +78,7 @@ def main():
     pr_info = PRInfo()
     commit = get_commit(gh, pr_info.sha)
 
-    atexit.register(update_mergeable_check, gh, pr_info, build_check_name)
+    atexit.register(update_mergeable_check, commit, pr_info, build_check_name)
 
     rerun_helper = RerunHelper(commit, build_check_name)
     if rerun_helper.is_already_finished_by_status():

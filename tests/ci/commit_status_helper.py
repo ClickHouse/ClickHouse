@@ -15,7 +15,6 @@ from github.CommitStatus import CommitStatus
 from github.GithubException import GithubException
 from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
-from github.PullRequest import PullRequest
 from github.Repository import Repository
 
 from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
@@ -441,7 +440,7 @@ def set_mergeable_check(
     )
 
 
-def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None:
+def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> None:
     not_run = (
         pr_info.labels.intersection({SKIP_MERGEABLE_CHECK_LABEL, "release"})
         or check_name not in REQUIRED_CHECKS
@@ -454,7 +453,6 @@ def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None
 
     logging.info("Update Mergeable Check by %s", check_name)
 
-    commit = get_commit(gh, pr_info.sha)
     statuses = get_commit_filtered_statuses(commit)
 
     required_checks = [
@@ -475,14 +473,11 @@ def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None
         else:
             fail.append(status.context)
 
+    state: StatusType = SUCCESS
+    description = ", ".join(success)
     if fail:
         description = "failed: " + ", ".join(fail)
-        description = format_description(description)
-        if mergeable_status is None or mergeable_status.description != description:
-            set_mergeable_check(commit, description, FAILURE)
-        return
-
-    description = ", ".join(success)
+        state = FAILURE
     description = format_description(description)
     if mergeable_status is None or mergeable_status.description != description:
-        set_mergeable_check(commit, description)
+        set_mergeable_check(commit, description, state)

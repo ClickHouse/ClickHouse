@@ -14,8 +14,8 @@ from commit_status_helper import (
     post_labels,
     remove_labels,
     set_mergeable_check,
+    update_mergeable_check,
 )
-from docs_check import NAME as DOCS_NAME
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
@@ -24,6 +24,7 @@ from lambda_shared_package.lambda_shared.pr import (
     TRUSTED_CONTRIBUTORS,
     check_pr_description,
 )
+from report import FAILURE
 
 TRUSTED_ORG_IDS = {
     54801242,  # clickhouse
@@ -136,22 +137,6 @@ def main():
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    # FIXME: it should rather be in finish check. no reason to stop ci run.
-    if FEATURE_LABEL in pr_info.labels and not pr_info.has_changes_in_documentation():
-        print(
-            f"The '{FEATURE_LABEL}' in the labels, "
-            "but there's no changed documentation"
-        )
-        post_commit_status(  # do not pass pr_info here intentionally
-            commit,
-            "failure",
-            "",
-            f"expect adding docs for {FEATURE_LABEL}",
-            DOCS_NAME,
-            pr_info,
-        )
-        sys.exit(0)
-
     if description_error:
         print(
             "::error ::Cannot run, PR description does not match the template: "
@@ -177,6 +162,7 @@ def main():
         sys.exit(1)
 
     set_mergeable_check(commit, "skipped")
+
     ci_report_url = create_ci_report(pr_info, [])
     if not can_run:
         print("::notice ::Cannot run")
@@ -189,16 +175,32 @@ def main():
             pr_info,
         )
         sys.exit(1)
-    else:
-        print("::notice ::Can run")
+
+    if FEATURE_LABEL in pr_info.labels and not pr_info.has_changes_in_documentation():
+        print(
+            f"The '{FEATURE_LABEL}' in the labels, "
+            "but there's no changed documentation"
+        )
+        PR_CHECK = "PR Check"
         post_commit_status(
             commit,
-            "pending",
-            ci_report_url,
-            description,
-            CI_STATUS_NAME,
+            FAILURE,
+            "",
+            f"expect adding docs for {FEATURE_LABEL}",
+            PR_CHECK,
             pr_info,
         )
+        update_mergeable_check(commit, pr_info, PR_CHECK)
+
+    print("::notice ::Can run")
+    post_commit_status(
+        commit,
+        "pending",
+        ci_report_url,
+        description,
+        CI_STATUS_NAME,
+        pr_info,
+    )
 
 
 if __name__ == "__main__":
