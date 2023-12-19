@@ -2330,7 +2330,7 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
         if (auto * identifier_node = node->as<IdentifierNode>(); identifier_node != nullptr)
             if (Poco::toUpper(identifier_node->getIdentifier().getFullName()) == "ALL" || Poco::toUpper(identifier_node->getAlias()) == "ALL")
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-				"Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+                    "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
 
         if (auto * function_node = node->as<FunctionNode>(); function_node != nullptr)
             if (Poco::toUpper(function_node->getAlias()) == "ALL")
@@ -7008,7 +7008,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING");
 
     if (settings.enable_order_by_all && query_node_typed.isOrderByAll())
-	expandOrderByAll(query_node_typed);
+        expandOrderByAll(query_node_typed);
 
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope);
