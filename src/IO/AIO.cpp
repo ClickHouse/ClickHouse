@@ -137,7 +137,7 @@ AIOContext::AIOContext(unsigned int)
 {
     ctx = io_setup();
     if (ctx < 0)
-        throw ErrnoException(DB::ErrorCodes::CANNOT_IOSETUP, "io_setup failed");
+        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_IOSETUP, "io_setup failed");
 }
 
 AIOContext::~AIOContext()
