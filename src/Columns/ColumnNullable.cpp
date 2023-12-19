@@ -890,10 +890,7 @@ ColumnPtr makeNullable(const ColumnPtr & column)
 
 ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column)
 {
-    if (isColumnNullable(*column))
-        return column;
-
-    if (isColumnLowCardinalityNullable(*column))
+    if (isColumnNullableOrLowCardinalityNullable(*column))
         return column;
 
     if (isColumnConst(*column))
@@ -915,6 +912,23 @@ ColumnPtr makeNullableSafe(const ColumnPtr & column)
 
     if (column->canBeInsideNullable())
         return makeNullable(column);
+
+    return column;
+}
+
+ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column)
+{
+    if (isColumnNullableOrLowCardinalityNullable(*column))
+        return column;
+
+    if (isColumnConst(*column))
+        return ColumnConst::create(makeNullableOrLowCardinalityNullableSafe(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    if (column->lowCardinality())
+        return assert_cast<const ColumnLowCardinality &>(*column).cloneNullable();
+
+    if (column->canBeInsideNullable())
+        return makeNullableSafe(column);
 
     return column;
 }

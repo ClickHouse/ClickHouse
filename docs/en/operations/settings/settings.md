@@ -5134,3 +5134,55 @@ When set to `true` than for all s3 requests first two attempts are made with low
 When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
+
+## allow_experimental_variant_type {#allow_experimental_variant_type}
+
+Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
+
+Default value: `false`.
+
+## use_variant_when_no_common_type_in_if {#use_variant_when_no_common_type_in_if}
+
+Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiif) functions when there is no common type for argument types.
+
+Example:
+
+```sql
+SET use_variant_when_no_common_type_in_if = 1;
+SELECT toTypeName(if(number % 2, number, range(number))) as variant_type FROM numbers(1);
+SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
+```
+
+```text
+┌─variant_type───────────────────┐
+│ Variant(Array(UInt64), UInt64) │
+└────────────────────────────────┘
+┌─variant───┐
+│ []        │
+│ 1         │
+│ [0,1]     │
+│ 3         │
+│ [0,1,2,3] │
+└───────────┘
+```
+
+```sql
+SET use_variant_when_no_common_type_in_if = 1;
+SELECT toTypeName(multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL)) AS variant_type FROM numbers(1);
+SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL) AS variant FROM numbers(4);
+```
+
+```text
+─variant_type─────────────────────────┐
+│ Variant(Array(UInt8), String, UInt8) │
+└──────────────────────────────────────┘
+
+┌─variant───────┐
+│ 42            │
+│ [1,2,3]       │
+│ Hello, World! │
+│ ᴺᵁᴸᴸ          │
+└───────────────┘
+```
+
+Default value: `false`.

@@ -109,11 +109,26 @@ Ptr IDataType::getForSubcolumn(
     bool throw_if_null) const
 {
     Ptr res;
-    forEachSubcolumn([&](const auto &, const auto & name, const auto & subdata)
+
+    ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
     {
-        if (name == subcolumn_name)
-            res = subdata.*member;
-    }, data);
+        for (size_t i = 0; i < subpath.size(); ++i)
+        {
+            size_t prefix_len = i + 1;
+            if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
+            {
+                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
+                /// Create data from path only if it's requested subcolumn.
+                if (name == subcolumn_name)
+                    res = ISerialization::createFromPath(subpath, prefix_len).*member;
+            }
+            subpath[i].visited = true;
+        }
+    };
+
+    ISerialization::EnumerateStreamsSettings settings;
+    settings.position_independent_encoding = false;
+    data.serialization->enumerateStreams(settings, callback_with_data, data);
 
     if (!res && throw_if_null)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());

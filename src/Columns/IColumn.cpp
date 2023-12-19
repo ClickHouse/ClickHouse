@@ -2,6 +2,7 @@
 #include <IO/Operators.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -81,6 +82,11 @@ void IColumn::forEachSubcolumnRecursively(RecursiveColumnCallback callback) cons
 bool isColumnNullable(const IColumn & column)
 {
     return checkColumn<ColumnNullable>(column);
+}
+
+bool isColumnNullableOrLowCardinalityNullable(const IColumn & column)
+{
+    return isColumnNullable(column) || isColumnLowCardinalityNullable(column);
 }
 
 bool isColumnConst(const IColumn & column)

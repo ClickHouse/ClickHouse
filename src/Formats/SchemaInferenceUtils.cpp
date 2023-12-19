@@ -946,7 +946,7 @@ namespace
         if constexpr (is_json)
             ok = tryReadJSONStringInto(field, buf);
         else
-            ok = tryReadQuotedStringInto(field, buf);
+            ok = tryReadQuotedString(field, buf);
 
         if (!ok)
             return nullptr;

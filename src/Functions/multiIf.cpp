@@ -9,6 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -116,6 +117,15 @@ public:
         {
             types_of_branches.emplace_back(arg);
         });
+
+        if (context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_when_no_common_type_in_if)
+        {
+            if (auto res = tryGetLeastSupertype(types_of_branches))
+                return res;
+            for (auto & type : types_of_branches)
+                type = removeNullableOrLowCardinalityNullable(type);
+            return std::make_shared<DataTypeVariant>(types_of_branches);
+        }
 
         return getLeastSupertype(types_of_branches);
     }

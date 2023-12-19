@@ -2831,3 +2831,39 @@ Result:
 │ SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+## variantElement
+
+Extracts a column with specified type from a `Variant` column.
+
+**Syntax**
+
+``` sql
+tupleElement(variant, type_name, [, default_value])
+```
+
+- `variant` — Variant column. [Variant](../../sql-reference/data-types/variant.md).
+- `type_name` — The name of the variant type to extract. [String](../../sql-reference/data-types/string.md).
+- `default_value` - The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional.
+
+**Returned value**
+
+- Subcolumn of a `Variant` column with specified type.
+
+**Example**
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM test;
+```
+
+```text
+┌─v─────────────┬─variantElement(v, 'String')─┬─variantElement(v, 'UInt64')─┬─variantElement(v, 'Array(UInt64)')─┐
+│ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ []                                 │
+│ 42            │ ᴺᵁᴸᴸ                        │                          42 │ []                                 │
+│ Hello, World! │ Hello, World!               │                        ᴺᵁᴸᴸ │ []                                 │
+│ [1,2,3]       │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ [1,2,3]                            │
+└───────────────┴─────────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
+```
+
