@@ -2942,6 +2942,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window.full_sort_description,
+                window.partition_by,
                 0 /* LIMIT */,
                 sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
