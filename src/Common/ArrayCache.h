@@ -192,7 +192,7 @@ private:
                 }
                 catch (DB::ErrnoException &)
                 {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    DB::tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
             }
         }
