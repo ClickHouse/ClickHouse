@@ -18,7 +18,7 @@ private:
 public:
     class SLRUIterator;
 
-    SLRUFileCachePriority(size_t max_size_, size_t max_elements_, double size_ratio);
+    SLRUFileCachePriority(size_t max_size_, size_t max_elements_, double size_ratio_);
 
     size_t getSize(const CacheGuard::Lock & lock) const override;
 
@@ -45,7 +45,10 @@ public:
 
     std::vector<FileSegmentInfo> dump(const CacheGuard::Lock &) override;
 
+    bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CacheGuard::Lock &) override;
+
 private:
+    double size_ratio;
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
     Poco::Logger * log = &Poco::Logger::get("SLRUFileCachePriority");
