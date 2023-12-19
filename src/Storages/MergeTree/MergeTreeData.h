@@ -1431,7 +1431,7 @@ protected:
             return  current_time >= iter->second.getNextMinExecutionTime();
         }
     };
-    /// Contols postponing logic for failed mutations.
+    /// Controls postponing logic for failed mutations.
     PartMutationBackoffPolicy mutation_backoff_policy;
 
     /// If part is assigned to merge or mutation (possibly replicated)
