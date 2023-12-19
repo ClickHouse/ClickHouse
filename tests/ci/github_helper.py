@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 """Helper for GitHub API requests"""
 import logging
+import re
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from os import path as p
+from pathlib import Path
 from time import sleep
 from typing import List, Optional, Tuple, Union
 
@@ -143,7 +144,9 @@ class GitHub(github.Github):
     def get_pull_cached(
         self, repo: Repository, number: int, obj_updated_at: Optional[datetime] = None
     ) -> PullRequest:
-        cache_file = self.cache_path / f"pr-{number}.pickle"
+        # clean any special symbol from the repo name, especially '/'
+        repo_name = re.sub(r"\W", "_", repo.full_name)
+        cache_file = self.cache_path / f"pr-{repo_name}-{number}.pickle"
 
         if cache_file.is_file():
             is_updated, cached_pr = self._is_cache_updated(cache_file, obj_updated_at)
