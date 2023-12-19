@@ -272,7 +272,7 @@ For example, consider the following tables:
 
 ## PASTE JOIN Usage
 
-The result of `PASTE JOIN` is a table that contains all columns from left subquery followed by all columns from the right subqiery.
+The result of `PASTE JOIN` is a table that contains all columns from left subquery followed by all columns from the right subquery.
 The rows are matched based on their positions in the original tables (the order of rows should be defined). 
 If the subqueries return a different number of rows, extra rows will be cut.
 
