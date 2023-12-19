@@ -29,15 +29,14 @@ private:
 
     void run();
 
-    // @returns new snapshot remote path
-    String updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer);
-
+    struct PathAndVersion
+    {
+        String remote_path;
+        int version;
+    };
+    PathAndVersion updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer);
     VFSLogItem getBatch(size_t start_logpointer, size_t end_logpointer) const;
-
-    /// @returns Obsolete objects
-    StoredObjects mergeSnapshotWithLogBatch(ReadBuffer & snapshot, VFSLogItem && batch, WriteBuffer & new_snapshot);
-
-    void onBatchProcessed(size_t start_logpointer, size_t end_logpointer, const String & snapshot_remote_path);
+    void onBatchProcessed(size_t start_logpointer, size_t end_logpointer, const PathAndVersion & pair);
 
     String getNode(size_t id) const;
 };

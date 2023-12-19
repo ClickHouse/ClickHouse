@@ -1,24 +1,25 @@
 #pragma once
-#include "Common/ZooKeeper/IKeeper.h"
 #include "Disks/ObjectStorages/StoredObject.h"
-#include "IO/ReadHelpers.h"
-#include "VFSTraits.h"
+#include "boost/container/flat_map.hpp"
+
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
+class ReadBuffer;
+class WriteBuffer;
 using VFSObsoleteObjects = StoredObjects;
 
-// TODO myrrc we know that for s3 remote path size is exactly 41 chars (see S3ObjectStorage.cpp)
-// and references probably won't exceed a char -- maybe we could fit object info in one 64 bit
-// stack-allocated field
-struct VFSLogItem : std::map<String /* remote_path */, int /*references */>
+struct VFSLogItem : boost::container::flat_map<String /* remote_path */, int /*references delta */>
 {
-    void merge(VFSLogItem && other);
+    static VFSLogItem parse(std::string_view str);
     static String getSerialised(StoredObjects && link, StoredObjects && unlink);
+    void merge(VFSLogItem && other);
+    VFSObsoleteObjects mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer & new_snapshot, Poco::Logger * log) &&;
 };
-
-template <>
-VFSLogItem parseFromString<VFSLogItem>(std::string_view str);
 }
 
 template <>
@@ -29,7 +30,7 @@ struct fmt::formatter<DB::VFSLogItem>
     {
         fmt::format_to(ctx.out(), "VFSLogItem(\n");
         for (const auto & [path, links] : item)
-            fmt::format_to(ctx.out(), "Item({}, links={})\n", path, links);
+            fmt::format_to(ctx.out(), "{} {}\n", path, links);
         return fmt::format_to(ctx.out(), ")");
     }
 };
