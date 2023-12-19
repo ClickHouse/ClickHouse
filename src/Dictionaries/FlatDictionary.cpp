@@ -725,7 +725,7 @@ void FlatDictionary::getItemsShortCircuitImpl(
     {
         const auto key = keys[row];
 
-        if (cond[row])
+        if (key < loaded_keys.size() && loaded_keys[key])
         {
             if constexpr (is_nullable)
                 set_value(row, container[key], attribute.is_nullable_set->find(key) != nullptr);

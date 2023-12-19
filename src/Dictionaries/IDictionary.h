@@ -277,7 +277,7 @@ public:
         const DataTypes & result_types,
         const Columns & key_columns,
         const ColumnWithTypeAndName & default_argument,
-        const DataTypePtr & result_type_short_circuit) const
+        const DataTypes & result_short_circuit_types) const
     {
         size_t attribute_names_size = attribute_names.size();
 
@@ -288,8 +288,9 @@ public:
         {
             const auto & attribute_name = attribute_names[i];
             const auto & result_type = result_types[i];
+            const auto & result_short_circuit_type = result_short_circuit_types[i];
             result.emplace_back(getColumnOrDefaultShortCircuit(attribute_name,
-                result_type, key_columns, default_argument, result_type_short_circuit));
+                result_type, key_columns, default_argument, result_short_circuit_type));
         }
 
         return result;
