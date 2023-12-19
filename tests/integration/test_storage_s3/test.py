@@ -2111,3 +2111,65 @@ def test_filtering_by_file_or_path(started_cluster):
     )
 
     assert int(result) == 1
+
+
+def test_union_schema_inference_mode(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["s3_non_default"]
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference1.jsonl') select 1 as a"
+    )
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference2.jsonl') select 2 as b"
+    )
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference3.jsonl') select 2 as c"
+    )
+
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference4.jsonl', TSV) select 'Error'"
+    )
+
+    for engine in ["s3", "url"]:
+        instance.query("system drop schema cache for s3")
+
+        result = instance.query(
+            f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference{{1,2,3}}.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
+        )
+        assert result == "a\tNullable(Int64)\nb\tNullable(Int64)\nc\tNullable(Int64)\n"
+
+        result = instance.query(
+            "select schema_inference_mode, splitByChar('/', source)[-1] as file, schema from system.schema_inference_cache where source like '%test_union_schema_inference%' order by file format TSV"
+        )
+        assert (
+            result == "UNION\ttest_union_schema_inference1.jsonl\ta Nullable(Int64)\n"
+            "UNION\ttest_union_schema_inference2.jsonl\tb Nullable(Int64)\n"
+            "UNION\ttest_union_schema_inference3.jsonl\tc Nullable(Int64)\n"
+        )
+        result = instance.query(
+            f"select * from {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference{{1,2,3}}.jsonl') order by tuple(*) settings schema_inference_mode='union', describe_compact_output=1 format TSV"
+        )
+        assert result == "1\t\\N\t\\N\n" "\\N\t2\t\\N\n" "\\N\t\\N\t2\n"
+
+        instance.query(f"system drop schema cache for {engine}")
+        result = instance.query(
+            f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference2.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
+        )
+        assert result == "b\tNullable(Int64)\n"
+
+        result = instance.query(
+            f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference{{1,2,3}}.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
+        )
+        assert (
+            result == "a\tNullable(Int64)\n"
+            "b\tNullable(Int64)\n"
+            "c\tNullable(Int64)\n"
+        )
+
+        error = instance.query_and_get_error(
+            f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference{{1,2,3,4}}.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
+        )
+        assert "Cannot extract table structure" in error

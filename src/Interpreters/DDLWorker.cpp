@@ -559,7 +559,7 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
 
 void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 {
-    LOG_DEBUG(log, "Processing task {} ({})", task.entry_name, task.query_for_logging);
+    LOG_DEBUG(log, "Processing task {} (query: {}, backup restore: {})", task.entry_name, task.query_for_logging, task.entry.is_backup_restore);
     chassert(!task.completely_processed);
 
     /// Setup tracing context on current thread for current DDL
@@ -611,7 +611,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         {
             /// Connection has been lost and now we are retrying,
             /// but our previous ephemeral node still exists.
-            zookeeper->handleEphemeralNodeExistence(active_node_path, canary_value);
+            zookeeper->deleteEphemeralNodeIfContentMatches(active_node_path, canary_value);
         }
 
         zookeeper->create(active_node_path, canary_value, zkutil::CreateMode::Ephemeral);

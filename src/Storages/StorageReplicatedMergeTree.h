@@ -177,7 +177,6 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ContextPtr query_context) override;
 
     void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
@@ -582,9 +581,7 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr local_context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        size_t num_streams);
+        QueryProcessingStage::Enum processed_stage);
 
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
@@ -749,7 +746,6 @@ private:
         const MergeTreeDataPartFormat & merged_part_format,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);
@@ -760,10 +756,6 @@ private:
         Int64 mutation_version,
         int32_t alter_version,
         int32_t log_version);
-
-    /// Exchange parts.
-
-    ConnectionTimeouts getFetchPartHTTPTimeouts(ContextPtr context);
 
     /** Returns an empty string if no one has a part.
       */

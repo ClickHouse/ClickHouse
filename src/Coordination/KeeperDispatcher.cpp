@@ -51,6 +51,56 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
+namespace
+{
+
+bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request)
+{
+    if (request->getOpNum() == Coordination::OpNum::Create
+        || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
+        || request->getOpNum() == Coordination::OpNum::Set)
+    {
+        return true;
+    }
+    else if (request->getOpNum() == Coordination::OpNum::Multi)
+    {
+        Coordination::ZooKeeperMultiRequest & multi_req = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*request);
+        Int64 memory_delta = 0;
+        for (const auto & sub_req : multi_req.requests)
+        {
+            auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_req);
+            switch (sub_zk_request->getOpNum())
+            {
+                case Coordination::OpNum::Create:
+                case Coordination::OpNum::CreateIfNotExists:
+                {
+                    Coordination::ZooKeeperCreateRequest & create_req = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
+                    memory_delta += create_req.bytesSize();
+                    break;
+                }
+                case Coordination::OpNum::Set:
+                {
+                    Coordination::ZooKeeperSetRequest & set_req = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*sub_zk_request);
+                    memory_delta += set_req.bytesSize();
+                    break;
+                }
+                case Coordination::OpNum::Remove:
+                {
+                    Coordination::ZooKeeperRemoveRequest & remove_req = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
+                    memory_delta -= remove_req.bytesSize();
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+        return memory_delta > 0;
+    }
+
+    return false;
+}
+
+}
 
 KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
@@ -92,6 +142,14 @@ void KeeperDispatcher::requestThread()
                 CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
                 if (shutdown_called)
                     break;
+
+                Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
+                if (configuration_and_settings->standalone_keeper && mem_soft_limit > 0 && total_memory_tracker.get() >= mem_soft_limit && checkIfRequestIncreaseMem(request.request))
+                {
+                    LOG_TRACE(log, "Processing requests refused because of max_memory_usage_soft_limit {}, the total used memory is {}, request type is {}", mem_soft_limit, total_memory_tracker.get(), request.request->getOpNum());
+                    addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
+                    continue;
+                }
 
                 KeeperStorage::RequestsForSessions current_batch;
                 size_t current_batch_bytes_size = 0;
@@ -872,6 +930,8 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
 
     snapshot_s3.updateS3Configuration(config, macros);
+
+    keeper_context->updateKeeperMemorySoftLimit(config);
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)

@@ -222,6 +222,7 @@ private:
     /// Create actual disk object storage transaction for operations
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
+    DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
 
     String getReadResourceName() const;
     String getWriteResourceName() const;

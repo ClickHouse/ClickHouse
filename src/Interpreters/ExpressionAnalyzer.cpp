@@ -581,7 +581,8 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
 
         AggregateFunctionProperties properties;
         aggregate.parameters = (node.parameters) ? getAggregateFunctionParametersArray(node.parameters, "", getContext()) : Array();
-        aggregate.function = AggregateFunctionFactory::instance().get(node.name, types, aggregate.parameters, properties);
+        aggregate.function
+            = AggregateFunctionFactory::instance().get(node.name, node.nulls_action, types, aggregate.parameters, properties);
 
         descriptions.push_back(aggregate);
     }
@@ -789,11 +790,12 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         }
 
         AggregateFunctionProperties properties;
-        window_function.aggregate_function
-            = AggregateFunctionFactory::instance().get(
-                window_function.function_node->name,
-                window_function.argument_types,
-                window_function.function_parameters, properties);
+        window_function.aggregate_function = AggregateFunctionFactory::instance().get(
+            window_function.function_node->name,
+            window_function.function_node->nulls_action,
+            window_function.argument_types,
+            window_function.function_parameters,
+            properties);
 
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it
