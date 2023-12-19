@@ -55,7 +55,7 @@ QUERY_NUM=1
 while read -r query; do
     echo -n "["
     for i in $(seq 1 $TRIES); do
-        RES=$(clickhouse-client --time --format Null --query "$query" --progress 0 2>&1 ||:)
+        RES=$(clickhouse-client --query_id "q${QUERY_NUM}-${i}" --time --format Null --query "$query" --progress 0 2>&1 ||:)
         echo -n "${RES}"
         [[ "$i" != "$TRIES" ]] && echo -n ", "
 

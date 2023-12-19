@@ -64,7 +64,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
     fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
 
     if (-1 == fd)
-        throwFromErrnoWithPath("Cannot open file " + path, path, ErrorCodes::CANNOT_OPEN_FILE);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
 
     try
     {
@@ -74,14 +74,14 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
             if (errno == EWOULDBLOCK)
                 throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot lock file {}. Another server instance in same directory is already running.", path);
             else
-                throwFromErrnoWithPath("Cannot lock file " + path, path, ErrorCodes::CANNOT_OPEN_FILE);
+                ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot lock file {}", path);
         }
 
         if (0 != ftruncate(fd, 0))
-            throwFromErrnoWithPath("Cannot ftruncate " + path, path, ErrorCodes::CANNOT_TRUNCATE_FILE);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot ftruncate file {}", path);
 
         if (0 != lseek(fd, 0, SEEK_SET))
-            throwFromErrnoWithPath("Cannot lseek " + path, path, ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, path, "Cannot lseek file {}", path);
 
         /// Write information about current server instance to the file.
         WriteBufferFromFileDescriptor out(fd, 1024);

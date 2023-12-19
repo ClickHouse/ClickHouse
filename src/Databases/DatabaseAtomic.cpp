@@ -89,14 +89,15 @@ void DatabaseAtomic::drop(ContextPtr)
     fs::remove_all(getMetadataPath());
 }
 
-void DatabaseAtomic::attachTableUnlocked(ContextPtr local_context, const String & name, const StoragePtr & table, const String & relative_table_path)
+void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     assert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
+    std::lock_guard lock(mutex);
     not_in_use = cleanupDetachedTables();
     auto table_id = table->getStorageID();
     assertDetachedTableNotInUse(table_id.uuid);
-    DatabaseOrdinary::attachTableUnlocked(local_context, name, table, relative_table_path);
+    DatabaseOrdinary::attachTableUnlocked(name, table);
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
 }
 
@@ -324,7 +325,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 
         /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
-        DatabaseWithOwnTablesBase::attachTableUnlocked(query_context, query.getTable(), table, /*relative_table_path=*/ {});   /// Should never throw
+        attachTableUnlocked(query.getTable(), table);   /// Should never throw
         table_name_to_path.emplace(query.getTable(), table_data_path);
     }
     catch (...)
