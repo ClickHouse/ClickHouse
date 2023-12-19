@@ -67,7 +67,7 @@ public:
 
     // Must insert the result for current_row.
     virtual void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) = 0;
+        size_t function_index) const = 0;
 
     virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
 };
@@ -1463,7 +1463,7 @@ struct WindowFunctionRank final : public WindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         IColumn & to = *transform->blockAt(transform->current_row)
             .output_columns[function_index];
@@ -1482,7 +1482,7 @@ struct WindowFunctionDenseRank final : public WindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         IColumn & to = *transform->blockAt(transform->current_row)
             .output_columns[function_index];
@@ -1561,7 +1561,7 @@ struct StatefulWindowFunction : public WindowFunction
 
     bool hasTrivialDestructor() const override { return std::is_trivially_destructible_v<State>; }
 
-    State & getState(const WindowFunctionWorkspace & workspace)
+    State & getState(const WindowFunctionWorkspace & workspace) const
     {
         return *static_cast<State *>(static_cast<void *>(workspace.aggregate_function_state.data()));
     }
@@ -1626,7 +1626,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         const auto & workspace = transform->workspaces[function_index];
         auto & state = getState(workspace);
@@ -1723,7 +1723,7 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         Float64 result = std::numeric_limits<Float64>::quiet_NaN();
 
@@ -1790,7 +1790,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         const auto & workspace = transform->workspaces[function_index];
         auto & state = getState(workspace);
@@ -1884,7 +1884,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         const auto & workspace = transform->workspaces[function_index];
         auto & state = getState(workspace);
@@ -1962,7 +1962,7 @@ struct WindowFunctionRowNumber final : public WindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         IColumn & to = *transform->blockAt(transform->current_row)
             .output_columns[function_index];
@@ -2015,7 +2015,7 @@ struct WindowFunctionNtile final : public StatefulWindowFunction<NtileState>
     }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         const auto & workspace = transform->workspaces[function_index];
         auto & state = getState(workspace);
@@ -2207,7 +2207,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         const auto & current_block = transform->blockAt(transform->current_row);
         IColumn & to = *current_block.output_columns[function_index];
@@ -2297,7 +2297,7 @@ struct WindowFunctionNthValue final : public WindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         const auto & current_block = transform->blockAt(transform->current_row);
         IColumn & to = *current_block.output_columns[function_index];
@@ -2425,7 +2425,7 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-                                size_t function_index) override
+                                size_t function_index) const override
     {
         const auto & current_block = transform->blockAt(transform->current_row);
         const auto & workspace = transform->workspaces[function_index];
