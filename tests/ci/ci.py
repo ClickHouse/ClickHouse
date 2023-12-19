@@ -511,7 +511,14 @@ def _update_gh_statuses(indata: Dict, s3: S3Helper) -> None:
 def _fetch_commit_tokens(message: str) -> List[str]:
     pattern = r"#[\w-]+"
     matches = re.findall(pattern, message)
-    return matches
+    res = [
+        match
+        for match in matches
+        if match == "#no-merge-commit"
+        or match.startswith("#job_")
+        or match.startswith("#job-")
+    ]
+    return res
 
 
 def main() -> int:
