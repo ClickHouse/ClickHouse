@@ -12,12 +12,12 @@ GroupNodePtr Group::getOneGroupNode()
     return group_nodes.front();
 }
 
-const std::list<GroupNodePtr> & Group::getGroupNodes() const
+const std::vector<GroupNodePtr> & Group::getGroupNodes() const
 {
     return group_nodes;
 }
 
-std::list<GroupNodePtr> & Group::getGroupNodes()
+std::vector<GroupNodePtr> & Group::getGroupNodes()
 {
     return group_nodes;
 }
@@ -110,18 +110,42 @@ String Group::toString() const
     String res;
     res += std::to_string(getId()) + ", ";
 
-    res += "group_nodes: ";
-    for (const auto & node : group_nodes)
-        res += "{ " + node->toString() + "}, ";
-
-    String prop_map;
-    for (const auto & [prop, cost_group_node] : prop_to_best)
+    res += " group_nodes: ";
+    if (group_nodes.empty())
     {
-        prop_map += "{ " + prop.toString() + "- (" + std::to_string(cost_group_node.cost.get()) + ", "
-            + std::to_string(cost_group_node.group_node->getId()) + ")}, ";
+        res += "none";
+    }
+    else
+    {
+        res += "[{" + group_nodes[0]->toString();
+        for (size_t i = 1; i < group_nodes.size(); i++)
+        {
+            res += "}, {";
+            res += group_nodes[i]->toString();
+        }
+        res += "}]";
     }
 
-    res += "prop_to_best: " + prop_map;
+    String prop_map;
+    if (prop_to_best.empty())
+    {
+        prop_map = "none";
+    }
+    else
+    {
+        size_t num = 1;
+        for (const auto & [prop, cost_group_node] : prop_to_best)
+        {
+            prop_map += "{ " + prop.distribution.toString() + ": " + std::to_string(cost_group_node.group_node->getId()) + "("
+                + std::to_string(cost_group_node.cost.get()) + ")}"; /// TODO format cost
+
+            if (num != prop_to_best.size())
+                prop_map += ", ";
+            num++;
+        }
+    }
+
+    res += ", prop_to_best_node: " + prop_map;
     return res;
 }
 

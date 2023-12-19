@@ -53,9 +53,8 @@ void DeriveStats::deriveStats()
     DeriveStatistics visitor(child_statistics, getQueryContext());
     Stats stats = group_node->accept(visitor);
 
-    auto * log = &Poco::Logger::get(
-        "DeriveStats group(" + std::to_string(task_context->getCurrentGroup().getId()) + ") group node(" + group_node->getStep()->getName()
-        + ")");
+    auto * log = &Poco::Logger::get(fmt::format(
+        "DeriveStats-#{}#{}({})", task_context->getCurrentGroup().getId(), group_node->getId(), group_node->getStep()->getName()));
     LOG_TRACE(log, "got {:.2g}", stats.getOutputRowSize());
 
     task_context->getCurrentGroup().setStatistics(stats);

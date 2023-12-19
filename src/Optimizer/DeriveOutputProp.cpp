@@ -7,6 +7,7 @@
 namespace DB
 {
 
+
 DeriveOutputProp::DeriveOutputProp(
     GroupNodePtr group_node_,
     const PhysicalProperties & required_prop_,
@@ -18,7 +19,25 @@ DeriveOutputProp::DeriveOutputProp(
 
 PhysicalProperties DeriveOutputProp::visit(QueryPlanStepPtr step)
 {
-    return Base::visit(step);
+    auto output_prop = Base::visit(step);
+
+    /// preserve sort properties
+    auto * transforming_step = dynamic_cast<ITransformingStep *>(step.get());
+    if (transforming_step && transforming_step->getDataStreamTraits().preserves_sorting)
+    {
+        /// There are some cases where sort desc is misaligned with the header,
+        /// and in this case it is not required to keep the sort prop.
+        /// E.g select * from aaa_all where name in (select name from bbb_all where name like '%d%') order by id limit 13 SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 1;
+        /// CreatingSetsStep header is id_0, name_1 but its sort desc is id
+        for (const auto & sort_column : step->getOutputStream().sort_description)
+            if (!step->getOutputStream().header.has(sort_column.column_name))
+                return output_prop;
+
+        output_prop.sort_prop.sort_description = transforming_step->getOutputStream().sort_description;
+        output_prop.sort_prop.sort_scope = transforming_step->getOutputStream().sort_scope;
+    }
+
+    return output_prop;
 }
 
 PhysicalProperties DeriveOutputProp::visitDefault(IQueryPlanStep & step)
@@ -29,12 +48,6 @@ PhysicalProperties DeriveOutputProp::visitDefault(IQueryPlanStep & step)
     PhysicalProperties res;
     res.distribution = children_prop[0].distribution;
 
-    auto * transforming_step = dynamic_cast<ITransformingStep *>(group_node->getStep().get());
-    if (transforming_step && transforming_step->getDataStreamTraits().preserves_sorting)
-    {
-        res.sort_prop.sort_description = step.getOutputStream().sort_description;
-        res.sort_prop.sort_scope = step.getOutputStream().sort_scope;
-    }
     return res;
 }
 
@@ -167,12 +180,6 @@ PhysicalProperties DeriveOutputProp::visit(ExpressionStep & step)
             else
                 return {.distribution = {.type = Distribution::Any}};
         }
-    }
-
-    if (step.getDataStreamTraits().preserves_sorting)
-    {
-        res.sort_prop.sort_description = step.getOutputStream().sort_description;
-        res.sort_prop.sort_scope = step.getOutputStream().sort_scope;
     }
 
     //    CalculateSortProp sort_prop_calculator(step.getExpression(), children_prop[0].sort_prop);

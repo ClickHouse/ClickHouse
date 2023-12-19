@@ -63,6 +63,6 @@ public:
     SortProp sort_prop;
 };
 
-String toString(std::vector<PhysicalProperties> properties_list) const;
+String toString(std::vector<PhysicalProperties> properties_list);
 
 }

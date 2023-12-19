@@ -118,27 +118,57 @@ String GroupNode::getDescription() const
 
 String GroupNode::toString() const
 {
-    String res;
-    res += "node id: " + std::to_string(getId()) + ", ";
-    res += step->getName() + " (" + step->getStepDescription() + "), ";
-    res += "is_enforce_node: " + std::to_string(is_enforce_node) + ", ";
+    String res = getDescription();
 
-    String child_ids;
-    for (auto * child : children)
-        child_ids += std::to_string(child->getId()) + ", ";
-    res += "children: " + child_ids;
-
-    String prop_map;
-    for (const auto & [output_prop, child_prop_cost] : prop_to_best_child)
+    res += " children: ";
+    if (children.empty())
     {
-        prop_map += output_prop.toString() + "-";
-
-        for (const auto & c_prop : child_prop_cost.child_prop)
-            prop_map += c_prop.toString() + "|";
+        res += "none";
+    }
+    else
+    {
+        res += std::to_string(children[0]->getId());
+        for (size_t i = 1; i < children.size(); i++)
+        {
+            res += "/";
+            res += std::to_string(children[i]->getId());
+        }
     }
 
-    res += "best child prop map: " + prop_map;
+    res += ", best properties: ";
+    String prop_map;
 
+    if (prop_to_best_child.empty())
+    {
+        prop_map = "none";
+    }
+    else
+    {
+        size_t num = 1;
+        for (const auto & [output_prop, child_prop_cost] : prop_to_best_child)
+        {
+            prop_map += output_prop.distribution.toString() + "=";
+            if (child_prop_cost.child_prop.empty())
+            {
+                prop_map += "none";
+            }
+            else
+            {
+                prop_map += child_prop_cost.child_prop[0].distribution.toString();
+                for (size_t i = 1; i < child_prop_cost.child_prop.size(); i++)
+                {
+                    prop_map += "/";
+                    prop_map += child_prop_cost.child_prop[i].distribution.toString();
+                }
+            }
+
+            if (num != prop_to_best_child.size())
+                prop_map += "-";
+            num++;
+        }
+    }
+
+    res += prop_map;
     return res;
 }
 

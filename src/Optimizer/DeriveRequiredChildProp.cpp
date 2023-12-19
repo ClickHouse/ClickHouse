@@ -12,7 +12,7 @@ void setSortProp(QueryPlanStepPtr step, SortProp & required_sort_prop, size_t ch
 
     /// There are some cases where sort desc is misaligned with the header, and in this case it is not required to keep the sort prop.
     /// E.g select * from aaa_all where name in (select name from bbb_all where name like '%d%') order by id limit 13 SETTINGS allow_experimental_query_coordination = 1, allow_experimental_analyzer = 1;
-    /// CreatingSetsStep header is id_0, name_1 but it's sort desc is id
+    /// CreatingSetsStep header is id_0, name_1 but its sort desc is id
     const auto & header = step->getInputStreams()[child_index].header;
     for (const auto & sort_column : step->getInputStreams()[child_index].sort_description)
         if (!header.has(sort_column.column_name))

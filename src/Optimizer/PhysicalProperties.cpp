@@ -5,27 +5,37 @@ namespace DB
 
 String SortProp::toString() const
 {
-    String res;
-    for (const auto & sort_column : sort_description)
-        res += sort_column.column_name + ", ";
-
+    String ret;
     switch (sort_scope)
     {
         case DataStream::SortScope::None:
-            res += "None";
+            ret += "None";
             break;
         case DataStream::SortScope::Stream:
-            res += "Stream";
+            ret += "Stream";
             break;
         case DataStream::SortScope::Global:
-            res += "Global";
+            ret += "Global";
             break;
         case DataStream::SortScope::Chunk:
-            res += "Chunk";
+            ret += "Chunk";
             break;
     }
 
-    return res;
+    if (!sort_description.empty())
+    {
+        ret += "(" + sort_description[0].column_name;
+        for (size_t i = 1; i < std::min(2UL, sort_description.size()); ++i)
+        {
+            ret += "/";
+            ret += sort_description[i].column_name;
+        }
+        if (sort_description.size() > 2UL)
+            ret += "/...";
+        ret += ")";
+    }
+
+    return ret;
 }
 
 String Distribution::toString() const
@@ -108,14 +118,21 @@ bool PhysicalProperties::satisfyDistribution(const PhysicalProperties & required
 
 String PhysicalProperties::toString() const
 {
-    return distribution.toString();
+    return distribution.toString() + "-" + sort_prop.toString();
 }
 
-String toString(std::vector<PhysicalProperties> properties_list) const
+String toString(std::vector<PhysicalProperties> properties_list)
 {
     if (properties_list.empty())
         return {};
-    for (const auto & properties :properties_list)
+
+    String ret = properties_list[0].toString();
+    for (size_t i = 1; i < properties_list.size(); ++i)
+    {
+        ret += "/";
+        ret += properties_list[i].toString();
+    }
+    return ret;
 }
 
 }

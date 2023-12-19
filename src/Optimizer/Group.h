@@ -27,8 +27,8 @@ public:
     void addGroupNode(GroupNodePtr group_node, UInt32 group_node_id);
     GroupNodePtr getOneGroupNode();
 
-    const std::list<GroupNodePtr> & getGroupNodes() const;
-    std::list<GroupNodePtr> & getGroupNodes();
+    const std::vector<GroupNodePtr> & getGroupNodes() const;
+    std::vector<GroupNodePtr> & getGroupNodes();
 
     bool updatePropBestNode(const PhysicalProperties & properties, GroupNodePtr group_node, Cost cost);
 
@@ -50,7 +50,7 @@ public:
 
 private:
     UInt32 id = 0;
-    std::list<GroupNodePtr> group_nodes;
+    std::vector<GroupNodePtr> group_nodes;
 
     /// optimize temp result
     std::unordered_map<PhysicalProperties, NodeAndCost, PhysicalProperties::HashFunction> prop_to_best;
