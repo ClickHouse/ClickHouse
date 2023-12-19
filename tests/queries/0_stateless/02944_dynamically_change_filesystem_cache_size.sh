@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-s3-storage
+# Tags: no-fasttest, no-parallel, no-s3-storage, no-random-settings
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 disk_name="s3_cache_02944"
 
+$CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT -nm --query "
@@ -32,7 +33,9 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -nm --query "SYSTEM RELOAD CONFIG"
+$CLICKHOUSE_CLIENT -nm --query "
+set send_logs_level='fatal';
+SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE state = 'DOWNLOADED'"
@@ -44,7 +47,9 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -nm --query "SYSTEM RELOAD CONFIG"
+$CLICKHOUSE_CLIENT -nm --query "
+set send_logs_level='fatal';
+SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM test FORMAT Null"
@@ -58,7 +63,9 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -nm --query "SYSTEM RELOAD CONFIG"
+$CLICKHOUSE_CLIENT -nm --query "
+set send_logs_level='fatal';
+SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE state = 'DOWNLOADED'"
@@ -70,7 +77,9 @@ cat $config_path \
 > $config_path_tmp
 mv $config_path_tmp $config_path
 
-$CLICKHOUSE_CLIENT -nm --query "SYSTEM RELOAD CONFIG"
+$CLICKHOUSE_CLIENT -nm --query "
+set send_logs_level='fatal';
+SYSTEM RELOAD CONFIG"
 $CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
 
 $CLICKHOUSE_CLIENT --query "SELECT * FROM test FORMAT Null"

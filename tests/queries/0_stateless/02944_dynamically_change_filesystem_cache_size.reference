@@ -1,4 +1,4 @@
-100	10	10	10	0	0	98	10	/var/lib/clickhouse/filesystem_caches/s3_cache_02944/	5	5000	0	1
+100	10	10	10	0	0	0	0	/var/lib/clickhouse/filesystem_caches/s3_cache_02944/	5	5000	0	1
 0
 10
 98
