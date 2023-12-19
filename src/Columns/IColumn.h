@@ -631,17 +631,6 @@ struct IsMutableColumns<Arg, Args ...>
 template <>
 struct IsMutableColumns<> { static const bool value = true; };
 
-template <typename ... Args>
-struct IsMutableColumnsOrRvalueReferences;
-
-template <typename Arg, typename ... Args>
-struct IsMutableColumnsOrRvalueReferences<Arg, Args ...>
-{
-    static const bool value = (std::is_assignable<MutableColumnPtr &&, Arg>::value || std::is_rvalue_reference_v<Arg &&>) && IsMutableColumnsOrRvalueReferences<Args ...>::value;
-};
-
-template <>
-struct IsMutableColumnsOrRvalueReferences<> { static const bool value = true; };
 
 template <typename Type>
 const Type * checkAndGetColumn(const IColumn & column)
