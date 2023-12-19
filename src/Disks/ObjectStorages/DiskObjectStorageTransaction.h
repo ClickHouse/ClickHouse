@@ -81,6 +81,13 @@ protected:
 
     DiskObjectStorageOperations operations_to_execute;
 
+    DiskObjectStorageTransaction(
+        IObjectStorage & object_storage_,
+        IMetadataStorage & metadata_storage_,
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
+        MetadataTransactionPtr metadata_transaction_);
+
+
     void writeFileUsingBlobWritingFunctionOps(
         const String & path, WriteMode mode, WriteBlobFunction && write_blob_function, StoredObject & object);
 
@@ -91,8 +98,7 @@ public:
     DiskObjectStorageTransaction(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
-        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_,
-        MetadataTransactionPtr metadata_transaction_);
+        DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
 
     void commit() override;
     void undo() override;
@@ -111,11 +117,7 @@ public:
 
     void createFile(const String & path) override;
 
-    void copyFile(
-        const std::string & from_file_path,
-        const std::string & to_file_path,
-        const ReadSettings & read_settings,
-        const WriteSettings &) override;
+    void copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings &) override;
 
     /// writeFile is a difficult function for transactions.
     /// Now it's almost noop because metadata added to transaction in finalize method
@@ -137,11 +139,9 @@ public:
     void removeRecursive(const std::string & path) override;
 
     void removeSharedFile(const std::string & path, bool keep_shared_data) override;
-    void
-    removeSharedRecursive(const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only) override;
+    void removeSharedRecursive(const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only) override;
     void removeSharedFileIfExists(const std::string & path, bool keep_shared_data) override;
-    void
-    removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
     void chmod(const String & path, mode_t mode) override;

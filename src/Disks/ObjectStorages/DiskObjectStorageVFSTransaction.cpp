@@ -156,13 +156,15 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
     CopyFileObjectStorageVFSOperation(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
+        IObjectStorage & destination_object_storage_,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const String & from_path_,
         const String & to_path_,
         zkutil::ZooKeeperPtr zookeeper_,
         const VFSTraits & traits_)
-        : CopyFileObjectStorageOperation(object_storage_, metadata_storage_, read_settings_, write_settings_, from_path_, to_path_)
+        : CopyFileObjectStorageOperation(
+            object_storage_, metadata_storage_, destination_object_storage_, read_settings_, write_settings_, from_path_, to_path_)
         , zookeeper(std::move(zookeeper_))
         , traits(traits_)
     {
@@ -179,7 +181,7 @@ void DiskObjectStorageVFSTransaction::copyFile(
     const String & from_file_path, const String & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
     operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageVFSOperation>(
-        object_storage, metadata_storage, read_settings, write_settings, from_file_path, to_file_path, zookeeper, traits));
+        object_storage, metadata_storage, object_storage, read_settings, write_settings, from_file_path, to_file_path, zookeeper, traits));
 }
 
 void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink)

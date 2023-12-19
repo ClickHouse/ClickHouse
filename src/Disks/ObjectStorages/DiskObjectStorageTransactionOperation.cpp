@@ -15,6 +15,7 @@ extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 CopyFileObjectStorageOperation::CopyFileObjectStorageOperation(
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_,
+    IObjectStorage & destination_object_storage_,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const std::string & from_path_,
@@ -24,6 +25,7 @@ CopyFileObjectStorageOperation::CopyFileObjectStorageOperation(
     , write_settings(write_settings_)
     , from_path(from_path_)
     , to_path(to_path_)
+    , destination_object_storage(destination_object_storage_)
 {
 }
 
@@ -42,7 +44,7 @@ void CopyFileObjectStorageOperation::execute(MetadataTransactionPtr tx)
         auto object_key = object_storage.generateObjectKeyForPath(to_path);
         auto object_to = StoredObject(object_key.serialize());
 
-        object_storage.copyObject(object_from, object_to, read_settings, write_settings);
+        object_storage.copyObjectToAnotherObjectStorage(object_from, object_to,read_settings,write_settings, destination_object_storage);
 
         tx->addBlobToMetadata(to_path, object_key, object_from.bytes_size);
 
@@ -53,7 +55,7 @@ void CopyFileObjectStorageOperation::execute(MetadataTransactionPtr tx)
 void CopyFileObjectStorageOperation::undo()
 {
     for (const auto & object : created_objects)
-        object_storage.removeObject(object);
+        destination_object_storage.removeObject(object);
 }
 
 RemoveRecursiveObjectStorageOperation::RemoveRecursiveObjectStorageOperation(

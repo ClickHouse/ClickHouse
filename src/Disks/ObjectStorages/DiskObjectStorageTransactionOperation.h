@@ -13,10 +13,12 @@ struct CopyFileObjectStorageOperation : IDiskObjectStorageOperation
     String to_path;
 
     StoredObjects created_objects;
+    IObjectStorage& destination_object_storage;
 
     CopyFileObjectStorageOperation(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
+        IObjectStorage & destination_object_storage_,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const String & from_path_,
