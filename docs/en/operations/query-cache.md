@@ -33,7 +33,6 @@ This reduces maintenance effort and avoids redundancy.
 The cached query result is tied to the user executing it. Authorization checks are performed when the query is executed, meaning that if there are any alterations to the user's role or permissions between one cached query and the next query, the query result will not reflect these changes. We recommend using different users to distingush between different level of access, instead of actively toggling roles for a single user between queries, as this practice may lead to unexpected query results.
 :::
 
-
 ## Configuration Settings and Usage
 
 Setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries of the
