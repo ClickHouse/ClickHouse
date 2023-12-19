@@ -2838,9 +2838,11 @@ Extracts a column with specified type from a `Variant` column.
 
 **Syntax**
 
-``` sql
+```sql
 tupleElement(variant, type_name, [, default_value])
 ```
+
+**Arguments**
 
 - `variant` — Variant column. [Variant](../../sql-reference/data-types/variant.md).
 - `type_name` — The name of the variant type to extract. [String](../../sql-reference/data-types/string.md).
@@ -2867,3 +2869,91 @@ SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantEleme
 └───────────────┴─────────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
 ```
 
+## minSampleSizeConversion
+
+Calculates minimum required sample size for an A/B test comparing conversions (proportions) in two samples.
+
+**Syntax**
+
+``` sql
+minSampleSizeConversion(baseline, mde, power, alpha)
+```
+
+Uses the formula described in [this article](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a). Assumes equal sizes of treatment and control groups. Returns the sample size required for one group (i.e. the sample size required for the whole experiment is twice the returned value).
+
+**Arguments**
+
+- `baseline` — Baseline conversion. [Float](../data-types/float.md).
+- `mde` — Minimum detectable effect (MDE) as percentage points (e.g. for a baseline conversion 0.25 the MDE 0.03 means an expected change to 0.25 ± 0.03). [Float](../data-types/float.md).
+- `power` — Required statistical power of a test (1 - probability of Type II error). [Float](../data-types/float.md).
+- `alpha` — Required significance level of a test (probability of Type I error). [Float](../data-types/float.md).
+
+**Returned value**
+
+A named [Tuple](../data-types/tuple.md) with 3 elements:
+
+- `"minimum_sample_size"` — Required sample size. [Float64](../data-types/float.md).
+- `"detect_range_lower"` — Lower bound of the range of values not detectable with the returned required sample size (i.e. all values less than or equal to `"detect_range_lower"` are detectable with the provided `alpha` and `power`). Calculated as `baseline - mde`. [Float64](../data-types/float.md).
+- `"detect_range_upper"` — Upper bound of the range of values not detectable with the returned required sample size (i.e. all values greater than or equal to `"detect_range_upper"` are detectable with the provided `alpha` and `power`). Calculated as `baseline + mde`. [Float64](../data-types/float.md).
+
+**Example**
+
+The following query calculates the required sample size for an A/B test with baseline conversion of 25%, MDE of 3%, significance level of 5%, and the desired statistical power of 80%:
+
+``` sql
+SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size;
+```
+
+Result:
+
+``` text
+┌─sample_size───────────────────┐
+│ (3396.077603219163,0.22,0.28) │
+└───────────────────────────────┘
+```
+
+## minSampleSizeContinuous
+
+Calculates minimum required sample size for an A/B test comparing means of a continuous metric in two samples.
+
+**Syntax**
+
+``` sql
+minSampleSizeContinous(baseline, sigma, mde, power, alpha)
+```
+
+Alias: `minSampleSizeContinous`
+
+Uses the formula described in [this article](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a). Assumes equal sizes of treatment and control groups. Returns the required sample size for one group (i.e. the sample size required for the whole experiment is twice the returned value). Also assumes equal variance of the test metric in treatment and control groups.
+
+**Arguments**
+
+- `baseline` — Baseline value of a metric. [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
+- `sigma` — Baseline standard deviation of a metric. [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
+- `mde` — Minimum detectable effect (MDE) as percentage of the baseline value (e.g. for a baseline value 112.25 the MDE 0.03 means an expected change to 112.25 ± 112.25*0.03). [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
+- `power` — Required statistical power of a test (1 - probability of Type II error). [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
+- `alpha` — Required significance level of a test (probability of Type I error). [Integer](../data-types/int-uint.md) or [Float](../data-types/float.md).
+
+**Returned value**
+
+A named [Tuple](../data-types/tuple.md) with 3 elements:
+
+- `"minimum_sample_size"` — Required sample size. [Float64](../data-types/float.md).
+- `"detect_range_lower"` — Lower bound of the range of values not detectable with the returned required sample size (i.e. all values less than or equal to `"detect_range_lower"` are detectable with the provided `alpha` and `power`). Calculated as `baseline * (1 - mde)`. [Float64](../data-types/float.md).
+- `"detect_range_upper"` — Upper bound of the range of values not detectable with the returned required sample size (i.e. all values greater than or equal to `"detect_range_upper"` are detectable with the provided `alpha` and `power`). Calculated as `baseline * (1 + mde)`. [Float64](../data-types/float.md).
+
+**Example**
+
+The following query calculates the required sample size for an A/B test on a metric with baseline value of 112.25, standard deviation of 21.1, MDE of 3%, significance level of 5%, and the desired statistical power of 80%:
+
+``` sql
+SELECT minSampleSizeContinous(112.25, 21.1, 0.03, 0.80, 0.05) AS sample_size;
+```
+
+Result:
+
+``` text
+┌─sample_size───────────────────────────┐
+│ (616.2931945826209,108.8825,115.6175) │
+└───────────────────────────────────────┘
+```

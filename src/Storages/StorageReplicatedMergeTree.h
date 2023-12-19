@@ -757,10 +757,6 @@ private:
         int32_t alter_version,
         int32_t log_version);
 
-    /// Exchange parts.
-
-    ConnectionTimeouts getFetchPartHTTPTimeouts(ContextPtr context);
-
     /** Returns an empty string if no one has a part.
       */
     String findReplicaHavingPart(const String & part_name, bool active);

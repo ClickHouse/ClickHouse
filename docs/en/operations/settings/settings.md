@@ -5186,3 +5186,25 @@ SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) =
 ```
 
 Default value: `false`.
+
+## max_partition_size_to_drop
+
+Restriction on dropping partitions in query time.
+
+Default value: 50 GB.
+The value 0 means that you can drop partitions without any restrictions.
+
+:::note
+This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
+:::
+
+## max_table_size_to_drop
+
+Restriction on deleting tables in query time.
+
+Default value: 50 GB.
+The value 0 means that you can delete all tables without any restrictions.
+
+:::note
+This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
+:::
