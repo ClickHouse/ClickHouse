@@ -1148,7 +1148,10 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
             break;
 
         if (!event->tryWait(quorum_timeout_ms))
-            throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Timeout while waiting for quorum");
+            throw Exception(
+                ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+                "Unknown quorum status. The data was inserted in the local replica but we could not verify quorum. Reason: "
+                "Timeout while waiting for quorum");
 
         LOG_TRACE(log, "Quorum {} for part {} updated, will check quorum node still exists", quorum_path, part_name);
     }
@@ -1158,7 +1161,10 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
     Coordination::Stat stat;
     String value;
     if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat) || stat.version != is_active_node_version)
-        throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT, "Replica become inactive while waiting for quorum");
+        throw Exception(
+            ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+            "Unknown quorum status. The data was inserted in the local replica but we could not verify quorum. Reason: "
+            "Replica became inactive while waiting for quorum");
 
     LOG_TRACE(log, "Quorum '{}' for part {} satisfied", quorum_path, part_name);
 }
