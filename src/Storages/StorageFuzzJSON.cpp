@@ -481,7 +481,7 @@ protected:
     {
         Columns columns;
         columns.reserve(block_header.columns());
-        for (const auto& col : block_header)
+        for (const auto & col : block_header)
         {
             chassert(col.type->getTypeId() == TypeIndex::String);
             columns.emplace_back(createColumn());
