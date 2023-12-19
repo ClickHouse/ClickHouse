@@ -47,7 +47,7 @@ bool SerializationEnum<Type>::tryDeserializeTextEscaped(IColumn & column, ReadBu
     {
         std::string field_name;
         readEscapedString(field_name, istr);
-        if (!this->tryGetValue(x, StringRef(field_name), true))
+        if (!ref_enum_values.tryGetValue(x, StringRef(field_name), true))
             return false;
     }
 
@@ -75,7 +75,7 @@ bool SerializationEnum<Type>::tryDeserializeTextQuoted(IColumn & column, ReadBuf
     std::string field_name;
     readQuotedStringWithSQLStyle(field_name, istr);
     FieldType x;
-    if (!this->tryGetValue(x, StringRef(field_name)))
+    if (!ref_enum_values.tryGetValue(x, StringRef(field_name)))
         return false;
     assert_cast<ColumnType &>(column).getData().push_back(x);
     return true;
@@ -111,7 +111,7 @@ bool SerializationEnum<Type>::tryDeserializeWholeText(IColumn & column, ReadBuff
     {
         std::string field_name;
         readStringUntilEOF(field_name, istr);
-        if (!this->tryGetValue(x, StringRef(field_name), true))
+        if (!ref_enum_values.tryGetValue(x, StringRef(field_name), true))
             return false;
     }
 
@@ -157,7 +157,7 @@ bool SerializationEnum<Type>::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     {
         std::string field_name;
         readJSONString(field_name, istr);
-        if (!this->tryGetValue(x, StringRef(field_name)))
+        if (!ref_enum_values.tryGetValue(x, StringRef(field_name)))
             return false;
     }
 
@@ -198,7 +198,7 @@ bool SerializationEnum<Type>::tryDeserializeTextCSV(IColumn & column, ReadBuffer
     {
         std::string field_name;
         readCSVString(field_name, istr, settings.csv);
-        if (!this->tryGetValue(x, StringRef(field_name), true))
+        if (!ref_enum_values.tryGetValue(x, StringRef(field_name), true))
             return false;
     }
 

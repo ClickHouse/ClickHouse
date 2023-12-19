@@ -60,7 +60,7 @@ public:
 
     bool tryReadValue(ReadBuffer & istr, FieldType & x) const
     {
-       if (!tryReadText(x, istr) || !this->hasValue(x))
+       if (!tryReadText(x, istr) || !ref_enum_values.hasValue(x))
            return false;
 
        return true;
