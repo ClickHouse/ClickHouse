@@ -135,6 +135,13 @@ public:
     static SetKey createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node);
 
     PreparedSets & getPreparedSets() { return prepared_sets; }
+
+    /** Check if query is streaming.
+      * Streaming query is query that has at least one stream table.
+    */
+    bool isStreaming() const { return is_streaming; }
+    void setIsStreaming(bool is_streaming_) { is_streaming = is_streaming_; }
+
 private:
     /// Query context
     ContextMutablePtr query_context;
@@ -150,6 +157,9 @@ private:
 
     /// Set key to set
     PreparedSets prepared_sets;
+
+    /// Is streaming query
+    bool is_streaming = false;
 };
 
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;

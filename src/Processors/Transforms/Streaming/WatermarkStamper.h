@@ -20,7 +20,7 @@ namespace Streaming
 struct WatermarkStamperParams
 {
 public:
-    WatermarkStamperParams(ASTPtr query, TreeRewriterResultPtr syntax_analyzer_result);
+    WatermarkStamperParams(ASTPtr query, bool has_aggregates, bool has_group_by);
 
     enum class EmitMode
     {

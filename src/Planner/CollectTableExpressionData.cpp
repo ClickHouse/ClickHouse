@@ -1,13 +1,16 @@
 #include <Planner/CollectTableExpressionData.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageView.h>
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/UnionNode.h>
 
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -192,6 +195,60 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
     }
 }
 
+bool storageSupportsStreamingQuery(const StoragePtr & storage, const ContextPtr & query_context)
+{
+    if (auto * view = storage->as<StorageView>(); view)
+        return view->isStreamingQuery(query_context);
+    else
+        return storage->supportsStreamingQuery();
+}
+
+void collectStreamingStorage(QueryTreeNodePtr & node, PlannerContextPtr & planner_context)
+{
+    if (auto * table_node = node->as<TableNode>())
+    {
+        const StoragePtr & storage = table_node->getStorage();
+        if (storageSupportsStreamingQuery(storage, planner_context->getQueryContext()))
+            planner_context->setIsStreaming(true);
+    }
+    else if (auto * table_function_node = node->as<TableFunctionNode>())
+    {
+        const StoragePtr & storage = table_function_node->getStorage();
+        if (storageSupportsStreamingQuery(storage, planner_context->getQueryContext()))
+            planner_context->setIsStreaming(true);
+    }
+    else if (auto * query_node = node->as<QueryNode>())
+    {
+        auto table_expressions_nodes = extractTableExpressions(query_node->getJoinTree());
+        for (auto & table_expression_node : table_expressions_nodes)
+        {
+            collectStreamingStorage(table_expression_node, planner_context);
+            if (planner_context->isStreaming())
+                return;
+        }
+    }
+    else if (auto * union_node = node->as<UnionNode>())
+    {
+        auto query_nodes = union_node->getQueries().getNodes();
+        for (auto & n : query_nodes)
+        {
+            if (n->getNodeType() == QueryTreeNodeType::QUERY ||
+                n->getNodeType() == QueryTreeNodeType::UNION)
+            {
+                collectStreamingStorage(n, planner_context);
+                if (planner_context->isStreaming())
+                    return;
+            }
+        }
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Expected table, table function, query or union node. Actual {}",
+            node->formatASTForErrorMessage());
+    }
+}
+
 }
 
 void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr & planner_context)
@@ -201,6 +258,10 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
 
     for (auto & table_expression_node : table_expressions_nodes)
     {
+        if (!planner_context->isStreaming() &&
+            planner_context->getQueryContext()->getSettingsRef().allow_experimental_streaming_query_mode.value == "streaming")
+            collectStreamingStorage(table_expression_node, planner_context);
+
         auto & table_expression_data = planner_context->getOrCreateTableExpressionData(table_expression_node);
 
         if (auto * table_node = table_expression_node->as<TableNode>())

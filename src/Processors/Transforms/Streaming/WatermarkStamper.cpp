@@ -44,14 +44,14 @@ void mergeEmitQuerySettings(const ASTPtr & emit_query, WatermarkStamperParams & 
 }
 }
 
-WatermarkStamperParams::WatermarkStamperParams(ASTPtr query, TreeRewriterResultPtr syntax_analyzer_result)
+WatermarkStamperParams::WatermarkStamperParams(ASTPtr query, bool has_aggregates, bool has_group_by)
 {
     const auto * select_query = query->as<ASTSelectQuery>();
     assert(select_query);
 
     mergeEmitQuerySettings(select_query->emit(), *this);
 
-    if (syntax_analyzer_result->aggregates.empty() && !syntax_analyzer_result->has_group_by)
+    if (!has_aggregates && !has_group_by)
     {
         /// For streaming non-aggregation query
         if (mode != EmitMode::TAIL && mode != EmitMode::NONE)

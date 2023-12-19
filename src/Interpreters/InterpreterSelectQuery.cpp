@@ -3366,7 +3366,7 @@ void InterpreterSelectQuery::executeStreamingAggregation(
         settings.compile_aggregate_expressions,
         settings.min_count_to_compile_aggregate_expression,
         {},
-        shouldKeepAggregationState(),
+        true,
         streaming_group_by);
 
     auto merge_threads = max_streams;
@@ -3410,28 +3410,10 @@ bool InterpreterSelectQuery::hasStreamingGlobalAggregation() const
     return isStreamingQuery() && hasAggregation();
 }
 
-bool InterpreterSelectQuery::shouldKeepAggregationState() const
-{
-    if (hasStreamingGlobalAggregation())
-    {
-        if (interpreter_subquery && interpreter_subquery->hasStreamingGlobalAggregation())
-            /// When we do global aggregation over global aggregation
-            /// we will need remove the aggregation state in the outer aggregation
-            /// to keep the results correct.
-            /// For example, for query `SELECT sum(s) FROM (SELECT sum(i) FROM kafka_stream);`
-            /// we can't keep the aggregation state of `sum(s)` when inner subquery emits
-            return false;
-
-        return true;
-    }
-
-    return false;
-}
-
 void InterpreterSelectQuery::buildWatermarkQueryPlan(QueryPlan & query_plan) const
 {
     assert(isStreamingQuery());
-    auto params = std::make_shared<Streaming::WatermarkStamperParams>(query_info.query, query_info.syntax_analyzer_result);
+    auto params = std::make_shared<Streaming::WatermarkStamperParams>(query_info.query, !query_info.syntax_analyzer_result->aggregates.empty(), query_info.syntax_analyzer_result->has_group_by);
     query_plan.addStep(std::make_unique<Streaming::WatermarkStep>(query_plan.getCurrentDataStream(), std::move(params), log));
 }
 

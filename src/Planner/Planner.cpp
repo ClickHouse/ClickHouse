@@ -33,6 +33,9 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/Streaming/WatermarkStep.h>
+#include <Processors/QueryPlan/Streaming/AggregatingStep.h>
+#include <Processors/Transforms/Streaming/WatermarkStamper.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -614,6 +617,9 @@ void addSortingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context)
 {
+    if (planner_context->isStreaming())
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Sorting in streaming query is not supported");
+
     const auto & sort_description = query_analysis_result.sort_description;
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
@@ -1112,6 +1118,61 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     query_plan.addStep(std::move(filter_step));
 }
 
+void addWatermarkStep(QueryPlan & query_plan, const QueryNode & query_node, const SelectQueryInfo & select_query_info)
+{
+    auto params = std::make_shared<Streaming::WatermarkStamperParams>(select_query_info.query, select_query_info.has_aggregates, query_node.hasGroupBy());
+    query_plan.addStep(std::make_unique<Streaming::WatermarkStep>(query_plan.getCurrentDataStream(), std::move(params), &Poco::Logger::get("Planner")));
+}
+
+void addStreamingAggregationStep(QueryPlan & query_plan,
+    const AggregationAnalysisResult & aggregation_analysis_result,
+    const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info [[maybe_unused]])
+{
+    assert(planner_context->isStreaming());
+
+    const auto & query_context = planner_context->getQueryContext();
+    const Settings & settings = query_context->getSettingsRef();
+
+    auto streaming_group_by = Streaming::Aggregator::Params::GroupBy::OTHER;
+
+    const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
+    const auto & keys = aggregation_analysis_result.aggregation_keys;
+
+    AggregateDescriptions aggregates = aggregation_analysis_result.aggregate_descriptions;
+
+    Streaming::Aggregator::Params params(
+        header_before_aggregation,
+        keys,
+        aggregates,
+        query_analysis_result.aggregate_overflow_row,
+        settings.max_rows_to_group_by,
+        settings.group_by_overflow_mode,
+        settings.group_by_two_level_threshold,
+        settings.group_by_two_level_threshold_bytes,
+        settings.max_bytes_before_external_group_by,
+        settings.empty_result_for_aggregation_by_empty_set
+            || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
+                && aggregation_analysis_result.group_by_with_constant_keys),
+        query_context->getGlobalTemporaryVolume(),
+        settings.max_threads,
+        settings.min_free_disk_space_for_temporary_data,
+        settings.compile_aggregate_expressions,
+        settings.min_count_to_compile_aggregate_expression,
+        {},
+        true,
+        streaming_group_by);
+
+    auto merge_threads = settings.max_threads;
+    auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
+        ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+        : static_cast<size_t>(settings.max_threads);
+
+    query_plan.addStep(std::make_unique<Streaming::AggregatingStep>(
+        query_plan.getCurrentDataStream(), params, query_analysis_result.aggregate_final, merge_threads, temporary_data_merge_threads));
+}
+
 }
 
 PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
@@ -1444,6 +1505,9 @@ void Planner::buildPlanForQueryNode()
 
     if (query_processing_info.isFirstStage())
     {
+        if (planner_context->isStreaming())
+            addWatermarkStep(query_plan, query_node, select_query_info);
+
         if (expression_analysis_result.hasWhere())
             addFilterStep(query_plan, expression_analysis_result.getWhere(), "WHERE", result_actions_to_execute);
 
@@ -1453,7 +1517,10 @@ void Planner::buildPlanForQueryNode()
             if (aggregation_analysis_result.before_aggregation_actions)
                 addExpressionStep(query_plan, aggregation_analysis_result.before_aggregation_actions, "Before GROUP BY", result_actions_to_execute);
 
-            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
+            if (planner_context->isStreaming())
+                addStreamingAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
+            else
+                addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
         }
 
         /** If we have aggregation, we can't execute any later-stage

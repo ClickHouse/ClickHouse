@@ -204,7 +204,6 @@ private:
     UInt64 maxBlockSizeByLimit() const;
 
     void executeStreamingAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final);
-    bool shouldKeepAggregationState() const;
     void checkAggregateAndWindowFunctions();
     void buildWatermarkQueryPlan(QueryPlan & query_plan) const;
     void buildStreamingProcessingQueryPlanAfterJoin(QueryPlan & query_plan);
