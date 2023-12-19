@@ -92,7 +92,6 @@ def test_exponential_backoff_with_merge_tree(started_cluster, node, found_in_log
 
 
 def test_exponential_backoff_with_replicated_tree(started_cluster):
-
     prepare_cluster(True)
 
     node_no_backoff.query(
@@ -111,7 +110,6 @@ def test_exponential_backoff_with_replicated_tree(started_cluster):
     ],
 )
 def test_exponential_backoff_create_dependent_table(started_cluster, node):
-
     prepare_cluster(False)
 
     node.query("INSERT INTO test_mutations SELECT * FROM system.numbers LIMIT 10")
