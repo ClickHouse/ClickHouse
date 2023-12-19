@@ -36,7 +36,7 @@ public:
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
         bool is_http_method_head_,
-        size_t keep_alive_timeout_,
+        UInt64 keep_alive_timeout_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         CompressionMethod compression_method_ = CompressionMethod::None);
 

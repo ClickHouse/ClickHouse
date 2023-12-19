@@ -925,13 +925,12 @@ PooledReadWriteBufferFromHTTP::PooledReadWriteBufferFromHTTP(
     Poco::URI uri_,
     const std::string & method_,
     OutStreamCallback out_stream_callback_,
-    const ConnectionTimeouts & timeouts_,
     const Poco::Net::HTTPBasicCredentials & credentials_,
     size_t buffer_size_,
     const UInt64 max_redirects,
-    size_t max_connections_per_endpoint)
+    PooledSessionFactoryPtr session_factory)
     : Parent(
-        std::make_shared<SessionType>(uri_, max_redirects, std::make_shared<PooledSessionFactory>(timeouts_, max_connections_per_endpoint)),
+        std::make_shared<SessionType>(uri_, max_redirects, session_factory),
         uri_,
         credentials_,
         method_,
