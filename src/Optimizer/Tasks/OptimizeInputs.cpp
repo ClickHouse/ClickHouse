@@ -218,6 +218,19 @@ Cost OptimizeInputs::enforceGroupNode(const PhysicalProperties & required_prop, 
             true,
             true);
     }
+    else if (
+        output_prop.sort_prop.sort_scope == DataStream::SortScope::Chunk && required_prop.distribution.type != Distribution::Type::Hashed)
+    {
+        /// We can keep the sort info if distribution type is not hash.
+        exchange_step = std::make_shared<ExchangeDataStep>(
+            required_prop.distribution,
+            group_node->getStep()->getOutputStream(),
+            max_block_size,
+            required_prop.sort_prop.sort_description,
+            DataStream::SortScope::Chunk,
+            false,
+            false);
+    }
     else
     {
         exchange_step

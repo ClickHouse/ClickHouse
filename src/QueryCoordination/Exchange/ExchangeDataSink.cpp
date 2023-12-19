@@ -50,7 +50,9 @@ void ExchangeDataSink::consume(Chunk chunk)
     auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     /// E.g select count() from distribute_table where name='a'
-    /// Filter has empty header. ExchangeData has empty header. But there is real data, and in order to prevent the upper layer from receiving an empty block, we construct a fake header.
+    /// Filter has empty header. ExchangeData has empty header.
+    /// But there is real data, and in order to prevent the
+    /// upper layer from receiving an empty block, we construct a fake header.
     if (unlikely(rows && !block))
     {
         auto column = ColumnUInt64::create();
