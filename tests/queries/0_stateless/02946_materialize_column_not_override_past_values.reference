@@ -1,0 +1,29 @@
+--Origin--
+1	2
+2	54321
+--After materialize--
+1	2
+2	54321
+--Origin--
+1	2
+2	54321
+--After materialize--
+1	2
+2	54321
+--Origin--
+1	2
+2	\N
+3	54321
+--After materialize--
+1	2
+2	\N
+3	54321
+--Origin--
+1	2
+2	54321
+--After rename--
+1	2
+2	54321
+--After materialize--
+1	2
+2	54321
