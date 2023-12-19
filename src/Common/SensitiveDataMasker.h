@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <mutex>
 #include <vector>
 #include <cstdint>
 
@@ -46,7 +45,6 @@ class SensitiveDataMasker
 private:
     class MaskingRule;
     std::vector<std::unique_ptr<MaskingRule>> all_masking_rules;
-    static std::mutex instance_mutex;
     static std::unique_ptr<SensitiveDataMasker> sensitive_data_masker;
 
 public:

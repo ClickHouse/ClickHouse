@@ -8,6 +8,7 @@
 import enum
 from queue import Full
 import shutil
+import itertools
 import sys
 import os
 import os.path
@@ -554,8 +555,12 @@ class SettingsRandomizer:
         "prefer_localhost_replica": lambda: random.randint(0, 1),
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_threads": lambda: random.randint(1, 64),
-        "optimize_or_like_chain": lambda: random.randint(0, 1),
+        "optimize_append_index": lambda: random.randint(0, 1),
+        "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
+        "optimize_if_transform_strings_to_enum": lambda: random.randint(0, 1),
         "optimize_read_in_order": lambda: random.randint(0, 1),
+        "optimize_or_like_chain": lambda: random.randint(0, 1),
+        "optimize_substitute_columns": lambda: random.randint(0, 1),
         "enable_multiple_prewhere_read_steps": lambda: random.randint(0, 1),
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
@@ -577,6 +582,11 @@ class SettingsRandomizer:
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
+        "filesystem_cache_segments_batch_size": lambda: random.choice([0, 3, 10, 50]),
+        "read_from_filesystem_cache_if_exists_otherwise_bypass_cache": lambda: random.randint(
+            0, 1
+        ),
+        "throw_on_error_from_cache_on_write_operations": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "allow_prefetched_read_pool_for_remote_filesystem": lambda: random.randint(
             0, 1
@@ -1635,6 +1645,8 @@ class TestSuite:
             if USE_JINJA
             else None
         )
+        if j2env is not None:
+            j2env.globals.update(product=itertools.product)
 
         for test_name in os.listdir(self.suite_path):
             if not is_test_from_dir(self.suite_path, test_name):
@@ -2197,7 +2209,7 @@ def reportLogStats(args):
         GROUP BY message_format_string
         ORDER BY count DESC
         LIMIT 100
-        FORMAT TSVWithNamesAndTypes
+        FORMAT PrettySpaceNoEscapes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop patterns of log messages:\n")
@@ -2217,7 +2229,7 @@ def reportLogStats(args):
         GROUP BY pattern
         ORDER BY count DESC
         LIMIT 30
-        FORMAT TSVWithNamesAndTypes
+        FORMAT PrettySpaceNoEscapes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop messages without format string (fmt::runtime):\n")
@@ -2230,10 +2242,10 @@ def reportLogStats(args):
         WHERE (now() - toIntervalMinute(240)) < event_time
         AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))
         AND (message NOT LIKE concat('%Exception: ', s, '%'))
-        GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT TSVWithNamesAndTypes
+        GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT PrettySpaceNoEscapes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
-    print("\nTop messages that does not match its format string:\n")
+    print("\nTop messages not matching their format strings:\n")
     print(value)
     print("\n")
 
@@ -2261,13 +2273,13 @@ def reportLogStats(args):
               'Attempt to read after eof', 'String size is too big ({}), maximum: {}'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(message), 1, 120),
-            min(if(length(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate
+            min(if(notEmpty(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)') as prefix), prefix, length(message)) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate
         FROM system.text_log
         WHERE (now() - toIntervalMinute(240)) < event_time
             AND (length(message_format_string) < 16
-                OR (message ilike '%DB::Exception%' AND length_without_exception_boilerplate < 30))
+                OR (message ILIKE '%DB::Exception%' AND length_without_exception_boilerplate < 30))
             AND message_format_string NOT IN known_short_messages
-        GROUP BY message_format_string ORDER BY c DESC LIMIT 50 FORMAT TSVWithNamesAndTypes
+        GROUP BY message_format_string ORDER BY c DESC LIMIT 50 FORMAT PrettySpaceNoEscapes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop short messages:\n")

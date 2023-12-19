@@ -558,7 +558,7 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
         return;
     }
 
-    if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
+    if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT) && !table_join->isEnabledAlgorithm(JoinAlgorithm::DEFAULT))
         return;
 
     if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
@@ -645,6 +645,74 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
 }
 
+
+static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
+    std::shared_ptr<TableJoin> & table_join,
+    const QueryTreeNodePtr & right_table_expression,
+    const Block & left_table_expression_header,
+    const Block & right_table_expression_header,
+    const PlannerContextPtr & planner_context)
+{
+    /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
+    if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
+    {
+        JoinPtr direct_join = tryDirectJoin(table_join, right_table_expression, right_table_expression_header, planner_context);
+        if (direct_join)
+            return direct_join;
+    }
+
+    if (algorithm == JoinAlgorithm::PARTIAL_MERGE ||
+        algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE)
+    {
+        if (MergeJoin::isSupported(table_join))
+            return std::make_shared<MergeJoin>(table_join, right_table_expression_header);
+    }
+
+    if (algorithm == JoinAlgorithm::HASH ||
+        /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
+        algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
+        algorithm == JoinAlgorithm::PARALLEL_HASH ||
+        algorithm == JoinAlgorithm::DEFAULT)
+    {
+        if (table_join->allowParallelHashJoin())
+        {
+            auto query_context = planner_context->getQueryContext();
+            return std::make_shared<ConcurrentHashJoin>(query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header);
+        }
+
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+    }
+
+    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
+    {
+        if (FullSortingMergeJoin::isSupported(table_join))
+            return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header);
+    }
+
+    if (algorithm == JoinAlgorithm::GRACE_HASH)
+    {
+        if (GraceHashJoin::isSupported(table_join))
+        {
+            auto query_context = planner_context->getQueryContext();
+            return std::make_shared<GraceHashJoin>(
+                query_context,
+                table_join,
+                left_table_expression_header,
+                right_table_expression_header,
+                query_context->getTempDataOnDisk());
+        }
+    }
+
+    if (algorithm == JoinAlgorithm::AUTO)
+    {
+        if (MergeJoin::isSupported(table_join))
+            return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+    }
+
+    return nullptr;
+}
+
 std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_join,
     const QueryTreeNodePtr & right_table_expression,
     const Block & left_table_expression_header,
@@ -679,7 +747,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     if (table_join->isJoinWithConstant())
     {
         if (!table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN with constant supported only with join algorithm 'hash'");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
 
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }
@@ -687,60 +755,11 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 
-    /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
-    if (table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
+    for (auto algorithm : table_join->getEnabledJoinAlgorithms())
     {
-        JoinPtr direct_join = tryDirectJoin(table_join, right_table_expression, right_table_expression_header, planner_context);
-        if (direct_join)
-            return direct_join;
-    }
-
-    if (table_join->isEnabledAlgorithm(JoinAlgorithm::PARTIAL_MERGE) ||
-        table_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE))
-    {
-        if (MergeJoin::isSupported(table_join))
-            return std::make_shared<MergeJoin>(table_join, right_table_expression_header);
-    }
-
-    if (table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) ||
-        /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
-        table_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE) ||
-        table_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
-    {
-        if (table_join->allowParallelHashJoin())
-        {
-            auto query_context = planner_context->getQueryContext();
-            return std::make_shared<ConcurrentHashJoin>(query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header);
-        }
-
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
-    }
-
-    if (table_join->isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE))
-    {
-        if (FullSortingMergeJoin::isSupported(table_join))
-            return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header);
-    }
-
-    if (table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
-    {
-        if (GraceHashJoin::isSupported(table_join))
-        {
-            auto query_context = planner_context->getQueryContext();
-            return std::make_shared<GraceHashJoin>(
-                query_context,
-                table_join,
-                left_table_expression_header,
-                right_table_expression_header,
-                query_context->getTempDataOnDisk());
-        }
-    }
-
-    if (table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
-    {
-        if (MergeJoin::isSupported(table_join))
-            return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+        auto join = tryCreateJoin(algorithm, table_join, right_table_expression, left_table_expression_header, right_table_expression_header, planner_context);
+        if (join)
+            return join;
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,

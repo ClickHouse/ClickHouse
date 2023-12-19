@@ -93,8 +93,11 @@ enum class RuntimeReloadType
     \
     M_WITH_FLAG(M, UInt64, max_table_size_to_drop, 50000000000lu, "If size of a table is greater than this value (in bytes) than table could not be dropped with any DROP query.", 0, RuntimeReloadType::NO) \
     M_WITH_FLAG(M, UInt64, max_partition_size_to_drop, 50000000000lu, "Same as max_table_size_to_drop, but for the partitions.", 0, RuntimeReloadType::NO) \
-    M_WITH_FLAG(M, UInt64, concurrent_threads_soft_limit_num, 0, "Sets how many concurrent thread can be allocated before applying CPU pressure. Zero means unlimited.", 0, RuntimeReloadType::NO) \
-    M_WITH_FLAG(M, UInt64, concurrent_threads_soft_limit_ratio_to_cores, 0, "Same as concurrent_threads_soft_limit_num, but with ratio to cores.", 0, RuntimeReloadType::NO) \
+    M_WITH_FLAG(M, UInt64, max_table_num_to_warn, 5000lu, "If number of tables is greater than this value, server will create a warning that will displayed to user.", 0) \
+    M_WITH_FLAG(M, UInt64, max_database_num_to_warn, 1000lu, "If number of databases is greater than this value, server will create a warning that will displayed to user.", 0) \
+    M_WITH_FLAG(M, UInt64, max_part_num_to_warn, 100000lu, "If number of databases is greater than this value, server will create a warning that will displayed to user.", 0) \
+    M_WITH_FLAG(M, UInt64, concurrent_threads_soft_limit_num, 0, "Sets how many concurrent thread can be allocated before applying CPU pressure. Zero means unlimited.", 0) \
+    M_WITH_FLAG(M, UInt64, concurrent_threads_soft_limit_ratio_to_cores, 0, "Same as concurrent_threads_soft_limit_num, but with ratio to cores.", 0) \
     \
     M_WITH_FLAG(M, UInt64, background_pool_size, 16, "The maximum number of threads what will be used for merging or mutating data parts for *MergeTree-engine tables in a background.", 0, RuntimeReloadType::NO) \
     M_WITH_FLAG(M, Float, background_merges_mutations_concurrency_ratio, 2, "The number of part mutation tasks that can be executed concurrently by each thread in background pool.", 0, RuntimeReloadType::NO) \
@@ -106,6 +109,9 @@ enum class RuntimeReloadType
     M_WITH_FLAG(M, UInt64, background_schedule_pool_size, 128, "The maximum number of threads that will be used for constantly executing some lightweight periodic operations.", 0, RuntimeReloadType::NO) \
     M_WITH_FLAG(M, UInt64, background_message_broker_schedule_pool_size, 16, "The maximum number of threads that will be used for executing background operations for message streaming.", 0, RuntimeReloadType::NO) \
     M_WITH_FLAG(M, UInt64, background_distributed_schedule_pool_size, 16, "The maximum number of threads that will be used for executing distributed sends.", 0, RuntimeReloadType::NO) \
+    M_WITH_FLAG(M, UInt64, tables_loader_foreground_pool_size, 0, "The maximum number of threads that will be used for foreground (that is being waited for by a query) loading of tables. Also used for synchronous loading of tables before the server start. Zero means use all CPUs.", 0) \
+    M_WITH_FLAG(M, UInt64, tables_loader_background_pool_size, 0, "The maximum number of threads that will be used for background async loading of tables. Zero means use all CPUs.", 0) \
+    M_WITH_FLAG(M, Bool, async_load_databases, false, "Enable asynchronous loading of databases and tables to speedup server startup. Queries to not yet loaded entity will be blocked until load is finished.", 0) \
     M_WITH_FLAG(M, Bool, display_secrets_in_show_and_select, false, "Allow showing secrets in SHOW and SELECT queries via a format setting and a grant", 0, RuntimeReloadType::NO) \
     \
     M_WITH_FLAG(M, UInt64, total_memory_profiler_step, 0, "Whenever server memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stack trace. Zero means disabled memory profiler. Values lower than a few megabytes will slow down server.", 0, RuntimeReloadType::NO) \

@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ROCKSDB_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 using FieldVectorPtr = std::shared_ptr<FieldVector>;
@@ -311,6 +312,32 @@ void StorageEmbeddedRocksDB::drop()
 {
     rocksdb_ptr->Close();
     rocksdb_ptr = nullptr;
+}
+
+bool StorageEmbeddedRocksDB::optimize(
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const ASTPtr & partition,
+    bool final,
+    bool deduplicate,
+    const Names & /* deduplicate_by_columns */,
+    ContextPtr /*context*/)
+{
+    if (partition)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition cannot be specified when optimizing table of type EmbeddedRocksDB");
+
+    if (final)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FINAL cannot be specified when optimizing table of type EmbeddedRocksDB");
+
+    if (deduplicate)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DEDUPLICATE cannot be specified when optimizing table of type EmbeddedRocksDB");
+
+    std::shared_lock lock(rocksdb_ptr_mx);
+    rocksdb::CompactRangeOptions compact_options;
+    auto status = rocksdb_ptr->CompactRange(compact_options, nullptr, nullptr);
+    if (!status.ok())
+        throw Exception(ErrorCodes::ROCKSDB_ERROR, "Compaction failed: {}", status.ToString());
+    return true;
 }
 
 void StorageEmbeddedRocksDB::initDB()
@@ -690,6 +717,30 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
     return Chunk(std::move(columns), num_rows);
 }
 
+std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & settings) const
+{
+    if (!settings.optimize_trivial_approximate_count_query)
+        return {};
+    std::shared_lock lock(rocksdb_ptr_mx);
+    if (!rocksdb_ptr)
+        return {};
+    UInt64 estimated_rows;
+    if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-num-keys", &estimated_rows))
+        return {};
+    return estimated_rows;
+}
+
+std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(const Settings & /*settings*/) const
+{
+    std::shared_lock lock(rocksdb_ptr_mx);
+    if (!rocksdb_ptr)
+        return {};
+    UInt64 estimated_bytes;
+    if (!rocksdb_ptr->GetAggregatedIntProperty("rocksdb.estimate-live-data-size", &estimated_bytes))
+        return {};
+    return estimated_bytes;
+}
+
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
@@ -700,20 +751,4 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 
     factory.registerStorage("EmbeddedRocksDB", create, features);
 }
-
-std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(const Settings & settings) const
-{
-    if (settings.optimize_trivial_approximate_count_query)
-    {
-        std::shared_lock lock(rocksdb_ptr_mx);
-        if (!rocksdb_ptr)
-            return {};
-        UInt64 estimated_rows;
-        if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-num-keys", &estimated_rows))
-            return {};
-        return estimated_rows;
-    }
-    return {};
-}
-
 }

@@ -1578,9 +1578,15 @@ Default value: `default`.
 
 ## allow_experimental_parallel_reading_from_replicas
 
-If true, ClickHouse will send a SELECT query to all replicas of a table (up to `max_parallel_replicas`) . It will work for any kind of MergeTree table.
+Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
 
-Default value: `false`.
+Possible values:
+
+- 0 - Disabled.
+- 1 - Enabled, silently disabled in case of failure.
+- 2 - Enabled, throws an exception in case of failure.
+
+Default value: `0`.
 
 ## compile_expressions {#compile-expressions}
 
@@ -2647,7 +2653,7 @@ Default value: 0.
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
-Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TKSV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
 
 Possible values:
 
@@ -2658,7 +2664,7 @@ Default value: `1`.
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
-Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TKSV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
+Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
 
 Possible values:
 
@@ -4349,6 +4355,8 @@ Default value: `1GiB`.
 
 ## Schema Inference settings
 
+See [schema inference](../../interfaces/schema-inference.md#schema-inference-modes) documentation for more details.
+
 ### schema_inference_use_cache_for_file {schema_inference_use_cache_for_file}
 
 Enable schemas cache for schema inference in `file` table function.
@@ -4389,6 +4397,13 @@ Possible values:
 - 2 - auto
 
 Default value: 2.
+
+### schema_inference_mode {schema_inference_mode}
+
+The mode of schema inference. Possible values: `default` and `union`.
+See [schema inference modes](../../interfaces/schema-inference.md#schema-inference-modes) section for more details.
+
+Default value: `default`.
 
 ## compatibility {#compatibility}
 
@@ -4801,9 +4816,254 @@ a	Tuple(
 )
 ```
 
+## allow_experimental_statistic {#allow_experimental_statistic}
+
+Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
+
+## allow_statistic_optimize {#allow_statistic_optimize}
+
+Allows using statistic to optimize the order of [prewhere conditions](../../sql-reference/statements/select/prewhere.md).
+
 ## analyze_index_with_space_filling_curves
 
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
+
+## query_plan_enable_optimizations {#query_plan_enable_optimizations}
+
+Toggles query optimization at the query plan level.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable all optimizations at the query plan level
+- 1 - Enable optimizations at the query plan level (but individual optimizations may still be disabled via their individual settings)
+
+Default value: `1`.
+
+## query_plan_max_optimizations_to_apply
+
+Limits the total number of optimizations applied to query plan, see setting [query_plan_enable_optimizations](#query_plan_enable_optimizations).
+Useful to avoid long optimization times for complex queries.
+If the actual number of optimizations exceeds this setting, an exception is thrown.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+Default value: '10000'
+
+## query_plan_lift_up_array_join
+
+Toggles a query-plan-level optimization which moves ARRAY JOINs up in the execution plan.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_push_down_limit
+
+Toggles a query-plan-level optimization which moves LIMITs down in the execution plan.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_split_filter
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Toggles a query-plan-level optimization which splits filters into expressions.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_merge_expressions
+
+Toggles a query-plan-level optimization which merges consecutive filters.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_filter_push_down
+
+Toggles a query-plan-level optimization which moves filters down in the execution plan.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_execute_functions_after_sorting
+
+Toggles a query-plan-level optimization which moves expressions after sorting steps.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_reuse_storage_ordering_for_window_functions
+
+Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_lift_up_union
+
+Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_distinct_in_order
+
+Toggles the distinct in-order optimization query-plan-level optimization.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_read_in_order
+
+Toggles the read in-order optimization query-plan-level optimization.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_aggregation_in_order
+
+Toggles the aggregation in-order query-plan-level optimization.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `0`.
+
+## query_plan_remove_redundant_sorting
+
+Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
+
+## query_plan_remove_redundant_distinct
+
+Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+
+Default value: `1`.
 
 ## dictionary_use_async_executor {#dictionary_use_async_executor}
 

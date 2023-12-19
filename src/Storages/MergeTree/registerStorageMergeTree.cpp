@@ -138,7 +138,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         * CollapsingMergeTree(date, [sample_key], primary_key, index_granularity, sign)
         * SummingMergeTree(date, [sample_key], primary_key, index_granularity, [columns_to_sum])
         * AggregatingMergeTree(date, [sample_key], primary_key, index_granularity)
-        * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column [, is_deleted_column]])
+        * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column])
         * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, 'config_element')
         *
         * Alternatively, you can specify:
@@ -441,15 +441,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
-        // if there is args and number of optional parameter is higher than 1
-        // is_deleted is not allowed with the 'allow_deprecated_syntax_for_merge_tree' settings
-        if (arg_cnt - arg_num == 2 && !engine_args[arg_cnt - 1]->as<ASTLiteral>() && is_extended_storage_def)
-        {
-            if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.is_deleted_column))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "is_deleted column name must be an identifier {}", verbose_help_message);
-            --arg_cnt;
-        }
-
         /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
@@ -581,10 +572,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
 
+        bool allow_suspicious_ttl = args.attach || args.getLocalContext()->getSettingsRef().allow_suspicious_ttl_expressions;
+
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
         }
 
         if (args.query.columns_list && args.query.columns_list->indices)
@@ -598,16 +591,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 metadata.projections.add(std::move(projection));
             }
 
-        auto constraints = metadata.constraints.getConstraints();
-        if (args.query.columns_list && args.query.columns_list->constraints)
-            for (auto & constraint : args.query.columns_list->constraints->children)
-                constraints.push_back(constraint);
-        metadata.constraints = ConstraintsDescription(constraints);
 
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, allow_suspicious_ttl);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
@@ -620,6 +608,30 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
+
+        auto constraints = metadata.constraints.getConstraints();
+        if (args.query.columns_list && args.query.columns_list->constraints)
+            for (auto & constraint : args.query.columns_list->constraints->children)
+                constraints.push_back(constraint);
+        if ((merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
+            merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing) &&
+            storage_settings->add_implicit_sign_column_constraint_for_collapsing_engine)
+        {
+            auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
+            sign_column_check_constraint->name = "check_sign_column";
+            sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
+
+            Array valid_values_array;
+            valid_values_array.emplace_back(-1);
+            valid_values_array.emplace_back(1);
+
+            auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
+            auto sign_column_ast = std::make_unique<ASTIdentifier>(merging_params.sign_column);
+            sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
+
+            constraints.push_back(std::move(sign_column_check_constraint));
+        }
+        metadata.constraints = ConstraintsDescription(constraints);
     }
     else
     {

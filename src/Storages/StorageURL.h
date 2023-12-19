@@ -48,6 +48,7 @@ public:
     bool supportsPartitionBy() const override { return true; }
 
     NamesAndTypesList getVirtuals() const override;
+    static Names getVirtualColumnNames();
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,
@@ -124,21 +125,6 @@ protected:
 
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
-
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const Strings & urls,
-        const HTTPHeaderEntries & headers,
-        const Poco::Net::HTTPBasicCredentials & credentials,
-        const String & format_name,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
-
-    static void addColumnsToCache(
-        const Strings & urls,
-        const ColumnsDescription & columns,
-        const String & format_name,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
 };
 
 
@@ -225,6 +211,7 @@ private:
     Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
+    std::optional<size_t> current_file_size;
     String format;
     const std::optional<FormatSettings> & format_settings;
     HTTPHeaderEntries headers;

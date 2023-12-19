@@ -86,13 +86,13 @@ protected:
     /// Actual serialization of columns in part.
     Serializations serializations;
 
-    UncompressedCache * uncompressed_cache;
-    MarkCache * mark_cache;
+    UncompressedCache * const uncompressed_cache;
+    MarkCache * const mark_cache;
 
     MergeTreeReaderSettings settings;
 
-    StorageSnapshotPtr storage_snapshot;
-    MarkRanges all_mark_ranges;
+    const StorageSnapshotPtr storage_snapshot;
+    const MarkRanges all_mark_ranges;
 
     /// Position and level (of nesting).
     using ColumnNameLevel = std::optional<std::pair<String, size_t>>;
