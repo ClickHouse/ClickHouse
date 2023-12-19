@@ -206,7 +206,7 @@ ReturnType safeAppendToNullMap(ColumnNullable & column, bool is_null)
 }
 
 /// Deserialize value into non-nullable column. In case of NULL, insert default and set is_null to true.
-/// If ReturnType is bool, return true if parsing was succesfull and false in case of any error.
+/// If ReturnType is bool, return true if parsing was successful and false in case of any error.
 template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested>
 static ReturnType deserializeImpl(IColumn & column, ReadBuffer & buf, CheckForNull && check_for_null, DeserializeNested && deserialize_nested, bool & is_null)
 {
