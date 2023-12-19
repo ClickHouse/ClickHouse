@@ -5041,7 +5041,7 @@ Context::ParallelReplicasMode Context::getParallelReplicasMode() const
     return SAMPLE_KEY;
 }
 
-bool Context::canUseParallelReplicas() const
+bool Context::canUseTaskBasedParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
     return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS && settings_ref.max_parallel_replicas > 1;
@@ -5049,12 +5049,12 @@ bool Context::canUseParallelReplicas() const
 
 bool Context::canUseParallelReplicasOnInitiator() const
 {
-    return canUseParallelReplicas() && !getClientInfo().collaborate_with_initiator;
+    return canUseTaskBasedParallelReplicas() && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
-    return canUseParallelReplicas() && getClientInfo().collaborate_with_initiator;
+    return canUseTaskBasedParallelReplicas() && getClientInfo().collaborate_with_initiator;
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
