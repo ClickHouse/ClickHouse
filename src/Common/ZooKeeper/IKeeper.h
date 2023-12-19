@@ -109,7 +109,8 @@ enum class Error : int32_t
     ZAUTHFAILED = -115,                 /// Client authentication failed
     ZCLOSING = -116,                    /// ZooKeeper is closing
     ZNOTHING = -117,                    /// (not error) no server responses to process
-    ZSESSIONMOVED = -118                /// Session moved to another server, so operation is ignored
+    ZSESSIONMOVED = -118,               /// Session moved to another server, so operation is ignored
+    ZNOTREADONLY = -119,                /// State-changing request is passed to read-only server
 };
 
 /// Network errors and similar. You should reinitialize ZooKeeper session in case of these errors
@@ -445,6 +446,7 @@ enum State
     CONNECTING = 1,
     ASSOCIATING = 2,
     CONNECTED = 3,
+    READONLY = 5,
     NOTCONNECTED = 999
 };
 

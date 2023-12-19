@@ -451,17 +451,25 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         }
         catch (...)
         {
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Couldn't get a create query for database {}", database_name);
+            /// Probably the database has been just removed.
+            if (throw_if_database_not_found)
+                throw;
+            LOG_WARNING(log, "Couldn't get a create query for database {}", backQuoteIfNeed(database_name));
+            return;
+        }
+
+        auto * create = create_database_query->as<ASTCreateQuery>();
+        if (create->getDatabase() != database_name)
+        {
+            /// Probably the database has been just renamed. Use the older name for backup to keep the backup consistent.
+            LOG_WARNING(log, "Got a create query with unexpected name {} for database {}",
+                        backQuoteIfNeed(create->getDatabase()), backQuoteIfNeed(database_name));
+            create_database_query = create_database_query->clone();
+            create = create_database_query->as<ASTCreateQuery>();
+            create->setDatabase(database_name);
         }
 
         database_info.create_database_query = create_database_query;
-        const auto & create = create_database_query->as<const ASTCreateQuery &>();
-
-        if (create.getDatabase() != database_name)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                            "Got a create query with unexpected name {} for database {}",
-                            backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(database_name));
-
         String new_database_name = renaming_map.getNewDatabaseName(database_name);
         database_info.metadata_path_in_backup = root_path_in_backup / "metadata" / (escapeForFileName(new_database_name) + ".sql");
     }
@@ -582,26 +590,34 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     }
 
     std::unordered_set<String> found_table_names;
-    for (const auto & db_table : db_tables)
+    for (auto & db_table : db_tables)
     {
-        const auto & create_table_query = db_table.first;
-        const auto & create = create_table_query->as<const ASTCreateQuery &>();
-        found_table_names.emplace(create.getTable());
+        auto create_table_query = db_table.first;
+        auto * create = create_table_query->as<ASTCreateQuery>();
+        found_table_names.emplace(create->getTable());
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
         {
-            if (!create.temporary)
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+            if (!create->temporary)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Got a non-temporary create query for {}",
-                                tableNameWithTypeToString(database_name, create.getTable(), false));
+                                tableNameWithTypeToString(database_name, create->getTable(), false));
+            }
         }
         else
         {
-            if (create.getDatabase() != database_name)
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                                "Got a create query with unexpected database name {} for {}",
-                                backQuoteIfNeed(create.getDatabase()),
-                                tableNameWithTypeToString(database_name, create.getTable(), false));
+            if (create->getDatabase() != database_name)
+            {
+                /// Probably the table has been just renamed. Use the older name for backup to keep the backup consistent.
+                LOG_WARNING(log, "Got a create query with unexpected database name {} for {}",
+                            backQuoteIfNeed(create->getDatabase()),
+                            tableNameWithTypeToString(database_name, create->getTable(), false));
+                create_table_query = create_table_query->clone();
+                create = create_table_query->as<ASTCreateQuery>();
+                create->setDatabase(database_name);
+                db_table.first = create_table_query;
+            }
         }
     }
 

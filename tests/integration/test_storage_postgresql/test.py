@@ -90,20 +90,20 @@ def test_postgres_conversions(started_cluster):
     cursor.execute(
         """CREATE TABLE test_types (
         a smallint, b integer, c bigint, d real, e double precision, f serial, g bigserial,
-        h timestamp, i date, j decimal(5, 3), k numeric, l boolean)"""
+        h timestamp, i date, j decimal(5, 3), k numeric, l boolean, "M" integer)"""
     )
     node1.query(
         """
         INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', 'mysecretpassword') VALUES
-        (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12.012345', '2000-05-12', 22.222, 22.222, 1)"""
+        (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12.012345', '2000-05-12', 22.222, 22.222, 1, 42)"""
     )
     result = node1.query(
         """
-        SELECT a, b, c, d, e, f, g, h, i, j, toDecimal128(k, 3), l FROM postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', 'mysecretpassword')"""
+        SELECT a, b, c, d, e, f, g, h, i, j, toDecimal128(k, 3), l, "M" FROM postgresql('postgres1:5432', 'postgres', 'test_types', 'postgres', 'mysecretpassword')"""
     )
     assert (
         result
-        == "-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12.012345\t2000-05-12\t22.222\t22.222\t1\n"
+        == "-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12.012345\t2000-05-12\t22.222\t22.222\t1\t42\n"
     )
 
     cursor.execute(
@@ -132,7 +132,8 @@ def test_postgres_conversions(started_cluster):
                 i Char(2)[][][][],                          -- Nullable(String)
                 j Char(2)[],                                -- Nullable(String)
                 k UUID[],                                   -- Nullable(UUID)
-                l UUID[][]                                  -- Nullable(UUID)
+                l UUID[][],                                 -- Nullable(UUID)
+                "M" integer[] NOT NULL                      -- Int32 (mixed-case identifier)
            )"""
     )
 
@@ -152,7 +153,8 @@ def test_postgres_conversions(started_cluster):
         "i\tArray(Array(Array(Array(Nullable(String)))))\t\t\t\t\t\n"
         "j\tArray(Nullable(String))\t\t\t\t\t\n"
         "k\tArray(Nullable(UUID))\t\t\t\t\t\n"
-        "l\tArray(Array(Nullable(UUID)))"
+        "l\tArray(Array(Nullable(UUID)))\t\t\t\t\t\n"
+        "M\tArray(Int32)"
         ""
     )
     assert result.rstrip() == expected
@@ -171,7 +173,8 @@ def test_postgres_conversions(started_cluster):
         "[[[[NULL]]]], "
         "[], "
         "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', '42209d53-d641-4d73-a8b6-c038db1e75d6', NULL], "
-        "[[NULL, '42209d53-d641-4d73-a8b6-c038db1e75d6'], ['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', NULL], [NULL, NULL]]"
+        "[[NULL, '42209d53-d641-4d73-a8b6-c038db1e75d6'], ['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', NULL], [NULL, NULL]],"
+        "[42, 42, 42]"
         ")"
     )
 
@@ -191,12 +194,73 @@ def test_postgres_conversions(started_cluster):
         "[[[[NULL]]]]\t"
         "[]\t"
         "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a','42209d53-d641-4d73-a8b6-c038db1e75d6',NULL]\t"
-        "[[NULL,'42209d53-d641-4d73-a8b6-c038db1e75d6'],['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a',NULL],[NULL,NULL]]\n"
+        "[[NULL,'42209d53-d641-4d73-a8b6-c038db1e75d6'],['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a',NULL],[NULL,NULL]]\t"
+        "[42,42,42]\n"
     )
     assert result == expected
 
     cursor.execute(f"DROP TABLE test_types")
     cursor.execute(f"DROP TABLE test_array_dimensions")
+
+
+def test_postgres_array_ndim_error_messges(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+
+    # cleanup
+    cursor.execute("DROP VIEW  IF EXISTS array_ndim_view;")
+    cursor.execute("DROP TABLE IF EXISTS array_ndim_table;")
+
+    # setup
+    cursor.execute(
+        'CREATE TABLE array_ndim_table (x INTEGER, "Mixed-case with spaces" INTEGER[]);'
+    )
+    cursor.execute("CREATE VIEW  array_ndim_view AS SELECT * FROM array_ndim_table;")
+    describe_table = """
+    DESCRIBE TABLE postgresql(
+        'postgres1:5432', 'postgres', 'array_ndim_view',
+        'postgres', 'mysecretpassword'
+    )
+    """
+
+    # View with array column cannot be empty. Should throw a useful error message.
+    # (Cannot infer array dimension.)
+    try:
+        node1.query(describe_table)
+        assert False
+    except Exception as error:
+        assert (
+            "PostgreSQL relation containing arrays cannot be empty: array_ndim_view"
+            in str(error)
+        )
+
+    # View cannot have empty array. Should throw useful error message.
+    # (Cannot infer array dimension.)
+    cursor.execute("TRUNCATE array_ndim_table;")
+    cursor.execute("INSERT INTO array_ndim_table VALUES (1234, '{}');")
+    try:
+        node1.query(describe_table)
+        assert False
+    except Exception as error:
+        assert (
+            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces"'
+            in str(error)
+        )
+
+    # View cannot have NULL array value. Should throw useful error message.
+    cursor.execute("TRUNCATE array_ndim_table;")
+    cursor.execute("INSERT INTO array_ndim_table VALUES (1234, NULL);")
+    try:
+        node1.query(describe_table)
+        assert False
+    except Exception as error:
+        assert (
+            'PostgreSQL array cannot be NULL: array_ndim_view."Mixed-case with spaces"'
+            in str(error)
+        )
+
+    # cleanup
+    cursor.execute("DROP VIEW  IF EXISTS array_ndim_view;")
+    cursor.execute("DROP TABLE IF EXISTS array_ndim_table;")
 
 
 def test_non_default_schema(started_cluster):

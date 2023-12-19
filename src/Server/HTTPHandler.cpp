@@ -45,7 +45,6 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/Net/NameValueCollection.h>
 
 #include <chrono>
 #include <sstream>
@@ -509,7 +508,7 @@ bool HTTPHandler::authenticateUser(
         tls_sni = request.getTLSServerName();
 #endif
 
-    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""), request.get("Host", ""), tls_sni, request);
+    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""), request.get("Host", ""), tls_sni);
     session->setForwardedFor(request.get("X-Forwarded-For", ""));
     session->setQuotaClientKey(quota_key);
 
@@ -1068,8 +1067,13 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             response.setChunkedTransferEncoding(true);
 
         HTMLForm params(default_settings, request);
-        with_stacktrace = params.getParsed<bool>("stacktrace", false);
-        close_session = params.getParsed<bool>("close_session", false);
+
+        if (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true))
+            with_stacktrace = true;
+
+        if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
+            close_session = true;
+
         if (close_session)
             session_id = params.get("session_id");
 

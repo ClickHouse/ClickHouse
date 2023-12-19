@@ -472,6 +472,39 @@ The value 0 means that you can delete all tables without any restrictions.
 ``` xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
+  
+
+## max\_database\_num\_to\_warn {#max-database-num-to-warn}  
+If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.    
+Default value: 1000
+
+**Example**
+
+``` xml
+<max_database_num_to_warn>50</max_database_num_to_warn>
+```
+  
+## max\_table\_num\_to\_warn {#max-table-num-to-warn}   
+If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
+Default value: 5000    
+
+**Example**
+
+``` xml
+<max_table_num_to_warn>400</max_table_num_to_warn>
+```
+
+
+## max\_part\_num\_to\_warn {#max-part-num-to-warn}  
+If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
+Default value: 100000  
+
+**Example**
+
+``` xml
+<max_part_num_to_warn>400</max_part_num_to_warn>
+```
+
 
 ## max_temporary_data_on_disk_size
 
@@ -1645,6 +1678,45 @@ Default value: `0.5`.
 
 
 
+
+## async_load_databases {#async_load_databases}
+
+Asynchronous loading of databases and tables.
+
+If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up.
+
+If `false`, all databases are loaded when the server starts.
+
+The default is `false`.
+
+**Example**
+
+``` xml
+<async_load_databases>true</async_load_databases>
+```
+
+## tables_loader_foreground_pool_size {#tables_loader_foreground_pool_size}
+
+Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
+
+Possible values:
+
+-   Any positive integer.
+-   Zero. Use all available CPUs.
+
+Default value: 0.
+
+
+## tables_loader_background_pool_size {#tables_loader_background_pool_size}
+
+Sets the number of threads performing asynchronous load jobs in background pool. The background pool is used for loading tables asynchronously after server start in case there are no queries waiting for the table. It could be beneficial to keep low number of threads in background pool if there are a lot of tables. It will reserve CPU resources for concurrent query execution.
+
+Possible values:
+
+-   Any positive integer.
+-   Zero. Use all available CPUs.
+
+Default value: 0.
 
 
 ## merge_tree {#merge_tree}

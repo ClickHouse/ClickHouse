@@ -7,7 +7,6 @@ from github import Github
 
 from commit_status_helper import (
     CI_STATUS_NAME,
-    NotSet,
     create_ci_report,
     format_description,
     get_commit,
@@ -137,6 +136,7 @@ def main():
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
+    # FIXME: it should rather be in finish check. no reason to stop ci run.
     if FEATURE_LABEL in pr_info.labels and not pr_info.has_changes_in_documentation():
         print(
             f"The '{FEATURE_LABEL}' in the labels, "
@@ -145,7 +145,7 @@ def main():
         post_commit_status(  # do not pass pr_info here intentionally
             commit,
             "failure",
-            NotSet,
+            "",
             f"expect adding docs for {FEATURE_LABEL}",
             DOCS_NAME,
             pr_info,
@@ -181,13 +181,23 @@ def main():
     if not can_run:
         print("::notice ::Cannot run")
         post_commit_status(
-            commit, labels_state, ci_report_url, description, CI_STATUS_NAME, pr_info
+            commit,
+            labels_state,
+            ci_report_url,
+            description,
+            CI_STATUS_NAME,
+            pr_info,
         )
         sys.exit(1)
     else:
         print("::notice ::Can run")
         post_commit_status(
-            commit, "pending", ci_report_url, description, CI_STATUS_NAME, pr_info
+            commit,
+            "pending",
+            ci_report_url,
+            description,
+            CI_STATUS_NAME,
+            pr_info,
         )
 
 

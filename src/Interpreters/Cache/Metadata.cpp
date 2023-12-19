@@ -134,11 +134,12 @@ std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) co
         / CacheMetadata::getFileNameForFileSegment(file_segment.offset(), file_segment.getKind());
 }
 
-CacheMetadata::CacheMetadata(const std::string & path_)
+CacheMetadata::CacheMetadata(const std::string & path_, size_t background_download_queue_size_limit_, size_t background_download_threads_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
-    , download_queue(std::make_shared<DownloadQueue>())
+    , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
     , log(&Poco::Logger::get("CacheMetadata"))
+    , download_threads_num(background_download_threads_)
 {
 }
 
@@ -458,27 +459,27 @@ void CacheMetadata::cleanupThreadFunc()
     }
 }
 
-void CacheMetadata::cancelCleanup()
-{
-    cleanup_queue->cancel();
-}
-
 class DownloadQueue
 {
 friend struct CacheMetadata;
 public:
-    void add(FileSegmentPtr file_segment)
+    explicit DownloadQueue(size_t queue_size_limit_) : queue_size_limit(queue_size_limit_) {}
+
+    bool add(FileSegmentPtr file_segment)
     {
         {
             std::lock_guard lock(mutex);
-            if (cancelled)
-                return;
+            if (cancelled || (queue_size_limit && queue.size() >= queue_size_limit))
+                return false;
             queue.push(DownloadInfo{file_segment->key(), file_segment->offset(), file_segment});
         }
 
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheDownloadQueueElements);
         cv.notify_one();
+        return true;
     }
+
+    bool setQueueLimit(size_t size) { return queue_size_limit.exchange(size) != size; }
 
 private:
     void cancel()
@@ -490,7 +491,8 @@ private:
         cv.notify_all();
     }
 
-    std::mutex mutex;
+    std::atomic<size_t> queue_size_limit;
+    mutable std::mutex mutex;
     std::condition_variable cv;
     bool cancelled = false;
 
@@ -507,10 +509,11 @@ private:
         /// before we actually started background download.
         std::weak_ptr<FileSegment> file_segment;
     };
+
     std::queue<DownloadInfo> queue;
 };
 
-void CacheMetadata::downloadThreadFunc()
+void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
 {
     std::optional<Memory<>> memory;
     while (true)
@@ -521,13 +524,13 @@ void CacheMetadata::downloadThreadFunc()
 
         {
             std::unique_lock lock(download_queue->mutex);
-            if (download_queue->cancelled)
+            if (download_queue->cancelled || stop_flag)
                 return;
 
             if (download_queue->queue.empty())
             {
-                download_queue->cv.wait(lock, [&](){ return download_queue->cancelled || !download_queue->queue.empty(); });
-                if (download_queue->cancelled)
+                download_queue->cv.wait(lock, [&](){ return download_queue->cancelled || !download_queue->queue.empty() || stop_flag; });
+                if (download_queue->cancelled || stop_flag)
                     return;
             }
 
@@ -602,6 +605,11 @@ void CacheMetadata::downloadThreadFunc()
     }
 }
 
+bool CacheMetadata::setBackgroundDownloadQueueSizeLimit(size_t size)
+{
+    return download_queue->setQueueLimit(size);
+}
+
 void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory)
 {
     LOG_TEST(
@@ -665,9 +673,86 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     LOG_TEST(log, "Downloaded file segment: {}", file_segment.getInfoForLog());
 }
 
-void CacheMetadata::cancelDownload()
+void CacheMetadata::startup()
+{
+    download_threads.reserve(download_threads_num);
+    for (size_t i = 0; i < download_threads_num; ++i)
+    {
+        download_threads.emplace_back(std::make_shared<DownloadThread>());
+        download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>([this, thread = download_threads.back()] { downloadThreadFunc(thread->stop_flag); });
+    }
+    cleanup_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ cleanupThreadFunc(); }});
+}
+
+void CacheMetadata::shutdown()
 {
     download_queue->cancel();
+    cleanup_queue->cancel();
+
+    for (auto & download_thread : download_threads)
+    {
+        if (download_thread->thread && download_thread->thread->joinable())
+            download_thread->thread->join();
+    }
+    if (cleanup_thread && cleanup_thread->joinable())
+        cleanup_thread->join();
+}
+
+bool CacheMetadata::isBackgroundDownloadEnabled()
+{
+    return download_threads_num;
+}
+
+bool CacheMetadata::setBackgroundDownloadThreads(size_t threads_num)
+{
+    if (threads_num == download_threads_num)
+        return false;
+
+    if (threads_num > download_threads_num)
+    {
+        SCOPE_EXIT({ download_threads_num = download_threads.size(); });
+
+        size_t add_threads = threads_num - download_threads_num;
+        for (size_t i = 0; i < add_threads; ++i)
+        {
+            download_threads.emplace_back(std::make_shared<DownloadThread>());
+            try
+            {
+                download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>(
+                    [this, thread = download_threads.back()] { downloadThreadFunc(thread->stop_flag); });
+            }
+            catch (...)
+            {
+                download_threads.pop_back();
+                throw;
+            }
+        }
+    }
+    else if (threads_num < download_threads_num)
+    {
+        size_t remove_threads = download_threads_num - threads_num;
+
+        {
+            std::lock_guard lock(download_queue->mutex);
+            for (size_t i = 0; i < remove_threads; ++i)
+                download_threads[download_threads.size() - 1 - i]->stop_flag = true;
+        }
+
+        download_queue->cv.notify_all();
+        SCOPE_EXIT({ download_threads_num = download_threads.size(); });
+
+        for (size_t i = 0; i < remove_threads; ++i)
+        {
+            chassert(download_threads.back()->stop_flag);
+
+            auto & thread = download_threads.back()->thread;
+            if (thread && thread->joinable())
+                thread->join();
+
+            download_threads.pop_back();
+        }
+    }
+    return true;
 }
 
 LockedKey::LockedKey(std::shared_ptr<KeyMetadata> key_metadata_)
@@ -847,12 +932,12 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 }
 
-void LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &)
+bool LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is not offset {}", offset);
-    key_metadata->download_queue->add(it->second->file_segment);
+    return key_metadata->download_queue->add(it->second->file_segment);
 }
 
 std::optional<FileSegment::Range> LockedKey::hasIntersectingRange(const FileSegment::Range & range) const
@@ -922,9 +1007,10 @@ std::string LockedKey::toString() const
     return result;
 }
 
-FileSegments LockedKey::sync()
+
+std::vector<FileSegment::Info> LockedKey::sync()
 {
-    FileSegments broken;
+    std::vector<FileSegment::Info> broken;
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
         if (it->second->evicting() || !it->second->releasable())
@@ -955,7 +1041,7 @@ FileSegments LockedKey::sync()
                 "File segment has DOWNLOADED state, but file does not exist ({})",
                 file_segment->getInfoForLog());
 
-            broken.push_back(FileSegment::getSnapshot(file_segment));
+            broken.push_back(FileSegment::getInfo(file_segment));
             it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */true);
             continue;
         }
@@ -974,7 +1060,7 @@ FileSegments LockedKey::sync()
             "File segment has unexpected size. Having {}, expected {} ({})",
             actual_size, expected_size, file_segment->getInfoForLog());
 
-        broken.push_back(FileSegment::getSnapshot(file_segment));
+        broken.push_back(FileSegment::getInfo(file_segment));
         it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */false);
     }
     return broken;

@@ -116,7 +116,8 @@ public:
             const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
             const PocoHTTPClientConfiguration & client_configuration,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-            bool use_virtual_addressing);
+            bool use_virtual_addressing,
+            bool disable_checksum);
 
     std::unique_ptr<Client> clone() const;
 
@@ -211,7 +212,8 @@ private:
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
            const PocoHTTPClientConfiguration & client_configuration,
            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-           bool use_virtual_addressing);
+           bool use_virtual_addressing,
+           bool disable_checksum_);
 
     Client(
         const Client & other, const PocoHTTPClientConfiguration & client_configuration);
@@ -257,6 +259,7 @@ private:
     PocoHTTPClientConfiguration client_configuration;
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads;
     bool use_virtual_addressing;
+    bool disable_checksum;
 
     std::string explicit_region;
     mutable bool detect_region = true;
@@ -287,6 +290,7 @@ public:
     std::unique_ptr<S3::Client> create(
         const PocoHTTPClientConfiguration & cfg,
         bool is_virtual_hosted_style,
+        bool disable_checksum,
         const String & access_key_id,
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,

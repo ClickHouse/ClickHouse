@@ -22,7 +22,7 @@ WriteBufferFromTemporaryFile::WriteBufferFromTemporaryFile(TemporaryFileOnDiskHo
 class ReadBufferFromTemporaryWriteBuffer : public ReadBufferFromFile
 {
 public:
-    static ReadBufferPtr createFrom(WriteBufferFromTemporaryFile * origin)
+    static std::unique_ptr<ReadBufferFromTemporaryWriteBuffer> createFrom(WriteBufferFromTemporaryFile * origin)
     {
         int fd = origin->getFD();
         std::string file_name = origin->getFileName();
@@ -32,7 +32,7 @@ public:
             throwFromErrnoWithPath("Cannot reread temporary file " + file_name, file_name,
                                    ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-        return std::make_shared<ReadBufferFromTemporaryWriteBuffer>(fd, file_name, std::move(origin->tmp_file));
+        return std::make_unique<ReadBufferFromTemporaryWriteBuffer>(fd, file_name, std::move(origin->tmp_file));
     }
 
     ReadBufferFromTemporaryWriteBuffer(int fd_, const std::string & file_name_, TemporaryFileOnDiskHolder && tmp_file_)
@@ -43,7 +43,7 @@ public:
 };
 
 
-ReadBufferPtr WriteBufferFromTemporaryFile::getReadBufferImpl()
+std::unique_ptr<ReadBuffer> WriteBufferFromTemporaryFile::getReadBufferImpl()
 {
     /// ignore buffer, write all data to file and reread it
     finalize();

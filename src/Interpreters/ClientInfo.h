@@ -2,7 +2,6 @@
 
 #include <Core/UUID.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/Net/NameValueCollection.h>
 #include <base/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/VersionNumber.h>
@@ -99,7 +98,6 @@ public:
 
     /// For mysql and postgresql
     UInt64 connection_id = 0;
-    Poco::Net::NameValueCollection headers;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.

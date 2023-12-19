@@ -14,6 +14,7 @@
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
 
 
 namespace DB
@@ -33,7 +34,8 @@ static bool isAccessControlQuery(const ASTPtr & query)
         || query->as<ASTCreateRoleQuery>()
         || query->as<ASTCreateRowPolicyQuery>()
         || query->as<ASTCreateSettingsProfileQuery>()
-        || query->as<ASTDropAccessEntityQuery>();
+        || query->as<ASTDropAccessEntityQuery>()
+        || query->as<ASTGrantQuery>();
 }
 
 ASTPtr removeOnClusterClauseIfNeeded(const ASTPtr & query, ContextPtr context, const WithoutOnClusterASTRewriteParams & params)

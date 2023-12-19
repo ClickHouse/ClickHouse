@@ -2566,7 +2566,7 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
 
-    if (!global_context->getSettings().log_comment.changed)
+    if (!has_log_comment)
     {
         Settings settings = global_context->getSettings();
         /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
@@ -3005,6 +3005,8 @@ void ClientBase::init(int argc, char ** argv)
         total_memory_tracker.setDescription("(total)");
         total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
     }
+
+    has_log_comment = config().has("log_comment");
 }
 
 }

@@ -28,6 +28,11 @@
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
 #    include <openssl/sha.h>
+#if USE_BORINGSSL
+#    include <openssl/digest.h>
+#else
+#    include <openssl/evp.h>
+#endif
 #endif
 
 #include <bit>
@@ -316,6 +321,25 @@ struct SHA512Impl
         SHA512_Init(&ctx);
         SHA512_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         SHA512_Final(out_char_data, &ctx);
+    }
+};
+
+struct SHA512Impl256
+{
+    static constexpr auto name = "SHA512_256";
+    enum { length = 32 };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        /// Here, we use the EVP interface that is common to both BoringSSL and OpenSSL. Though BoringSSL is the default
+        /// SSL library that we use, for S390X architecture only OpenSSL is supported. But the SHA512-256, SHA512_256_Init,
+        /// SHA512_256_Update, SHA512_256_Final methods to calculate hash (similar to the other SHA functions) aren't available
+        /// in the current version of OpenSSL that we use which necessitates the use of the EVP interface.
+        auto md_ctx = EVP_MD_CTX_create();
+        EVP_DigestInit_ex(md_ctx, EVP_sha512_256(), nullptr /*engine*/);
+        EVP_DigestUpdate(md_ctx, begin, size);
+        EVP_DigestFinal_ex(md_ctx, out_char_data, nullptr /*size*/);
+        EVP_MD_CTX_destroy(md_ctx);
     }
 };
 #endif
@@ -1801,6 +1825,7 @@ using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
 using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
 using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
 using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
+using FunctionSHA512_256 = FunctionStringHashFixedString<SHA512Impl256>;
 #endif
 using FunctionSipHash128 = FunctionAnyHash<SipHash128Impl>;
 using FunctionSipHash128Keyed = FunctionAnyHash<SipHash128KeyedImpl, true, SipHash128KeyedImpl::Key, SipHash128KeyedImpl::KeyColumns>;

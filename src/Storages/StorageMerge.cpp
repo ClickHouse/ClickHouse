@@ -1293,6 +1293,40 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
     return {false, ast};
 }
 
+bool StorageMerge::supportsTrivialCountOptimization() const
+{
+    bool supported = true;
+    forEachTable([&](const auto & table)
+    {
+        supported &= table->supportsTrivialCountOptimization();
+    });
+    return supported;
+}
+
+std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const
+{
+    UInt64 total_rows = 0;
+    forEachTable([&](const auto & table)
+    {
+        std::optional<UInt64> rows = table->totalRows(settings);
+        if (rows)
+            total_rows += *rows;
+    });
+    return {total_rows};
+}
+
+std::optional<UInt64> StorageMerge::totalBytes(const Settings & settings) const
+{
+    UInt64 total_bytes = 0;
+    forEachTable([&](const auto & table)
+    {
+        std::optional<UInt64> bytes = table->totalBytes(settings);
+        if (bytes)
+            total_bytes += *bytes;
+    });
+    return {total_bytes};
+}
+
 
 void registerStorageMerge(StorageFactory & factory)
 {

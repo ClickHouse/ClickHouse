@@ -602,7 +602,12 @@ void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for CreatingSets should have empty header. Got: {}",
                         pipeline.getHeader().dumpStructure());
 
-    IProcessor::PortNumbers delayed_streams(pipe.numOutputPorts());
+    pipeline.dropTotalsAndExtremes();
+
+    bool has_totals = pipe.getTotalsPort();
+    bool has_extremes = pipe.getExtremesPort();
+    size_t num_extra_ports = (has_totals ? 1 : 0) + (has_extremes ? 1 : 0);
+    IProcessor::PortNumbers delayed_streams(pipe.numOutputPorts() + num_extra_ports);
     for (size_t i = 0; i < delayed_streams.size(); ++i)
         delayed_streams[i] = i;
 
@@ -613,8 +618,14 @@ void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
     pipes.emplace_back(QueryPipelineBuilder::getPipe(std::move(pipeline), resources));
     pipe = Pipe::unitePipes(std::move(pipes), collected_processors, true);
 
-    auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams, true);
-    addTransform(std::move(processor));
+    auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts() + num_extra_ports, delayed_streams, true);
+    auto in = processor->getInputs().begin();
+    auto out = processor->getOutputs().begin();
+    InputPort * totals_in = has_totals ? &*(in++) : nullptr;
+    InputPort * extremes_in = has_extremes ? &*(in++) : nullptr;
+    OutputPort * totals_out = has_totals ? &*(out++) : nullptr;
+    OutputPort * extremes_out = has_extremes ? &*(out++) : nullptr;
+    pipe.addTransform(std::move(processor), totals_in, extremes_in, totals_out, extremes_out);
 }
 
 void QueryPipelineBuilder::setProcessListElement(QueryStatusPtr elem)

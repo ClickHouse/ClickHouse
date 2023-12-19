@@ -248,10 +248,10 @@ Field generateRandomFixedValue(const StorageFuzzJSON::Configuration & config, pc
     return f;
 }
 
-String fuzzJSONKey(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, const String & source)
+String fuzzString(UInt64 min_length, UInt64 max_length, pcg64 & rnd, const String & source, std::function<char(pcg64 &)> charGen)
 {
     String result;
-    result.reserve(config.max_key_length);
+    result.reserve(max_length);
 
     using FA = FuzzAction;
     auto get_action = [&]() -> FuzzAction
@@ -261,7 +261,7 @@ String fuzzJSONKey(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, c
     };
 
     size_t i = 0;
-    while (i < source.size() && result.size() < config.max_key_length)
+    while (i < source.size() && result.size() < max_length)
     {
         auto action = get_action();
         switch (action)
@@ -271,12 +271,12 @@ String fuzzJSONKey(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, c
             }
             break;
             case FA::Edit: {
-                result.push_back(generateRandomKeyCharacter(rnd));
+                result.push_back(charGen(rnd));
                 ++i;
             }
             break;
             case FA::Add: {
-                result.push_back(generateRandomKeyCharacter(rnd));
+                result.push_back(charGen(rnd));
             }
             break;
             default:
@@ -284,10 +284,22 @@ String fuzzJSONKey(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, c
         }
     }
 
-    while (result.size() < config.min_key_length)
-        result.push_back(generateRandomKeyCharacter(rnd));
+    while (result.size() < min_length)
+        result.push_back(charGen(rnd));
 
     return result;
+}
+
+String fuzzJSONKey(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, const String & key)
+{
+    return fuzzString(config.min_key_length, config.max_key_length, rnd, key, generateRandomKeyCharacter);
+}
+
+// Randomly modify structural characters (e.g. '{', '}', '[', ']', ':', '"') to generate output that cannot be parsed as JSON.
+String fuzzJSONStructure(const StorageFuzzJSON::Configuration & config, pcg64 & rnd, const String & s)
+{
+    return config.should_malform_output ? fuzzString(/*min_length*/ 0, /*max_length*/ s.size(), rnd, s, generateRandomStringValueCharacter)
+                                        : s;
 }
 
 std::shared_ptr<JSONNode>
@@ -397,7 +409,7 @@ void fuzzJSONObject(
     if (next_node->key)
     {
         writeDoubleQuoted(*next_node->key, out);
-        out << ":";
+        out << fuzzJSONStructure(config, rnd, ":");
     }
 
     auto & val = next_node->value;
@@ -405,7 +417,11 @@ void fuzzJSONObject(
     if (val.fixed)
     {
         if (val.fixed->getType() == Field::Types::Which::String)
-            writeDoubleQuoted(val.fixed->get<String>(), out);
+        {
+            out << fuzzJSONStructure(config, rnd, "\"");
+            writeText(val.fixed->get<String>(), out);
+            out << fuzzJSONStructure(config, rnd, "\"");
+        }
         else
             writeFieldText(*val.fixed, out);
     }
@@ -414,9 +430,9 @@ void fuzzJSONObject(
         if (!val.array && !val.object)
             return;
 
-        const auto & [op, cl, node_list] = val.array ? std::make_tuple('[', ']', *val.array) : std::make_tuple('{', '}', *val.object);
+        const auto & [op, cl, node_list] = val.array ? std::make_tuple("[", "]", *val.array) : std::make_tuple("{", "}", *val.object);
 
-        out << op;
+        out << fuzzJSONStructure(config, rnd, op);
 
         bool first = true;
         for (const auto & ptr : node_list)
@@ -426,7 +442,7 @@ void fuzzJSONObject(
 
             WriteBufferFromOwnString child_out;
             if (!first)
-                child_out << ", ";
+                child_out << fuzzJSONStructure(config, rnd, ", ");
             first = false;
 
             fuzzJSONObject(ptr, child_out, config, rnd, depth + 1, node_count);
@@ -435,7 +451,7 @@ void fuzzJSONObject(
                 break;
             out << child_out.str();
         }
-        out << cl;
+        out << fuzzJSONStructure(config, rnd, cl);
     }
 }
 
@@ -554,10 +570,11 @@ Pipe StorageFuzzJSON::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-static constexpr std::array<std::string_view, 13> optional_configuration_keys
+static constexpr std::array<std::string_view, 14> optional_configuration_keys
     = {"json_str",
        "random_seed",
        "reuse_output",
+       "malform_output",
        "probability",
        "max_output_length",
        "max_nesting_level",
@@ -582,6 +599,9 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
 
     if (collection.has("reuse_output"))
         configuration.should_reuse_output = static_cast<bool>(collection.get<UInt64>("reuse_output"));
+
+    if (collection.has("malform_output"))
+        configuration.should_malform_output = static_cast<bool>(collection.get<UInt64>("malform_output"));
 
     if (collection.has("probability"))
     {

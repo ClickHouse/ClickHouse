@@ -20,7 +20,6 @@ from clickhouse_helper import (
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
-    NotSet,
     RerunHelper,
     get_commit,
     override_status,
@@ -28,9 +27,9 @@ from commit_status_helper import (
     post_commit_status_to_file,
     update_mergeable_check,
 )
-from docker_pull_helper import DockerImage, get_image_with_version
+from docker_images_helper import DockerImage, pull_image, get_docker_image
 from download_release_packages import download_last_release
-from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
+from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from report import TestResults, read_test_results
@@ -169,7 +168,7 @@ def process_results(
     status = []
     status_path = result_directory / "check_status.tsv"
     if status_path.exists():
-        logging.info("Found test_results.tsv")
+        logging.info("Found %s", status_path.name)
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
 
@@ -225,16 +224,24 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
+    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
+    reports_path.mkdir(parents=True, exist_ok=True)
 
     repo_path = Path(REPO_COPY)
-    reports_path = Path(REPORTS_PATH)
     post_commit_path = temp_path / "functional_commit_status.tsv"
 
     args = parse_args()
-    check_name = args.check_name
-    kill_timeout = args.kill_timeout
+    check_name = args.check_name or os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    kill_timeout = args.kill_timeout or int(os.getenv("KILL_TIMEOUT", "0"))
+    assert (
+        kill_timeout > 0
+    ), "kill timeout must be provided as an input arg or in KILL_TIMEOUT env"
     validate_bugfix_check = args.validate_bugfix
+    print(f"Runnin check [{check_name}] with timeout [{kill_timeout}]")
 
     flaky_check = "flaky" in check_name.lower()
 
@@ -285,10 +292,11 @@ def main():
                 post_commit_status(
                     commit,
                     state,
-                    NotSet,
+                    "",
                     NO_CHANGES_MSG,
                     check_name_with_group,
                     pr_info,
+                    dump_to_file=True,
                 )
             elif args.post_commit_status == "file":
                 post_commit_status_to_file(
@@ -300,7 +308,8 @@ def main():
             sys.exit(0)
 
     image_name = get_image_name(check_name)
-    docker_image = get_image_with_version(reports_path, image_name)
+
+    docker_image = pull_image(get_docker_image(image_name))
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
@@ -323,6 +332,7 @@ def main():
     )
     if validate_bugfix_check:
         additional_envs.append("GLOBAL_TAGS=no-random-settings")
+        additional_envs.append("BUGFIX_VALIDATE_CHECK=1")
 
     ci_logs_credentials = CiLogsCredentials(temp_path / "export-logs-config.sh")
     ci_logs_args = ci_logs_credentials.get_docker_arguments(
@@ -378,7 +388,13 @@ def main():
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
         post_commit_status(
-            commit, state, report_url, description, check_name_with_group, pr_info
+            commit,
+            state,
+            report_url,
+            description,
+            check_name_with_group,
+            pr_info,
+            dump_to_file=True,
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(

@@ -101,6 +101,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         auto client = S3::ClientFactory::instance().create(
             client_configuration,
             new_uri.is_virtual_hosted_style,
+            /* disable_checksum= */ false,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             auth_settings.server_side_encryption_customer_key_base64,
@@ -207,6 +208,9 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
             return;
         }
 
+        /// To avoid reference to binding
+        const auto & snapshot_path_ref = snapshot_path;
+
         SCOPE_EXIT(
         {
             LOG_INFO(log, "Removing lock file");
@@ -222,7 +226,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
             }
             catch (...)
             {
-                LOG_INFO(log, "Failed to delete lock file for {} from S3", snapshot_file_info.path);
+                LOG_INFO(log, "Failed to delete lock file for {} from S3", snapshot_path_ref);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         });

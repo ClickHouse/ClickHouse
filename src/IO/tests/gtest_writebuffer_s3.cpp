@@ -210,7 +210,8 @@ struct Client : DB::S3::Client
                std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
                GetClientConfiguration(),
                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-               /* use_virtual_addressing = */ true)
+               /* use_virtual_addressing = */ true,
+               /* disable_checksum_= */ false)
         , store(mock_s3_store)
     { }
 

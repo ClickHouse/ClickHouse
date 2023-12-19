@@ -16,6 +16,7 @@
 #include <Common/Throttler_fwd.h>
 
 #include <IO/S3/URI.h>
+#include <IO/S3/Credentials.h>
 
 #include <aws/core/Aws.h>
 #include <aws/s3/S3Errors.h>
