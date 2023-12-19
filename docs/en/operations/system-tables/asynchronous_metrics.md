@@ -549,11 +549,11 @@ Total amount of data parts in all tables of MergeTree family. Numbers larger tha
 
 ### TotalPrimaryKeyBytesInMemory
 
-The total amount of memory (in bytes) used by primary key values.
+The total amount of memory (in bytes) used by primary key values (only takes active parts into account).
 
 ### TotalPrimaryKeyBytesInMemoryAllocated
 
-The total amount of memory (in bytes) reserved for primary key values.
+The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account).
 
 ### TotalRowsOfMergeTreeTables
 
