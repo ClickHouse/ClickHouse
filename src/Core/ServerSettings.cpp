@@ -4,10 +4,13 @@
 namespace DB
 {
 
-IMPLEMENT_SETTINGS_TRAITS(ServerSettingsTraits, SERVER_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(ServerSettingsTraits, SERVER_SETTINGS_WITH_FLAG)
 
 void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
+
+    SERVER_SETTINGS(SET_RUNTIME_RELOAD_, "", "")
+    
     // settings which can be loaded from the the default profile, see also MAKE_DEPRECATED_BY_SERVER_CONFIG in src/Core/Settings.h
     std::unordered_set<std::string> settings_from_profile_allowlist = {
         "background_pool_size",
