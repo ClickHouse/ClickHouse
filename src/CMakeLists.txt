@@ -631,6 +631,10 @@ if (TARGET ch_contrib::rocksdb)
     target_link_libraries(dbms PUBLIC ch_contrib::rocksdb)
 endif()
 
+if (TARGET ch_contrib::maxminddb)
+    dbms_target_link_libraries(PUBLIC ch_contrib::maxminddb)
+endif()
+
 if (TARGET ch_contrib::libpqxx)
     target_link_libraries(dbms PUBLIC ch_contrib::libpqxx)
 endif()

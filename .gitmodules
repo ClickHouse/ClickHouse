@@ -13,6 +13,9 @@
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
 	url = https://github.com/ClickHouse/librdkafka
+[submodule "contrib/libmaxminddb"]
+	path = contrib/libmaxminddb
+	url = https://github.com/maxmind/libmaxminddb.git	
 [submodule "contrib/cctz"]
 	path = contrib/cctz
 	url = https://github.com/ClickHouse/cctz

@@ -1,3 +1,6 @@
+if (TARGET ch_contrib::maxminddb)
+    set(USE_MAXMINDDB 1)
+endif()
 if (TARGET ch_contrib::rocksdb)
     set(USE_ROCKSDB 1)
 endif()

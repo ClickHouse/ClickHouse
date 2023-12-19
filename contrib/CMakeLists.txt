@@ -96,6 +96,8 @@ add_contrib (corrosion-cmake corrosion)
 add_contrib (delta-kernel-rs-cmake delta-kernel-rs)
 add_contrib (chdig-cmake chdig)
 
+add_contrib (libmaxminddb-cmake libmaxminddb)
+
 if (ENABLE_FUZZING)
     add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
 endif()
