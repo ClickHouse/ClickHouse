@@ -293,7 +293,7 @@ bool StorageView::isStreamingQuery(ContextPtr query_context) const
 
     PlannerContextPtr planner_context = buildPlannerContext(query_tree, SelectQueryOptions{}, std::make_shared<GlobalPlannerContext>());
 
-    collectTableExpressionData(query_tree, planner_context);
+    collectStreamingStorage(query_tree, planner_context);
 
     return planner_context->isStreaming();
 }

@@ -203,6 +203,8 @@ bool storageSupportsStreamingQuery(const StoragePtr & storage, const ContextPtr 
         return storage->supportsStreamingQuery();
 }
 
+}
+
 void collectStreamingStorage(QueryTreeNodePtr & node, PlannerContextPtr & planner_context)
 {
     if (auto * table_node = node->as<TableNode>())
@@ -247,8 +249,6 @@ void collectStreamingStorage(QueryTreeNodePtr & node, PlannerContextPtr & planne
             "Expected table, table function, query or union node. Actual {}",
             node->formatASTForErrorMessage());
     }
-}
-
 }
 
 void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr & planner_context)
