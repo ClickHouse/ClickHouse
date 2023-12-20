@@ -12,6 +12,11 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
+
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
@@ -280,7 +285,17 @@ bool StorageView::isStreamingQuery(ContextPtr query_context) const
     auto select = getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
     auto local_context = Context::createCopy(query_context);
 
-    return InterpreterSelectWithUnionQuery(select, local_context, SelectQueryOptions().noModify().analyze()).isStreamingQuery();
+    auto query_tree = buildQueryTree(select, local_context);
+
+    QueryTreePassManager query_tree_pass_manager(local_context);
+    addQueryTreePasses(query_tree_pass_manager);
+    query_tree_pass_manager.run(query_tree);
+
+    PlannerContextPtr planner_context = buildPlannerContext(query_tree, SelectQueryOptions{}, std::make_shared<GlobalPlannerContext>());
+
+    collectTableExpressionData(query_tree, planner_context);
+
+    return planner_context->isStreaming();
 }
 
 void registerStorageView(StorageFactory & factory)
