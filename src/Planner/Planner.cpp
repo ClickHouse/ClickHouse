@@ -915,6 +915,7 @@ void addWindowSteps(QueryPlan & query_plan,
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window_description.full_sort_description,
+                window_description.partition_by,
                 0 /*limit*/,
                 sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
