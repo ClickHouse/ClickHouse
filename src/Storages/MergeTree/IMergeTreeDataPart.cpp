@@ -593,6 +593,23 @@ UInt64 IMergeTreeDataPart::getMarksCount() const
     return index_granularity.getMarksCount();
 }
 
+UInt64 IMergeTreeDataPart::getExistingBytesOnDisk() const
+{
+    if (!supportLightweightDeleteMutate() || !hasLightweightDelete() || !rows_count
+        || !storage.getSettings()->exclude_deleted_rows_for_part_size_in_merge)
+        return bytes_on_disk;
+
+    /// Uninitialized existing_rows_count
+    /// (if existing_rows_count equals rows_count, it means that previously we failed to read existing_rows_count)
+    if (existing_rows_count > rows_count)
+        readExistingRowsCount();
+
+    if (existing_rows_count < rows_count)
+        return bytes_on_disk * existing_rows_count / rows_count;
+    else /// Load failed
+        return bytes_on_disk;
+}
+
 size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
 {
     auto checksum = checksums.files.find(file_name);
@@ -1285,6 +1302,85 @@ void IMergeTreeDataPart::loadRowsCount()
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Data part doesn't contain fixed size column (even Date column)");
     }
+}
+
+void IMergeTreeDataPart::readExistingRowsCount() const
+{
+    if (!supportLightweightDeleteMutate() || !hasLightweightDelete() || !storage.getSettings()->exclude_deleted_rows_for_part_size_in_merge
+        || existing_rows_count < rows_count || !getMarksCount())
+        return;
+
+    std::lock_guard lock(existing_rows_count_mutex);
+
+    /// Already read by another thread
+    if (existing_rows_count < rows_count)
+        return;
+
+    NamesAndTypesList cols;
+    cols.push_back(LightweightDeleteDescription::FILTER_COLUMN);
+
+    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr();
+    StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
+
+    MergeTreeReaderPtr reader = getReader(
+        cols,
+        storage_snapshot_ptr,
+        MarkRanges{MarkRange(0, getMarksCount())},
+        nullptr,
+        storage.getContext()->getMarkCache().get(),
+        std::make_shared<AlterConversions>(),
+        MergeTreeReaderSettings{},
+        ValueSizeMap{},
+        ReadBufferFromFileBase::ProfileCallback{});
+
+    if (!reader)
+    {
+        LOG_WARNING(storage.log, "Create reader failed while reading existing rows count");
+        existing_rows_count = rows_count;
+        return;
+    }
+
+    size_t current_mark = 0;
+    const size_t total_mark = getMarksCount();
+
+    bool continue_reading = false;
+    size_t current_row = 0;
+    size_t existing_count = 0;
+
+    while (current_row < rows_count)
+    {
+        size_t rows_to_read = index_granularity.getMarkRows(current_mark);
+        continue_reading = (current_mark != 0);
+
+        Columns result;
+        result.resize(1);
+
+        size_t rows_read = reader->readRows(current_mark, total_mark, continue_reading, rows_to_read, result);
+        if (!rows_read)
+        {
+            LOG_WARNING(storage.log, "Part {} has lightweight delete, but _row_exists column not found", name);
+            existing_rows_count = rows_count;
+            return;
+        }
+
+        current_row += rows_read;
+        current_mark += (rows_to_read == rows_read);
+
+        const ColumnUInt8 * row_exists_col = typeid_cast<const ColumnUInt8 *>(result[0].get());
+        if (!row_exists_col)
+        {
+            LOG_WARNING(storage.log, "Part {} _row_exists column type is not UInt8", name);
+            existing_rows_count = rows_count;
+            return;
+        }
+
+        for (UInt8 row_exists : row_exists_col->getData())
+            if (row_exists)
+                existing_count++;
+    }
+
+    existing_rows_count = existing_count;
+    LOG_DEBUG(storage.log, "Part {} existing_rows_count = {}", name, existing_rows_count);
 }
 
 void IMergeTreeDataPart::appendFilesOfRowsCount(Strings & files)
