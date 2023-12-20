@@ -279,11 +279,11 @@ def _configure_docker_jobs(
     images_info = docker_images_helper.get_images_info()
 
     # a. check missing images
-    print("Start checking missing images in dockerhub")
-    # FIXME: we need login as docker manifest inspect goes directly to one of the *.docker.com hosts instead of "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
-    #         find if it's possible to use the setting of /etc/docker/daemon.json
-    docker_images_helper.docker_login()
     if not rebuild_all_dockers:
+        # FIXME: we need login as docker manifest inspect goes directly to one of the *.docker.com hosts instead of "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
+        #         find if it's possible to use the setting of /etc/docker/daemon.json
+        docker_images_helper.docker_login()
+        print("Start checking missing images in dockerhub")
         missing_multi_dict = check_missing_images_on_dockerhub(imagename_digest_dict)
         missing_multi = list(missing_multi_dict)
         missing_amd64 = []
@@ -305,6 +305,15 @@ def _configure_docker_jobs(
                     "aarch64",
                 )
             )
+        # FIXME: temporary hack, remove after transition to docker digest as tag
+        else:
+            if missing_multi:
+                print(
+                    f"WARNING: Missing images {list(missing_multi)} - fallback to latest tag"
+                )
+                for image in missing_multi:
+                    imagename_digest_dict[image] = "latest"
+        print("...checking missing images in dockerhub - done")
     else:
         # add all images to missing
         missing_multi = list(imagename_digest_dict)
@@ -315,16 +324,7 @@ def _configure_docker_jobs(
             for name in imagename_digest_dict
             if not images_info[name]["only_amd64"]
         ]
-    # FIXME: temporary hack, remove after transition to docker digest as tag
-    if docker_digest_or_latest:
-        if missing_multi:
-            print(
-                f"WARNING: Missing images {list(missing_multi)} - fallback to latest tag"
-            )
-            for image in missing_multi:
-                imagename_digest_dict[image] = "latest"
 
-    print("...checking missing images in dockerhub - done")
     return {
         "images": imagename_digest_dict,
         "missing_aarch64": missing_aarch64,
@@ -548,14 +548,14 @@ def main() -> int:
 
     if args.configure:
         GR = GitRunner()
-        pr_info = PRInfo(need_changed_files=True)
+        pr_info = PRInfo()
 
         docker_data = {}
         git_ref = GR.run(f"{GIT_PREFIX} rev-parse HEAD")
 
         # if '#no-merge-commit' is set in commit message - set git ref to PR branch head to avoid merge-commit
         tokens = []
-        if pr_info.number != 0:
+        if pr_info.number != 0 and not args.skip_jobs:
             message = GR.run(f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1")
             tokens = _fetch_commit_tokens(message)
             print(f"Found commit message tokens: [{tokens}]")
