@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-cpu-aarch64, no-parallel
+# Tags: no-tsan, no-parallel
 # TSan does not supports tracing.
-# trace_log doesn't work on aarch64
 
 # Regression for proper release of Context,
 # via tracking memory of external tables.
