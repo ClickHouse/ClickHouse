@@ -187,6 +187,7 @@ def test_simple_insert_select(
     )
     assert node.query("SELECT * FROM s3_test order by dt, id FORMAT Values") == values1
     assert len(list_objects(cluster, "data/")) == FILES_OVERHEAD + files_per_part
+    assert False, "test is broken"
 
     node.query("SYSTEM FLUSH LOGS")
     blob_storage_log = node.query(

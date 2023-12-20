@@ -375,6 +375,11 @@ def main():
     )
     state = override_status(state, check_name, invert=validate_bugfix_check)
 
+    # break to debug locally
+    if validate_bugfix_check:
+        state = "error"
+        description = "Invalid check_status.tsv"
+
     ch_helper = ClickHouseHelper()
 
     report_url = upload_results(
