@@ -174,6 +174,7 @@ public:
     StringRef getDataAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     void insert(const Field & x) override;
+    void insertIntoVariant(const Field & x, Discriminator global_discr);
     void insertFrom(const IColumn & src_, size_t n) override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;

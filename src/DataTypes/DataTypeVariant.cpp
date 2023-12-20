@@ -1,9 +1,11 @@
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -94,6 +96,16 @@ MutableColumnPtr DataTypeVariant::createColumn() const
     return ColumnVariant::create(std::move(nested_columns));
 }
 
+ColumnPtr DataTypeVariant::createColumnConst(size_t size, const DB::Field & field) const
+{
+    auto field_type = applyVisitor(FieldToDataType(), field);
+    auto discr = tryGetVariantDiscriminator(field_type);
+    if (!discr)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot insert field \"{}\" into column with type {}", toString(field), getName());
+    auto column = createColumn();
+    assert_cast<ColumnVariant &>(*column).insertIntoVariant(field, *discr);
+    return ColumnConst::create(std::move(column), size);
+}
 
 Field DataTypeVariant::getDefault() const
 {

@@ -480,6 +480,16 @@ void ColumnVariant::insertFrom(const IColumn & src_, size_t n)
     }
 }
 
+void ColumnVariant::insertIntoVariant(const DB::Field & x, Discriminator global_discr)
+{
+    if (global_discr > variants.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid global discriminator: {}. The number of variants is {}", size_t(global_discr), variants.size());
+    auto & variant = getVariantByGlobalDiscriminator(global_discr);
+    variant.insert(x);
+    getLocalDiscriminators().push_back(localDiscriminatorByGlobal(global_discr));
+    getOffsets().push_back(variant.size() - 1);
+}
+
 void ColumnVariant::insertRangeFrom(const IColumn & src_, size_t start, size_t length)
 {
     const size_t num_variants = variants.size();

@@ -204,7 +204,7 @@ ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB:
     /// If this variant is empty, fill result column with default values.
     if (prev->empty())
     {
-        auto res = IColumn::mutate(makeNullableOrLowCardinalityNullableSafe(prev));
+        auto res = makeNullableOrLowCardinalityNullableSafe(prev)->cloneEmpty();
         res->insertManyDefaults(local_discriminators->size());
         return res;
     }
