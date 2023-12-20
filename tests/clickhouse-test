@@ -612,10 +612,10 @@ class SettingsRandomizer:
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
         "max_bytes_before_external_sort": threshold_generator(
-            1.0, 0.5, 1, 10 * 1024 * 1024 * 1024
+            0.3, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "max_bytes_before_external_group_by": threshold_generator(
-            1.0, 0.5, 1, 10 * 1024 * 1024 * 1024
+            0.3, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "max_bytes_before_remerge_sort": lambda: random.randint(1, 3000000000),
         "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
