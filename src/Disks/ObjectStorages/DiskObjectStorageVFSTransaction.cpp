@@ -1,22 +1,20 @@
 #include "DiskObjectStorageVFSTransaction.h"
+#include "DiskObjectStorageTransactionOperation.h"
+#include "DiskObjectStorageVFS.h"
 #include "Disks/IO/WriteBufferWithFinalizeCallback.h"
-#include "Disks/ObjectStorages/DiskObjectStorageTransactionOperation.h"
 #include "VFSLogItem.h"
-#include "base/FnTraits.h"
 
-static void pushVFSLogItem(const DB::VFSTraits & traits, const zkutil::ZooKeeperPtr & zk, const String & item)
+namespace DB
+{
+static void pushVFSLogItem(const VFSTraits & traits, const zkutil::ZooKeeperPtr & zk, const String & item)
 {
     zk->create(traits.log_item, item, zkutil::CreateMode::PersistentSequential);
 }
 
-namespace DB
-{
-DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(
-    IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_, zkutil::ZooKeeperPtr zookeeper_, const VFSTraits & traits_)
-    : DiskObjectStorageTransaction(object_storage_, metadata_storage_, nullptr)
-    , zookeeper(std::move(zookeeper_))
+DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_)
+    : DiskObjectStorageTransaction(*disk_.object_storage, *disk_.metadata_storage, nullptr)
+    , disk(disk_)
     , log(&Poco::Logger::get("DiskObjectStorageVFS"))
-    , traits(traits_)
 {
 }
 
@@ -50,23 +48,16 @@ void DiskObjectStorageVFSTransaction::removeSharedFileIfExists(const String & pa
 
 struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectStorageOperation
 {
-    zkutil::ZooKeeperPtr zookeeper;
-    const VFSTraits & traits;
+    DiskObjectStorageVFS & disk;
 
-    RemoveRecursiveObjectStorageVFSOperation(
-        IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_,
-        const String & path_,
-        zkutil::ZooKeeperPtr zookeeper_,
-        const VFSTraits & traits_)
+    RemoveRecursiveObjectStorageVFSOperation(DiskObjectStorageVFS & disk_, const String & path_)
         : RemoveRecursiveObjectStorageOperation(
-            object_storage_,
-            metadata_storage_,
+            *disk_.object_storage,
+            *disk_.metadata_storage,
             path_,
             /*keep_all_batch_data=*/true,
-            /*remove_metadata_only*/ {})
-        , zookeeper(std::move(zookeeper_))
-        , traits(traits_)
+            {})
+        , disk(disk_)
     {
     }
 
@@ -76,14 +67,13 @@ struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectSto
         StoredObjects unlink;
         for (auto && [_, unlink_by_path] : objects_to_remove_by_path)
             std::ranges::move(unlink_by_path.objects, std::back_inserter(unlink));
-        pushVFSLogItem(traits, zookeeper, VFSLogItem::getSerialised({}, std::move(unlink)));
+        pushVFSLogItem(disk.traits, disk.zookeeper, VFSLogItem::getSerialised({}, std::move(unlink)));
     }
 };
 
 void DiskObjectStorageVFSTransaction::removeSharedRecursive(const String & path, bool, const NameSet &)
 {
-    operations_to_execute.emplace_back(
-        std::make_unique<RemoveRecursiveObjectStorageVFSOperation>(object_storage, metadata_storage, path, zookeeper, traits));
+    operations_to_execute.emplace_back(std::make_unique<RemoveRecursiveObjectStorageVFSOperation>(disk, path));
 }
 
 void DiskObjectStorageVFSTransaction::removeSharedFiles(const RemoveBatchRequest & files, bool, const NameSet &)
@@ -150,38 +140,38 @@ void DiskObjectStorageVFSTransaction::createHardLink(const String & src_path, co
 // get remote path and write to Zookeeper, but the former seems less ugly to me
 struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
 {
-    zkutil::ZooKeeperPtr zookeeper;
-    const VFSTraits & traits;
+    DiskObjectStorageVFS & disk;
 
     CopyFileObjectStorageVFSOperation(
-        IObjectStorage & object_storage_,
-        IMetadataStorage & metadata_storage_,
-        IObjectStorage & destination_object_storage_,
+        DiskObjectStorageVFS & disk_,
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const String & from_path_,
-        const String & to_path_,
-        zkutil::ZooKeeperPtr zookeeper_,
-        const VFSTraits & traits_)
+        const String & to_path_)
         : CopyFileObjectStorageOperation(
-            object_storage_, metadata_storage_, destination_object_storage_, read_settings_, write_settings_, from_path_, to_path_)
-        , zookeeper(std::move(zookeeper_))
-        , traits(traits_)
+            *disk_.object_storage,
+            *disk_.metadata_storage,
+            *disk_.object_storage,
+            read_settings_,
+            write_settings_,
+            from_path_,
+            to_path_)
+        , disk(disk_)
     {
     }
 
     void execute(MetadataTransactionPtr tx) override
     {
         CopyFileObjectStorageOperation::execute(tx);
-        pushVFSLogItem(traits, zookeeper, VFSLogItem::getSerialised(std::move(created_objects), {}));
+        pushVFSLogItem(disk.traits, disk.zookeeper, VFSLogItem::getSerialised(std::move(created_objects), {}));
     }
 };
 
 void DiskObjectStorageVFSTransaction::copyFile(
     const String & from_file_path, const String & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
-    operations_to_execute.emplace_back(std::make_unique<CopyFileObjectStorageVFSOperation>(
-        object_storage, metadata_storage, object_storage, read_settings, write_settings, from_file_path, to_file_path, zookeeper, traits));
+    operations_to_execute.emplace_back(
+        std::make_unique<CopyFileObjectStorageVFSOperation>(disk, read_settings, write_settings, from_file_path, to_file_path));
 }
 
 void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink)
@@ -191,10 +181,10 @@ void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, 
     String entry = VFSLogItem::getSerialised(std::move(link), std::move(unlink));
     LOG_TRACE(log, "Pushing {}", entry);
 
-    auto callback = [zk = this->zookeeper, entry_captured = std::move(entry), log_captured = this->log, &traits_captured = this->traits]
+    auto callback = [entry_captured = std::move(entry), log_captured = this->log, &disk_captured = disk]
     {
         LOG_TRACE(log_captured, "Executing {}", entry_captured);
-        pushVFSLogItem(traits_captured, zk, entry_captured);
+        pushVFSLogItem(disk_captured.traits, disk_captured.zookeeper, entry_captured);
     };
 
     operations_to_execute.emplace_back(

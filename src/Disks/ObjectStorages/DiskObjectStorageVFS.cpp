@@ -1,6 +1,5 @@
 #include "DiskObjectStorageVFS.h"
 #include "DiskObjectStorageVFSTransaction.h"
-#include "IO/WriteBufferFromFile.h"
 #include "Interpreters/Context.h"
 #include "ObjectStorageVFSGCThread.h"
 
@@ -102,7 +101,7 @@ void DiskObjectStorageVFS::unlock(std::string_view path)
 
 DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageVFSTransaction>(*object_storage, *metadata_storage, zookeeper, traits);
+    return std::make_shared<DiskObjectStorageVFSTransaction>(*this);
 }
 
 String DiskObjectStorageVFS::lockPathToFullPath(std::string_view path) const

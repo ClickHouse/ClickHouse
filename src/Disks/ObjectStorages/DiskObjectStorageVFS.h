@@ -41,7 +41,11 @@ public:
     void unlock(std::string_view path) override;
 
 private:
+    friend struct RemoveRecursiveObjectStorageVFSOperation;
+    friend struct CopyFileObjectStorageVFSOperation;
+    friend struct DiskObjectStorageVFSTransaction;
     friend class ObjectStorageVFSGCThread;
+
     std::optional<ObjectStorageVFSGCThread> garbage_collector;
 
     const bool allow_gc;

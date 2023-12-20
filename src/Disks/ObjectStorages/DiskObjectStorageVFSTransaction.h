@@ -1,15 +1,13 @@
 #pragma once
-#include "Common/ZooKeeper/ZooKeeper.h"
 #include "DiskObjectStorageTransaction.h"
-#include "VFSTraits.h"
 
 namespace DB
 {
+class DiskObjectStorageVFS;
+
 struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransaction
 {
-    DiskObjectStorageVFSTransaction(
-        IObjectStorage & object_storage_, IMetadataStorage & metadata_storage_, zkutil::ZooKeeperPtr zookeeper_, const VFSTraits & traits_);
-
+    DiskObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_); // NOLINT
     void replaceFile(const String & from_path, const String & to_path) override;
 
     // createFile creates an empty file. If the file is written using writeFile, we'd
@@ -41,9 +39,8 @@ struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransacti
     }
 
 private:
-    zkutil::ZooKeeperPtr zookeeper;
+    DiskObjectStorageVFS & disk;
     Poco::Logger const * const log;
-    const VFSTraits & traits;
 
     void addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink);
 };

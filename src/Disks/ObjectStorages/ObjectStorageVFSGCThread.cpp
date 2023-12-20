@@ -89,7 +89,7 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpoin
     if (should_have_previous_snapshot)
         obsolete.emplace_back(old_snapshot);
 
-    if (!invalid.empty())
+    if (!invalid.empty()) // TODO myrrc remove after testing
     {
         String out;
         for (const auto & [path, ref] : invalid)
