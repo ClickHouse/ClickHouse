@@ -48,14 +48,11 @@ public:
         return arguments;
     }
 
-    /** From the parameters for combined function,
-      *  get the parameters for nested function.
-      * If arguments are not suitable for combined function, throw an exception.
+    /** Get the number of parameters for combinator itself.
+      * All parameters will be passed to nested function,
+      * expect last `getNumberOfParameters()` parameters that are for combined function.
       */
-    virtual Array transformParameters(const Array & parameters) const
-    {
-        return parameters;
-    }
+    virtual size_t getNumberOfParameters() const { return 0; }
 
     /** Create combined aggregate function (ex: sumIf)
       *  from nested function (ex: sum)

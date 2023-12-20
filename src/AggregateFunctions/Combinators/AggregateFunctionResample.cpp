@@ -30,14 +30,7 @@ public:
         return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
-    Array transformParameters(const Array & params) const override
-    {
-        if (params.size() < 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Incorrect number of parameters for aggregate function with {} suffix", getName());
-
-        return Array(params.begin(), params.end() - 3);
-    }
+    size_t getNumberOfParameters() const override { return 3; }
 
     AggregateFunctionPtr transformAggregateFunction(
         const AggregateFunctionPtr & nested_function,

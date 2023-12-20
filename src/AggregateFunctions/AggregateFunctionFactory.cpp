@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
@@ -105,12 +106,13 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
                             "to apply a function to Nullable arguments.");
 
         DataTypes nested_types = combinator->transformArguments(types_without_low_cardinality);
-        Array nested_parameters = combinator->transformParameters(parameters);
+        /// "Null" combinator doesn't have parameters
+        chassert(combinator->getNumberOfParameters() == 0);
 
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
-        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments);
+        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, parameters, out_properties, has_null_arguments);
 
         bool is_nested_nothing = false;
         AggregateFunctionPtr current_nested_function = nested_function;
@@ -253,13 +255,21 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 combinator_name);
         }
 
+        size_t combinator_parameters_number = combinator->getNumberOfParameters();
+        if (parameters.size() < combinator_parameters_number)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Incorrect number of parameters for aggregate with '{}' combinator: expected {}, got {}",
+                    combinator->getName(), combinator_parameters_number, parameters.size());
+
+        Array nested_parameters(parameters.begin(), parameters.end() - combinator_parameters_number);
         DataTypes nested_types = combinator->transformArguments(argument_types);
-        Array nested_parameters = combinator->transformParameters(parameters);
-
         AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties);
-        return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, nested_function->getParameters());
-    }
+        /// Parameters may be changed after function resolving, pass new set of parameters to combinator
+        nested_parameters = nested_function->getParameters();
+        nested_parameters.insert(nested_parameters.end(), parameters.end() - combinator_parameters_number, parameters.end());
 
+        return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, nested_parameters);
+    }
 
     String extra_info;
     if (FunctionFactory::instance().hasNameOrAlias(name))
