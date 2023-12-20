@@ -401,6 +401,9 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     if (hasOffset())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST(options));
 
+    if (hasEmit())
+        select_query->setExpression(ASTSelectQuery::Expression::EMIT, getEmit()->toAST(options));
+
     if (hasSettingsChanges())
     {
         auto settings_query = std::make_shared<ASTSetQuery>();

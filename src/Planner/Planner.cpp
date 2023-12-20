@@ -1120,7 +1120,7 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
 
 void addWatermarkStep(QueryPlan & query_plan, const QueryNode & query_node, const SelectQueryInfo & select_query_info)
 {
-    auto params = std::make_shared<Streaming::WatermarkStamperParams>(select_query_info.query, select_query_info.has_aggregates, query_node.hasGroupBy());
+    auto params = std::make_shared<Streaming::WatermarkStamperParams>(query_node, select_query_info.has_aggregates);
     query_plan.addStep(std::make_unique<Streaming::WatermarkStep>(query_plan.getCurrentDataStream(), std::move(params), &Poco::Logger::get("Planner")));
 }
 

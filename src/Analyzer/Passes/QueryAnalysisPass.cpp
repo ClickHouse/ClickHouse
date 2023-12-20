@@ -6102,7 +6102,7 @@ void QueryAnalyzer::resolveEmitNode(QueryTreeNodePtr & node, IdentifierResolveSc
     auto interval_kind = result_type->getKind();
     if (interval_kind <= IntervalKind::Day)
     {
-        emit_node.setWindowInterval(interval_constant.getValue().get<Int64>());
+        emit_node.setWindowIntervalValue(interval_constant.getValue().get<Int64>());
         emit_node.setWindowIntervalUnit(interval_kind);
     }
     else

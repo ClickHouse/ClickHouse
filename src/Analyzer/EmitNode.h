@@ -46,19 +46,14 @@ public:
         return children[interval_function_child_index];
     }
 
-    Int64 getWindowInterval() const
+    Streaming::WindowInterval getWindowInterval() const
     {
-        return window_interval.interval;
+        return window_interval;
     }
 
-    void setWindowInterval(Int64 interval)
+    void setWindowIntervalValue(Int64 interval)
     {
         window_interval.interval = interval;
-    }
-
-    IntervalKind getWindowIntervalUnit() const
-    {
-        return window_interval.unit;
     }
 
     void setWindowIntervalUnit(IntervalKind unit)

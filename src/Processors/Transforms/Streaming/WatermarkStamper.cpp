@@ -1,5 +1,6 @@
 #include <Processors/Transforms/Streaming/WatermarkTransform.h>
 
+#include <Analyzer/EmitNode.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/Streaming/ASTEmitQuery.h>
@@ -42,6 +43,36 @@ void mergeEmitQuerySettings(const ASTPtr & emit_query, WatermarkStamperParams & 
     else
         params.mode = WatermarkStamperParams::EmitMode::NONE;
 }
+
+void setDefaultWatermarkParams(WatermarkStamperParams & params, bool has_aggregates, bool has_group_by)
+{
+    if (!has_aggregates && !has_group_by)
+    {
+        /// For streaming non-aggregation query
+        if (params.mode != WatermarkStamperParams::EmitMode::TAIL &&
+            params.mode != WatermarkStamperParams::EmitMode::NONE)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Streaming tail mode doesn't support any watermark or periodic emit");
+
+        /// Set default emit mode
+        if (params.mode == WatermarkStamperParams::EmitMode::NONE)
+            params.mode = WatermarkStamperParams::EmitMode::TAIL;
+    }
+    else
+    {
+        /// For streaming aggregation query
+        if (params.mode == WatermarkStamperParams::EmitMode::TAIL)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Streaming aggregation doesn't support tail emit");
+
+        /// Set default emit mode
+        if (params.mode == WatermarkStamperParams::EmitMode::NONE)
+        {
+            /// If `PERIODIC INTERVAL ...` is missing in `EMIT STREAM` query
+            params.mode = WatermarkStamperParams::EmitMode::PERIODIC;
+            params.periodic_interval.interval = DEFAULT_PERIODIC_INTERVAL.first;
+            params.periodic_interval.unit = DEFAULT_PERIODIC_INTERVAL.second;
+        }
+    }
+}
 }
 
 WatermarkStamperParams::WatermarkStamperParams(ASTPtr query, bool has_aggregates, bool has_group_by)
@@ -51,31 +82,29 @@ WatermarkStamperParams::WatermarkStamperParams(ASTPtr query, bool has_aggregates
 
     mergeEmitQuerySettings(select_query->emit(), *this);
 
-    if (!has_aggregates && !has_group_by)
-    {
-        /// For streaming non-aggregation query
-        if (mode != EmitMode::TAIL && mode != EmitMode::NONE)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Streaming tail mode doesn't support any watermark or periodic emit");
+    setDefaultWatermarkParams(*this, has_aggregates, has_group_by);
+}
 
-        /// Set default emit mode
-        if (mode == EmitMode::NONE)
-            mode = EmitMode::TAIL;
-    }
-    else
+WatermarkStamperParams::WatermarkStamperParams(const QueryNode & query_node, bool has_aggregates)
+{
+    if (query_node.hasEmit())
     {
-        /// For streaming aggregation query
-        if (mode == EmitMode::TAIL)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Streaming aggregation doesn't support tail emit");
-
-        /// Set default emit mode
-        if (mode == EmitMode::NONE)
+        auto & emit_node = query_node.getEmit()->as<EmitNode &>();
+        if (emit_node.hasIntervalFunction())
         {
-            /// If `PERIODIC INTERVAL ...` is missing in `EMIT STREAM` query
-            mode = EmitMode::PERIODIC;
-            periodic_interval.interval = DEFAULT_PERIODIC_INTERVAL.first;
-            periodic_interval.unit = DEFAULT_PERIODIC_INTERVAL.second;
+            periodic_interval = emit_node.getWindowInterval();
+            switch (emit_node.getEmitType())
+            {
+                case EmitType::PERIODIC:
+                    mode = WatermarkStamperParams::EmitMode::PERIODIC;
+                    break;
+            }
         }
+        else
+            mode = WatermarkStamperParams::EmitMode::NONE;
     }
+
+    setDefaultWatermarkParams(*this, has_aggregates, query_node.hasGroupBy());
 }
 
 void WatermarkStamper::preProcess(const Block &)
