@@ -289,7 +289,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_SHUTDOWN);
             if (kill(0, SIGTERM))
-                throwFromErrno("System call kill(0, SIGTERM) failed", ErrorCodes::CANNOT_KILL);
+                throw ErrnoException(ErrorCodes::CANNOT_KILL, "System call kill(0, SIGTERM) failed");
             break;
         }
         case Type::KILL:
@@ -380,7 +380,7 @@ BlockIO InterpreterSystemQuery::execute()
             }
             else
             {
-                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
+                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
                 if (query.key_to_drop.empty())
                 {
                     cache->removeAllReleasable();
@@ -434,7 +434,7 @@ BlockIO InterpreterSystemQuery::execute()
             }
             else
             {
-                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name).cache;
+                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
                 auto file_segments = cache->sync();
                 fill_data(query.filesystem_cache_name, cache, file_segments);
             }

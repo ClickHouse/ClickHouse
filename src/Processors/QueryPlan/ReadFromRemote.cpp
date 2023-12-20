@@ -236,7 +236,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     scalars["_shard_num"]
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
-    if (context->canUseParallelReplicas())
+    if (context->canUseTaskBasedParallelReplicas())
     {
         if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
         {
@@ -258,7 +258,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
         shard.shard_info.pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage);
     remote_query_executor->setLogger(log);
 
-    if (context->canUseParallelReplicas())
+    if (context->canUseTaskBasedParallelReplicas())
     {
         // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
         // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.

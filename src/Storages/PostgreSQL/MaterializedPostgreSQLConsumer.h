@@ -46,7 +46,7 @@ private:
         const Names column_names;
         const ArrayInfo array_info;
 
-        struct Buffer
+        struct Buffer : private boost::noncopyable
         {
             Block sample_block;
             MutableColumns columns;
@@ -56,13 +56,18 @@ private:
 
             void assertInsertIsPossible(size_t col_idx) const;
         };
+        using BufferPtr = std::unique_ptr<Buffer>;
 
-        Buffer & getBuffer();
+        Buffer & getLastBuffer();
 
-        void setBuffer(std::unique_ptr<Buffer> buffer_) { buffer = std::move(buffer_); }
+        BufferPtr popBuffer();
+
+        void addBuffer(BufferPtr buffer);
+
+        void returnBuffer(BufferPtr buffer);
 
     private:
-        std::unique_ptr<Buffer> buffer;
+        std::deque<BufferPtr> buffers;
     };
 
     using Storages = std::unordered_map<String, StorageData>;

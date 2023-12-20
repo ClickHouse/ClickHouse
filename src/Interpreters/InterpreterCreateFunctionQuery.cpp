@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 
 #include <Access/ContextAccess.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -32,7 +32,7 @@ BlockIO InterpreterCreateFunctionQuery::execute()
 
     if (!create_function_query.cluster.empty())
     {
-        if (current_context->getUserDefinedSQLObjectsLoader().isReplicated())
+        if (current_context->getUserDefinedSQLObjectsStorage().isReplicated())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not allowed because used-defined functions are replicated automatically");
 
         DDLQueryOnClusterParams params;

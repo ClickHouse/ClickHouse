@@ -611,6 +611,13 @@ class SettingsRandomizer:
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
+        "max_bytes_before_external_sort": threshold_generator(
+            1.0, 0.5, 1, 10 * 1024 * 1024 * 1024
+        ),
+        "max_bytes_before_external_group_by": threshold_generator(
+            1.0, 0.5, 1, 10 * 1024 * 1024 * 1024
+        ),
+        "max_bytes_before_remerge_sort": lambda: random.randint(1, 3000000000),
         "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
         "http_response_buffer_size": lambda: random.randint(0, 10 * 1048576),
         "http_wait_end_of_query": lambda: random.random() > 0.5,
@@ -1766,6 +1773,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
         proc_name = multiprocessing.current_process().name
         print(f"\nRunning {about}{num_tests} {test_suite.suite} tests ({proc_name}).\n")
 
+    seria_num = 1
     while True:
         if is_concurrent:
             case = queue.get(timeout=args.timeout * 1.1)
@@ -1793,7 +1801,9 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
             test_cace_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
             if not is_concurrent:
                 sys.stdout.flush()
-                sys.stdout.write(f"{test_cace_name:72}")
+                sys.stdout.write(
+                    f"Case SN: {seria_num} | Current Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Case Name: {test_cace_name:72}"
+                )
                 # This flush is needed so you can see the test name of the long
                 # running test before it will finish. But don't do it in parallel
                 # mode, so that the lines don't mix.
@@ -1839,6 +1849,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
         if failures_chain >= args.max_failures_chain:
             stop_tests()
             break
+        seria_num += 1
 
     if failures_total > 0:
         print(

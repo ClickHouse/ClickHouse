@@ -533,8 +533,8 @@ Result:
 
 ```result
 ┌─concatWithSeparator('a', '1', '2', '3', '4')─┐
-│ 1a2a3a4                           │
-└───────────────────────────────────┘
+│ 1a2a3a4                                      │
+└──────────────────────────────────────────────┘
 ```
 
 ## concatWithSeparatorAssumeInjective

@@ -460,6 +460,12 @@ Possible values:
 
 Default value: 1048576.
 
+## http_make_head_request {#http-make-head-request}
+
+The `http_make_head_request` setting allows the execution of a `HEAD` request while reading data from HTTP to retrieve information about the file to be read, such as its size. Since it's enabled by default, it may be desirable to disable this setting in cases where the server does not support `HEAD` requests.
+
+Default value: `true`.
+
 ## table_function_remote_max_addresses {#table_function_remote_max_addresses}
 
 Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
@@ -1578,9 +1584,15 @@ Default value: `default`.
 
 ## allow_experimental_parallel_reading_from_replicas
 
-If true, ClickHouse will send a SELECT query to all replicas of a table (up to `max_parallel_replicas`) . It will work for any kind of MergeTree table.
+Enables or disables sending SELECT queries to all replicas of a table (up to `max_parallel_replicas`). Reading is parallelized and coordinated dynamically. It will work for any kind of MergeTree table.
 
-Default value: `false`.
+Possible values:
+
+- 0 - Disabled.
+- 1 - Enabled, silently disabled in case of failure.
+- 2 - Enabled, throws an exception in case of failure.
+
+Default value: `0`.
 
 ## compile_expressions {#compile-expressions}
 
@@ -4152,6 +4164,41 @@ Result:
 └─────┴─────┴───────┘
 ```
 
+## enable_order_by_all {#enable-order-by-all}
+
+Enables or disables sorting by `ALL` columns, i.e. [ORDER BY](../../sql-reference/statements/select/order-by.md)
+
+Possible values:
+
+- 0 — Disable ORDER BY ALL.
+- 1 — Enable ORDER BY ALL.
+
+Default value: `1`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE TAB(C1 Int, C2 Int, ALL Int) ENGINE=Memory();
+
+INSERT INTO TAB VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
+
+SELECT * FROM TAB ORDER BY ALL; -- returns an error that ALL is ambiguous
+
+SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all;
+```
+
+Result:
+
+```text
+┌─C1─┬─C2─┬─ALL─┐
+│ 20 │ 20 │  10 │
+│ 30 │ 10 │  20 │
+│ 10 │ 20 │  30 │
+└────┴────┴─────┘
+```
+
 ## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string}
 
 Controls whether function [splitBy*()](../../sql-reference/functions/splitting-merging-functions.md) with argument `max_substrings` > 0 will include the remaining string in the last element of the result array.
@@ -5087,3 +5134,25 @@ When set to `true` than for all s3 requests first two attempts are made with low
 When set to `false` than all attempts are made with identical timeouts.
 
 Default value: `true`.
+
+## max_partition_size_to_drop
+
+Restriction on dropping partitions in query time.
+
+Default value: 50 GB.
+The value 0 means that you can drop partitions without any restrictions.
+
+:::note
+This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
+:::
+
+## max_table_size_to_drop
+
+Restriction on deleting tables in query time.
+
+Default value: 50 GB.
+The value 0 means that you can delete all tables without any restrictions.
+
+:::note
+This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
+:::

@@ -1050,7 +1050,6 @@ public:
                 ctx->space_reservation,
                 false, // TODO Do we need deduplicate for projections
                 {},
-                false, // no cleanup
                 projection_merging_params,
                 NO_TRANSACTION_PTR,
                 /* need_prefix */ true,
@@ -1357,6 +1356,7 @@ private:
         NameSet removed_stats;
         /// A stat file need to be renamed iff the column is renamed.
         NameToNameMap renamed_stats;
+
         for (const auto & command : ctx->for_file_renames)
         {
             if (command.type == MutationCommand::DROP_INDEX)
@@ -1652,6 +1652,8 @@ private:
         ctx->new_data_part->version.setCreationTID(tid, nullptr);
         ctx->new_data_part->storeVersionMetadata();
 
+        auto settings = ctx->source_part->storage.getSettings();
+
         NameSet hardlinked_files;
 
         /// NOTE: Renames must be done in order
@@ -1691,9 +1693,18 @@ private:
 
             if (it->isFile())
             {
-                ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
-                    ctx->source_part->getDataPartStorage(), file_name, destination);
-                hardlinked_files.insert(file_name);
+                if (settings->always_use_copy_instead_of_hardlinks)
+                {
+                    ctx->new_data_part->getDataPartStorage().copyFileFrom(
+                        ctx->source_part->getDataPartStorage(), it->name(), destination);
+                }
+                else
+                {
+                    ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
+                        ctx->source_part->getDataPartStorage(), it->name(), destination);
+
+                    hardlinked_files.insert(it->name());
+                }
             }
             else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
             {
@@ -1705,11 +1716,20 @@ private:
 
                 for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
                 {
-                    auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
-                    projection_data_part_storage_dst->createHardLinkFrom(
-                        *projection_data_part_storage_src, p_it->name(), p_it->name());
+                    if (settings->always_use_copy_instead_of_hardlinks)
+                    {
+                        projection_data_part_storage_dst->copyFileFrom(
+                            *projection_data_part_storage_src, p_it->name(), p_it->name());
+                    }
+                    else
+                    {
+                        auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
 
-                    hardlinked_files.insert(file_name_with_projection_prefix);
+                        projection_data_part_storage_dst->createHardLinkFrom(
+                            *projection_data_part_storage_src, p_it->name(), p_it->name());
+
+                        hardlinked_files.insert(file_name_with_projection_prefix);
+                    }
                 }
             }
         }
@@ -1973,19 +1993,20 @@ bool MutateTask::prepare()
         IDataPartStorage::ClonePartParams clone_params
         {
             .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
-            .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks), .keep_metadata_version = true
+            .copy_instead_of_hardlink = settings_ptr->always_use_copy_instead_of_hardlinks,
+            .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
+            .keep_metadata_version = true,
         };
-        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(
-            ctx->source_part,
-            prefix,
-            ctx->future_part->part_info,
-            ctx->metadata_snapshot,
-            clone_params,
-            ctx->context->getReadSettings(),
-            ctx->context->getWriteSettings());
-        part->getDataPartStorage().beginTransaction();
+        MergeTreeData::MutableDataPartPtr part;
+        scope_guard lock;
 
-        ctx->temporary_directory_lock = std::move(lock);
+        {
+            std::tie(part, lock) = ctx->data->cloneAndLoadDataPartOnSameDisk(
+                ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings());
+            part->getDataPartStorage().beginTransaction();
+            ctx->temporary_directory_lock = std::move(lock);
+        }
+
         promise.set_value(std::move(part));
         return false;
     }

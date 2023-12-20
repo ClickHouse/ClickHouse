@@ -55,9 +55,9 @@ public:
 
     virtual ~IFileCachePriority() = default;
 
-    size_t getElementsLimit() const { return max_elements; }
+    size_t getElementsLimit(const CacheGuard::Lock &) const { return max_elements; }
 
-    size_t getSizeLimit() const { return max_size; }
+    size_t getSizeLimit(const CacheGuard::Lock &) const { return max_size; }
 
     virtual size_t getSize(const CacheGuard::Lock &) const = 0;
 
@@ -75,7 +75,7 @@ public:
 
     virtual void shuffle(const CacheGuard::Lock &) = 0;
 
-    virtual std::vector<FileSegmentInfo> dump(FileCache & cache, const CacheGuard::Lock &) = 0;
+    virtual std::vector<FileSegmentInfo> dump(const CacheGuard::Lock &) = 0;
 
     using FinalizeEvictionFunc = std::function<void(const CacheGuard::Lock & lk)>;
     virtual bool collectCandidatesForEviction(
@@ -86,9 +86,11 @@ public:
         FinalizeEvictionFunc & finalize_eviction_func,
         const CacheGuard::Lock &) = 0;
 
+    virtual bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CacheGuard::Lock &) = 0;
+
 protected:
-    const size_t max_size = 0;
-    const size_t max_elements = 0;
+    size_t max_size = 0;
+    size_t max_elements = 0;
 };
 
 }

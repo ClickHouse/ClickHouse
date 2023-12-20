@@ -44,9 +44,11 @@ public:
 
     void shuffle(const CacheGuard::Lock &) override;
 
-    std::vector<FileSegmentInfo> dump(FileCache & cache, const CacheGuard::Lock &) override;
+    std::vector<FileSegmentInfo> dump(const CacheGuard::Lock &) override;
 
     void pop(const CacheGuard::Lock & lock) { remove(queue.begin(), lock); }
+
+    bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CacheGuard::Lock &) override;
 
 private:
     void updateElementsCount(int64_t num);

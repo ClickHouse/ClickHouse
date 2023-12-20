@@ -14,6 +14,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Poco/String.h>
 
 
 namespace DB
@@ -286,6 +287,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 } else
                     interpolate_expression_list = std::make_shared<ASTExpressionList>();
             }
+        }
+        else if (order_expression_list->children.size() == 1)
+        {
+            /// ORDER BY ALL
+            auto * identifier = order_expression_list->children[0]->as<ASTOrderByElement>()->children[0]->as<ASTIdentifier>();
+            if (identifier != nullptr && Poco::toUpper(identifier->name()) == "ALL")
+                select_query->order_by_all = true;
         }
     }
 

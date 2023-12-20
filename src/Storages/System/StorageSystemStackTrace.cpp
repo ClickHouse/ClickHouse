@@ -133,7 +133,7 @@ bool wait(int timeout_ms)
                 continue;
             }
 
-            throwFromErrno("Cannot poll pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot poll pipe");
         }
         if (poll_res == 0)
             return false;
@@ -146,7 +146,7 @@ bool wait(int timeout_ms)
             if (errno == EINTR)
                 continue;
 
-            throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from pipe");
         }
 
         if (read_res == sizeof(notification_num))
@@ -296,7 +296,7 @@ protected:
                     if (ESRCH == errno)
                         continue;
 
-                    throwFromErrno("Cannot send signal with sigqueue", ErrorCodes::CANNOT_SIGQUEUE);
+                    throw ErrnoException(ErrorCodes::CANNOT_SIGQUEUE, "Cannot send signal with sigqueue");
                 }
 
                 /// Just in case we will wait for pipe with timeout. In case signal didn't get processed.
@@ -402,13 +402,13 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
     sa.sa_flags = SA_SIGINFO;
 
     if (sigemptyset(&sa.sa_mask))
-        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
 
     if (sigaddset(&sa.sa_mask, sig))
-        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
 
     if (sigaction(sig, &sa, nullptr))
-        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
 }
 
 
