@@ -458,7 +458,9 @@ std::string SecureSocketImpl::getTLSServerName() const
     std::lock_guard<std::recursive_mutex> lock(_mutex);
     std::string server_name;
 
-    if (_pSSL)
+    int sslError = SSL_get_error(_pSSL, -1);
+    /// Only get servername if SSL error is absent
+    if (sslError == SSL_ERROR_NONE)
         server_name = SSL_get_servername(_pSSL, TLSEXT_NAMETYPE_host_name);
     return server_name;
 }

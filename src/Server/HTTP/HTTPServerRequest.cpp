@@ -35,11 +35,6 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     server_address = session.serverAddress();
     secure = session.socket().secure();
 
-#if USE_SSL
-    if (secure)
-        tls_sni = getTLSServerName();
-#endif
-
     auto receive_timeout = context->getReceiveTimeout();
     auto send_timeout = context->getSendTimeout();
 
@@ -48,6 +43,11 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
 
     auto in = std::make_unique<ReadBufferFromPocoSocket>(session.socket());
     socket = session.socket().impl();
+
+#if USE_SSL
+    if (secure)
+        tls_sni = getTLSServerName();
+#endif
 
     readRequest(*in);  /// Try parse according to RFC7230
 
