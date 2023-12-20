@@ -179,13 +179,22 @@ private:
         {
             ptr = mmap(address_hint, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             if (MAP_FAILED == ptr)
-                throw ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot mmap {}", ReadableSize(size));
+                throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot mmap {}", ReadableSize(size));
         }
 
         ~Chunk()
         {
             if (ptr && 0 != munmap(ptr, size))
-                throw ErrnoException(DB::ErrorCodes::CANNOT_MUNMAP, "Allocator: Cannot munmap {}", ReadableSize(size));
+            {
+                try
+                {
+                    throw DB::ErrnoException(DB::ErrorCodes::CANNOT_MUNMAP, "Allocator: Cannot munmap {}", ReadableSize(size));
+                }
+                catch (DB::ErrnoException &)
+                {
+                    DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+            }
         }
 
         Chunk(Chunk && other) noexcept : ptr(other.ptr), size(other.size)

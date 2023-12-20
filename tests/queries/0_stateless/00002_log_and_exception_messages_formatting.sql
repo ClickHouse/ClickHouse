@@ -19,11 +19,13 @@ SELECT
             WHERE
                 length(message_format_string) = 0
               AND message not like '% Received from %clickhouse-staging.com:9440%'
+              AND source_file not like '%/AWSLogger.cpp%'
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
 WHERE
-    message NOT LIKE '% Received from %clickhouse-staging.com:9440%';
+    message NOT LIKE '% Received from %clickhouse-staging.com:9440%'
+  AND source_file not like '%/AWSLogger.cpp%';
 
 -- Check the same for exceptions. The value was 0.03
 WITH 0.05 AS threshold

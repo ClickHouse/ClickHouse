@@ -376,6 +376,8 @@ def _configure_jobs(
             if job_config.run_by_label in pr_labels:
                 for batch in range(num_batches):  # type: ignore
                     batches_to_do.append(batch)
+        elif job_config.run_always:
+            batches_to_do.append(batch)
         else:
             # this job controlled by digest, add to todo if it's not successfully done before
             for batch in range(num_batches):  # type: ignore
@@ -400,10 +402,10 @@ def _configure_jobs(
             for token in commit_tokens
             if token.startswith("#job_")
         ]
-        assert any(
-            len(x) > 1 for x in requested_jobs
-        ), f"Invalid job names requested [{requested_jobs}]"
         if requested_jobs:
+            assert any(
+                len(x) > 1 for x in requested_jobs
+            ), f"Invalid job names requested [{requested_jobs}]"
             jobs_to_do_requested = []
             for job in requested_jobs:
                 job_with_parents = CI_CONFIG.get_job_with_parents(job)
@@ -511,7 +513,14 @@ def _update_gh_statuses(indata: Dict, s3: S3Helper) -> None:
 def _fetch_commit_tokens(message: str) -> List[str]:
     pattern = r"#[\w-]+"
     matches = re.findall(pattern, message)
-    return matches
+    res = [
+        match
+        for match in matches
+        if match == "#no-merge-commit"
+        or match.startswith("#job_")
+        or match.startswith("#job-")
+    ]
+    return res
 
 
 def main() -> int:
