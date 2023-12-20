@@ -96,7 +96,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     /// Aggregate functions such as any_value_respect_nulls are considered window functions in that sense
     auto properties = tryGetProperties(name, action);
     bool is_window_function = properties.has_value() && properties->is_window_function;
-    if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
+    if (!is_window_function && name != AggregateFunctionNothing::name && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))
     {
         AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix("Null");
@@ -112,12 +112,22 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 
         AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments);
 
+        bool is_nested_nothing = false;
+        AggregateFunctionPtr current_nested_function = nested_function;
+        for (; current_nested_function; current_nested_function = current_nested_function->getNestedFunction())
+        {
+            if (current_nested_function->getName() == AggregateFunctionNothing::name)
+            {
+                is_nested_nothing = true;
+                break;
+            }
+        }
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
         // nullability themselves. Another special case is functions from Nothing
         // that are rewritten to AggregateFunctionNothing, in this case
         // nested_function is nullptr.
-        if (!nested_function || !nested_function->isOnlyWindowFunction())
+        if (!is_nested_nothing && (!nested_function || !nested_function->isOnlyWindowFunction()))
             return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
@@ -247,7 +257,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         Array nested_parameters = combinator->transformParameters(parameters);
 
         AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties);
-        return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+        return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, nested_function->getParameters());
     }
 
 

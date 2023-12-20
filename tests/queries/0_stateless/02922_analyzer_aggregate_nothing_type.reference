@@ -14,6 +14,62 @@
 [nan,nan]
 
 [nan,nan]
+-- quantile:
+\N
+\N
+\N
+\N
+1
+1
+1
+-- quantiles:
+[nan,nan]
+[nan,nan]
+[nan,nan]
+[nan,nan]
+[1,1]
+[1,1]
+[1,1]
+-- nothing:
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+-- nothing(UInt64):
+0
+0
+0
+0
+0
+0
+0
+-- nothing(Nullable(Nothing)):
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+-- sum:
+\N
+\N
+\N
+\N
+6
+6
+6
+-- count:
+0
+0
+0
+0
+6
+6
+6
 0
 
 0

@@ -9,6 +9,70 @@ SELECT count(NULL) FROM remote('127.0.0.{1,2}', numbers(3)) GROUP BY number % 2 
 SELECT quantile(0.5)(NULL) FROM remote('127.0.0.{1,2}', numbers(3)) GROUP BY number % 2 WITH TOTALS;
 SELECT quantiles(0.1, 0.2)(NULL :: Nullable(UInt32)) FROM remote('127.0.0.{1,2}', numbers(3)) GROUP BY number % 2 WITH TOTALS;
 
+SELECT '-- quantile:';
+SELECT quantileArray(0.5)([NULL, NULL]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT quantileArrayIf(0.5)([NULL], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT quantileArrayIf(0.5)([NULL], 0) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT quantileIfArray(0.5)([NULL, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT quantileIfArray(0.5)([1, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT quantileIfArrayIf(0.5)([1, NULL], [1, 0], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT quantileIfArrayArray(0.5)([[1, NULL]], [[1, 0]]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+
+SELECT '-- quantiles:';
+select quantilesArray(0.5, 0.9)([NULL :: Nullable(UInt64), NULL]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT quantilesArrayIf(0.5, 0.9)([NULL :: Nullable(UInt64)], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT quantilesArrayIf(0.5, 0.9)([NULL :: Nullable(UInt64)], 0) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT quantilesIfArray(0.5, 0.9)([NULL :: Nullable(UInt64), NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT quantilesIfArray(0.5, 0.9)([1, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT quantilesIfArrayIf(0.5, 0.9)([1, NULL], [1, 0], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT quantilesIfArrayArray(0.5, 0.9)([[1, NULL]], [[1, 0]]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+
+SELECT '-- nothing:';
+SELECT nothingArray([NULL, NULL]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingArrayIf([NULL], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingArrayIf([NULL], 0) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingIfArray([NULL, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingIfArray([1, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingIfArrayIf([1, NULL], [1, 0], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingIfArrayArray([[1, NULL]], [[1, 0]]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+
+SELECT '-- nothing(UInt64):';
+SELECT nothingArray('UInt64')([NULL, NULL]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingArrayIf('UInt64')([NULL], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingArrayIf('UInt64')([NULL], 0) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingIfArray('UInt64')([NULL, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingIfArray('UInt64')([1, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingIfArrayIf('UInt64')([1, NULL], [1, 0], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingIfArrayArray('UInt64')([[1, NULL]], [[1, 0]]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+
+SELECT '-- nothing(Nullable(Nothing)):';
+SELECT nothingArray('Nullable(Nothing)')([NULL, NULL]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingArrayIf('Nullable(Nothing)')([NULL], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingArrayIf('Nullable(Nothing)')([NULL], 0) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingIfArray('Nullable(Nothing)')([NULL, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingIfArray('Nullable(Nothing)')([1, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingIfArrayIf('Nullable(Nothing)')([1, NULL], [1, 0], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT nothingIfArrayArray('Nullable(Nothing)')([[1, NULL]], [[1, 0]]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+
+SELECT '-- sum:';
+SELECT sumArray([NULL, NULL]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT sumArrayIf([NULL], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT sumArrayIf([NULL], 0) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT sumIfArray([NULL, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT sumIfArray([1, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT sumIfArrayIf([1, NULL], [1, 0], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT sumIfArrayArray([[1, NULL]], [[1, 0]]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+
+SELECT '-- count:';
+SELECT countArray([NULL, NULL]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT countArrayIf([NULL], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT countArrayIf([NULL], 0) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT countIfArray([NULL, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT countIfArray([1, NULL], [1, 0]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT countIfArrayIf([1, NULL], [1, 0], 1) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+SELECT countIfArrayArray([[1, NULL]], [[1, 0]]) AS x FROM remote('127.0.0.{1,2}', numbers(3));
+
+
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (`n` UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t1 SELECT * FROM numbers(10);

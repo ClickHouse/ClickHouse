@@ -84,6 +84,10 @@ void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_fun
 {
     function_name = aggregate_function_value->getName();
     function = std::move(aggregate_function_value);
+
+    // const auto & function_parameters = aggregate_function_value->getParameters();
+    // auto & parameters = getParameters();
+
     kind = FunctionKind::AGGREGATE;
 }
 
