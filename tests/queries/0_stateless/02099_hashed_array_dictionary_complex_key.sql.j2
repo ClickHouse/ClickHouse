@@ -12,6 +12,8 @@ INSERT INTO complex_key_simple_attributes_source_table VALUES(0, 'id_key_0', 'va
 INSERT INTO complex_key_simple_attributes_source_table VALUES(1, 'id_key_1', 'value_1', 'value_second_1');
 INSERT INTO complex_key_simple_attributes_source_table VALUES(2, 'id_key_2', 'value_2', 'value_second_2');
 
+{% for dictionary_config in ['', 'SHARDS 16'] -%}
+
 DROP DICTIONARY IF EXISTS hashed_array_dictionary_complex_key_simple_attributes;
 CREATE DICTIONARY hashed_array_dictionary_complex_key_simple_attributes
 (
@@ -23,7 +25,7 @@ CREATE DICTIONARY hashed_array_dictionary_complex_key_simple_attributes
 PRIMARY KEY id, id_key
 SOURCE(CLICKHOUSE(TABLE 'complex_key_simple_attributes_source_table'))
 LIFETIME(MIN 1 MAX 1000)
-LAYOUT(COMPLEX_KEY_HASHED_ARRAY());
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY({{ dictionary_config }}));
 
 SELECT 'Dictionary hashed_array_dictionary_complex_key_simple_attributes';
 SELECT 'dictGet existing value';
@@ -45,6 +47,8 @@ SELECT * FROM hashed_array_dictionary_complex_key_simple_attributes ORDER BY (id
 
 DROP DICTIONARY hashed_array_dictionary_complex_key_simple_attributes;
 
+{% endfor %}
+
 DROP TABLE complex_key_simple_attributes_source_table;
 
 DROP TABLE IF EXISTS complex_key_complex_attributes_source_table;
@@ -61,6 +65,8 @@ INSERT INTO complex_key_complex_attributes_source_table VALUES(0, 'id_key_0', 'v
 INSERT INTO complex_key_complex_attributes_source_table VALUES(1, 'id_key_1', 'value_1', NULL);
 INSERT INTO complex_key_complex_attributes_source_table VALUES(2, 'id_key_2', 'value_2', 'value_second_2');
 
+{% for dictionary_config in ['', 'SHARDS 16'] -%}
+
 DROP DICTIONARY IF EXISTS hashed_array_dictionary_complex_key_complex_attributes;
 CREATE DICTIONARY hashed_array_dictionary_complex_key_complex_attributes
 (
@@ -73,7 +79,7 @@ CREATE DICTIONARY hashed_array_dictionary_complex_key_complex_attributes
 PRIMARY KEY id, id_key
 SOURCE(CLICKHOUSE(TABLE 'complex_key_complex_attributes_source_table'))
 LIFETIME(MIN 1 MAX 1000)
-LAYOUT(COMPLEX_KEY_HASHED_ARRAY());
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY({{ dictionary_config }}));
 
 SELECT 'Dictionary hashed_array_dictionary_complex_key_complex_attributes';
 SELECT 'dictGet existing value';
@@ -92,6 +98,8 @@ SELECT 'dictHas';
 SELECT dictHas('hashed_array_dictionary_complex_key_complex_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
 SELECT * FROM hashed_array_dictionary_complex_key_complex_attributes ORDER BY (id, id_key);
+
+{% endfor %}
 
 DROP DICTIONARY hashed_array_dictionary_complex_key_complex_attributes;
 DROP TABLE complex_key_complex_attributes_source_table;

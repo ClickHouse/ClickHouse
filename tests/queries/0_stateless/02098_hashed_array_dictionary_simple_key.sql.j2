@@ -11,6 +11,8 @@ INSERT INTO simple_key_simple_attributes_source_table VALUES(0, 'value_0', 'valu
 INSERT INTO simple_key_simple_attributes_source_table VALUES(1, 'value_1', 'value_second_1');
 INSERT INTO simple_key_simple_attributes_source_table VALUES(2, 'value_2', 'value_second_2');
 
+{% for dictionary_config in ['', 'SHARDS 16'] -%}
+
 DROP DICTIONARY IF EXISTS hashed_array_dictionary_simple_key_simple_attributes;
 CREATE DICTIONARY hashed_array_dictionary_simple_key_simple_attributes
 (
@@ -20,7 +22,7 @@ CREATE DICTIONARY hashed_array_dictionary_simple_key_simple_attributes
 )
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'simple_key_simple_attributes_source_table'))
-LAYOUT(HASHED_ARRAY())
+LAYOUT(HASHED_ARRAY({{ dictionary_config }}))
 LIFETIME(MIN 1 MAX 1000)
 SETTINGS(dictionary_use_async_executor=1, max_threads=8);
 
@@ -43,6 +45,7 @@ SELECT 'select all values as input stream';
 SELECT * FROM hashed_array_dictionary_simple_key_simple_attributes ORDER BY id;
 
 DROP DICTIONARY hashed_array_dictionary_simple_key_simple_attributes;
+{% endfor %}
 
 DROP TABLE simple_key_simple_attributes_source_table;
 
@@ -59,6 +62,8 @@ INSERT INTO simple_key_complex_attributes_source_table VALUES(0, 'value_0', 'val
 INSERT INTO simple_key_complex_attributes_source_table VALUES(1, 'value_1', NULL);
 INSERT INTO simple_key_complex_attributes_source_table VALUES(2, 'value_2', 'value_second_2');
 
+{% for dictionary_config in ['', 'SHARDS 16'] -%}
+
 DROP DICTIONARY IF EXISTS hashed_array_dictionary_simple_key_complex_attributes;
 CREATE DICTIONARY hashed_array_dictionary_simple_key_complex_attributes
 (
@@ -68,7 +73,7 @@ CREATE DICTIONARY hashed_array_dictionary_simple_key_complex_attributes
 )
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'simple_key_complex_attributes_source_table'))
-LAYOUT(HASHED_ARRAY())
+LAYOUT(HASHED_ARRAY({{ dictionary_config }}))
 LIFETIME(MIN 1 MAX 1000);
 
 SELECT 'Dictionary hashed_array_dictionary_simple_key_complex_attributes';
@@ -90,6 +95,9 @@ SELECT 'select all values as input stream';
 SELECT * FROM hashed_array_dictionary_simple_key_complex_attributes ORDER BY id;
 
 DROP DICTIONARY hashed_array_dictionary_simple_key_complex_attributes;
+
+{% endfor %}
+
 DROP TABLE simple_key_complex_attributes_source_table;
 
 DROP TABLE IF EXISTS simple_key_hierarchy_table;
@@ -104,6 +112,8 @@ INSERT INTO simple_key_hierarchy_table VALUES (2, 1);
 INSERT INTO simple_key_hierarchy_table VALUES (3, 1);
 INSERT INTO simple_key_hierarchy_table VALUES (4, 2);
 
+{% for dictionary_config in ['', 'SHARDS 16'] -%}
+
 DROP DICTIONARY IF EXISTS hashed_array_dictionary_simple_key_hierarchy;
 CREATE DICTIONARY hashed_array_dictionary_simple_key_hierarchy
 (
@@ -112,7 +122,7 @@ CREATE DICTIONARY hashed_array_dictionary_simple_key_hierarchy
 )
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'simple_key_hierarchy_table'))
-LAYOUT(HASHED_ARRAY())
+LAYOUT(HASHED_ARRAY({{ dictionary_config }}))
 LIFETIME(MIN 1 MAX 1000);
 
 SELECT 'Dictionary hashed_array_dictionary_simple_key_hierarchy';
@@ -122,5 +132,8 @@ SELECT 'dictGetHierarchy';
 SELECT dictGetHierarchy('hashed_array_dictionary_simple_key_hierarchy', toUInt64(1));
 SELECT dictGetHierarchy('hashed_array_dictionary_simple_key_hierarchy', toUInt64(4));
 
+{% endfor %}
+
 DROP DICTIONARY hashed_array_dictionary_simple_key_hierarchy;
+
 DROP TABLE simple_key_hierarchy_table;
