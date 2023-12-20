@@ -869,7 +869,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
     /// method is called.
     do
     {
-        /// Use getData insteand of exists to avoid watch leak.
+        /// Use getData instead of exists to avoid watch leak.
         impl->get(path, callback, std::make_shared<Coordination::WatchCallback>(watch));
 
         if (!state->event.tryWait(1000))
@@ -888,7 +888,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
     return false;
 }
 
-void ZooKeeper::handleEphemeralNodeExistence(const std::string & path, const std::string & fast_delete_if_equal_value)
+void ZooKeeper::deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value)
 {
     zkutil::EventPtr eph_node_disappeared = std::make_shared<Poco::Event>();
     String content;
@@ -1175,6 +1175,7 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncRemove(const std::stri
     return future;
 }
 
+/// Needs to match ZooKeeperWithInjection::asyncTryRemove implementation
 std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemove(const std::string & path, int32_t version)
 {
     auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();

@@ -56,23 +56,28 @@ public:
         {
             /// UTF8 variant is not available for FixedString and Enum arguments.
             if (!isString(arguments[0]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}",
-                                arguments[0]->getName(), getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of function {}, expected String",
+                    arguments[0]->getName(), getName());
         }
         else
         {
             if (!isStringOrFixedString(arguments[0]) && !isEnum(arguments[0]))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}",
-                                arguments[0]->getName(), getName());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of first argument of function {}, expected String, FixedString or Enum",
+                    arguments[0]->getName(), getName());
         }
 
         if (!isNativeNumber(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
-                            arguments[1]->getName(), getName());
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {}, expected (U)Int*",
+                arguments[1]->getName(), getName());
 
         if (number_of_arguments == 3 && !isNativeNumber(arguments[2]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
-                            arguments[2]->getName(), getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of second argument of function {}, expected (U)Int*",
+                arguments[2]->getName(), getName());
 
         return std::make_shared<DataTypeString>();
     }

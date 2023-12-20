@@ -405,7 +405,7 @@ MergeTreeDataMergerMutator::MergeSelectingInfo MergeTreeDataMergerMutator::getPo
         }
 
         IMergeSelector::Part part_info;
-        part_info.size = part->getBytesOnDisk();
+        part_info.size = part->getExistingBytesOnDisk();
         part_info.age = res.current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
@@ -611,7 +611,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
             return SelectPartsDecision::CANNOT_SELECT;
         }
 
-        sum_bytes += (*it)->getBytesOnDisk();
+        sum_bytes += (*it)->getExistingBytesOnDisk();
 
         prev_it = it;
         ++it;
@@ -791,7 +791,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
 }
 
 
-size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts)
+size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts, const bool & is_merge)
 {
     size_t res = 0;
     time_t current_time = std::time(nullptr);
@@ -802,7 +802,10 @@ size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::
         if (part_max_ttl && part_max_ttl <= current_time)
             continue;
 
-        res += part->getBytesOnDisk();
+        if (is_merge && part->storage.getSettings()->exclude_deleted_rows_for_part_size_in_merge)
+            res += part->getExistingBytesOnDisk();
+        else
+            res += part->getBytesOnDisk();
     }
 
     return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);

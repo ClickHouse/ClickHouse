@@ -260,6 +260,10 @@ public:
 
         void rollback(DataPartsLock * lock = nullptr);
 
+        /// Immediately remove parts from table's data_parts set and change part
+        /// state to temporary. Useful for new parts which not present in table.
+        void rollbackPartsToTemporaryState();
+
         size_t size() const { return precommitted_parts.size(); }
         bool isEmpty() const { return precommitted_parts.empty(); }
 
@@ -594,6 +598,11 @@ public:
         DataPartsLock & lock,
         DataPartsVector * out_covered_parts = nullptr);
 
+    /// Remove parts from working set immediately (without wait for background
+    /// process). Transfer part state to temporary. Have very limited usage only
+    /// for new parts which aren't already present in table.
+    void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove);
+
     /// Removes parts from the working set parts.
     /// Parts in add must already be in data_parts with PreActive, Active, or Outdated states.
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
@@ -786,7 +795,7 @@ public:
     /// We do not use mutex because it is not very important that the size could change during the operation.
     void checkPartitionCanBeDropped(const ASTPtr & partition, ContextPtr local_context);
 
-    void checkPartCanBeDropped(const String & part_name);
+    void checkPartCanBeDropped(const String & part_name, ContextPtr local_context);
 
     Pipe alterPartition(
         const StorageMetadataPtr & metadata_snapshot,

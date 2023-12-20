@@ -235,7 +235,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     scalars["_shard_num"]
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
-    if (context->canUseParallelReplicas())
+    if (context->canUseTaskBasedParallelReplicas())
     {
         if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
         {
@@ -256,7 +256,6 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     /// parallel replicas custom key case
     if (shard.shard_filter_generator)
     {
-        LOG_DEBUG(log, "Number of replicas {}", shard.shard_info.per_replica_pools.size());
         for (size_t i = 0; i < shard.shard_info.per_replica_pools.size(); ++i)
         {
             auto query = shard.query->clone();
@@ -295,7 +294,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
             shard.shard_info.pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage);
         remote_query_executor->setLogger(log);
 
-        if (context->canUseParallelReplicas())
+        if (context->canUseTaskBasedParallelReplicas())
         {
             // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
             // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
@@ -405,7 +404,9 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             IConnections::ReplicaInfo replica_info
             {
                 .all_replicas_count = all_replicas_count,
-                .number_of_current_replica = 0
+                /// `shard_num` will be equal to the number of the given replica in the cluster (set by `Cluster::getClusterWithReplicasAsShards`).
+                /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
+                .number_of_current_replica = shard.shard_num - 1,
             };
 
             addPipeForSingeReplica(pipes, shard.pool, replica_info);
@@ -424,7 +425,9 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         IConnections::ReplicaInfo replica_info
         {
             .all_replicas_count = all_replicas_count,
-            .number_of_current_replica = pipes.size()
+            /// `shard_num` will be equal to the number of the given replica in the cluster (set by `Cluster::getClusterWithReplicasAsShards`).
+            /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
+            .number_of_current_replica = current_shard->shard_num - 1,
         };
 
         addPipeForSingeReplica(pipes, current_shard->pool, replica_info);
