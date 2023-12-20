@@ -1108,7 +1108,7 @@ template <typename AttributeType, bool is_nullable, typename ValueSetter, typena
 void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsImpl(
     const Attribute & attribute,
     DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
-    ValueSetter && set_value [[maybe_unused]],
+    ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
     const auto & attribute_containers = std::get<CollectionsHolder<AttributeType>>(attribute.containers);
@@ -1176,6 +1176,8 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCircui
         keys_extractor.rollbackCurrentKey();
     }
 
+    keys_extractor.reset();
+
     IColumn::Filter mask(keys_size, 1);
     auto mask_info = extractMask(mask, std::move(cond_col));
     inverseMask(mask, mask_info);
@@ -1191,39 +1193,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCircui
     DictionaryDefaultValueExtractor<DictionaryAttributeType> default_value_extractor(
         dictionary_attribute.null_value, result);
 
-    size_t keys_found = 0;
-
-    for (size_t key_index = 0; key_index < keys_size; ++key_index)
-    {
-        auto key = keys_extractor.extractCurrentKey();
-        auto shard = getShard(key);
-
-        const auto & container = attribute_containers[shard];
-        const auto it = container.find(key);
-
-        if (it != container.end())
-        {
-            set_value(key_index, getValueFromCell(it), false);
-            ++keys_found;
-        }
-        else
-        {
-            if constexpr (is_nullable)
-            {
-                bool is_value_nullable = ((*attribute.is_nullable_sets)[shard].find(key) != nullptr) || default_value_extractor.isNullAt(key_index);
-                set_value(key_index, default_value_extractor[key_index], is_value_nullable);
-            }
-            else
-            {
-                set_value(key_index, default_value_extractor[key_index], false);
-            }
-        }
-
-        keys_extractor.rollbackCurrentKey();
-    }
-
-    query_count.fetch_add(keys_size, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
+    getItemsImpl<AttributeType, is_nullable>(attribute, keys_extractor, set_value, default_value_extractor);
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>

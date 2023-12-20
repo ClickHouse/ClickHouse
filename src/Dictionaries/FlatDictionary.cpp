@@ -718,34 +718,7 @@ void FlatDictionary::getItemsShortCircuitImpl(
     DictionaryDefaultValueExtractor<DictionaryAttributeType> default_value_extractor(
         dictionary_attribute.null_value, result);
 
-    const auto & container = std::get<ContainerType<AttributeType>>(attribute.container);
-
-    size_t keys_found = 0;
-
-    for (size_t row = 0; row < rows; ++row)
-    {
-        const auto key = keys[row];
-
-        if (key < loaded_keys.size() && loaded_keys[key])
-        {
-            if constexpr (is_nullable)
-                set_value(row, container[key], attribute.is_nullable_set->find(key) != nullptr);
-            else
-                set_value(row, container[key], false);
-
-            ++keys_found;
-        }
-        else
-        {
-            if constexpr (is_nullable)
-                set_value(row, default_value_extractor[row], default_value_extractor.isNullAt(row));
-            else
-                set_value(row, default_value_extractor[row], false);
-        }
-    }
-
-    query_count.fetch_add(rows, std::memory_order_relaxed);
-    found_count.fetch_add(keys_found, std::memory_order_relaxed);
+    getItemsImpl<AttributeType, is_nullable>(attribute, keys, set_value, default_value_extractor);
 }
 
 template <typename T>
