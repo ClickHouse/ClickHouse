@@ -102,6 +102,7 @@ public:
         if (data.isRejected())
             return;
 
+        /// Monotonicity check only works for functions that contain at most two arguments and one of them must be a constant.
         if (!ast_function.arguments)
         {
             data.reject();
@@ -146,32 +147,9 @@ public:
             return;
         }
 
-        ColumnsWithTypeAndName args;
-        ColumnWithTypeAndName const_arg;
+        auto function_arguments = getFunctionArguments(ast_function, data);
 
-        if (arguments_size == 2)
-        {
-            if (ast_function.arguments->children[0]->as<ASTLiteral>())
-            {
-                const auto * literal = ast_function.arguments->children[0]->as<ASTLiteral>();
-                const_arg = extractLiteralColumnAndTypeFromAstLiteral(literal);
-                args.push_back(const_arg);
-                args.emplace_back(data.arg_data_type, "tmp");
-            }
-            else
-            {
-                const auto * literal = ast_function.arguments->children[1]->as<ASTLiteral>();
-                args.emplace_back(data.arg_data_type, "tmp");
-                const_arg = extractLiteralColumnAndTypeFromAstLiteral(literal);
-                args.push_back(const_arg);
-            }
-        }
-        else
-        {
-            args.emplace_back(data.arg_data_type, "tmp");
-        }
-
-        auto function_base = function->build(args);
+        auto function_base = function->build(function_arguments);
 
         if (function_base && function_base->hasInformationAboutMonotonicity())
         {
@@ -222,6 +200,33 @@ public:
         result.column = result.type->createColumnConst(0, literal->value);
 
         return result;
+    }
+
+    static ColumnsWithTypeAndName getFunctionArguments(const ASTFunction & ast_function, const Data & data)
+    {
+        ColumnsWithTypeAndName args;
+
+        if (ast_function.arguments->children.size() == 2)
+        {
+            if (ast_function.arguments->children[0]->as<ASTLiteral>())
+            {
+                const auto * literal = ast_function.arguments->children[0]->as<ASTLiteral>();
+                args.push_back(extractLiteralColumnAndTypeFromAstLiteral(literal));
+                args.emplace_back(data.arg_data_type, "tmp");
+            }
+            else
+            {
+                const auto * literal = ast_function.arguments->children[1]->as<ASTLiteral>();
+                args.emplace_back(data.arg_data_type, "tmp");
+                args.push_back(extractLiteralColumnAndTypeFromAstLiteral(literal));
+            }
+        }
+        else
+        {
+            args.emplace_back(data.arg_data_type, "tmp");
+        }
+
+        return args;
     }
 };
 

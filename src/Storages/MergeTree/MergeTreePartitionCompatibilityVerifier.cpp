@@ -32,25 +32,22 @@ namespace
 
         auto expression_list = extractKeyExpressionList(definition_ast);
 
-        Monotonicity monotonicity;
+        MonotonicityCheckVisitor::Data data {{table_with_columns}, destination_storage.getContext(), {}};
 
         for (auto i = 0u; i < expression_list->children.size(); i++)
         {
-            MonotonicityCheckVisitor::Data data {{table_with_columns}, destination_storage.getContext(), {}};
-
             data.range = hyperrectangle[i];
 
             MonotonicityCheckVisitor(data).visit(expression_list->children[i]);
-            monotonicity = data.monotonicity;
 
-            if (!monotonicity.is_monotonic || !monotonicity.is_positive)
+            if (!data.monotonicity.is_monotonic || !data.monotonicity.is_positive)
             {
                 return false;
             }
 
         }
 
-        return monotonicity.is_monotonic && monotonicity.is_positive;
+        return true;
     }
 
     bool isExpressionDirectSubsetOf(const ASTPtr source, const ASTPtr destination)
