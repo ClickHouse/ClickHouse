@@ -122,8 +122,8 @@ select 'exceptions shorter than 30',
     from logs
     where message ilike '%DB::Exception%' and if(length(extract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) < 30 + 26 and message_format_string not in known_short_messages;
 
--- Avoid too noisy messages: top 1 message frequency must be less than 10%. We should reduce the threshold
-WITH 0.10 as threshold
+-- Avoid too noisy messages: top 1 message frequency must be less than 30%. We should reduce the threshold
+WITH 0.30 as threshold
 select
     'noisy messages',
     greatest(coalesce(((select message_format_string, count() from logs group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,

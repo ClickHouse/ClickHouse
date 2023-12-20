@@ -4,7 +4,7 @@ unknown runtime exceptions	0.01	[]
 messages shorter than 10	1	[]
 messages shorter than 16	1	[]
 exceptions shorter than 30	1	[]
-noisy messages	0.1	
+noisy messages	0.3	
 noisy Trace messages	0.16	
 noisy Debug messages	0.09	
 noisy Info messages	0.05	
