@@ -72,7 +72,7 @@ VFSObsoleteObjects VFSLogItem::mergeWithSnapshot(ReadBuffer & snapshot, WriteBuf
         if (snapshot.eof())
             return {};
         Pair out;
-        readStringUntilWhitespaceInto(out.first, snapshot);
+        readStringUntilWhitespace(out.first, snapshot);
         checkChar(' ', snapshot);
         readIntTextUnsafe(out.second, snapshot);
         checkChar('\n', snapshot);

@@ -1,5 +1,4 @@
 #include "ObjectStorageVFSGCThread.h"
-#include <ranges>
 #include "Common/ZooKeeper/ZooKeeperLock.h"
 #include "Compression/CompressedReadBuffer.h"
 #include "Compression/CompressedWriteBuffer.h"
@@ -131,7 +130,7 @@ VFSLogItem ObjectStorageVFSGCThread::getBatch(size_t start_logpointer, size_t en
 
 void ObjectStorageVFSGCThread::onBatchProcessed(size_t start_logpointer, size_t end_logpointer, const PathAndVersion & pair)
 {
-    LOG_DEBUG(log, "Removing log range [{};{}], latest snapshot {}", start_logpointer, end_logpointer, pair.remote_path);
+    LOG_DEBUG(log, "Removing log range [{};{}], snapshot {}", start_logpointer, end_logpointer, pair.remote_path);
 
     const size_t log_batch_length = end_logpointer - start_logpointer + 1;
     Coordination::Requests requests(log_batch_length + 1);
