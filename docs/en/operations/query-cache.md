@@ -30,7 +30,7 @@ the same caching logic and configuration is often duplicated. With ClickHouse's 
 This reduces maintenance effort and avoids redundancy.
 
 :::security consideration
-The cached query result is tied to the user executing it. Authorization checks are performed when the query is executed, meaning that if there are any alterations to the user's role or permissions between one cached query and the next query, the query result will not reflect these changes. We recommend using different users to distingush between different level of access, instead of actively toggling roles for a single user between queries, as this practice may lead to unexpected query results.
+The cached query result is tied to the user executing it. Authorization checks are performed when the query is executed. This means that if there are any alterations to the user's role or permissions between the time the query is cached and when the cache is accessed, the result will not reflect these changes. We recommend using different users to distinguish between different levels of access, instead of actively toggling roles for a single user between queries, as this practice may lead to unexpected query results.
 :::
 
 ## Configuration Settings and Usage
