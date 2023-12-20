@@ -2,7 +2,7 @@
 import json
 import logging
 import os
-from typing import Dict, List, Set, Union, Literal
+from typing import Dict, List, Set, Union
 
 from unidiff import PatchSet  # type: ignore
 

@@ -689,7 +689,8 @@ def main() -> int:
     elif args.mark_success:
         assert indata, "Run config must be provided via --infile"
         job = args.job_name
-        num_batches = CI_CONFIG.get_job_config(job).num_batches
+        job_config = CI_CONFIG.get_job_config(job)
+        num_batches = job_config.num_batches
         assert (
             num_batches <= 1 or 0 <= args.batch < num_batches
         ), f"--batch must be provided and in range [0, {num_batches}) for {job}"
@@ -706,7 +707,7 @@ def main() -> int:
             if not CommitStatusData.is_present():
                 # apparently exit after rerun-helper check
                 # do nothing, exit without failure
-                print("ERROR: no status file for job [{job}]")
+                print(f"ERROR: no status file for job [{job}]")
                 job_status = CommitStatusData(
                     status="dummy failure",
                     description="dummy status",
@@ -717,7 +718,9 @@ def main() -> int:
                 job_status = CommitStatusData.load_status()
 
         # Storing job data (report_url) to restore OK GH status on job results reuse
-        if job_status.is_ok():
+        if job_config.run_always:
+            print(f"Job [{job}] runs always in CI - do not mark as done")
+        elif job_status.is_ok():
             success_flag_name = get_file_flag_name(
                 job, indata["jobs_data"]["digests"][job], args.batch, num_batches
             )
