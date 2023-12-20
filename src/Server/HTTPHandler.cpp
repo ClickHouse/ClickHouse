@@ -64,6 +64,8 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_COMPILE_REGEXP;
+    extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
@@ -75,8 +77,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV6;
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
-    extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_COMPILE_REGEXP;
+    extern const int CANNOT_SCHEDULE_TASK;
     extern const int DUPLICATE_COLUMN;
     extern const int ILLEGAL_COLUMN;
     extern const int THERE_IS_NO_COLUMN;
@@ -259,6 +260,10 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     else if (exception_code == ErrorCodes::TIMEOUT_EXCEEDED)
     {
         return HTTPResponse::HTTP_REQUEST_TIMEOUT;
+    }
+    else if (exception_code == ErrorCodes::CANNOT_SCHEDULE_TASK)
+    {
+        return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
     }
 
     return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;

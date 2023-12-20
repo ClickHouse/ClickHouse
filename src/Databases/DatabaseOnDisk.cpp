@@ -648,13 +648,13 @@ void DatabaseOnDisk::iterateMetadataFiles(ContextPtr local_context, const Iterat
     ThreadPool pool(CurrentMetrics::DatabaseOnDiskThreads, CurrentMetrics::DatabaseOnDiskThreadsActive, CurrentMetrics::DatabaseOnDiskThreadsScheduled);
     for (const auto & file : metadata_files)
     {
-        pool.scheduleOrThrowOnError([&]()
+        pool.scheduleOrThrow([&]()
         {
             if (file.second)
                 process_metadata_file(file.first);
             else
                 process_tmp_drop_metadata_file(file.first);
-        });
+        }, Priority{}, getContext()->getSettingsRef().lock_acquire_timeout.totalMicroseconds());
     }
     pool.wait();
 }
