@@ -8,31 +8,20 @@ endif()
 set(AZURE_DIR "${ClickHouse_SOURCE_DIR}/contrib/azure")
 set(AZURE_SDK_LIBRARY_DIR "${AZURE_DIR}/sdk")
 
-file(GLOB AZURE_SDK_CORE_SRC
+file(GLOB AZURE_SDK_SRC
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/cryptography/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/http/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/http/curl/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/io/*.cpp"
-)
-
-file(GLOB AZURE_SDK_IDENTITY_SRC
+    "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/tracing/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/identity/azure-identity/src/*.cpp"
-)
-
-file(GLOB AZURE_SDK_STORAGE_COMMON_SRC
+    "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-blobs/src/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-common/src/*.cpp"
 )
 
-file(GLOB AZURE_SDK_STORAGE_BLOBS_SRC
-    "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-blobs/src/*.cpp"
-)
-
 file(GLOB AZURE_SDK_UNIFIED_SRC
-    ${AZURE_SDK_CORE_SRC}
-    ${AZURE_SDK_IDENTITY_SRC}
-    ${AZURE_SDK_STORAGE_COMMON_SRC}
-    ${AZURE_SDK_STORAGE_BLOBS_SRC}
+    ${AZURE_SDK_SRC}
 )
 
 set(AZURE_SDK_INCLUDES
