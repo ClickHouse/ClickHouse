@@ -3318,8 +3318,8 @@ def test_rabbitmq_flush_by_block_size(rabbitmq_cluster):
                     routing_key="",
                     body=json.dumps({"key": 0, "value": 0}),
                 )
-            except e:
-                logging.debug(f"Got error: {str(e)}")
+            except Exception as e:
+                logging.debug("Got error: %s", e)
 
     produce_thread = threading.Thread(target=produce)
     produce_thread.start()
@@ -3396,8 +3396,8 @@ def test_rabbitmq_flush_by_time(rabbitmq_cluster):
                 )
                 logging.debug("Produced a message")
                 time.sleep(0.8)
-            except e:
-                logging.debug(f"Got error: {str(e)}")
+            except Exception as e:
+                logging.debug("Got error: %s", e)
 
     produce_thread = threading.Thread(target=produce)
     produce_thread.start()
