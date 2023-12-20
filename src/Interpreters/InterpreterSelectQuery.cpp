@@ -3380,6 +3380,9 @@ void InterpreterSelectQuery::executeStreamingAggregation(
 
 bool InterpreterSelectQuery::isStreamingQuery() const
 {
+    if (context->getSettingsRef().allow_experimental_streaming_query_mode.value != "streaming")
+        return false;
+
     if (is_streaming_query.has_value())
         return *is_streaming_query;
 
