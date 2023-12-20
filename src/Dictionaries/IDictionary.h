@@ -259,6 +259,7 @@ public:
         const std::string & attribute_name [[maybe_unused]],
         const DataTypePtr & result_type [[maybe_unused]],
         const Columns & key_columns [[maybe_unused]],
+        const DataTypes & key_types [[maybe_unused]],
         const ColumnWithTypeAndName & default_argument [[maybe_unused]],
         const DataTypePtr & result_type_short_circuit [[maybe_unused]]) const
     {
@@ -276,6 +277,7 @@ public:
         const Strings & attribute_names,
         const DataTypes & result_types,
         const Columns & key_columns,
+        const DataTypes & key_types,
         const ColumnWithTypeAndName & default_argument,
         const DataTypes & result_short_circuit_types) const
     {
@@ -289,8 +291,8 @@ public:
             const auto & attribute_name = attribute_names[i];
             const auto & result_type = result_types[i];
             const auto & result_short_circuit_type = result_short_circuit_types[i];
-            result.emplace_back(getColumnOrDefaultShortCircuit(attribute_name,
-                result_type, key_columns, default_argument, result_short_circuit_type));
+            result.emplace_back(getColumnOrDefaultShortCircuit(attribute_name, result_type,
+                key_columns, key_types, default_argument, result_short_circuit_type));
         }
 
         return result;

@@ -321,13 +321,13 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
-    bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
-    {
-        settings.enable_lazy_execution_for_first_argument = false;
-        settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
-        settings.force_enable_lazy_execution = false;
-        return true;
-    }
+    // bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
+    // {
+    //     settings.enable_lazy_execution_for_first_argument = false;
+    //     settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
+    //     settings.force_enable_lazy_execution = false;
+    //     return true;
+    // }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
@@ -634,8 +634,8 @@ private:
             else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.empty())
             {
                 result_columns = dictionary->getColumnsOrDefaultShortCircuit(
-                    attribute_names, result_tuple_type.getElements(), key_columns, last_argument,
-                    result_short_circuit_tuple_type.getElements());
+                    attribute_names, result_tuple_type.getElements(), key_columns, key_types,
+                    last_argument, result_short_circuit_tuple_type.getElements());
             }
             else
             {
@@ -655,7 +655,7 @@ private:
             else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.empty())
             {
                 result = dictionary->getColumnOrDefaultShortCircuit(
-                    attribute_names[0], result_type, key_columns, last_argument, result_type_short_circuit);
+                    attribute_names[0], result_type, key_columns, key_types, last_argument, result_type_short_circuit);
             }
             else
             {

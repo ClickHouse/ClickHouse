@@ -86,6 +86,7 @@ public:
         const std::string & attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
+        const DataTypes & key_types,
         const ColumnWithTypeAndName & default_argument,
         const DataTypePtr & result_type_short_circuit) const override;
 
