@@ -1,5 +1,5 @@
 #ifdef ENABLE_ZSTDQAT_COMPRESSION
-#include <CompressionCodecZSTD.h>
+#include <Compression/CompressionCodecZSTD.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <zstd.h>
@@ -23,6 +23,7 @@ namespace ErrorCodes
 class CompressionCodecZSTDQAT : public CompressionCodecZSTD
 {
 public:
+    /// QAT Hardware only supports compression levels L1 to L12
     static constexpr auto ZSTDQAT_SUPPORTED_MIN_LEVEL = 1;
     static constexpr auto ZSTDQAT_SUPPORTED_MAX_LEVEL = 12;
     explicit CompressionCodecZSTDQAT(int level_);
@@ -44,17 +45,17 @@ UInt32 CompressionCodecZSTDQAT::doCompressData(const char * source, UInt32 sourc
     if (!initialized)
     {
         cctx = ZSTD_createCCtx();
-        /* Start QAT device, start QAT device at any time before compression job started */
+        /// Start QAT device, start QAT device at any time before compression job started
         int res = QZSTD_startQatDevice();
-        /* Create sequence producer state for QAT sequence producer */
+        /// Create sequence producer state for QAT sequence producer
         sequenceProducerState = QZSTD_createSeqProdState();
-        /* register qatSequenceProducer */
+        /// register qatSequenceProducer
         ZSTD_registerSequenceProducer(
             cctx,
             sequenceProducerState,
             qatSequenceProducer
         );
-        /* Enable sequence producer fallback */
+        /// Enable sequence producer fallback
         ZSTD_CCtx_setParameter(cctx, ZSTD_c_enableSeqProducerFallback, 1);
         ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
         initialized = true;
@@ -104,9 +105,10 @@ CompressionCodecZSTDQAT::~CompressionCodecZSTDQAT()
 {
     if (initialized)
     {
-        /* Free sequence producer state */
+        /// Free sequence producer state
         QZSTD_freeSeqProdState(sequenceProducerState);
-        ZSTD_freeCCtx(cctx);
+        if (auto status = ZSTD_freeCCtx(cctx); status != 0)
+            LOG_WARNING(log, "ZSTD_freeCCtx failed with status: {} ", static_cast<UInt32>(status));
     }
 }
 

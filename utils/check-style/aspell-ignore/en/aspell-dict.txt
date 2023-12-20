@@ -726,6 +726,7 @@ QueryCacheHits
 QueryCacheMisses
 QueryPreempted
 QueryThread
+QuickAssist
 QuoteMeta
 RBAC
 RClickHouse
@@ -996,6 +997,7 @@ ZooKeeperRequest
 ZooKeeperSession
 ZooKeeperWatch
 ZooKeepers
+ZSTDQAT
 aarch
 accurateCast
 accurateCastOrDefault
@@ -2662,5 +2664,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-QuickAssist
-ZSTDQAT

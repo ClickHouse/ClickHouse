@@ -1,3 +1,4 @@
+#include <Compression/CompressionCodecZSTD.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <zstd.h>
@@ -10,7 +11,6 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
-#include "CompressionCodecZSTD.h"
 
 namespace DB
 {
