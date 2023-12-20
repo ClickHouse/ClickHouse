@@ -5,10 +5,6 @@
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 #include <fmt/core.h>
 
-#include <functional>
-#include <string>
-
-
 namespace DB
 {
 

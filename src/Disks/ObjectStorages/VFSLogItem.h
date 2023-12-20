@@ -11,14 +11,20 @@ namespace DB
 {
 class ReadBuffer;
 class WriteBuffer;
-using VFSObsoleteObjects = StoredObjects;
+using VFSLogItemStorage = boost::container::flat_map<String /* remote_path */, int /*references delta */>;
 
-struct VFSLogItem : boost::container::flat_map<String /* remote_path */, int /*references delta */>
+struct VFSMergeResult
+{
+    StoredObjects obsolete;
+    VFSLogItemStorage invalid;
+};
+
+struct VFSLogItem : VFSLogItemStorage
 {
     static VFSLogItem parse(std::string_view str);
     static String getSerialised(StoredObjects && link, StoredObjects && unlink);
     void merge(VFSLogItem && other);
-    VFSObsoleteObjects mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer & new_snapshot, Poco::Logger * log) &&;
+    VFSMergeResult mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer & new_snapshot, Poco::Logger * log) &&;
 };
 }
 

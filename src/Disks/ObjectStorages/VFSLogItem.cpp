@@ -5,11 +5,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 // TODO myrrc this assumes single log item will never have more than one link to a single stored object
 String VFSLogItem::getSerialised(StoredObjects && link, StoredObjects && unlink)
 {
@@ -57,48 +52,51 @@ void VFSLogItem::merge(VFSLogItem && other)
             it->second += elem.second;
 }
 
-// TODO myrrc this is ugly
-VFSObsoleteObjects VFSLogItem::mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer & new_snapshot, Poco::Logger * log) &&
+VFSMergeResult VFSLogItem::mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer & new_snapshot, Poco::Logger * log) &&
 {
+    // TODO myrrc this algo is ugly
     /// Both snapshot and batch data are sorted so we can merge them in one traversal
-    VFSObsoleteObjects obsolete;
-    using Pair = std::pair<String, int>;
+    VFSMergeResult out;
 
+    using Pair = std::remove_cvref_t<decltype(out.invalid)::reference>;
     std::optional<Pair> left;
-    auto batch_it = begin();
+    auto batch_it = cbegin();
 
     auto read_left = [&] -> decltype(left)
     {
         if (snapshot.eof())
             return {};
-        Pair out;
-        readStringUntilWhitespace(out.first, snapshot);
+        Pair entry;
+        readStringUntilWhitespace(entry.first, snapshot);
         checkChar(' ', snapshot);
-        readIntTextUnsafe(out.second, snapshot);
+        readIntTextUnsafe(entry.second, snapshot);
         checkChar('\n', snapshot);
-        LOG_TRACE(log, "Old snapshot entry: {} {}", out.first, out.second);
-        return out;
+        LOG_TRACE(log, "Old snapshot entry: {} {}", entry.first, entry.second);
+        return entry;
     };
     left = read_left();
 
     auto write = [&](std::string_view remote, int links)
     {
-        if (links < 1) // TODO myrrc collect invalid objects instead of throwing
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "{} references to {}", links, remote);
-        String out = fmt::format("{} {}\n", remote, links);
-        LOG_TRACE(log, "New snapshot entry: {}", out);
-        writeString(out, new_snapshot);
+        if (links < 1)
+        {
+            out.invalid.emplace(remote, links);
+            return;
+        }
+        const String entry = fmt::format("{} {}\n", remote, links);
+        LOG_TRACE(log, "New snapshot entry: {}", entry);
+        writeString(entry, new_snapshot);
     };
 
     while (left && batch_it != cend())
     {
         auto & [left_remote, left_links] = *left;
-        auto & [right_remote, right_links] = *batch_it;
+        const auto & [right_remote, right_links] = *batch_it;
 
         if (const int res = left_remote.compare(right_remote); res == 0)
-        { // TODO myrrc <=>
+        {
             if (int delta = left_links + right_links; delta == 0)
-                obsolete.emplace_back(StoredObject{left_remote});
+                out.obsolete.emplace_back(StoredObject{left_remote});
             else
                 write(left_remote, delta);
 
@@ -113,7 +111,7 @@ VFSObsoleteObjects VFSLogItem::mergeWithSnapshot(ReadBuffer & snapshot, WriteBuf
         else
         {
             if (right_links == 0) // Object's lifetime is local to batch
-                obsolete.emplace_back(StoredObject{right_remote});
+                out.obsolete.emplace_back(StoredObject{right_remote});
             else
                 write(right_remote, right_links);
             ++batch_it;
@@ -129,14 +127,14 @@ VFSObsoleteObjects VFSLogItem::mergeWithSnapshot(ReadBuffer & snapshot, WriteBuf
 
     while (batch_it != cend())
     {
-        auto & [right_remote, right_links] = *batch_it;
+        const auto & [right_remote, right_links] = *batch_it;
         if (right_links == 0) // Object's lifetime is local to batch
-            obsolete.emplace_back(StoredObject{right_remote});
+            out.obsolete.emplace_back(StoredObject{right_remote});
         else
             write(right_remote, right_links);
         ++batch_it;
     }
 
-    return obsolete;
+    return out;
 }
 }

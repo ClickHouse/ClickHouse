@@ -36,16 +36,21 @@ TEST(DiskObjectStorageVFS, VFSLogItem)
 
     auto in_2 = ReadBufferFromString{""sv};
     auto out_2 = WriteBufferFromOwnString{};
-    EXPECT_DEATH({ VFSLogItem{item}.mergeWithSnapshot(in_2, out_2, log); }, "Logical error: '-2 references to delta'.");
+    auto res_2 = VFSLogItem{item}.mergeWithSnapshot(in_2, out_2, log);
+    EXPECT_EQ(res_2.obsolete, StoredObjects{StoredObject{"unlink"}});
+    EXPECT_EQ(res_2.invalid, (VFSLogItemStorage{{"delta", -2}}));
 
     auto in_3 = ReadBufferFromString{"delta 2\n"sv};
     auto out_3 = WriteBufferFromOwnString{};
-    EXPECT_EQ(std::move(item).mergeWithSnapshot(in_3, out_3, log), (VFSObsoleteObjects{StoredObject{"delta"}, StoredObject{"unlink"}}));
+    auto res_3 = std::move(item).mergeWithSnapshot(in_3, out_3, log);
+    EXPECT_EQ(res_3.obsolete, (StoredObjects{StoredObject{"delta"}, StoredObject{"unlink"}}));
+    EXPECT_EQ(res_3.invalid, VFSLogItemStorage{});
 
     const String serialized_snapshot = out_3.str();
     auto in_4 = ReadBufferFromOwnString{serialized_snapshot}; // copy of serialized
     auto out_4 = WriteBufferFromOwnString{};
-
-    EXPECT_EQ(VFSLogItem{}.mergeWithSnapshot(in_4, out_4, log), VFSObsoleteObjects{});
+    auto res_4 = VFSLogItem{}.mergeWithSnapshot(in_4, out_4, log);
+    EXPECT_EQ(res_4.obsolete, StoredObjects{});
+    EXPECT_EQ(res_4.invalid, VFSLogItemStorage{});
     EXPECT_EQ(serialized_snapshot, out_4.str());
 }

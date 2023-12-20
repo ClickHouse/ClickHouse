@@ -29,15 +29,11 @@ private:
 
     void run();
 
-    struct PathAndVersion
-    {
-        String remote_path;
-        int version;
-    };
-    PathAndVersion updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer);
+    void updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer);
     VFSLogItem getBatch(size_t start_logpointer, size_t end_logpointer) const;
-    void onBatchProcessed(size_t start_logpointer, size_t end_logpointer, const PathAndVersion & pair);
+    void removeBatch(size_t start_logpointer, size_t end_logpointer);
 
     String getNode(size_t id) const;
+    StoredObject getSnapshotObject(size_t logpointer) const;
 };
 }

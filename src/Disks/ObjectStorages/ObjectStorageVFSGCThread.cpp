@@ -8,13 +8,16 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, ContextPtr context)
     : storage(storage_)
     , log(&Poco::Logger::get(fmt::format("VFSGC({})", storage_.getName())))
     , zookeeper_lock(storage.zookeeper, storage.traits.locks_node, "gc_lock")
 {
-    storage.zookeeper->createIfNotExists(storage.traits.last_snapshot_node, "");
-
     task = context->getSchedulePool().createTask(
         log->name(),
         [this]
@@ -63,47 +66,41 @@ void ObjectStorageVFSGCThread::run()
     log_items_batch = {};
 
     LOG_DEBUG(log, "Acquired lock for log range [{};{}]", start_logpointer, end_logpointer);
-    const PathAndVersion pair = updateSnapshotWithLogEntries(start_logpointer, end_logpointer);
-    onBatchProcessed(start_logpointer, end_logpointer, pair);
+    updateSnapshotWithLogEntries(start_logpointer, end_logpointer);
+    removeBatch(start_logpointer, end_logpointer);
     LOG_DEBUG(log, "Removed lock for log range [{};{}]", start_logpointer, end_logpointer);
 }
 
-ObjectStorageVFSGCThread::PathAndVersion
-ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer)
+void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer)
 {
     const bool should_have_previous_snapshot = start_logpointer > 0;
 
-    Coordination::Stat old_snapshot_stat;
-    const String old_snapshot_remote_path = storage.zookeeper->get(storage.traits.last_snapshot_node, &old_snapshot_stat);
-    const StoredObject old_snapshot_object{old_snapshot_remote_path};
-
-    // TODO myrrc what if replica capturing log entry doesn't get correct snapshot due to stale read?
-    // Should write snapshot logpointer here, read first child of log, and if lp + 1 != first_child issue
-    // storage.zookeeper->sync(storage.traits.log_base_node)
+    const StoredObject old_snapshot = getSnapshotObject(start_logpointer - 1);
     auto old_snapshot_uncompressed_buf = should_have_previous_snapshot
-        ? storage.object_storage->readObject(old_snapshot_object)
+        ? storage.object_storage->readObject(old_snapshot)
         : std::unique_ptr<ReadBufferFromFileBase>(std::make_unique<ReadBufferFromEmptyFile>());
-
     CompressedReadBuffer old_snapshot_buf{*old_snapshot_uncompressed_buf};
 
-    // TODO myrrc use snapshot name instead of random name to locate objects on s3 without involving clickhouse
-    const String new_snapshot_name = fmt::format("vfs_snapshot_{}", end_logpointer);
-    const ObjectStorageKey new_snapshot_key = storage.object_storage->generateObjectKeyForPath(new_snapshot_name);
-    StoredObject new_snapshot{new_snapshot_key.serialize()};
-
+    const StoredObject new_snapshot = getSnapshotObject(end_logpointer);
     auto new_snapshot_uncompressed_buf = storage.object_storage->writeObject(new_snapshot, WriteMode::Rewrite);
     CompressedWriteBuffer new_snapshot_buf{*new_snapshot_uncompressed_buf};
 
-    StoredObjects obsolete = getBatch(start_logpointer, end_logpointer).mergeWithSnapshot(old_snapshot_buf, new_snapshot_buf, log);
+    auto [obsolete, invalid] = getBatch(start_logpointer, end_logpointer).mergeWithSnapshot(old_snapshot_buf, new_snapshot_buf, log);
     if (should_have_previous_snapshot)
-        obsolete.emplace_back(old_snapshot_object);
+        obsolete.emplace_back(old_snapshot);
+
+    if (!invalid.empty())
+    {
+        String out;
+        for (const auto & [path, ref] : invalid)
+            fmt::format_to(std::back_inserter(out), "{} {}\n", path, ref);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid objects:\n{}", out);
+    }
 
     new_snapshot_buf.finalize(); // We need to write new snapshot to s3 before removing old one
     new_snapshot_uncompressed_buf->finalize();
 
     storage.object_storage->removeObjects(obsolete);
-
-    return {std::move(new_snapshot.remote_path), old_snapshot_stat.version};
 }
 
 VFSLogItem ObjectStorageVFSGCThread::getBatch(size_t start_logpointer, size_t end_logpointer) const
@@ -128,16 +125,14 @@ VFSLogItem ObjectStorageVFSGCThread::getBatch(size_t start_logpointer, size_t en
     return out;
 }
 
-void ObjectStorageVFSGCThread::onBatchProcessed(size_t start_logpointer, size_t end_logpointer, const PathAndVersion & pair)
+void ObjectStorageVFSGCThread::removeBatch(size_t start_logpointer, size_t end_logpointer)
 {
-    LOG_DEBUG(log, "Removing log range [{};{}], snapshot {}", start_logpointer, end_logpointer, pair.remote_path);
+    LOG_DEBUG(log, "Removing log range [{};{}]", start_logpointer, end_logpointer);
 
     const size_t log_batch_length = end_logpointer - start_logpointer + 1;
-    Coordination::Requests requests(log_batch_length + 1);
+    Coordination::Requests requests(log_batch_length);
     for (size_t i = 0; i < log_batch_length; ++i)
         requests[i] = zkutil::makeRemoveRequest(getNode(start_logpointer + i), -1);
-    requests[log_batch_length] = zkutil::makeSetRequest(storage.traits.last_snapshot_node, pair.remote_path, pair.version);
-
     storage.zookeeper->multi(requests);
 }
 
@@ -145,5 +140,11 @@ String ObjectStorageVFSGCThread::getNode(size_t id) const
 {
     // Zookeeper's sequential node is 10 digits with padding zeros
     return fmt::format("{}{:010}", storage.traits.log_item, id);
+}
+
+StoredObject ObjectStorageVFSGCThread::getSnapshotObject(size_t logpointer) const
+{
+    /// TODO myrrc this works only for S3ObjectStorage. Must also recheck encrypted disk replication
+    return StoredObject{ObjectStorageKey::createAsRelative(storage.object_key_prefix, fmt::format("vfs/_{}", logpointer)).serialize()};
 }
 }

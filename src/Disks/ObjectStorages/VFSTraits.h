@@ -11,7 +11,6 @@ struct VFSTraits
         , locks_node(base_node + "/locks")
         , log_base_node(base_node + "/ops")
         , log_item(log_base_node + "/log-")
-        , last_snapshot_node(base_node + "/snapshot")
     {
     }
 
@@ -22,6 +21,5 @@ struct VFSTraits
     String locks_node;
     String log_base_node;
     String log_item;
-    String last_snapshot_node;
 };
 }

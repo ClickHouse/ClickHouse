@@ -167,7 +167,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             /// NOTE: In case of mutation and hardlinks it can even lead to extremely rare dataloss (we will produce new part with the same hardlinks, don't fetch the same from other replica), so this check is important.
             ///
             /// In case of DROP_RANGE on fast replica and stale replica we can have some failed select queries in case of zero copy replication.
-            zero_copy_lock->lock->unlock();
+            if (zero_copy_lock)
+                zero_copy_lock->lock->unlock();
             disk->unlock(vfs_lock_path);
 
             LOG_DEBUG(log, "We took zero copy lock, but mutation of part {} finished by some other replica, will release lock and download mutated part to avoid data duplication", entry.new_part_name);
