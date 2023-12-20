@@ -272,6 +272,15 @@ std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
     return getTotalActiveSizeInBytes();
 }
 
+std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &) const
+{
+    UInt64 res = 0;
+    auto parts = getDataPartsForInternalUsage();
+    for (const auto & part : parts)
+        res += part->getBytesUncompressedOnDisk();
+    return res;
+}
+
 SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
