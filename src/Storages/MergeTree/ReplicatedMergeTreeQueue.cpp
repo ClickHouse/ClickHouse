@@ -1349,7 +1349,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 if (auto part_in_memory = asInMemoryPart(part))
                     sum_parts_size_in_bytes += part_in_memory->block.bytes();
                 else
-                    sum_parts_size_in_bytes += part->getBytesOnDisk();
+                    sum_parts_size_in_bytes += part->getExistingBytesOnDisk();
             }
         }
 
@@ -1935,7 +1935,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
     /// We need to check committing block numbers and new parts which could be committed.
     /// Actually we don't need most of predicate logic here but it all the code related to committing blocks
-    /// and updatating queue state is implemented there.
+    /// and updating queue state is implemented there.
     PartitionIdsHint partition_ids_hint;
     for (const auto & candidate : candidates)
         for (const auto & partitions : candidate->block_numbers)

@@ -668,6 +668,12 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
         it->default_desc.kind != ColumnDefaultKind::Alias && it->default_desc.kind != ColumnDefaultKind::Ephemeral;
 }
 
+bool ColumnsDescription::hasNotAlias(const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
+}
+
 bool ColumnsDescription::hasAlias(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);

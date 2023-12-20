@@ -1,5 +1,5 @@
 ### Table of Contents
-**[ClickHouse release v23.11, 2023-12-05](#2311)**<br/>
+**[ClickHouse release v23.11, 2023-12-06](#2311)**<br/>
 **[ClickHouse release v23.10, 2023-11-02](#2310)**<br/>
 **[ClickHouse release v23.9, 2023-09-28](#239)**<br/>
 **[ClickHouse release v23.8 LTS, 2023-08-31](#238)**<br/>
@@ -14,7 +14,7 @@
 
 # 2023 Changelog
 
-### <a id="2311"></a> ClickHouse release 23.11, 2023-12-05
+### <a id="2311"></a> ClickHouse release 23.11, 2023-12-06
 
 #### Backward Incompatible Change
 * The default ClickHouse server configuration file has enabled `access_management` (user manipulation by SQL queries) and `named_collection_control` (manipulation of named collection by SQL queries) for the `default` user by default. This closes [#56482](https://github.com/ClickHouse/ClickHouse/issues/56482). [#56619](https://github.com/ClickHouse/ClickHouse/pull/56619) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -105,7 +105,6 @@
 * Rewrite equality with `is null` check in JOIN ON section. Experimental *Analyzer only*. [#56538](https://github.com/ClickHouse/ClickHouse/pull/56538) ([vdimir](https://github.com/vdimir)).
 * Function`concat` now supports arbitrary argument types (instead of only String and FixedString arguments). This makes it behave more similar to MySQL `concat` implementation. For example, `SELECT concat('ab', 42)` now returns `ab42`. [#56540](https://github.com/ClickHouse/ClickHouse/pull/56540) ([Serge Klochkov](https://github.com/slvrtrn)).
 * Allow getting cache configuration from 'named_collection' section in config or from SQL created named collections. [#56541](https://github.com/ClickHouse/ClickHouse/pull/56541) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Update `query_masking_rules` when reloading the config ([#56449](https://github.com/ClickHouse/ClickHouse/issues/56449)). [#56573](https://github.com/ClickHouse/ClickHouse/pull/56573) ([Mikhail Koviazin](https://github.com/mkmkme)).
 * PostgreSQL database engine: Make the removal of outdated tables less aggressive with unsuccessful postgres connection. [#56609](https://github.com/ClickHouse/ClickHouse/pull/56609) ([jsc0218](https://github.com/jsc0218)).
 * It took too much time to connnect to PG when URL is not right, so the relevant query stucks there and get cancelled. [#56648](https://github.com/ClickHouse/ClickHouse/pull/56648) ([jsc0218](https://github.com/jsc0218)).
 * Keeper improvement: disable compressed logs by default in Keeper. [#56763](https://github.com/ClickHouse/ClickHouse/pull/56763) ([Antonio Andelic](https://github.com/antonio2368)).

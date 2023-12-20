@@ -38,13 +38,12 @@ namespace DB::HashedDictionaryImpl
 {
 
 /// Implementation parallel dictionary load for SHARDS
-template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
+template <DictionaryKeyType dictionary_key_type, typename DictionaryType>
 class HashedDictionaryParallelLoader : public boost::noncopyable
 {
-    using HashedDictionary = HashedDictionary<dictionary_key_type, sparse, sharded>;
 
 public:
-    explicit HashedDictionaryParallelLoader(HashedDictionary & dictionary_)
+    explicit HashedDictionaryParallelLoader(DictionaryType & dictionary_)
         : dictionary(dictionary_)
         , shards(dictionary.configuration.shards)
         , pool(CurrentMetrics::HashedDictionaryThreads, CurrentMetrics::HashedDictionaryThreadsActive, CurrentMetrics::HashedDictionaryThreadsScheduled, shards)
@@ -118,7 +117,7 @@ public:
     }
 
 private:
-    HashedDictionary & dictionary;
+    DictionaryType & dictionary;
     const size_t shards;
     ThreadPool pool;
     std::vector<std::optional<ConcurrentBoundedQueue<Block>>> shards_queues;

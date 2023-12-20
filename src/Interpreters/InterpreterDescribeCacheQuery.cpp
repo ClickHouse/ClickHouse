@@ -42,8 +42,8 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     auto cache_data = FileCacheFactory::instance().getByName(ast.cache_name);
-    const auto & settings = cache_data.settings;
-    const auto & cache = cache_data.cache;
+    auto settings = cache_data->getSettings();
+    const auto & cache = cache_data->cache;
 
     size_t i = 0;
     res_columns[i++]->insert(settings.max_size);
