@@ -41,14 +41,14 @@ LIMIT 2
 
 ## Globs in path {#globs_in_path}
 
-Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern (not only suffix or prefix).
+Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix.
 
-- `*` — Substitutes any number of any characters except `/` including empty string.
-- `?` — Substitutes any single character.
+- `*` — Represents arbitrarily many characters except `/` but including the empty string.
+- `?` — Represents an arbitrary single character.
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
-- `{N..M}` — Substitutes any number in range from N to M including both borders.
+- `{N..M}` — Represents any number `>= N` and `<= M`.
 
-Constructions with `{}` are similar to the [remote](../../sql-reference/table-functions/remote.md)) table function.
+Constructions with `{}` are similar to the [remote](remote.md) and [file](file.md) table functions.
 
 **Example**
 

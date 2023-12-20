@@ -1293,6 +1293,37 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
     return {false, ast};
 }
 
+bool StorageMerge::supportsTrivialCountOptimization() const
+{
+    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(); }) == nullptr;
+}
+
+std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const
+{
+    return totalRowsOrBytes([&](const auto & table) { return table->totalRows(settings); });
+}
+
+std::optional<UInt64> StorageMerge::totalBytes(const Settings & settings) const
+{
+    return totalRowsOrBytes([&](const auto & table) { return table->totalBytes(settings); });
+}
+
+template <typename F>
+std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
+{
+    UInt64 total_rows_or_bytes = 0;
+    auto first_table = getFirstTable([&](const auto & table)
+    {
+        if (auto rows_or_bytes = func(table))
+        {
+            total_rows_or_bytes += *rows_or_bytes;
+            return false;
+        }
+        return true;
+    });
+
+    return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
+}
 
 void registerStorageMerge(StorageFactory & factory)
 {

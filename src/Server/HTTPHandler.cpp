@@ -45,7 +45,6 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/Net/NameValueCollection.h>
 
 #include <chrono>
 #include <sstream>
@@ -503,7 +502,7 @@ bool HTTPHandler::authenticateUser(
     else if (request.getMethod() == HTTPServerRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
 
-    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""), request);
+    session->setHttpClientInfo(http_method, request.get("User-Agent", ""), request.get("Referer", ""));
     session->setForwardedFor(request.get("X-Forwarded-For", ""));
     session->setQuotaClientKey(quota_key);
 
@@ -617,12 +616,10 @@ void HTTPHandler::processQuery(
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
-    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
-
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response,
         request.getMethod() == HTTPRequest::HTTP_HEAD,
-        keep_alive_timeout,
+        context->getServerSettings().keep_alive_timeout.totalSeconds(),
         client_supports_http_compression,
         http_response_compression_method);
 
@@ -1062,8 +1059,13 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             response.setChunkedTransferEncoding(true);
 
         HTMLForm params(default_settings, request);
-        with_stacktrace = params.getParsed<bool>("stacktrace", false);
-        close_session = params.getParsed<bool>("close_session", false);
+
+        if (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true))
+            with_stacktrace = true;
+
+        if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
+            close_session = true;
+
         if (close_session)
             session_id = params.get("session_id");
 

@@ -32,6 +32,7 @@ void StorageSnapshot::init()
 
     if (storage.hasLightweightDeletedMask())
         system_columns[LightweightDeleteDescription::FILTER_COLUMN.name] = LightweightDeleteDescription::FILTER_COLUMN.type;
+
     system_columns[BlockNumberColumn::name] = BlockNumberColumn::type;
 }
 

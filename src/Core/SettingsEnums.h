@@ -133,18 +133,12 @@ enum class DefaultTableEngine
     ReplacingMergeTree,
     ReplicatedMergeTree,
     ReplicatedReplacingMergeTree,
+    SharedMergeTree,
+    SharedReplacingMergeTree,
     Memory,
 };
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
-
-enum class CleanDeletedRows
-{
-    Never = 0, /// Disable.
-    Always,
-};
-
-DECLARE_SETTING_ENUM(CleanDeletedRows)
 
 enum class MySQLDataTypesSupport
 {
@@ -251,6 +245,14 @@ enum class S3QueueAction
 DECLARE_SETTING_ENUM(S3QueueAction)
 
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
+
+enum class SchemaInferenceMode
+{
+    DEFAULT,
+    UNION,
+};
+
+DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 

@@ -983,21 +983,10 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     std::optional<bool> join_constant;
 
-    if (join_strictness == JoinStrictness::All)
+    if (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Semi  || join_strictness == JoinStrictness::Anti)
         join_constant = tryExtractConstantFromJoinNode(join_table_expression);
 
-    if (join_constant)
-    {
-        /** If there is JOIN with always true constant, we transform it to cross.
-          * If there is JOIN with always false constant, we do not process JOIN keys.
-          * It is expected by join algorithm to handle such case.
-          *
-          * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1;
-          */
-        if (*join_constant)
-            join_kind = JoinKind::Cross;
-    }
-    else if (join_node.isOnJoinExpression())
+    if (!join_constant && join_node.isOnJoinExpression())
     {
         join_clauses_and_actions = buildJoinClausesAndActions(left_plan_output_columns,
             right_plan_output_columns,
@@ -1077,7 +1066,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    bool join_use_nulls = settings.join_use_nulls;
     auto to_nullable_function = FunctionFactory::instance().get("toNullable", query_context);
 
     auto join_cast_plan_columns_to_nullable = [&](QueryPlan & plan_to_add_cast)
@@ -1103,7 +1091,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         plan_to_add_cast.addStep(std::move(cast_join_columns_step));
     };
 
-    if (join_use_nulls)
+    if (settings.join_use_nulls)
     {
         if (isFull(join_kind))
         {
@@ -1122,6 +1110,18 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     auto table_join = std::make_shared<TableJoin>(settings, query_context->getGlobalTemporaryVolume());
     table_join->getTableJoin() = join_node.toASTTableJoin()->as<ASTTableJoin &>();
+
+    if (join_constant)
+    {
+        /** If there is JOIN with always true constant, we transform it to cross.
+          * If there is JOIN with always false constant, we do not process JOIN keys.
+          * It is expected by join algorithm to handle such case.
+          *
+          * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1;
+          */
+        if (*join_constant)
+            join_kind = JoinKind::Cross;
+    }
     table_join->getTableJoin().kind = join_kind;
 
     if (join_kind == JoinKind::Comma)

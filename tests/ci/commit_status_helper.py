@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
 
 from collections import defaultdict
+import json
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 import csv
 import logging
 import time
+from dataclasses import asdict, dataclass
 
 from github import Github
 from github.Commit import Commit
 from github.CommitStatus import CommitStatus
 from github.GithubException import GithubException
-from github.GithubObject import _NotSetType, NotSet as NotSet
+from github.GithubObject import NotSet
 from github.IssueComment import IssueComment
 from github.PullRequest import PullRequest
 from github.Repository import Repository
 
 from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
-from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
+from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL, TEMP_PATH
 from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
 from report import (
     ERROR,
@@ -37,6 +39,7 @@ CommitStatuses = List[CommitStatus]
 MERGEABLE_NAME = "Mergeable Check"
 GH_REPO = None  # type: Optional[Repository]
 CI_STATUS_NAME = "CI running"
+STATUS_FILE_PATH = Path(TEMP_PATH) / "status.json"
 
 
 class RerunHelper:
@@ -92,10 +95,11 @@ def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
 def post_commit_status(
     commit: Commit,
     state: str,
-    report_url: Union[_NotSetType, str] = NotSet,
-    description: Union[_NotSetType, str] = NotSet,
-    check_name: Union[_NotSetType, str] = NotSet,
+    report_url: Optional[str] = None,
+    description: Optional[str] = None,
+    check_name: Optional[str] = None,
     pr_info: Optional[PRInfo] = None,
+    dump_to_file: bool = False,
 ) -> None:
     """The parameters are given in the same order as for commit.create_status,
     if an optional parameter `pr_info` is given, the `set_status_comment` functions
@@ -104,9 +108,9 @@ def post_commit_status(
         try:
             commit.create_status(
                 state=state,
-                target_url=report_url,
-                description=description,
-                context=check_name,
+                target_url=report_url if report_url is not None else NotSet,
+                description=description if description is not None else NotSet,
+                context=check_name if check_name is not None else NotSet,
             )
             break
         except Exception as ex:
@@ -129,6 +133,15 @@ def post_commit_status(
 
         if not status_updated:
             logging.error("Failed to update the status comment, continue anyway")
+    if dump_to_file:
+        assert pr_info
+        CommitStatusData(
+            status=state,
+            description=description or "",
+            report_url=report_url or "",
+            sha=pr_info.sha,
+            pr_num=pr_info.number,
+        ).dump_status()
 
 
 STATUS_ICON_MAP = defaultdict(
@@ -307,6 +320,55 @@ def post_commit_status_to_file(
     with open(file_path, "w", encoding="utf-8") as f:
         out = csv.writer(f, delimiter="\t")
         out.writerow([state, report_url, description])
+
+
+@dataclass
+class CommitStatusData:
+    """
+    if u about to add/remove fields in this class be causious that it dumps/loads to/from files (see it's method)
+    - you might want to add default values for new fields so that it won't break with old files
+    """
+
+    status: str
+    report_url: str
+    description: str
+    sha: str = "deadbeaf"
+    pr_num: int = -1
+
+    @classmethod
+    def _filter_dict(cls, data: dict) -> Dict:
+        return {k: v for k, v in data.items() if k in cls.__annotations__.keys()}
+
+    @classmethod
+    def load_from_file(cls, file_path: Union[Path, str]):  # type: ignore
+        res = {}
+        with open(file_path, "r") as json_file:
+            res = json.load(json_file)
+        return CommitStatusData(**cls._filter_dict(res))
+
+    @classmethod
+    def load_status(cls):  # type: ignore
+        return cls.load_from_file(STATUS_FILE_PATH)
+
+    @classmethod
+    def is_present(cls) -> bool:
+        return STATUS_FILE_PATH.is_file()
+
+    def dump_status(self) -> None:
+        STATUS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self.dump_to_file(STATUS_FILE_PATH)
+
+    def dump_to_file(self, file_path: Union[Path, str]) -> None:
+        file_path = Path(file_path) or STATUS_FILE_PATH
+        with open(file_path, "w") as json_file:
+            json.dump(asdict(self), json_file)
+
+    def is_ok(self):
+        return self.status == SUCCESS
+
+    @staticmethod
+    def cleanup():
+        STATUS_FILE_PATH.unlink(missing_ok=True)
 
 
 def get_commit_filtered_statuses(commit: Commit) -> CommitStatuses:

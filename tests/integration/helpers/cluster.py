@@ -390,6 +390,7 @@ class ClickHouseCluster:
         odbc_bridge_bin_path=None,
         library_bridge_bin_path=None,
         zookeeper_config_path=None,
+        keeper_config_dir=None,
         custom_dockerd_host=None,
         zookeeper_keyfile=None,
         zookeeper_certfile=None,
@@ -424,6 +425,12 @@ class ClickHouseCluster:
             p.join(self.base_dir, zookeeper_config_path)
             if zookeeper_config_path
             else p.join(HELPERS_DIR, "zookeeper_config.xml")
+        )
+
+        self.keeper_config_dir = (
+            p.join(self.base_dir, keeper_config_dir)
+            if keeper_config_dir
+            else HELPERS_DIR
         )
 
         project_name = (
@@ -2725,7 +2732,9 @@ class ClickHouseCluster:
                 if self.use_keeper:  # TODO: remove hardcoded paths from here
                     for i in range(1, 4):
                         shutil.copy(
-                            os.path.join(HELPERS_DIR, f"keeper_config{i}.xml"),
+                            os.path.join(
+                                self.keeper_config_dir, f"keeper_config{i}.xml"
+                            ),
                             os.path.join(
                                 self.keeper_instance_dir_prefix + f"{i}", "config"
                             ),

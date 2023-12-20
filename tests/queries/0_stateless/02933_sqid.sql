@@ -1,6 +1,5 @@
 -- Tags: no-fasttest
 
-SET allow_experimental_hash_functions = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 
 SELECT '-- negative tests';

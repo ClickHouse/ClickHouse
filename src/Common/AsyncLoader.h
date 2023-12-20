@@ -362,7 +362,7 @@ public:
         bool is_executing = false;
     };
 
-    // For introspection and debug only, see `system.async_loader` table.
+    // For introspection and debug only, see `system.asynchronous_loader` table.
     std::vector<JobState> getJobStates() const;
 
     // For deadlock resolution. Should not be used directly.

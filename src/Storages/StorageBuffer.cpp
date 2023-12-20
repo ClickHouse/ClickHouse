@@ -692,7 +692,7 @@ void StorageBuffer::flushAndPrepareForShutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, getContext());
     }
     catch (...)
     {
@@ -718,7 +718,6 @@ bool StorageBuffer::optimize(
     bool final,
     bool deduplicate,
     const Names & /* deduplicate_by_columns */,
-    bool cleanup,
     ContextPtr /*context*/)
 {
     if (partition)
@@ -729,9 +728,6 @@ bool StorageBuffer::optimize(
 
     if (deduplicate)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DEDUPLICATE cannot be specified when optimizing table of type Buffer");
-
-    if (cleanup)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type Buffer");
 
     flushAllBuffers(false);
     return true;
@@ -1065,7 +1061,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     /// Flush buffers to the storage because BufferSource skips buffers with old metadata_version.
-    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
+    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, local_context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);

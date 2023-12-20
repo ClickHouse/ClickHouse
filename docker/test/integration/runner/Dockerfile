@@ -74,7 +74,7 @@ RUN python3 -m pip install --no-cache-dir \
     delta-spark==2.3.0 \
     dict2xml \
     dicttoxml \
-    docker \
+    docker==6.1.3 \
     docker-compose==1.29.2 \
     grpcio \
     grpcio-tools \

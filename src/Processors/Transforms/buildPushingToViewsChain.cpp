@@ -341,7 +341,7 @@ Chain buildPushingToViewsChain(
             if (select_context->getSettingsRef().allow_experimental_analyzer)
                 header = InterpreterSelectQueryAnalyzer::getSampleBlock(query, select_context);
             else
-                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze()).getSampleBlock();
+                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions()).getSampleBlock();
 
             /// Insert only columns returned by select.
             Names insert_columns;
@@ -349,7 +349,7 @@ Chain buildPushingToViewsChain(
             for (const auto & column : header)
             {
                 /// But skip columns which storage doesn't have.
-                if (inner_table_columns.hasPhysical(column.name))
+                if (inner_table_columns.hasNotAlias(column.name))
                     insert_columns.emplace_back(column.name);
             }
 
