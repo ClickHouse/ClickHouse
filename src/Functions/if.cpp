@@ -42,6 +42,8 @@ using namespace GatherUtils;
 /** Selection function by condition: if(cond, then, else).
   * cond - UInt8
   * then, else - numeric types for which there is a general type, or dates, datetimes, or strings, or arrays of these types.
+  * For better performance, try to use branch free code for numeric types except floating point types because of inf or nan, besides the trick will not improve much on floating point types. eg.
+  * cond ? a : b -> !!cond * a + !cond * b
   */
 
 template <typename ArrayCond, typename ArrayA, typename ArrayB, typename ArrayResult, typename ResultType>
@@ -51,7 +53,6 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
     bool a_is_short = a.size() < size;
     bool b_is_short = b.size() < size;
 
-    /// Below code attempts to use a branch-free check (multiply with the condition) for better performance instead of conditional evaluation.
     if (a_is_short && b_is_short)
     {
         size_t a_index = 0, b_index = 0;
@@ -106,7 +107,6 @@ inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Ar
 {
     size_t size = cond.size();
     bool a_is_short = a.size() < size;
-    /// Below code attempts to use a branch-free check (multiply with the condition) for better performance instead of conditional evaluation.
     if (a_is_short)
     {
         size_t a_index = 0;
@@ -134,7 +134,6 @@ inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, Ar
 {
     size_t size = cond.size();
     bool b_is_short = b.size() < size;
-    /// Below code attempts to use a branch-free check (multiply with the condition) for better performance instead of conditional evaluation.
     if (b_is_short)
     {
         size_t b_index = 0;
