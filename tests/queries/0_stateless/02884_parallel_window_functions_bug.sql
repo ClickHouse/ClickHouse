@@ -1,6 +1,3 @@
-DROP TABLE IF EXISTS posts;
-DROP TABLE IF EXISTS post_metrics;
-
 CREATE TABLE IF NOT EXISTS posts
 (
     `page_id` LowCardinality(String),
@@ -12,19 +9,7 @@ CREATE TABLE IF NOT EXISTS posts
 )
 ENGINE = ReplacingMergeTree(as_of)
 PARTITION BY toStartOfMonth(created)
-ORDER BY (page_id, post_id)
-TTL created + toIntervalMonth(26);
-
-
-INSERT INTO posts SELECT
-    repeat('a', (number % 10) + 1),
-    toString(number),
-    number % 10,
-    number,
-    now() - toIntervalMinute(number),
-    now()
-FROM numbers(1000);
-
+ORDER BY (page_id, post_id);
 
 CREATE TABLE IF NOT EXISTS post_metrics
 (
@@ -37,61 +22,7 @@ CREATE TABLE IF NOT EXISTS post_metrics
 )
 ENGINE = ReplacingMergeTree(as_of)
 PARTITION BY toStartOfMonth(created)
-ORDER BY (page_id, post_id)
-TTL created + toIntervalMonth(26);
-
-
-INSERT INTO post_metrics SELECT
-    repeat('a', (number % 10) + 1),
-    toString(number),
-    now() - toIntervalMinute(number),
-    number * 100,
-    number * 10,
-    now()
-FROM numbers(1000);
-
-
-SELECT
-    host_id,
-    path_id,
-    max(rank) AS rank
-FROM
-(
-    WITH
-        as_of_posts AS
-        (
-            SELECT
-                *,
-                row_number() OVER (PARTITION BY (page_id, post_id) ORDER BY as_of DESC) AS row_num
-            FROM posts
-            WHERE (created >= subtractHours(now(), 24)) AND (host_id > 0)
-        ),
-        as_of_post_metrics AS
-        (
-            SELECT
-                *,
-                row_number() OVER (PARTITION BY (page_id, post_id) ORDER BY as_of DESC) AS row_num
-            FROM post_metrics
-            WHERE created >= subtractHours(now(), 24)
-        )
-    SELECT
-        page_id,
-        post_id,
-        host_id,
-        path_id,
-        impressions,
-        clicks,
-        ntile(20) OVER (PARTITION BY page_id ORDER BY clicks ASC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS rank
-    FROM as_of_posts
-    GLOBAL LEFT JOIN as_of_post_metrics USING (page_id, post_id, row_num)
-    WHERE (row_num = 1) AND (impressions > 0)
-) AS t
-WHERE t.rank > 18
-GROUP BY
-    host_id,
-    path_id
-ORDER BY host_id, path_id;
-
+ORDER BY (page_id, post_id);
 
 INSERT INTO posts SELECT
     repeat('a', (number % 10) + 1),
@@ -102,7 +33,6 @@ INSERT INTO posts SELECT
     now()
 FROM numbers(100000);
 
-
 INSERT INTO post_metrics SELECT
     repeat('a', (number % 10) + 1),
     toString(number),
@@ -111,7 +41,6 @@ INSERT INTO post_metrics SELECT
     number * 10,
     now()
 FROM numbers(100000);
-
 
 SELECT
     host_id,
@@ -152,7 +81,4 @@ WHERE t.rank > 18
 GROUP BY
     host_id,
     path_id
-ORDER BY host_id, path_id;
-
-DROP TABLE posts;
-DROP TABLE post_metrics;
+FORMAT Null;
