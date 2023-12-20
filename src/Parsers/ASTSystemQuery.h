@@ -97,6 +97,7 @@ public:
         STOP_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
+        DUMP_HEAP_PROFILE,
         END
     };
 

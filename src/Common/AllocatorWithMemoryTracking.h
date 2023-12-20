@@ -36,7 +36,7 @@ struct AllocatorWithMemoryTracking
         if (!p)
             throw std::bad_alloc();
 
-        trace.onAlloc(p, bytes);
+        trace.onAlloc(p, bytes, bytes);
 
         return p;
     }

@@ -377,7 +377,7 @@ struct ContextSharedPart : boost::noncopyable
     HTTPHeaderFilter http_header_filter TSA_GUARDED_BY(mutex);                    /// Forbidden HTTP headers from config.xml
 
     /// No lock required for trace_collector modified only during initialization
-    std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
+    mutable std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -697,16 +697,16 @@ struct ContextSharedPart : boost::noncopyable
         total_memory_tracker.resetOvercommitTracker();
     }
 
-    bool hasTraceCollector() const
+    TraceCollector * getTraceCollector() const
     {
-        return trace_collector.has_value();
+        return trace_collector.has_value() ? &*trace_collector : nullptr;
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
         if (!trace_log)
             return;
-        if (hasTraceCollector())
+        if (trace_collector.has_value())
             return;
 
         trace_collector.emplace(std::move(trace_log));
@@ -3620,16 +3620,21 @@ void Context::initializeTraceCollector()
     shared->initializeTraceCollector(getTraceLog());
 }
 
+bool Context::hasTraceCollector() const
+{
+    return shared->getTraceCollector() != nullptr;
+}
+
+TraceCollector * Context::getTraceCollector() const
+{
+    return shared->getTraceCollector();
+}
+
 /// Call after unexpected crash happen.
 void Context::handleCrash() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     if (shared->system_logs)
         shared->system_logs->handleCrash();
-}
-
-bool Context::hasTraceCollector() const
-{
-    return shared->hasTraceCollector();
 }
 
 

@@ -1,6 +1,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <Interpreters/TraceLog.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -8,6 +9,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/ClickHouseRevision.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -23,6 +25,7 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"MemorySample", static_cast<UInt8>(TraceType::MemorySample)},
     {"MemoryPeak", static_cast<UInt8>(TraceType::MemoryPeak)},
     {"ProfileEvent", static_cast<UInt8>(TraceType::ProfileEvent)},
+    {"MemoryProfile", static_cast<UInt8>(TraceType::MemoryProfile)},
 };
 
 NamesAndTypesList TraceLogElement::getNamesAndTypes()
@@ -43,6 +46,8 @@ NamesAndTypesList TraceLogElement::getNamesAndTypes()
         {"ptr", std::make_shared<DataTypeUInt64>()},
         {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"increment", std::make_shared<DataTypeInt64>()},
+        {"weight", std::make_shared<DataTypeInt64>()},
+        {"profile_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()))},
     };
 }
 
@@ -69,6 +74,15 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(event_name);
     columns[i++]->insert(increment);
+    columns[i++]->insert(weight);
+
+    if (profile_id.has_value())
+    {
+        std::array<char, 36> s = formatUUID(*profile_id);
+        columns[i++]->insertData(s.data(), s.size());
+    }
+    else
+        columns[i++]->insertDefault();
 }
 
 }

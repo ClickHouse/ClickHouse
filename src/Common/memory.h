@@ -146,6 +146,16 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size [[maybe_unuse
 #    include <malloc/malloc.h>
 #endif
 
+/// True if we can get a reliable upper bound on allocation size when freeing memory.
+constexpr bool allocatorSupportsUsableSize()
+{
+#if USE_JEMALLOC || defined(_GNU_SOURCE)
+    return true;
+#else
+    return false;
+#endif
+}
+
 template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align [[maybe_unused]])
@@ -218,6 +228,8 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
     catch (...)
     {
     }
+
+    chassert(actual_size != 0 || !allocatorSupportsUsableSize());
 
     return actual_size;
 }

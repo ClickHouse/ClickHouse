@@ -73,6 +73,8 @@ public:
     /// Please note: addresses are also available in the system.stack_trace and system.trace_log tables.
     static void setShowAddresses(bool show);
 
+    void skipTopFrames(size_t n) { offset = std::min(offset + n, size); }
+
 protected:
     void tryCapture();
 

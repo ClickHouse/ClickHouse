@@ -265,9 +265,9 @@ bool PartLog::addNewParts(
     return true;
 }
 
-bool PartLog::addNewPart(ContextPtr context, const PartLog::PartLogEntry & part, const ExecutionStatus & execution_status)
+bool PartLog::addNewPart(ContextPtr current_context, const PartLog::PartLogEntry & part, const ExecutionStatus & execution_status)
 {
-    return addNewParts(context, {part}, execution_status);
+    return addNewParts(current_context, {part}, execution_status);
 }
 
 

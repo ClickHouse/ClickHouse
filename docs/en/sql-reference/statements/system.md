@@ -517,3 +517,13 @@ If there's a refresh in progress for the given view, interrupt and cancel it. Ot
 ```sql
 SYSTEM CANCEL VIEW [db.]name
 ```
+
+### SYSTEM DUMP HEAP PROFILE
+
+Initiates writing a sample of active memory allocations to [system.trace_log](../../operations/system-tables/trace_log.md), as described in [heap_profiler_log_sample_rate](../../operations/server-configuration-parameters/settings.md#heap_profiler_log_sample_rate).
+
+After this query, you may want to `SYSTEM FLUSH LOGS` to make sure the new rows are written to the table.
+
+```sql
+SYSTEM DUMP HEAP PROFILE
+```

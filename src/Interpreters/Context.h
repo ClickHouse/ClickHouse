@@ -146,6 +146,7 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
+class TraceCollector;
 
 /// Scheduling policy can be changed using `background_merges_mutations_scheduling_policy` config option.
 /// By default concurrent merges are scheduled using "round_robin" to ensure fair and starvation-free operation.
@@ -1048,11 +1049,11 @@ public:
 
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
+    bool hasTraceCollector() const;
+    TraceCollector * getTraceCollector() const; // may be null
 
     /// Call after unexpected crash happen.
     void handleCrash() const;
-
-    bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog() const;

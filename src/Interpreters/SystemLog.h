@@ -104,19 +104,19 @@ struct SystemLogSettings
 };
 
 template <typename LogElement>
-class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, WithContext
+class SystemLog : public SystemLogBase<LogElement>, public WithContext, private boost::noncopyable
 {
 public:
     using Self = SystemLog;
     using Base = SystemLogBase<LogElement>;
 
     /** Parameter: table name where to write log.
-      * If table is not exists, then it get created with specified engine.
+      * If table does not exist, then it get created with specified engine.
       * If it already exists, then its structure is checked to be compatible with structure of log record.
       *  If it is compatible, then existing table will be used.
       *  If not - then existing table will be renamed to same name but with suffix '_N' at end,
       *   where N - is a minimal number from 1, for that table with corresponding name doesn't exist yet;
-      *   and new table get created - as if previous table was not exist.
+      *   and new table get created - as if previous table did not exist.
       */
     SystemLog(ContextPtr context_,
               const SystemLogSettings & settings_,

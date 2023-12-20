@@ -24,6 +24,7 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
+#include <Interpreters/TraceCollector.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
@@ -673,6 +674,15 @@ BlockIO InterpreterSystemQuery::execute()
                 commands.emplace_back([system_log] { system_log->flush(true); });
 
             executeCommandsAndThrowIfError(commands);
+            break;
+        }
+        case Type::DUMP_HEAP_PROFILE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
+            auto trace_collector = getContext()->getTraceCollector();
+            if (trace_collector == nullptr)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Trace collector is disabled");
+            trace_collector->dumpHeapProfileNow();
             break;
         }
         case Type::STOP_LISTEN:
@@ -1337,6 +1347,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::FLUSH_LOGS:
+        case Type::DUMP_HEAP_PROFILE:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
             break;

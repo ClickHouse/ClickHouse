@@ -27,14 +27,18 @@ struct TraceLogElement
     UInt64 thread_id{};
     String query_id{};
     Array trace{};
-    /// Allocation size in bytes for TraceType::Memory and TraceType::MemorySample.
+    /// Allocation size in bytes for TraceType::Memory*
     Int64 size{};
-    /// Allocation ptr for TraceType::MemorySample.
+    /// Allocation ptr for TraceType::MemorySample and MemoryProfile.
     UInt64 ptr{};
     /// ProfileEvent for TraceType::ProfileEvent.
     ProfileEvents::Event event{ProfileEvents::end()};
     /// Increment of profile event for TraceType::ProfileEvent.
     ProfileEvents::Count increment{};
+    /// How many bytes or events this sample represents.
+    Int64 weight{1};
+    /// For TraceType::MemoryProfile.
+    std::optional<UUID> profile_id;
 
     static std::string name() { return "TraceLog"; }
     static NamesAndTypesList getNamesAndTypes();
@@ -46,6 +50,9 @@ struct TraceLogElement
 class TraceLog : public SystemLog<TraceLogElement>
 {
     using SystemLog<TraceLogElement>::SystemLog;
+
+public:
+    static const char * getDefaultOrderBy() { return "trace_type, event_date, event_time"; }
 };
 
 }

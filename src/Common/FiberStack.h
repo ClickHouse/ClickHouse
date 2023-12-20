@@ -63,7 +63,7 @@ public:
 
         /// Do not count guard page in memory usage.
         auto trace = CurrentMemoryTracker::alloc(num_pages * page_size);
-        trace.onAlloc(vp, num_pages * page_size);
+        trace.onAlloc(vp, num_pages * page_size, num_pages * page_size);
 
         boost::context::stack_context sctx;
         sctx.size = num_bytes;

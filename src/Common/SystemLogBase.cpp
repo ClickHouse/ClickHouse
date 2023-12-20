@@ -52,7 +52,7 @@ SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settin
 static thread_local bool recursive_push_call = false;
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::push(LogElement&& element)
+void SystemLogQueue<LogElement>::push(LogElement * begin, size_t count)
 {
     /// It is possible that the method will be called recursively.
     /// Better to drop these events to avoid complications.
@@ -76,23 +76,11 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
         if (is_shutdown)
             return;
 
-        if (queue.size() == settings.buffer_size_rows_flush_threshold)
+        if (queue.size() + count <= settings.max_size_rows)
         {
-            buffer_size_rows_flush_threshold_exceeded = true;
-
-            // The queue more than half full, time to flush.
-            // We only check for strict equality, because messages are added one
-            // by one, under exclusive lock, so we will see each message count.
-            // It is enough to only wake the flushing thread once, after the message
-            // count increases past half available size.
-            const uint64_t queue_end = queue_front_index + queue.size();
-            if (requested_flush_up_to < queue_end)
-                requested_flush_up_to = queue_end;
-
-            flush_event.notify_all();
+            queue.insert(queue.end(), std::move_iterator(begin), std::move_iterator(begin + count));
         }
-
-        if (queue.size() >= settings.max_size_rows)
+        else
         {
             // Ignore all further entries until the queue is flushed.
             // Log a message about that. Don't spam it -- this might be especially
@@ -106,16 +94,27 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
                 // TextLog sets its logger level to 0, so this log is a noop and
                 // there is no recursive logging.
                 lock.unlock();
-                LOG_ERROR(log, "Queue is full for system log '{}' at {}. max_size_rows {}",
+                LOG_ERROR(log, "Queue is full for system log '{}' at {} when adding {} elements. max_size_rows {}",
                           demangle(typeid(*this).name()),
                           queue_front_index,
+                          count,
                           settings.max_size_rows);
             }
-
-            return;
         }
 
-        queue.push_back(std::move(element));
+        if (queue.size() >= settings.buffer_size_rows_flush_threshold)
+        {
+            buffer_size_rows_flush_threshold_exceeded = true;
+
+            // The queue is more than half full, time to flush.
+            // It is enough to only wake the flushing thread once, after the message
+            // count increases past half available size.
+            const uint64_t queue_end = queue_front_index + queue.size();
+            if (requested_flush_up_to < queue_end)
+                requested_flush_up_to = queue_end;
+
+            flush_event.notify_all();
+        }
     }
 
     if (buffer_size_rows_flush_threshold_exceeded)
@@ -254,7 +253,13 @@ void SystemLogBase<LogElement>::startup()
 template <typename LogElement>
 void SystemLogBase<LogElement>::add(LogElement element)
 {
-    queue->push(std::move(element));
+    queue->push(&element, 1);
+}
+
+template <typename LogElement>
+void SystemLogBase<LogElement>::addGroup(std::vector<LogElement> elements)
+{
+    queue->push(elements.data(), elements.size());
 }
 
 template <typename LogElement>

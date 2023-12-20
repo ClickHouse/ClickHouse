@@ -25,8 +25,9 @@ Columns:
     - `Real` represents collecting stack traces by wall-clock time.
     - `CPU` represents collecting stack traces by CPU time.
     - `Memory` represents collecting allocations and deallocations when memory allocation exceeds the subsequent watermark.
-    - `MemorySample` represents collecting random allocations and deallocations.
     - `MemoryPeak` represents collecting updates of peak memory usage.
+    - `MemorySample` represents collecting random allocations and deallocations.
+    - `MemoryProfile` represents a periodic dump of a random sample of active allocations, see [heap_profiler_log_sample_rate](../../operations/server-configuration-parameters/settings.md#heap_profiler_log_sample_rate).
     - `ProfileEvent` represents collecting of increments of profile events.
 - `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](#system_tables-query_log) system table.
@@ -34,6 +35,8 @@ Columns:
 - `size` ([Int64](../../sql-reference/data-types/int-uint.md)) - For trace types `Memory`, `MemorySample` or `MemoryPeak` is the amount of memory allocated, for other trace types is 0.
 - `event` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) - For trace type `ProfileEvent` is the name of updated profile event, for other trace types is an empty string.
 - `increment` ([UInt64](../../sql-reference/data-types/int-uint.md)) - For trace type `ProfileEvent` is the amount of increment of profile event, for other trace types is 0.
+- `weight` ([Int64](../../sql-reference/data-types/int-uint.md)) - For trace type `MemoryProfile`: the amount of memory that this row represents, in bytes. Different from `size`, which is the size of the allocation. For things like flame graphs, it's important to use `weight` and not `size`. E.g. a sample randomly chosen from 1000 8-byte allocations would have weight 8000, same as a sample representing one 8000-byte allocation. For other trace types: 1.
+- `profile_id` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) - For trace type `MemoryProfile`: UUID of the dump (snapshot). All rows with the same `profile_id` are written simultaneously, atomically. Normally you would make a flame graph out of one such dump, or the union of dumps from multiple servers.
 
 **Example**
 

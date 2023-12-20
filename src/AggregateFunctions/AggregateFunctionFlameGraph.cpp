@@ -491,6 +491,13 @@ struct AggregateFunctionFlameGraphData
 ///     -q "select arrayJoin(flameGraph(arrayReverse(trace))) from system.trace_log where trace_type = 'CPU' and query_id = 'xxx'"
 ///     | ~/dev/FlameGraph/flamegraph.pl  > flame_cpu.svg
 ///
+/// * Build a flamegraph based on memory profiler, showing a representative sample of active allocations for the whole server:
+/// 1. Choose a profile id from:
+///    select profile_id, max(event_time_microseconds), sum(weight)/1e9 as gb from system.trace_log where trace_type = 'MemoryProfile' group by profile_id order by max(event_time_microseconds) desc limit 70
+/// 2. clickhouse client --allow_introspection_functions=1
+///     -q "select arrayJoin(flameGraph(arrayReverse(trace), weight)) from system.trace_log where trace_type = 'MemoryProfile' and profile_id = 'yyy'"
+///     | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem.svg
+///
 /// * Build a flamegraph based on memory query profiler, showing all allocations
 /// set memory_profiler_sample_probability=1, max_untracked_memory=1;
 /// SELECT SearchPhrase, COUNT(DISTINCT UserID) AS u FROM hits WHERE SearchPhrase <> '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;

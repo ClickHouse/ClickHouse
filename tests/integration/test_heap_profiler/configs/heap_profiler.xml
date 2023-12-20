@@ -1,0 +1,3 @@
+<clickhouse>
+    <heap_profiler_log_sample_rate>23</heap_profiler_log_sample_rate>
+</clickhouse>

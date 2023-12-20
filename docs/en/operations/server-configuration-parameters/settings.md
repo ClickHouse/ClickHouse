@@ -472,10 +472,10 @@ The value 0 means that you can delete all tables without any restrictions.
 ``` xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
-  
 
-## max\_database\_num\_to\_warn {#max-database-num-to-warn}  
-If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.    
+
+## max\_database\_num\_to\_warn {#max-database-num-to-warn}
+If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
 Default value: 1000
 
 **Example**
@@ -483,10 +483,10 @@ Default value: 1000
 ``` xml
 <max_database_num_to_warn>50</max_database_num_to_warn>
 ```
-  
-## max\_table\_num\_to\_warn {#max-table-num-to-warn}   
-If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
-Default value: 5000    
+
+## max\_table\_num\_to\_warn {#max-table-num-to-warn}
+If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 5000
 
 **Example**
 
@@ -495,9 +495,9 @@ Default value: 5000
 ```
 
 
-## max\_part\_num\_to\_warn {#max-part-num-to-warn}  
-If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
-Default value: 100000  
+## max\_part\_num\_to\_warn {#max-part-num-to-warn}
+If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+Default value: 100000
 
 **Example**
 
@@ -2708,12 +2708,46 @@ Default value: `4194304`.
 
 Allows to collect random allocations and deallocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](#total-memory-profiler-step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
 
+See also `heap_profiler_log_sample_rate` for a different flavor of allocation sampling.
+
 Possible values:
 
-- Positive integer.
+- Real number between 0 and 1, inclusive.
 - 0 — Writing of random allocations and deallocations in the `system.trace_log` system table is disabled.
 
 Default value: `0`.
+
+## heap_profiler_log_sample_rate {#heap_profiler_log_sample_rate}
+
+If enabled, maintains a representative sample of active memory allocations. Every `2^heap_profiler_log_sample_rate` bytes (on average), an allocation is added to the set. When freed, it's removed from the set. Every `heap_profiler_dump_period_seconds` seconds, the whole set is written to [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemoryProfile` and a randomly generated `profile_id`. The `weight` column tells how many allocation bytes this row "represents", e.g. how much weight it should carry in a flame graph.
+
+The intended usage is creating flame graphs, like this:
+ 0. Get flamegraph.pl from https://github.com/brendangregg/FlameGraph
+ 1. Choose a profile id, e.g. using this query:
+    `select profile_id, max(event_time_microseconds), sum(weight)/1e9 as gb from system.trace_log where trace_type = 'MemoryProfile' group by profile_id order by max(event_time_microseconds) desc limit 70`
+ 2. `clickhouse client --allow_introspection_functions=1 -q "select arrayJoin(flameGraph(arrayReverse(trace), weight)) from system.trace_log where trace_type = 'MemoryProfile' and profile_id = <value from step 1>" | ~/dev/FlameGraph/flamegraph.pl --countname=bytes --color=mem > flame_mem.svg`
+
+Possible values:
+
+- Nonnegative integer.
+- -1 - allocation sampling is disabled.
+
+Default value: `24`, i.e. 16 MiB.
+
+## heap_profiler_max_samples {#heap_profiler_max_samples}
+
+Limit on the number of memory allocations to maintain in the set as described in [heap_profiler_log_sample_rate](#heap_profiler_log_sample_rate). By default, chosen automatically. Should be on the order of `ram_size / 2^heap_profiler_log_sample_rate`. Each sample takes around 600 bytes. With default settings, heap profiling uses tens of MB of memory.
+
+Possible values:
+
+- Positive integer.
+- -1 - limit is chosen automatically.
+
+Default value: `-1`.
+
+## heap_profiler_dump_period_seconds {#heap_profiler_dump_period_seconds}
+
+How often to write information about active memory allocations to system.trace_log, as described in [heap_profiler_log_sample_rate](#heap_profiler_log_sample_rate). Set to -1 to disable periodic dumps. A dump can also still be triggered manually with `SYSTEM DUMP HEAP PROFILE`, if heap_profiler_log_sample_rate is enabled.
 
 ## compiled_expression_cache_size {#compiled-expression-cache-size}
 

@@ -10,20 +10,28 @@ struct AllocationTrace
     AllocationTrace() = default;
     explicit AllocationTrace(double sample_probability_) : sample_probability(sample_probability_) {}
 
-    ALWAYS_INLINE void onAlloc(void * ptr, size_t size) const
+    ALWAYS_INLINE void onAlloc(void * ptr, size_t estimated_usable_size, size_t requested_size) const
     {
-        if (likely(sample_probability <= 0))
-            return;
+        /// Send the information to two separate tracers: TraceType::MemoryProfile and TraceType::MemorySample.
+        /// Would it make sense to unify them into one? Doesn't seem so, see comment in HeapProfiler.h.
+        /// Would it make sense to reuse the StackTrace if the allocation ends up traced by both tracers?
+        /// In practice this should be too rare to be worth it.
 
-        onAllocImpl(ptr, size);
+        reportAllocToHeapProfiler(ptr, requested_size);
+
+        if (unlikely(sample_probability > 0))
+            onAllocImpl(ptr, estimated_usable_size);
     }
 
-    ALWAYS_INLINE void onFree(void * ptr, size_t size) const
+    /// estimated_usable_size doesn't necessarily match between onAlloc() and onFree().
+    /// If allocatorSupportsUsableSize() is true, estimated_usable_size in onFree() must be >=
+    /// requested_size in the corresponding onAlloc().
+    ALWAYS_INLINE void onFree(void * ptr, size_t estimated_usable_size) const
     {
-        if (likely(sample_probability <= 0))
-            return;
+        reportFreeToHeapProfiler(ptr, estimated_usable_size);
 
-        onFreeImpl(ptr, size);
+        if (unlikely(sample_probability > 0))
+            onFreeImpl(ptr, estimated_usable_size);
     }
 
 private:
@@ -31,4 +39,8 @@ private:
 
     void onAllocImpl(void * ptr, size_t size) const;
     void onFreeImpl(void * ptr, size_t size) const;
+
+    /// These are defined in HeapProfiler.cpp so that their HeapProfiler::instance() calls are inlined.
+    void reportAllocToHeapProfiler(void * ptr, size_t requested_size) const;
+    void reportFreeToHeapProfiler(void * ptr, size_t estimated_usable_size) const;
 };

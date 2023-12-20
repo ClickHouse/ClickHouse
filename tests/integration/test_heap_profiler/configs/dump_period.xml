@@ -1,0 +1,3 @@
+<clickhouse>
+    <heap_profiler_dump_period_seconds>1</heap_profiler_dump_period_seconds>
+</clickhouse>

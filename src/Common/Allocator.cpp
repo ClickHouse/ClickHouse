@@ -113,7 +113,7 @@ void * Allocator<clear_memory_, populate>::alloc(size_t size, size_t alignment)
     checkSize(size);
     auto trace = CurrentMemoryTracker::alloc(size);
     void * ptr = allocNoTrack<clear_memory_, populate>(size, alignment);
-    trace.onAlloc(ptr, size);
+    trace.onAlloc(ptr, size, size);
     return ptr;
 }
 
@@ -163,7 +163,7 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         }
 
         buf = new_buf;
-        trace_alloc.onAlloc(buf, new_size);
+        trace_alloc.onAlloc(buf, new_size, new_size);
 
         if constexpr (clear_memory)
             if (new_size > old_size)

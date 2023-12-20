@@ -106,7 +106,7 @@ public:
     void shutdown();
 
     // producer methods
-    void push(LogElement && element);
+    void push(LogElement * begin, size_t count); // all or nothing
     Index notifyFlush(bool should_prepare_tables_anyway);
     void waitFlush(Index expected_flushed_up_to);
 
@@ -163,6 +163,10 @@ public:
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
       */
     void add(LogElement element);
+
+    /** Append multiple records transactionally. Either all or none are written.
+      */
+    void addGroup(std::vector<LogElement> elements);
 
     /// Flush data in the buffer to disk. Block the thread until the data is stored on disk.
     void flush(bool force) override;
