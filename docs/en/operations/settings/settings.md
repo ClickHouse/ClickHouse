@@ -1716,7 +1716,7 @@ Default value: `1`
 
 ## query_cache_squash_partial_results {#query-cache-squash-partial-results}
 
-Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
+Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query-cache-compress-entries)).
 
 Possible values:
 
@@ -2486,7 +2486,7 @@ See also:
 - [load_balancing](#load_balancing-round_robin)
 - [Table engine Distributed](../../engines/table-engines/special/distributed.md)
 - [distributed_replica_error_cap](#distributed_replica_error_cap)
-- [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
+- [distributed_replica_error_half_life](#distributed_replica_error_half_life)
 
 ## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms}
 
@@ -4715,7 +4715,7 @@ Possible values:
 
 Default value: `false`.
 
-## rename_files_after_processing
+## rename_files_after_processing {#rename_files_after_processing}
 
 - **Type:** String
 
