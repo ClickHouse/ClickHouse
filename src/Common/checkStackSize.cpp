@@ -54,7 +54,7 @@ static size_t getStackSize(void ** out_address)
 #   if defined(OS_FREEBSD) || defined(OS_SUNOS)
     pthread_attr_init(&attr);
     if (0 != pthread_attr_get_np(pthread_self(), &attr))
-        throwFromErrno("Cannot pthread_attr_get_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
+        throw ErrnoException(ErrorCodes::CANNOT_PTHREAD_ATTR, "Cannot pthread_attr_get_np");
 #   else
     if (0 != pthread_getattr_np(pthread_self(), &attr))
     {
@@ -64,14 +64,14 @@ static size_t getStackSize(void ** out_address)
             return 0;
         }
         else
-            throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
+            throw ErrnoException(ErrorCodes::CANNOT_PTHREAD_ATTR, "Cannot pthread_getattr_np");
     }
 #   endif
 
     SCOPE_EXIT({ pthread_attr_destroy(&attr); });
 
     if (0 != pthread_attr_getstack(&attr, &address, &size))
-        throwFromErrno("Cannot pthread_getattr_np", ErrorCodes::CANNOT_PTHREAD_ATTR);
+        throw ErrnoException(ErrorCodes::CANNOT_PTHREAD_ATTR, "Cannot pthread_attr_getstack");
 
 #ifdef USE_MUSL
     /// Adjust stack size for the main thread under musl.

@@ -6,6 +6,7 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <Interpreters/Context.h>
 #include <IO/HTTPCommon.h>
 
 #ifdef __clang__
@@ -38,7 +39,7 @@ WebUIRequestHandler::WebUIRequestHandler(IServer & server_)
 
 void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
-    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
+    auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
 
     response.setContentType("text/html; charset=UTF-8");
 

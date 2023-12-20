@@ -112,7 +112,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
-    size_t keep_alive_timeout_,
+    UInt64 keep_alive_timeout_,
     const ProfileEvents::Event & write_event_)
     : HTTPWriteBuffer(response_.getSocket(), write_event_)
     , response(response_)

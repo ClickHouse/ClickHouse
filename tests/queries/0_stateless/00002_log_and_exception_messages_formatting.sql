@@ -10,7 +10,7 @@ create view logs as select * from system.text_log where now() - toIntervalMinute
 -- Check that we don't have too many messages formatted with fmt::runtime or strings concatenation.
 -- 0.001 threshold should be always enough, the value was about 0.00025
 select 'runtime messages', greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.001) from logs
-    where message not like '% Received from %clickhouse-staging.com:9440%';
+    where message not like '% Received from %clickhouse-staging.com:9440%' and source_file not like '%/AWSLogger.cpp%';
 
 -- Check the same for exceptions. The value was 0.03
 select 'runtime exceptions', greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.05) from logs

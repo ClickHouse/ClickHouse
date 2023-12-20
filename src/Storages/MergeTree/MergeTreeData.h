@@ -795,7 +795,7 @@ public:
     /// We do not use mutex because it is not very important that the size could change during the operation.
     void checkPartitionCanBeDropped(const ASTPtr & partition, ContextPtr local_context);
 
-    void checkPartCanBeDropped(const String & part_name);
+    void checkPartCanBeDropped(const String & part_name, ContextPtr local_context);
 
     Pipe alterPartition(
         const StorageMetadataPtr & metadata_snapshot,

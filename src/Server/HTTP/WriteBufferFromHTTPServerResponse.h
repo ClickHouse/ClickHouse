@@ -29,7 +29,7 @@ public:
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
         bool is_http_method_head_,
-        size_t keep_alive_timeout_,
+        UInt64 keep_alive_timeout_,
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     ~WriteBufferFromHTTPServerResponse() override;

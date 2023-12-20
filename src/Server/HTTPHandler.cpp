@@ -627,7 +627,12 @@ void HTTPHandler::processQuery(
     bool enable_http_compression = params.getParsed<bool>("enable_http_compression", context->getSettingsRef().enable_http_compression);
     Int64 http_zlib_compression_level = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef().http_zlib_compression_level);
 
-    used_output.out_holder = std::make_shared<WriteBufferFromHTTPServerResponse>(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_event);
+    used_output.out_holder =
+        std::make_shared<WriteBufferFromHTTPServerResponse>(
+            response,
+            request.getMethod() == HTTPRequest::HTTP_HEAD,
+            context->getServerSettings().keep_alive_timeout.totalSeconds(),
+            write_event);
     used_output.out = used_output.out_holder;
     used_output.out_maybe_compressed = used_output.out_holder;
 

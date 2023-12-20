@@ -34,7 +34,7 @@ namespace ErrorCodes
 }
 
 static inline std::unique_ptr<WriteBuffer>
-responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, unsigned int keep_alive_timeout)
+responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, UInt64 keep_alive_timeout)
 {
     auto buf = std::unique_ptr<WriteBuffer>(new WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout));
 
@@ -89,7 +89,7 @@ static inline void trySendExceptionToClient(
 
 void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
 {
-    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
+    auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
     auto out = responseWriteBuffer(request, response, keep_alive_timeout);
 
     try

@@ -67,7 +67,7 @@
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
@@ -1768,7 +1768,7 @@ try
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
-        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
+        global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     catch (...)
     {
@@ -2140,10 +2140,9 @@ void Server::createServers(
 {
     const Settings & settings = global_context->getSettingsRef();
 
-    Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings.http_receive_timeout);
-    http_params->setKeepAliveTimeout(keep_alive_timeout);
+    http_params->setKeepAliveTimeout(global_context->getServerSettings().keep_alive_timeout);
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config.keys("protocols", protocols);
@@ -2397,10 +2396,9 @@ void Server::createInterserverServers(
 {
     const Settings & settings = global_context->getSettingsRef();
 
-    Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings.http_receive_timeout);
-    http_params->setKeepAliveTimeout(keep_alive_timeout);
+    http_params->setKeepAliveTimeout(global_context->getServerSettings().keep_alive_timeout);
 
     /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)

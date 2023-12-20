@@ -915,6 +915,7 @@ void addWindowSteps(QueryPlan & query_plan,
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window_description.full_sort_description,
+                window_description.partition_by,
                 0 /*limit*/,
                 sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
@@ -1340,7 +1341,7 @@ void Planner::buildPlanForQueryNode()
 
     const auto & settings = query_context->getSettingsRef();
 
-    if (settings.allow_experimental_parallel_reading_from_replicas > 0)
+    if (query_context->canUseTaskBasedParallelReplicas())
     {
         const auto & table_expression_nodes = planner_context->getTableExpressionNodeToData();
         for (const auto & it : table_expression_nodes)
@@ -1366,7 +1367,7 @@ void Planner::buildPlanForQueryNode()
         }
     }
 
-    if (settings.allow_experimental_parallel_reading_from_replicas > 0 || !settings.parallel_replicas_custom_key.value.empty())
+    if (query_context->canUseTaskBasedParallelReplicas() || !settings.parallel_replicas_custom_key.value.empty())
     {
         /// Check support for JOIN for parallel replicas with custom key
         if (planner_context->getTableExpressionNodeToData().size() > 1)
