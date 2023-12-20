@@ -18,7 +18,7 @@ from github.IssueComment import IssueComment
 from github.Repository import Repository
 
 from ci_config import CI_CONFIG, REQUIRED_CHECKS, CHECK_DESCRIPTIONS, CheckDescription
-from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL, TEMP_PATH
+from env_helper import GITHUB_JOB_URL, GITHUB_REPOSITORY, TEMP_PATH
 from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
 from report import (
     ERROR,
@@ -436,7 +436,7 @@ def set_mergeable_check(
         context=MERGEABLE_NAME,
         description=description,
         state=state,
-        target_url=GITHUB_RUN_URL,
+        target_url=GITHUB_JOB_URL(),
     )
 
 
@@ -474,10 +474,16 @@ def update_mergeable_check(commit: Commit, pr_info: PRInfo, check_name: str) -> 
             fail.append(status.context)
 
     state: StatusType = SUCCESS
-    description = ", ".join(success)
+
+    if success:
+        description = ", ".join(success)
+    else:
+        description = "awaiting job statuses"
+
     if fail:
         description = "failed: " + ", ".join(fail)
         state = FAILURE
     description = format_description(description)
+
     if mergeable_status is None or mergeable_status.description != description:
         set_mergeable_check(commit, description, state)
