@@ -6093,7 +6093,7 @@ void QueryAnalyzer::resolveEmitNode(QueryTreeNodePtr & node, IdentifierResolveSc
             scope.scope_node->formatASTForErrorMessage());
 
     auto & interval_constant = interval_function->as<ConstantNode &>();
-    auto * result_type = checkAndGetDataType<DataTypeInterval>(interval_constant.getResultType().get());
+    const auto * result_type = checkAndGetDataType<DataTypeInterval>(interval_constant.getResultType().get());
     if (result_type == nullptr)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Emit interval function must be constant of interval type. In scope {}",
