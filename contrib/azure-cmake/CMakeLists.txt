@@ -17,6 +17,7 @@ file(GLOB AZURE_SDK_SRC
     "${AZURE_SDK_LIBRARY_DIR}/core/azure-core/src/tracing/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/identity/azure-identity/src/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-blobs/src/*.cpp"
+    "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-blobs/src/private/*.cpp"
     "${AZURE_SDK_LIBRARY_DIR}/storage/azure-storage-common/src/*.cpp"
 )
 
