@@ -24,7 +24,7 @@ namespace ErrorCodes
 std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth, const Names & required_source_columns, bool & is_projection_optimized)
 {
-    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, false).isProjectionOptmized(is_projection_optimized);
+    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth).isProjectionOptmized(is_projection_optimized);
     return interpretSubquery(table_expression, context, required_source_columns, subquery_options);
 }
 
