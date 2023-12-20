@@ -10,7 +10,7 @@
 class GeneratorWithTemplate : public DB::IObjectStorageKeysGenerator
 {
 public:
-    GeneratorWithTemplate(String key_template_)
+    explicit GeneratorWithTemplate(String key_template_)
     : key_template(std::move(key_template_))
     , re_gen(key_template, /*logging*/ false)
     {
@@ -62,7 +62,7 @@ private:
 class GeneratorAsIsWithPrefix : public DB::IObjectStorageKeysGenerator
 {
 public:
-    GeneratorAsIsWithPrefix(String key_prefix_)
+    explicit GeneratorAsIsWithPrefix(String key_prefix_)
         : key_prefix(std::move(key_prefix_))
     {}
 
