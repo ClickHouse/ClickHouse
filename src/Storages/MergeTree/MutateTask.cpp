@@ -81,7 +81,6 @@ static void splitAndModifyMutationCommands(
                 auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
                 if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
                 {
-                    LOG_DEBUG(log, "Materializing column {}\n", command.column_name);
                     for_interpreter.push_back(command);
                     mutated_columns.emplace(command.column_name);
                 }
