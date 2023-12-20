@@ -161,21 +161,6 @@ def main():
         )
         sys.exit(1)
 
-    set_mergeable_check(commit, "skipped")
-
-    ci_report_url = create_ci_report(pr_info, [])
-    if not can_run:
-        print("::notice ::Cannot run")
-        post_commit_status(
-            commit,
-            labels_state,
-            ci_report_url,
-            description,
-            CI_STATUS_NAME,
-            pr_info,
-        )
-        sys.exit(1)
-
     if FEATURE_LABEL in pr_info.labels and not pr_info.has_changes_in_documentation():
         print(
             f"The '{FEATURE_LABEL}' in the labels, "
@@ -191,6 +176,21 @@ def main():
             pr_info,
         )
         update_mergeable_check(commit, pr_info, PR_CHECK)
+    else:
+        set_mergeable_check(commit, "skipped", state="success")
+
+    ci_report_url = create_ci_report(pr_info, [])
+    if not can_run:
+        print("::notice ::Cannot run")
+        post_commit_status(
+            commit,
+            labels_state,
+            ci_report_url,
+            description,
+            CI_STATUS_NAME,
+            pr_info,
+        )
+        sys.exit(1)
 
     print("::notice ::Can run")
     post_commit_status(
