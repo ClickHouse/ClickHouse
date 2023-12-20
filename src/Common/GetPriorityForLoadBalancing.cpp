@@ -35,6 +35,14 @@ std::function<Priority(size_t index)> GetPriorityForLoadBalancing::getPriorityFu
         case LoadBalancing::ROUND_ROBIN:
             auto local_last_used = last_used.fetch_add(1) % pool_size;
 
+            // Example: pool_size = 5
+            // | local_last_used | i=0 | i=1 | i=2 | i=3 | i=4 |
+            // | 0               | 4   | 0   | 1   | 2   | 3   |
+            // | 1               | 3   | 4   | 0   | 1   | 2   |
+            // | 2               | 2   | 3   | 4   | 0   | 1   |
+            // | 3               | 1   | 2   | 3   | 4   | 0   |
+            // | 4               | 0   | 1   | 2   | 3   | 4   |
+
             get_priority = [pool_size, local_last_used](size_t i)
             {
                 size_t priority = pool_size - 1;

@@ -147,7 +147,7 @@ protected:
         return std::make_tuple(shared_pool_states, nested_pools, last_error_decrease_time);
     }
 
-    NestedPools nested_pools;
+    const NestedPools nested_pools;
 
     const time_t decrease_error_period;
     const size_t max_error_cap;
