@@ -80,7 +80,11 @@ static void splitAndModifyMutationCommands(
                 /// So we only mutated column if `command.column_name` is a materialized column or if the part does not have physical column file
                 auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
                 if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                {
+                    LOG_DEBUG(log, "Materializing column {}\n", command.column_name);
+                    for_interpreter.push_back(command);
                     mutated_columns.emplace(command.column_name);
+                }
             }
             if (command.type == MutationCommand::Type::MATERIALIZE_INDEX
                 || command.type == MutationCommand::Type::MATERIALIZE_STATISTIC
@@ -92,7 +96,6 @@ static void splitAndModifyMutationCommands(
                 for_interpreter.push_back(command);
                 for (const auto & [column_name, expr] : command.column_to_update_expression)
                     mutated_columns.emplace(column_name);
-
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
