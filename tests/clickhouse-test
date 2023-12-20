@@ -1773,7 +1773,6 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
         proc_name = multiprocessing.current_process().name
         print(f"\nRunning {about}{num_tests} {test_suite.suite} tests ({proc_name}).\n")
 
-    seria_num = 1
     while True:
         if is_concurrent:
             case = queue.get(timeout=args.timeout * 1.1)
@@ -1801,9 +1800,7 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
             test_cace_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
             if not is_concurrent:
                 sys.stdout.flush()
-                sys.stdout.write(
-                    f"Case SN: {seria_num} | Current Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Case Name: {test_cace_name:72}"
-                )
+                sys.stdout.write(f"{test_cace_name:72}")
                 # This flush is needed so you can see the test name of the long
                 # running test before it will finish. But don't do it in parallel
                 # mode, so that the lines don't mix.
@@ -1849,7 +1846,6 @@ def run_tests_array(all_tests_with_params: Tuple[List[str], int, TestSuite]):
         if failures_chain >= args.max_failures_chain:
             stop_tests()
             break
-        seria_num += 1
 
     if failures_total > 0:
         print(
