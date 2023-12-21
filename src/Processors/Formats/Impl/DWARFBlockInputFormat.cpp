@@ -740,7 +740,7 @@ void DWARFBlockInputFormat::parseFilenameTable(UnitState & unit, uint64_t offset
     auto error = prologue.parse(*debug_line_extractor, &offset, /*RecoverableErrorHandler*/ [&](auto e)
         {
             if (++seen_debug_line_warnings < 10)
-                LOG_INFO(&Poco::Logger::get("DWARF"), "{}", llvm::toString(std::move(e)));
+                LOG_INFO(&Poco::Logger::get("DWARF"), "Parsing error: {}", llvm::toString(std::move(e)));
         }, *dwarf_context, unit.dwarf_unit);
 
     if (error)

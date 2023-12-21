@@ -157,11 +157,16 @@ BackupImpl::~BackupImpl()
 void BackupImpl::open()
 {
     std::lock_guard lock{mutex};
-    LOG_INFO(log, "{} backup: {}", ((open_mode == OpenMode::WRITE) ? "Writing" : "Reading"), backup_name_for_logging);
-    ProfileEvents::increment((open_mode == OpenMode::WRITE) ? ProfileEvents::BackupsOpenedForWrite : ProfileEvents::BackupsOpenedForRead);
 
-    if (open_mode == OpenMode::WRITE)
+    if (open_mode == OpenMode::READ)
     {
+        ProfileEvents::increment(ProfileEvents::BackupsOpenedForRead);
+        LOG_INFO(log, "Reading backup: {}", backup_name_for_logging);
+    }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::BackupsOpenedForWrite);
+        LOG_INFO(log, "Writing backup: {}", backup_name_for_logging);
         timestamp = std::time(nullptr);
         if (!uuid)
             uuid = UUIDHelpers::generateV4();

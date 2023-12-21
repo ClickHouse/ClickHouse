@@ -2009,7 +2009,7 @@ Data for the query cache is allocated in DRAM. If memory is scarce, make sure to
 
 ## query_thread_log {#query_thread_log}
 
-Setting for logging threads of queries received with the [log_query_threads=1](../../operations/settings/settings.md#settings-log-query-threads) setting.
+Setting for logging threads of queries received with the [log_query_threads=1](../../operations/settings/settings.md#log-query-threads) setting.
 
 Queries are logged in the [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -2051,7 +2051,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 ## query_views_log {#query_views_log}
 
-Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views) setting.
+Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#log-query-views) setting.
 
 Queries are logged in the [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -2331,7 +2331,7 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 
 **See Also**
 
-- [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
+- [skip_unavailable_shards](../../operations/settings/settings.md#skip_unavailable_shards)
 - [Cluster Discovery](../../operations/cluster-discovery.md)
 - [Replicated database engine](../../engines/database-engines/replicated.md)
 
