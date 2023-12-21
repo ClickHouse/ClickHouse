@@ -361,21 +361,6 @@ public:
 
     using KeysWithInfo = StorageS3Source::KeysWithInfo;
 
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const KeysWithInfo::const_iterator & begin,
-        const KeysWithInfo::const_iterator & end,
-        const Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & ctx);
-
-    static void addColumnsToCache(
-        const KeysWithInfo & keys,
-        const Configuration & configuration,
-        const ColumnsDescription & columns,
-        const String & format_name,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & ctx);
-
     bool supportsTrivialCountOptimization() const override { return true; }
 
 protected:

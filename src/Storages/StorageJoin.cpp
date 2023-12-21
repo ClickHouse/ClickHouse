@@ -535,8 +535,7 @@ private:
 #undef M
 
             default:
-                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys in StorageJoin. Type: {}",
-                                static_cast<UInt32>(join->data->type));
+                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys of type {} in StorageJoin", join->data->type);
         }
 
         if (!rows_added)

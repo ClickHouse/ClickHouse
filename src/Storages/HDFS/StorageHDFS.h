@@ -95,19 +95,6 @@ protected:
     friend class HDFSSource;
 
 private:
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const std::vector<StorageHDFS::PathWithInfo> & paths_with_info,
-        const String & uri_without_path,
-        const String & format_name,
-        const ContextPtr & ctx);
-
-    static void addColumnsToCache(
-        const std::vector<StorageHDFS::PathWithInfo> & paths,
-        const String & uri_without_path,
-        const ColumnsDescription & columns,
-        const String & format_name,
-        const ContextPtr & ctx);
-
     std::vector<String> uris;
     String format_name;
     String compression_method;

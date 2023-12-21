@@ -184,12 +184,12 @@ BackupCoordinationRemote::BackupCoordinationRemote(
             if (my_is_internal)
             {
                 String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
-                auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
 
-                if (code == Coordination::Error::ZNODEEXISTS)
-                    zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
-                else if (code != Coordination::Error::ZOK)
-                    throw zkutil::KeeperException::fromPath(code, alive_node_path);
+                /// Delete the ephemeral node from the previous connection so we don't have to wait for keeper to do it automatically.
+                zk->tryRemove(alive_node_path);
+
+                zk->createAncestors(alive_node_path);
+                zk->create(alive_node_path, "", zkutil::CreateMode::Ephemeral);
             }
         })
 {

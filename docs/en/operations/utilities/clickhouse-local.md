@@ -216,6 +216,7 @@ Arguments:
 - `--logger.level` — Log level.
 - `--ignore-error` — do not stop processing if a query failed.
 - `-c`, `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
+- `--no-system-tables` — do not attach system tables.
 - `--help` — arguments references for `clickhouse-local`.
 - `-V`, `--version` — print version information and exit.
 

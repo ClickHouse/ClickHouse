@@ -10,7 +10,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -26,8 +25,6 @@
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/IArchiveReader.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -39,7 +36,6 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
-#include <Processors/ResizeProcessor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Common/escapeForFileName.h>
@@ -56,7 +52,6 @@
 #include <unistd.h>
 #include <filesystem>
 #include <shared_mutex>
-#include <cmath>
 #include <algorithm>
 
 #ifdef __clang__
@@ -299,13 +294,13 @@ struct stat getFileStat(const String & current_path, bool use_table_fd, int tabl
     {
         /// Check if file descriptor allows random reads (and reading it twice).
         if (0 != fstat(table_fd, &file_stat))
-            throwFromErrno("Cannot stat table file descriptor, inside " + storage_name, ErrorCodes::CANNOT_STAT);
+            throw ErrnoException(ErrorCodes::CANNOT_STAT, "Cannot stat table file descriptor, inside {}", storage_name);
     }
     else
     {
         /// Check if file descriptor allows random reads (and reading it twice).
         if (0 != stat(current_path.c_str(), &file_stat))
-            throwFromErrno("Cannot stat file " + current_path, ErrorCodes::CANNOT_STAT);
+            throw ErrnoException(ErrorCodes::CANNOT_STAT, "Cannot stat file {}", current_path);
     }
 
     return file_stat;
@@ -392,11 +387,19 @@ namespace
         {
         }
 
-        std::unique_ptr<ReadBuffer> next() override
+        std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() override
         {
+            bool is_first = current_index == 0;
+            /// For default mode check cached columns for all paths on first iteration.
+            /// If we have cached columns, next() won't be called again.
+            if (is_first && getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+            {
+                if (auto cached_columns = tryGetColumnsFromCache(paths))
+                    return {nullptr, cached_columns};
+            }
+
             String path;
             struct stat file_stat;
-            bool is_first = current_index == 0;
 
             do
             {
@@ -407,14 +410,21 @@ namespace
                             ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                             "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
                             format);
-                    return nullptr;
+                    return {nullptr, std::nullopt};
                 }
 
                 path = paths[current_index++];
                 file_stat = getFileStat(path, false, -1, "File");
             } while (getContext()->getSettingsRef().engine_file_skip_empty_files && file_stat.st_size == 0);
 
-            return createReadBuffer(path, file_stat, false, -1, compression_method, getContext());
+            /// For union mode, check cached columns only for current path, because schema can be different for different files.
+            if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
+            {
+                if (auto cached_columns = tryGetColumnsFromCache({path}))
+                    return {nullptr, cached_columns};
+            }
+
+            return {createReadBuffer(path, file_stat, false, -1, compression_method, getContext()), std::nullopt};
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -426,7 +436,64 @@ namespace
             StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
+        void setSchemaToLastFile(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_file
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::UNION)
+                return;
+
+            /// For union mode, schema can be different for different files, so we need to
+            /// cache last inferred schema only for last processed file.
+            auto cache_key = getKeyForSchemaCache(paths[current_index - 1], format, format_settings, getContext());
+            StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
+        }
+
+        void setResultingSchema(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_file
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::DEFAULT)
+                return;
+
+            /// For default mode we cache resulting schema for all paths.
+            auto cache_keys = getKeysForSchemaCache(paths, format, format_settings, getContext());
+            StorageFile::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
+        }
+
+        String getLastFileName() const override
+        {
+            if (current_index != 0)
+                return paths[current_index - 1];
+            return "";
+        }
+
     private:
+        std::optional<ColumnsDescription> tryGetColumnsFromCache(const Strings & paths_)
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_file)
+                return std::nullopt;
+
+            /// Check if the cache contains one of the paths.
+            auto & schema_cache = StorageFile::getSchemaCache(getContext());
+            struct stat file_stat{};
+            for (const auto & path : paths_)
+            {
+                auto get_last_mod_time = [&]() -> std::optional<time_t>
+                {
+                    if (0 != stat(path.c_str(), &file_stat))
+                        return std::nullopt;
+
+                    return file_stat.st_mtime;
+                };
+
+                auto cache_key = getKeyForSchemaCache(path, format, format_settings, getContext());
+                auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
+                if (columns)
+                    return columns;
+            }
+
+            return std::nullopt;
+        }
+
         const std::vector<String> & paths;
 
         size_t current_index = 0;
@@ -450,8 +517,19 @@ namespace
         {
         }
 
-        std::unique_ptr<ReadBuffer> next() override
+        std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() override
         {
+            /// For default mode check cached columns for all initial archive paths (maybe with globs) on first iteration.
+            /// If we have cached columns, next() won't be called again.
+            if (is_first && getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+            {
+                for (const auto & archive : archive_info.paths_to_archives)
+                {
+                    if (auto cached_columns = tryGetColumnsFromSchemaCache(archive, archive_info.path_in_archive))
+                        return {nullptr, cached_columns};
+                }
+            }
+
             std::unique_ptr<ReadBuffer> read_buf;
             while (true)
             {
@@ -463,7 +541,7 @@ namespace
                             "Cannot extract table structure from {} format file, because all files are empty. You must specify table structure manually",
                             format);
 
-                    return nullptr;
+                    return {nullptr, std::nullopt};
                 }
 
                 const auto & archive = archive_info.paths_to_archives[current_archive_index];
@@ -494,11 +572,11 @@ namespace
                     if (!read_buf)
                         continue;
 
-                    last_read_file_path = processed_files.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), archive_info.path_in_archive));
-                    columns_from_cache = tryGetColumnsFromSchemaCache(archive, last_read_file_path);
+                    last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), archive_info.path_in_archive));
+                    is_first = false;
 
-                    if (columns_from_cache)
-                        return nullptr;
+                    if (auto cached_columns = tryGetColumnsFromSchemaCache(archive, last_read_file_path))
+                        return {nullptr, cached_columns};
                 }
                 else
                 {
@@ -531,11 +609,17 @@ namespace
                         continue;
                     }
 
-                    last_read_file_path = processed_files.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), *filename));
-                    columns_from_cache = tryGetColumnsFromSchemaCache(archive, last_read_file_path);
+                    last_read_file_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive_reader->getPath(), *filename));
+                    is_first = false;
 
-                    if (columns_from_cache)
-                        return nullptr;
+                    if (auto cached_columns = tryGetColumnsFromSchemaCache(archive, last_read_file_path))
+                    {
+                        /// For union mode next() will be called again even if we found cached columns,
+                        /// so we need to remember last_read_buffer to continue iterating through files in archive.
+                        if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
+                            last_read_buffer = archive_reader->readFile(std::move(file_enumerator));
+                        return {nullptr, cached_columns};
+                    }
 
                     read_buf = archive_reader->readFile(std::move(file_enumerator));
                 }
@@ -543,18 +627,13 @@ namespace
                 break;
             }
 
-            is_first = false;
-            return read_buf;
-        }
-
-        std::optional<ColumnsDescription> getCachedColumns() override
-        {
-            return columns_from_cache;
+            return {std::move(read_buf), std::nullopt};
         }
 
         void setPreviousReadBuffer(std::unique_ptr<ReadBuffer> buffer) override
         {
-            last_read_buffer = std::move(buffer);
+            if (buffer)
+                last_read_buffer = std::move(buffer);
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -566,13 +645,45 @@ namespace
             StorageFile::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
-        std::vector<std::string> processed_files;
-    private:
+        void setSchemaToLastFile(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_file
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::UNION)
+                return;
 
+            /// For union mode, schema can be different for different files in archive, so we need to
+            /// cache last inferred schema only for last processed file.
+            auto & schema_cache = StorageFile::getSchemaCache(getContext());
+            auto cache_key = getKeyForSchemaCache(last_read_file_path, format, format_settings, getContext());
+            schema_cache.addColumns(cache_key, columns);
+        }
+
+        void setResultingSchema(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_file
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::DEFAULT)
+                return;
+
+            /// For default mode we cache resulting schema for all paths.
+            /// Also add schema for initial paths (maybe with globes) in cache,
+            /// so next time we won't iterate through files (that can be expensive).
+            for (const auto & archive : archive_info.paths_to_archives)
+                paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive, archive_info.path_in_archive));
+            auto & schema_cache = StorageFile::getSchemaCache(getContext());
+            auto cache_keys = getKeysForSchemaCache(paths_for_schema_cache, format, format_settings, getContext());
+            schema_cache.addManyColumns(cache_keys, columns);
+        }
+
+        String getLastFileName() const override
+        {
+            return last_read_file_path;
+        }
+
+    private:
         std::optional<ColumnsDescription> tryGetColumnsFromSchemaCache(const std::string & archive_path, const std::string & full_path)
         {
             auto context = getContext();
-            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_file)
+            if (!context->getSettingsRef().schema_inference_use_cache_for_file)
                 return std::nullopt;
 
             struct stat file_stat;
@@ -602,44 +713,13 @@ namespace
 
         std::string last_read_file_path;
 
-        std::optional<ColumnsDescription> columns_from_cache;
-
         std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
         std::unique_ptr<ReadBuffer> last_read_buffer;
 
         String format;
         const std::optional<FormatSettings> & format_settings;
+        std::vector<std::string> paths_for_schema_cache;
     };
-
-    std::optional<ColumnsDescription> tryGetColumnsFromCacheForArchives(
-        const StorageFile::ArchiveInfo & archive_info,
-        std::vector<std::string> & paths_for_schema_cache,
-        const String & format,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context)
-    {
-        struct stat file_stat{};
-        std::optional<ColumnsDescription> columns_from_cache;
-
-        for (const auto & archive : archive_info.paths_to_archives)
-        {
-            const auto & full_path = paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive, archive_info.path_in_archive));
-
-            auto & schema_cache = StorageFile::getSchemaCache(context);
-            auto get_last_mod_time = [&]() -> std::optional<time_t>
-            {
-                if (0 != stat(archive.c_str(), &file_stat))
-                    return std::nullopt;
-
-                return file_stat.st_mtime;
-            };
-
-            auto cache_key = getKeyForSchemaCache(full_path, format, format_settings, context);
-            columns_from_cache = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
-        }
-
-        return columns_from_cache;
-    }
 }
 
 ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr context)
@@ -692,48 +772,19 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
             "Cannot extract table structure from {} format file, because there are no files with provided path. "
             "You must specify table structure manually", format);
 
-    ColumnsDescription columns;
-    std::vector<std::string> archive_paths_for_schema_cache;
-    std::optional<ColumnsDescription> columns_from_cache;
-
-    if (context->getSettingsRef().schema_inference_use_cache_for_file)
+    if (archive_info)
     {
-        if (archive_info)
-            columns_from_cache = tryGetColumnsFromCacheForArchives(*archive_info, archive_paths_for_schema_cache, format, format_settings, context);
-        else
-            columns_from_cache = tryGetColumnsFromCache(paths, format, format_settings, context);
+        ReadBufferFromArchiveIterator read_buffer_iterator(*archive_info, format, format_settings, context);
+        return readSchemaFromFormat(
+            format,
+            format_settings,
+            read_buffer_iterator,
+            /*retry=*/archive_info->paths_to_archives.size() > 1 || !archive_info->isSingleFileRead(),
+            context);
     }
 
-    if (columns_from_cache)
-    {
-        columns = std::move(*columns_from_cache);
-    }
-    else
-    {
-        if (archive_info)
-        {
-            ReadBufferFromArchiveIterator read_buffer_iterator(*archive_info, format, format_settings, context);
-            columns = readSchemaFromFormat(
-                format,
-                format_settings,
-                read_buffer_iterator,
-                /*retry=*/archive_info->paths_to_archives.size() > 1 || !archive_info->isSingleFileRead(),
-                context);
-
-            for (auto & file : read_buffer_iterator.processed_files)
-                archive_paths_for_schema_cache.push_back(std::move(file));
-        }
-        else
-        {
-            ReadBufferFromFileIterator read_buffer_iterator(paths, format, compression_method, format_settings, context);
-            columns = readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
-        }
-    }
-
-    if (context->getSettingsRef().schema_inference_use_cache_for_file)
-        addColumnsToCache(archive_info.has_value() ? archive_paths_for_schema_cache : paths, columns, format, format_settings, context);
-
-    return columns;
+    ReadBufferFromFileIterator read_buffer_iterator(paths, format, compression_method, format_settings, context);
+    return readSchemaFromFormat(format, format_settings, read_buffer_iterator, paths.size() > 1, context);
 }
 
 bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -757,7 +808,7 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
     struct stat buf;
     int res = fstat(table_fd_, &buf);
     if (-1 == res)
-        throwFromErrno("Cannot execute fstat", res, ErrorCodes::CANNOT_FSTAT);
+        throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot execute fstat");
     total_bytes_to_read = buf.st_size;
 
     if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
@@ -1737,7 +1788,7 @@ void StorageFile::truncate(
     if (use_table_fd)
     {
         if (0 != ::ftruncate(table_fd, 0))
-            throwFromErrno("Cannot truncate file at fd " + toString(table_fd), ErrorCodes::CANNOT_TRUNCATE_FILE);
+            throw ErrnoException(ErrorCodes::CANNOT_TRUNCATE_FILE, "Cannot truncate file at fd {}", toString(table_fd));
     }
     else
     {
@@ -1747,7 +1798,7 @@ void StorageFile::truncate(
                 continue;
 
             if (0 != ::truncate(path.c_str(), 0))
-                throwFromErrnoWithPath("Cannot truncate file " + path, path, ErrorCodes::CANNOT_TRUNCATE_FILE);
+                ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
         }
     }
 }
@@ -1872,43 +1923,6 @@ SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
 {
     static SchemaCache schema_cache(context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_file", DEFAULT_SCHEMA_CACHE_ELEMENTS));
     return schema_cache;
-}
-
-std::optional<ColumnsDescription> StorageFile::tryGetColumnsFromCache(
-    const Strings & paths, const String & format_name, const std::optional<FormatSettings> & format_settings, ContextPtr context)
-{
-    /// Check if the cache contains one of the paths.
-    auto & schema_cache = getSchemaCache(context);
-    struct stat file_stat{};
-    for (const auto & path : paths)
-    {
-        auto get_last_mod_time = [&]() -> std::optional<time_t>
-        {
-            if (0 != stat(path.c_str(), &file_stat))
-                return std::nullopt;
-
-            return file_stat.st_mtime;
-        };
-
-        auto cache_key = getKeyForSchemaCache(path, format_name, format_settings, context);
-        auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
-        if (columns)
-            return columns;
-    }
-
-    return std::nullopt;
-}
-
-void StorageFile::addColumnsToCache(
-    const Strings & paths,
-    const ColumnsDescription & columns,
-    const String & format_name,
-    const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & context)
-{
-    auto & schema_cache = getSchemaCache(context);
-    auto cache_keys = getKeysForSchemaCache(paths, format_name, format_settings, context);
-    schema_cache.addManyColumns(cache_keys, columns);
 }
 
 void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive)
