@@ -577,7 +577,9 @@ static void writeFieldsToColumn(
                 }
 
                 null_map_column->insertValue(0);
-            } else {
+            }
+            else
+            {
                 // Column is not null but field is null. It's possible due to overrides
                 if (field.isNull())
                 {
