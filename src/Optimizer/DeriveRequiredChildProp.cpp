@@ -200,16 +200,11 @@ AlternativeChildrenProp DeriveRequiredChildProp::visit(DistinctStep & step)
         }
     }
 
-    required_child_prop.distribution = {.type = Distribution::Singleton};
+    if (step.isPreliminary())
+        required_child_prop.distribution = {.type = Distribution::Any};
+    else
+        required_child_prop.distribution = {.type = Distribution::Singleton};
 
-    //    if (step.isPreliminary())
-    //    {
-    //        required_child_prop.distribution = {.type = Distribution::Any};
-    //    }
-    //    else
-    //    {
-    //        required_child_prop.distribution = {.type = Distribution::Singleton};
-    //    }
     return {{required_child_prop}};
 }
 
