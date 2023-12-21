@@ -1,12 +1,10 @@
-import time
-
 import pytest
+import time
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance(
-    "node1",
-    with_zookeeper=True,
+node = cluster.add_instance(
+    "node",
     main_configs=["configs/asynchronous_metrics_update_period_s.xml"],
 )
 
@@ -21,31 +19,113 @@ def started_cluster():
         cluster.shutdown()
 
 
+def greater(a, b):
+    return b > a
+
+
+def lesser(a, b):
+    return b < a
+
+
+def query_until_condition(a, b, condition, retries=20, timeout=60, delay=0.5):
+    """
+
+    :param a: could be an input lambda that returns an int or just an int
+    :param b: could be an input lambda that returns an int or just an int
+    :param condition: lambda that returns a boolean after comparing a and b
+    :param retries: number of times to retry until the condition is met
+    :param timeout: time in seconds after which stop retrying
+    :param delay: time in seconds between each retry
+    :return: values of a and b (value post evaluation if lambda)
+    """
+    retries_done = 0
+    start_time = time.time()
+    while True:
+        res1 = a() if callable(a) else a
+        res2 = b() if callable(b) else b
+        if condition(res1, res2):
+            return res1, res2
+        retries_done += 1
+        if retries_done >= retries or (time.time() - start_time) > timeout:
+            return res1, res2
+        time.sleep(delay)
+
+
 def test_total_pk_bytes_in_memory_fields(started_cluster):
-    cluster.start()
-    node1.query("SET log_queries = 1;")
-    query_create = """CREATE TABLE test
+    query_create = """CREATE TABLE test_pk_bytes
     (
-       id Int64,
-       event_time DateTime
+       a UInt64,
+       b UInt64
     )
     Engine=MergeTree()
-    PARTITION BY toYYYYMMDD(event_time)
-    ORDER BY id;"""
-    node1.query(query_create)
-    node1.query("""INSERT INTO test VALUES (1, now())""")
-    node1.query("SYSTEM FLUSH LOGS;")
+    ORDER BY a SETTINGS index_granularity=1"""
+    node.query(query_create)
 
-    # query system.asynchronous_metrics
-    test_query = "SELECT count() > 0 ? 'ok' : 'fail' FROM system.asynchronous_metrics WHERE metric = 'TotalPrimaryKeyBytesInMemory';"
-    assert "ok\n" in node1.query(test_query)
+    query_pk_bytes = "SELECT value FROM system.asynchronous_metrics WHERE metric = 'TotalPrimaryKeyBytesInMemory';"
+    query_pk_bytes_allocated = """SELECT value FROM system.asynchronous_metrics 
+                                  WHERE metric = 'TotalPrimaryKeyBytesInMemoryAllocated';"""
 
-    test_query = "SELECT count() > 0 ? 'ok' : 'fail' FROM system.asynchronous_metrics WHERE metric = 'TotalPrimaryKeyBytesInMemoryAllocated';"
-    assert "ok\n" in node1.query(test_query)
+    # query for metrics before inserting anything into the table
+    pk_bytes_before = int(node.query(query_pk_bytes).strip())
+    pk_bytes_allocated_before = int(node.query(query_pk_bytes_allocated).strip())
 
-    # query system.asynchronous_metric_log
-    test_query = "SELECT count() > 0 ? 'ok' : 'fail' FROM system.asynchronous_metric_log WHERE metric = 'TotalPrimaryKeyBytesInMemory';"
-    assert "ok\n" in node1.query(test_query)
+    # insert data into the table and select
+    node.query(
+        """INSERT INTO test_pk_bytes SELECT number + 20, number * 20 from numbers(1000000)"""
+    )
 
-    test_query = "SELECT count() > 0 ? 'ok' : 'fail' FROM system.asynchronous_metric_log WHERE metric = 'TotalPrimaryKeyBytesInMemoryAllocated';"
-    assert "ok\n" in node1.query(test_query)
+    node.query("""SELECT * FROM test_pk_bytes where a > 1000000""")
+
+    # functions to query primary key bytes used and allocated in memory
+    def res_pk_bytes():
+        return int(node.query(query_pk_bytes).strip())
+
+    def res_pk_bytes_allocated():
+        return int(node.query(query_pk_bytes_allocated).strip())
+
+    # query again after data insertion (make a reasonable amount of retries)
+    # metrics should be greater after inserting data
+    pk_bytes_before, pk_bytes_after = query_until_condition(
+        pk_bytes_before, res_pk_bytes, condition=greater
+    )
+    assert pk_bytes_after > pk_bytes_before
+
+    pk_bytes_allocated_before, pk_bytes_allocated_after = query_until_condition(
+        pk_bytes_allocated_before, res_pk_bytes_allocated, condition=greater
+    )
+    assert pk_bytes_allocated_after > pk_bytes_allocated_before
+
+    # insert some more data
+    node.query(
+        """INSERT INTO test_pk_bytes SELECT number + 100, number * 200 from numbers(1000000)"""
+    )
+    node.query("""SELECT * FROM test_pk_bytes""")
+
+    # query again and compare the metrics.
+    # metrics should be greater after inserting more data
+    pk_bytes_after, pk_bytes_after_2 = query_until_condition(
+        pk_bytes_after, res_pk_bytes, condition=greater
+    )
+    assert pk_bytes_after_2 > pk_bytes_after
+
+    pk_bytes_allocated_after, pk_bytes_allocated_after_2 = query_until_condition(
+        pk_bytes_allocated_after, res_pk_bytes_allocated, condition=greater
+    )
+    assert pk_bytes_allocated_after_2 > pk_bytes_allocated_after
+
+    # alter the table to drop some data
+    node.query(
+        "ALTER table test_pk_bytes DELETE where a < 1000000 SETTINGS mutations_sync=1;"
+    )
+
+    # query again and compare the metrics.
+    # metrics should be lesser after dropping some data
+    before_drop, after_drop = query_until_condition(
+        pk_bytes_after_2, res_pk_bytes, condition=lesser
+    )
+    assert before_drop > after_drop
+
+    before_drop, after_drop = query_until_condition(
+        pk_bytes_allocated_after_2, res_pk_bytes_allocated, condition=lesser
+    )
+    assert before_drop > after_drop
