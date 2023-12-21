@@ -1,10 +1,12 @@
 #include "NamedCollectionsHelpers.h"
+#include "Parsers/queryToString.h"
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <variant>
 
 namespace DB
 {
@@ -63,6 +65,15 @@ namespace
     }
 }
 
+std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
+{
+    auto res = getKeyValueFromAST(ast, true, context);
+
+    if (!res || !std::holds_alternative<Field>(res->second))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get key value from ast {}", queryToString(ast));
+
+    return {res->first, std::get<Field>(res->second)};
+}
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ASTs asts, ContextPtr context, bool throw_unknown_collection, std::vector<std::pair<std::string, ASTPtr>> * complex_args)

@@ -24,6 +24,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 /// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
 
+std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context);
+
 HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection);
 
 struct ExternalDatabaseEqualKeysSet
