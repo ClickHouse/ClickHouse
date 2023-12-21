@@ -145,7 +145,7 @@ def main():
     gh = GitHub(get_best_robot_token(), create_cache_dir=False)
     commit = get_commit(gh, pr_info.sha)
 
-    atexit.register(update_mergeable_check, gh, pr_info, NAME)
+    atexit.register(update_mergeable_check, commit, pr_info, NAME)
 
     rerun_helper = RerunHelper(commit, NAME)
     if rerun_helper.is_already_finished_by_status():
