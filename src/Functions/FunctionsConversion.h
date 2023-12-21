@@ -1413,10 +1413,10 @@ inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuff
 template <>
 inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
 {
-    time_t tmp = 0;
-    if (!tryReadDateTimeText(tmp, rb, *time_zone))
+    time_t time = 0;
+    if (!tryReadDateTimeText(time, rb, *time_zone))
         return false;
-    x = static_cast<UInt32>(tmp);
+    convertFromTime<DataTypeDateTime>(x, time);
     return true;
 }
 
@@ -1697,7 +1697,6 @@ struct ConvertThroughParsing
                                     break;
                                 }
                             }
-
                             parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
                         } while (false);
                     }
@@ -3291,7 +3290,6 @@ private:
         {
             /// In case when converting to Nullable type, we apply different parsing rule,
             /// that will not throw an exception but return NULL in case of malformed input.
-
             FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionName, ConvertFromStringExceptionMode::Null>::create();
             return createFunctionAdaptor(function, from_type);
         }
