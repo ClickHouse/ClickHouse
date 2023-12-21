@@ -279,7 +279,7 @@ void ReplicatedMergeTreeClusterBalancer::runStep(const zkutil::ZooKeeperPtr & zo
 void ReplicatedMergeTreeClusterBalancer::replicatePartition(const zkutil::ZooKeeperPtr & zookeeper, const ReplicatedMergeTreeClusterPartition & target, const std::list<ReplicatedMergeTreeLogEntryPtr> & entries)
 {
     /// clonePartition() insert entries to the queue (not to the common log),
-    /// and those entires need to be loaded to the in memory queue to wait them
+    /// and those entries need to be loaded to the in memory queue to wait them
     /// below
     storage.queue.load(zookeeper);
     /// Only pullLogsToQueue() triggers background operations, so we need to do
@@ -806,7 +806,7 @@ void ReplicatedMergeTreeClusterBalancer::cleanupOldPartitions(const zkutil::ZooK
         if (std::find(all_replicas.begin(), all_replicas.end(), replica_name) != all_replicas.end())
             continue;
 
-        /// FIXME: no syncronization between queue.load(), this leads to
+        /// FIXME: no synchronization between queue.load(), this leads to
         /// LOGICAL_ERROR, due to double call to removePartsFromWorkingSet()
         enqueueDropPartition(zookeeper, replica_name, partition.getPartitionId());
     }

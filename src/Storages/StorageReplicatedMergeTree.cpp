@@ -8929,7 +8929,7 @@ bool StorageReplicatedMergeTree::addOpsToDropAllPartsInPartition(
 
     clearBlocksInPartition(zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
 
-    /// TODO(cluster): clear the replicas assigment for the partition?
+    /// TODO(cluster): clear the replicas assignment for the partition?
 
     String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range_info);
 

@@ -34,7 +34,7 @@ private:
 
     /// Full map of <replica_name, partitions> (including under re-sharding partitions)
     std::unordered_map<String, std::vector<String>> replicas_partitions;
-    /// Replicas whos under removal (SYSTEM DROP CLUSTER REPLICA)
+    /// Replicas whose under removal (SYSTEM DROP CLUSTER REPLICA)
     NameSet removing_replicas;
     /// Partitions that are suitable for re-sharding, these are partitions that:
     /// - not under re-sharding
