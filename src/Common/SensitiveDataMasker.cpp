@@ -1,6 +1,5 @@
 #include "SensitiveDataMasker.h"
 
-#include <mutex>
 #include <set>
 #include <string>
 #include <atomic>
@@ -87,7 +86,6 @@ public:
 SensitiveDataMasker::~SensitiveDataMasker() = default;
 
 std::shared_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
-std::mutex SensitiveDataMasker::instance_mutex;
 
 void SensitiveDataMasker::setInstance(std::shared_ptr<SensitiveDataMasker> sensitive_data_masker_)
 {
@@ -95,21 +93,20 @@ void SensitiveDataMasker::setInstance(std::shared_ptr<SensitiveDataMasker> sensi
     if (!sensitive_data_masker_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: the 'sensitive_data_masker' is not set");
 
-    std::lock_guard lock(instance_mutex);
     if (sensitive_data_masker_->rulesCount() > 0)
     {
-        sensitive_data_masker = std::move(sensitive_data_masker_);
+        std::atomic_store(&sensitive_data_masker, std::move(sensitive_data_masker_));
     }
     else
     {
-        sensitive_data_masker.reset();
+        std::atomic_store(&sensitive_data_masker, std::shared_ptr<SensitiveDataMasker>(nullptr));
     }
 }
 
 std::shared_ptr<SensitiveDataMasker> SensitiveDataMasker::getInstance()
 {
-    std::lock_guard lock(instance_mutex);
-    return sensitive_data_masker;
+    // TODO: use std::atomic<std::shared_ptr> when compiler supports it
+    return std::atomic_load(&sensitive_data_masker);
 }
 
 SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
