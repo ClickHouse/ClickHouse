@@ -74,7 +74,7 @@ def process_all_results(
         if test_results is not None:
             all_results.extend(test_results)
 
-    return any_ok, all_results, error
+    return any_ok and error is None, all_results, error
 
 
 def main():
