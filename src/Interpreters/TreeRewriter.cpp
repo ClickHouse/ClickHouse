@@ -1051,11 +1051,6 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         "_part_uuid",
         "_partition_value",
     };
-    if (storage)
-    {
-        if (auto storage_virtual_columns = storage->getVirtuals().getNames(); !storage_virtual_columns.empty())
-            virtual_columns = NameSet(storage_virtual_columns.begin(), storage_virtual_columns.end());
-    }
 
     /// Do not take into account virtual columns
     /// (see also getSmallestColumn() in ReadFromMergeTree)
