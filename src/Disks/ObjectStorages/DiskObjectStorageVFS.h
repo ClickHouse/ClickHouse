@@ -6,15 +6,11 @@
 
 namespace DB
 {
-// A wrapper for object storage which counts references to objects using a transaction log in Keeper.
-// Disk operations don't remove data from object storage immediately, a garbage collector is responsible
-// for that.
+// A wrapper for object storage which counts references to objects using a transaction log in Keeper. Disk
+// operations don't remove data from object storage immediately, a garbage collector is responsible for that.
 class DiskObjectStorageVFS final : public DiskObjectStorage
 {
 public:
-    // TODO myrrc should just "using DiskObjectStorage::DiskObjectStorage" and fill zookeeper
-    // in startupImpl but in checkAccessImpl (called before startupImpl) a file is written therefore
-    // we need to have zookeeper already
     DiskObjectStorageVFS(
         const String & name,
         const String & object_storage_root_path_,
@@ -23,7 +19,6 @@ public:
         ObjectStoragePtr object_storage_,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        zkutil::ZooKeeperPtr zookeeper_,
         bool allow_gc);
     ~DiskObjectStorageVFS() override = default;
 
@@ -52,7 +47,8 @@ private:
     const UInt64 gc_thread_sleep_ms;
     const VFSTraits traits;
 
-    zkutil::ZooKeeperPtr zookeeper;
+    zkutil::ZooKeeperPtr cached_zookeeper;
+    zkutil::ZooKeeperPtr zookeeper();
 
     DiskTransactionPtr createObjectStorageTransaction() final;
     String lockPathToFullPath(std::string_view path) const;

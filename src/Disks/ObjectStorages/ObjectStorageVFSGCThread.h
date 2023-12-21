@@ -1,6 +1,5 @@
 #pragma once
 #include "Poco/Logger.h"
-#include "Common/ZooKeeper/ZooKeeperLock.h"
 #include "Core/BackgroundSchedulePool.h"
 #include "VFSLogItem.h"
 #include "base/types.h"
@@ -9,14 +8,14 @@ namespace DB
 {
 class DiskObjectStorageVFS;
 
-// Despite the name, this thread handles not only garbage collection but also snapshot making and
-// uploading it to corresponding object storage
+// Despite the name, this thread handles not only garbage collection but also snapshot making and uploading
+// it to corresponding object storage.
 // TODO myrrc we should think about dropping the snapshot for log (at some point we want to remove
 // even the latest snapshot if we e.g. clean the bucket)
 class ObjectStorageVFSGCThread
 {
 public:
-    ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, ContextPtr context);
+    ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool);
     ~ObjectStorageVFSGCThread();
 
     inline void stop() { task->deactivate(); }
@@ -25,7 +24,7 @@ private:
     DiskObjectStorageVFS & storage;
     Poco::Logger * const log;
     BackgroundSchedulePool::TaskHolder task;
-    zkutil::ZooKeeperLock zookeeper_lock;
+    const String gc_lock;
 
     void run();
 

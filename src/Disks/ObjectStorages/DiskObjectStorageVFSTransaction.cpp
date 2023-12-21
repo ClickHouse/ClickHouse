@@ -6,15 +6,8 @@
 
 namespace DB
 {
-static void pushVFSLogItem(const VFSTraits & traits, const zkutil::ZooKeeperPtr & zk, const String & item)
-{
-    zk->create(traits.log_item, item, zkutil::CreateMode::PersistentSequential);
-}
-
 DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_)
-    : DiskObjectStorageTransaction(*disk_.object_storage, *disk_.metadata_storage, nullptr)
-    , disk(disk_)
-    , log(&Poco::Logger::get("DiskObjectStorageVFS"))
+    : DiskObjectStorageTransaction(*disk_.object_storage, *disk_.metadata_storage, nullptr), disk(disk_)
 {
 }
 
@@ -67,7 +60,8 @@ struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectSto
         StoredObjects unlink;
         for (auto && [_, unlink_by_path] : objects_to_remove_by_path)
             std::ranges::move(unlink_by_path.objects, std::back_inserter(unlink));
-        pushVFSLogItem(disk.traits, disk.zookeeper, VFSLogItem::getSerialised({}, std::move(unlink)));
+        const String entry = VFSLogItem::getSerialised({}, std::move(unlink));
+        disk.zookeeper()->create(disk.traits.log_item, entry, zkutil::CreateMode::PersistentSequential);
     }
 };
 
@@ -89,7 +83,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
     const bool is_metadata_file_for_vfs = path.ends_with(":vfs");
     const String & path_without_tag = is_metadata_file_for_vfs ? path.substr(0, path.size() - 4) : path;
 
-    LOG_TRACE(log, "writeFile(is_metadata={})", is_metadata_file_for_vfs);
+    LOG_TRACE(disk.log, "writeFile(is_metadata={})", is_metadata_file_for_vfs);
 
     // This is a metadata file we got from some replica, we need to load it on local metadata disk
     // and add a Link entry
@@ -149,13 +143,7 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
         const String & from_path_,
         const String & to_path_)
         : CopyFileObjectStorageOperation(
-            *disk_.object_storage,
-            *disk_.metadata_storage,
-            *disk_.object_storage,
-            read_settings_,
-            write_settings_,
-            from_path_,
-            to_path_)
+            *disk_.object_storage, *disk_.metadata_storage, *disk_.object_storage, read_settings_, write_settings_, from_path_, to_path_)
         , disk(disk_)
     {
     }
@@ -163,7 +151,8 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
     void execute(MetadataTransactionPtr tx) override
     {
         CopyFileObjectStorageOperation::execute(tx);
-        pushVFSLogItem(disk.traits, disk.zookeeper, VFSLogItem::getSerialised(std::move(created_objects), {}));
+        const String entry = VFSLogItem::getSerialised(std::move(created_objects), {});
+        disk.zookeeper()->create(disk.traits.log_item, entry, zkutil::CreateMode::PersistentSequential);
     }
 };
 
@@ -179,12 +168,12 @@ void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, 
     if (link.empty() && unlink.empty()) [[unlikely]]
         return;
     String entry = VFSLogItem::getSerialised(std::move(link), std::move(unlink));
-    LOG_TRACE(log, "Pushing {}", entry);
+    LOG_TRACE(disk.log, "Pushing {}", entry);
 
-    auto callback = [entry_captured = std::move(entry), log_captured = this->log, &disk_captured = disk]
+    auto callback = [entry_captured = std::move(entry), &disk_captured = disk]
     {
-        LOG_TRACE(log_captured, "Executing {}", entry_captured);
-        pushVFSLogItem(disk_captured.traits, disk_captured.zookeeper, entry_captured);
+        LOG_TRACE(disk_captured.log, "Executing {}", entry_captured);
+        disk_captured.zookeeper()->create(disk_captured.traits.log_item, entry_captured, zkutil::CreateMode::PersistentSequential);
     };
 
     operations_to_execute.emplace_back(

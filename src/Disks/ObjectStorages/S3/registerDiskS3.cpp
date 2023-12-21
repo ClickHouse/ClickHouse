@@ -244,12 +244,11 @@ void registerDiskS3(DiskFactory & factory,
             auto disk = std::make_shared<DiskObjectStorageVFS>(
                 name,
                 uri.key,
-                "DiskS3",
+                "DiskVFS",
                 std::move(metadata_storage),
                 std::move(s3_storage),
                 config,
                 config_prefix,
-                context->getZooKeeper(),
                 allow_vfs_gc);
 
             disk->startup(context, skip_access_check);

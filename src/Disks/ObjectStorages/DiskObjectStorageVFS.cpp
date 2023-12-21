@@ -13,7 +13,6 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    zkutil::ZooKeeperPtr zookeeper_,
     bool allow_gc_)
     : DiskObjectStorage( //NOLINT
         name_,
@@ -26,11 +25,8 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     , allow_gc(allow_gc_)
     , gc_thread_sleep_ms(config.getUInt64(config_prefix + ".object_storage_vfs_gc_period", 10'000))
     , traits(VFSTraits{name_})
-    , zookeeper(std::move(zookeeper_))
 {
-    zookeeper->createAncestors(traits.log_item);
-    // TODO myrrc ugly hack to create traits node, remove
-    zookeeper->createAncestors(fs::path(traits.locks_node) / "dummy");
+    zookeeper()->createAncestors(traits.log_item);
 }
 
 DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
@@ -44,7 +40,6 @@ DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),
         config_prefix,
-        zookeeper,
         allow_gc);
 }
 
@@ -53,7 +48,7 @@ void DiskObjectStorageVFS::startupImpl(ContextPtr context)
     DiskObjectStorage::startupImpl(context);
     if (!allow_gc)
         return;
-    garbage_collector.emplace(*this, context);
+    garbage_collector.emplace(*this, context->getSchedulePool());
 }
 
 void DiskObjectStorageVFS::shutdown()
@@ -81,8 +76,8 @@ bool DiskObjectStorageVFS::lock(std::string_view path, bool block)
     do
     {
         if (block)
-            zookeeper->waitForDisappear(lock_path_full);
-        const auto code = zookeeper->tryCreate(lock_path_full, "", mode);
+            zookeeper()->waitForDisappear(lock_path_full);
+        const auto code = zookeeper()->tryCreate(lock_path_full, "", mode);
         if (code == ZOK)
             return true;
         if (code == ZNODEEXISTS && !block)
@@ -96,7 +91,14 @@ void DiskObjectStorageVFS::unlock(std::string_view path)
 {
     const String lock_path_full = lockPathToFullPath(path);
     LOG_TRACE(log, "Removing lock {} (zk path {})", path, lock_path_full);
-    zookeeper->remove(lock_path_full);
+    zookeeper()->remove(lock_path_full);
+}
+
+zkutil::ZooKeeperPtr DiskObjectStorageVFS::zookeeper()
+{
+    if (!cached_zookeeper || cached_zookeeper->expired()) [[unlikely]]
+        cached_zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
+    return cached_zookeeper;
 }
 
 DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()

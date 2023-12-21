@@ -40,7 +40,6 @@ struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransacti
 
 private:
     DiskObjectStorageVFS & disk;
-    Poco::Logger const * const log;
 
     void addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink);
 };

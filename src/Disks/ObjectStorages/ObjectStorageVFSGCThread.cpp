@@ -1,10 +1,9 @@
 #include "ObjectStorageVFSGCThread.h"
-#include "Common/ZooKeeper/ZooKeeperLock.h"
 #include "Compression/CompressedReadBuffer.h"
 #include "Compression/CompressedWriteBuffer.h"
 #include "DiskObjectStorageVFS.h"
 #include "IO/ReadBufferFromEmptyFile.h"
-#include "Interpreters/Context.h"
+#include "IO/ReadHelpers.h"
 
 namespace DB
 {
@@ -13,12 +12,15 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, ContextPtr context)
+ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool)
     : storage(storage_)
     , log(&Poco::Logger::get(fmt::format("VFSGC({})", storage_.getName())))
-    , zookeeper_lock(storage.zookeeper, storage.traits.locks_node, "gc_lock")
+    , gc_lock(fs::path(storage.traits.locks_node) / "gc_lock")
 {
-    task = context->getSchedulePool().createTask(
+    LOG_DEBUG(log, "Garbage collector started with interval {}ms", storage.gc_thread_sleep_ms);
+    storage.zookeeper()->createAncestors(gc_lock);
+
+    task = pool.createTask(
         log->name(),
         [this]
         {
@@ -28,11 +30,9 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
             }
             catch (...)
             {
-                LOG_DEBUG(log, "Task threw an exception, rescheduling");
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
             }
         });
-
     task->activateAndSchedule();
 }
 
@@ -40,18 +40,21 @@ ObjectStorageVFSGCThread::~ObjectStorageVFSGCThread() = default;
 
 void ObjectStorageVFSGCThread::run()
 {
-    SCOPE_EXIT({
-        zookeeper_lock.unlock();
-        task->scheduleAfter(storage.gc_thread_sleep_ms);
-    });
+    SCOPE_EXIT(task->scheduleAfter(storage.gc_thread_sleep_ms));
 
-    if (!zookeeper_lock.tryLock())
+    // We can't use ZooKeeperLock as it captures a ZooKeeperPtr (that can expire) by value and we can't
+    // reinitialize the lock after construction
+    using enum Coordination::Error;
+    if (auto code = storage.zookeeper()->tryCreate(gc_lock, "", zkutil::CreateMode::Ephemeral); code == ZNODEEXISTS)
     {
         LOG_DEBUG(log, "Failed to acquire lock, sleeping");
         return;
     }
+    else if (code != ZOK)
+        throw Coordination::Exception(code);
+    SCOPE_EXIT(storage.zookeeper()->remove(gc_lock));
 
-    Strings log_items_batch = storage.zookeeper->getChildren(storage.traits.log_base_node);
+    Strings log_items_batch = storage.zookeeper()->getChildren(storage.traits.log_base_node);
     constexpr size_t batch_min_size = 1; // TODO myrrc should be a setting
     // TODO myrrc should (possibly?) be a setting. The batch size must not be too large as we put it in memory
     constexpr size_t batch_max_size = 5000;
@@ -110,7 +113,7 @@ VFSLogItem ObjectStorageVFSGCThread::getBatch(size_t start_logpointer, size_t en
     Strings nodes(log_batch_length);
     for (size_t i = 0; i < log_batch_length; ++i)
         nodes[i] = getNode(start_logpointer + i);
-    auto responses = storage.zookeeper->get(nodes);
+    auto responses = storage.zookeeper()->get(nodes);
     nodes = {};
 
     VFSLogItem out;
@@ -133,7 +136,7 @@ void ObjectStorageVFSGCThread::removeBatch(size_t start_logpointer, size_t end_l
     Coordination::Requests requests(log_batch_length);
     for (size_t i = 0; i < log_batch_length; ++i)
         requests[i] = zkutil::makeRemoveRequest(getNode(start_logpointer + i), -1);
-    storage.zookeeper->multi(requests);
+    storage.zookeeper()->multi(requests);
 }
 
 String ObjectStorageVFSGCThread::getNode(size_t id) const
