@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_FEW_LIVE_REPLICAS;
+    extern const int LOGICAL_ERROR;
 };
 
 class ReplicatedMergeTreeClusterPartitionSelectorImpl
