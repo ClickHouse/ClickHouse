@@ -14,6 +14,12 @@ Columns:
 - `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether a setting was specified in `config.xml`
 - `description` ([String](../../sql-reference/data-types/string.md)) — Short server setting description.
 - `type` ([String](../../sql-reference/data-types/string.md)) — Server setting value type.
+- `is_hot_reloadable` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) - Shows whether hot reload is supported
+- `runtime_reload` ([Enum8](../../sql-reference/data-types/enum.md)) — Hot reload type of parameter. Possible values:
+    - `Yes`
+    - `OnlyIncrease`
+    - `OnlyDecrease`
+    - `No`
 - `is_obsolete` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) - Shows whether a setting is obsolete.
 
 **Example**
@@ -27,22 +33,21 @@ WHERE name LIKE '%thread_pool%'
 ```
 
 ``` text
-┌─name────────────────────────────────────────_─value─_─default─_─changed─_─description──────────────────────────────────────────────────────────────────────────────────────────────────────
-───────────────────────────────────_─type───_─is_obsolete─┐
-│ max_thread_pool_size                        │ 10000 │ 10000   │       1 │ The maximum number of threads that could be allocated from the OS and used for query execution and background operations.                           │ UInt64 │           0 │
-│ max_thread_pool_free_size                   │ 1000  │ 1000    │       0 │ The maximum number of threads that will always stay in a global thread pool once allocated and remain idle in case of insufficient number of tasks. │ UInt64 │           0 │
-│ thread_pool_queue_size                      │ 10000 │ 10000   │       0 │ The maximum number of tasks that will be placed in a queue and wait for execution.                                                                  │ UInt64 │           0 │
-│ max_io_thread_pool_size                     │ 100   │ 100     │       0 │ The maximum number of threads that would be used for IO operations                                                                                  │ UInt64 │           0 │
-│ max_io_thread_pool_free_size                │ 0     │ 0       │       0 │ Max free size for IO thread pool.                                                                                                                   │ UInt64 │           0 │
-│ io_thread_pool_queue_size                   │ 10000 │ 10000   │       0 │ Queue size for IO thread pool.                                                                                                                      │ UInt64 │           0 │
-│ max_active_parts_loading_thread_pool_size   │ 64    │ 64      │       0 │ The number of threads to load active set of data parts (Active ones) at startup.                                                                    │ UInt64 │           0 │
-│ max_outdated_parts_loading_thread_pool_size │ 32    │ 32      │       0 │ The number of threads to load inactive set of data parts (Outdated ones) at startup.                                                                │ UInt64 │           0 │
-│ max_parts_cleaning_thread_pool_size         │ 128   │ 128     │       0 │ The number of threads for concurrent removal of inactive data parts.                                                                                │ UInt64 │           0 │
-│ max_backups_io_thread_pool_size             │ 1000  │ 1000    │       0 │ The maximum number of threads that would be used for IO operations for BACKUP queries                                                               │ UInt64 │           0 │
-│ max_backups_io_thread_pool_free_size        │ 0     │ 0       │       0 │ Max free size for backups IO thread pool.                                                                                                           │ UInt64 │           0 │
-│ backups_io_thread_pool_queue_size           │ 0     │ 0       │       0 │ Queue size for backups IO thread pool.                                                                                                              │ UInt64 │           0 │
-└─────────────────────────────────────────────┴───────┴─────────┴─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-───────────────────────────────────┴────────┴─────────────┘
+┌─name────────────────────────────────────────┬─value─┬─default─┬─changed─┬─description─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─type───┬─is_hot_reloadable─┬─runtime_reload─┬─is_obsolete─┐
+│ max_thread_pool_size                        │ 10000 │ 10000   │       0 │ The maximum number of threads that could be allocated from the OS and used for query execution and background operations.                           │ UInt64 │                 0 │ No             │           0 │
+│ max_thread_pool_free_size                   │ 1000  │ 1000    │       0 │ The maximum number of threads that will always stay in a global thread pool once allocated and remain idle in case of insufficient number of tasks. │ UInt64 │                 0 │ No             │           0 │
+│ thread_pool_queue_size                      │ 10000 │ 10000   │       0 │ The maximum number of tasks that will be placed in a queue and wait for execution.                                                                  │ UInt64 │                 0 │ No             │           0 │
+│ max_io_thread_pool_size                     │ 100   │ 100     │       0 │ The maximum number of threads that would be used for IO operations                                                                                  │ UInt64 │                 0 │ Yes            │           0 │
+│ max_io_thread_pool_free_size                │ 0     │ 0       │       0 │ Max free size for IO thread pool.                                                                                                                   │ UInt64 │                 0 │ Yes            │           0 │
+│ io_thread_pool_queue_size                   │ 10000 │ 10000   │       0 │ Queue size for IO thread pool.                                                                                                                      │ UInt64 │                 0 │ Yes            │           0 │
+│ max_active_parts_loading_thread_pool_size   │ 64    │ 64      │       0 │ The number of threads to load active set of data parts (Active ones) at startup.                                                                    │ UInt64 │                 0 │ Yes            │           0 │
+│ max_outdated_parts_loading_thread_pool_size │ 32    │ 32      │       0 │ The number of threads to load inactive set of data parts (Outdated ones) at startup.                                                                │ UInt64 │                 0 │ Yes            │           0 │
+│ max_parts_cleaning_thread_pool_size         │ 128   │ 128     │       0 │ The number of threads for concurrent removal of inactive data parts.                                                                                │ UInt64 │                 0 │ Yes            │           0 │
+│ max_backups_io_thread_pool_size             │ 1000  │ 1000    │       0 │ The maximum number of threads that would be used for IO operations for BACKUP queries                                                               │ UInt64 │                 0 │ Yes            │           0 │
+│ max_backups_io_thread_pool_free_size        │ 0     │ 0       │       0 │ Max free size for backups IO thread pool.                                                                                                           │ UInt64 │                 0 │ Yes            │           0 │
+│ backups_io_thread_pool_queue_size           │ 0     │ 0       │       0 │ Queue size for backups IO thread pool.                                                                                                              │ UInt64 │                 0 │ Yes            │           0 │
+└─────────────────────────────────────────────┴───────┴─────────┴─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────┴───────────────────┴────────────────┴─────────────┘
+
 ```
 
 Using of `WHERE changed` can be useful, for example, when you want to check 

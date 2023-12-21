@@ -20,22 +20,15 @@ namespace CurrentMetrics
 namespace DB
 {
 
-static std::vector<std::pair<String, Int8>> getTypeEnumsAndValues()
+static std::vector<std::pair<String, Int8>> getRuntimeReloadEnumAndValues()
 {
     return std::vector<std::pair<String, Int8>>{
-        {"Full",            static_cast<Int8>(RuntimeReloadType::FULL)},
-        {"OnlyIncrease",    static_cast<Int8>(RuntimeReloadType::ONLY_INCREASE)},
-        {"OnlyDecrease",    static_cast<Int8>(RuntimeReloadType::ONLY_DECREASE)},
-        {"No",              static_cast<Int8>(RuntimeReloadType::NO)},
+        {"Yes",            static_cast<Int8>(RuntimeReloadType::Yes)},
+        {"OnlyIncrease",    static_cast<Int8>(RuntimeReloadType::OnlyIncrease)},
+        {"OnlyDecrease",    static_cast<Int8>(RuntimeReloadType::OnlyDecrease)},
+        {"No",              static_cast<Int8>(RuntimeReloadType::No)},
     };
 }
-
-struct UpdatedData {
-    std::string value;
-    RuntimeReloadType type;
-};
-
-
 
 NamesAndTypesList StorageSystemServerSettings::getNamesAndTypes()
 {
@@ -46,9 +39,9 @@ NamesAndTypesList StorageSystemServerSettings::getNamesAndTypes()
         {"changed", std::make_shared<DataTypeUInt8>()},
         {"description", std::make_shared<DataTypeString>()},
         {"type", std::make_shared<DataTypeString>()},
-        {"is_obsolete", std::make_shared<DataTypeUInt8>()},
         {"is_hot_reloadable", std::make_shared<DataTypeUInt8>()},
-        {"runtime_reload", std::make_shared<DataTypeEnum8>(getTypeEnumsAndValues())}
+        {"runtime_reload", std::make_shared<DataTypeEnum8>(getRuntimeReloadEnumAndValues())},
+        {"is_obsolete", std::make_shared<DataTypeUInt8>()}
     };
 }
 
@@ -88,7 +81,6 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
     {
         const auto & setting_name = setting.getName();
         const auto & it = updated.find(setting_name);
-        const auto & runtime_reload_it = settings.runtime_reload_map.find(setting_name);
 
         res_columns[0]->insert(setting_name);
         res_columns[1]->insert((it != updated.end()) ? it->second: setting.getValueString());
@@ -96,9 +88,9 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
         res_columns[3]->insert(setting.isValueChanged());
         res_columns[4]->insert(setting.getDescription());
         res_columns[5]->insert(setting.getTypeName());
-        res_columns[6]->insert(setting.isObsolete());
-        res_columns[7]->insert((it != updated.end()) ? true : false);
-        res_columns[8]->insert(static_cast<Int8>(runtime_reload_it != settings.runtime_reload_map.end() ? runtime_reload_it->second: RuntimeReloadType::NO));
+        res_columns[6]->insert((it != updated.end()) ? true : false);
+        res_columns[7]->insert(static_cast<Int8>(settings.runtime_reload_map.contains(setting_name) ? settings.runtime_reload_map.at(setting_name): RuntimeReloadType::No));
+        res_columns[8]->insert(setting.isObsolete());
     }
 }
 
