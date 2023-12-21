@@ -847,6 +847,7 @@ CI_CONFIG.validate()
 
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
+    "PR Check",
     "ClickHouse build check",
     "ClickHouse special build check",
     "Docs Check",

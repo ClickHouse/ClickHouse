@@ -18,9 +18,9 @@ def main():
 
     pr_info = PRInfo(need_orgs=True)
     gh = Github(get_best_robot_token(), per_page=100)
-    # Update the Mergeable Check at the final step
-    update_mergeable_check(gh, pr_info, CI_STATUS_NAME)
     commit = get_commit(gh, pr_info.sha)
+    # Update the Mergeable Check at the final step
+    update_mergeable_check(commit, pr_info, CI_STATUS_NAME)
 
     statuses = [
         status
