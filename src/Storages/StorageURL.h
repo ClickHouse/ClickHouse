@@ -125,21 +125,6 @@ protected:
 
 private:
     virtual Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const = 0;
-
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const Strings & urls,
-        const HTTPHeaderEntries & headers,
-        const Poco::Net::HTTPBasicCredentials & credentials,
-        const String & format_name,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
-
-    static void addColumnsToCache(
-        const Strings & urls,
-        const ColumnsDescription & columns,
-        const String & format_name,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
 };
 
 

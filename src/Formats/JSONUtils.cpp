@@ -564,6 +564,15 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
     }
 
+    bool checkAndSkipColon(ReadBuffer & in)
+    {
+        skipWhitespaceIfAny(in);
+        if (!checkChar(':', in))
+            return false;
+        skipWhitespaceIfAny(in);
+        return true;
+    }
+
     String readFieldName(ReadBuffer & in)
     {
         skipWhitespaceIfAny(in);
@@ -573,6 +582,12 @@ namespace JSONUtils
         return field;
     }
 
+    bool tryReadFieldName(ReadBuffer & in, String & field)
+    {
+        skipWhitespaceIfAny(in);
+        return tryReadJSONStringInto(field, in) && checkAndSkipColon(in);
+    }
+
     String readStringField(ReadBuffer & in)
     {
         skipWhitespaceIfAny(in);
@@ -580,6 +595,15 @@ namespace JSONUtils
         readJSONString(value, in);
         skipWhitespaceIfAny(in);
         return value;
+    }
+
+    bool tryReadStringField(ReadBuffer & in, String & value)
+    {
+        skipWhitespaceIfAny(in);
+        if (!tryReadJSONStringInto(value, in))
+            return false;
+        skipWhitespaceIfAny(in);
+        return true;
     }
 
     void skipArrayStart(ReadBuffer & in)
@@ -628,6 +652,15 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
     }
 
+    bool checkAndSkipObjectStart(ReadBuffer & in)
+    {
+        skipWhitespaceIfAny(in);
+        if (!checkChar('{', in))
+            return false;
+        skipWhitespaceIfAny(in);
+        return true;
+    }
+
     bool checkAndSkipObjectEnd(ReadBuffer & in)
     {
         skipWhitespaceIfAny(in);
@@ -644,11 +677,25 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
     }
 
+    bool checkAndSkipComma(ReadBuffer & in)
+    {
+        skipWhitespaceIfAny(in);
+        if (!checkChar(',', in))
+            return false;
+        skipWhitespaceIfAny(in);
+        return true;
+    }
+
     std::pair<String, String> readStringFieldNameAndValue(ReadBuffer & in)
     {
         auto field_name = readFieldName(in);
         auto field_value = readStringField(in);
         return {field_name, field_value};
+    }
+
+    bool tryReadStringFieldNameAndValue(ReadBuffer & in, std::pair<String, String> & field_and_value)
+    {
+        return tryReadFieldName(in, field_and_value.first) && tryReadStringField(in, field_and_value.second);
     }
 
     NameAndTypePair readObjectWithNameAndType(ReadBuffer & in)
@@ -673,6 +720,44 @@ namespace JSONUtils
         return name_and_type;
     }
 
+    bool tryReadObjectWithNameAndType(ReadBuffer & in, NameAndTypePair & name_and_type)
+    {
+        if (!checkAndSkipObjectStart(in))
+            return false;
+
+        std::pair<String, String> first_field_and_value;
+        if (!tryReadStringFieldNameAndValue(in, first_field_and_value))
+            return false;
+
+        if (!checkAndSkipComma(in))
+            return false;
+
+        std::pair<String, String> second_field_and_value;
+        if (!tryReadStringFieldNameAndValue(in, second_field_and_value))
+            return false;
+
+        if (first_field_and_value.first == "name" && second_field_and_value.first == "type")
+        {
+            auto type = DataTypeFactory::instance().tryGet(second_field_and_value.second);
+            if (!type)
+                return false;
+            name_and_type = {first_field_and_value.second, type};
+        }
+        else if (second_field_and_value.first == "name" && first_field_and_value.first == "type")
+        {
+            auto type = DataTypeFactory::instance().tryGet(first_field_and_value.second);
+            if (!type)
+                return false;
+            name_and_type = {second_field_and_value.second, type};
+        }
+        else
+        {
+            return false;
+        }
+
+        return checkAndSkipObjectEnd(in);
+    }
+
     NamesAndTypesList readMetadata(ReadBuffer & in)
     {
         auto field_name = readFieldName(in);
@@ -691,6 +776,37 @@ namespace JSONUtils
             names_and_types.push_back(readObjectWithNameAndType(in));
         }
         return names_and_types;
+    }
+
+    bool tryReadMetadata(ReadBuffer & in, NamesAndTypesList & names_and_types)
+    {
+        String field_name;
+        if (!tryReadFieldName(in, field_name) || field_name != "meta")
+            return false;
+
+        if (!checkAndSkipArrayStart(in))
+            return false;
+
+        bool first = true;
+        while (!checkAndSkipArrayEnd(in))
+        {
+            if (!first)
+            {
+                if (!checkAndSkipComma(in))
+                    return false;
+            }
+            else
+            {
+                first = false;
+            }
+
+            NameAndTypePair name_and_type;
+            if (!tryReadObjectWithNameAndType(in, name_and_type))
+                return false;
+            names_and_types.push_back(name_and_type);
+        }
+
+        return !names_and_types.empty();
     }
 
     void validateMetadataByHeader(const NamesAndTypesList & names_and_types_from_metadata, const Block & header)

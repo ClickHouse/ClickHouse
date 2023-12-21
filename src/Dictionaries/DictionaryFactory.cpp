@@ -69,12 +69,6 @@ DictionaryPtr DictionaryFactory::create(
         layout_type);
 }
 
-DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, ContextPtr global_context) const
-{
-    auto configuration = getDictionaryConfigurationFromAST(ast, global_context);
-    return DictionaryFactory::create(name, *configuration, "dictionary", global_context, true);
-}
-
 bool DictionaryFactory::isComplex(const std::string & layout_type) const
 {
     auto it = registered_layouts.find(layout_type);

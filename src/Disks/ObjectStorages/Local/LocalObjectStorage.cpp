@@ -141,7 +141,7 @@ void LocalObjectStorage::removeObject(const StoredObject & object)
         return;
 
     if (0 != unlink(object.remote_path.data()))
-        throwFromErrnoWithPath("Cannot unlink file " + object.remote_path, object.remote_path, ErrorCodes::CANNOT_UNLINK);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, object.remote_path, "Cannot unlink file {}", object.remote_path);
 }
 
 void LocalObjectStorage::removeObjects(const StoredObjects & objects)

@@ -1,5 +1,3 @@
-SET allow_experimental_analyzer = 1;
-
 SELECT *
 FROM
 (
@@ -33,7 +31,6 @@ INNER JOIN
         WITH TOTALS
 ) AS t2 USING (a)
 SETTINGS allow_experimental_analyzer=1;
-
 
 SELECT a
 FROM
@@ -72,3 +69,46 @@ ALL LEFT JOIN
         WITH TOTALS
 ) AS js2 USING (a)
 ORDER BY b ASC NULLS FIRST;
+
+SELECT '---';
+SELECT
+    *
+FROM (
+    SELECT ([toString(number % 2)] :: Array(LowCardinality(String))) AS item_id, count() FROM numbers(3) GROUP BY item_id
+    WITH TOTALS
+) AS l
+FULL JOIN (
+    SELECT ([toString((number % 2) * 2)] :: Array(String)) AS item_id FROM numbers(3)
+) AS r
+ON l.item_id = r.item_id
+ORDER BY 1,2,3
+;
+
+SELECT '---';
+SELECT
+    *
+FROM (
+    SELECT ([toString(number % 2)] :: Array(LowCardinality(String))) AS item_id, count() FROM numbers(3) GROUP BY item_id
+    WITH TOTALS
+) AS l
+FULL JOIN (
+    SELECT ([toString((number % 2) * 2)] :: Array(String)) AS item_id, count() FROM numbers(3) GROUP BY item_id
+    WITH TOTALS
+) AS r
+ON l.item_id = r.item_id
+ORDER BY 1,2,3
+;
+
+SELECT '---';
+SELECT
+    *
+FROM (
+    SELECT ([toString(number % 2)] :: Array(String)) AS item_id FROM numbers(3)
+) AS l
+FULL JOIN (
+    SELECT ([toString((number % 2) * 2)] :: Array(LowCardinality(String))) AS item_id, count() FROM numbers(3) GROUP BY item_id
+    WITH TOTALS
+) AS r
+ON l.item_id = r.item_id
+ORDER BY 1,2,3
+;
