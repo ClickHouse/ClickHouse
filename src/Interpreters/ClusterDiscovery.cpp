@@ -35,6 +35,7 @@ namespace ErrorCodes
 {
     extern const int KEEPER_EXCEPTION;
     extern const int LOGICAL_ERROR;
+    extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 namespace FailPoints
@@ -124,21 +125,27 @@ ClusterDiscovery::ClusterDiscovery(
 
     for (const auto & key : config_keys)
     {
-        String prefix = config_prefix + "." + key + ".discovery";
-        if (!config.has(prefix))
+        String cluster_config_prefix = config_prefix + "." + key + ".discovery";
+        if (!config.has(cluster_config_prefix))
             continue;
+
+        String zk_root = config.getString(cluster_config_prefix + ".path");
+        if (zk_root.empty())
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "ZooKeeper path for cluster '{}' is empty", key);
 
         clusters_info.emplace(
             key,
             ClusterInfo(
                 /* name_= */ key,
-                /* zk_root_= */ config.getString(prefix + ".path"),
-                /* host_name= */ config.getString(prefix + ".my_hostname", getFQDNOrHostName()),
+                /* zk_root_= */ zk_root,
+                /* host_name= */ config.getString(cluster_config_prefix + ".my_hostname", getFQDNOrHostName()),
+                /* username= */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
+                /* password= */ config.getString(cluster_config_prefix + ".password", ""),
                 /* port= */ context->getTCPPort(),
-                /* secure= */ config.getBool(prefix + ".secure", false),
-                /* shard_id= */ config.getUInt(prefix + ".shard", 0),
-                /* observer_mode= */ ConfigHelper::getBool(config, prefix + ".observer"),
-                /* invisible= */ ConfigHelper::getBool(config, prefix + ".invisible")
+                /* secure= */ config.getBool(cluster_config_prefix + ".secure", false),
+                /* shard_id= */ config.getUInt(cluster_config_prefix + ".shard", 0),
+                /* observer_mode= */ ConfigHelper::getBool(config, cluster_config_prefix + ".observer"),
+                /* invisible= */ ConfigHelper::getBool(config, cluster_config_prefix + ".invisible")
             )
         );
     }
@@ -248,15 +255,15 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 
     bool secure = cluster_info.current_node.secure;
     ClusterConnectionParameters params{
-        /* username= */ context->getUserName(),
-        /* password= */ "",
+        /* username= */ cluster_info.username,
+        /* password= */ cluster_info.password,
         /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure,
         /* priority= */ Priority{1},
         /* cluster_name= */ "",
-        /* password= */ ""};
+        /* cluster_secret= */ ""};
     auto cluster = std::make_shared<Cluster>(
         context->getSettingsRef(),
         shards,

@@ -1,0 +1,44 @@
+import pytest
+
+from .common import check_on_cluster
+
+from helpers.cluster import ClickHouseCluster
+
+cluster = ClickHouseCluster(__file__)
+
+nodes = {
+    "node0": cluster.add_instance(
+        "node0",
+        main_configs=["config/config_with_pwd.xml"],
+        user_configs=["config/users.d/users_with_pwd.xml"],
+        stay_alive=True,
+        with_zookeeper=True,
+    ),
+    "node1": cluster.add_instance(
+        "node1",
+        main_configs=["config/config_with_pwd.xml"],
+        user_configs=["config/users.d/users_with_pwd.xml"],
+        stay_alive=True,
+        with_zookeeper=True,
+    ),
+}
+
+
+@pytest.fixture(scope="module")
+def start_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def test_connect_with_password(start_cluster):
+    check_on_cluster(
+        [nodes["node0"], nodes["node1"]],
+        len(nodes),
+        cluster_name="test_auto_cluster_with_pwd",
+        what="count()",
+        msg="Wrong nodes count in cluster",
+        query_params={"password": "passwordAbc"},
+    )
