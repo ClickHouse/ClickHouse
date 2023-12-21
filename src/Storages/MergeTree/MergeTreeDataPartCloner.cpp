@@ -30,7 +30,9 @@ namespace DistinctPartitionExpression
         return partition.store(merge_tree_data, storage, dst_part->checksums);
     }
 
-    void deleteMinMaxFiles(
+    IMergeTreeDataPart::MinMaxIndex::WrittenFiles updateMinMaxFiles(
+        const MergeTreeData & merge_tree_data,
+        const MergeTreeData::MutableDataPartPtr & dst_part,
         IDataPartStorage & storage,
         const StorageMetadataPtr & metadata_snapshot
     )
@@ -40,16 +42,6 @@ namespace DistinctPartitionExpression
             auto file = "minmax_" + escapeForFileName(column_name) + ".idx";
             storage.removeFile(file);
         }
-    }
-
-    IMergeTreeDataPart::MinMaxIndex::WrittenFiles updateMinMaxFiles(
-        const MergeTreeData & merge_tree_data,
-        const MergeTreeData::MutableDataPartPtr & dst_part,
-        IDataPartStorage & storage,
-        const StorageMetadataPtr & metadata_snapshot
-    )
-    {
-        deleteMinMaxFiles(storage, metadata_snapshot);
 
         return dst_part->minmax_idx->store(merge_tree_data, storage, dst_part->checksums);
     }
