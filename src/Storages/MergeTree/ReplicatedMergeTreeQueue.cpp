@@ -13,6 +13,7 @@
 #include <base/sort.h>
 
 #include <ranges>
+#include <optional>
 
 namespace DB
 {
@@ -2622,7 +2623,8 @@ String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & 
 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback,
-                                        std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode)
+                                        std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode,
+                                        zkutil::ZooKeeperPtr & zookeeper, std::optional<String> srcReplica)
 {
     std::lock_guard<std::mutex> lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);
@@ -2639,13 +2641,37 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
             LogEntry::REPLACE_RANGE,
             LogEntry::DROP_PART
         };
+
+        std::unordered_set<String> existing_replicas;
+        if (srcReplica)
+       {
+            existing_replicas = std::unordered_set<String>(
+                zookeeper->getChildren(zookeeper_path + "/replicas").begin(),
+                zookeeper->getChildren(zookeeper_path + "/replicas").end());
+       }
+
         out_entry_names.reserve(queue.size());
+        // Iterate over queue entries
         for (const auto & entry : queue)
         {
-            if (!lightweight_entries_only
-                || std::find(lightweight_entries.begin(), lightweight_entries.end(), entry->type) != lightweight_entries.end())
+            bool entry_matches = !lightweight_entries_only || std::find(lightweight_entries.begin(), lightweight_entries.end(), entry->type) != lightweight_entries.end();
+            bool source_replica_condition = true;
+
+            // Check if srcReplica condition should be applied
+            if (srcReplica && entry_matches)
+            {
+                // Condition: entry's source_replica is the specified one or not in the system anymore or is empty
+                source_replica_condition = entry->source_replica == srcReplica.value() ||
+                    existing_replicas.find(entry->source_replica) == existing_replicas.end() ||
+                    entry->source_replica.empty();
+            }
+
+            if (entry_matches && source_replica_condition)
+        {
                 out_entry_names.insert(entry->znode_name);
         }
+        }
+
         LOG_TEST(log, "Waiting for {} entries to be processed: {}", out_entry_names.size(), fmt::join(out_entry_names, ", "));
     }
 

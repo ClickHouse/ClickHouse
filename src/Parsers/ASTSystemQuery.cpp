@@ -207,6 +207,15 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         {
             settings.ostr << ' ';
             print_keyword(magic_enum::enum_name(sync_replica_mode));
+
+            // If the mode is LIGHTWEIGHT and a specific source replica is specified
+            if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replica.empty())
+            {
+                settings.ostr << ' ';
+                print_keyword("FROM");
+                settings.ostr << ' ';
+                print_identifier(src_replica.value());
+            }
         }
     }
     else if (type == Type::SYNC_DATABASE_REPLICA)

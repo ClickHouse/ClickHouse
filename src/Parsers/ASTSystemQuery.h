@@ -138,6 +138,8 @@ public:
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
+    std::optional<String> src_replica;
+
     ServerType server_type;
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
