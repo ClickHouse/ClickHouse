@@ -889,7 +889,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
 
         context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
         context->setSetting("max_parallel_replicas", UInt64{0});
-        LOG_INFO(log, "Disabling parallel replicas to execute a query with IN with subquery");
+        LOG_DEBUG(log, "Disabling parallel replicas to execute a query with IN with subquery");
         return true;
     }
 
