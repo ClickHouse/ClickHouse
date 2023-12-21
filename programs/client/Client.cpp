@@ -349,6 +349,13 @@ try
     try
     {
         connect();
+        /// Synchronize profile settings from server
+        for (const auto & setting : connection->getServerProfileSettings())
+        {
+            const auto & const_settings = global_context->getSettingsRef();
+            auto & setting_ref = const_cast<Settings &>(const_settings);
+            setting_ref.set(setting.first, setting.second);
+        }
     }
     catch (const Exception & e)
     {

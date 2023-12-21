@@ -1,7 +1,9 @@
 #include <memory>
+#include <unordered_map>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <Core/Field.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -36,6 +38,7 @@
 #include <base/scope_guard.h>
 
 #include <Common/config_version.h>
+#include "IO/VarInt.h"
 #include "config.h"
 
 #if USE_SSL
@@ -50,6 +53,7 @@ namespace CurrentMetrics
 
 namespace DB
 {
+using Which = Field::Types::Which;
 
 namespace ErrorCodes
 {
@@ -429,6 +433,44 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             UInt64 read_nonce;
             readIntBinary(read_nonce, *in);
             nonce.emplace(read_nonce);
+        }
+
+        //Synchronize settings from server
+        size_t settings_size;
+        readVarUInt(settings_size, *in);
+        for (size_t i = 0; i < settings_size; ++i)
+        {
+            String name;
+            readStringBinary(name, *in);
+            UInt64 type;
+            readVarUInt(type, *in);
+            switch(type)
+            {
+                case Which::UInt64:
+                {
+                    UInt64 int_value;
+                    readVarUInt(int_value, *in);
+                    Field field_number(int_value);
+                    server_profile_settings[name] = field_number;
+                }
+                case Which::String:
+                {
+                    String string_value;
+                    readStringBinary(string_value, *in);
+                    Field field_string(string_value);
+                    server_profile_settings[name] = field_string;
+                }
+                case Which::Bool:
+                {
+                    bool bool_value;
+                    readVarUInt(bool_value, *in);
+                    Field field_bool(bool_value);
+                    server_profile_settings[name] = field_bool;
+                }
+                default:
+                    break;
+
+            }
         }
     }
     else if (packet_type == Protocol::Server::Exception)

@@ -1,7 +1,9 @@
+#include "IO/VarInt.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Interpreters/Context_fwd.h"
 #include "Interpreters/SquashingTransform.h"
 #include "Parsers/ASTInsertQuery.h"
+#include "base/types.h"
 #include <algorithm>
 #include <exception>
 #include <iterator>
@@ -40,6 +42,10 @@
 #include <Core/ServerSettings.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Access/User.h>
+#include <Access/SettingsProfile.h>
+#include <Access/SettingsProfilesInfo.h>
+#include <Access/SettingsProfileElement.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/logger_useful.h>
@@ -183,6 +189,7 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
 
 namespace DB
 {
+using Which = Field::Types::Which;
 
 TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
     : Poco::Net::TCPServerConnection(socket_)
@@ -1553,6 +1560,42 @@ void TCPHandler::sendHello()
         nonce.emplace(thread_local_rng());
         writeIntBinary(nonce.value(), *out);
     }
+
+    /// If client is Clickhouse-client we will send server profile settings of this user
+    if (client_name == (std::string(VERSION_NAME) + " client"))
+    {
+        const auto & profile_ids = session->sessionContext()->getUser()->settings.toProfileIDs();
+        auto & access_control = server.context()->getAccessControl();
+        std::vector<SettingChange> settings;
+
+        for (const auto & profile_id : profile_ids)
+        {
+            const auto & profile = access_control.getSettingsProfileInfo(profile_id);
+            for (const auto & setting : profile->settings)
+                settings.emplace_back(setting);
+        }
+
+        writeVarUInt(settings.size(), *out);
+
+        for (const auto & setting : settings)
+        {
+            writeStringBinary(setting.name, *out);
+            writeVarUInt(setting.value.getType(), *out);
+
+            switch(setting.value.getType())
+            {
+                case Which::UInt64:
+                    writeVarUInt(setting.value.safeGet<UInt64>(), *out);break;
+                case Which::String:
+                    writeStringBinary(setting.value.safeGet<String>(), *out);break;
+                case Which::Bool:
+                    writeVarUInt(setting.value.get<UInt64>(), *out);break;
+                default:
+                    break;
+            }
+        }
+    }
+
     out->next();
 }
 

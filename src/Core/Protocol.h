@@ -162,6 +162,7 @@ namespace Protocol
 
             SSHChallengeRequest = 11,       /// Request for SSH signature challenge
             SSHChallengeResponse = 12,       /// Request for SSH signature challenge
+            SyncProfileSettings = 13,        /// Request for server profile settings
             MAX = SSHChallengeResponse,
         };
 

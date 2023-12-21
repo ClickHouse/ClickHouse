@@ -142,6 +142,7 @@ public:
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     virtual void setThrottler(const ThrottlerPtr & throttler_) = 0;
+    virtual const std::unordered_map<String, Field> & getServerProfileSettings() = 0;
 };
 
 using ServerConnectionPtr = std::unique_ptr<IServerConnection>;
