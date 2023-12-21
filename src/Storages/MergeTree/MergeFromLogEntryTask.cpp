@@ -312,7 +312,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             reserved_space,
             entry.deduplicate,
             entry.deduplicate_by_columns,
-            entry.cleanup,
             storage.merging_params,
             NO_TRANSACTION_PTR);
 

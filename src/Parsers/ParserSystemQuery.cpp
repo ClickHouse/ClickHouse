@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
 [[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
 {
@@ -426,6 +431,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             break;
+        }
+        case Type::DROP_DISK_METADATA_CACHE:
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
         }
         case Type::DROP_SCHEMA_CACHE:
         {

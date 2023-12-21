@@ -16,13 +16,14 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
-#include <base/hex.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ActionBlocker.h>
 #include <Common/formatReadable.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Compression/CheckingCompressedReadBuffer.h>
 #include <IO/Operators.h>
+#include <base/hex.h>
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
 #include <boost/range/adaptor/indexed.hpp>
@@ -36,6 +37,11 @@ namespace CurrentMetrics
     extern const Metric BrokenDistributedFilesToInsert;
     extern const Metric DistributedBytesToInsert;
     extern const Metric BrokenDistributedBytesToInsert;
+}
+
+namespace ProfileEvents
+{
+    extern const Event DistributedAsyncInsertionFailures;
 }
 
 namespace fs = std::filesystem;
@@ -195,6 +201,15 @@ void DistributedAsyncInsertDirectoryQueue::run()
                 /// No errors while processing existing files.
                 /// Let's see maybe there are more files to process.
                 do_sleep = false;
+
+                const auto now = std::chrono::system_clock::now();
+                if (now - last_decrease_time > decrease_error_count_period)
+                {
+                    std::lock_guard status_lock(status_mutex);
+
+                    status.error_count /= 2;
+                    last_decrease_time = now;
+                }
             }
             catch (...)
             {
@@ -212,15 +227,6 @@ void DistributedAsyncInsertDirectoryQueue::run()
         }
         else
             LOG_TEST(LogFrequencyLimiter(log, 30), "Skipping send data over distributed table.");
-
-        const auto now = std::chrono::system_clock::now();
-        if (now - last_decrease_time > decrease_error_count_period)
-        {
-            std::lock_guard status_lock(status_mutex);
-
-            status.error_count /= 2;
-            last_decrease_time = now;
-        }
 
         if (do_sleep)
             break;
@@ -376,6 +382,8 @@ try
 }
 catch (...)
 {
+    ProfileEvents::increment(ProfileEvents::DistributedAsyncInsertionFailures);
+
     std::lock_guard status_lock(status_mutex);
 
     ++status.error_count;
@@ -516,7 +524,16 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching()
 
         DistributedAsyncInsertBatch batch(*this);
         batch.deserialize();
-        batch.send();
+
+        /// In case of recovery it is possible that some of files will be
+        /// missing, if server had been restarted abnormally
+        /// (between unlink(*.bin) and unlink(current_batch.txt)).
+        ///
+        /// But current_batch_file_path should be removed anyway, since if some
+        /// file was missing, then the batch is not complete and there is no
+        /// point in trying to pretend that it will not break deduplication.
+        if (batch.valid())
+            batch.send();
 
         auto dir_sync_guard = getDirectorySyncGuard(relative_path);
         fs::remove(current_batch_file_path);

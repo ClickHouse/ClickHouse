@@ -69,14 +69,14 @@ class TestSetCapacity(unittest.TestCase):
             # Do not change capacity
             TestCase("noqueue", 1, 13, 20, [Queue("in_progress", 155, "noqueue")], -1),
             TestCase(
-                "w/reserve-1", 1, 13, 20, [Queue("queued", 15, "w/reserve-1")], -1
+                "w/reserve-1", 1, 13, 20, [Queue("queued", 15, "w/reserve-1")], 14
             ),
             # Increase capacity
-            TestCase("increase-1", 1, 13, 20, [Queue("queued", 23, "increase-1")], 16),
+            TestCase("increase-1", 1, 13, 20, [Queue("queued", 23, "increase-1")], 17),
             TestCase(
-                "style-checker", 1, 13, 20, [Queue("queued", 33, "style-checker")], 19
+                "style-checker", 1, 13, 20, [Queue("queued", 33, "style-checker")], 20
             ),
-            TestCase("increase-2", 1, 13, 20, [Queue("queued", 18, "increase-2")], 14),
+            TestCase("increase-2", 1, 13, 20, [Queue("queued", 18, "increase-2")], 15),
             TestCase("increase-3", 1, 13, 20, [Queue("queued", 183, "increase-3")], 20),
             TestCase(
                 "increase-w/o reserve",
@@ -87,21 +87,9 @@ class TestSetCapacity(unittest.TestCase):
                     Queue("in_progress", 11, "increase-w/o reserve"),
                     Queue("queued", 12, "increase-w/o reserve"),
                 ],
-                16,
+                17,
             ),
             TestCase("lower-min", 10, 5, 20, [Queue("queued", 5, "lower-min")], 10),
-            # scale up group with prefix private-
-            TestCase(
-                "private-increase",
-                1,
-                13,
-                20,
-                [
-                    Queue("in_progress", 12, "private-increase"),
-                    Queue("queued", 11, "private-increase"),
-                ],
-                20,
-            ),
             # Decrease capacity
             TestCase("w/reserve", 1, 13, 20, [Queue("queued", 5, "w/reserve")], 5),
             TestCase(

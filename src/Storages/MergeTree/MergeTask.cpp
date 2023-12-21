@@ -68,10 +68,7 @@ static void extractMergingAndGatheringColumns(
 
     /// Force version column for Replacing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
-    {
-        key_columns.emplace(merging_params.is_deleted_column);
         key_columns.emplace(merging_params.version_column);
-    }
 
     /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
     if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
@@ -165,7 +162,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     std::optional<MergeTreeDataPartBuilder> builder;
     if (global_ctx->parent_part)
     {
-        auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename);
+        auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename,  /* use parent transaction */ false);
         builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage);
         builder->withParentPart(global_ctx->parent_part);
     }
@@ -185,11 +182,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     if (data_part_storage->exists())
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
 
+    data_part_storage->beginTransaction();
+    /// Background temp dirs cleaner will not touch tmp projection directory because
+    /// it's located inside part's directory
     if (!global_ctx->parent_part)
-    {
-        data_part_storage->beginTransaction();
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
-    }
 
     global_ctx->all_column_names = global_ctx->metadata_snapshot->getColumns().getNamesOfPhysical();
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
@@ -496,7 +493,6 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 
     size_t sum_input_rows_exact = global_ctx->merge_list_element_ptr->rows_read;
     size_t input_rows_filtered = *global_ctx->input_rows_filtered;
-    size_t cleanedup_rows_count = global_ctx->cleanedup_rows_count;
     global_ctx->merge_list_element_ptr->columns_written = global_ctx->merging_column_names.size();
     global_ctx->merge_list_element_ptr->progress.store(ctx->column_sizes->keyColumnsWeight(), std::memory_order_relaxed);
 
@@ -510,12 +506,12 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     /// skipped writing rows_sources file. Otherwise rows_sources_count must be equal to the total
     /// number of input rows.
     if ((rows_sources_count > 0 || global_ctx->future_part->parts.size() > 1)
-        && sum_input_rows_exact != rows_sources_count + input_rows_filtered + cleanedup_rows_count)
+        && sum_input_rows_exact != rows_sources_count + input_rows_filtered)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Number of rows in source parts ({}) excluding filtered rows ({}) and cleaned up rows ({}) differs from number "
+            "Number of rows in source parts ({}) excluding filtered rows ({}) differs from number "
             "of bytes written to rows_sources file ({}). It is a bug.",
-            sum_input_rows_exact, input_rows_filtered, cleanedup_rows_count, rows_sources_count);
+            sum_input_rows_exact, input_rows_filtered, rows_sources_count);
 
     /// TemporaryDataOnDisk::createRawStream returns WriteBufferFromFile implementing IReadableWriteBuffer
     /// and we expect to get ReadBufferFromFile here.
@@ -574,6 +570,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
             global_ctx->storage_snapshot,
             global_ctx->future_part->parts[part_num],
             column_names,
+            /*mark_ranges=*/ {},
+            /*apply_deleted_mask=*/ true,
             ctx->read_with_direct_io,
             /*take_column_types_from_storage=*/ true,
             /*quiet=*/ false,
@@ -758,7 +756,6 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->space_reservation,
             global_ctx->deduplicate,
             global_ctx->deduplicate_by_columns,
-            global_ctx->cleanup,
             projection_merging_params,
             global_ctx->need_prefix,
             global_ctx->new_data_part.get(),
@@ -928,6 +925,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             global_ctx->storage_snapshot,
             part,
             global_ctx->merging_column_names,
+            /*mark_ranges=*/ {},
+            /*apply_deleted_mask=*/ true,
             ctx->read_with_direct_io,
             /*take_column_types_from_storage=*/ true,
             /*quiet=*/ false,
@@ -1005,9 +1004,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
         case MergeTreeData::MergingParams::Replacing:
             merged_transform = std::make_shared<ReplacingSortedTransform>(
-                header, pipes.size(), sort_description, ctx->merging_params.is_deleted_column, ctx->merging_params.version_column,
-                merge_block_size_rows, merge_block_size_bytes, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size,
-                (data_settings->clean_deleted_rows != CleanDeletedRows::Never) || global_ctx->cleanup, &global_ctx->cleanedup_rows_count);
+                header, pipes.size(), sort_description, ctx->merging_params.version_column,
+                merge_block_size_rows, merge_block_size_bytes, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Graphite:

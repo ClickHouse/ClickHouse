@@ -384,7 +384,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             &Poco::Logger::get("checkDataPart"),
             "Will drop cache for data part {} and will check it once again", data_part->name);
 
-        auto & cache = *FileCacheFactory::instance().getByName(*cache_name).cache;
+        auto & cache = *FileCacheFactory::instance().getByName(*cache_name)->cache;
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
         {
             auto file_name = it->name();

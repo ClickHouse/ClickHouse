@@ -32,6 +32,8 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     ContextPtr context
 );
 
+MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command);
+
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
 class MutationsInterpreter
@@ -214,6 +216,7 @@ private:
     std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
+    bool deleted_mask_updated = false;
 
     NameSet materialized_indices;
     NameSet materialized_projections;

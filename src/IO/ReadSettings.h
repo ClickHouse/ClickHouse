@@ -120,6 +120,7 @@ struct ReadSettings
     size_t http_retry_initial_backoff_ms = 100;
     size_t http_retry_max_backoff_ms = 1600;
     bool http_skip_not_found_url_for_globs = true;
+    bool http_make_head_request = true;
 
     /// Monitoring
     bool for_object_storage = false; // to choose which profile events should be incremented

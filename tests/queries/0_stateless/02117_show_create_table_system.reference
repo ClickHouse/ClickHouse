@@ -406,6 +406,7 @@ CREATE TABLE system.mutations
     `parts_to_do_names` Array(String),
     `parts_to_do` Int64,
     `is_done` UInt8,
+    `is_killed` UInt8,
     `latest_failed_part` String,
     `latest_fail_time` DateTime,
     `latest_fail_reason` String
@@ -1089,6 +1090,7 @@ CREATE TABLE system.tables
     `storage_policy` String,
     `total_rows` Nullable(UInt64),
     `total_bytes` Nullable(UInt64),
+    `total_bytes_uncompressed` Nullable(UInt64),
     `parts` Nullable(UInt64),
     `active_parts` Nullable(UInt64),
     `total_marks` Nullable(UInt64),

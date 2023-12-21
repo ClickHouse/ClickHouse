@@ -30,6 +30,7 @@ AppleClang
 Approximative
 ArrayJoin
 ArrowStream
+AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
 AsynchronousHeavyMetricsUpdateInterval
 AsynchronousInsert
@@ -38,11 +39,6 @@ AsynchronousInsertThreadsActive
 AsynchronousMetricsCalculationTimeSpent
 AsynchronousMetricsUpdateInterval
 AsynchronousReadWait
-AsyncInsertCacheSize
-TablesLoaderBackgroundThreads
-TablesLoaderBackgroundThreadsActive
-TablesLoaderForegroundThreads
-TablesLoaderForegroundThreadsActive
 Authenticator
 Authenticators
 AutoFDO
@@ -715,6 +711,7 @@ Promtail
 Protobuf
 ProtobufSingle
 ProxySQL
+Punycode
 PyArrow
 PyCharm
 QEMU
@@ -876,6 +873,7 @@ TLSv
 TPCH
 TSDB
 TSVRaw
+TSVWithNames
 TSVs
 TSan
 TThe
@@ -887,6 +885,10 @@ TabSeparatedRawWithNamesAndTypes
 TabSeparatedWithNames
 TabSeparatedWithNamesAndTypes
 Tabix
+TablesLoaderBackgroundThreads
+TablesLoaderBackgroundThreadsActive
+TablesLoaderForegroundThreads
+TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Telegraf
@@ -1233,6 +1235,7 @@ changelogs
 charset
 charsets
 chconn
+cheatsheet
 checkouting
 checksummed
 checksumming
@@ -1848,6 +1851,8 @@ mininum
 miniselect
 minmap
 minmax
+minSampleSizeContinuous
+minSampleSizeConversion
 mins
 misconfiguration
 mispredictions
@@ -2067,6 +2072,8 @@ pseudorandom
 pseudorandomize
 psql
 ptrs
+punycodeDecode
+punycodeEncode
 pushdown
 pwrite
 py
@@ -2231,6 +2238,7 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
 serverUUID
