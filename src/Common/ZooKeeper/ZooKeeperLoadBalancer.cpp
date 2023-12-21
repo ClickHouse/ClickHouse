@@ -138,8 +138,10 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
         {
             auto client  = std::make_unique<Coordination::ZooKeeper>(host_info_list[i].toZooKeeperNode(), args, zk_log);
             // Non optimal case: we connected to a keeper host that is not at highest priority, set a timeout to force reconnect.
-            // Except for RANDOM, as it's random anyway regardless of first or second host.
-            if (i != 0 && args.get_priority_load_balancing.load_balancing != LoadBalancing::RANDOM)
+            // Except for RANDOM and ROUND_ROBIN. For random, as it's random anyway regardless of first or second host.
+            // For round robin, hosts tried later will be in the same order as well.
+            const auto & lb_algorithm = args.get_priority_load_balancing.load_balancing;
+            if (i != 0 && (lb_algorithm != LoadBalancing::RANDOM && lb_algorithm != LoadBalancing::ROUND_ROBIN))
             {
                 auto session_timeout_seconds = client->setClientSessionDeadline(args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
                 LOG_INFO(log, "Connecting to a different az ZooKeeper with session timeout {} seconds", session_timeout_seconds);
