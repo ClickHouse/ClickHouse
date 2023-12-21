@@ -608,7 +608,7 @@ def main() -> int:
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
         if pr_info.number != 0 and not args.docker_digest_or_latest:
-            #FIXME: it runs style check before docker build if possible (style-check images is not changed)
+            # FIXME: it runs style check before docker build if possible (style-check images is not changed)
             #    find a way to do style check always before docker build and others
             _check_and_update_for_early_style_check(result)
         if pr_info.has_changes_in_documentation_only():
