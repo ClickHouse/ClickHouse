@@ -68,7 +68,8 @@ public:
         String timezone;
         if (arguments.size() == 2)
         {
-            timezone = extractTimeZoneNameFromColumn(arguments[1].column.get(), arguments[1].name);
+            if (arguments[1].column)
+                timezone = extractTimeZoneNameFromColumn(*arguments[1].column);
 
             if (timezone.empty())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -158,9 +159,8 @@ public:
         Int64 ms = 0;
         memcpy(reinterpret_cast<UInt8 *>(&ms) + 2, buffer, 6);
 
-#    if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        ms = std::byteswap(ms);
-#    endif
+        if constexpr (std::endian::native == std::endian::little)
+            std::reverse(reinterpret_cast<UInt8 *>(&ms), reinterpret_cast<UInt8 *>(&ms) + sizeof(Int64));
 
         return DecimalUtils::decimalFromComponents<DateTime64>(ms / intExp10(DATETIME_SCALE), ms % intExp10(DATETIME_SCALE), DATETIME_SCALE);
     }
@@ -169,17 +169,17 @@ public:
 
 REGISTER_FUNCTION(ULIDStringToDateTime)
 {
-    factory.registerFunction<FunctionULIDStringToDateTime>(FunctionDocumentation
+    factory.registerFunction<FunctionULIDStringToDateTime>(
         {
-            .description=R"(
+            R"(
 This function extracts the timestamp from a ULID and returns it as a DateTime64(3) typed value.
 The function expects the ULID to be provided as the first argument, which can be either a String or a FixedString(26) data type.
 An optional second argument can be passed to specify a timezone for the timestamp.
 )",
-            .examples{
-                {"ulid", "SELECT ULIDStringToDateTime(generateULID())", ""},
-                {"timezone", "SELECT ULIDStringToDateTime(generateULID(), 'Asia/Istanbul')", ""}},
-            .categories{"ULID"}
+            Documentation::Examples{
+                {"ulid", "SELECT ULIDStringToDateTime(generateULID())"},
+                {"timezone", "SELECT ULIDStringToDateTime(generateULID(), 'Asia/Istanbul')"}},
+            Documentation::Categories{"ULID"}
         },
         FunctionFactory::CaseSensitive);
 }

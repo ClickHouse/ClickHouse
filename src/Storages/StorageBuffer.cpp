@@ -1,6 +1,7 @@
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
@@ -165,8 +166,7 @@ public:
         : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
         , column_names_and_types(storage_snapshot->getColumnsByNames(
             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
-        , buffer(buffer_)
-        , metadata_version(storage_snapshot->metadata->metadata_version) {}
+        , buffer(buffer_) {}
 
     String getName() const override { return "Buffer"; }
 
@@ -181,7 +181,7 @@ protected:
 
         std::unique_lock lock(buffer.lockForReading());
 
-        if (!buffer.data.rows() || buffer.metadata_version != metadata_version)
+        if (!buffer.data.rows())
             return res;
 
         Columns columns;
@@ -199,7 +199,6 @@ protected:
 private:
     NamesAndTypesList column_names_and_types;
     StorageBuffer::Buffer & buffer;
-    int32_t metadata_version;
     bool has_been_read = false;
 };
 
@@ -617,7 +616,7 @@ public:
             least_busy_buffer = &storage.buffers[start_shard_num];
             least_busy_lock = least_busy_buffer->lockForWriting();
         }
-        insertIntoBuffer(block, *least_busy_buffer, metadata_snapshot->metadata_version);
+        insertIntoBuffer(block, *least_busy_buffer);
         least_busy_lock.unlock();
 
         storage.reschedule();
@@ -626,15 +625,14 @@ private:
     StorageBuffer & storage;
     StorageMetadataPtr metadata_snapshot;
 
-    void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, int32_t metadata_version)
+    void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer)
     {
         time_t current_time = time(nullptr);
 
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
 
-        if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()) ||
-            buffer.metadata_version != metadata_version)
+        if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()))
         {
             /** If, after inserting the buffer, the constraints are exceeded, then we will reset the buffer.
               * This also protects against unlimited consumption of RAM, since if it is impossible to write to the table,
@@ -642,7 +640,6 @@ private:
               */
 
             storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
-            buffer.metadata_version = metadata_version;
         }
 
         if (!buffer.first_write_time)
@@ -659,7 +656,7 @@ private:
 };
 
 
-SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
+SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     return std::make_shared<BufferSink>(*this, metadata_snapshot);
 }
@@ -685,7 +682,7 @@ void StorageBuffer::startup()
 }
 
 
-void StorageBuffer::flushAndPrepareForShutdown()
+void StorageBuffer::flush()
 {
     if (!flush_handle)
         return;
@@ -694,7 +691,7 @@ void StorageBuffer::flushAndPrepareForShutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, getContext());
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
     }
     catch (...)
     {
@@ -720,6 +717,7 @@ bool StorageBuffer::optimize(
     bool final,
     bool deduplicate,
     const Names & /* deduplicate_by_columns */,
+    bool cleanup,
     ContextPtr /*context*/)
 {
     if (partition)
@@ -730,6 +728,9 @@ bool StorageBuffer::optimize(
 
     if (deduplicate)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DEDUPLICATE cannot be specified when optimizing table of type Buffer");
+
+    if (cleanup)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type Buffer");
 
     flushAllBuffers(false);
     return true;
@@ -995,11 +996,8 @@ void StorageBuffer::reschedule()
         std::unique_lock lock(buffer.tryLock());
         if (lock.owns_lock())
         {
-            if (buffer.data)
-            {
-                min_first_write_time = std::min(min_first_write_time, buffer.first_write_time);
-                rows += buffer.data.rows();
-            }
+            min_first_write_time = buffer.first_write_time;
+            rows += buffer.data.rows();
         }
     }
 
@@ -1018,7 +1016,7 @@ void StorageBuffer::reschedule()
 
 void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
-    std::optional<NameDependencies> name_deps{};
+    auto name_deps = getDependentViewsByColumn(local_context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -1029,9 +1027,7 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
 
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
-            if (!name_deps)
-                name_deps = getDependentViewsByColumn(local_context);
-            const auto & deps_mv = name_deps.value()[command.column_name];
+            const auto & deps_mv = name_deps[command.column_name];
             if (!deps_mv.empty())
             {
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -1062,12 +1058,13 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     checkAlterIsPossible(params, local_context);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    /// Flush buffers to the storage because BufferSource skips buffers with old metadata_version.
-    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, local_context);
+    /// Flush all buffers to storages, so that no non-empty blocks of the old
+    /// structure remain. Structure of empty blocks will be updated during first
+    /// insert.
+    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
-    new_metadata.metadata_version += 1;
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }

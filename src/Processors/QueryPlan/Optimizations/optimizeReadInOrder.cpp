@@ -12,7 +12,6 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -175,8 +174,6 @@ static void appendExpression(ActionsDAGPtr & dag, const ActionsDAGPtr & expressi
         dag->mergeInplace(std::move(*expression->clone()));
     else
         dag = expression->clone();
-
-    dag->projectInput(false);
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
@@ -237,20 +234,15 @@ void buildSortingDAG(QueryPlan::Node & node, ActionsDAGPtr & dag, FixedColumns &
 
         const auto & array_joined_columns = array_join->arrayJoin()->columns;
 
-        if (dag)
+        /// Remove array joined columns from outputs.
+        /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
+        ActionsDAG::NodeRawConstPtrs outputs;
+        outputs.reserve(dag->getOutputs().size());
+
+        for (const auto & output : dag->getOutputs())
         {
-            /// Remove array joined columns from outputs.
-            /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
-            ActionsDAG::NodeRawConstPtrs outputs;
-            outputs.reserve(dag->getOutputs().size());
-
-            for (const auto & output : dag->getOutputs())
-            {
-                if (!array_joined_columns.contains(output->result_name))
-                    outputs.push_back(output);
-            }
-
-            dag->getOutputs() = std::move(outputs);
+            if (!array_joined_columns.contains(output->result_name))
+                outputs.push_back(output);
         }
     }
 }
@@ -345,7 +337,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     if (dag)
     {
-        matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
+        matches = matchTrees(sorting_key_dag, *dag);
 
         for (const auto & [node, match] : matches)
         {
@@ -514,7 +506,7 @@ AggregationInputOrder buildInputOrderInfo(
 
     if (dag)
     {
-        matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
+        matches = matchTrees(sorting_key_dag, *dag);
 
         for (const auto & [node, match] : matches)
         {
@@ -1004,7 +996,7 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     }
 }
 
-/// This optimization is obsolete and will be removed.
+/// This optimisation is obsolete and will be removed.
 /// optimizeReadInOrder covers it.
 size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/)
 {

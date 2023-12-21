@@ -63,7 +63,6 @@ struct PartLogElement
     UUID table_uuid{UUIDHelpers::Nil};
     String part_name;
     String partition_id;
-    String partition;
     String disk_name;
     String path_on_disk;
 

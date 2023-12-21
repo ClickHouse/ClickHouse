@@ -3,7 +3,6 @@
 #include <Backups/BackupFileInfo.h>
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
-#include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
@@ -16,7 +15,7 @@
 #include <IO/Archives/createArchiveWriter.h>
 #include <IO/ConcatSeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromFileBase.h>
+#include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -24,16 +23,6 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
 
-#include <ranges>
-
-
-namespace ProfileEvents
-{
-    extern const Event BackupsOpenedForRead;
-    extern const Event BackupsOpenedForWrite;
-    extern const Event BackupReadMetadataMicroseconds;
-    extern const Event BackupWriteMetadataMicroseconds;
-}
 
 namespace DB
 {
@@ -47,7 +36,6 @@ namespace ErrorCodes
     extern const int WRONG_BASE_BACKUP;
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int BACKUP_IS_EMPTY;
-    extern const int CANNOT_RESTORE_TO_NONENCRYPTED_DISK;
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
     extern const int LOGICAL_ERROR;
 }
@@ -88,31 +76,26 @@ namespace
 
 
 BackupImpl::BackupImpl(
-    const BackupInfo & backup_info_,
+    const String & backup_name_for_logging_,
     const ArchiveParams & archive_params_,
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupReader> reader_,
-    const ContextPtr & context_,
-    bool use_same_s3_credentials_for_base_backup_)
-    : backup_info(backup_info_)
-    , backup_name_for_logging(backup_info.toStringForLogging())
+    const ContextPtr & context_)
+    : backup_name_for_logging(backup_name_for_logging_)
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
-    , context(context_)
     , is_internal_backup(false)
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
-    , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
-    , log(&Poco::Logger::get("BackupImpl"))
 {
-    open();
+    open(context_);
 }
 
 
 BackupImpl::BackupImpl(
-    const BackupInfo & backup_info_,
+    const String & backup_name_for_logging_,
     const ArchiveParams & archive_params_,
     const std::optional<BackupInfo> & base_backup_info_,
     std::shared_ptr<IBackupWriter> writer_,
@@ -120,25 +103,21 @@ BackupImpl::BackupImpl(
     bool is_internal_backup_,
     const std::shared_ptr<IBackupCoordination> & coordination_,
     const std::optional<UUID> & backup_uuid_,
-    bool deduplicate_files_,
-    bool use_same_s3_credentials_for_base_backup_)
-    : backup_info(backup_info_)
-    , backup_name_for_logging(backup_info.toStringForLogging())
+    bool deduplicate_files_)
+    : backup_name_for_logging(backup_name_for_logging_)
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
-    , context(context_)
     , is_internal_backup(is_internal_backup_)
     , coordination(coordination_)
     , uuid(backup_uuid_)
     , version(CURRENT_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
     , deduplicate_files(deduplicate_files_)
-    , use_same_s3_credentials_for_base_backup(use_same_s3_credentials_for_base_backup_)
     , log(&Poco::Logger::get("BackupImpl"))
 {
-    open();
+    open(context_);
 }
 
 
@@ -154,11 +133,9 @@ BackupImpl::~BackupImpl()
     }
 }
 
-void BackupImpl::open()
+void BackupImpl::open(const ContextPtr & context)
 {
     std::lock_guard lock{mutex};
-    LOG_INFO(log, "{} backup: {}", ((open_mode == OpenMode::WRITE) ? "Writing" : "Reading"), backup_name_for_logging);
-    ProfileEvents::increment((open_mode == OpenMode::WRITE) ? ProfileEvents::BackupsOpenedForWrite : ProfileEvents::BackupsOpenedForRead);
 
     if (open_mode == OpenMode::WRITE)
     {
@@ -166,7 +143,6 @@ void BackupImpl::open()
         if (!uuid)
             uuid = UUIDHelpers::generateV4();
         lock_file_name = use_archive ? (archive_params.archive_name + ".lock") : ".lock";
-        lock_file_before_first_file_checked = false;
         writing_finalized = false;
 
         /// Check that we can write a backup there and create the lock file to own this destination.
@@ -182,8 +158,29 @@ void BackupImpl::open()
     if (open_mode == OpenMode::READ)
         readBackupMetadata();
 
-    if ((open_mode == OpenMode::WRITE) && base_backup_info)
-        base_backup_uuid = getBaseBackupUnlocked()->getUUID();
+    if (base_backup_info)
+    {
+        BackupFactory::CreateParams params;
+        params.backup_info = *base_backup_info;
+        params.open_mode = OpenMode::READ;
+        params.context = context;
+        base_backup = BackupFactory::instance().createBackup(params);
+
+        if (open_mode == OpenMode::WRITE)
+        {
+            base_backup_uuid = base_backup->getUUID();
+        }
+        else if (base_backup_uuid != base_backup->getUUID())
+        {
+            throw Exception(
+                ErrorCodes::WRONG_BASE_BACKUP,
+                "Backup {}: The base backup {} has different UUID ({} != {})",
+                backup_name_for_logging,
+                base_backup->getNameForLogging(),
+                toString(base_backup->getUUID()),
+                (base_backup_uuid ? toString(*base_backup_uuid) : ""));
+        }
+    }
 }
 
 void BackupImpl::close()
@@ -211,7 +208,7 @@ void BackupImpl::openArchive()
         if (!reader->fileExists(archive_name))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
         size_t archive_size = reader->getFileSize(archive_name);
-        archive_reader = createArchiveReader(archive_name, [my_reader = reader, archive_name]{ return my_reader->readFile(archive_name); }, archive_size);
+        archive_reader = createArchiveReader(archive_name, [reader=reader, archive_name]{ return reader->readFile(archive_name); }, archive_size);
         archive_reader->setPassword(archive_params.password);
     }
     else
@@ -226,42 +223,6 @@ void BackupImpl::closeArchive()
 {
     archive_reader.reset();
     archive_writer.reset();
-}
-
-std::shared_ptr<const IBackup> BackupImpl::getBaseBackup() const
-{
-    std::lock_guard lock{mutex};
-    return getBaseBackupUnlocked();
-}
-
-std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
-{
-    if (!base_backup && base_backup_info)
-    {
-        if (use_same_s3_credentials_for_base_backup)
-            backup_info.copyS3CredentialsTo(*base_backup_info);
-
-        BackupFactory::CreateParams params;
-        params.backup_info = *base_backup_info;
-        params.open_mode = OpenMode::READ;
-        params.context = context;
-        /// use_same_s3_credentials_for_base_backup should be inherited for base backups
-        params.use_same_s3_credentials_for_base_backup = use_same_s3_credentials_for_base_backup;
-
-        base_backup = BackupFactory::instance().createBackup(params);
-
-        if ((open_mode == OpenMode::READ) && (base_backup_uuid != base_backup->getUUID()))
-        {
-            throw Exception(
-                ErrorCodes::WRONG_BASE_BACKUP,
-                "Backup {}: The base backup {} has different UUID ({} != {})",
-                backup_name_for_logging,
-                base_backup->getNameForLogging(),
-                toString(base_backup->getUUID()),
-                (base_backup_uuid ? toString(*base_backup_uuid) : ""));
-        }
-    }
-    return base_backup;
 }
 
 size_t BackupImpl::getNumFiles() const
@@ -314,10 +275,8 @@ UInt64 BackupImpl::getNumReadBytes() const
 
 void BackupImpl::writeBackupMetadata()
 {
-    LOG_TRACE(log, "Backup {}: Writing metadata", backup_name_for_logging);
-    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupWriteMetadataMicroseconds);
-
     assert(!is_internal_backup);
+
     checkLockFile(true);
 
     std::unique_ptr<WriteBuffer> out;
@@ -380,8 +339,6 @@ void BackupImpl::writeBackupMetadata()
             }
             if (!info.data_file_name.empty() && (info.data_file_name != info.file_name))
                 *out << "<data_file>" << xml << info.data_file_name << "</data_file>";
-            if (info.encrypted_by_disk)
-                *out << "<encrypted_by_disk>true</encrypted_by_disk>";
         }
 
         total_size += info.size;
@@ -401,16 +358,11 @@ void BackupImpl::writeBackupMetadata()
     out->finalize();
 
     uncompressed_size = size_of_entries + out->count();
-
-    LOG_TRACE(log, "Backup {}: Metadata was written", backup_name_for_logging);
 }
 
 
 void BackupImpl::readBackupMetadata()
 {
-    LOG_TRACE(log, "Backup {}: Reading metadata", backup_name_for_logging);
-    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupReadMetadataMicroseconds);
-
     using namespace XMLUtils;
 
     std::unique_ptr<ReadBuffer> in;
@@ -419,7 +371,7 @@ void BackupImpl::readBackupMetadata()
         if (!archive_reader->fileExists(".backup"))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Archive {} is not a backup", backup_name_for_logging);
         setCompressedSize();
-        in = archive_reader->readFile(".backup", /*throw_on_not_found=*/true);
+        in = archive_reader->readFile(".backup");
     }
     else
     {
@@ -461,7 +413,6 @@ void BackupImpl::readBackupMetadata()
             const Poco::XML::Node * file_config = child;
             BackupFileInfo info;
             info.file_name = getString(file_config, "name");
-
             info.size = getUInt64(file_config, "size");
             if (info.size)
             {
@@ -493,7 +444,6 @@ void BackupImpl::readBackupMetadata()
                 {
                     info.data_file_name = getString(file_config, "data_file", info.file_name);
                 }
-                info.encrypted_by_disk = getBool(file_config, "encrypted_by_disk", false);
             }
 
             file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
@@ -515,8 +465,6 @@ void BackupImpl::readBackupMetadata()
     compressed_size = uncompressed_size;
     if (!use_archive)
         setCompressedSize();
-
-    LOG_TRACE(log, "Backup {}: Metadata was read", backup_name_for_logging);
 }
 
 void BackupImpl::checkBackupDoesntExist() const
@@ -686,11 +634,6 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const String & file_nam
 
 std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) const
 {
-    return readFileImpl(size_and_checksum, /* read_encrypted= */ false);
-}
-
-std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
-{
     if (open_mode != OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
 
@@ -717,14 +660,6 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
         info = it->second;
     }
 
-    if (info.encrypted_by_disk != read_encrypted)
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_RESTORE_TO_NONENCRYPTED_DISK,
-            "File {} is encrypted in the backup, it can be restored only to an encrypted disk",
-            info.data_file_name);
-    }
-
     std::unique_ptr<SeekableReadBuffer> read_buffer;
     std::unique_ptr<SeekableReadBuffer> base_read_buffer;
 
@@ -732,7 +667,7 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
     {
         /// Make `read_buffer` if there is data for this backup entry in this backup.
         if (use_archive)
-            read_buffer = archive_reader->readFile(info.data_file_name, /*throw_on_not_found=*/true);
+            read_buffer = archive_reader->readFile(info.data_file_name);
         else
             read_buffer = reader->readFile(info.data_file_name);
     }
@@ -740,8 +675,7 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
     if (info.base_size)
     {
         /// Make `base_read_buffer` if there is data for this backup entry in the base backup.
-        auto base = getBaseBackup();
-        if (!base)
+        if (!base_backup)
         {
             throw Exception(
                 ErrorCodes::NO_BASE_BACKUP,
@@ -749,7 +683,7 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
                 backup_name_for_logging, formatSizeAndChecksum(size_and_checksum));
         }
 
-        if (!base->fileExists(std::pair(info.base_size, info.base_checksum)))
+        if (!base_backup->fileExists(std::pair(info.base_size, info.base_checksum)))
         {
             throw Exception(
                 ErrorCodes::WRONG_BASE_BACKUP,
@@ -757,7 +691,7 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
                 backup_name_for_logging, formatSizeAndChecksum(size_and_checksum));
         }
 
-        base_read_buffer = base->readFile(std::pair{info.base_size, info.base_checksum});
+        base_read_buffer = base_backup->readFile(std::pair{info.base_size, info.base_checksum});
     }
 
     {
@@ -786,14 +720,14 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
     }
 }
 
-size_t BackupImpl::copyFileToDisk(const String & file_name,
-                                  DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
+size_t BackupImpl::copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path,
+                                  WriteMode write_mode, const WriteSettings & write_settings) const
 {
-    return copyFileToDisk(getFileSizeAndChecksum(file_name), destination_disk, destination_path, write_mode);
+    return copyFileToDisk(getFileSizeAndChecksum(file_name), destination_disk, destination_path, write_mode, write_settings);
 }
 
-size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
-                                  DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
+size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path,
+                                  WriteMode write_mode, const WriteSettings & write_settings) const
 {
     if (open_mode != OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
@@ -826,26 +760,19 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
         info = it->second;
     }
 
-    if (info.encrypted_by_disk && !destination_disk->getDataSourceDescription().is_encrypted)
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_RESTORE_TO_NONENCRYPTED_DISK,
-            "File {} is encrypted in the backup, it can be restored only to an encrypted disk",
-            info.data_file_name);
-    }
-
     bool file_copied = false;
 
     if (info.size && !info.base_size && !use_archive)
     {
         /// Data comes completely from this backup.
-        reader->copyFileToDisk(info.data_file_name, info.size, info.encrypted_by_disk, destination_disk, destination_path, write_mode);
+        reader->copyFileToDisk(info.data_file_name, info.size, destination_disk, destination_path, write_mode, write_settings);
         file_copied = true;
+
     }
     else if (info.size && (info.size == info.base_size))
     {
         /// Data comes completely from the base backup (nothing comes from this backup).
-        getBaseBackup()->copyFileToDisk(std::pair{info.base_size, info.base_checksum}, destination_disk, destination_path, write_mode);
+        base_backup->copyFileToDisk(std::pair{info.base_size, info.base_checksum}, destination_disk, destination_path, write_mode, write_settings);
         file_copied = true;
     }
 
@@ -859,13 +786,9 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     else
     {
         /// Use the generic way to copy data. `readFile()` will update `num_read_files`.
-        auto read_buffer = readFileImpl(size_and_checksum, /* read_encrypted= */ info.encrypted_by_disk);
-        std::unique_ptr<WriteBuffer> write_buffer;
-        size_t buf_size = std::min<size_t>(info.size, reader->getWriteBufferSize());
-        if (info.encrypted_by_disk)
-            write_buffer = destination_disk->writeEncryptedFile(destination_path, buf_size, write_mode, reader->getWriteSettings());
-        else
-            write_buffer = destination_disk->writeFile(destination_path, buf_size, write_mode, reader->getWriteSettings());
+        auto read_buffer = readFile(size_and_checksum);
+        auto write_buffer = destination_disk->writeFile(destination_path, std::min<size_t>(info.size, DBMS_DEFAULT_BUFFER_SIZE),
+                                                        write_mode, write_settings);
         copyData(*read_buffer, *write_buffer, info.size);
         write_buffer->finalize();
     }
@@ -876,15 +799,15 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
 
 void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 {
-    /// we don't write anything for reference files
-    if (entry->isReference())
-        return;
-
     if (open_mode != OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
 
     if (writing_finalized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
+
+    std::string from_file_name = "memory buffer";
+    if (auto fname = entry->getFilePath(); !fname.empty())
+        from_file_name = "file " + fname;
 
     {
         std::lock_guard lock{mutex};
@@ -892,69 +815,63 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
         total_size += info.size;
     }
 
-    auto src_disk = entry->getDisk();
-    auto src_file_path = entry->getFilePath();
-    bool from_immutable_file = entry->isFromImmutableFile();
-    String src_file_desc = src_file_path.empty() ? "memory buffer" : ("file " + src_file_path);
-
     if (info.data_file_name.empty())
     {
-        LOG_TRACE(log, "Writing backup for file {} from {}: skipped, {}", info.data_file_name, src_file_desc, !info.size ? "empty" : "base backup has it");
+        LOG_TRACE(log, "Writing backup for file {} from {}: skipped, {}", info.data_file_name, from_file_name, !info.size ? "empty" : "base backup has it");
         return;
     }
 
     if (!coordination->startWritingFile(info.data_file_index))
     {
-        LOG_TRACE(log, "Writing backup for file {} from {}: skipped, data file #{} is already being written", info.data_file_name, src_file_desc, info.data_file_index);
+        LOG_TRACE(log, "Writing backup for file {} from {}: skipped, data file #{} is already being written", info.data_file_name, from_file_name, info.data_file_index);
         return;
     }
 
-    if (!lock_file_before_first_file_checked.exchange(true))
-        checkLockFile(true);
+    LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, from_file_name, info.data_file_index);
 
-    /// NOTE: `mutex` must be unlocked during copying otherwise writing will be in one thread maximum and hence slow.
+    auto writer_description = writer->getDataSourceDescription();
+    auto reader_description = entry->getDataSourceDescription();
 
-    const auto write_info_to_archive = [&](const auto & file_name)
+    /// We need to copy whole file without archive, we can do it faster
+    /// if source and destination are compatible
+    if (!use_archive && writer->supportNativeCopy(reader_description))
     {
-        auto out = archive_writer->writeFile(file_name);
-        auto read_buffer = entry->getReadBuffer(writer->getReadSettings());
-        if (info.base_size != 0)
-            read_buffer->seek(info.base_size, SEEK_SET);
-        copyData(*read_buffer, *out);
-        out->finalize();
-    };
+        /// Should be much faster than writing data through server.
+        LOG_TRACE(log, "Will copy file {} using native copy", info.data_file_name);
 
-    if (use_archive)
-    {
-        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}, adding to archive", info.data_file_name, src_file_desc, info.data_file_index);
-        write_info_to_archive(info.data_file_name);
-    }
-    else if (src_disk && from_immutable_file)
-    {
-        LOG_TRACE(log, "Writing backup for file {} from {} (disk {}): data file #{}", info.data_file_name, src_file_desc, src_disk->getName(), info.data_file_index);
-        writer->copyFileFromDisk(info.data_file_name, src_disk, src_file_path, info.encrypted_by_disk, info.base_size, info.size - info.base_size);
+        /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
+
+        writer->copyFileNative(entry->tryGetDiskIfExists(), entry->getFilePath(), info.base_size, info.size - info.base_size, info.data_file_name);
     }
     else
     {
-        LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, src_file_desc, info.data_file_index);
-        auto create_read_buffer = [entry, read_settings = writer->getReadSettings()] { return entry->getReadBuffer(read_settings); };
-        writer->copyDataToFile(info.data_file_name, create_read_buffer, info.base_size, info.size - info.base_size);
-    }
-
-    std::function<void(const String &)> copy_file_inside_backup;
-    if (use_archive)
-    {
-        copy_file_inside_backup = write_info_to_archive;
-    }
-    else
-    {
-        copy_file_inside_backup = [&](const auto & data_file_copy)
+        bool has_entries = false;
         {
-            writer->copyFile(data_file_copy, info.data_file_name, info.size - info.base_size);
-        };
-    }
+            std::lock_guard lock{mutex};
+            has_entries = num_entries > 0;
+        }
+        if (!has_entries)
+            checkLockFile(true);
 
-    std::ranges::for_each(info.data_file_copies, copy_file_inside_backup);
+        if (use_archive)
+        {
+            LOG_TRACE(log, "Adding file {} to archive", info.data_file_name);
+            auto out = archive_writer->writeFile(info.data_file_name);
+            auto read_buffer = entry->getReadBuffer();
+            if (info.base_size != 0)
+                read_buffer->seek(info.base_size, SEEK_SET);
+            copyData(*read_buffer, *out);
+            out->finalize();
+        }
+        else
+        {
+            LOG_TRACE(log, "Will copy file {}", info.data_file_name);
+            auto create_read_buffer = [entry] { return entry->getReadBuffer(); };
+
+            /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
+            writer->copyDataToFile(create_read_buffer, info.base_size, info.size - info.base_size, info.data_file_name);
+        }
+    }
 
     {
         std::lock_guard lock{mutex};

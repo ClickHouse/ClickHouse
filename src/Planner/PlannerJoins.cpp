@@ -191,7 +191,7 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
     auto asof_inequality = getASOFJoinInequality(function_name);
     bool is_asof_join_inequality = join_node.getStrictness() == JoinStrictness::Asof && asof_inequality != ASOFJoinInequality::None;
 
-    if (function_name == "equals" || function_name == "isNotDistinctFrom" || is_asof_join_inequality)
+    if (function_name == "equals" || is_asof_join_inequality)
     {
         const auto * left_child = join_expressions_actions_node->children.at(0);
         const auto * right_child = join_expressions_actions_node->children.at(1);
@@ -253,8 +253,7 @@ void buildJoinClause(ActionsDAGPtr join_expression_dag,
                 }
                 else
                 {
-                    bool null_safe_comparison = function_name == "isNotDistinctFrom";
-                    join_clause.addKey(left_key, right_key, null_safe_comparison);
+                    join_clause.addKey(left_key, right_key);
                 }
             }
             else
@@ -475,24 +474,6 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
                     right_key_node = &join_expression_actions->addCast(*right_key_node, common_type, {});
             }
 
-            if (join_clause.isNullsafeCompareKey(i) && left_key_node->result_type->isNullable() && right_key_node->result_type->isNullable())
-            {
-                /**
-                  * In case of null-safe comparison (a IS NOT DISTICT FROM b),
-                  * we need to wrap keys with a non-nullable type.
-                  * The type `tuple` can be used for this purpose,
-                  * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
-                  * Thus, join algorithm will match keys with values tuple(NULL).
-                  * Example:
-                  *   SELECT * FROM t1 JOIN t2 ON t1.a <=> t2.b
-                  * This will be semantically transformed to:
-                  *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
-                  */
-                auto wrap_nullsafe_function = FunctionFactory::instance().get("tuple", planner_context->getQueryContext());
-                left_key_node = &join_expression_actions->addFunction(wrap_nullsafe_function, {left_key_node}, {});
-                right_key_node = &join_expression_actions->addFunction(wrap_nullsafe_function, {right_key_node}, {});
-            }
-
             join_expression_actions->addOrReplaceInOutputs(*left_key_node);
             join_expression_actions->addOrReplaceInOutputs(*right_key_node);
 
@@ -558,11 +539,10 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
         return;
     }
 
-    if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT) && !table_join->isEnabledAlgorithm(JoinAlgorithm::DEFAULT))
+    if (!table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
         return;
 
-    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage);
-        storage_dictionary && storage_dictionary->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
+    if (auto storage_dictionary = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dictionary)
         table_join->setStorageJoin(std::dynamic_pointer_cast<const IKeyValueEntity>(storage_dictionary->getDictionary()));
     else if (auto storage_key_value = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_key_value)
         table_join->setStorageJoin(storage_key_value);
@@ -603,17 +583,13 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
     const String & key_name = clauses[0].key_names_right[0];
 
     auto & right_table_expression_data = planner_context->getTableExpressionDataOrThrow(right_table_expression);
-
-    if (const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(key_name))
-    {
-        const auto & storage_primary_key = storage->getPrimaryKey();
-        if (storage_primary_key.size() != 1 || storage_primary_key[0] != *table_column_name)
-            return {};
-    }
-    else
-    {
+    const auto * table_column_name = right_table_expression_data.getColumnNameOrNull(key_name);
+    if (!table_column_name)
         return {};
-    }
+
+    const auto & storage_primary_key = storage->getPrimaryKey();
+    if (storage_primary_key.size() != 1 || storage_primary_key[0] != *table_column_name)
+        return {};
 
     /** For right table expression during execution columns have unique name.
       * Direct key value join implementation during storage querying must use storage column names.
@@ -645,74 +621,6 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
 
 }
 
-
-static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
-    std::shared_ptr<TableJoin> & table_join,
-    const QueryTreeNodePtr & right_table_expression,
-    const Block & left_table_expression_header,
-    const Block & right_table_expression_header,
-    const PlannerContextPtr & planner_context)
-{
-    /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
-    if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
-    {
-        JoinPtr direct_join = tryDirectJoin(table_join, right_table_expression, right_table_expression_header, planner_context);
-        if (direct_join)
-            return direct_join;
-    }
-
-    if (algorithm == JoinAlgorithm::PARTIAL_MERGE ||
-        algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE)
-    {
-        if (MergeJoin::isSupported(table_join))
-            return std::make_shared<MergeJoin>(table_join, right_table_expression_header);
-    }
-
-    if (algorithm == JoinAlgorithm::HASH ||
-        /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
-        algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
-        algorithm == JoinAlgorithm::PARALLEL_HASH ||
-        algorithm == JoinAlgorithm::DEFAULT)
-    {
-        if (table_join->allowParallelHashJoin())
-        {
-            auto query_context = planner_context->getQueryContext();
-            return std::make_shared<ConcurrentHashJoin>(query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header);
-        }
-
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
-    }
-
-    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
-    {
-        if (FullSortingMergeJoin::isSupported(table_join))
-            return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header);
-    }
-
-    if (algorithm == JoinAlgorithm::GRACE_HASH)
-    {
-        if (GraceHashJoin::isSupported(table_join))
-        {
-            auto query_context = planner_context->getQueryContext();
-            return std::make_shared<GraceHashJoin>(
-                query_context,
-                table_join,
-                left_table_expression_header,
-                right_table_expression_header,
-                query_context->getTempDataOnDisk());
-        }
-    }
-
-    if (algorithm == JoinAlgorithm::AUTO)
-    {
-        if (MergeJoin::isSupported(table_join))
-            return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
-    }
-
-    return nullptr;
-}
-
 std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_join,
     const QueryTreeNodePtr & right_table_expression,
     const Block & left_table_expression_header,
@@ -726,7 +634,6 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     /// JOIN with JOIN engine.
     if (auto storage = table_join->getStorageJoin())
     {
-        Names required_column_names;
         for (const auto & result_column : right_table_expression_header)
         {
             const auto * source_column_name = right_table_expression_data.getColumnNameOrNull(result_column.name);
@@ -736,9 +643,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
                     fmt::join(storage->getKeyNames(), ", "), result_column.name);
 
             table_join->setRename(*source_column_name, result_column.name);
-            required_column_names.push_back(*source_column_name);
         }
-        return storage->getJoinLocked(table_join, planner_context->getQueryContext(), required_column_names);
+        return storage->getJoinLocked(table_join, planner_context->getQueryContext());
     }
 
     /** JOIN with constant.
@@ -747,7 +653,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     if (table_join->isJoinWithConstant())
     {
         if (!table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN with constant supported only with join algorithm 'hash'");
 
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }
@@ -755,11 +661,60 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 
-    for (auto algorithm : table_join->getEnabledJoinAlgorithms())
+    /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
+    if (table_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
     {
-        auto join = tryCreateJoin(algorithm, table_join, right_table_expression, left_table_expression_header, right_table_expression_header, planner_context);
-        if (join)
-            return join;
+        JoinPtr direct_join = tryDirectJoin(table_join, right_table_expression, right_table_expression_header, planner_context);
+        if (direct_join)
+            return direct_join;
+    }
+
+    if (table_join->isEnabledAlgorithm(JoinAlgorithm::PARTIAL_MERGE) ||
+        table_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE))
+    {
+        if (MergeJoin::isSupported(table_join))
+            return std::make_shared<MergeJoin>(table_join, right_table_expression_header);
+    }
+
+    if (table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) ||
+        /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
+        table_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE) ||
+        table_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
+    {
+        if (table_join->allowParallelHashJoin())
+        {
+            auto query_context = planner_context->getQueryContext();
+            return std::make_shared<ConcurrentHashJoin>(query_context, table_join, query_context->getSettings().max_threads, right_table_expression_header);
+        }
+
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+    }
+
+    if (table_join->isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE))
+    {
+        if (FullSortingMergeJoin::isSupported(table_join))
+            return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header);
+    }
+
+    if (table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
+    {
+        if (GraceHashJoin::isSupported(table_join))
+        {
+            auto query_context = planner_context->getQueryContext();
+            return std::make_shared<GraceHashJoin>(
+                query_context,
+                table_join,
+                left_table_expression_header,
+                right_table_expression_header,
+                query_context->getTempDataOnDisk());
+        }
+    }
+
+    if (table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
+    {
+        if (MergeJoin::isSupported(table_join))
+            return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,

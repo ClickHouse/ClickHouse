@@ -15,6 +15,7 @@ from github import Github
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
     ClickHouseHelper,
+    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
@@ -24,12 +25,12 @@ from commit_status_helper import (
     post_commit_status,
     post_commit_status_to_file,
 )
-from docker_images_helper import DockerImage, pull_image, get_docker_image
+from docker_pull_helper import get_images_with_versions, DockerImage
 from download_release_packages import download_last_release
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import ERROR, TestResult, TestResults, read_test_results
+from report import TestResults, read_test_results
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -37,20 +38,19 @@ from upload_result_helper import upload_results
 
 
 # When update, update
-# tests/integration/ci-runner.py:ClickhouseIntegrationTestsRunner.get_images_names too
+# integration/ci-runner.py:ClickhouseIntegrationTestsRunner.get_images_names too
 IMAGES = [
-    "clickhouse/dotnet-client",
-    "clickhouse/integration-helper",
-    "clickhouse/integration-test",
     "clickhouse/integration-tests-runner",
-    "clickhouse/kerberized-hadoop",
-    "clickhouse/kerberos-kdc",
     "clickhouse/mysql-golang-client",
     "clickhouse/mysql-java-client",
     "clickhouse/mysql-js-client",
     "clickhouse/mysql-php-client",
-    "clickhouse/nginx-dav",
     "clickhouse/postgresql-java-client",
+    "clickhouse/integration-test",
+    "clickhouse/kerberos-kdc",
+    "clickhouse/kerberized-hadoop",
+    "clickhouse/integration-helper",
+    "clickhouse/dotnet-client",
 ]
 
 
@@ -76,7 +76,6 @@ def get_json_params_dict(
 
 
 def get_env_for_runner(
-    check_name: str,
     build_path: Path,
     repo_path: Path,
     result_path: Path,
@@ -98,9 +97,6 @@ def get_env_for_runner(
     my_env["CLICKHOUSE_TESTS_JSON_PARAMS_PATH"] = f"{work_path}/params.json"
     my_env["CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER"] = "0"
 
-    if "analyzer" in check_name.lower():
-        my_env["CLICKHOUSE_USE_NEW_ANALYZER"] = "1"
-
     return my_env
 
 
@@ -118,7 +114,7 @@ def process_results(
     status = []
     status_path = result_directory / "check_status.tsv"
     if status_path.exists():
-        logging.info("Found %s", status_path.name)
+        logging.info("Found test_results.tsv")
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
 
@@ -166,17 +162,14 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
     post_commit_path = temp_path / "integration_commit_status.tsv"
     repo_path = Path(REPO_COPY)
+    reports_path = Path(REPORTS_PATH)
 
     args = parse_args()
-    check_name = args.check_name or os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided in --check-name input option or in CHECK_NAME env"
+    check_name = args.check_name
     validate_bugfix_check = args.validate_bugfix
 
     if "RUN_BY_HASH_NUM" in os.environ:
@@ -218,7 +211,7 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    images = [pull_image(get_docker_image(i)) for i in IMAGES]
+    images = get_images_with_versions(reports_path, IMAGES)
     result_path = temp_path / "output_dir"
     result_path.mkdir(parents=True, exist_ok=True)
 
@@ -233,9 +226,7 @@ def main():
     else:
         download_all_deb_packages(check_name, reports_path, build_path)
 
-    my_env = get_env_for_runner(
-        check_name, build_path, repo_path, result_path, work_path
-    )
+    my_env = get_env_for_runner(build_path, repo_path, result_path, work_path)
 
     json_path = work_path / "params.json"
     with open(json_path, "w", encoding="utf-8") as json_params:
@@ -263,7 +254,6 @@ def main():
         ),
     )
 
-    ch_helper = ClickHouseHelper()
     with TeePopen(run_command, output_path_log, my_env) as process:
         retcode = process.wait()
         if retcode == 0:
@@ -271,25 +261,6 @@ def main():
         elif retcode == 13:
             logging.warning(
                 "There were issues with infrastructure. Not writing status report to restart job."
-            )
-            prepared_events = prepare_tests_results_for_clickhouse(
-                pr_info,
-                [
-                    TestResult(
-                        "integration_infrastructure_fail",
-                        "ERROR",
-                        stopwatch.duration_seconds,
-                    )
-                ],
-                ERROR,
-                stopwatch.duration_seconds,
-                stopwatch.start_time_str,
-                "",
-                check_name_with_group,
-            )
-
-            ch_helper.insert_events_into(
-                db="default", table="checks", events=prepared_events
             )
             sys.exit(1)
         else:
@@ -299,6 +270,9 @@ def main():
 
     state, description, test_results, additional_logs = process_results(result_path)
     state = override_status(state, check_name, invert=validate_bugfix_check)
+
+    ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, check_name, test_results)
 
     s3_helper = S3Helper()
     report_url = upload_results(
@@ -313,13 +287,7 @@ def main():
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
         post_commit_status(
-            commit,
-            state,
-            report_url,
-            description,
-            check_name_with_group,
-            pr_info,
-            dump_to_file=True,
+            commit, state, report_url, description, check_name_with_group, pr_info
         )
     elif args.post_commit_status == "file":
         post_commit_status_to_file(post_commit_path, description, state, report_url)

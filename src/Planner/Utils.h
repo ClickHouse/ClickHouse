@@ -65,9 +65,9 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
 /// Returns `and` function node that has condition nodes as its arguments
 QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context);
 
-/// Replace table expressions from query JOIN TREE with dummy tables
+/// Replace tables nodes and table function nodes with dummy table nodes
 using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
-QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr & query_node,
+QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
 
@@ -77,13 +77,5 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
     const ContextPtr & context);
 
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
-
-/// Build filter for specific table_expression
-FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
-        PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter = {});
-
-ASTPtr parseAdditionalResultFilter(const Settings & settings);
 
 }

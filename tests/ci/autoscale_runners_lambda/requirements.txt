@@ -1,1 +1,1 @@
-../lambda_shared_package
+requests

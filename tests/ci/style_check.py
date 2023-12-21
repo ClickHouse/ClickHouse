@@ -9,18 +9,23 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+
+from clickhouse_helper import (
+    ClickHouseHelper,
+    mark_flaky_tests,
+    prepare_tests_results_for_clickhouse,
+)
 from commit_status_helper import (
     RerunHelper,
     get_commit,
     post_commit_status,
     update_mergeable_check,
 )
-from docker_images_helper import get_docker_image, pull_image
-from env_helper import REPO_COPY, TEMP_PATH
+from docker_pull_helper import get_image_with_version
+from env_helper import REPO_COPY, REPORTS_PATH, TEMP_PATH
 from get_robot_token import get_best_robot_token
-from git_helper import GIT_PREFIX, git_runner
 from github_helper import GitHub
+from git_helper import git_runner
 from pr_info import PRInfo
 from report import TestResults, read_test_results
 from s3_helper import S3Helper
@@ -29,6 +34,13 @@ from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 
 NAME = "Style Check"
+
+GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
+    "git -c user.email=robot-clickhouse@users.noreply.github.com "
+    "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+    "-c core.sshCommand="
+    "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
+)
 
 
 def process_result(
@@ -121,15 +133,6 @@ def commit_push_staged(pr_info: PRInfo) -> None:
         git_runner(push_cmd)
 
 
-def checkout_last_ref(pr_info: PRInfo) -> None:
-    # Checkout the merge commit back to avoid special effects
-    assert pr_info.number
-    if not pr_info.head_name == pr_info.base_name:
-        # We can't push to forks, sorry folks
-        return
-    git_runner("git checkout -f -")
-
-
 def main():
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("git_helper").setLevel(logging.DEBUG)
@@ -140,8 +143,13 @@ def main():
     repo_path = Path(REPO_COPY)
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
+    reports_path = Path(REPORTS_PATH)
+    reports_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
+    if args.push:
+        checkout_head(pr_info)
+
     gh = GitHub(get_best_robot_token(), create_cache_dir=False)
     commit = get_commit(gh, pr_info.sha)
 
@@ -156,18 +164,14 @@ def main():
         code = int(state != "success")
         sys.exit(code)
 
+    docker_image = get_image_with_version(reports_path, "clickhouse/style-test")
     s3_helper = S3Helper()
 
-    IMAGE_NAME = "clickhouse/style-test"
-    image = pull_image(get_docker_image(IMAGE_NAME))
     cmd = (
         f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE "
         f"--volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output "
-        f"{image}"
+        f"{docker_image}"
     )
-
-    if args.push:
-        checkout_head(pr_info)
 
     logging.info("Is going to run the command: %s", cmd)
     subprocess.check_call(
@@ -177,18 +181,16 @@ def main():
 
     if args.push:
         commit_push_staged(pr_info)
-        checkout_last_ref(pr_info)
 
     state, description, test_results, additional_files = process_result(temp_path)
     ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, NAME, test_results)
 
     report_url = upload_results(
         s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME
     )
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(
-        commit, state, report_url, description, NAME, pr_info, dump_to_file=True
-    )
+    post_commit_status(commit, state, report_url, description, NAME, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

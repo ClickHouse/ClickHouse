@@ -19,7 +19,6 @@ struct ProcessorProfileLogElement
     UInt64 plan_step{};
     UInt64 plan_group{};
 
-    String initial_query_id;
     String query_id;
     String processor_name;
 
@@ -45,7 +44,12 @@ struct ProcessorProfileLogElement
 class ProcessorsProfileLog : public SystemLog<ProcessorProfileLogElement>
 {
 public:
-    using SystemLog<ProcessorProfileLogElement>::SystemLog;
+    ProcessorsProfileLog(
+        ContextPtr context_,
+        const String & database_name_,
+        const String & table_name_,
+        const String & storage_def_,
+        size_t flush_interval_milliseconds_);
 };
 
 }

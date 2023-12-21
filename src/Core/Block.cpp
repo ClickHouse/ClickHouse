@@ -597,14 +597,6 @@ Block Block::sortColumns() const
     return sorted_block;
 }
 
-Block Block::shrinkToFit() const
-{
-    Columns new_columns(data.size(), nullptr);
-    for (size_t i = 0; i < data.size(); ++i)
-        new_columns[i] = data[i].column->shrinkToFit();
-    return cloneWithColumns(new_columns);
-}
-
 
 const ColumnsWithTypeAndName & Block::getColumnsWithTypeAndName() const
 {
@@ -671,10 +663,12 @@ Names Block::getDataTypeNames() const
 
 Block::NameMap Block::getNamesToIndexesMap() const
 {
-    NameMap res(index_by_name.size());
-    res.set_empty_key(StringRef{});
+    NameMap res;
+    res.reserve(index_by_name.size());
+
     for (const auto & [name, index] : index_by_name)
         res[name] = index;
+
     return res;
 }
 

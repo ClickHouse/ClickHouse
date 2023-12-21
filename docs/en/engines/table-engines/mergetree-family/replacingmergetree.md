@@ -20,7 +20,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = ReplacingMergeTree([ver [, is_deleted]])
+) ENGINE = ReplacingMergeTree([ver])
 [PARTITION BY expr]
 [ORDER BY expr]
 [PRIMARY KEY expr]
@@ -111,6 +111,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 
-- `ver` - column with the version. Optional parameter. For a description, see the text above.
+-   `ver` - column with the version. Optional parameter. For a description, see the text above.
 
 </details>

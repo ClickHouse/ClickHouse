@@ -261,5 +261,5 @@ The results look like
 ```
 
 :::note
-As mentioned in the [GitHub repo](https://github.com/GoogleCloudPlatform/covid-19-open-data), the dataset is no longer updated as of September 15, 2022.
+As mentioned in the [GitHub repo](https://github.com/GoogleCloudPlatform/covid-19-open-data), the datset is no longer updated as of September 15, 2022.
 :::

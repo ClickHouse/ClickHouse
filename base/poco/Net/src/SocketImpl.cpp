@@ -274,9 +274,7 @@ void SocketImpl::shutdown()
 
 int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 {
-    bool blocking = _blocking && (flags & MSG_DONTWAIT) == 0;
-
-	if (_isBrokenTimeout && blocking)
+	if (_isBrokenTimeout)
 	{
 		if (_sndTimeout.totalMicroseconds() != 0)
 		{
@@ -291,13 +289,11 @@ int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 		if (_sockfd == POCO_INVALID_SOCKET) throw InvalidSocketException();
 		rc = ::send(_sockfd, reinterpret_cast<const char*>(buffer), length, flags);
 	}
-	while (blocking && rc < 0 && lastError() == POCO_EINTR);
+	while (_blocking && rc < 0 && lastError() == POCO_EINTR);
 	if (rc < 0)
 	{
 		int err = lastError();
-		if ((err == POCO_EAGAIN || err == POCO_EWOULDBLOCK) && !blocking)
-			;
-		else if (err == POCO_EAGAIN || err == POCO_ETIMEDOUT)
+		if (err == POCO_EAGAIN || err == POCO_ETIMEDOUT)
 			throw TimeoutException();
 		else
 			error(err);

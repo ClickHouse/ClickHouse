@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/StringRef.h>
-#include <Core/TypeId.h>
+#include <Core/Types.h>
 
 #include "config.h"
 
@@ -218,7 +218,7 @@ public:
       *  For example, to obtain unambiguous representation of Array of strings, strings data should be interleaved with their sizes.
       * Parameter begin should be used with Arena::allocContinue.
       */
-    virtual StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit = nullptr) const = 0;
+    virtual StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const = 0;
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns pointer to the position after the read data.
@@ -397,13 +397,6 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
-    /// Requests the removal of unused capacity.
-    /// It is a non-binding request to reduce the capacity of the underlying container to its size.
-    virtual MutablePtr shrinkToFit() const
-    {
-        return cloneResized(size());
-    }
-
     /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
     virtual void ensureOwnership() {}
 
@@ -425,23 +418,21 @@ public:
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
 
-    using MutableColumnCallback = std::function<void(WrappedPtr &)>;
-    virtual void forEachSubcolumn(MutableColumnCallback) {}
-
-    /// Default implementation calls the mutable overload using const_cast.
     using ColumnCallback = std::function<void(const WrappedPtr &)>;
-    virtual void forEachSubcolumn(ColumnCallback) const;
+    virtual void forEachSubcolumn(ColumnCallback) const {}
+
+    using MutableColumnCallback = std::function<void(WrappedPtr &)>;
+    virtual void forEachSubcolumn(MutableColumnCallback callback);
 
     /// Similar to forEachSubcolumn but it also do recursive calls.
     /// In recursive calls it's prohibited to replace pointers
     /// to subcolumns, so we use another callback function.
 
-    using RecursiveMutableColumnCallback = std::function<void(IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback) {}
-
-    /// Default implementation calls the mutable overload using const_cast.
     using RecursiveColumnCallback = std::function<void(const IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const;
+    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const {}
+
+    using RecursiveMutableColumnCallback = std::function<void(IColumn &)>;
+    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback);
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.

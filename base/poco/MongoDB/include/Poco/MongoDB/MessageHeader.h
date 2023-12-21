@@ -28,9 +28,6 @@ namespace MongoDB
 {
 
 
-    class Message; // Required to disambiguate friend declaration in MessageHeader.
-
-
     class MongoDB_API MessageHeader
     /// Represents the message header which is always prepended to a
     /// MongoDB request or response message.
@@ -40,18 +37,14 @@ namespace MongoDB
 
         enum OpCode
         {
-            // Opcodes deprecated in MongoDB 5.0
             OP_REPLY = 1,
+            OP_MSG = 1000,
             OP_UPDATE = 2001,
             OP_INSERT = 2002,
             OP_QUERY = 2004,
             OP_GET_MORE = 2005,
             OP_DELETE = 2006,
-            OP_KILL_CURSORS = 2007,
-
-            /// Opcodes supported in MongoDB 5.1 and later
-            OP_COMPRESSED = 2012,
-            OP_MSG = 2013
+            OP_KILL_CURSORS = 2007
         };
 
         explicit MessageHeader(OpCode);

@@ -17,7 +17,6 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/logger_useful.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -36,7 +35,6 @@ namespace ErrorCodes
 
 static const auto suffix = ".removed";
 static const auto cleaner_reschedule_ms = 60000;
-static const auto reschedule_error_multiplier = 10;
 
 DatabasePostgreSQL::DatabasePostgreSQL(
         ContextPtr context_,
@@ -53,9 +51,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
-    , log(&Poco::Logger::get("DatabasePostgreSQL(" + dbname_ + ")"))
 {
-    fs::create_directories(metadata_path);
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
@@ -178,7 +174,7 @@ StoragePtr DatabasePostgreSQL::tryGetTable(const String & table_name, ContextPtr
 }
 
 
-StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr context_, bool table_checked) const
+StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr, bool table_checked) const
 {
     if (!cache_tables || !cached_tables.contains(table_name))
     {
@@ -193,14 +189,10 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
 
         auto storage = std::make_shared<StoragePostgreSQL>(
                 StorageID(database_name, table_name), pool, table_name,
-                ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{},
-                context_, configuration.schema, configuration.on_conflict);
+                ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{}, configuration.schema, configuration.on_conflict);
 
         if (cache_tables)
-        {
-            LOG_TEST(log, "Cached table `{}`", table_name);
             cached_tables[table_name] = storage;
-        }
 
         return storage;
     }
@@ -298,7 +290,7 @@ void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 }
 
 
-void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, LoadingStrictnessLevel /*mode*/)
+void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
 {
     {
         std::lock_guard lock{mutex};
@@ -323,26 +315,8 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, Load
 void DatabasePostgreSQL::removeOutdatedTables()
 {
     std::lock_guard lock{mutex};
-
-    std::set<std::string> actual_tables;
-    try
-    {
-        auto connection_holder = pool->get();
-        actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        /** Avoid repeated interrupting other normal routines (they acquire locks!)
-          * for the case of unavailable connection, since it is possible to be
-          * unsuccessful again, and the unsuccessful conn is very time-consuming:
-          * connection period is exclusive and timeout is at least 2 seconds for
-          * PostgreSQL.
-          */
-        cleaner_task->scheduleAfter(reschedule_error_multiplier * cleaner_reschedule_ms);
-        return;
-    }
+    auto connection_holder = pool->get();
+    auto actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
 
     if (cache_tables)
     {

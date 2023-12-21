@@ -7,11 +7,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/PODArray_fwd.h>
-#include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-
-#include <Backups/IBackup.h>
-#include <Backups/WithRetries.h>
 
 #include <span>
 
@@ -45,18 +41,16 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
     void drop() override;
-
-    NamesAndTypesList getVirtuals() const override;
 
     std::string getName() const override { return "KeeperMap"; }
     Names getPrimaryKey() const override { return {primary_key}; }
 
     Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
-    Chunk getBySerializedKeys(std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version) const;
+    Chunk getBySerializedKeys(std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map) const;
 
     Block getSampleBlock(const Names &) const override;
 
@@ -74,9 +68,6 @@ public:
         return node->getColumnName() == primary_key;
     }
     bool supportsDelete() const override { return true; }
-
-    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     zkutil::ZooKeeperPtr getClient() const;
     const std::string & dataPath() const;
@@ -120,25 +111,18 @@ private:
 
     std::optional<bool> isTableValid() const;
 
-    void restoreDataImpl(
-        const BackupPtr & backup,
-        const String & data_path_in_backup,
-        std::shared_ptr<WithRetries> with_retries,
-        bool allow_non_empty_tables,
-        const DiskPtr & temporary_disk);
-
-    std::string zk_root_path;
+    std::string root_path;
     std::string primary_key;
 
-    std::string zk_data_path;
+    std::string data_path;
 
-    std::string zk_metadata_path;
+    std::string metadata_path;
 
-    std::string zk_tables_path;
-    std::string zk_table_path;
+    std::string tables_path;
+    std::string table_path;
 
-    std::string zk_dropped_path;
-    std::string zk_dropped_lock_path;
+    std::string dropped_path;
+    std::string dropped_lock_path;
 
     std::string zookeeper_name;
 

@@ -184,7 +184,7 @@ scope_guard MergeTreeTransaction::beforeCommit()
 
     /// We should wait for mutations to finish before committing transaction, because some mutation may fail and cause rollback.
     for (const auto & table_and_mutation : mutations_to_wait)
-        table_and_mutation.first->waitForMutation(table_and_mutation.second, /* wait_for_another_mutation */ false);
+        table_and_mutation.first->waitForMutation(table_and_mutation.second);
 
     assert([&]()
     {
@@ -326,8 +326,6 @@ void MergeTreeTransaction::afterFinalize()
     is_read_only = storages.empty();
 
     /// Release shared pointers just in case
-    creating_parts.clear();
-    removing_parts.clear();
     storages.clear();
     mutations.clear();
     finalized = true;

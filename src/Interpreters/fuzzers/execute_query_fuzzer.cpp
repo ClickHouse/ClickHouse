@@ -13,44 +13,43 @@
 using namespace DB;
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
+try
 {
-    try
+    std::string input = std::string(reinterpret_cast<const char*>(data), size);
+
+    static SharedContextHolder shared_context;
+    static ContextMutablePtr context;
+
+    auto initialize = [&]() mutable
     {
-        std::string input = std::string(reinterpret_cast<const char*>(data), size);
+        shared_context = Context::createShared();
+        context = Context::createGlobal(shared_context.get());
+        context->makeGlobalContext();
+        context->setApplicationType(Context::ApplicationType::LOCAL);
 
-        static SharedContextHolder shared_context;
-        static ContextMutablePtr context;
+        registerFunctions();
+        registerAggregateFunctions();
+        registerTableFunctions();
+        registerStorages();
+        registerDictionaries();
+        registerDisks(/* global_skip_access_check= */ true);
+        registerFormats();
 
-        auto initialize = [&]() mutable
-        {
-            shared_context = Context::createShared();
-            context = Context::createGlobal(shared_context.get());
-            context->makeGlobalContext();
-            context->setApplicationType(Context::ApplicationType::LOCAL);
+        return true;
+    };
 
-            registerFunctions();
-            registerAggregateFunctions();
-            registerTableFunctions();
-            registerStorages();
-            registerDictionaries();
-            registerDisks(/* global_skip_access_check= */ true);
-            registerFormats();
+    static bool initialized = initialize();
+    (void) initialized;
 
-            return true;
-        };
+    auto io = DB::executeQuery(input, context, true, QueryProcessingStage::Complete);
 
-        static bool initialized = initialize();
-        (void) initialized;
-
-        auto io = DB::executeQuery(input, context, QueryFlags{ .internal = true }, QueryProcessingStage::Complete).second;
-
-        PullingPipelineExecutor executor(io.pipeline);
-        Block res;
-        while (!res && executor.pull(res));
-    }
-    catch (...)
-    {
-    }
+    PullingPipelineExecutor executor(io.pipeline);
+    Block res;
+    while (!res && executor.pull(res));
 
     return 0;
+}
+catch (...)
+{
+    return 1;
 }

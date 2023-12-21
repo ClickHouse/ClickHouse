@@ -9,10 +9,6 @@
 #include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
 
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-
 #include <atomic>
 #include <filesystem>
 #include <map>
@@ -20,9 +16,12 @@
 #include <sstream>
 #include <unordered_map>
 #include <fmt/format.h>
-#include <libunwind.h>
 
 #include "config.h"
+
+#if USE_UNWIND
+#    include <libunwind.h>
+#endif
 
 namespace
 {
@@ -208,7 +207,8 @@ void StackTrace::symbolize(
     const StackTrace::FramePointers & frame_pointers, [[maybe_unused]] size_t offset, size_t size, StackTrace::Frames & frames)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    auto symbol_index_ptr = DB::SymbolIndex::instance();
+    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
     for (size_t i = 0; i < offset; ++i)
@@ -283,28 +283,21 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
 
 void StackTrace::tryCapture()
 {
+#if USE_UNWIND
     size = unw_backtrace(frame_pointers.data(), capacity);
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
+#else
+    size = 0;
+#endif
 }
 
 /// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
 
-// Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
-// information but pollute stack traces).
-// Replace parts from @c replacements with shorter aliases
-String demangleAndCollapseNames(std::string_view file, const char * const symbol_name)
+String collapseNames(String && haystack)
 {
-    std::string_view file_copy = file;
-    if (auto trim_pos = file.find_last_of('/'); trim_pos != file.npos)
-        file_copy.remove_suffix(file.size() - trim_pos);
-    if (file_copy.ends_with("functional"))
-        return "?";
-
-    String haystack = demangle(symbol_name);
-
-    // TODO myrrc surely there is a written version already for better in place search&replace
+    // TODO: surely there is a written version already for better in place search&replace
     for (auto [needle, to] : replacements)
     {
         size_t pos = 0;
@@ -347,11 +340,14 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         return callback("<Empty trace>");
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
+    std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    out.exceptions(std::ios::failbit);
 
     using enum DB::Dwarf::LocationInfoMode;
     const auto mode = fatal ? FULL_WITH_INLINE : FAST;
 
-    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    auto symbol_index_ptr = DB::SymbolIndex::instance();
+    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
     std::unordered_map<String, DB::Dwarf> dwarfs;
 
     for (size_t i = stack_trace.offset; i < stack_trace.size; ++i)
@@ -362,10 +358,8 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
         const void * physical_addr = reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
 
-        DB::WriteBufferFromOwnString out;
         out << i << ". ";
 
-        String file;
         if (std::error_code ec; object && std::filesystem::exists(object->name, ec) && !ec)
         {
             auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
@@ -373,39 +367,33 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
             DB::Dwarf::LocationInfo location;
 
             if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, mode, inline_frames))
-            {
-                file = location.file.toString();
-                out << file << ":" << location.line << ": ";
-            }
+                out << location.file.toString() << ":" << location.line << ": ";
         }
 
         if (const auto * const symbol = symbol_index.findSymbol(virtual_addr))
-            out << demangleAndCollapseNames(file, symbol->name);
+            out << collapseNames(demangle(symbol->name));
         else
             out << "?";
 
         if (shouldShowAddress(physical_addr))
-        {
-            out << " @ ";
-            DB::writePointerHex(physical_addr, out);
-        }
+            out << " @ " << physical_addr;
 
         out << " in " << (object ? object->name : "?");
 
         for (size_t j = 0; j < inline_frames.size(); ++j)
         {
             const auto & frame = inline_frames[j];
-            const String file_for_inline_frame = frame.location.file.toString();
             callback(fmt::format(
                 "{}.{}. inlined from {}:{}: {}",
                 i,
                 j + 1,
-                file_for_inline_frame,
+                frame.location.file.toString(),
                 frame.location.line,
-                demangleAndCollapseNames(file_for_inline_frame, frame.name)));
+                collapseNames(demangle(frame.name))));
         }
 
         callback(out.str());
+        out.str({});
     }
 #else
     for (size_t i = stack_trace.offset; i < stack_trace.size; ++i)
@@ -416,21 +404,6 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
 
 void StackTrace::toStringEveryLine(std::function<void(std::string_view)> callback) const
 {
-    toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
-}
-
-void StackTrace::toStringEveryLine(const FramePointers & frame_pointers, std::function<void(std::string_view)> callback)
-{
-    toStringEveryLineImpl(true, {frame_pointers, 0, static_cast<size_t>(std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin())}, std::move(callback));
-}
-
-void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, size_t size, std::function<void(std::string_view)> callback)
-{
-    __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
-
-    StackTrace::FramePointers frame_pointers{};
-    std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
-
     toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
 }
 
@@ -458,7 +431,8 @@ String toStringCached(const StackTrace::FramePointers & pointers, size_t offset,
         return it->second;
     else
     {
-        DB::WriteBufferFromOwnString out;
+        std::ostringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        out.exceptions(std::ios::failbit);
         toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
 
         return cache.emplace(StackTraceTriple{pointers, offset, size}, out.str()).first->second;

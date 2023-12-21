@@ -16,7 +16,6 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/thread_local_rng.h>
-#include <Coordination/KeeperFeatureFlags.h>
 #include <unistd.h>
 #include <random>
 
@@ -33,8 +32,7 @@ namespace CurrentMetrics
 
 namespace DB
 {
-class ZooKeeperLog;
-class ZooKeeperWithFaultInjection;
+    class ZooKeeperLog;
 
 namespace ErrorCodes
 {
@@ -52,8 +50,7 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 struct ShuffleHost
 {
     String host;
-    UInt8 original_index = 0;
-    Priority priority;
+    Int64 priority = 0;
     UInt64 random = 0;
 
     void randomize()
@@ -136,16 +133,6 @@ struct MultiReadResponses
             responses);
     }
 
-    /// If Keeper/ZooKeeper doesn't support MultiRead feature we will dispatch
-    /// asynchronously all the read requests separately
-    /// Sometimes it's important to process all requests instantly
-    /// e.g. we want to trigger exceptions while we are in the ZK client retry loop
-    void waitForResponses()
-    {
-        if (auto * responses_with_futures = std::get_if<ResponsesWithFutures>(&responses))
-            responses_with_futures->waitForResponses();
-    }
-
 private:
     using RegularResponses = std::vector<Coordination::ResponsePtr>;
     using FutureResponses = std::vector<std::future<ResponseType>>;
@@ -169,15 +156,6 @@ private:
             return *cached_responses[index];
         }
 
-        void waitForResponses()
-        {
-            for (size_t i = 0; i < size(); ++i)
-            {
-                if (!cached_responses[i].has_value())
-                    cached_responses[i] = future_responses[i].get();
-            }
-        }
-
         size_t size() const { return future_responses.size(); }
     };
 
@@ -195,9 +173,6 @@ private:
 /// Methods with names not starting at try- raise KeeperException on any error.
 class ZooKeeper
 {
-    /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
-    friend class DB::ZooKeeperWithFaultInjection;
-
 public:
 
     using Ptr = std::shared_ptr<ZooKeeper>;
@@ -241,7 +216,7 @@ public:
     /// Returns true, if the session has expired.
     bool expired();
 
-    bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const;
+    DB::KeeperApiVersion getApiVersion();
 
     /// Create a znode.
     /// Throw an exception if something went wrong.
@@ -262,8 +237,6 @@ public:
     /// Creates all non-existent ancestors of the given path with empty contents.
     /// Does not create the node itself.
     void createAncestors(const std::string & path);
-
-    void checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests);
 
     /// Remove the node if the version matches. (if version == -1, remove any version).
     void remove(const std::string & path, int32_t version = -1);
@@ -289,8 +262,6 @@ public:
     {
         return exists(paths.begin(), paths.end());
     }
-
-    bool anyExists(const std::vector<std::string> & paths);
 
     std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
     std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
@@ -360,11 +331,6 @@ public:
                              Coordination::WatchCallback watch_callback,
                              Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
-    Strings getChildrenWatch(const std::string & path,
-                             Coordination::Stat * stat,
-                             Coordination::WatchCallbackPtr watch_callback,
-                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
     using MultiGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, false>;
     using MultiTryGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, true>;
 
@@ -401,13 +367,6 @@ public:
         Coordination::WatchCallback watch_callback,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
-    Coordination::Error tryGetChildrenWatch(
-        const std::string & path,
-        Strings & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallbackPtr watch_callback,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
     template <typename TIter>
     MultiTryGetChildrenResponse
     tryGetChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
@@ -428,9 +387,8 @@ public:
     /// Performs several operations in a transaction.
     /// Throws on every error.
     Coordination::Responses multi(const Coordination::Requests & requests);
-    /// Throws only if some operation has returned an "unexpected" error - an error that would cause
-    /// the corresponding try- method to throw.
-    /// On exception, `responses` may or may not be populated.
+    /// Throws only if some operation has returned an "unexpected" error
+    /// - an error that would cause the corresponding try- method to throw.
     Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
     /// Throws nothing (even session expired errors)
     Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
@@ -474,13 +432,7 @@ public:
     /// If the node exists and its value is equal to fast_delete_if_equal_value it will remove it
     /// If the node exists and its value is different, it will wait for it to disappear. It will throw a LOGICAL_ERROR if the node doesn't
     /// disappear automatically after 3x session_timeout.
-    void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
-
-    Coordination::ReconfigResponse reconfig(
-        const std::string & joining,
-        const std::string & leaving,
-        const std::string & new_members,
-        int32_t version = -1);
+    void handleEphemeralNodeExistence(const std::string & path, const std::string & fast_delete_if_equal_value);
 
     /// Async interface (a small subset of operations is implemented).
     ///
@@ -520,7 +472,7 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureGetChildren asyncTryGetChildrenNoThrow(
         const std::string & path,
-        Coordination::WatchCallbackPtr watch_callback = {},
+        Coordination::WatchCallback watch_callback = {},
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     using FutureSet = std::future<Coordination::SetResponse>;
@@ -562,32 +514,17 @@ public:
         const std::string & path,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
-    using FutureReconfig = std::future<Coordination::ReconfigResponse>;
-    FutureReconfig asyncReconfig(
-        const std::string & joining,
-        const std::string & leaving,
-        const std::string & new_members,
-        int32_t version = -1);
-
     void finalize(const String & reason);
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
     UInt32 getSessionUptime() const { return static_cast<UInt32>(session_uptime.elapsedSeconds()); }
 
-    bool hasReachedDeadline() const { return impl->hasReachedDeadline(); }
-
-    uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
-
     void setServerCompletelyStarted();
 
-    Int8 getConnectedHostIdx() const;
-    String getConnectedHostPort() const;
-    int32_t getConnectionXid() const;
-
-    const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return impl->getKeeperFeatureFlags(); }
-
 private:
+    friend class EphemeralNodeHolder;
+
     void init(ZooKeeperArgs args_);
 
     /// The following methods don't any throw exceptions but return error codes.
@@ -600,7 +537,7 @@ private:
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat,
-        Coordination::WatchCallbackPtr watch_callback,
+        Coordination::WatchCallback watch_callback,
         Coordination::ListRequestType list_request_type);
     Coordination::Error multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
@@ -613,7 +550,7 @@ private:
     template <typename TResponse, bool try_multi, typename TIter>
     MultiReadResponses<TResponse, try_multi> multiRead(TIter start, TIter end, RequestFactory request_factory, AsyncFunction<TResponse> async_fun)
     {
-        if (isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ))
+        if (getApiVersion() >= DB::KeeperApiVersion::WITH_MULTI_READ)
         {
             Coordination::Requests requests;
             for (auto it = start; it != end; ++it)
@@ -650,6 +587,8 @@ private:
 
     ZooKeeperArgs args;
 
+    std::mutex mutex;
+
     Poco::Logger * log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
 
@@ -666,18 +605,11 @@ class EphemeralNodeHolder
 public:
     using Ptr = std::shared_ptr<EphemeralNodeHolder>;
 
-    EphemeralNodeHolder(const std::string & path_, ZooKeeper & zookeeper_, bool create, bool try_create, bool sequential, const std::string & data)
+    EphemeralNodeHolder(const std::string & path_, ZooKeeper & zookeeper_, bool create, bool sequential, const std::string & data)
             : path(path_), zookeeper(zookeeper_)
     {
         if (create)
-        {
             path = zookeeper.create(path, data, sequential ? CreateMode::EphemeralSequential : CreateMode::Ephemeral);
-            need_remove = created = true;
-        }
-        else if (try_create)
-        {
-            need_remove = created = Coordination::Error::ZOK == zookeeper.tryCreate(path, data, sequential ? CreateMode::EphemeralSequential : CreateMode::Ephemeral);
-        }
     }
 
     std::string getPath() const
@@ -685,32 +617,19 @@ public:
         return path;
     }
 
-    bool isCreated() const
-    {
-        return created;
-    }
-
     static Ptr create(const std::string & path, ZooKeeper & zookeeper, const std::string & data = "")
     {
-        return std::make_shared<EphemeralNodeHolder>(path, zookeeper, true, false, false, data);
-    }
-
-    static Ptr tryCreate(const std::string & path, ZooKeeper & zookeeper, const std::string & data = "")
-    {
-        auto node = std::make_shared<EphemeralNodeHolder>(path, zookeeper, false, true, false, data);
-        if (node->isCreated())
-            return node;
-        return nullptr;
+        return std::make_shared<EphemeralNodeHolder>(path, zookeeper, true, false, data);
     }
 
     static Ptr createSequential(const std::string & path, ZooKeeper & zookeeper, const std::string & data = "")
     {
-        return std::make_shared<EphemeralNodeHolder>(path, zookeeper, true, false, true, data);
+        return std::make_shared<EphemeralNodeHolder>(path, zookeeper, true, true, data);
     }
 
     static Ptr existing(const std::string & path, ZooKeeper & zookeeper)
     {
-        return std::make_shared<EphemeralNodeHolder>(path, zookeeper, false, false, false, "");
+        return std::make_shared<EphemeralNodeHolder>(path, zookeeper, false, false, "");
     }
 
     void setAlreadyRemoved()
@@ -724,13 +643,7 @@ public:
             return;
         try
         {
-            if (!zookeeper.expired())
-                zookeeper.tryRemove(path);
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::CannotRemoveEphemeralNode);
-                LOG_DEBUG(&Poco::Logger::get("EphemeralNodeHolder"), "Cannot remove {} since session has been expired", path);
-            }
+            zookeeper.tryRemove(path);
         }
         catch (...)
         {
@@ -744,7 +657,6 @@ private:
     ZooKeeper & zookeeper;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::EphemeralNode};
     bool need_remove = true;
-    bool created = false;
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
@@ -756,27 +668,5 @@ String extractZooKeeperName(const String & path);
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr);
 
 String getSequentialNodeName(const String & prefix, UInt64 number);
-
-void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
-
-bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
-
-String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
-
-template <typename Client>
-void addCheckNotExistsRequest(Coordination::Requests & requests, const Client & client, const std::string & path)
-{
-    if (client.isFeatureEnabled(DB::KeeperFeatureFlag::CHECK_NOT_EXISTS))
-    {
-        auto request = std::make_shared<Coordination::CheckRequest>();
-        request->path = path;
-        request->not_exists = true;
-        requests.push_back(std::move(request));
-        return;
-    }
-
-    requests.push_back(makeCreateRequest(path, "", zkutil::CreateMode::Persistent));
-    requests.push_back(makeRemoveRequest(path, -1));
-}
 
 }

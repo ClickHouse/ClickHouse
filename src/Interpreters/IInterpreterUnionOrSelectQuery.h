@@ -35,7 +35,6 @@ public:
 
     virtual void buildQueryPlan(QueryPlan & query_plan) = 0;
     QueryPipelineBuilder buildQueryPipeline();
-    QueryPipelineBuilder buildQueryPipeline(QueryPlan & query_plan);
 
     virtual void ignoreWithTotals() = 0;
 

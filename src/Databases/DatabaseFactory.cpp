@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseDictionary.h>
-#include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOrdinary.h>
@@ -15,6 +14,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
@@ -46,14 +46,6 @@
 
 #if USE_SQLITE
 #include <Databases/SQLite/DatabaseSQLite.h>
-#endif
-
-#if USE_AWS_S3
-#include <Databases/DatabaseS3.h>
-#endif
-
-#if USE_HDFS
-#include <Databases/DatabaseHDFS.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -107,6 +99,9 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
 {
     cckMetadataPathForOrdinary(create, metadata_path);
 
+    /// Creates store/xxx/ for Atomic
+    fs::create_directories(fs::path(metadata_path).parent_path());
+
     DatabasePtr impl = getImpl(create, metadata_path, context);
 
     if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
@@ -137,13 +132,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
     static const std::unordered_set<std::string_view> database_engines{"Ordinary", "Atomic", "Memory",
         "Dictionary", "Lazy", "Replicated", "MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3", "HDFS"};
+        "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
 
     if (!database_engines.contains(engine_name))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine name `{}` does not exist", engine_name);
 
     static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
-        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite", "Filesystem", "S3", "HDFS"};
+        "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
 
     static const std::unordered_set<std::string_view> engines_with_table_overrides{"MaterializeMySQL", "MaterializedMySQL", "MaterializedPostgreSQL"};
     bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
@@ -323,8 +318,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, context, false);
-            use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, false);
+            use_table_cache = named_collection->getOrDefault<UInt64>("use_tables_cache", 0);
         }
         else
         {
@@ -386,7 +381,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, context, false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, false);
         }
         else
         {
@@ -435,63 +430,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
 
         return std::make_shared<DatabaseSQLite>(context, engine_define, create.attach, database_path);
-    }
-#endif
-
-    else if (engine_name == "Filesystem")
-    {
-        const ASTFunction * engine = engine_define->engine;
-
-        /// If init_path is empty, then the current path will be used
-        std::string init_path;
-
-        if (engine->arguments && !engine->arguments->children.empty())
-        {
-            if (engine->arguments->children.size() != 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem database requires at most 1 argument: filesystem_path");
-
-            const auto & arguments = engine->arguments->children;
-            init_path = safeGetLiteralValue<String>(arguments[0], engine_name);
-        }
-
-        return std::make_shared<DatabaseFilesystem>(database_name, init_path, context);
-    }
-
-#if USE_AWS_S3
-    else if (engine_name == "S3")
-    {
-        const ASTFunction * engine = engine_define->engine;
-
-        DatabaseS3::Configuration config;
-
-        if (engine->arguments && !engine->arguments->children.empty())
-        {
-            ASTs & engine_args = engine->arguments->children;
-            config = DatabaseS3::parseArguments(engine_args, context);
-        }
-
-        return std::make_shared<DatabaseS3>(database_name, config, context);
-    }
-#endif
-
-#if USE_HDFS
-    else if (engine_name == "HDFS")
-    {
-        const ASTFunction * engine = engine_define->engine;
-
-        /// If source_url is empty, then table name must contain full url
-        std::string source_url;
-
-        if (engine->arguments && !engine->arguments->children.empty())
-        {
-            if (engine->arguments->children.size() != 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS database requires at most 1 argument: source_url");
-
-            const auto & arguments = engine->arguments->children;
-            source_url = safeGetLiteralValue<String>(arguments[0], engine_name);
-        }
-
-        return std::make_shared<DatabaseHDFS>(database_name, source_url, context);
     }
 #endif
 

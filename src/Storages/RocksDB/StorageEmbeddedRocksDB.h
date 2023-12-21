@@ -5,7 +5,6 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>
-#include <Storages/RocksDB/EmbeddedRocksDBSink.h>
 
 
 namespace rocksdb
@@ -27,7 +26,6 @@ class Context;
 class StorageEmbeddedRocksDB final : public IStorage, public IKeyValueEntity, WithContext
 {
     friend class EmbeddedRocksDBSink;
-    friend class ReadFromEmbeddedRocksDB;
 public:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
         const String & relative_data_path_,
@@ -41,8 +39,7 @@ public:
 
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -51,21 +48,11 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands &, ContextPtr) override;
-    void drop() override;
-
-    bool optimize(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ASTPtr & partition,
-        bool final,
-        bool deduplicate,
-        const Names & deduplicate_by_columns,
-        ContextPtr context) override;
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
@@ -94,13 +81,6 @@ public:
         PaddedPODArray<UInt8> * out_null_map) const;
 
     bool supportsDelete() const override { return true; }
-
-    /// To turn on the optimization optimize_trivial_approximate_count_query=1 should be set for a query.
-    bool supportsTrivialCountOptimization() const override { return true; }
-
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
 private:
     const String primary_key;

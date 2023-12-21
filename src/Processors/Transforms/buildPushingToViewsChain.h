@@ -7,8 +7,6 @@
 #include <Storages/IStorage.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadStatus.h>
-
 
 namespace Poco
 {
@@ -63,14 +61,8 @@ Chain buildPushingToViewsChain(
     /// We could specify separate thread_status for each view.
     /// Needed mainly to collect counters separately. Should be improved.
     ThreadStatusesHolderPtr thread_status_holder,
-    /// Usually current_thread->getThreadGroup(), but sometimes ThreadStatus
-    /// may not have ThreadGroup (i.e. Buffer background flush), and in this
-    /// case it should be passed outside.
-    ThreadGroupPtr running_group,
     /// Counter to measure time spent separately per view. Should be improved.
     std::atomic_uint64_t * elapsed_counter_ms,
-    /// True if it's part of async insert flush
-    bool async_insert,
     /// LiveView executes query itself, it needs source block structure.
     const Block & live_view_header = {});
 

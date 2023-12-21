@@ -20,6 +20,7 @@ public:
         StorageMetadataPtr metadata_snapshot_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
+        bool cleanup_,
         MergeMutateSelectedEntryPtr merge_mutate_entry_,
         TableLockHolder table_lock_holder_,
         IExecutableTask::TaskResultCallback & task_result_callback_)
@@ -27,19 +28,19 @@ public:
         , metadata_snapshot(std::move(metadata_snapshot_))
         , deduplicate(deduplicate_)
         , deduplicate_by_columns(std::move(deduplicate_by_columns_))
+        , cleanup(cleanup_)
         , merge_mutate_entry(std::move(merge_mutate_entry_))
         , table_lock_holder(std::move(table_lock_holder_))
         , task_result_callback(task_result_callback_)
     {
         for (auto & item : merge_mutate_entry->future_part->parts)
-            priority.value += item->getBytesOnDisk();
+            priority += item->getBytesOnDisk();
     }
 
     bool executeStep() override;
     void onCompleted() override;
-    StorageID getStorageID() const override;
-    Priority getPriority() const override { return priority; }
-    String getQueryId() const override { return getStorageID().getShortName() + "::" + merge_mutate_entry->future_part->name; }
+    StorageID getStorageID() override;
+    UInt64 getPriority() override { return priority; }
 
     void setCurrentTransaction(MergeTreeTransactionHolder && txn_holder_, MergeTreeTransactionPtr && txn_)
     {
@@ -67,6 +68,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     bool deduplicate;
     Names deduplicate_by_columns;
+    bool cleanup;
     MergeMutateSelectedEntryPtr merge_mutate_entry{nullptr};
     TableLockHolder table_lock_holder;
     FutureMergedMutatedPartPtr future_part{nullptr};
@@ -75,10 +77,9 @@ private:
     using MergeListEntryPtr = std::unique_ptr<MergeListEntry>;
     MergeListEntryPtr merge_list_entry;
 
-    Priority priority;
+    UInt64 priority{0};
 
     std::function<void(const ExecutionStatus &)> write_part_log;
-    std::function<void()> transfer_profile_counters_to_initial_query;
     IExecutableTask::TaskResultCallback task_result_callback;
     MergeTaskPtr merge_task{nullptr};
 
@@ -86,10 +87,6 @@ private:
     MergeTreeTransactionPtr txn;
 
     ProfileEvents::Counters profile_counters;
-
-    ContextMutablePtr task_context;
-
-    ContextMutablePtr createTaskContext() const;
 };
 
 

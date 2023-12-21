@@ -67,7 +67,7 @@ DatabaseMySQL::DatabaseMySQL(
     try
     {
         /// Test that the database is working fine; it will also fetch tables.
-        empty(); // NOLINT(bugprone-standalone-empty)
+        empty();
     }
     catch (...)
     {
@@ -76,8 +76,6 @@ DatabaseMySQL::DatabaseMySQL(
         else
             throw;
     }
-
-    fs::create_directories(metadata_path);
 
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
 }
@@ -405,8 +403,9 @@ String DatabaseMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/)
+void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
 {
+
     std::lock_guard lock{mutex};
     fs::directory_iterator iter(getMetadataPath());
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types_fwd.h>
+#include <Core/Types.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Poco/JSON/Object.h>
 
@@ -96,10 +96,8 @@ using MutableSerializationInfos = std::vector<MutableSerializationInfoPtr>;
 class SerializationInfoByName : public std::map<String, MutableSerializationInfoPtr>
 {
 public:
-    using Settings = SerializationInfo::Settings;
-
     SerializationInfoByName() = default;
-    SerializationInfoByName(const NamesAndTypesList & columns, const Settings & settings);
+    SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings);
 
     void add(const Block & block);
     void add(const SerializationInfoByName & other);
@@ -110,9 +108,7 @@ public:
     void replaceData(const SerializationInfoByName & other);
 
     void writeJSON(WriteBuffer & out) const;
-
-    static SerializationInfoByName readJSON(
-        const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in);
+    void readJSON(ReadBuffer & in);
 };
 
 }

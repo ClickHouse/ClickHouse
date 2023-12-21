@@ -1,5 +1,7 @@
 #pragma once
 
+#include <re2_st/re2.h>
+#include <re2_st/stringpiece.h>
 #include <string>
 #include <vector>
 #include <Core/Block.h>
@@ -11,14 +13,6 @@
 #include <Formats/ParsedTemplateFormatString.h>
 #include <Formats/SchemaInferenceUtils.h>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace DB
 {
@@ -34,17 +28,17 @@ public:
     /// Return true if row was successfully parsed and row fields were extracted.
     bool parseRow(PeekableReadBuffer & buf);
 
-    std::string_view getField(size_t index) { return matched_fields[index]; }
+    re2_st::StringPiece getField(size_t index) { return matched_fields[index]; }
     size_t getMatchedFieldsSize() const { return matched_fields.size(); }
     size_t getNumberOfGroups() const { return regexp.NumberOfCapturingGroups(); }
 
 private:
-    const re2::RE2 regexp;
+    const re2_st::RE2 regexp;
     // The vector of fields extracted from line using regexp.
-    std::vector<std::string_view> matched_fields;
+    std::vector<re2_st::StringPiece> matched_fields;
     // These two vectors are needed to use RE2::FullMatchN (function for extracting fields).
-    std::vector<re2::RE2::Arg> re2_arguments;
-    std::vector<re2::RE2::Arg *> re2_arguments_ptrs;
+    std::vector<re2_st::RE2::Arg> re2_arguments;
+    std::vector<re2_st::RE2::Arg *> re2_arguments_ptrs;
     bool skip_unmatched;
 };
 
@@ -86,9 +80,10 @@ public:
     RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
 
 private:
-    std::optional<DataTypes> readRowAndGetDataTypes() override;
+    DataTypes readRowAndGetDataTypes() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+
 
     using EscapingRule = FormatSettings::EscapingRule;
     RegexpFieldExtractor field_extractor;

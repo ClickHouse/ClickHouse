@@ -119,7 +119,7 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
-    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
+    void checkTableCanBeDropped() const override;
 
     void dropInnerTableIfAny(bool sync, ContextPtr context) override;
 
@@ -134,6 +134,7 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ContextPtr context) override;
 
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
@@ -141,7 +142,7 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     void startup() override;
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     void read(
         QueryPlan & query_plan,

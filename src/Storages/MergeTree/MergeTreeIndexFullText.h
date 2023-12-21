@@ -25,8 +25,8 @@ struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
 
     bool empty() const override { return !has_elems; }
 
-    const String index_name;
-    const BloomFilterParameters params;
+    String index_name;
+    BloomFilterParameters params;
 
     std::vector<BloomFilter> bloom_filters;
     bool has_elems;
@@ -92,7 +92,6 @@ private:
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
-            FUNCTION_HAS_ANY,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -108,13 +107,13 @@ private:
                 : function(function_), key_column(key_column_), bloom_filter(std::move(const_bloom_filter_)) {}
 
         Function function = FUNCTION_UNKNOWN;
-        /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS, FUNCTION_MULTI_SEARCH and FUNCTION_HAS_ANY
+        /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS and FUNCTION_MULTI_SEARCH
         size_t key_column;
 
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS
         std::unique_ptr<BloomFilter> bloom_filter;
 
-        /// For FUNCTION_IN, FUNCTION_NOT_IN, FUNCTION_MULTI_SEARCH and FUNCTION_HAS_ANY
+        /// For FUNCTION_IN, FUNCTION_NOT_IN and FUNCTION_MULTI_SEARCH
         std::vector<std::vector<BloomFilter>> set_bloom_filters;
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
@@ -162,7 +161,7 @@ public:
     ~MergeTreeIndexFullText() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query, ContextPtr context) const override;

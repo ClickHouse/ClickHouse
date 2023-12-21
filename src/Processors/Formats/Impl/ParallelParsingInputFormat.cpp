@@ -8,7 +8,7 @@
 namespace DB
 {
 
-void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group)
+void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
@@ -40,7 +40,6 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
             unit.segment.resize(0);
 
             size_t segment_start = getDataOffsetMaybeCompressed(*in);
-            auto file_segmentation_engine = file_segmentation_engine_creator(format_settings);
             auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes, max_block_size);
 
             unit.original_segment_size = getDataOffsetMaybeCompressed(*in) - segment_start;
@@ -65,7 +64,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
     }
 }
 
-void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_group, size_t current_ticket_number)
+void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
@@ -125,6 +124,10 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_grou
             column_mapping->is_set = true;
             first_parser_finished.set();
         }
+
+        // We suppose we will get at least some blocks for a non-empty buffer,
+        // except at the end of file. Also see a matching assert in readImpl().
+        assert(unit.is_last || !unit.chunk_ext.chunk.empty() || parsing_finished);
 
         std::lock_guard<std::mutex> lock(mutex);
         unit.status = READY_TO_READ;
@@ -196,69 +199,62 @@ Chunk ParallelParsingInputFormat::generate()
     }
 
     const auto inserter_unit_number = reader_ticket_number % processing_units.size();
-    auto * unit = &processing_units[inserter_unit_number];
+    auto & unit = processing_units[inserter_unit_number];
 
     if (!next_block_in_current_unit.has_value())
     {
-        while (true)
+        // We have read out all the Blocks from the previous Processing Unit,
+        // wait for the current one to become ready.
+        std::unique_lock<std::mutex> lock(mutex);
+        reader_condvar.wait(lock, [&](){ return unit.status == READY_TO_READ || parsing_finished; });
+
+        if (parsing_finished)
         {
-            // We have read out all the Blocks from the previous Processing Unit,
-            // wait for the current one to become ready.
-            std::unique_lock<std::mutex> lock(mutex);
-            reader_condvar.wait(lock, [&]() { return unit->status == READY_TO_READ || parsing_finished; });
-
-            if (parsing_finished)
+            /**
+              * Check for background exception and rethrow it before we return.
+              */
+            if (background_exception)
             {
-                /// Check for background exception and rethrow it before we return.
-                if (background_exception)
-                {
-                    lock.unlock();
-                    cancel();
-                    std::rethrow_exception(background_exception);
-                }
-
-                return {};
+                lock.unlock();
+                cancel();
+                std::rethrow_exception(background_exception);
             }
 
-            assert(unit->status == READY_TO_READ);
-
-            if (!unit->chunk_ext.chunk.empty())
-                break;
-
-            /// If this uint is last, parsing is finished.
-            if (unit->is_last)
-            {
-                parsing_finished = true;
-                return {};
-            }
-
-            /// We can get zero blocks for an entire segment if format parser
-            /// skipped all rows. For example, it can happen while using settings
-            /// input_format_allow_errors_num/input_format_allow_errors_ratio
-            /// and this segment contained only rows with errors.
-            /// Process the next unit.
-            ++reader_ticket_number;
-            unit = &processing_units[reader_ticket_number % processing_units.size()];
+            return {};
         }
 
+        assert(unit.status == READY_TO_READ);
         next_block_in_current_unit = 0;
     }
 
-    assert(next_block_in_current_unit.value() < unit->chunk_ext.chunk.size());
+    if (unit.chunk_ext.chunk.empty())
+    {
+        /*
+         * Can we get zero blocks for an entire segment, when the format parser
+         * skips it entire content and does not create any blocks? Probably not,
+         * but if we ever do, we should add a loop around the above if, to skip
+         * these. Also see a matching assert in the parser thread.
+         */
+        assert(unit.is_last);
+        parsing_finished = true;
+        return {};
+    }
 
-    Chunk res = std::move(unit->chunk_ext.chunk.at(*next_block_in_current_unit));
-    last_block_missing_values = std::move(unit->chunk_ext.block_missing_values[*next_block_in_current_unit]);
-    last_approx_bytes_read_for_chunk = unit->chunk_ext.approx_chunk_sizes.at(*next_block_in_current_unit);
+    assert(next_block_in_current_unit.value() < unit.chunk_ext.chunk.size());
+
+    Chunk res = std::move(unit.chunk_ext.chunk.at(*next_block_in_current_unit));
+    last_block_missing_values = std::move(unit.chunk_ext.block_missing_values[*next_block_in_current_unit]);
+    last_approx_bytes_read_for_chunk = unit.chunk_ext.approx_chunk_sizes.at(*next_block_in_current_unit);
 
     next_block_in_current_unit.value() += 1;
 
-    if (*next_block_in_current_unit == unit->chunk_ext.chunk.size())
+    if (*next_block_in_current_unit == unit.chunk_ext.chunk.size())
     {
         // parsing_finished reading this Processing Unit, move to the next one.
         next_block_in_current_unit.reset();
         ++reader_ticket_number;
 
-        if (unit->is_last)
+        if (unit.is_last)
         {
             // It it was the last unit, we're parsing_finished.
             parsing_finished = true;
@@ -267,7 +263,7 @@ Chunk ParallelParsingInputFormat::generate()
         {
             // Pass the unit back to the segmentator.
             std::lock_guard lock(mutex);
-            unit->status = READY_TO_INSERT;
+            unit.status = READY_TO_INSERT;
             segmentator_condvar.notify_all();
         }
     }

@@ -14,7 +14,6 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/JoinUtils.h>
 
 #include <Compression/CompressedWriteBuffer.h>
@@ -90,10 +89,10 @@ RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const
     return lock->getLock(type, query_id, acquire_timeout, false);
 }
 
-SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
+SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::lock_guard mutate_lock(mutate_mutex);
-    return StorageSetOrJoinBase::write(query, metadata_snapshot, context, /*async_insert=*/false);
+    return StorageSetOrJoinBase::write(query, metadata_snapshot, context);
 }
 
 void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
@@ -139,15 +138,14 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     // New scope controls lifetime of pipeline.
     {
         auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
-        MutationsInterpreter::Settings settings(true);
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, settings);
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
         Block block;
         while (executor.pull(block))
         {
-            new_data->addBlockToJoin(block, true);
+            new_data->addJoinedBlock(block, true);
             if (persistent)
                 backup_stream.write(block);
         }
@@ -178,7 +176,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     }
 }
 
-HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
+HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
@@ -238,10 +236,8 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     /// Qualifies will be added by join implementation (TableJoin contains a rename mapping).
     analyzed_join->setRightKeys(key_names);
     analyzed_join->setLeftKeys(left_key_names_resorted);
-    Block right_sample_block;
-    for (const auto & name : required_columns_names)
-        right_sample_block.insert(getRightSampleBlock().getByName(name));
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+
+    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, getRightSampleBlock());
 
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     join_clone->setLock(holder);
@@ -260,7 +256,7 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     if (!holder)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 
-    join->addBlockToJoin(block_to_insert, true);
+    join->addJoinedBlock(block_to_insert, true);
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const
@@ -535,7 +531,8 @@ private:
 #undef M
 
             default:
-                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys of type {} in StorageJoin", join->data->type);
+                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys in StorageJoin. Type: {}",
+                                static_cast<UInt32>(join->data->type));
         }
 
         if (!rows_added)
