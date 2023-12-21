@@ -210,8 +210,9 @@ private:
     {
         if (unconditional_retry)
         {
-            LOG_DEBUG(logger, "ZooKeeperRetriesControl: unconditional_retry");
             unconditional_retry = false;
+            /// reset the flag, it will be set to false in case of error
+            iteration_succeeded = true;
             return true;
         }
 
