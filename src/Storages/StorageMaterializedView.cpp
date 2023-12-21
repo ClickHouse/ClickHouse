@@ -460,6 +460,16 @@ std::optional<UInt64> StorageMaterializedView::totalBytes(const Settings & setti
     return {};
 }
 
+std::optional<UInt64> StorageMaterializedView::totalBytesUncompressed(const Settings & settings) const
+{
+    if (hasInnerTable())
+    {
+        if (auto table = tryGetTargetTable())
+            return table->totalBytesUncompressed(settings);
+    }
+    return {};
+}
+
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
     if (has_inner_table)

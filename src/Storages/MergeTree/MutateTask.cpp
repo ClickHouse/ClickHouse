@@ -51,7 +51,6 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
     return true;
 }
 
-
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
@@ -79,7 +78,8 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
-                || command.type == MutationCommand::Type::UPDATE)
+                || command.type == MutationCommand::Type::UPDATE
+                || command.type == MutationCommand::Type::APPLY_DELETED_MASK)
             {
                 for_interpreter.push_back(command);
                 for (const auto & [column_name, expr] : command.column_to_update_expression)
@@ -202,7 +202,8 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
-                || command.type == MutationCommand::Type::UPDATE)
+                || command.type == MutationCommand::Type::UPDATE
+                || command.type == MutationCommand::Type::APPLY_DELETED_MASK)
             {
                 for_interpreter.push_back(command);
             }
@@ -257,15 +258,12 @@ getColumnsForNewDataPart(
     NameToNameMap renamed_columns_from_to;
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
-    if (source_part->supportLightweightDeleteMutate())
-        system_columns.push_back(LightweightDeleteDescription::FILTER_COLUMN);
 
-    /// Preserve system columns that have persisted values in the source_part
-    for (const auto & column : system_columns)
-    {
-        if (part_columns.has(column.name) && !storage_columns.contains(column.name))
-            storage_columns.emplace_back(column);
-    }
+    const auto & deleted_mask_column = LightweightDeleteDescription::FILTER_COLUMN;
+    bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
+
+    bool deleted_mask_updated = false;
+    bool has_delete_command = false;
 
     NameSet storage_columns_set;
     for (const auto & [name, _] : storage_columns)
@@ -277,28 +275,36 @@ getColumnsForNewDataPart(
         {
             for (const auto & [column_name, _] : command.column_to_update_expression)
             {
-                /// Allow to update and persist values of system column
-                auto column = system_columns.tryGetByName(column_name);
-                if (column && !storage_columns.contains(column_name))
-                    storage_columns.emplace_back(column_name, column->type);
+                if (column_name == deleted_mask_column.name
+                    && supports_lightweight_deletes
+                    && !storage_columns_set.contains(deleted_mask_column.name))
+                    deleted_mask_updated = true;
             }
         }
 
+        if (command.type == MutationCommand::DELETE || command.type == MutationCommand::APPLY_DELETED_MASK)
+            has_delete_command = true;
+
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
-        {
             continue;
-        }
 
         if (command.type == MutationCommand::DROP_COLUMN)
-        {
             removed_columns.insert(command.column_name);
-        }
 
         if (command.type == MutationCommand::RENAME_COLUMN)
         {
             renamed_columns_to_from.emplace(command.rename_to, command.column_name);
             renamed_columns_from_to.emplace(command.column_name, command.rename_to);
+        }
+    }
+
+    if (!storage_columns_set.contains(deleted_mask_column.name))
+    {
+        if (deleted_mask_updated || (part_columns.has(deleted_mask_column.name) && !has_delete_command))
+        {
+            storage_columns.push_back(deleted_mask_column);
+            storage_columns_set.insert(deleted_mask_column.name);
         }
     }
 
@@ -1530,7 +1536,8 @@ private:
 
         for (auto & command_for_interpreter : ctx->for_interpreter)
         {
-            if (command_for_interpreter.type == MutationCommand::DELETE)
+            if (command_for_interpreter.type == MutationCommand::DELETE
+                || command_for_interpreter.type == MutationCommand::APPLY_DELETED_MASK)
             {
                 has_delete = true;
                 break;
@@ -1936,6 +1943,9 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
         if (part->info.partition_id != command_partition_id)
             return true;
     }
+
+    if (command.type == MutationCommand::APPLY_DELETED_MASK && !part->hasLightweightDelete())
+        return true;
 
     if (canSkipConversionToNullable(part, command))
         return true;

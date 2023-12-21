@@ -37,6 +37,7 @@ class JobConfig:
     timeout: Optional[int] = None
     num_batches: int = 1
     run_by_label: str = ""
+    run_always: bool = False
 
 
 @dataclass
@@ -145,12 +146,11 @@ integration_check_digest = DigestConfig(
         "clickhouse/postgresql-java-client",
     ],
 )
-# FIXME: which tests are AST_FUZZER_TEST? just python?
-# FIXME: should ast fuzzer test be non-skipable?
+
 ast_fuzzer_check_digest = DigestConfig(
-    include_paths=["./tests/ci/ast_fuzzer_check.py"],
-    exclude_files=[".md"],
-    docker=["clickhouse/fuzzer"],
+    # include_paths=["./tests/ci/ast_fuzzer_check.py"],
+    # exclude_files=[".md"],
+    # docker=["clickhouse/fuzzer"],
 )
 unit_check_digest = DigestConfig(
     include_paths=["./tests/ci/unit_tests_check.py"],
@@ -166,9 +166,9 @@ perf_check_digest = DigestConfig(
     docker=["clickhouse/performance-comparison"],
 )
 sqllancer_check_digest = DigestConfig(
-    include_paths=["./tests/ci/sqlancer_check.py"],
-    exclude_files=[".md"],
-    docker=["clickhouse/sqlancer-test"],
+    # include_paths=["./tests/ci/sqlancer_check.py"],
+    # exclude_files=[".md"],
+    # docker=["clickhouse/sqlancer-test"],
 )
 sqllogic_check_digest = DigestConfig(
     include_paths=["./tests/ci/sqllogic_test.py"],
@@ -226,6 +226,7 @@ upgrade_test_common_params = {
 astfuzzer_test_common_params = {
     "digest": ast_fuzzer_check_digest,
     "run_command": "ast_fuzzer_check.py",
+    "run_always": True,
 }
 integration_test_common_params = {
     "digest": integration_check_digest,
@@ -242,6 +243,7 @@ perf_test_common_params = {
 sqllancer_test_common_params = {
     "digest": sqllancer_check_digest,
     "run_command": "sqlancer_check.py",
+    "run_always": True,
 }
 sqllogic_test_params = {
     "digest": sqllogic_check_digest,
@@ -609,9 +611,7 @@ CI_CONFIG = CiConfig(
         "Style check": TestConfig(
             "",
             job_config=JobConfig(
-                digest=DigestConfig(
-                    include_paths=["."], exclude_dirs=[".git", "__pycache__"]
-                )
+                run_always=True,
             ),
         ),
         "tests bugfix validate check": TestConfig(
@@ -847,6 +847,7 @@ CI_CONFIG.validate()
 
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
+    "PR Check",
     "ClickHouse build check",
     "ClickHouse special build check",
     "Docs Check",

@@ -19,6 +19,8 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
+          fetch-depth: 0 # to get version
+          filter: tree:0
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -155,7 +157,7 @@ jobs:
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
   BuilderReport:
-    if: ${{ success() || failure() }}
+    if: ${{ !failure() && !cancelled() }}
     needs:
       - RunConfig
       - BuilderDebAarch64
