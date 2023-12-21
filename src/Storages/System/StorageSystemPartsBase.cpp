@@ -1,3 +1,4 @@
+#include "Common/SipHash.h"
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Common/escapeForFileName.h>
@@ -137,6 +138,13 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
 
                     String engine_name = storage->getName();
                     UUID storage_uuid = storage->getStorageID().uuid;
+                    if (database->getEngineName() == "Ordinary")
+                    {
+                        SipHash hash;
+                        hash.update(database_name);
+                        hash.update(table_name);
+                        storage_uuid = hash.get128();
+                    }
 
 #if USE_MYSQL
                     if (auto * proxy = dynamic_cast<StorageMaterializedMySQL *>(storage.get()))
