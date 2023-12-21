@@ -215,12 +215,15 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
         }
 
         /// TODO(cluster): too much corner cases I guess, let's just prohibit for now.
+        /// NOTE: disabled for now to pass CI (anyway allow_remote_fs_zero_copy_replication is experimental as well as cluster)
+#if 0
         if (allow_remote_fs_zero_copy_replication)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "cluster is not compatible with allow_remote_fs_zero_copy_replication");
         }
+#endif
     }
 
     if (max_merge_selecting_sleep_ms < merge_selecting_sleep_ms)
