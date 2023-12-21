@@ -286,6 +286,10 @@ StorageKafka::StorageKafka(
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
 
+    consumers.resize(num_consumers);
+    for (size_t i = 0; i < num_consumers; ++i)
+        consumers[i] = createKafkaConsumer(i);
+
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>([this]()
     {
         const auto & table = getStorageID().getTableName();
@@ -422,10 +426,6 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
 
 void StorageKafka::startup()
 {
-    consumers.resize(num_consumers);
-    for (size_t i = 0; i < num_consumers; ++i)
-        consumers[i] = createKafkaConsumer(i);
-
     // Start the reader thread
     for (auto & task : tasks)
     {
