@@ -37,7 +37,7 @@ $CLICKHOUSE_CLIENT -nm -q "
     select throwIf(is_readonly = 1) from system.replicas where database = currentDatabase() and table like 'data_%' format Null;
 "
 
-for i in {1..20}; do
+for _ in {1..20}; do
     restart_replica &
     # Ignore all errors (that is caused by RESTART REPLICA)
     sync_cluster >& /dev/null
