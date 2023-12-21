@@ -98,12 +98,20 @@ MutableColumnPtr DataTypeVariant::createColumn() const
 
 ColumnPtr DataTypeVariant::createColumnConst(size_t size, const DB::Field & field) const
 {
-    auto field_type = applyVisitor(FieldToDataType(), field);
-    auto discr = tryGetVariantDiscriminator(field_type);
-    if (!discr)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot insert field \"{}\" into column with type {}", toString(field), getName());
     auto column = createColumn();
-    assert_cast<ColumnVariant &>(*column).insertIntoVariant(field, *discr);
+    if (field.isNull())
+    {
+        column->insertDefault();
+    }
+    else
+    {
+        auto field_type = applyVisitor(FieldToDataType(), field);
+        auto discr = tryGetVariantDiscriminator(field_type);
+        if (!discr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot insert field \"{}\" into column with type {}", toString(field), getName());
+        assert_cast<ColumnVariant &>(*column).insertIntoVariant(field, *discr);
+    }
+
     return ColumnConst::create(std::move(column), size);
 }
 
