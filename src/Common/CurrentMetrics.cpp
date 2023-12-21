@@ -260,6 +260,7 @@
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M)
 #endif
 
+
 namespace CurrentMetrics
 {
     #define M(NAME, DOCUMENTATION) extern const Metric NAME = Metric(__COUNTER__);

@@ -133,18 +133,12 @@ enum class DefaultTableEngine
     ReplacingMergeTree,
     ReplicatedMergeTree,
     ReplicatedReplacingMergeTree,
+    SharedMergeTree,
+    SharedReplacingMergeTree,
     Memory,
 };
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
-
-enum class CleanDeletedRows
-{
-    Never = 0, /// Disable.
-    Always,
-};
-
-DECLARE_SETTING_ENUM(CleanDeletedRows)
 
 enum class MySQLDataTypesSupport
 {

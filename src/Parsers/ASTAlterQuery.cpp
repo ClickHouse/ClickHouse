@@ -471,6 +471,16 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY " << (settings.hilite ? hilite_none : "");
         sql_security->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::APPLY_DELETED_MASK)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY DELETED MASK" << (settings.hilite ? hilite_none : "");
+
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+    }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
 }

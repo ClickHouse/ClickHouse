@@ -191,7 +191,7 @@ Block getHeader(ContextPtr context, ASTPtr query)
     if (context->getSettingsRef().allow_experimental_analyzer)
         return InterpreterSelectQueryAnalyzer::getSampleBlock(query, context);
     else
-        return InterpreterSelectQuery(query, context, SelectQueryOptions().analyze()).getSampleBlock();
+        return InterpreterSelectQuery(query, context, SelectQueryOptions()).getSampleBlock();
 }
 
 /// Generates one chain part for every view in buildPushingToViewsChain

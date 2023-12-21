@@ -112,6 +112,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_remove_ttl("REMOVE TTL");
     ParserKeyword s_remove_sample_by("REMOVE SAMPLE BY");
+    ParserKeyword s_apply_deleted_mask("APPLY DELETED MASK");
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
@@ -832,6 +833,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->type = ASTAlterCommand::MODIFY_COMMENT;
+            }
+            else if (s_apply_deleted_mask.ignore(pos, expected))
+            {
+                command->type = ASTAlterCommand::APPLY_DELETED_MASK;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command->partition, expected))
+                        return false;
+                }
             }
             else
                 return false;

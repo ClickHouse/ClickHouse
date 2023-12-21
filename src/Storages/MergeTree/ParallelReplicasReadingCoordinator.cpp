@@ -161,26 +161,44 @@ void DefaultCoordinator::updateReadingState(InitialAllRangesAnnouncement announc
     PartRefs parts_diff;
 
     /// To get rid of duplicates
-    for (auto && part: announcement.description)
+    for (auto && part_ranges: announcement.description)
     {
-        auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
-            [&part] (const Part & other) { return other.description.info.getPartNameV1() == part.info.getPartNameV1(); });
+        Part part{.description = std::move(part_ranges), .replicas = {announcement.replica_num}};
+        const MergeTreePartInfo & announced_part = part.description.info;
 
-        /// We have the same part - add the info about presence on current replica to it
-        if (the_same_it != all_parts_to_read.end())
+        auto it = std::lower_bound(cbegin(all_parts_to_read), cend(all_parts_to_read), part);
+        if (it != all_parts_to_read.cend())
         {
-            the_same_it->replicas.insert(announcement.replica_num);
-            continue;
+            const MergeTreePartInfo & found_part = it->description.info;
+            if (found_part == announced_part)
+            {
+                /// We have the same part - add the info about presence on current replica
+                it->replicas.insert(announcement.replica_num);
+                continue;
+            }
+            else
+            {
+                /// check if it is covering or covered part
+                /// need to compare with 2 nearest parts in set, - lesser and greater than the part from the announcement
+                bool is_disjoint = found_part.isDisjoint(announced_part);
+                if (it != all_parts_to_read.cbegin() && is_disjoint)
+                {
+                    const MergeTreePartInfo & lesser_part = (--it)->description.info;
+                    is_disjoint &= lesser_part.isDisjoint(announced_part);
+                }
+                if (!is_disjoint)
+                    continue;
+            }
+        }
+        else if (!all_parts_to_read.empty())
+        {
+            /// the announced part is greatest - check if it's disjoint with lesser part
+            const MergeTreePartInfo & lesser_part = all_parts_to_read.crbegin()->description.info;
+            if (!lesser_part.isDisjoint(announced_part))
+                continue;
         }
 
-        auto covering_or_the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
-            [&part] (const Part & other) { return !other.description.info.isDisjoint(part.info); });
-
-        /// It is covering part or we have covering - skip it
-        if (covering_or_the_same_it != all_parts_to_read.end())
-            continue;
-
-        auto [insert_it, _] = all_parts_to_read.emplace(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+        auto [insert_it, _] = all_parts_to_read.emplace(std::move(part));
         parts_diff.push_back(insert_it);
     }
 
@@ -205,13 +223,16 @@ void DefaultCoordinator::updateReadingState(InitialAllRangesAnnouncement announc
 
 void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
-    LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
+    if (stats[replica_number].is_unavailable == false)
+    {
+        LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
 
-    ++unavailable_replicas_count;
-    stats[replica_number].is_unavailable = true;
+        stats[replica_number].is_unavailable = true;
+        ++unavailable_replicas_count;
 
-    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
-        finalizeReadingState();
+        if (sent_initial_requests == replicas_count - unavailable_replicas_count)
+            finalizeReadingState();
+    }
 }
 
 void DefaultCoordinator::finalizeReadingState()
@@ -387,12 +408,13 @@ public:
 template <CoordinationMode mode>
 void InOrderCoordinator<mode>::markReplicaAsUnavailable(size_t replica_number)
 {
-    LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
+    if (stats[replica_number].is_unavailable == false)
+    {
+        LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
 
-    stats[replica_number].is_unavailable = true;
-    ++unavailable_replicas_count;
-
-    /// There is nothing to do else.
+        stats[replica_number].is_unavailable = true;
+        ++unavailable_replicas_count;
+    }
 }
 
 template <CoordinationMode mode>
@@ -559,11 +581,9 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
     std::lock_guard lock(mutex);
 
     if (!pimpl)
-    {
-        initialize();
-    }
-
-    return pimpl->markReplicaAsUnavailable(replica_number);
+        unavailable_nodes_registered_before_initialization.push_back(replica_number);
+    else
+        pimpl->markReplicaAsUnavailable(replica_number);
 }
 
 void ParallelReplicasReadingCoordinator::initialize()
@@ -580,8 +600,12 @@ void ParallelReplicasReadingCoordinator::initialize()
             pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::ReverseOrder>>(replicas_count);
             break;
     }
+
     if (progress_callback)
         pimpl->setProgressCallback(std::move(progress_callback));
+
+    for (const auto replica : unavailable_nodes_registered_before_initialization)
+        pimpl->markReplicaAsUnavailable(replica);
 }
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_) {}

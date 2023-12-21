@@ -286,13 +286,12 @@ bool StorageMaterializedView::optimize(
     bool final,
     bool deduplicate,
     const Names & deduplicate_by_columns,
-    bool cleanup,
     ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
     auto storage_ptr = getTargetTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
+    return getTargetTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
 }
 
 void StorageMaterializedView::alter(
@@ -491,6 +490,16 @@ std::optional<UInt64> StorageMaterializedView::totalBytes(const Settings & setti
     {
         if (auto table = tryGetTargetTable())
             return table->totalBytes(settings);
+    }
+    return {};
+}
+
+std::optional<UInt64> StorageMaterializedView::totalBytesUncompressed(const Settings & settings) const
+{
+    if (hasInnerTable())
+    {
+        if (auto table = tryGetTargetTable())
+            return table->totalBytesUncompressed(settings);
     }
     return {};
 }
