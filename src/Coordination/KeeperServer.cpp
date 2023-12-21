@@ -737,6 +737,10 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             initial_batch_committed = true;
             return nuraft::cb_func::ReturnCode::Ok;
         }
+        case nuraft::cb_func::PreAppendLogLeader:
+        {
+            return nuraft::cb_func::ReturnCode::ReturnNull;
+        }
         case nuraft::cb_func::PreAppendLogFollower:
         {
             const auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
