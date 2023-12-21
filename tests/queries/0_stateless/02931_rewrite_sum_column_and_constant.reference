@@ -1,3 +1,27 @@
+20
+SELECT sum(uint64 + 1 AS i)
+FROM test_table
+--
+20
+SELECT sum(uint64) + (1 * count(uint64))
+FROM test_table
+--
+\N
+0
+WITH CAST(\'1\', \'Nullable(UInt64)\') AS my_literal
+SELECT sum(number + my_literal)
+FROM numbers(0)
+WITH CAST(\'1\', \'Nullable(UInt64)\') AS my_literal
+SELECT sum(number) + (my_literal * count())
+FROM numbers(0)
+--
+25.549999999999997
+25.549999999999997
+SELECT sum(uint64) + (2.11 * count(uint64))
+FROM test_table
+SELECT sum(uint64) + (2.11 * count(uint64))
+FROM test_table
+--
 25
 25
 SELECT sum(uint64) + (2 * count(uint64))

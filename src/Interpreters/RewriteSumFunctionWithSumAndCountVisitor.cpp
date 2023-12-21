@@ -4,7 +4,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 
-
 namespace DB
 {
 
@@ -34,6 +33,10 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
     if (!nested_func || !nested_func_supported.contains(Poco::toLower(nested_func->name))|| nested_func->arguments->children.size() != 2)
         return;
 
+    String alias = nested_func->tryGetAlias();
+    if (!alias.empty())
+        return;
+
     size_t column_id = nested_func->arguments->children.size();
 
     for (size_t i = 0; i < nested_func->arguments->children.size(); i++)
@@ -45,9 +48,25 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
 
     size_t literal_id = 1 - column_id;
     const auto * literal = nested_func->arguments->children[literal_id]->as<ASTLiteral>();
-    const auto * column = nested_func->arguments->children[column_id]->as<ASTIdentifier>();
+    if (!literal)
+        return;
 
-    if (!column || !literal)
+    Field::Types::Which literal_type = literal->value.getType();
+    if (literal_type != Field::Types::UInt64 &&
+        literal_type != Field::Types::Int64 &&
+        literal_type != Field::Types::UInt128 &&
+        literal_type != Field::Types::Int128 &&
+        literal_type != Field::Types::UInt256 &&
+        literal_type != Field::Types::Int256 &&
+        literal_type != Field::Types::Float64 &&
+        literal_type != Field::Types::Decimal32 &&
+        literal_type != Field::Types::Decimal64 &&
+        literal_type != Field::Types::Decimal128 &&
+        literal_type != Field::Types::Decimal256)
+        return;
+
+    const auto * column = nested_func->arguments->children[column_id]->as<ASTIdentifier>();
+    if (!column)
         return;
 
     auto pos = IdentifierSemantic::getMembership(*column);
@@ -74,7 +93,7 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
                                                         std::make_shared<ASTIdentifier>(column_name)
                                                         ),
                                         makeASTFunction("multiply",
-                                                        std::make_shared<ASTLiteral>(literal->value),
+                                                        std::make_shared<ASTLiteral>(* literal),
                                                         makeASTFunction("count", std::make_shared<ASTIdentifier>(column_name))
                                                         )
                                         );

@@ -13,6 +13,25 @@ INSERT INTO test_table VALUES (3, 3.3, 3.33);
 INSERT INTO test_table VALUES (4, 4.4, 4.44);
 INSERT INTO test_table VALUES (5, 5.5, 5.55);
 
+SELECT sum(uint64 + 1 AS i) from test_table;
+EXPLAIN SYNTAX (SELECT sum(uint64 + 1 AS i) from test_table);
+SELECT '--';
+
+SELECT sum(uint64 + 1) AS i from test_table;
+EXPLAIN SYNTAX (SELECT sum(uint64 + 1) AS i from test_table);
+SELECT '--';
+
+WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0);
+WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0);
+EXPLAIN SYNTAX (WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0));
+EXPLAIN SYNTAX (WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0));
+SELECT '--';
+
+SELECT sum(uint64 + 2.11) From test_table;
+SELECT sum(uint64) + 2.11 * count(uint64) From test_table;
+EXPLAIN SYNTAX (SELECT sum(uint64 + 2.11) From test_table);
+EXPLAIN SYNTAX (SELECT sum(uint64) + 2.11 * count(uint64) From test_table);
+SELECT '--';
 
 SELECT sum(uint64 + 2) From test_table;
 SELECT sum(uint64) + 2 * count(uint64) From test_table;
