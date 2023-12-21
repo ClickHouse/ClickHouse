@@ -327,7 +327,7 @@ std::shared_ptr<FutureSetFromStorage> PreparedSets::findStorage(const Hash & key
     return it->second;
 }
 
-PreparedSets::Subqueries PreparedSets::getSubqueries()
+PreparedSets::Subqueries PreparedSets::getSubqueries() const
 {
     PreparedSets::Subqueries res;
     res.reserve(sets_from_subqueries.size());

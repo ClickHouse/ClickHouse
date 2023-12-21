@@ -157,7 +157,8 @@ public:
     std::shared_ptr<FutureSetFromSubquery> findSubquery(const Hash & key) const;
 
     using Subqueries = std::vector<std::shared_ptr<FutureSetFromSubquery>>;
-    Subqueries getSubqueries();
+    Subqueries getSubqueries() const;
+    bool hasSubqueries() const { return !sets_from_subqueries.empty(); }
 
     const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
     // const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }

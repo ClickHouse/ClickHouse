@@ -882,6 +882,17 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         return true;
     }
 
+    if (query_analyzer->getPreparedSets()->hasSubqueries())
+    {
+        if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
+
+        context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        context->setSetting("max_parallel_replicas", UInt64{0});
+        LOG_INFO(log, "Disabling parallel replicas to execute a query with IN with subquery");
+        return true;
+    }
+
     auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
     if (!storage_merge_tree || settings.parallel_replicas_min_number_of_rows_per_replica == 0)
         return false;
