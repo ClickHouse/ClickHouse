@@ -407,7 +407,9 @@ def _configure_jobs(
                 ci_controlling_labels += [label]
         if ci_controlling_labels:
             print(f"NOTE: CI controlling labels are set: [{ci_controlling_labels}]")
-            print(f"    :   following jobs will be executed: [{jobs_requested_by_label}]")
+            print(
+                f"    :   following jobs will be executed: [{jobs_requested_by_label}]"
+            )
             jobs_to_do = jobs_requested_by_label
 
     if commit_tokens:
