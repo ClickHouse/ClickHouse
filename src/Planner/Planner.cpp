@@ -1333,13 +1333,26 @@ void Planner::buildPlanForQueryNode()
     }
 
     collectSets(query_tree, *planner_context);
+
+    const auto & settings = query_context->getSettingsRef();
+    if (query_context->canUseTaskBasedParallelReplicas())
+    {
+        if (planner_context->getPreparedSets().hasSubqueries())
+        {
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
+
+            auto & mutable_context = planner_context->getMutableQueryContext();
+            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            LOG_DEBUG(&Poco::Logger::get("Planner"), "Disabling parallel replicas to execute a query with IN with subquery");
+        }
+    }
+
     collectTableExpressionData(query_tree, planner_context);
     checkStoragesSupportTransactions(planner_context);
 
     if (!select_query_options.only_analyze)
         collectFiltersForAnalysis(query_tree, planner_context);
-
-    const auto & settings = query_context->getSettingsRef();
 
     if (query_context->canUseTaskBasedParallelReplicas())
     {
