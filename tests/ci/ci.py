@@ -135,7 +135,7 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         "--skip-jobs",
         action="store_true",
         default=False,
-        help="skip fetching data about job runs, used in --configure action (for debugging)",
+        help="skip fetching data about job runs, used in --configure action (for debugging and nigthly ci)",
     )
     parser.add_argument(
         "--rebuild-all-docker",
@@ -377,6 +377,7 @@ def _configure_jobs(
                 for batch in range(num_batches):  # type: ignore
                     batches_to_do.append(batch)
         elif job_config.run_always:
+            # always add to todo
             batches_to_do.append(batch)
         else:
             # this job controlled by digest, add to todo if it's not successfully done before
@@ -607,8 +608,10 @@ def main() -> int:
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
         if pr_info.number != 0 and not args.docker_digest_or_latest:
+            #FIXME: it runs style check before docker build if possible (style-check images is not changed)
+            #    find a way to do style check always before docker build and others
             _check_and_update_for_early_style_check(result)
-        if pr_info.number != 0 and pr_info.has_changes_in_documentation_only():
+        if pr_info.has_changes_in_documentation_only():
             _update_config_for_docs_only(result)
 
     elif args.update_gh_statuses:
