@@ -729,8 +729,8 @@ void HTTPHandler::processQuery(
     /// to some other value.
     const auto & settings = context->getSettingsRef();
 
-    /// Only readonly queries are allowed for HTTP GET requests.
-    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
+    /// Anything else beside HTTP POST should be readonly queries.
+    if (request.getMethod() != HTTPServerRequest::HTTP_POST)
     {
         if (settings.readonly == 0)
             context->setSetting("readonly", 2);

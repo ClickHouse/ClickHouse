@@ -290,6 +290,11 @@ bool ZooKeeperWithFaultInjection::exists(const std::string & path, Coordination:
     return executeWithFaultSync(__func__, path, [&]() { return keeper->exists(path, stat, watch); });
 }
 
+bool ZooKeeperWithFaultInjection::anyExists(const std::vector<std::string> & paths)
+{
+    return executeWithFaultSync(__func__, !paths.empty() ? paths.front() : "", [&]() { return keeper->anyExists(paths); });
+}
+
 zkutil::ZooKeeper::MultiExistsResponse ZooKeeperWithFaultInjection::exists(const std::vector<std::string> & paths)
 {
     return executeWithFaultSync(__func__, !paths.empty() ? paths.front() : "", [&]() { return keeper->exists(paths); });
