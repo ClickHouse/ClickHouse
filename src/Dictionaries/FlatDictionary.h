@@ -87,8 +87,7 @@ public:
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnWithTypeAndName & default_argument,
-        const DataTypePtr & result_type_short_circuit) const override;
+        IColumn::Filter & default_mask) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -178,9 +177,7 @@ private:
         const Attribute & attribute,
         const PaddedPODArray<UInt64> & keys,
         ValueSetter && set_value,
-        const ColumnWithTypeAndName & default_argument,
-        const DictionaryAttribute & dictionary_attribute,
-        const DataTypePtr & result_type_short_circuit) const;
+        IColumn::Filter & default_mask) const;
 
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);

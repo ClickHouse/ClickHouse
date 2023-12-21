@@ -145,13 +145,13 @@ public:
         const DataTypes & key_types,
         const ColumnPtr & default_values_column) const override;
 
-    ColumnPtr getColumnOrDefaultShortCircuit(
-        const std::string & attribute_name,
-        const DataTypePtr & result_type,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const ColumnWithTypeAndName & default_argument,
-        const DataTypePtr & result_type_short_circuit) const override;
+    // ColumnPtr getColumnOrDefaultShortCircuit(
+    //     const std::string & attribute_name,
+    //     const DataTypePtr & result_type,
+    //     const Columns & key_columns,
+    //     const DataTypes & key_types,
+    //     const ColumnWithTypeAndName & default_argument,
+    //     const DataTypePtr & result_type_short_circuit) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -494,121 +494,121 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
     return result;
 }
 
-template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumnOrDefaultShortCircuit(
-    const std::string & attribute_name,
-    const DataTypePtr & result_type,
-    const Columns & key_columns,
-    const DataTypes & key_types,
-    const ColumnWithTypeAndName & default_argument,
-    const DataTypePtr & result_type_short_circuit) const
-{
-    if (dictionary_key_type == DictionaryKeyType::Complex)
-        dict_struct.validateKeyTypes(key_types);
+// template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
+// ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumnOrDefaultShortCircuit(
+//     const std::string & attribute_name,
+//     const DataTypePtr & result_type,
+//     const Columns & key_columns,
+//     const DataTypes & key_types,
+//     const ColumnWithTypeAndName & default_argument,
+//     const DataTypePtr & result_type_short_circuit) const
+// {
+//     if (dictionary_key_type == DictionaryKeyType::Complex)
+//         dict_struct.validateKeyTypes(key_types);
 
-    ColumnPtr result;
+//     ColumnPtr result;
 
-    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
+//     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+//     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
 
-    const size_t size = extractor.getKeysSize();
+//     const size_t size = extractor.getKeysSize();
 
-    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
-    const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
-    auto & attribute = attributes[attribute_index];
+//     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
+//     const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
+//     auto & attribute = attributes[attribute_index];
 
-    bool is_attribute_nullable = attribute.is_nullable_sets.has_value();
+//     bool is_attribute_nullable = attribute.is_nullable_sets.has_value();
 
-    ColumnUInt8::MutablePtr col_null_map_to;
-    ColumnUInt8::Container * vec_null_map_to = nullptr;
-    if (is_attribute_nullable)
-    {
-        col_null_map_to = ColumnUInt8::create(size, false);
-        vec_null_map_to = &col_null_map_to->getData();
-    }
+//     ColumnUInt8::MutablePtr col_null_map_to;
+//     ColumnUInt8::Container * vec_null_map_to = nullptr;
+//     if (is_attribute_nullable)
+//     {
+//         col_null_map_to = ColumnUInt8::create(size, false);
+//         vec_null_map_to = &col_null_map_to->getData();
+//     }
 
-    auto type_call = [&](const auto & dictionary_attribute_type)
-    {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-        using ValueType = DictionaryValueType<AttributeType>;
-        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+//     auto type_call = [&](const auto & dictionary_attribute_type)
+//     {
+//         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+//         using AttributeType = typename Type::AttributeType;
+//         using ValueType = DictionaryValueType<AttributeType>;
+//         using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-        auto column = ColumnProvider::getColumn(dictionary_attribute, size);
+//         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
 
-        if constexpr (std::is_same_v<ValueType, Array>)
-        {
-            auto * out = column.get();
+//         if constexpr (std::is_same_v<ValueType, Array>)
+//         {
+//             auto * out = column.get();
 
-            getItemsShortCircuitImpl<ValueType, false, AttributeType>(
-                attribute,
-                extractor,
-                [&](const size_t, const Array & value, bool) { out->insert(value); },
-                default_argument,
-                dictionary_attribute,
-                result_type_short_circuit);
-        }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
-        {
-            auto * out = column.get();
+//             getItemsShortCircuitImpl<ValueType, false, AttributeType>(
+//                 attribute,
+//                 extractor,
+//                 [&](const size_t, const Array & value, bool) { out->insert(value); },
+//                 default_argument,
+//                 dictionary_attribute,
+//                 result_type_short_circuit);
+//         }
+//         else if constexpr (std::is_same_v<ValueType, StringRef>)
+//         {
+//             auto * out = column.get();
 
-            if (is_attribute_nullable)
-                getItemsShortCircuitImpl<ValueType, true, AttributeType>(
-                    attribute,
-                    extractor,
-                    [&](size_t row, StringRef value, bool is_null)
-                    {
-                        (*vec_null_map_to)[row] = is_null;
-                        out->insertData(value.data, value.size);
-                    },
-                    default_argument,
-                    dictionary_attribute,
-                    result_type_short_circuit);
-            else
-                getItemsShortCircuitImpl<ValueType, false, AttributeType>(
-                    attribute,
-                    extractor,
-                    [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
-                    default_argument,
-                    dictionary_attribute,
-                    result_type_short_circuit);
-        }
-        else
-        {
-            auto & out = column->getData();
+//             if (is_attribute_nullable)
+//                 getItemsShortCircuitImpl<ValueType, true, AttributeType>(
+//                     attribute,
+//                     extractor,
+//                     [&](size_t row, StringRef value, bool is_null)
+//                     {
+//                         (*vec_null_map_to)[row] = is_null;
+//                         out->insertData(value.data, value.size);
+//                     },
+//                     default_argument,
+//                     dictionary_attribute,
+//                     result_type_short_circuit);
+//             else
+//                 getItemsShortCircuitImpl<ValueType, false, AttributeType>(
+//                     attribute,
+//                     extractor,
+//                     [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
+//                     default_argument,
+//                     dictionary_attribute,
+//                     result_type_short_circuit);
+//         }
+//         else
+//         {
+//             auto & out = column->getData();
 
-            if (is_attribute_nullable)
-                getItemsShortCircuitImpl<ValueType, true, AttributeType>(
-                    attribute,
-                    extractor,
-                    [&](size_t row, const auto value, bool is_null)
-                    {
-                        (*vec_null_map_to)[row] = is_null;
-                        out[row] = value;
-                    },
-                    default_argument,
-                    dictionary_attribute,
-                    result_type_short_circuit);
-            else
-                getItemsShortCircuitImpl<ValueType, false, AttributeType>(
-                    attribute,
-                    extractor,
-                    [&](size_t row, const auto value, bool) { out[row] = value; },
-                    default_argument,
-                    dictionary_attribute,
-                    result_type_short_circuit);
-        }
+//             if (is_attribute_nullable)
+//                 getItemsShortCircuitImpl<ValueType, true, AttributeType>(
+//                     attribute,
+//                     extractor,
+//                     [&](size_t row, const auto value, bool is_null)
+//                     {
+//                         (*vec_null_map_to)[row] = is_null;
+//                         out[row] = value;
+//                     },
+//                     default_argument,
+//                     dictionary_attribute,
+//                     result_type_short_circuit);
+//             else
+//                 getItemsShortCircuitImpl<ValueType, false, AttributeType>(
+//                     attribute,
+//                     extractor,
+//                     [&](size_t row, const auto value, bool) { out[row] = value; },
+//                     default_argument,
+//                     dictionary_attribute,
+//                     result_type_short_circuit);
+//         }
 
-        result = std::move(column);
-    };
+//         result = std::move(column);
+//     };
 
-    callOnDictionaryAttributeType(attribute.type, type_call);
+//     callOnDictionaryAttributeType(attribute.type, type_call);
 
-    if (is_attribute_nullable)
-        result = ColumnNullable::create(result, std::move(col_null_map_to));
+//     if (is_attribute_nullable)
+//         result = ColumnNullable::create(result, std::move(col_null_map_to));
 
-    return result;
-}
+//     return result;
+// }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse, sharded>::hasKeys(const Columns & key_columns, const DataTypes & key_types) const

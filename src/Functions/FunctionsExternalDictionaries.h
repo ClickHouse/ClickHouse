@@ -14,6 +14,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Columns/MaskOperations.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -22,6 +23,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnFunction.h>
+#include <Functions/FunctionFactory.h>
 
 #include <Access/Common/AccessFlags.h>
 
@@ -63,7 +65,7 @@ namespace ErrorCodes
   */
 
 
-class FunctionDictHelper : WithContext
+class FunctionDictHelper : public WithContext
 {
 public:
     explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
@@ -321,13 +323,13 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
-    // bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
-    // {
-    //     settings.enable_lazy_execution_for_first_argument = false;
-    //     settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
-    //     settings.force_enable_lazy_execution = false;
-    //     return true;
-    // }
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
+    {
+        settings.enable_lazy_execution_for_first_argument = false;
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
+        settings.force_enable_lazy_execution = false;
+        return true;
+    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
@@ -597,7 +599,7 @@ public:
 
         auto result_column = executeDictionaryRequest(
             dictionary, attribute_names, key_columns, key_types, attribute_type, default_cols,
-            collect_values_limit, arguments[current_arguments_index-1], result_type);
+            collect_values_limit, arguments[current_arguments_index-1]); //, result_type);
 
         if (key_is_nullable)
             result_column = wrapInNullable(result_column, {arguments[2]}, result_type, input_rows_count);
@@ -607,6 +609,56 @@ public:
 
 private:
 
+    std::pair<ColumnPtr, ColumnPtr> getDefaultsShortCircuit(
+        IColumn::Filter & default_mask,
+        const DataTypePtr & result_type,
+        const ColumnWithTypeAndName & last_argument) const
+    {
+        auto rows = default_mask.size();
+
+        auto mask_col = ColumnUInt8::create();
+        mask_col->getData() = std::move(default_mask);
+        ColumnPtr mask_col_res = std::move(mask_col);
+
+        IColumn::Filter mask(rows, 1);
+        auto mask_info = extractInvertedMask(mask, mask_col_res);
+        //inverseMask(mask, mask_info);
+        ColumnWithTypeAndName column_before_cast = last_argument;
+        maskedExecute(column_before_cast, mask, mask_info);
+
+        default_mask = std::move(mask);
+
+        ColumnWithTypeAndName column_to_cast = {
+            column_before_cast.column->convertToFullColumnIfConst(),
+            column_before_cast.type,
+            column_before_cast.name};
+        auto casted = IColumn::mutate(castColumnAccurate(column_to_cast, result_type));
+        casted->expand(default_mask, false);
+        return {std::move(casted), mask_col_res};
+    }
+
+    void restoreShortCircuitColumn(
+        ColumnPtr & result_column,
+        ColumnPtr defaults_column,
+        ColumnPtr mask_column,
+        IColumn::Filter & inverted_mask,
+        const DataTypePtr & result_type) const
+    {
+        auto rows = inverted_mask.size();
+
+        auto mut_lhs = IColumn::mutate(std::move(result_column));
+        mut_lhs->expand(inverted_mask, true);
+
+        auto if_func = FunctionFactory::instance().get("if", helper.getContext());
+        ColumnsWithTypeAndName if_args = {
+            {mask_column, std::make_shared<DataTypeUInt8>(), {}},
+            {std::move(mut_lhs), result_type, {}},
+            {defaults_column, result_type, {}},
+        };
+
+        result_column = if_func->build(if_args)->execute(if_args, result_type, rows);
+    }
+
     ColumnPtr executeDictionaryRequest(
         std::shared_ptr<const IDictionary> & dictionary,
         const Strings & attribute_names,
@@ -615,15 +667,15 @@ private:
         const DataTypePtr & result_type,
         const Columns & default_cols,
         size_t collect_values_limit,
-        const ColumnWithTypeAndName & last_argument,
-        const DataTypePtr & result_type_short_circuit) const
+        const ColumnWithTypeAndName & last_argument) const
+        // const DataTypePtr & result_type_short_circuit) const
     {
         ColumnPtr result;
 
         if (attribute_names.size() > 1)
         {
             const auto & result_tuple_type = assert_cast<const DataTypeTuple &>(*result_type);
-            const auto & result_short_circuit_tuple_type = assert_cast<const DataTypeTuple &>(*result_type_short_circuit);
+            //const auto & result_short_circuit_tuple_type = assert_cast<const DataTypeTuple &>(*result_type_short_circuit);
 
             Columns result_columns;
             if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
@@ -633,9 +685,25 @@ private:
             }
             else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.empty())
             {
+                IColumn::Filter default_values;
                 result_columns = dictionary->getColumnsOrDefaultShortCircuit(
                     attribute_names, result_tuple_type.getElements(), key_columns, key_types,
-                    last_argument, result_short_circuit_tuple_type.getElements());
+                    default_values);
+
+                auto [defaults_column, mask_column] =
+                    getDefaultsShortCircuit(default_values, result_type, last_argument);
+
+                const auto & tuple_defaults = assert_cast<const ColumnTuple &>(*defaults_column);
+
+                for (size_t col = 0; col < result_columns.size(); ++col)
+                {
+                    restoreShortCircuitColumn(
+                        result_columns[col],
+                        tuple_defaults.getColumnPtr(col),
+                        mask_column,
+                        default_values,
+                        result_tuple_type.getElements()[col]);
+                }
             }
             else
             {
@@ -654,8 +722,14 @@ private:
             }
             else if (dictionary_get_function_type == DictionaryGetFunctionType::getOrDefault && default_cols.empty())
             {
+                IColumn::Filter default_values;
                 result = dictionary->getColumnOrDefaultShortCircuit(
-                    attribute_names[0], result_type, key_columns, key_types, last_argument, result_type_short_circuit);
+                    attribute_names[0], result_type, key_columns, key_types, default_values);
+
+                auto [defaults_column, mask_column] =
+                    getDefaultsShortCircuit(default_values, result_type, last_argument);
+
+                restoreShortCircuitColumn(result, defaults_column, mask_column, default_values, result_type);
             }
             else
             {
