@@ -530,8 +530,11 @@ KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
     else if (!ret_consumer_ptr && closed_consumer_index.has_value())
     {
         ret_consumer_ptr = consumers[*closed_consumer_index];
+
+        cppkafka::Configuration consumer_config = getConsumerConfiguration(*closed_consumer_index);
         /// It should be OK to create consumer under lock, since it should be fast (without subscribing).
-        ret_consumer_ptr->setConsumer(createConsumer(*ret_consumer_ptr, *closed_consumer_index));
+        ret_consumer_ptr->createConsumer(consumer_config);
+        LOG_TRACE(log, "Created #{} consumer", *closed_consumer_index);
     }
     /// 3. There is no free consumer and num_consumers already created, waiting @timeout.
     else
@@ -574,29 +577,6 @@ KafkaConsumerPtr StorageKafka::createKafkaConsumer(size_t consumer_number)
         stream_cancelled,
         topics);
     return kafka_consumer_ptr;
-}
-
-ConsumerPtr StorageKafka::createConsumer(KafkaConsumer & kafka_consumer, size_t consumer_number)
-{
-    cppkafka::Configuration consumer_config = getConsumerConfiguration(consumer_number);
-
-    /// Using KafkaConsumer by reference should be safe, since
-    /// cppkafka::Consumer can poll messages (including statistics, which will
-    /// trigger the callback below) only via KafkaConsumer.
-    if (consumer_config.get("statistics.interval.ms") != "0")
-    {
-        consumer_config.set_stats_callback([&kafka_consumer](cppkafka::KafkaHandleBase &, const std::string & stat_json)
-        {
-            kafka_consumer.setRDKafkaStat(stat_json);
-        });
-    }
-
-    auto consumer_ptr = std::make_shared<cppkafka::Consumer>(consumer_config);
-    consumer_ptr->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
-
-    LOG_TRACE(log, "Created #{} consumer", consumer_number);
-
-    return consumer_ptr;
 }
 
 cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number)

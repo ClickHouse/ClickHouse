@@ -13,6 +13,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <base/defines.h>
 
 namespace CurrentMetrics
 {
@@ -63,9 +64,22 @@ KafkaConsumer::KafkaConsumer(
 {
 }
 
-void KafkaConsumer::setConsumer(const ConsumerPtr & consumer_)
+void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
 {
-    consumer = consumer_;
+    chassert(!consumer.get());
+
+    /// Using this should be safe, since cppkafka::Consumer can poll messages
+    /// (including statistics, which will trigger the callback below) only via
+    /// KafkaConsumer.
+    if (consumer_config.get("statistics.interval.ms") != "0")
+    {
+        consumer_config.set_stats_callback([this](cppkafka::KafkaHandleBase &, const std::string & stat_json)
+        {
+            setRDKafkaStat(stat_json);
+        });
+    }
+    consumer = std::make_shared<cppkafka::Consumer>(consumer_config);
+    consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
 
     // called (synchronously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)

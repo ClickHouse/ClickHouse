@@ -72,7 +72,7 @@ public:
 
     ~KafkaConsumer();
 
-    void setConsumer(const ConsumerPtr & consumer);
+    void createConsumer(cppkafka::Configuration consumer_config);
     bool hasConsumer() const { return consumer.get() != nullptr; }
     ConsumerPtr && moveConsumer() { return std::move(consumer); }
 

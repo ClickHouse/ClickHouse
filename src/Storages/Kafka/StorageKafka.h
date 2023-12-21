@@ -130,8 +130,6 @@ private:
     SettingsChanges createSettingsAdjustments();
     /// Creates KafkaConsumer object without real consumer (cppkafka::Consumer)
     KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
-    /// Creates real cppkafka::Consumer object
-    ConsumerPtr createConsumer(KafkaConsumer & kafka_consumer, size_t consumer_number);
     /// Returns consumer configuration with all changes that had been overwritten in config
     cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
 
