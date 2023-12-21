@@ -8,6 +8,6 @@ sidebar_label: Re sharding
 
 TBD
 
-# Differences between plain ReplicationMergeTree
+# Differences between plain ReplicatedMergeTree
 
 TBD
