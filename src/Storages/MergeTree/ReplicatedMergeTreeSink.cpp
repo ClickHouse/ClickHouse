@@ -912,12 +912,8 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                         part->name, multi_code, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
             });
 
-            /// Independently of how many retries we had left we want to do at least one check of this inner retry
-            /// so a) we try to verify at least once if metadata was written and b) we set the proper final error
-            /// (UNKNOWN_STATUS_OF_INSERT) if we fail to reconnect to keeper
-            new_retry_controller.requestUnconditionalRetry();
-
             bool node_exists = false;
+            /// The loop will be executed at least once
             new_retry_controller.retryLoop([&]
             {
                 fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault, { zookeeper->forceFailureBeforeOperation(); });
@@ -1076,7 +1072,6 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
                 quorum_info.status_path = storage.zookeeper_path + "/quorum/parallel/" + retry_context.actual_part_name;
 
             ZooKeeperRetriesControl new_retry_controller = retries_ctl;
-            new_retry_controller.requestUnconditionalRetry();
             new_retry_controller.actionAfterLastFailedRetry([&]
             {
                 /// We do not know whether or not data has been inserted in other replicas

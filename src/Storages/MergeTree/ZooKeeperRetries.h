@@ -61,6 +61,7 @@ public:
     ///     then it can provide feedback to retries controller via user errors
     ///
     /// It is possible to use it multiple times (it will share nº of errors over the total amount of calls)
+    /// Each retryLoop is independent and it will execute f at least once
     void retryLoop(auto && f, auto && iteration_cleanup)
     {
         current_iteration = 0;
@@ -68,6 +69,8 @@ public:
 
         while (current_iteration == 0 || canTry())
         {
+            /// reset the flag, it will be set to false in case of error
+            iteration_succeeded = true;
             try
             {
                 f();
@@ -175,8 +178,6 @@ public:
 
     void stopRetries() { stop_retries = true; }
 
-    void requestUnconditionalRetry() { unconditional_retry = true; }
-
     bool isLastRetry() const { return total_failures >= retries_info.max_retries; }
 
     bool isRetry() const { return current_iteration > 1; }
@@ -208,14 +209,6 @@ private:
 
     bool canTry()
     {
-        if (unconditional_retry)
-        {
-            unconditional_retry = false;
-            /// reset the flag, it will be set to false in case of error
-            iteration_succeeded = true;
-            return true;
-        }
-
         if (iteration_succeeded)
         {
             if (logger && total_failures > 0)
@@ -252,9 +245,6 @@ private:
         logLastError("will retry due to error");
         sleepForMilliseconds(current_backoff_ms);
         current_backoff_ms = std::min(current_backoff_ms * 2, retries_info.max_backoff_ms);
-
-        /// reset the flag, it will be set to false in case of error
-        iteration_succeeded = true;
 
         return true;
     }
@@ -308,7 +298,6 @@ private:
     UserError user_error;
     KeeperError keeper_error;
     std::function<void()> action_after_last_failed_retry = []() {};
-    bool unconditional_retry = false;
     bool iteration_succeeded = true;
     bool stop_retries = false;
     QueryStatusPtr process_list_element;
