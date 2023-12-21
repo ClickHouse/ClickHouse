@@ -206,7 +206,11 @@ public:
     {
         ColumnsWithTypeAndName args;
 
-        if (ast_function.arguments->children.size() == 2)
+        auto arguments_size = ast_function.arguments->children.size();
+
+        chassert(arguments_size == 1 || arguments_size == 2);
+
+        if (arguments_size == 2)
         {
             if (ast_function.arguments->children[0]->as<ASTLiteral>())
             {
