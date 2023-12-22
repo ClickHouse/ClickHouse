@@ -120,14 +120,6 @@ public:
 
     size_t getMarkRows(size_t part_idx, size_t mark) const { return parts[part_idx].data_part->index_granularity.getMarkRows(mark); }
 
-    size_t getTotalRowCount() const
-    {
-        size_t total = 0;
-        for (const auto & part : parts)
-            total += part.getRowsCount();
-        return total;
-    }
-
 private:
     const RangesInDataParts & parts;
 };
@@ -423,7 +415,7 @@ SplitResult split(RangesInDataParts ranges_in_data_parts, size_t max_layers)
         chassert(current_part_range.event == PartsRangesIterator::EventType::RangeEnd);
 
         /** If there are more than 1 part ranges that we are currently processing
-          * that means that this part range is interesecting with other range.
+          * that means that this part range is intersecting with other range.
           *
           * If part level is 0, we must process whole part because it can contain duplicate primary keys.
           */
@@ -468,6 +460,16 @@ SplitResult split(RangesInDataParts ranges_in_data_parts, size_t max_layers)
         part_index_start_to_range.erase(current_part_range.part_index);
     }
 
+    /// Process parts ranges with undefined value at end mark
+    bool is_intersecting = part_index_start_to_range.size() > 1;
+    for (const auto & [part_index, mark_range] : part_index_start_to_range)
+    {
+        if (is_intersecting)
+            add_intersecting_range(part_index, mark_range);
+        else
+            add_non_intersecting_range(part_index, mark_range);
+    }
+
     auto & non_intersecting_ranges_in_data_parts = non_intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts();
     auto & intersecting_ranges_in_data_parts = intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts();
 
@@ -477,6 +479,7 @@ SplitResult split(RangesInDataParts ranges_in_data_parts, size_t max_layers)
     // of granules with values greater than the previous mark and less or equal than the new border.
 
     std::priority_queue<PartsRangesIterator, std::vector<PartsRangesIterator>, std::greater<>> parts_ranges_queue;
+
     for (size_t part_index = 0; part_index < intersecting_ranges_in_data_parts.size(); ++part_index)
     {
         size_t initial_part_index = intersecting_ranges_in_data_parts_builder.mapPartIndexToInitialPartIndex(part_index);
@@ -505,7 +508,8 @@ SplitResult split(RangesInDataParts ranges_in_data_parts, size_t max_layers)
     std::vector<Values> borders;
     std::vector<RangesInDataParts> result_layers;
 
-    const size_t rows_per_layer = std::max<size_t>(index_access.getTotalRowCount() / max_layers, 1);
+    size_t total_intersecting_rows_count = intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts().getRowsCountAllParts();
+    const size_t rows_per_layer = std::max<size_t>(total_intersecting_rows_count / max_layers, 1);
 
     while (!parts_ranges_queue.empty())
     {
@@ -703,18 +707,18 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
     SplitResult split_result = split(std::move(parts), max_layers);
-
-    SplitPartsWithRangesByPrimaryKeyResult result;
-    result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
-
     auto borders = std::move(split_result.borders);
     auto result_layers = std::move(split_result.layers);
     auto filters = buildFilters(primary_key, borders);
 
+    SplitPartsWithRangesByPrimaryKeyResult result;
+    result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
+    result.merging_pipes.resize(result_layers.size());
+
     for (size_t i = 0; i < result_layers.size(); ++i)
     {
-        Pipe layer_pipe = in_order_reading_step_getter(std::move(result_layers[i]));
-        layer_pipe.addSimpleTransform([sorting_expr](const Block & header)
+        result.merging_pipes[i] = in_order_reading_step_getter(std::move(result_layers[i]));
+        result.merging_pipes[i].addSimpleTransform([sorting_expr](const Block & header)
                                     { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
 
         auto & filter_function = filters[i];
@@ -723,19 +727,17 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
         auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
         auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
-        reorderColumns(*actions, layer_pipe.getHeader(), filter_function->getColumnName());
+        reorderColumns(*actions, result.merging_pipes[i].getHeader(), filter_function->getColumnName());
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
         auto description = fmt::format(
             "filter values in ({}, {}]", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
-        layer_pipe.addSimpleTransform(
+        result.merging_pipes[i].addSimpleTransform(
             [&](const Block & header)
             {
                 auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_function->getColumnName(), true);
                 step->setDescription(description);
                 return step;
             });
-
-        result.merging_pipes.push_back(std::move(layer_pipe));
     }
 
     return result;
