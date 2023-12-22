@@ -58,7 +58,7 @@ public:
         return BaseRequest::GetChecksumAlgorithmName();
     }
 
-    std::string getRegion() const
+    std::string getRegionOverride() const
     {
         return region_override;
     }

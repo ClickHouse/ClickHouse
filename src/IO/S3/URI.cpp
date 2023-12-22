@@ -148,8 +148,8 @@ URI::URI(const std::string & uri_)
 
 void URI::addRegionToURI(const std::string &region)
 {
-    auto pos = endpoint.find("amazonaws.com");
-    endpoint = endpoint.substr(0, pos) + region + "." + endpoint.substr(pos);
+    if (auto pos = endpoint.find("amazonaws.com"); pos != std::string::npos)
+        endpoint = endpoint.substr(0, pos) + region + "." + endpoint.substr(pos);
 }
 
 void URI::validateBucket(const String & bucket, const Poco::URI & uri)
