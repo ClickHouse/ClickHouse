@@ -34,15 +34,6 @@ cd /build/build_docker
 rm -f CMakeCache.txt
 
 
-# We don't want to depend on any third-party CMake files.
-# To check it, find and delete them.
-
-grep -o -P '"contrib/[^"]+"' ../.gitmodules |
-  grep -v -P 'llvm-project|google-protobuf|grpc|abseil-cpp|corrosion' |
-  xargs -I@ find ../@ -'(' -name 'CMakeLists.txt' -or -name '*.cmake' -')' -and -not -name '*.h.cmake' |
-  xargs rm
-
-
 if [ -n "$MAKE_DEB" ]; then
   rm -rf /build/packages/root
   # NOTE: this is for backward compatibility with previous releases,
@@ -158,7 +149,7 @@ then
     mkdir -p "$PERF_OUTPUT"
     cp -r ../tests/performance "$PERF_OUTPUT"
     cp -r ../tests/config/top_level_domains  "$PERF_OUTPUT"
-    cp -r ../docker/test/performance-comparison/config "$PERF_OUTPUT" ||:
+    cp -r ../tests/performance/scripts/config "$PERF_OUTPUT" ||:
     for SRC in /output/clickhouse*; do
         # Copy all clickhouse* files except packages and bridges
         [[ "$SRC" != *.* ]] && [[ "$SRC" != *-bridge ]] && \
@@ -169,7 +160,7 @@ then
         ln -sf clickhouse "$PERF_OUTPUT"/clickhouse-keeper
     fi
 
-    cp -r ../docker/test/performance-comparison "$PERF_OUTPUT"/scripts ||:
+    cp -r ../tests/performance/scripts "$PERF_OUTPUT"/scripts ||:
     prepare_combined_output "$PERF_OUTPUT"
 
     # We have to know the revision that corresponds to this binary build.

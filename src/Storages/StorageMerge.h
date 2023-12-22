@@ -77,6 +77,11 @@ public:
     /// Evaluate database name or regexp for StorageMerge and TableFunction merge
     static std::tuple<bool /* is_regexp */, ASTPtr> evaluateDatabaseName(const ASTPtr & node, ContextPtr context);
 
+    bool supportsTrivialCountOptimization() const override;
+
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+
 private:
     std::optional<OptimizedRegularExpression> source_database_regexp;
     std::optional<OptimizedRegularExpression> source_table_regexp;
@@ -112,6 +117,9 @@ private:
     ColumnsDescription getColumnsDescriptionFromSourceTables() const;
 
     bool tableSupportsPrewhere() const;
+
+    template <typename F>
+    std::optional<UInt64> totalRowsOrBytes(F && func) const;
 
     friend class ReadFromMerge;
 };
@@ -173,14 +181,19 @@ private:
 
     struct AliasData
     {
-        String name;
-        DataTypePtr type;
-        ASTPtr expression;
+        String name;       /// "size" in  "size String Alias formatReadableSize(size_bytes)"
+        DataTypePtr type;  /// String in "size String Alias formatReadableSize(size_bytes)", or something different came from query
+        ASTPtr expression; /// formatReadableSize(size_bytes) in "size String Alias formatReadableSize(size_bytes)"
     };
 
     using Aliases = std::vector<AliasData>;
 
+    class RowPolicyData;
+    using RowPolicyDataOpt = std::optional<RowPolicyData>;
+
     std::vector<Aliases> table_aliases;
+
+    std::vector<RowPolicyDataOpt> table_row_policy_data_opts;
 
     void createChildPlans();
 
@@ -189,10 +202,11 @@ private:
     QueryPlan createPlanForTable(
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        const QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
         const StorageWithLockAndName & storage_with_lock,
-        Names real_column_names,
+        Names && real_column_names,
+        const RowPolicyDataOpt & row_policy_data_opt,
         ContextMutablePtr modified_context,
         size_t streams_num);
 
@@ -200,9 +214,10 @@ private:
         QueryPlan & plan,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & modified_query_info,
-        const QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         const Block & header,
         const Aliases & aliases,
+        const RowPolicyDataOpt & row_policy_data_opt,
         const StorageWithLockAndName & storage_with_lock,
         ContextMutablePtr modified_context,
         bool concat_streams = false) const;
@@ -212,13 +227,14 @@ private:
         const StorageWithLockAndName & storage_with_lock_and_name,
         const StorageSnapshotPtr & storage_snapshot);
 
-    static void convertingSourceStream(
+    static void convertAndFilterSourceStream(
         const Block & header,
         const StorageMetadataPtr & metadata_snapshot,
         const Aliases & aliases,
+        const RowPolicyDataOpt & row_policy_data_opt,
         ContextPtr context,
         QueryPipelineBuilder & builder,
-        const QueryProcessingStage::Enum & processed_stage);
+        QueryProcessingStage::Enum processed_stage);
 };
 
 }

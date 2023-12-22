@@ -38,7 +38,10 @@ node = cluster.add_instance(
         "configs/server_overrides.xml",
         "configs/ssl.xml",
     ],
-    user_configs=["configs/users_overrides.xml"],
+    user_configs=[
+        "configs/users_overrides.xml",
+        "configs/users_overrides_persistent.xml",
+    ],
     with_minio=True,
     minio_certs_dir="minio_certs",
 )
@@ -256,7 +259,7 @@ def assert_took(took, should_took):
             "user",
             "max_backup_bandwidth",
             "1M",
-            7 * 2,
+            7,
             id="user_local_to_remote_throttling",
         ),
         # reading 1e6*8 bytes with 2M default bandwith should take (8-2)/2=3 seconds
@@ -266,7 +269,7 @@ def assert_took(took, should_took):
             "server",
             "max_backup_bandwidth_for_server",
             "2M",
-            3 * 2,
+            3,
             id="server_local_to_remote_throttling",
         ),
     ],

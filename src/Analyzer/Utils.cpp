@@ -544,11 +544,8 @@ inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode * function_nod
         argument_types.emplace_back(function_node_argument->getResultType());
 
     AggregateFunctionProperties properties;
-    return AggregateFunctionFactory::instance().get(
-        function_node->getFunctionName(),
-        argument_types,
-        parameters,
-        properties);
+    auto action = NullsAction::EMPTY;
+    return AggregateFunctionFactory::instance().get(function_node->getFunctionName(), action, argument_types, parameters, properties);
 }
 
 }

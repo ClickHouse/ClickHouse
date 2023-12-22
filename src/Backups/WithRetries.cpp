@@ -55,6 +55,10 @@ void WithRetries::renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const
 
         callback(my_faulty_zookeeper);
     }
+    else
+    {
+        my_faulty_zookeeper->setKeeper(zookeeper);
+    }
 }
 
 const WithRetries::KeeperSettings & WithRetries::getKeeperSettings() const

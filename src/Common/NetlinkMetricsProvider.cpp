@@ -117,7 +117,7 @@ struct NetlinkMessage
                 if (errno == EAGAIN)
                     continue;
                 else
-                    throwFromErrno("Can't send a Netlink command", ErrorCodes::NETLINK_ERROR);
+                    throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't send a Netlink command");
             }
 
             if (bytes_sent > request_size)
@@ -255,7 +255,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
 {
     netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
     if (netlink_socket_fd < 0)
-        throwFromErrno("Can't create PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+        throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't create PF_NETLINK socket");
 
     try
     {
@@ -267,7 +267,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
         tv.tv_usec = 50000;
 
         if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
-            throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+            throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't set timeout on PF_NETLINK socket");
 
         union
         {
@@ -277,7 +277,7 @@ NetlinkMetricsProvider::NetlinkMetricsProvider()
         addr.nl_family = AF_NETLINK;
 
         if (::bind(netlink_socket_fd, &sockaddr, sizeof(addr)) < 0)
-            throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+            throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Can't bind PF_NETLINK socket");
 
         taskstats_family_id = getFamilyId(netlink_socket_fd);
     }

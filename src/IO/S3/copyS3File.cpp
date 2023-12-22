@@ -4,6 +4,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
+#include <IO/S3/BlobStorageLogWriter.h>
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
@@ -59,6 +60,7 @@ namespace
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunner<void> schedule_,
             bool for_disk_s3_,
+            BlobStorageLogWriterPtr blob_storage_log_,
             const Poco::Logger * log_)
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
@@ -68,6 +70,7 @@ namespace
             , object_metadata(object_metadata_)
             , schedule(schedule_)
             , for_disk_s3(for_disk_s3_)
+            , blob_storage_log(blob_storage_log_)
             , log(log_)
         {
         }
@@ -83,6 +86,7 @@ namespace
         const std::optional<std::map<String, String>> & object_metadata;
         ThreadPoolCallbackRunner<void> schedule;
         bool for_disk_s3;
+        BlobStorageLogWriterPtr blob_storage_log;
         const Poco::Logger * log;
 
         struct UploadPartTask
@@ -132,6 +136,10 @@ namespace
                 ProfileEvents::increment(ProfileEvents::DiskS3CreateMultipartUpload);
 
             auto outcome = client_ptr->CreateMultipartUpload(request);
+            if (blob_storage_log)
+                blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadCreate,
+                                           dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
+                                           outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
             if (outcome.IsSuccess())
             {
@@ -178,6 +186,16 @@ namespace
 
                 auto outcome = client_ptr->CompleteMultipartUpload(request);
 
+                if (blob_storage_log)
+                    blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadComplete,
+                                               dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
+                                               outcome.IsSuccess() ? nullptr : &outcome.GetError());
+
+                if (blob_storage_log)
+                    blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadComplete,
+                                               dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
+                                               outcome.IsSuccess() ? nullptr : &outcome.GetError());
+
                 if (outcome.IsSuccess())
                 {
                     LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, part_tags.size());
@@ -206,7 +224,12 @@ namespace
             abort_request.SetBucket(dest_bucket);
             abort_request.SetKey(dest_key);
             abort_request.SetUploadId(multipart_upload_id);
-            client_ptr->AbortMultipartUpload(abort_request);
+            auto outcome = client_ptr->AbortMultipartUpload(abort_request);
+            if (blob_storage_log)
+                blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadAbort,
+                                           dest_bucket, dest_key, /* local_path_ */ {}, /* data_size */ 0,
+                                           outcome.IsSuccess() ? nullptr : &outcome.GetError());
+
             multipart_upload_aborted = true;
         }
 
@@ -435,8 +458,9 @@ namespace
             const S3Settings::RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunner<void> schedule_,
-            bool for_disk_s3_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, &Poco::Logger::get("copyDataToS3File"))
+            bool for_disk_s3_,
+            BlobStorageLogWriterPtr blob_storage_log_)
+            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, &Poco::Logger::get("copyDataToS3File"))
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -488,7 +512,7 @@ namespace
             client_ptr->setKMSHeaders(request);
         }
 
-        void processPutRequest(const S3::PutObjectRequest & request)
+        void processPutRequest(S3::PutObjectRequest & request)
         {
             size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
             for (size_t retries = 1;; ++retries)
@@ -500,6 +524,10 @@ namespace
                 Stopwatch watch;
                 auto outcome = client_ptr->PutObject(request);
                 watch.stop();
+                if (blob_storage_log)
+                    blob_storage_log->addEvent(BlobStorageLogElement::EventType::Upload,
+                                               dest_bucket, dest_key, /* local_path_ */ {}, size,
+                                               outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
                 if (outcome.IsSuccess())
                 {
@@ -581,6 +609,11 @@ namespace
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
             auto outcome = client_ptr->UploadPart(req);
+            if (blob_storage_log)
+                blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadWrite,
+                                           dest_bucket, dest_key, /* local_path_ */ {}, size,
+                                           outcome.IsSuccess() ? nullptr : &outcome.GetError());
+
             if (!outcome.IsSuccess())
             {
                 abortMultipartUpload();
@@ -608,8 +641,9 @@ namespace
             const ReadSettings & read_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunner<void> schedule_,
-            bool for_disk_s3_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, &Poco::Logger::get("copyS3File"))
+            bool for_disk_s3_,
+            BlobStorageLogWriterPtr blob_storage_log_)
+            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, &Poco::Logger::get("copyS3File"))
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
@@ -621,6 +655,7 @@ namespace
 
         void performCopy()
         {
+            LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
             if (!supports_multipart_copy || size <= upload_settings.max_single_operation_copy_size)
                 performSingleOperationCopy();
             else
@@ -675,7 +710,7 @@ namespace
             client_ptr->setKMSHeaders(request);
         }
 
-        void processCopyRequest(const S3::CopyObjectRequest & request)
+        void processCopyRequest(S3::CopyObjectRequest & request)
         {
             size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
             for (size_t retries = 1;; ++retries)
@@ -712,6 +747,7 @@ namespace
                             dest_bucket,
                             dest_key,
                             request_settings,
+                            blob_storage_log,
                             object_metadata,
                             schedule,
                             for_disk_s3);
@@ -803,11 +839,12 @@ void copyDataToS3File(
     const String & dest_bucket,
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
+    BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata,
     ThreadPoolCallbackRunner<void> schedule,
     bool for_disk_s3)
 {
-    CopyDataToFileHelper helper{create_read_buffer, offset, size, dest_s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3};
+    CopyDataToFileHelper helper{create_read_buffer, offset, size, dest_s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3, blob_storage_log};
     helper.performCopy();
 }
 
@@ -822,13 +859,14 @@ void copyS3File(
     const String & dest_key,
     const S3Settings::RequestSettings & settings,
     const ReadSettings & read_settings,
+    BlobStorageLogWriterPtr blob_storage_log,
     const std::optional<std::map<String, String>> & object_metadata,
     ThreadPoolCallbackRunner<void> schedule,
     bool for_disk_s3)
 {
     if (settings.allow_native_copy)
     {
-        CopyFileHelper helper{s3_client, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, read_settings, object_metadata, schedule, for_disk_s3};
+        CopyFileHelper helper{s3_client, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, read_settings, object_metadata, schedule, for_disk_s3, blob_storage_log};
         helper.performCopy();
     }
     else
@@ -837,7 +875,7 @@ void copyS3File(
         {
             return std::make_unique<ReadBufferFromS3>(s3_client, src_bucket, src_key, "", settings, read_settings);
         };
-        copyDataToS3File(create_read_buffer, src_offset, src_size, s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3);
+        copyDataToS3File(create_read_buffer, src_offset, src_size, s3_client, dest_bucket, dest_key, settings, blob_storage_log, object_metadata, schedule, for_disk_s3);
     }
 }
 

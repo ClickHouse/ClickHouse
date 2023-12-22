@@ -75,7 +75,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr);
 
-    auto table_id = getContext()->tryResolveStorageID(alter, Context::ResolveOrdinary);
+    auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
 
     if (table_id)
@@ -155,6 +155,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
+
+        if (!getContext()->getSettings().allow_experimental_statistic && (
+            command_ast->type == ASTAlterCommand::ADD_STATISTIC ||
+            command_ast->type == ASTAlterCommand::DROP_STATISTIC ||
+            command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTIC))
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistic is now disabled. Turn on allow_experimental_statistic");
     }
 
     if (typeid_cast<DatabaseReplicated *>(database.get()))
@@ -318,6 +324,21 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
             break;
         }
+        case ASTAlterCommand::ADD_STATISTIC:
+        {
+            required_access.emplace_back(AccessType::ALTER_ADD_STATISTIC, database, table);
+            break;
+        }
+        case ASTAlterCommand::DROP_STATISTIC:
+        {
+            required_access.emplace_back(AccessType::ALTER_DROP_STATISTIC, database, table);
+            break;
+        }
+        case ASTAlterCommand::MATERIALIZE_STATISTIC:
+        {
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTIC, database, table);
+            break;
+        }
         case ASTAlterCommand::ADD_INDEX:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_INDEX, database, table);
@@ -387,6 +408,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             break;
         }
         case ASTAlterCommand::DELETE:
+        case ASTAlterCommand::APPLY_DELETED_MASK:
         case ASTAlterCommand::DROP_PARTITION:
         case ASTAlterCommand::DROP_DETACHED_PARTITION:
         {

@@ -9,6 +9,10 @@ keywords: [gcs, bucket]
 
 Provides a table-like interface to `SELECT` and `INSERT` data from [Google Cloud Storage](https://cloud.google.com/storage/). Requires the [`Storage Object User` IAM role](https://cloud.google.com/storage/docs/access-control/iam-roles).
 
+This is an alias of the [s3 table function](../../sql-reference/table-functions/s3.md).
+
+If you have multiple replicas in your cluster, you can use the [s3Cluster function](../../sql-reference/table-functions/s3Cluster.md) (which works with GCS) instead to parallelize inserts.
+
 **Syntax**
 
 ``` sql

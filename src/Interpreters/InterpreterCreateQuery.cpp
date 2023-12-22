@@ -9,11 +9,13 @@
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
 #include <Common/atomicRename.h>
+#include <Common/PoolId.h>
 #include <Common/logger_useful.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
+#include <Core/ServerSettings.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -326,11 +328,22 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (!load_database_without_tables)
         {
-
             /// We use global context here, because storages lifetime is bigger than query context lifetime
             TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
-            loader.loadTables();
-            loader.startupTables();
+            auto load_tasks = loader.loadTablesAsync();
+            auto startup_tasks = loader.startupTablesAsync();
+            if (getContext()->getGlobalContext()->getServerSettings().async_load_databases)
+            {
+                scheduleLoad(load_tasks);
+                scheduleLoad(startup_tasks);
+            }
+            else
+            {
+                /// First prioritize, schedule and wait all the load table tasks
+                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), load_tasks);
+                /// Only then prioritize, schedule and wait all the startup tasks
+                waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
+            }
         }
     }
     catch (...)
@@ -436,6 +449,12 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         {
             column_declaration->codec = column.codec;
             column_declaration->children.push_back(column_declaration->codec);
+        }
+
+        if (column.stat)
+        {
+            column_declaration->stat_type = column.stat->ast;
+            column_declaration->children.push_back(column_declaration->stat_type);
         }
 
         if (column.ttl)
@@ -640,6 +659,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec);
         }
 
+        if (col_decl.stat_type)
+        {
+            if (!attach && !context_->getSettingsRef().allow_experimental_statistic)
+                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Create table with statistic is now disabled. Turn on allow_experimental_statistic");
+            column.stat = StatisticDescription::getStatisticFromColumnDeclaration(col_decl);
+        }
+
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;
 
@@ -752,26 +778,41 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         properties.constraints = as_storage_metadata->getConstraints();
     }
-    else if (create.select)
+    else if (create.select && !create.isParameterizedView())
     {
         Block as_select_sample;
 
-        if (!create.isParameterizedView())
+        if (getContext()->getSettingsRef().allow_experimental_analyzer)
         {
-            if (getContext()->getSettingsRef().allow_experimental_analyzer)
-            {
-                as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
-            }
-            else
-            {
-                as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
-                    getContext(),
-                    false /* is_subquery */,
-                    create.isParameterizedView());
-            }
-
-            properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
         }
+        else
+        {
+            /** To get valid sample block we need to prepare query without only_analyze, because we need to execute scalar
+              * subqueries. Otherwise functions that expect only constant arguments will throw error during query analysis,
+              * because the result of scalar subquery is not a constant.
+              *
+              * Example:
+              * CREATE MATERIALIZED VIEW test_mv ENGINE=MergeTree ORDER BY arr
+              * AS
+              * WITH (SELECT '\d[a-z]') AS constant_value
+              * SELECT extractAll(concat(toString(number), 'a'), assumeNotNull(constant_value)) AS arr
+              * FROM test_table;
+              *
+              * For new analyzer this issue does not exists because we always execute scalar subqueries.
+              * We can improve this in new analyzer, and execute scalar subqueries only in contexts when we expect constant
+              * for example: LIMIT, OFFSET, functions parameters, functions constant only arguments.
+              */
+
+            SelectQueryOptions options;
+            if (create.isParameterizedView())
+                options = options.createParameterizedView();
+
+            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), options);
+            as_select_sample = interpreter.getSampleBlock();
+        }
+
+        properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }
     else if (create.as_table_function)
     {
@@ -1185,7 +1226,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
 
     /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && create.to_table_id && !create.attach)
+    if (create.select && create.is_materialized_view && create.to_table_id && !create.attach && !is_restore_from_backup)
     {
         if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
             {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
@@ -1202,7 +1243,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             {
                 input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
                     getContext(),
-                    SelectQueryOptions().analyze()).getSampleBlock();
+                    {}).getSampleBlock();
             }
 
             Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();

@@ -5,10 +5,213 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/HashUtils.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+/// Visitor that optimizes logical expressions _only_ in JOIN ON section
+class JoinOnLogicalExpressionOptimizerVisitor : public InDepthQueryTreeVisitorWithContext<JoinOnLogicalExpressionOptimizerVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<JoinOnLogicalExpressionOptimizerVisitor>;
+
+    explicit JoinOnLogicalExpressionOptimizerVisitor(ContextPtr context)
+        : Base(std::move(context))
+    {}
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        auto * function_node = node->as<FunctionNode>();
+
+        if (!function_node)
+            return;
+
+        if (function_node->getFunctionName() == "or")
+        {
+            bool is_argument_type_changed = tryOptimizeIsNotDistinctOrIsNull(node, getContext());
+            if (is_argument_type_changed)
+                need_rerun_resolve = true;
+            return;
+        }
+    }
+
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (!need_rerun_resolve)
+            return;
+
+        if (auto * function_node = node->as<FunctionNode>())
+            rerunFunctionResolve(function_node, getContext());
+    }
+
+private:
+    bool need_rerun_resolve = false;
+
+    /// Returns true if type of some operand is changed and parent function needs to be re-resolved
+    static bool tryOptimizeIsNotDistinctOrIsNull(QueryTreeNodePtr & node, const ContextPtr & context)
+    {
+        auto & function_node = node->as<FunctionNode &>();
+        chassert(function_node.getFunctionName() == "or");
+
+
+        QueryTreeNodes or_operands;
+        or_operands.reserve(function_node.getArguments().getNodes().size());
+
+        /// Indices of `equals` or `isNotDistinctFrom` functions in the vector above
+        std::vector<size_t> equals_functions_indices;
+
+        /** Map from `isNull` argument to indices of operands that contains that `isNull` functions
+          * `a = b OR (a IS NULL AND b IS NULL) OR (a IS NULL AND c IS NULL)`
+          * will be mapped to
+          * {
+          *     a => [(a IS NULL AND b IS NULL), (a IS NULL AND c IS NULL)]
+          *     b => [(a IS NULL AND b IS NULL)]
+          *     c => [(a IS NULL AND c IS NULL)]
+          * }
+          * Then for each a <=> b we can find all operands that contains both a IS NULL and b IS NULL
+          */
+        QueryTreeNodePtrWithHashMap<std::vector<size_t>> is_null_argument_to_indices;
+
+        for (const auto & argument : function_node.getArguments())
+        {
+            or_operands.push_back(argument);
+
+            auto * argument_function = argument->as<FunctionNode>();
+            if (!argument_function)
+                continue;
+
+            const auto & func_name = argument_function->getFunctionName();
+            if (func_name == "equals" || func_name == "isNotDistinctFrom")
+            {
+                equals_functions_indices.push_back(or_operands.size() - 1);
+            }
+            else if (func_name == "and")
+            {
+                for (const auto & and_argument : argument_function->getArguments().getNodes())
+                {
+                    auto * and_argument_function = and_argument->as<FunctionNode>();
+                    if (and_argument_function && and_argument_function->getFunctionName() == "isNull")
+                    {
+                        const auto & is_null_argument = and_argument_function->getArguments().getNodes()[0];
+                        is_null_argument_to_indices[is_null_argument].push_back(or_operands.size() - 1);
+                    }
+                }
+            }
+        }
+
+        /// OR operands that are changed to and needs to be re-resolved
+        std::unordered_set<size_t> arguments_to_reresolve;
+
+        for (size_t equals_function_idx : equals_functions_indices)
+        {
+            auto * equals_function = or_operands[equals_function_idx]->as<FunctionNode>();
+
+            /// For a <=> b we are looking for expressions containing both `a IS NULL` and `b IS NULL` combined with AND
+            const auto & argument_nodes = equals_function->getArguments().getNodes();
+            const auto & lhs_is_null_parents = is_null_argument_to_indices[argument_nodes[0]];
+            const auto & rhs_is_null_parents = is_null_argument_to_indices[argument_nodes[1]];
+            std::unordered_set<size_t> operands_to_optimize;
+            std::set_intersection(lhs_is_null_parents.begin(), lhs_is_null_parents.end(),
+                                  rhs_is_null_parents.begin(), rhs_is_null_parents.end(),
+                                  std::inserter(operands_to_optimize, operands_to_optimize.begin()));
+
+            /// If we have `a = b OR (a IS NULL AND b IS NULL)` we can optimize it to `a <=> b`
+            if (!operands_to_optimize.empty() && equals_function->getFunctionName() == "equals")
+                arguments_to_reresolve.insert(equals_function_idx);
+
+            for (size_t to_optimize_idx : operands_to_optimize)
+            {
+                /// We are looking for operand `a IS NULL AND b IS NULL AND ...`
+                auto * operand_to_optimize = or_operands[to_optimize_idx]->as<FunctionNode>();
+
+                /// Remove `a IS NULL` and `b IS NULL` arguments from AND
+                QueryTreeNodes new_arguments;
+                for (const auto & and_argument : operand_to_optimize->getArguments().getNodes())
+                {
+                    bool to_eliminate = false;
+
+                    const auto * and_argument_function = and_argument->as<FunctionNode>();
+                    if (and_argument_function && and_argument_function->getFunctionName() == "isNull")
+                    {
+                        const auto & is_null_argument = and_argument_function->getArguments().getNodes()[0];
+                        to_eliminate = (is_null_argument->isEqual(*argument_nodes[0]) || is_null_argument->isEqual(*argument_nodes[1]));
+                    }
+
+                    if (to_eliminate)
+                        arguments_to_reresolve.insert(to_optimize_idx);
+                    else
+                        new_arguments.emplace_back(and_argument);
+                }
+                /// If less than two arguments left, we will remove or replace the whole AND below
+                operand_to_optimize->getArguments().getNodes() = std::move(new_arguments);
+            }
+        }
+
+        if (arguments_to_reresolve.empty())
+            /// Nothing have been changed
+            return false;
+
+        auto and_function_resolver = FunctionFactory::instance().get("and", context);
+        auto strict_equals_function_resolver = FunctionFactory::instance().get("isNotDistinctFrom", context);
+
+        bool need_reresolve = false;
+        QueryTreeNodes new_or_operands;
+        for (size_t i = 0; i < or_operands.size(); ++i)
+        {
+            if (arguments_to_reresolve.contains(i))
+            {
+                auto * function = or_operands[i]->as<FunctionNode>();
+                if (function->getFunctionName() == "equals")
+                {
+                    /// We should replace `a = b` with `a <=> b` because we removed checks for IS NULL
+                    need_reresolve |= function->getResultType()->isNullable();
+                    function->resolveAsFunction(strict_equals_function_resolver);
+                    new_or_operands.emplace_back(std::move(or_operands[i]));
+                }
+                else if (function->getFunctionName() == "and")
+                {
+                    const auto & and_arguments = function->getArguments().getNodes();
+                    if (and_arguments.size() > 1)
+                    {
+                        function->resolveAsFunction(and_function_resolver);
+                        new_or_operands.emplace_back(std::move(or_operands[i]));
+                    }
+                    else if (and_arguments.size() == 1)
+                    {
+                        /// Replace AND with a single argument with the argument itself
+                        new_or_operands.emplace_back(and_arguments[0]);
+                    }
+                }
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function name: '{}'", function->getFunctionName());
+            }
+            else
+            {
+                new_or_operands.emplace_back(std::move(or_operands[i]));
+            }
+        }
+
+        if (new_or_operands.size() == 1)
+        {
+            node = std::move(new_or_operands[0]);
+            return need_reresolve;
+        }
+
+        /// Rebuild OR function
+        auto or_function_resolver = FunctionFactory::instance().get("or", context);
+        function_node.getArguments().getNodes() = std::move(new_or_operands);
+        function_node.resolveAsFunction(or_function_resolver);
+        return need_reresolve;
+    }
+};
 
 class LogicalExpressionOptimizerVisitor : public InDepthQueryTreeVisitorWithContext<LogicalExpressionOptimizerVisitor>
 {
@@ -21,6 +224,17 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (auto * join_node = node->as<JoinNode>())
+        {
+            /// Operator <=> is not supported outside of JOIN ON section
+            if (join_node->hasJoinExpression())
+            {
+                JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(getContext());
+                join_on_visitor.visit(join_node->getJoinExpression());
+            }
+            return;
+        }
+
         auto * function_node = node->as<FunctionNode>();
 
         if (!function_node)
@@ -38,6 +252,7 @@ public:
             return;
         }
     }
+
 private:
     void tryReplaceAndEqualsChainsWithConstant(QueryTreeNodePtr & node)
     {
@@ -224,7 +439,7 @@ private:
             }
 
             /// otherwise add a stub 0 to make OR correct
-            or_operands.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(0)));
+            or_operands.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(0), function_node.getResultType()));
         }
 
         auto or_function_resolver = FunctionFactory::instance().get("or", getContext());

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 from pathlib import Path
 from typing import Tuple
 import subprocess
@@ -9,10 +10,9 @@ import time
 
 from ci_config import CI_CONFIG, BuildConfig
 from ccache_utils import CargoCache
-from docker_pull_helper import get_image_with_version
+
 from env_helper import (
     GITHUB_JOB_API_URL,
-    IMAGES_PATH,
     REPO_COPY,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
@@ -23,6 +23,7 @@ from pr_info import PRInfo
 from report import BuildResult, FAILURE, StatusType, SUCCESS
 from s3_helper import S3Helper
 from tee_popen import TeePopen
+import docker_images_helper
 from version_helper import (
     ClickHouseVersion,
     get_version_from_repo,
@@ -128,18 +129,16 @@ def check_for_success_run(
     version: ClickHouseVersion,
 ) -> None:
     # TODO: Remove after S3 artifacts
-    # the final empty argument is necessary for distinguish build and build_suffix
-    logged_prefix = "/".join((S3_BUILDS_BUCKET, s3_prefix, ""))
-    logging.info("Checking for artifacts in %s", logged_prefix)
+    logging.info("Checking for artifacts %s in bucket %s", s3_prefix, S3_BUILDS_BUCKET)
     try:
         # Performance artifacts are now part of regular build, so we're safe
         build_results = s3_helper.list_prefix(s3_prefix)
     except Exception as ex:
-        logging.info("Got exception while listing %s: %s\nRerun", logged_prefix, ex)
+        logging.info("Got exception while listing %s: %s\nRerun", s3_prefix, ex)
         return
 
     if build_results is None or len(build_results) == 0:
-        logging.info("Nothing found in %s, rerun", logged_prefix)
+        logging.info("Nothing found in %s, rerun", s3_prefix)
         return
 
     logging.info("Some build results found:\n%s", build_results)
@@ -225,11 +224,22 @@ def upload_master_static_binaries(
     print(f"::notice ::Binary static URL (compact): {url_compact}")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser("Clickhouse builder script")
+    parser.add_argument(
+        "build_name",
+        help="build name",
+    )
+    return parser.parse_args()
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
 
+    args = parse_args()
+
     stopwatch = Stopwatch()
-    build_name = sys.argv[1]
+    build_name = args.build_name
 
     build_config = CI_CONFIG.build_config[build_name]
 
@@ -252,12 +262,12 @@ def main():
         (performance_pr, pr_info.sha, build_name, "performance.tar.zst")
     )
 
+    # FIXME: to be removed in favor of "skip by job digest"
     # If this is rerun, then we try to find already created artifacts and just
     # put them as github actions artifact (result)
-    check_for_success_run(s3_helper, s3_path_prefix, build_name, version)
-
-    docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
-    image_version = docker_image.version
+    # The s3_path_prefix has additional "/" in the end to prevent finding
+    # e.g. `binary_darwin_aarch64/clickhouse` for `binary_darwin`
+    check_for_success_run(s3_helper, f"{s3_path_prefix}/", build_name, version)
 
     logging.info("Got version from repo %s", version.string)
 
@@ -281,13 +291,17 @@ def main():
     )
     cargo_cache.download()
 
+    docker_image = docker_images_helper.pull_image(
+        docker_images_helper.get_docker_image(IMAGE_NAME)
+    )
+
     packager_cmd = get_packager_cmd(
         build_config,
         repo_path / "docker" / "packager",
         build_output_path,
         cargo_cache.directory,
         version.string,
-        image_version,
+        docker_image.version,
         official_flag,
     )
 
@@ -426,7 +440,9 @@ FORMAT JSONCompactEachRow"""
         url = f"https://{ci_logs_credentials.host}/"
         profiles_dir = temp_path / "profiles_source"
         profiles_dir.mkdir(parents=True, exist_ok=True)
-        logging.info("Processing profile JSON files from {GIT_REPO_ROOT}/build_docker")
+        logging.info(
+            "Processing profile JSON files from %s", repo_path / "build_docker"
+        )
         git_runner(
             "./utils/prepare-time-trace/prepare-time-trace.sh "
             f"build_docker {profiles_dir.absolute()}"

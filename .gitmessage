@@ -1,0 +1,10 @@
+
+
+## To avoid merge commit in CI run (add a leading space to apply):
+#no-merge-commit
+
+## Running specified job (add a leading space to apply):
+#job_<JOB NAME>
+#job_stateless_tests_release
+#job_package_debug
+#job_integration_tests_asan
