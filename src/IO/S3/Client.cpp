@@ -573,7 +573,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         auto new_uri = getURIFromError(error);
         if (!new_uri)
             return result;
-        
+
         if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegion());
 
