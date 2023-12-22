@@ -208,13 +208,22 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             settings.ostr << ' ';
             print_keyword(magic_enum::enum_name(sync_replica_mode));
 
-            // If the mode is LIGHTWEIGHT and a specific source replica is specified
-            if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replica.empty())
+            // If the mode is LIGHTWEIGHT and specific source replicas are specified
+            if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
             {
                 settings.ostr << ' ';
                 print_keyword("FROM");
                 settings.ostr << ' ';
-                print_identifier(src_replica.value());
+
+                for (auto it = src_replicas.begin(); it != src_replicas.end(); ++it)
+                {
+                    print_identifier(*it);
+
+                    // Add a comma and space after each identifier, except the last one
+                    if (std::next(it) != src_replicas.end()) {
+                        settings.ostr << ", ";
+            }
+                }
             }
         }
     }

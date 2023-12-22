@@ -13,7 +13,6 @@
 #include <base/sort.h>
 
 #include <ranges>
-#include <optional>
 
 namespace DB
 {
@@ -2624,7 +2623,7 @@ String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback,
                                         std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode,
-                                        zkutil::ZooKeeperPtr & zookeeper, std::unordered_set<String> srcReplicas)
+                                        zkutil::ZooKeeperPtr & zookeeper, std::unordered_set<String> src_replicas)
 {
     std::lock_guard<std::mutex> lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);
@@ -2643,7 +2642,7 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
         };
 
         std::unordered_set<String> existing_replicas;
-        if (!srcReplicas.empty())
+        if (!src_replicas.empty())
        {
             existing_replicas = std::unordered_set<String>(
                 zookeeper->getChildren(zookeeper_path + "/replicas").begin(),
@@ -2651,17 +2650,17 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
        }
 
         out_entry_names.reserve(queue.size());
-        // Iterate over queue entries
+
         for (const auto & entry : queue)
         {
             bool entry_matches = !lightweight_entries_only || std::find(lightweight_entries.begin(), lightweight_entries.end(), entry->type) != lightweight_entries.end();
             bool source_replica_condition = true;
 
             // Check if srcReplica condition should be applied
-            if (!srcReplicas.empty() && entry_matches)
+            if (!src_replicas.empty() && entry_matches)
             {
                 // Condition: entry's source_replica is one of the specified ones, or not in the system anymore, or is empty
-                source_replica_condition = srcReplicas.count(entry->source_replica) > 0 ||
+                source_replica_condition = src_replicas.count(entry->source_replica) > 0 ||
                     existing_replicas.find(entry->source_replica) == existing_replicas.end() ||
                     entry->source_replica.empty();
             }
