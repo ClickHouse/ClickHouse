@@ -418,8 +418,9 @@ static constexpr std::string_view statistics = R"(
         `INDEX_COMMENT` String,
         `IS_VISIBLE` String,
         `EXPRESSION` Nullable(String)
-    ) AS
-    SELECT
+    )
+    SQL SECURITY INVOKER
+    AS SELECT
         ''            AS table_catalog,
         ''            AS table_schema,
         ''            AS table_name,
