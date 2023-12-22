@@ -5,8 +5,6 @@
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
 
-#include <Processors/Executors/ManualPipelineExecutor.h>
-
 #include <Core/BackgroundSchedulePool.h>
 
 #include <random>
@@ -14,6 +12,8 @@
 
 namespace DB
 {
+
+class PipelineExecutor;
 
 class StorageMaterializedView;
 class ASTRefreshStrategy;
@@ -52,33 +52,32 @@ public:
     /// Cancel task execution
     void cancel();
 
-    /// Pause task execution (must be either resumed or canceled later)
-    void pause();
-
-    /// Resume task execution
-    void resume();
-
     /// Permanently disable task scheduling and remove this table from RefreshSet.
     void shutdown();
 
     /// Notify dependent task
-    void notify(const StorageID & parent_id, std::chrono::sys_seconds parent_next_prescribed_time, const RefreshSchedule & parent_schedule);
+    void notify(const StorageID & parent_id, std::chrono::sys_seconds parent_next_prescribed_time);
 
+    /// For tests
     void setFakeTime(std::optional<Int64> t);
 
 private:
     Poco::Logger * log = nullptr;
     std::weak_ptr<IStorage> view_to_refresh;
 
-    /// Protects all fields below (they're accessed by both refreshTask() and public methods).
-    /// Never locked for blocking operations (e.g. creating or dropping the internal table).
-    mutable std::mutex mutex;
+    /// Protects interrupt_execution and running_executor.
+    /// Can be locked while holding `mutex`.
+    std::mutex executor_mutex;
+    /// If there's a refresh in progress, it can be aborted by setting this flag and cancel()ling
+    /// this executor. Refresh task will then reconsider what to do, re-checking `stop_requested`,
+    /// `cancel_requested`, etc.
+    std::atomic_bool interrupt_execution {false};
+    PipelineExecutor * running_executor = nullptr;
 
-    /// Task execution. Non-empty iff a refresh is in progress (possibly paused).
-    ContextMutablePtr refresh_context;
-    std::shared_ptr<ASTInsertQuery> refresh_query;
-    std::optional<ManualPipelineExecutor> refresh_executor;
-    std::optional<BlockIO> refresh_pipeline;
+    /// Protects all fields below.
+    /// Never locked for blocking operations (e.g. creating or dropping the internal table).
+    /// Can't be locked while holding `executor_mutex`.
+    mutable std::mutex mutex;
 
     RefreshSchedule refresh_schedule;
     RefreshSettings refresh_settings; // TODO: populate, use, update on alter
@@ -90,19 +89,11 @@ private:
 
     /// Refreshes are stopped (e.g. by SYSTEM STOP VIEW).
     bool stop_requested = false;
-    /// Refreshes are paused (e.g. by SYSTEM PAUSE VIEW).
-    bool pause_requested = false;
-    /// Cancel current refresh, then reset this flag.
-    bool cancel_requested = false;
 
     /// If true, we should start a refresh right away. All refreshes go through this flag.
     bool refresh_immediately = false;
 
-    /// If true, the refresh task should interrupt its query execution and reconsider what to do,
-    /// re-checking `stop_requested`, `cancel_requested`, etc.
-    std::atomic_bool interrupt_execution {false};
-
-    /// When to refresh next. Updated when a refresh is finished or canceled.
+    /// When to refresh next. Updated when a refresh is finished or cancelled.
     /// We maintain the distinction between:
     ///  * The "prescribed" time of the refresh, dictated by the refresh schedule.
     ///    E.g. for REFERSH EVERY 1 DAY, the prescribed time is always at the exact start of a day.
@@ -135,19 +126,11 @@ private:
     ///
     /// Public methods just provide inputs for the refreshTask()'s decisions
     /// (e.g. stop_requested, cancel_requested), they don't do anything significant themselves.
-    /// This adds some inefficiency: even trivial or no-op requests have to schedule a background
-    /// task instead of directly performing the operation; but the simplicity seems worth it, I had
-    /// a really hard time trying to organize this code in any other way.
     void refreshTask();
 
-    /// Methods that do the actual work: creating/dropping internal table, executing the query.
+    /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
     /// Mutex must be unlocked. Called only from refresh_task.
-    void initializeRefreshUnlocked(std::shared_ptr<const StorageMaterializedView> view);
-    bool executeRefreshUnlocked();
-    /// Whoever calls complete/cancelRefreshUnlocked() should also assign info.last_refresh_result.
-    void completeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view);
-    void cancelRefreshUnlocked();
-    void cleanStateUnlocked();
+    void executeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view);
 
     /// Assigns next_refresh_*
     void advanceNextRefreshTime(std::chrono::system_clock::time_point now);
@@ -156,6 +139,8 @@ private:
     bool arriveDependency(const StorageID & parent);
     bool arriveTime();
     void populateDependencies();
+
+    void interruptExecution();
 
     std::shared_ptr<StorageMaterializedView> lockView();
 

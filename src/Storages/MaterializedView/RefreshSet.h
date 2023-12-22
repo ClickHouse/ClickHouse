@@ -17,13 +17,12 @@ enum class RefreshState : RefreshTaskStateUnderlying
     Scheduled,
     WaitingForDependencies,
     Running,
-    Paused
 };
 
 enum class LastRefreshResult : RefreshTaskStateUnderlying
 {
     Unknown = 0,
-    Canceled,
+    Cancelled,
     Exception,
     Finished
 };
@@ -33,7 +32,9 @@ struct RefreshInfo
     StorageID view_id = StorageID::createEmpty();
     RefreshState state = RefreshState::Scheduled;
     LastRefreshResult last_refresh_result = LastRefreshResult::Unknown;
-    std::optional<UInt32> last_refresh_time;
+    std::optional<UInt32> last_attempt_time;
+    std::optional<UInt32> last_success_time;
+    UInt64 last_attempt_duration_ms = 0;
     UInt32 next_refresh_time = 0;
     UInt64 refresh_count = 0;
     String exception_message; // if last_refresh_result is Exception

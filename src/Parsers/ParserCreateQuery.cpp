@@ -1470,34 +1470,42 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    if (is_materialized_view && !to_table)
+    if (is_materialized_view)
     {
-        /// Internal ENGINE for MATERIALIZED VIEW must be specified.
-        /// Actually check it in Interpreter as default_table_engine can be set
-        storage_p.parse(pos, storage, expected);
+        if (!to_table)
+        {
+            /// Internal ENGINE for MATERIALIZED VIEW must be specified.
+            /// Actually check it in Interpreter as default_table_engine can be set
+            storage_p.parse(pos, storage, expected);
 
-        if (s_populate.ignore(pos, expected))
-            is_populate = true;
-        else if (s_empty.ignore(pos, expected))
-            is_create_empty = true;
+            if (s_populate.ignore(pos, expected))
+                is_populate = true;
+            else if (s_empty.ignore(pos, expected))
+                is_create_empty = true;
 
-        if (ParserKeyword{"TO"}.ignore(pos, expected))
-            throw Exception(
-                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'ENGINE' and 'TO [db].[table]'");
-    }
-    else
-    {
-        if (storage_p.ignore(pos, expected))
-            throw Exception(
-                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'ENGINE'");
+            if (ParserKeyword{"TO"}.ignore(pos, expected))
+                throw Exception(
+                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'ENGINE' and 'TO [db].[table]'");
+        }
+        else
+        {
+            if (storage_p.ignore(pos, expected))
+                throw Exception(
+                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'ENGINE'");
 
-        if (s_populate.ignore(pos, expected))
-            throw Exception(
-                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
+            if (s_populate.ignore(pos, expected))
+                throw Exception(
+                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
 
-        if (s_empty.ignore(pos, expected))
-            throw Exception(
-                ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'EMPTY'");
+            if (s_empty.ignore(pos, expected))
+            {
+                if (!refresh_strategy)
+                    throw Exception(
+                        ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'EMPTY'");
+
+                is_create_empty = true;
+            }
+        }
     }
 
     /// AS SELECT ...

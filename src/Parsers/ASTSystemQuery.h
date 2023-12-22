@@ -96,8 +96,6 @@ public:
         STOP_VIEW,
         STOP_VIEWS,
         CANCEL_VIEW,
-        PAUSE_VIEW,
-        RESUME_VIEW,
         TEST_VIEW,
         END
     };

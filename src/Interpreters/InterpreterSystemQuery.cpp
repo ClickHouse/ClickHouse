@@ -623,12 +623,6 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CANCEL_VIEW:
             getRefreshTask()->cancel();
             break;
-        case Type::PAUSE_VIEW:
-            getRefreshTask()->pause();
-            break;
-        case Type::RESUME_VIEW:
-            getRefreshTask()->resume();
-            break;
         case Type::TEST_VIEW:
             getRefreshTask()->setFakeTime(query.fake_time_for_view);
             break;
@@ -1285,8 +1279,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_VIEW:
         case Type::STOP_VIEWS:
         case Type::CANCEL_VIEW:
-        case Type::PAUSE_VIEW:
-        case Type::RESUME_VIEW:
         case Type::TEST_VIEW:
         {
             if (!query.table)

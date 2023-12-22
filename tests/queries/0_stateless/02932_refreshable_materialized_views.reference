@@ -33,11 +33,12 @@ CREATE MATERIALIZED VIEW default.b\nREFRESH EVERY 2 YEAR\n(\n    `y` Int32\n)\nE
 <23: simple refresh>	1
 <24: rename during refresh>	1
 <25: rename during refresh>	f	Running
-<26: paused+resumed>	1
-<27: canceled>	f	Scheduled
+<27: cancelled>	f	Scheduled
 CREATE MATERIALIZED VIEW default.g\nREFRESH EVERY 1 WEEK OFFSET 3 DAY 4 HOUR RANDOMIZE FOR 4 DAY 1 HOUR\n(\n    `x` Int64\n)\nENGINE = Memory AS\nSELECT 42
 <29: randomize>	1	1
 CREATE MATERIALIZED VIEW default.h\nREFRESH EVERY 1 SECOND TO default.dest\n(\n    `x` Int64\n) AS\nSELECT x * 10 AS x\nFROM default.src
 <30: to existing table>	10
 <31: to existing table>	10
 <31: to existing table>	20
+<32: empty>	i	Scheduled	Unknown
+<32: empty>	j	Scheduled	Finished

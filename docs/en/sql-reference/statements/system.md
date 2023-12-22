@@ -510,25 +510,9 @@ SYSTEM START VIEW [db.]name
 SYSTEM START VIEWS
 ```
 
-### SYSTEM PAUSE VIEW
-
-If there's a refresh in progress for the given view, interrupt and pause it. Otherwise do nothing. The state of the refresh is preserved, and it can be resumed without losing progress.
-
-```sql
-SYSTEM PAUSE VIEW [db.]name
-```
-
-### SYSTEM RESUME VIEW
-
-If there's a paused refresh for the given view, resume it. Otherwise do nothing.
-
-```sql
-SYSTEM RESUME VIEW [db.]name
-```
-
 ### SYSTEM CANCEL VIEW
 
-If there's a refresh in progress for the given view, interrupt and cancel it. If there's a paused refresh, discard its state. Otherwise do nothing.
+If there's a refresh in progress for the given view, interrupt and cancel it. Otherwise do nothing.
 
 ```sql
 SYSTEM CANCEL VIEW [db.]name

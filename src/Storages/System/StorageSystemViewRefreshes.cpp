@@ -21,6 +21,8 @@ NamesAndTypesList StorageSystemViewRefreshes::getNamesAndTypes()
         {"status", std::make_shared<DataTypeString>()},
         {"last_refresh_result", std::make_shared<DataTypeString>()},
         {"last_refresh_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
+        {"last_success_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
+        {"duration_ms", std::make_shared<DataTypeUInt64>()},
         {"next_refresh_time", std::make_shared<DataTypeDateTime>()},
         {"remaining_dependencies", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"exception", std::make_shared<DataTypeString>()},
@@ -56,11 +58,17 @@ void StorageSystemViewRefreshes::fillData(
         res_columns[i++]->insert(toString(refresh.state));
         res_columns[i++]->insert(toString(refresh.last_refresh_result));
 
-        if (refresh.last_refresh_time.has_value())
-            res_columns[i++]->insert(refresh.last_refresh_time.value());
+        if (refresh.last_attempt_time.has_value())
+            res_columns[i++]->insert(refresh.last_attempt_time.value());
         else
             res_columns[i++]->insertDefault(); // NULL
 
+        if (refresh.last_success_time.has_value())
+            res_columns[i++]->insert(refresh.last_success_time.value());
+        else
+            res_columns[i++]->insertDefault(); // NULL
+
+        res_columns[i++]->insert(refresh.last_attempt_duration_ms);
         res_columns[i++]->insert(refresh.next_refresh_time);
 
         Array deps;

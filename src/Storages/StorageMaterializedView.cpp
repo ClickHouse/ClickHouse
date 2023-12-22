@@ -134,10 +134,13 @@ StorageMaterializedView::StorageMaterializedView(
     }
 
     if (query.refresh_strategy)
+    {
         refresher = RefreshTask::create(
             *this,
             getContext(),
             *query.refresh_strategy);
+        refresh_on_start = !attach_ && !query.is_create_empty;
+    }
 }
 
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
@@ -461,6 +464,9 @@ void StorageMaterializedView::startup()
     if (refresher)
     {
         refresher->initializeAndStart(std::static_pointer_cast<StorageMaterializedView>(shared_from_this()));
+
+        if (refresh_on_start)
+            refresher->run();
     }
 }
 

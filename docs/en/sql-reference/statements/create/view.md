@@ -104,7 +104,7 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name
 REFRESH EVERY|AFTER interval [OFFSET interval]
 RANDOMIZE FOR interval
 DEPENDS ON [db.]name [, [db.]name [, ...]]
-[TO[db.]name] [(columns)] [ENGINE = engine]
+[TO[db.]name] [(columns)] [ENGINE = engine] [EMPTY]
 AS SELECT ...
 ```
 where `interval` is a sequence of simple intervals:
@@ -122,7 +122,6 @@ Differences from regular non-refreshable materialized views:
 Refreshable materialized views are a work in progress. Setting `allow_experimental_refreshable_materialized_view = 1` is required for creating one. Current limitations:
  * not compatible with Replicated database or table engines,
  * require [Atomic database engine](../../../engines/database-engines/atomic.md),
- * each refresh query executes in one thread (max_threads setting is ignored),
  * no retries for failed refresh - we just skip to the next scheduled refresh time,
  * no limit on number of concurrent refreshes.
 :::
@@ -146,6 +145,8 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 ```
 
 At most one refresh may be running at a time, for a given view. E.g. if a view with `REFRESH EVERY 1 MINUTE` takes 2 minutes to refresh, it'll just be refreshing every 2 minutes. If it then becomes faster and starts refreshing in 10 seconds, it'll go back to refreshing every minute. (In particular, it won't refresh every 10 seconds to catch up with a backlog of missed refreshes - there's no such backlog.)
+
+Additionally, a refresh is started immediately after the materialized view is created, unless `EMPTY` is specified in the `CREATE` query. If `EMPTY` is specified, the first refresh happens according to schedule.
 
 ### Dependencies {#refresh-dependencies}
 
@@ -201,7 +202,7 @@ This replaces refresh schedule *and* dependencies. If the table had a `DEPENDS O
 
 The status of all refreshable materialized views is available in table [`system.view_refreshes`](../../../operations/system-tables/view_refreshes.md). In particular, it contains refresh progress (if running), last and next refresh time, exception message if a refresh failed.
 
-To manually stop, start, pause, resume, or cancel refreshes use [`SYSTEM REFRESH|STOP|START|PAUSE|RESUME|CANCEL VIEW`](../system.md#refreshable-materialized-views).
+To manually stop, start, trigger, or cancel refreshes use [`SYSTEM STOP|START|REFRESH|CANCEL VIEW`](../system.md#refreshable-materialized-views).
 
 ## Window View [Experimental]
 

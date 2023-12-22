@@ -64,6 +64,10 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (ParserKeyword{"DEPENDS ON"}.ignore(pos, expected))
     {
+        if (refresh->schedule_kind == RefreshScheduleKind::AFTER)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "DEPENDS ON is allowed only for REFRESH EVERY, not REFRESH AFTER");
+
         ASTPtr dependencies;
 
         auto list_parser = ParserList{

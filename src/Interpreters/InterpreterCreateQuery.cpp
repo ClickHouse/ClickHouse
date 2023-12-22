@@ -1092,11 +1092,9 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
         if (create.refresh_strategy && database->getEngineName() != "Atomic")
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Refreshable materialized view requires Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
-                /// TODO: Support non-Atomic databases.
-                ///        * Ordinary doesn't work because the view uses atomic table replacement.
-                ///          This is not necessary, change it.
-                ///        * Replicated doesn't work because it tries to replicate the inner table
-                ///          creation/exchange/drop, which creates all sorts of problems.
+                /// TODO: Support Replicated databases, only with Shared/ReplicatedMergeTree.
+                ///       Figure out how to make the refreshed data appear all at once on other
+                ///       replicas; maybe a replicated SYSTEM SYNC REPLICA query before the rename?
 
         /// The database doesn't support UUID so we'll ignore it. The UUID could be set here because of either
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
