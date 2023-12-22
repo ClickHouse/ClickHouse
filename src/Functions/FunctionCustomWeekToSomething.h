@@ -14,8 +14,13 @@ namespace ErrorCodes
 template <typename ToDataType, typename Transform>
 class FunctionCustomWeekToSomething : public IFunctionCustomWeek<Transform>
 {
+private:
+    ContextPtr context;
+
 public:
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCustomWeekToSomething>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCustomWeekToSomething>(context_); }
+
+    explicit FunctionCustomWeekToSomething(ContextPtr & context_) : context(context_) {}
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -43,6 +48,23 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
                 arguments[0].type->getName(), this->getName());
+    }
+
+    std::pair<Field, Field> convertStringToUnixTimestamp(const Field & left, const Field & right) const override
+    {
+        ColumnsWithTypeAndName temp_block;
+        auto src_type = std::make_shared<DataTypeString>();
+
+        auto column = src_type->createColumn();
+        column->insert(left);
+        column->insert(right);
+        temp_block.emplace_back(ColumnWithTypeAndName{std::move(column), src_type,"tmp"});
+
+        auto to_datetime = FunctionFactory::instance().get("toUnixTimestamp", context);
+        auto res_column = to_datetime->build(temp_block)->execute(
+            temp_block, std::make_shared<DataTypeUInt32>(), 2U);
+
+        return { (*res_column)[0U], (*res_column)[1U] };
     }
 
 };

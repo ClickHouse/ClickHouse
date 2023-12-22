@@ -8,6 +8,9 @@
 #include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -52,6 +55,14 @@ public:
         {
             return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), date_lut)
                     == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
+        }
+        else if (checkAndGetDataType<DataTypeString>(&type))
+        {
+            auto [new_left, new_right] = convertStringToUnixTimestamp(left, right);
+            return Transform::FactorTransform::execute(UInt32(new_left.template get<UInt64>()), date_lut)
+                    == Transform::FactorTransform::execute(UInt32(new_right.template get<UInt64>()), date_lut)
                 ? is_monotonic
                 : is_not_monotonic;
         }
@@ -114,6 +125,11 @@ protected:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, expected 1, 2 or 3.",
                 getName(), arguments.size());
+    }
+
+    virtual std::pair<Field, Field> convertStringToUnixTimestamp(const Field & left, const Field & right) const
+    {
+        return {left, right};
     }
 
 };
