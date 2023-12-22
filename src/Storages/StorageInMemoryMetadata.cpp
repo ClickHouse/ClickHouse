@@ -120,7 +120,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
 
     auto new_context = Context::createCopy(context->getGlobalContext());
     new_context->setClientInfo(context->getClientInfo());
-    new_context->setQueryContext(std::const_pointer_cast<Context>(context));
+    new_context->setQueryContext(context->getQueryContext());
 
     const auto & database = context->getCurrentDatabase();
     if (!database.empty())
@@ -130,13 +130,16 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
 
+    if (context->getCurrentTransaction())
+        new_context->copyTransactionInfo(context);
+
     if (sql_security_type == ASTSQLSecurity::Type::NONE)
         return new_context;
 
     new_context->setUser(getDefinerID(context));
     auto user = new_context->getUser();
     new_context->applySettingsChanges(user->settings.toSettingsChanges());
-    new_context->applySettingsChanges(context->getSettings().changes());
+    new_context->applySettingsChanges(context->getSettingsRef().changes());
     return new_context;
 }
 

@@ -4668,6 +4668,13 @@ MergeTreeTransactionPtr Context::getCurrentTransaction() const
     return merge_tree_transaction;
 }
 
+void Context::copyTransactionInfo(ContextPtr ctx)
+{
+    metadata_transaction = ctx->metadata_transaction;
+    merge_tree_transaction = ctx->merge_tree_transaction;
+    merge_tree_transaction_holder = ctx->merge_tree_transaction_holder;
+}
+
 bool Context::isServerCompletelyStarted() const
 {
     SharedLockGuard lock(shared->mutex);

@@ -36,7 +36,7 @@ static constexpr std::string_view schemata = R"(
         `DEFAULT_CHARACTER_SET_NAME` Nullable(String),
         `SQL_PATH` Nullable(String)
     )
-    SQL SECURITY NONE
+    SQL SECURITY INVOKER
     AS SELECT
         name                          AS catalog_name,
         name                          AS schema_name,
@@ -75,7 +75,7 @@ static constexpr std::string_view tables = R"(
         `TABLE_COLLATION` Nullable(String),
         `TABLE_COMMENT` Nullable(String)
     )
-    SQL SECURITY NONE
+    SQL SECURITY INVOKER
     AS SELECT
         database             AS table_catalog,
         database             AS table_schema,
@@ -125,7 +125,7 @@ static constexpr std::string_view views = R"(
         `IS_TRIGGER_DELETABLE` Enum8('NO' = 0, 'YES' = 1),
         `IS_TRIGGER_INSERTABLE_INTO` Enum8('NO' = 0, 'YES' = 1)
     )
-    SQL SECURITY NONE
+    SQL SECURITY INVOKER
     AS SELECT
         database AS table_catalog,
         database AS table_schema,
@@ -207,7 +207,7 @@ static constexpr std::string_view columns = R"(
         `COLUMN_COMMENT` String,
         `COLUMN_TYPE` String
     )
-    SQL SECURITY NONE
+    SQL SECURITY INVOKER
     AS SELECT
         database AS table_catalog,
         database AS table_schema,
@@ -296,7 +296,7 @@ static constexpr std::string_view key_column_usage = R"(
          `REFERENCED_TABLE_NAME` Nullable(String),
          `REFERENCED_COLUMN_NAME` Nullable(String)
     )
-    SQL SECURITY NONE
+    SQL SECURITY INVOKER
     AS SELECT
         'def'                         AS constraint_catalog,
         database                      AS constraint_schema,
@@ -352,7 +352,7 @@ static constexpr std::string_view referential_constraints = R"(
          `TABLE_NAME` String,
          `REFERENCED_TABLE_NAME` String
     )
-    SQL SECURITY NONE
+    SQL SECURITY INVOKER
     AS SELECT
         ''                        AS constraint_catalog,
         NULL                      AS constraint_name,
