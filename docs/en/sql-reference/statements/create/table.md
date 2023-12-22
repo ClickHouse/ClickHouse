@@ -380,7 +380,8 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 `ZSTDQAT[(level)]` — ZSTD QAT (hardware-accelerated compression) implemented by [QAT-ZSTD-Plugin](https://github.com/intel/QAT-ZSTD-Plugin) with configurable level. Default level: 1. Setting `level <= 0` applies the default level. Possible levels: \[1, 12\]. Recommended level range: \[6, 12\].
 
-ZSTDQAT tries to use an Intel® QAT offloading device ([QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)). If no such device was found, it will fallback to ZSTD compression in software.
+- ZSTDQAT is disabled by default and can only be used after setting configuration parameter `enable_zstd_qat_codec = 1`.
+- ZSTDQAT tries to use an Intel® QAT offloading device ([QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)). If no such device was found, it will fallback to ZSTD compression in software.
 
 #### DEFLATE_QPL
 

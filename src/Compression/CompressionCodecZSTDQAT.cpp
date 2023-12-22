@@ -30,6 +30,7 @@ public:
     ~CompressionCodecZSTDQAT() override;
 
 protected:
+    bool isZSTDQAT() const override { return true; }
     /// TODO: So far, QAT hardware only support compression. For next generation in future, it will support decompression as well.
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
