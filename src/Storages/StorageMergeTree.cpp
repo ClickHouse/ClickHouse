@@ -272,6 +272,15 @@ std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
     return getTotalActiveSizeInBytes();
 }
 
+std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &) const
+{
+    UInt64 res = 0;
+    auto parts = getDataPartsForInternalUsage();
+    for (const auto & part : parts)
+        res += part->getBytesUncompressedOnDisk();
+    return res;
+}
+
 SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
@@ -280,12 +289,20 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
         *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context);
 }
 
-void StorageMergeTree::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
+void StorageMergeTree::checkTableCanBeDropped(ContextPtr query_context) const
 {
     if (!supportsReplication() && isStaticStorage())
         return;
 
     auto table_id = getStorageID();
+
+    const auto & query_settings = query_context->getSettingsRef();
+    if (query_settings.max_table_size_to_drop.changed)
+    {
+        getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes(), query_settings.max_table_size_to_drop);
+        return;
+    }
+
     getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
 
@@ -1078,7 +1095,6 @@ bool StorageMergeTree::merge(
     bool final,
     bool deduplicate,
     const Names & deduplicate_by_columns,
-    bool cleanup,
     const MergeTreeTransactionPtr & txn,
     String & out_disable_reason,
     bool optimize_skip_merged_partitions)
@@ -1118,7 +1134,7 @@ bool StorageMergeTree::merge(
     /// Copying a vector of columns `deduplicate by columns.
     IExecutableTask::TaskResultCallback f = [](bool) {};
     auto task = std::make_shared<MergePlainMergeTreeTask>(
-        *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_mutate_entry, table_lock_holder, f);
+        *this, metadata_snapshot, deduplicate, deduplicate_by_columns, merge_mutate_entry, table_lock_holder, f);
 
     task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
 
@@ -1356,7 +1372,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     if (merge_entry)
     {
-        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, /* cleanup */ false, merge_entry, shared_lock, common_assignee_trigger);
+        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
         bool scheduled = assignee.scheduleMergeMutateTask(task);
         /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
@@ -1490,7 +1506,6 @@ bool StorageMergeTree::optimize(
     bool final,
     bool deduplicate,
     const Names & deduplicate_by_columns,
-    bool cleanup,
     ContextPtr local_context)
 {
     if (deduplicate)
@@ -1506,13 +1521,6 @@ bool StorageMergeTree::optimize(
     String disable_reason;
     if (!partition && final)
     {
-        if (cleanup && this->merging_params.mode != MergingParams::Mode::Replacing)
-        {
-            constexpr const char * message = "Cannot OPTIMIZE with CLEANUP table: {}";
-            disable_reason = "only ReplacingMergeTree can be CLEANUP";
-            throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
-        }
-
         DataPartsVector data_parts = getVisibleDataPartsVector(local_context);
         std::unordered_set<String> partition_ids;
 
@@ -1527,7 +1535,6 @@ bool StorageMergeTree::optimize(
                     true,
                     deduplicate,
                     deduplicate_by_columns,
-                    cleanup,
                     txn,
                     disable_reason,
                     local_context->getSettingsRef().optimize_skip_merged_partitions))
@@ -1555,7 +1562,6 @@ bool StorageMergeTree::optimize(
                 final,
                 deduplicate,
                 deduplicate_by_columns,
-                cleanup,
                 txn,
                 disable_reason,
                 local_context->getSettingsRef().optimize_skip_merged_partitions))

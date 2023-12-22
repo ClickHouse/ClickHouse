@@ -151,6 +151,9 @@ public:
 
     std::vector<FileSegment::Info> sync();
 
+    using IterateFunc = std::function<void(const FileSegmentInfo &)>;
+    void iterate(IterateFunc && func);
+
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
 private:

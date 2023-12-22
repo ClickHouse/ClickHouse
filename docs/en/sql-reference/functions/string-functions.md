@@ -533,8 +533,8 @@ Result:
 
 ```result
 ┌─concatWithSeparator('a', '1', '2', '3', '4')─┐
-│ 1a2a3a4                           │
-└───────────────────────────────────┘
+│ 1a2a3a4                                      │
+└──────────────────────────────────────────────┘
 ```
 
 ## concatWithSeparatorAssumeInjective
@@ -1381,6 +1381,71 @@ Result:
 ┌─soundex('aksel')─┐
 │ A240             │
 └──────────────────┘
+```
+
+## punycodeEncode
+
+Returns the [Punycode](https://en.wikipedia.org/wiki/Punycode) of a string.
+The string must be UTF8-encoded, otherwise results are undefined.
+
+**Syntax**
+
+``` sql
+punycodeEncode(val)
+```
+
+**Arguments**
+
+- `val` - Input value. [String](../data-types/string.md)
+
+**Returned value**
+
+- A Punycode representation of the input value. [String](../data-types/string.md)
+
+**Example**
+
+``` sql
+select punycodeEncode('München');
+```
+
+Result:
+
+```result
+┌─punycodeEncode('München')─┐
+│ Mnchen-3ya                │
+└───────────────────────────┘
+```
+
+## punycodeDecode
+
+Returns the UTF8-encoded plaintext of a [Punycode](https://en.wikipedia.org/wiki/Punycode)-encoded string.
+
+**Syntax**
+
+``` sql
+punycodeEncode(val)
+```
+
+**Arguments**
+
+- `val` - Punycode-encoded string. [String](../data-types/string.md)
+
+**Returned value**
+
+- The plaintext of the input value. [String](../data-types/string.md)
+
+**Example**
+
+``` sql
+select punycodeDecode('Mnchen-3ya');
+```
+
+Result:
+
+```result
+┌─punycodeEncode('Mnchen-3ya')─┐
+│ München                      │
+└──────────────────────────────┘
 ```
 
 ## byteHammingDistance

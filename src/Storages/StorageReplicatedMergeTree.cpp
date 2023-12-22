@@ -265,7 +265,7 @@ String StorageReplicatedMergeTree::getEndpointName() const
 
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
 {
-    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0});
+    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings().keep_alive_timeout);
 }
 
 static MergeTreePartInfo makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(const String & partition_id)
@@ -2707,7 +2707,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         {
             String source_replica_path = fs::path(zookeeper_path) / "replicas" / part_desc->replica;
             ReplicatedMergeTreeAddress address(getZooKeeper()->get(fs::path(source_replica_path) / "host"));
-            auto timeouts = getFetchPartHTTPTimeouts(getContext());
+            auto timeouts = ConnectionTimeouts::getFetchPartHTTPTimeouts(getContext()->getServerSettings(), getContext()->getSettingsRef());
 
             auto credentials = getContext()->getInterserverCredentials();
             String interserver_scheme = getContext()->getInterserverScheme();
@@ -3643,7 +3643,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
     const auto storage_settings_ptr = getSettings();
     const bool deduplicate = false; /// TODO: read deduplicate option from table config
     const Names deduplicate_by_columns = {};
-    const bool cleanup = (storage_settings_ptr->clean_deleted_rows != CleanDeletedRows::Never);
     CreateMergeEntryResult create_result = CreateMergeEntryResult::Other;
 
     enum class AttemptStatus
@@ -3727,11 +3726,9 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 future_merged_part->part_format,
                 deduplicate,
                 deduplicate_by_columns,
-                cleanup,
                 nullptr,
                 merge_pred->getVersion(),
                 future_merged_part->merge_type);
-
 
             if (create_result == CreateMergeEntryResult::Ok)
                 return AttemptStatus::EntryCreated;
@@ -3849,7 +3846,6 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     const MergeTreeDataPartFormat & merged_part_format,
     bool deduplicate,
     const Names & deduplicate_by_columns,
-    bool cleanup,
     ReplicatedMergeTreeLogEntryData * out_log_entry,
     int32_t log_version,
     MergeType merge_type)
@@ -3889,7 +3885,6 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     entry.merge_type = merge_type;
     entry.deduplicate = deduplicate;
     entry.deduplicate_by_columns = deduplicate_by_columns;
-    entry.cleanup = cleanup;
     entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
@@ -4177,23 +4172,6 @@ void StorageReplicatedMergeTree::stopBeingLeader()
 
     LOG_INFO(log, "Stopped being leader");
     is_leader = false;
-}
-
-ConnectionTimeouts StorageReplicatedMergeTree::getFetchPartHTTPTimeouts(ContextPtr local_context)
-{
-    auto timeouts = getHTTPTimeouts(local_context);
-    auto settings = getSettings();
-
-    if (settings->replicated_fetches_http_connection_timeout.changed)
-        timeouts.connection_timeout = settings->replicated_fetches_http_connection_timeout;
-
-    if (settings->replicated_fetches_http_send_timeout.changed)
-        timeouts.send_timeout = settings->replicated_fetches_http_send_timeout;
-
-    if (settings->replicated_fetches_http_receive_timeout.changed)
-        timeouts.receive_timeout = settings->replicated_fetches_http_receive_timeout;
-
-    return timeouts;
 }
 
 bool StorageReplicatedMergeTree::checkReplicaHavePart(const String & replica, const String & part_name)
@@ -4800,7 +4778,7 @@ bool StorageReplicatedMergeTree::fetchPart(
     else
     {
         address.fromString(zookeeper->get(fs::path(source_replica_path) / "host"));
-        timeouts = getFetchPartHTTPTimeouts(getContext());
+        timeouts = ConnectionTimeouts::getFetchPartHTTPTimeouts(getContext()->getServerSettings(), getContext()->getSettingsRef());
 
         credentials = getContext()->getInterserverCredentials();
         interserver_scheme = getContext()->getInterserverScheme();
@@ -5481,6 +5459,12 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(const Settings & se
     return res;
 }
 
+std::optional<UInt64> StorageReplicatedMergeTree::totalBytesUncompressed(const Settings & settings) const
+{
+    UInt64 res = 0;
+    foreachActiveParts([&res](auto & part) { res += part->getBytesUncompressedOnDisk(); }, settings.select_sequential_consistency);
+    return res;
+}
 
 void StorageReplicatedMergeTree::assertNotReadonly() const
 {
@@ -5635,7 +5619,6 @@ bool StorageReplicatedMergeTree::optimize(
     bool final,
     bool deduplicate,
     const Names & deduplicate_by_columns,
-    bool cleanup,
     ContextPtr query_context)
 {
     /// NOTE: exclusive lock cannot be used here, since this may lead to deadlock (see comments below),
@@ -5646,9 +5629,6 @@ bool StorageReplicatedMergeTree::optimize(
 
     if (!is_leader)
         throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
-
-    if (cleanup)
-        LOG_DEBUG(log, "Cleanup the ReplicatedMergeTree.");
 
     auto handle_noop = [&]<typename... Args>(FormatStringHelper<Args...> fmt_string, Args && ...args)
     {
@@ -5728,7 +5708,6 @@ bool StorageReplicatedMergeTree::optimize(
                 future_merged_part->uuid,
                 future_merged_part->part_format,
                 deduplicate, deduplicate_by_columns,
-                cleanup,
                 &merge_entry, can_merge.getVersion(),
                 future_merged_part->merge_type);
 
@@ -5753,13 +5732,6 @@ bool StorageReplicatedMergeTree::optimize(
     bool assigned = false;
     if (!partition && final)
     {
-        if (cleanup && this->merging_params.mode != MergingParams::Mode::Replacing)
-        {
-            constexpr const char * message = "Cannot OPTIMIZE with CLEANUP table: {}";
-            String disable_reason = "only ReplacingMergeTree can be CLEANUP";
-            throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
-        }
-
         DataPartsVector data_parts = getVisibleDataPartsVector(query_context);
         std::unordered_set<String> partition_ids;
 
@@ -6457,9 +6429,17 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
 }
 
 
-void StorageReplicatedMergeTree::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
+void StorageReplicatedMergeTree::checkTableCanBeDropped(ContextPtr query_context) const
 {
     auto table_id = getStorageID();
+
+    const auto & query_settings = query_context->getSettingsRef();
+    if (query_settings.max_table_size_to_drop.changed)
+    {
+        getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes(), query_settings.max_table_size_to_drop);
+        return;
+    }
+
     getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
 
@@ -10278,7 +10258,7 @@ void StorageReplicatedMergeTree::backupData(
         bool exists = false;
         Strings mutation_ids;
         {
-            ZooKeeperRetriesControl retries_ctl("getMutations", zookeeper_retries_info, nullptr);
+            ZooKeeperRetriesControl retries_ctl("getMutations", log, zookeeper_retries_info, nullptr);
             retries_ctl.retryLoop([&]()
             {
                 if (!zookeeper || zookeeper->expired())
@@ -10297,7 +10277,7 @@ void StorageReplicatedMergeTree::backupData(
                 bool mutation_id_exists = false;
                 String mutation;
 
-                ZooKeeperRetriesControl retries_ctl("getMutation", zookeeper_retries_info, nullptr);
+                ZooKeeperRetriesControl retries_ctl("getMutation", log, zookeeper_retries_info, nullptr);
                 retries_ctl.retryLoop([&]()
                 {
                     if (!zookeeper || zookeeper->expired())

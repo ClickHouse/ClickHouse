@@ -118,6 +118,7 @@ public:
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void iterate(IterateFunc && func);
+
     bool isEmpty() const;
 
     enum class KeyNotFoundPolicy
@@ -260,7 +261,7 @@ struct LockedKey : private boost::noncopyable
 
     void markAsRemoved();
 
-    std::vector<FileSegment::Info> sync(FileCache & cache);
+    std::vector<FileSegment::Info> sync();
 
     std::string toString() const;
 

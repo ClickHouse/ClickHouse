@@ -786,10 +786,28 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
         else
         {
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
-                getContext(),
-                false /* is_subquery */,
-                create.isParameterizedView());
+            /** To get valid sample block we need to prepare query without only_analyze, because we need to execute scalar
+              * subqueries. Otherwise functions that expect only constant arguments will throw error during query analysis,
+              * because the result of scalar subquery is not a constant.
+              *
+              * Example:
+              * CREATE MATERIALIZED VIEW test_mv ENGINE=MergeTree ORDER BY arr
+              * AS
+              * WITH (SELECT '\d[a-z]') AS constant_value
+              * SELECT extractAll(concat(toString(number), 'a'), assumeNotNull(constant_value)) AS arr
+              * FROM test_table;
+              *
+              * For new analyzer this issue does not exists because we always execute scalar subqueries.
+              * We can improve this in new analyzer, and execute scalar subqueries only in contexts when we expect constant
+              * for example: LIMIT, OFFSET, functions parameters, functions constant only arguments.
+              */
+
+            SelectQueryOptions options;
+            if (create.isParameterizedView())
+                options = options.createParameterizedView();
+
+            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), options);
+            as_select_sample = interpreter.getSampleBlock();
         }
 
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
@@ -1223,7 +1241,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             {
                 input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
                     getContext(),
-                    SelectQueryOptions().analyze()).getSampleBlock();
+                    {}).getSampleBlock();
             }
 
             Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();

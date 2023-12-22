@@ -77,6 +77,11 @@ public:
     /// Evaluate database name or regexp for StorageMerge and TableFunction merge
     static std::tuple<bool /* is_regexp */, ASTPtr> evaluateDatabaseName(const ASTPtr & node, ContextPtr context);
 
+    bool supportsTrivialCountOptimization() const override;
+
+    std::optional<UInt64> totalRows(const Settings & settings) const override;
+    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+
 private:
     std::optional<OptimizedRegularExpression> source_database_regexp;
     std::optional<OptimizedRegularExpression> source_table_regexp;
@@ -112,6 +117,9 @@ private:
     ColumnsDescription getColumnsDescriptionFromSourceTables() const;
 
     bool tableSupportsPrewhere() const;
+
+    template <typename F>
+    std::optional<UInt64> totalRowsOrBytes(F && func) const;
 
     friend class ReadFromMerge;
 };

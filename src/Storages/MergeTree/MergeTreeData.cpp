@@ -846,10 +846,6 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 {
     const auto columns = metadata.getColumns().getAllPhysical();
 
-    if (!is_deleted_column.empty() && mode != MergingParams::Replacing)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "is_deleted column for MergeTree cannot be specified in modes except Replacing.");
-
     if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::VersionedCollapsing)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Sign column for MergeTree cannot be specified "
@@ -919,41 +915,6 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Version column {} does not exist in table declaration.", version_column);
     };
 
-    /// Check that if the is_deleted column is needed, it exists and is of type UInt8. If exist, version column must be defined too but version checks are not done here.
-    auto check_is_deleted_column = [this, & columns](bool is_optional, const std::string & storage)
-    {
-        if (is_deleted_column.empty())
-        {
-            if (is_optional)
-                return;
-
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: is_deleted ({}) column for storage {} is empty", is_deleted_column, storage);
-        }
-        else
-        {
-            if (version_column.empty() && !is_optional)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Version column ({}) for storage {} is empty while is_deleted ({}) is not.",
-                                version_column, storage, is_deleted_column);
-
-            bool miss_is_deleted_column = true;
-            for (const auto & column : columns)
-            {
-                if (column.name == is_deleted_column)
-                {
-                    if (!typeid_cast<const DataTypeUInt8 *>(column.type.get()))
-                        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "is_deleted column ({}) for storage {} must have type UInt8. Provided column of type {}.",
-                                        is_deleted_column, storage, column.type->getName());
-                    miss_is_deleted_column = false;
-                    break;
-                }
-            }
-
-            if (miss_is_deleted_column)
-                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "is_deleted column {} does not exist in table declaration.", is_deleted_column);
-        }
-    };
-
-
     if (mode == MergingParams::Collapsing)
         check_sign_column(false, "CollapsingMergeTree");
 
@@ -990,7 +951,6 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
     if (mode == MergingParams::Replacing)
     {
-        check_is_deleted_column(true, "ReplacingMergeTree");
         check_version_column(true, "ReplacingMergeTree");
     }
 
@@ -3830,6 +3790,25 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
         resetObjectColumnsFromActiveParts(acquired_lock);
 }
 
+void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove)
+{
+    auto lock = lockParts();
+
+    for (const auto & part : remove)
+    {
+        auto it_part = data_parts_by_info.find(part->info);
+        if (it_part == data_parts_by_info.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} not found in data_parts", part->getNameWithState());
+
+        assert(part->getState() == MergeTreeDataPartState::PreActive);
+
+        modifyPartState(part, MergeTreeDataPartState::Temporary);
+        /// Erase immediately
+        LOG_TEST(log, "removePartsFromWorkingSetImmediatelyAndSetTemporaryState: removing {} from data_parts_indexes", part->getNameWithState());
+        data_parts_indexes.erase(it_part);
+    }
+}
+
 void MergeTreeData::removePartsFromWorkingSet(
         MergeTreeTransaction * txn, const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock)
 {
@@ -4066,11 +4045,14 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         Strings restored;
         Strings error_parts;
 
-        auto is_appropriate_state = [] (DataPartState state)
+        auto is_appropriate_state = [] (const DataPartPtr & part_)
         {
-            if (state != DataPartState::Outdated)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to restore a part from unexpected state: {}", state);
-            return true;
+            /// In rare cases, we may have a chain of unexpected parts that cover common source parts, e.g. all_1_2_3, all_1_3_4
+            /// It may happen as a result of interrupted cloneReplica
+            bool already_active = part_->getState() == DataPartState::Active;
+            if (!already_active && part_->getState() != DataPartState::Outdated)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to restore a part {} from unexpected state: {}", part_->name, part_->getState());
+            return !already_active;
         };
 
         auto activate_part = [this, &restored_active_part](auto it)
@@ -4114,7 +4096,7 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         for (const auto & part_candidate_in_partition : parts_candidates | std::views::reverse)
         {
             if (part->info.contains(part_candidate_in_partition->info)
-                && is_appropriate_state(part_candidate_in_partition->getState()))
+                && is_appropriate_state(part_candidate_in_partition))
             {
                 String out_reason;
                 /// Outdated parts can itersect legally (because of DROP_PART) here it's okay, we
@@ -4853,10 +4835,18 @@ void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition, Context
         partition_size += part->getBytesOnDisk();
 
     auto table_id = getStorageID();
+
+    const auto & query_settings = local_context->getSettingsRef();
+    if (query_settings.max_partition_size_to_drop.changed)
+    {
+        getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size, query_settings.max_partition_size_to_drop);
+        return;
+    }
+
     getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
 }
 
-void MergeTreeData::checkPartCanBeDropped(const String & part_name)
+void MergeTreeData::checkPartCanBeDropped(const String & part_name, ContextPtr local_context)
 {
     if (!supportsReplication() && isStaticStorage())
         return;
@@ -4866,6 +4856,14 @@ void MergeTreeData::checkPartCanBeDropped(const String & part_name)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in committed state", part_name);
 
     auto table_id = getStorageID();
+
+    const auto & query_settings = local_context->getSettingsRef();
+    if (query_settings.max_partition_size_to_drop.changed)
+    {
+        getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk(), query_settings.max_partition_size_to_drop);
+        return;
+    }
+
     getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk());
 }
 
@@ -5053,7 +5051,7 @@ Pipe MergeTreeData::alterPartition(
                 if (command.part)
                 {
                     auto part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
-                    checkPartCanBeDropped(part_name);
+                    checkPartCanBeDropped(part_name, query_context);
                     dropPart(part_name, command.detach, query_context);
                 }
                 else
@@ -6340,6 +6338,24 @@ MergeTreeData::Transaction::Transaction(MergeTreeData & data_, MergeTreeTransact
 {
     if (txn)
         data.transactions_enabled.store(true);
+}
+
+void MergeTreeData::Transaction::rollbackPartsToTemporaryState()
+{
+    if (!isEmpty())
+    {
+        WriteBufferFromOwnString buf;
+        buf << " Rollbacking parts state to temporary and removing from working set:";
+        for (const auto & part : precommitted_parts)
+            buf << " " << part->getDataPartStorage().getPartDirectory();
+        buf << ".";
+        LOG_DEBUG(data.log, "Undoing transaction.{}", buf.str());
+
+        data.removePartsFromWorkingSetImmediatelyAndSetTemporaryState(
+            DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()));
+    }
+
+    clear();
 }
 
 TransactionID MergeTreeData::Transaction::getTID() const

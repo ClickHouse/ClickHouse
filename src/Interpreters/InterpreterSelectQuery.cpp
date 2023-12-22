@@ -481,7 +481,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     /// Check support for FINAL for parallel replicas
     bool is_query_with_final = isQueryWithFinal(query_info);
-    if (is_query_with_final && settings.allow_experimental_parallel_reading_from_replicas > 0)
+    if (is_query_with_final && context->canUseTaskBasedParallelReplicas())
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1)
         {
@@ -1698,7 +1698,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         return step_raw_ptr;
                     };
 
-                    if (expressions.join->pipelineType() == JoinPipelineType::YShaped)
+                    if (expressions.join->pipelineType() == JoinPipelineType::YShaped && expressions.join->getTableJoin().kind() != JoinKind::Paste)
                     {
                         const auto & table_join = expressions.join->getTableJoin();
                         const auto & join_clause = table_join.getOnlyClause();
@@ -2942,6 +2942,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window.full_sort_description,
+                window.partition_by,
                 0 /* LIMIT */,
                 sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
