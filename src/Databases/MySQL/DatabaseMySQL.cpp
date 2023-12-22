@@ -361,8 +361,10 @@ void DatabaseMySQL::cleanOutdatedTables()
     }
 }
 
-void DatabaseMySQL::attachTableUnlocked(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
+void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
+    std::lock_guard lock{mutex};
+
     if (!local_tables_cache.contains(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot attach table {}.{} because it does not exist.",
             backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));

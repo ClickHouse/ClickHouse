@@ -141,16 +141,6 @@ protected:
 private:
     void setStorageMetadata(CommonArguments args);
 
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const Strings & paths, const String & format_name, const std::optional<FormatSettings> & format_settings, ContextPtr context);
-
-    static void addColumnsToCache(
-        const Strings & paths,
-        const ColumnsDescription & columns,
-        const String & format_name,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & context);
-
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
     // function -- in this case, format_settings is set.

@@ -515,7 +515,9 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
     constexpr ResourceCost estimated_cost = 1;
     ResourceGuard rlock(read_settings.resource_link, estimated_cost);
+
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
+
     rlock.unlock();
 
     if (outcome.IsSuccess())

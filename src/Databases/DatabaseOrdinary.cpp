@@ -140,6 +140,8 @@ void DatabaseOrdinary::loadTableFromMetadata(
     assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & query = ast->as<const ASTCreateQuery &>();
 
+    LOG_TRACE(log, "Loading table {}", name.getFullName());
+
     try
     {
         auto [table_name, table] = createTableFromAST(

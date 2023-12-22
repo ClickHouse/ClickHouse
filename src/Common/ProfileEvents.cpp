@@ -451,6 +451,7 @@ The server successfully detected this situation and will download merged part fr
     M(ThreadpoolReaderSubmitReadSynchronously, "How many times we haven't scheduled a task on the thread pool and read synchronously instead") \
     M(ThreadpoolReaderSubmitReadSynchronouslyBytes, "How many bytes were read synchronously") \
     M(ThreadpoolReaderSubmitReadSynchronouslyMicroseconds, "How much time we spent reading synchronously") \
+    M(ThreadpoolReaderSubmitLookupInCacheMicroseconds, "How much time we spent checking if content is cached") \
     M(AsynchronousReaderIgnoredBytes, "Number of bytes ignored during asynchronous reading") \
     \
     M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
@@ -462,7 +463,8 @@ The server successfully detected this situation and will download merged part fr
     M(ReadBufferSeekCancelConnection, "Number of seeks which lead to new connection (s3, http)") \
     \
     M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.") \
-    M(SleepFunctionMicroseconds, "Time spent sleeping due to a sleep function call.") \
+    M(SleepFunctionMicroseconds, "Time set to sleep in a sleep function (sleep, sleepEachRow).") \
+    M(SleepFunctionElapsedMicroseconds, "Time spent sleeping in a sleep function (sleep, sleepEachRow).") \
     \
     M(ThreadPoolReaderPageCacheHit, "Number of times the read inside ThreadPoolReader was done from page cache.") \
     M(ThreadPoolReaderPageCacheHitBytes, "Number of bytes read inside ThreadPoolReader when it was done from page cache.") \

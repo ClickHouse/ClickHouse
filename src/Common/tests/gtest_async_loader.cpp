@@ -997,66 +997,6 @@ TEST(AsyncLoader, SetMaxThreads)
     t.loader.wait();
 }
 
-TEST(AsyncLoader, DynamicPools)
-{
-    const size_t max_threads[] { 2, 10 };
-    const int jobs_in_chain = 16;
-    AsyncLoaderTest t({
-        {.max_threads = max_threads[0], .priority{0}},
-        {.max_threads = max_threads[1], .priority{-1}},
-    });
-
-    t.loader.start();
-
-    std::atomic<size_t> executing[2] { 0, 0 }; // Number of currently executing jobs per pool
-
-    for (int concurrency = 1; concurrency <= 12; concurrency++)
-    {
-        std::atomic<bool> boosted{false}; // Visible concurrency was increased
-        std::atomic<int> left{concurrency * jobs_in_chain / 2}; // Number of jobs to start before `prioritize()` call
-        std::shared_mutex prioritization_mutex; // To slow down job execution during prioritization to avoid race condition
-
-        LoadJobSet jobs_to_prioritize;
-
-        auto job_func = [&] (AsyncLoader & loader, const LoadJobPtr & self)
-        {
-            auto pool_id = self->executionPool();
-            executing[pool_id]++;
-            if (executing[pool_id] > max_threads[0])
-                boosted = true;
-            ASSERT_LE(executing[pool_id], max_threads[pool_id]);
-
-            // Dynamic prioritization
-            if (--left == 0)
-            {
-                std::unique_lock lock{prioritization_mutex};
-                for (const auto & job : jobs_to_prioritize)
-                    loader.prioritize(job, 1);
-            }
-
-            std::shared_lock lock{prioritization_mutex};
-            t.randomSleepUs(100, 200, 100);
-
-            ASSERT_LE(executing[pool_id], max_threads[pool_id]);
-            executing[pool_id]--;
-        };
-
-        std::vector<LoadTaskPtr> tasks;
-        tasks.reserve(concurrency);
-        for (int i = 0; i < concurrency; i++)
-            tasks.push_back(makeLoadTask(t.loader, t.chainJobSet(jobs_in_chain, job_func, fmt::format("c{}-j", i))));
-        jobs_to_prioritize = getGoals(tasks); // All jobs
-        scheduleLoad(tasks);
-        waitLoad(tasks);
-
-        ASSERT_EQ(executing[0], 0);
-        ASSERT_EQ(executing[1], 0);
-        ASSERT_EQ(boosted, concurrency > 2);
-        boosted = false;
-    }
-
-}
-
 TEST(AsyncLoader, SubJobs)
 {
     AsyncLoaderTest t(1);
@@ -1095,7 +1035,7 @@ TEST(AsyncLoader, SubJobs)
         std::atomic<int> jobs_left;
         // It is a good practice to keep load task inside the component:
         // 1) to make sure it outlives its load jobs;
-        // 2) to avoid removing load jobs from `system.async_loader` while we use the component
+        // 2) to avoid removing load jobs from `system.asynchronous_loader` while we use the component
         LoadTaskPtr load_task;
     };
 
@@ -1165,7 +1105,7 @@ TEST(AsyncLoader, RecursiveJob)
         std::atomic<int> jobs_left;
         // It is a good practice to keep load task inside the component:
         // 1) to make sure it outlives its load jobs;
-        // 2) to avoid removing load jobs from `system.async_loader` while we use the component
+        // 2) to avoid removing load jobs from `system.asynchronous_loader` while we use the component
         LoadTaskPtr load_task;
     };
 

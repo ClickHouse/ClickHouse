@@ -117,6 +117,40 @@ class S3Helper:
 
         return S3Helper.copy_file_to_local(S3_BUILDS_BUCKET, file_path, s3_path)
 
+    def upload_file(
+        self, bucket: str, file_path: Union[Path, str], s3_path: Union[Path, str]
+    ) -> str:
+        return self._upload_file_to_s3(bucket, Path(file_path), str(s3_path))
+
+    def download_file(
+        self, bucket: str, s3_path: str, local_file_path: Union[Path, str]
+    ) -> None:
+        if Path(local_file_path).is_dir():
+            local_file_path = Path(local_file_path) / s3_path.split("/")[-1]
+        try:
+            self.client.download_file(bucket, s3_path, local_file_path)
+        except botocore.exceptions.ClientError as e:
+            if e.response and e.response["ResponseMetadata"]["HTTPStatusCode"] == 404:
+                assert False, f"No such object [s3://{S3_BUILDS_BUCKET}/{s3_path}]"
+
+    def download_files(
+        self,
+        bucket: str,
+        s3_path: str,
+        file_suffix: str,
+        local_directory: Union[Path, str],
+    ) -> List[str]:
+        local_directory = Path(local_directory)
+        local_directory.mkdir(parents=True, exist_ok=True)
+        objects = self.list_prefix_non_recursive(s3_path)
+        res = []
+        for obj in objects:
+            if obj.endswith(file_suffix):
+                local_file_path = local_directory
+                self.download_file(bucket, obj, local_file_path)
+                res.append(obj.split("/")[-1])
+        return res
+
     def fast_parallel_upload_dir(
         self, dir_path: Path, s3_dir_path: str, bucket_name: str
     ) -> List[str]:
@@ -275,6 +309,18 @@ class S3Helper:
         if "Contents" in objects:
             for obj in objects["Contents"]:
                 result.append(obj["Key"])
+
+        return result
+
+    def list_prefix_non_recursive(
+        self, s3_prefix_path: str, bucket: str = S3_BUILDS_BUCKET
+    ) -> List[str]:
+        objects = self.client.list_objects_v2(Bucket=bucket, Prefix=s3_prefix_path)
+        result = []
+        if "Contents" in objects:
+            for obj in objects["Contents"]:
+                if "/" not in obj["Key"][len(s3_prefix_path) + 1 :]:
+                    result.append(obj["Key"])
 
         return result
 
