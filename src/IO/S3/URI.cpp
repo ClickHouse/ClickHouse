@@ -146,6 +146,12 @@ URI::URI(const std::string & uri_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
 }
 
+void URI::addRegionToURI(const std::string &region)
+{
+    auto pos = endpoint.find("amazonaws.com");
+    endpoint = endpoint.substr(0, pos) + region + "." + endpoint.substr(pos);
+}
+
 void URI::validateBucket(const String & bucket, const Poco::URI & uri)
 {
     /// S3 specification requires at least 3 and at most 63 characters in bucket name.
