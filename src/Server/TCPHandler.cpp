@@ -1582,7 +1582,7 @@ void TCPHandler::sendHello()
             writeStringBinary(setting.name, *out);
             writeVarUInt(setting.value.getType(), *out);
 
-            switch(setting.value.getType())
+            switch (setting.value.getType())
             {
                 case Which::UInt64:
                     writeVarUInt(setting.value.safeGet<UInt64>(), *out);break;

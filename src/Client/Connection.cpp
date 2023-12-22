@@ -444,7 +444,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             readStringBinary(name, *in);
             UInt64 type;
             readVarUInt(type, *in);
-            switch(type)
+            switch (type)
             {
                 case Which::UInt64:
                 {
@@ -452,6 +452,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
                     readVarUInt(int_value, *in);
                     Field field_number(int_value);
                     server_profile_settings[name] = field_number;
+                    break;
                 }
                 case Which::String:
                 {
@@ -459,6 +460,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
                     readStringBinary(string_value, *in);
                     Field field_string(string_value);
                     server_profile_settings[name] = field_string;
+                    break;
                 }
                 case Which::Bool:
                 {
@@ -466,6 +468,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
                     readVarUInt(bool_value, *in);
                     Field field_bool(bool_value);
                     server_profile_settings[name] = field_bool;
+                    break;
                 }
                 default:
                     break;
