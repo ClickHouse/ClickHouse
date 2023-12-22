@@ -35,7 +35,7 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractC
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".list_object_keys_size", 1000),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
-        config.getBool(config_prefix + ".s3_read_only", false));
+        config.getBool(config_prefix + ".readonly", false));
 }
 
 std::unique_ptr<S3::Client> getClient(
