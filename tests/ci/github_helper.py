@@ -195,6 +195,32 @@ class GitHub(github.Github):
         with open(path, "rb") as ob_fd:
             return self.load(ob_fd)  # type: ignore
 
+    # pylint: disable=protected-access
+    @staticmethod
+    def toggle_pr_draft(pr: PullRequest) -> None:
+        """GH rest API does not provide a way to toggle the draft status for PR"""
+        node_id = pr._rawData["node_id"]
+        if pr.draft:
+            action = (
+                "mutation PullRequestReadyForReview($input:MarkPullRequestReadyForReviewInput!)"
+                "{markPullRequestReadyForReview(input: $input){pullRequest{id}}}"
+            )
+        else:
+            action = (
+                "mutation ConvertPullRequestToDraft($input:ConvertPullRequestToDraftInput!)"
+                "{convertPullRequestToDraft(input: $input){pullRequest{id}}}"
+            )
+        query = {
+            "query": action,
+            "variables": {"input": {"pullRequestId": node_id}},
+        }
+        url = f"{pr._requester.base_url}/graphql"
+        _, data = pr._requester.requestJsonAndCheck("POST", url, input=query)
+        if data.get("data"):
+            pr._draft = pr._makeBoolAttribute(not pr.draft)
+
+    # pylint: enable=protected-access
+
     def _is_cache_updated(
         self, cache_file: Path, obj_updated_at: Optional[datetime]
     ) -> Tuple[bool, object]:
