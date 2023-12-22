@@ -152,10 +152,6 @@ public:
         return ranges_in_data_parts;
     }
 
-    size_t mapPartIndexToInitialPartIndex(size_t part_index) const
-    {
-        return part_index_to_initial_ranges_in_data_parts_index.at(part_index);
-    }
 private:
     std::unordered_map<size_t, size_t> part_index_to_current_ranges_in_data_parts_index;
     std::unordered_map<size_t, size_t> part_index_to_initial_ranges_in_data_parts_index;
@@ -179,20 +175,22 @@ struct PartsRangesIterator
         else if (compare_result == 1)
             return false;
 
-        // RangeStart event always before RangeEnd event
-        if (event != other.event)
-            return event < other.event;
+        if (part_index == other.part_index)
+        {
+            /// Within the same part we should process events in order of mark numbers,
+            /// because they already ordered by value and range ends have greater mark numbers than the beginnings.
+            /// Otherwise we could get invalid ranges with the right bound that is less than the left bound.
+            const auto ev_mark = event == EventType::RangeStart ? range.begin : range.end;
+            const auto other_ev_mark = other.event == EventType::RangeStart ? other.range.begin : other.range.end;
 
-        /// Within the same part we should process events in order of mark numbers,
-        /// because they already ordered by value and range ends have greater mark numbers than the beginnings.
-        /// Otherwise we could get invalid ranges with the right bound that is less than the left bound.
-        const auto ev_mark = event == EventType::RangeStart ? range.begin : range.end;
-        const auto other_ev_mark = other.event == EventType::RangeStart ? other.range.begin : other.range.end;
+            // Start event always before end event
+            if (ev_mark == other_ev_mark)
+                return event < other.event;
 
-        if (ev_mark == other_ev_mark)
-            return part_index < other.part_index;
+            return ev_mark < other_ev_mark;
+        }
 
-        return ev_mark < other_ev_mark;
+        return part_index < other.part_index;
     }
 
     [[maybe_unused]] bool operator==(const PartsRangesIterator & other) const
@@ -221,14 +219,13 @@ struct PartsRangesIterator
     EventType event;
 };
 
-struct SplitResult
+struct SplitPartsRangesResult
 {
     RangesInDataParts non_intersecting_parts_ranges;
-    std::vector<Values> borders;
-    std::vector<RangesInDataParts> layers;
+    RangesInDataParts intersecting_parts_ranges;
 };
 
-SplitResult split(RangesInDataParts ranges_in_data_parts, size_t max_layers)
+SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts)
 {
     /** Split ranges in data parts into intersecting ranges in data parts and non intersecting ranges in data parts.
       *
@@ -470,32 +467,46 @@ SplitResult split(RangesInDataParts ranges_in_data_parts, size_t max_layers)
             add_non_intersecting_range(part_index, mark_range);
     }
 
-    auto & non_intersecting_ranges_in_data_parts = non_intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts();
-    auto & intersecting_ranges_in_data_parts = intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts();
+    auto && non_intersecting_ranges_in_data_parts = std::move(non_intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
+    auto && intersecting_ranges_in_data_parts = std::move(intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
 
+    std::stable_sort(
+        non_intersecting_ranges_in_data_parts.begin(),
+        non_intersecting_ranges_in_data_parts.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
+
+    std::stable_sort(
+        intersecting_ranges_in_data_parts.begin(),
+        intersecting_ranges_in_data_parts.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
+
+    return {std::move(non_intersecting_ranges_in_data_parts), std::move(intersecting_ranges_in_data_parts)};
+}
+
+std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersectingPartsRangesIntoLayers(RangesInDataParts intersecting_ranges_in_data_parts, size_t max_layers)
+{
     // We will advance the iterator pointing to the mark with the smallest PK value until
     // there will be not less than rows_per_layer rows in the current layer (roughly speaking).
     // Then we choose the last observed value as the new border, so the current layer will consists
     // of granules with values greater than the previous mark and less or equal than the new border.
 
+    IndexAccess index_access(intersecting_ranges_in_data_parts);
     std::priority_queue<PartsRangesIterator, std::vector<PartsRangesIterator>, std::greater<>> parts_ranges_queue;
 
     for (size_t part_index = 0; part_index < intersecting_ranges_in_data_parts.size(); ++part_index)
     {
-        size_t initial_part_index = intersecting_ranges_in_data_parts_builder.mapPartIndexToInitialPartIndex(part_index);
-
         for (const auto & range : intersecting_ranges_in_data_parts[part_index].ranges)
         {
             const auto & index_granularity = intersecting_ranges_in_data_parts[part_index].data_part->index_granularity;
             parts_ranges_queue.push(
-                {index_access.getValue(initial_part_index, range.begin), range, initial_part_index, PartsRangesIterator::EventType::RangeStart});
+                {index_access.getValue(part_index, range.begin), range, part_index, PartsRangesIterator::EventType::RangeStart});
 
             const bool value_is_defined_at_end_mark = range.end < index_granularity.getMarksCount();
             if (!value_is_defined_at_end_mark)
                 continue;
 
             parts_ranges_queue.push(
-                {index_access.getValue(initial_part_index, range.end), range, initial_part_index, PartsRangesIterator::EventType::RangeEnd});
+                {index_access.getValue(part_index, range.end), range, part_index, PartsRangesIterator::EventType::RangeEnd});
         }
     }
 
@@ -508,7 +519,7 @@ SplitResult split(RangesInDataParts ranges_in_data_parts, size_t max_layers)
     std::vector<Values> borders;
     std::vector<RangesInDataParts> result_layers;
 
-    size_t total_intersecting_rows_count = intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts().getRowsCountAllParts();
+    size_t total_intersecting_rows_count = intersecting_ranges_in_data_parts.getRowsCountAllParts();
     const size_t rows_per_layer = std::max<size_t>(total_intersecting_rows_count / max_layers, 1);
 
     while (!parts_ranges_queue.empty())
@@ -525,7 +536,8 @@ SplitResult split(RangesInDataParts ranges_in_data_parts, size_t max_layers)
             return marks_in_current_layer < intersected_parts * 2;
         };
 
-        RangesInDataPartsBuilder current_layer_builder(ranges_in_data_parts);
+        RangesInDataPartsBuilder current_layer_builder(intersecting_ranges_in_data_parts);
+        result_layers.emplace_back();
 
         while (rows_in_current_layer < rows_per_layer || layers_intersection_is_too_big() || result_layers.size() == max_layers)
         {
@@ -573,13 +585,8 @@ SplitResult split(RangesInDataParts ranges_in_data_parts, size_t max_layers)
             current_part_range_begin[part_index] = current_part_range_end[part_index];
         }
 
-        result_layers.push_back(std::move(current_layer_builder.getCurrentRangesInDataParts()));
+        result_layers.back() = std::move(current_layer_builder.getCurrentRangesInDataParts());
     }
-
-    std::stable_sort(
-        non_intersecting_ranges_in_data_parts.begin(),
-        non_intersecting_ranges_in_data_parts.end(),
-        [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
 
     for (auto & layer : result_layers)
     {
@@ -589,7 +596,7 @@ SplitResult split(RangesInDataParts ranges_in_data_parts, size_t max_layers)
             [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
     }
 
-    return {std::move(non_intersecting_ranges_in_data_parts), std::move(borders), std::move(result_layers)};
+    return {std::move(result_layers), std::move(borders)};
 }
 
 
@@ -706,18 +713,18 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
-    SplitResult split_result = split(std::move(parts), max_layers);
-    auto borders = std::move(split_result.borders);
-    auto result_layers = std::move(split_result.layers);
-    auto filters = buildFilters(primary_key, borders);
-
     SplitPartsWithRangesByPrimaryKeyResult result;
-    result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
-    result.merging_pipes.resize(result_layers.size());
 
-    for (size_t i = 0; i < result_layers.size(); ++i)
+    SplitPartsRangesResult split_result = splitPartsRanges(std::move(parts));
+    result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
+
+    auto && [layers, borders] = splitIntersectingPartsRangesIntoLayers(std::move(split_result.intersecting_parts_ranges), max_layers);
+    auto filters = buildFilters(primary_key, borders);
+    result.merging_pipes.resize(layers.size());
+
+    for (size_t i = 0; i < layers.size(); ++i)
     {
-        result.merging_pipes[i] = in_order_reading_step_getter(std::move(result_layers[i]));
+        result.merging_pipes[i] = in_order_reading_step_getter(std::move(layers[i]));
         result.merging_pipes[i].addSimpleTransform([sorting_expr](const Block & header)
                                     { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
 
