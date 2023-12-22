@@ -277,13 +277,10 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to deserialize data into Variant column with not global variants order");
 
     /// First, deserialize new discriminators.
-    /// We deserialize them into a separate column to be able to use substream cache,
-    /// so if we also need to deserialize some of sub columns, we will read discriminators only once.
     settings.path.push_back(Substream::VariantDiscriminators);
-    ColumnPtr discriminators;
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
-        discriminators = cached_discriminators;
+        col.getLocalDiscriminatorsPtr() = cached_discriminators;
     }
     else
     {
@@ -291,29 +288,31 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         if (!discriminators_stream)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for VariantDiscriminators in SerializationVariant::deserializeBinaryBulkWithMultipleStreams");
 
-        discriminators = ColumnVariant::ColumnDiscriminators::create();
-        SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(*discriminators->assumeMutable(), *discriminators_stream, limit, 0);
-        addToSubstreamsCache(cache, settings.path, discriminators);
+        SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(*col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, limit, 0);
+        addToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsPtr());
     }
 
     settings.path.pop_back();
 
-    /// Iterate through new discriminators, append them to column and calculate the limit for each variant.
+    /// Iterate through new discriminators and calculate the limit for each variant.
     /// While calculating limits we can also fill offsets column (we store offsets only in memory).
-    const auto & discriminators_data = assert_cast<const ColumnVariant::ColumnDiscriminators &>(*discriminators).getData();
-    auto & local_discriminators = col.getLocalDiscriminators();
-    local_discriminators.reserve(local_discriminators.size() + limit);
+    auto & discriminators_data = col.getLocalDiscriminators();
     auto & offsets = col.getOffsets();
     offsets.reserve(offsets.size() + limit);
     std::vector<size_t> variant_limits(variants.size(), 0);
-    for (size_t i = 0; i != limit; ++i)
+    size_t discriminators_offset = discriminators_data.size() - limit;
+    for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
     {
         ColumnVariant::Discriminator discr = discriminators_data[i];
-        local_discriminators.push_back(discr);
         if (discr == ColumnVariant::NULL_DISCRIMINATOR)
+        {
             offsets.emplace_back();
+        }
         else
-            offsets.push_back(col.getVariantByLocalDiscriminator(discr).size() + variant_limits[discr]++);
+        {
+            offsets.push_back(col.getVariantByLocalDiscriminator(discr).size() + variant_limits[discr]);
+            ++variant_limits[discr];
+        }
     }
 
     /// Now we can deserialize variants according to their limits.

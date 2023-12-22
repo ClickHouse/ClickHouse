@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # reset --log_comment
@@ -29,14 +30,15 @@ function test2_insert()
 {
     echo "test2 insert"
     $CH_CLIENT -q "insert into test select number, number::Variant(UInt64)::Variant(UInt64, Array(UInt64)) from numbers(1000000) settings max_insert_block_size = 100000, min_insert_block_size_rows=100000"
-    $CH_CLIENT -q "insert into test select number, if(number % 2, NULL, number)::Variant(UInt64)::Variant(UInt64, String, Array(UInt64)) as res from numbers(1000000, 10000000) settings max_insert_block_size = 100000, min_insert_block_size_rows=100000"
+    $CH_CLIENT -q "insert into test select number, if(number % 2, NULL, number)::Variant(UInt64)::Variant(UInt64, String, Array(UInt64)) as res from numbers(1000000, 1000000) settings max_insert_block_size = 100000, min_insert_block_size_rows=100000"
     $CH_CLIENT -q "insert into test select number, if(number % 2, NULL, 'str_' || toString(number))::Variant(String)::Variant(UInt64, String, Array(UInt64)) as res from numbers(2000000, 1000000) settings max_insert_block_size = 100000, min_insert_block_size_rows=100000"
-    $CH_CLIENT -q "insert into test select number, if(number < 5, if(number % 2, NULL, number)::Variant(UInt64)::Variant(UInt64, String, Array(UInt64)), if(number % 2, NULL, 'str_' || toString(number))::Variant(String)::Variant(UInt64, String, Array(UInt64))) from numbers(3000000, 1000000) settings max_insert_block_size = 100000, min_insert_block_size_rows=100000"
-    }
+    $CH_CLIENT -q "insert into test select number, if(number < 3500000, if(number % 2, NULL, number)::Variant(UInt64)::Variant(UInt64, String, Array(UInt64)), if(number % 2, NULL, 'str_' || toString(number))::Variant(String)::Variant(UInt64, String, Array(UInt64))) from numbers(3000000, 1000000) settings max_insert_block_size = 100000, min_insert_block_size_rows=100000"
+}
 
 function test2_select()
 {
     echo "test2 select"
+    $CH_CLIENT -q "select v, v.String, v.UInt64 from test format Null;"
     $CH_CLIENT -q "select v from test format Null;"
     $CH_CLIENT -q "select count() from test where isNotNull(v);"
     $CH_CLIENT -q "select v.String from test format Null;"
