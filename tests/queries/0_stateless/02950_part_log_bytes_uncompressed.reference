@@ -1,0 +1,4 @@
+NewPart	part_log_bytes_uncompressed	all_1_1_0	2
+NewPart	part_log_bytes_uncompressed	all_2_2_0	2
+MergeParts	part_log_bytes_uncompressed	all_1_2_1	4
+MutatePart	part_log_bytes_uncompressed	all_1_2_1_3	4
