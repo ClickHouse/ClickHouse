@@ -113,10 +113,8 @@ def test_total_pk_bytes_in_memory_fields(started_cluster):
     )
     assert pk_bytes_allocated_after_2 > pk_bytes_allocated_after
 
-    # alter the table to drop some data
-    node.query(
-        "ALTER table test_pk_bytes DELETE where a < 1000000 SETTINGS mutations_sync=1;"
-    )
+    # drop all the data
+    node.query("TRUNCATE table test_pk_bytes;")
 
     # query again and compare the metrics.
     # metrics should be lesser after dropping some data
@@ -129,3 +127,6 @@ def test_total_pk_bytes_in_memory_fields(started_cluster):
         pk_bytes_allocated_after_2, res_pk_bytes_allocated, condition=lesser
     )
     assert before_drop > after_drop
+
+    # finally drop the table
+    node.query("DROP table test_pk_bytes;")
