@@ -8,7 +8,8 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Processors/Executors/ManualPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 
 namespace CurrentMetrics
 {
@@ -17,6 +18,12 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
+}
 
 RefreshTask::RefreshTask(
     const ASTRefreshStrategy & strategy)
@@ -124,7 +131,7 @@ void RefreshTask::stop()
     std::lock_guard guard(mutex);
     if (std::exchange(stop_requested, true))
         return;
-    interrupt_execution.store(true);
+    interruptExecution();
     refresh_task->schedule();
 }
 
@@ -139,26 +146,7 @@ void RefreshTask::run()
 void RefreshTask::cancel()
 {
     std::lock_guard guard(mutex);
-    if (std::exchange(cancel_requested, true))
-        return;
-    interrupt_execution.store(true);
-    refresh_task->schedule();
-}
-
-void RefreshTask::pause()
-{
-    std::lock_guard guard(mutex);
-    if (std::exchange(pause_requested, true))
-        return;
-    interrupt_execution.store(true);
-    refresh_task->schedule();
-}
-
-void RefreshTask::resume()
-{
-    std::lock_guard guard(mutex);
-    if (!std::exchange(pause_requested, false))
-        return;
+    interruptExecution();
     refresh_task->schedule();
 }
 
@@ -167,7 +155,7 @@ void RefreshTask::shutdown()
     {
         std::lock_guard guard(mutex);
         stop_requested = true;
-        interrupt_execution.store(true);
+        interruptExecution();
     }
 
     /// Wait for the task to return and prevent it from being scheduled in future.
@@ -181,7 +169,7 @@ void RefreshTask::shutdown()
     set_handle.reset();
 }
 
-void RefreshTask::notify(const StorageID & parent_id, std::chrono::sys_seconds parent_next_prescribed_time, const RefreshSchedule & parent_schedule)
+void RefreshTask::notify(const StorageID & parent_id, std::chrono::sys_seconds parent_next_prescribed_time)
 {
     std::lock_guard guard(mutex);
     if (!set_handle)
@@ -205,38 +193,24 @@ void RefreshTask::notify(const StorageID & parent_id, std::chrono::sys_seconds p
     /// (4) REFRESH EVERY 2 HOUR depends on REFRESH EVERY 1 HOUR
     ///     The 2 HOUR refresh should happen after the 1 HOUR refresh for every other hour, e.g.
     ///     after the 2pm refresh, then after the 4pm refresh, etc.
-    /// (5) REFRESH AFTER 1 HOUR depends on REFRESH AFTER 1 HOUR
-    ///     Here the two views should try to synchronize their schedules instead of arbitrarily drifting
-    ///     apart. In particular, consider the case where the dependency refreshes slightly faster than
-    ///     the dependent. If we don't do anything special, the DEPENDS ON will have pretty much no effect.
-    ///     To apply some synchronization pressure, we reduce the dependent's delay by some percentage
-    ///     after the dependent completed.
-    /// (6) REFRESH AFTER 1 HOUR depends on REFRESH AFTER 2 HOUR
-    ///     REFRESH EVERY 1 HOUR depends on REFRESH EVERY 2 HOUR
-    ///     Not sure about these. Currently we just make the dependent refresh at the same rate as
-    ///     the dependency, i.e. the 1 HOUR table will actually be refreshed every 2 hours.
+    ///
+    /// We currently don't allow dependencies in REFRESH AFTER case, because its unclear how to define
+    /// it in a non-confusing way. Consider view y that depends on view x, both with
+    /// REFRESH AFTER 1 hour. The user's intention is probably to make y always refresh immediately
+    /// after x. But suppose y takes slightly longer to refresh than x. If we don't do anything
+    /// special, x's refresh schedule will run ahead, and the DEPENDS ON will have pretty much no
+    /// effect - confusing! As a dirty way to prevent this, we could just decrease refresh period by,
+    /// say, 50%, if the view has dependencies at all. But that still sounds more confusing than useful.
+    /// Or we could say that we only refresh y if x refreshes less than 10% of 1 HOUR ago, so in our
+    /// scenario y would be refreshing every 2 hours instead of 1 hour sometimes.
 
     /// Only accept the dependency's refresh if its next refresh time is after ours.
-    /// This takes care of cases (1)-(4), and seems harmless in all other cases.
-    /// Might be mildly helpful in weird cases like REFRESH AFTER 3 HOUR depends on REFRESH AFTER 2 HOUR.
+    /// This takes care of cases (1)-(4).
     if (parent_next_prescribed_time <= next_refresh_prescribed)
         return;
 
     if (arriveDependency(parent_id) && !std::exchange(refresh_immediately, true))
         refresh_task->schedule();
-
-    /// Decrease delay in case (5).
-    /// Maybe we should do it for all AFTER-AFTER dependencies, even if periods are different.
-    if (refresh_schedule.kind == RefreshScheduleKind::AFTER &&
-        parent_schedule.kind == RefreshScheduleKind::AFTER &&
-        refresh_schedule.period == parent_schedule.period)
-    {
-        /// TODO: Implement this.
-        ///        * Add setting max_after_delay_adjustment_pct
-        ///        * Decrease both next_refresh_prescribed and next_refresh_with_spread,
-        ///          but only if they haven't already been decreased this way during current period
-        ///        * refresh_task->schedule()
-    }
 }
 
 void RefreshTask::setFakeTime(std::optional<Int64> t)
@@ -260,38 +234,14 @@ void RefreshTask::refreshTask()
 
             interrupt_execution.store(false);
 
-            /// Discard the active refresh if requested.
-            if ((stop_requested || cancel_requested) && refresh_context)
-            {
-                lock.unlock();
-                cancelRefreshUnlocked();
-                lock.lock();
-
-                info.last_refresh_result = LastRefreshResult::Canceled;
-
-                if (cancel_requested)
-                {
-                    /// Move on to the next refresh time according to schedule.
-                    /// Otherwise we'd start another refresh immediately after canceling this one.
-                    auto now = currentTime();
-                    if (now >= next_refresh_with_spread)
-                        advanceNextRefreshTime(now);
-                }
-            }
-
-            cancel_requested = false;
-
-            if (pause_requested && !refresh_context)
-                pause_requested = false; // no refresh to pause
-
-            if (stop_requested || pause_requested)
+            if (stop_requested)
             {
                 /// Exit the task and wait for the user to start or resume, which will schedule the task again.
-                info.state = stop_requested ? RefreshState::Disabled : RefreshState::Paused;
+                info.state = RefreshState::Disabled;
                 break;
             }
 
-            if (!refresh_immediately && !refresh_context)
+            if (!refresh_immediately)
             {
                 auto now = currentTime();
                 if (now >= next_refresh_with_spread)
@@ -338,61 +288,66 @@ void RefreshTask::refreshTask()
 
             lock.unlock();
 
-            bool finished = false;
+            bool refreshed = false;
+            std::optional<String> exception;
+            auto start_time = std::chrono::steady_clock::now();
 
             try
             {
-                if (!refresh_context)
-                    initializeRefreshUnlocked(view);
-
-                finished = executeRefreshUnlocked();
-
-                if (finished)
-                    completeRefreshUnlocked(view);
+                executeRefreshUnlocked(view);
+                refreshed = true;
             }
             catch (...)
             {
-                PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
-                auto text = message.text;
-                message.text = fmt::format("Refresh failed: {}", message.text);
-                LOG_ERROR(log, message);
-
-                /// Don't leave a trash table.
-                if (refresh_context)
-                    cancelRefreshUnlocked();
-
-                lock.lock();
-
-                info.last_refresh_result = LastRefreshResult::Exception;
-                info.exception_message = text;
-
-                /// TODO: Do a few retries with exponential backoff.
-                advanceNextRefreshTime(currentTime());
-
-                continue;
+                if (!interrupt_execution.load())
+                {
+                    PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
+                    auto text = message.text;
+                    message.text = fmt::format("Refresh failed: {}", message.text);
+                    LOG_ERROR(log, message);
+                    exception = text;
+                }
             }
 
             lock.lock();
 
-            if (!finished)
-                continue;
-
             auto now = currentTime();
             auto secs = std::chrono::floor<std::chrono::seconds>(now);
-            info.last_refresh_time = UInt32(secs.time_since_epoch().count());
-            info.last_refresh_result = LastRefreshResult::Finished;
-            info.refresh_count += 1;
-            advanceNextRefreshTime(now);
+            info.last_attempt_time = UInt32(secs.time_since_epoch().count());
+            info.last_attempt_duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
 
-            auto next_time = next_refresh_prescribed;
-            auto refresh_schedule_copy = refresh_schedule;
+            if (exception)
+            {
+                info.last_refresh_result = LastRefreshResult::Exception;
+                info.exception_message = *exception;
 
-            lock.unlock();
-            StorageID my_id = view->getStorageID();
-            auto dependents = view->getContext()->getRefreshSet().getDependents(my_id);
-            for (const RefreshTaskHolder & dep_task : dependents)
-                dep_task->notify(my_id, next_time, refresh_schedule_copy);
-            lock.lock();
+                /// TODO: Do a few retries with exponential backoff.
+                advanceNextRefreshTime(now);
+            }
+            else if(!refreshed)
+            {
+                info.last_refresh_result = LastRefreshResult::Cancelled;
+
+                /// Make sure we don't just start another refresh immediately.
+                if (!stop_requested && now >= next_refresh_with_spread)
+                    advanceNextRefreshTime(now);
+            }
+            else
+            {
+                info.last_refresh_result = LastRefreshResult::Finished;
+                info.last_success_time = info.last_attempt_time;
+                info.refresh_count += 1;
+                advanceNextRefreshTime(now);
+
+                auto next_time = next_refresh_prescribed;
+
+                lock.unlock();
+                StorageID my_id = view->getStorageID();
+                auto dependents = view->getContext()->getRefreshSet().getDependents(my_id);
+                for (const RefreshTaskHolder & dep_task : dependents)
+                    dep_task->notify(my_id, next_time);
+                lock.lock();
+            }
         }
     }
     catch (...)
@@ -407,100 +362,87 @@ void RefreshTask::refreshTask()
     }
 }
 
-void RefreshTask::initializeRefreshUnlocked(std::shared_ptr<const StorageMaterializedView> view)
+void RefreshTask::executeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view)
 {
-    chassert(!refresh_context);
     LOG_DEBUG(log, "Refreshing view {}", view->getStorageID().getFullTableName());
     progress.reset();
-    std::tie(refresh_context, refresh_query) = view->prepareRefresh();
-}
 
-bool RefreshTask::executeRefreshUnlocked()
-{
-    CurrentThread::QueryScope query_scope(refresh_context); // create a thread group for the query
+    /// Create a table.
+    auto [refresh_context, refresh_query] = view->prepareRefresh();
 
-    /// TODO: Execute in multiple threads.
-    /// TODO: interrupt_execution is not enough to interrupt the PipelineExecutor reliably quickly,
-    ///       it doesn't interrupt the epoll for async tasks (if any), see async_task_queue.
-    ///       Either do refresh_executor.cancel() (which won't work for pausing) or add a periodic
-    ///       check of the flag in the epoll wait (wake up every e.g. 500 ms).
-    if (!refresh_executor)
+    StorageID stale_table = StorageID::createEmpty();
+    try
     {
-        refresh_pipeline = InterpreterInsertQuery(refresh_query, refresh_context).execute();
+        /// Run the query.
+        {
+            CurrentThread::QueryScope query_scope(refresh_context); // create a thread group for the query
 
-        refresh_pipeline->pipeline.setProgressCallback([this](const Progress & prog)
+            BlockIO block_io = InterpreterInsertQuery(refresh_query, refresh_context).execute();
+            QueryPipeline & pipeline = block_io.pipeline;
+
+            pipeline.setProgressCallback([this](const Progress & prog)
             {
                 /// TODO: Investigate why most fields are not populated. Change columns in system.view_refreshes as needed, update documentation (docs/en/operations/system-tables/view_refreshes.md).
                 progress.incrementPiecewiseAtomically(prog);
             });
 
-        /// Add the query to system.processes and allow it to be killed with KILL QUERY.
-        String query_for_logging = refresh_query->formatForLogging(
-            refresh_context->getSettingsRef().log_queries_cut_to_length);
-        refresh_pipeline->process_list_entry = refresh_context->getProcessList().insert(
-            query_for_logging, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
-        refresh_pipeline->pipeline.setProcessListElement(refresh_pipeline->process_list_entry->getQueryStatus());
-        refresh_context->setProcessListElement(refresh_pipeline->process_list_entry->getQueryStatus());
+            /// Add the query to system.processes and allow it to be killed with KILL QUERY.
+            String query_for_logging = refresh_query->formatForLogging(
+                refresh_context->getSettingsRef().log_queries_cut_to_length);
+            block_io.process_list_entry = refresh_context->getProcessList().insert(
+                query_for_logging, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
+            pipeline.setProcessListElement(block_io.process_list_entry->getQueryStatus());
+            refresh_context->setProcessListElement(block_io.process_list_entry->getQueryStatus());
 
-        refresh_executor.emplace(refresh_pipeline->pipeline);
+            if (!pipeline.completed())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for view refresh must be completed");
+
+            PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+            executor.setReadProgressCallback(pipeline.getReadProgressCallback());
+
+            {
+                std::unique_lock exec_lock(executor_mutex);
+                if (interrupt_execution.load())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh cancelled");
+                running_executor = &executor;
+            }
+            SCOPE_EXIT({
+                std::unique_lock exec_lock(executor_mutex);
+                running_executor = nullptr;
+            });
+
+            executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+        }
+
+        /// (Just in case PipelineExecutor can somehow return without exception but with incomplete
+        ///  results if cancelled at the wrong moment.)
+        if (interrupt_execution.load())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh cancelled");
+
+        /// Exchange tables.
+        stale_table = view->exchangeTargetTable(refresh_query->table_id, refresh_context);
     }
-
-    bool finished{false};
-    while (!interrupt_execution.load() && !finished)
-        finished = !refresh_executor->executeStep(interrupt_execution);
-
-    return finished;
-}
-
-void RefreshTask::completeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view)
-{
-    auto stale_table = view->exchangeTargetTable(refresh_query->table_id, refresh_context);
-    auto refresh_context_ptr_copy = refresh_context;
-    cleanStateUnlocked();
-
-    InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, view->getContext(), refresh_context_ptr_copy, stale_table, /*sync*/ true, /*ignore_sync_setting*/ true);
-}
-
-void RefreshTask::cancelRefreshUnlocked()
-{
-    auto table_to_drop = refresh_query->table_id;
-    auto refresh_context_ptr_copy = refresh_context;
-
-    /// Destroy the executor to unpin the table that we're about to drop.
-    /// (Not necessary if the drop is asynchronous, but why not.)
-    cleanStateUnlocked();
-
-    if (auto view = lockView())
+    catch (...)
     {
         try
         {
             InterpreterDropQuery::executeDropQuery(
-                ASTDropQuery::Kind::Drop, view->getContext(), refresh_context_ptr_copy, table_to_drop, /*sync*/ false, /*ignore_sync_setting*/ true);
+                ASTDropQuery::Kind::Drop, view->getContext(), refresh_context, refresh_query->table_id, /*sync*/ false, /*ignore_sync_setting*/ true);
         }
         catch (...)
         {
             tryLogCurrentException(log, "Failed to drop temporary table after a failed refresh");
             /// Let's ignore this and keep going, at risk of accumulating many trash tables if this keeps happening.
         }
+        throw;
     }
-}
 
-void RefreshTask::cleanStateUnlocked()
-{
-    refresh_executor.reset();
-    refresh_pipeline.reset();
-    refresh_query.reset();
-    refresh_context.reset();
+    /// Drop the old table (outside the try-catch so we don't try to drop the other table if this fails).
+    InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, view->getContext(), refresh_context, stale_table, /*sync*/ true, /*ignore_sync_setting*/ true);
 }
 
 void RefreshTask::advanceNextRefreshTime(std::chrono::system_clock::time_point now)
 {
-    /// TODO: Add a setting to randomize initial delay in case of AFTER, for the case when the server
-    ///       is restarted more often than the refresh period.
-    /// TODO: Maybe do something like skip_update_after_seconds and skip_update_after_ratio.
-    ///       Or maybe that should be checked in refreshTask(), just before starting a refresh.
-    ///       Probably only useful after we have concurrency limits. Or maybe it's not useful even then?
-
     std::chrono::sys_seconds next = refresh_schedule.prescribeNext(next_refresh_prescribed, now);
     next_refresh_prescribed = next;
     next_refresh_with_spread = refresh_schedule.addRandomSpread(next);
@@ -533,6 +475,16 @@ void RefreshTask::populateDependencies()
     auto deps = set_handle.getDependencies();
     remaining_dependencies.insert(deps.begin(), deps.end());
     time_arrived = false;
+}
+
+void RefreshTask::interruptExecution()
+{
+    chassert(!mutex.try_lock());
+    std::unique_lock lock(executor_mutex);
+    if (interrupt_execution.exchange(true))
+        return;
+    if (running_executor)
+        running_executor->cancel();
 }
 
 std::shared_ptr<StorageMaterializedView> RefreshTask::lockView()

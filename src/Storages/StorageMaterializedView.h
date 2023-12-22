@@ -105,6 +105,7 @@ private:
     StorageID target_table_id = StorageID::createEmpty();
 
     RefreshTaskHolder refresher;
+    bool refresh_on_start = false;
 
     bool has_inner_table = false;
 

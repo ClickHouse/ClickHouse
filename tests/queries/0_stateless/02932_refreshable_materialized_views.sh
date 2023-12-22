@@ -20,6 +20,7 @@ $CLICKHOUSE_CLIENT -nq "
     create materialized view a
         refresh after 1 second
         engine Memory
+        empty
         as select number as x from numbers(2) union all select rand64() as x"
 $CLICKHOUSE_CLIENT -nq "select '<1: created view>', view, remaining_dependencies, exception, last_refresh_result in ('Unknown', 'Finished') from refreshes";
 $CLICKHOUSE_CLIENT -nq "show create a"
@@ -83,7 +84,7 @@ $CLICKHOUSE_CLIENT -nq "
 
 # Create a dependent view, refresh it once.
 $CLICKHOUSE_CLIENT -nq "
-    create materialized view b refresh every 2 year depends on a (y Int32) engine MergeTree order by y as select x*10 as y from a;
+    create materialized view b refresh every 2 year depends on a (y Int32) engine MergeTree order by y empty as select x*10 as y from a;
     show create b;
     system test view b set fake time '2052-11-11 11:11:11';
     system refresh view b;"
@@ -169,7 +170,7 @@ $CLICKHOUSE_CLIENT -nq "
 $CLICKHOUSE_CLIENT -nq "
     drop table a;
     drop table b;
-    create materialized view c refresh every 1 second (x Int64) engine Memory as select * from src;
+    create materialized view c refresh every 1 second (x Int64) engine Memory empty as select * from src;
     drop table src;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Exception' ]
 do
@@ -197,7 +198,7 @@ $CLICKHOUSE_CLIENT -nq "
     drop table d;
     truncate src;
     insert into src values (1)
-    create materialized view e refresh every 1 second (x Int64) engine MergeTree order by x as select x + sleepEachRow(1) as x from src settings max_block_size = 1;"
+    create materialized view e refresh every 1 second (x Int64) engine MergeTree order by x empty as select x + sleepEachRow(1) as x from src settings max_block_size = 1;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Finished' ]
 do
     sleep 0.1
@@ -210,7 +211,7 @@ while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes -- $LINENO" | xar
 do
     sleep 0.1
 done
-# Make refreshes slow, make for a slow refresh to start. (We stopped refreshes first to make sure
+# Make refreshes slow, wait for a slow refresh to start. (We stopped refreshes first to make sure
 # we wait for a slow refresh, not a previous fast one.)
 $CLICKHOUSE_CLIENT -nq "
     insert into src select * from numbers(1000) settings max_block_size=1;
@@ -226,34 +227,17 @@ $CLICKHOUSE_CLIENT -nq "
     select '<25: rename during refresh>', view, status from refreshes;
     alter table f modify refresh after 10 year;"
 sleep 2 # make it likely that at least one row was processed
-# Pause.
-rows_before_pause="`$CLICKHOUSE_CLIENT -nq "select read_rows from refreshes" | xargs`"
-$CLICKHOUSE_CLIENT -nq "
-    system pause view f;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes -- $LINENO" | xargs`" != 'Paused' ]
-do
-    sleep 0.1
-done
-# Resume.
-$CLICKHOUSE_CLIENT -nq "
-    system resume view f;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes -- $LINENO" | xargs`" != 'Running' ]
-do
-    sleep 0.1
-done
-$CLICKHOUSE_CLIENT -nq "
-    select '<26: paused+resumed>', read_rows >= $rows_before_pause from refreshes"
 # Cancel.
 $CLICKHOUSE_CLIENT -nq "
     system cancel view f;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Canceled' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Cancelled' ]
 do
     sleep 0.1
 done
-# Check that another refresh doesn't immediately start after the canceled one.
+# Check that another refresh doesn't immediately start after the cancelled one.
 sleep 1
 $CLICKHOUSE_CLIENT -nq "
-    select '<27: canceled>', view, status from refreshes;
+    select '<27: cancelled>', view, status from refreshes;
     system refresh view f;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes -- $LINENO" | xargs`" != 'Running' ]
 do
@@ -266,7 +250,7 @@ $CLICKHOUSE_CLIENT -nq "
 
 # Try OFFSET and RANDOMIZE FOR.
 $CLICKHOUSE_CLIENT -nq "
-    create materialized view g refresh every 1 week offset 3 day 4 hour randomize for 4 day 1 hour (x Int64) engine Memory as select 42;
+    create materialized view g refresh every 1 week offset 3 day 4 hour randomize for 4 day 1 hour (x Int64) engine Memory empty as select 42;
     show create g;
     system test view g set fake time '2050-02-03 15:30:13';"
 while [ "`$CLICKHOUSE_CLIENT -nq "select next_refresh_time > '2049-01-01' from refreshes -- $LINENO" | xargs`" != '1' ]
@@ -283,7 +267,7 @@ $CLICKHOUSE_CLIENT -nq "
     create table dest (x Int64) engine MergeTree order by x;
     truncate src;
     insert into src values (1);
-    create materialized view h refresh every 1 second to dest as select x*10 as x from src;
+    create materialized view h refresh every 1 second to dest empty as select x*10 as x from src;
     show create h;"
 while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Finished' ]
 do
@@ -300,5 +284,20 @@ $CLICKHOUSE_CLIENT -nq "
     select '<31: to existing table>', * from dest;
     drop table dest;
     drop table src;
-    drop table h;
+    drop table h;"
+
+# EMPTY
+$CLICKHOUSE_CLIENT -nq "
+    create materialized view i refresh after 1 year engine Memory empty as select number as x from numbers(2);
+    create materialized view j refresh after 1 year engine Memory as select number as x from numbers(2)"
+while [ "`$CLICKHOUSE_CLIENT -nq "select sum(last_success_time is null) from refreshes -- $LINENO" | xargs`" == '2' ]
+do
+    sleep 0.1
+done
+$CLICKHOUSE_CLIENT -nq "
+    select '<32: empty>', view, status, last_refresh_result from refreshes order by view;
+    drop table i;
+    drop table j"
+
+$CLICKHOUSE_CLIENT -nq "
     drop table refreshes;"
