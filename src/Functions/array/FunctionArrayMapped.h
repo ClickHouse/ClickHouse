@@ -5,9 +5,9 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/IColumn.h>
 
 #include <Common/Exception.h>
@@ -18,8 +18,8 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -64,7 +64,21 @@ class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static constexpr size_t num_fixed_params = []{ if constexpr (requires { Impl::num_fixed_params; }) return Impl::num_fixed_params; else return 0; }();
+    static constexpr size_t num_fixed_params = []
+    {
+        if constexpr (requires { Impl::num_fixed_params; })
+            return Impl::num_fixed_params;
+        else
+            return 0;
+    }();
+
+    static constexpr bool return_fixed_string = []
+    {
+        if constexpr (requires { Impl::return_fixed_string; })
+            return Impl::return_fixed_string;
+        else
+            return false;
+    }();
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayMapped>(); }
 
@@ -134,9 +148,7 @@ public:
                 arguments[0]->getName());
 
         size_t num_function_arguments = function_type->getArgumentTypes().size();
-        if (is_single_array_argument
-            && tuple_argument_size > 1
-            && tuple_argument_size == num_function_arguments)
+        if (is_single_array_argument && tuple_argument_size > 1 && tuple_argument_size == num_function_arguments)
         {
             assert(nested_types.size() == 1);
 
@@ -163,7 +175,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        size_t min_args = (Impl::needExpression() ? 2 : 1) + num_fixed_params ;
+        size_t min_args = (Impl::needExpression() ? 2 : 1) + num_fixed_params;
         if (arguments.size() < min_args)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -201,8 +213,10 @@ public:
                     (num_fixed_params == 0 ? " and only" : ""),
                     getName(),
                     arguments[num_fixed_params].type->getName());
-
-            return Impl::getReturnType(nested_type, nested_type);
+            if constexpr (return_fixed_string)
+                return Impl::getReturnType(nested_type, nested_type, arguments[num_fixed_params].column.get()->getUInt(0));
+            else
+                return Impl::getReturnType(nested_type, nested_type);
         }
         else
         {
@@ -244,8 +258,11 @@ public:
             if (!first_array_type)
                 throw DB::Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
-
-            return Impl::getReturnType(return_type, first_array_type->getNestedType());
+            if constexpr (return_fixed_string)
+                return Impl::getReturnType(
+                    return_type, first_array_type->getNestedType(), arguments[num_fixed_params].column.get()->getUInt(0));
+            else
+                return Impl::getReturnType(return_type, first_array_type->getNestedType());
         }
     }
 
@@ -260,18 +277,14 @@ public:
             {
                 const auto * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
                 if (!column_const_array)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", column_array_ptr->getName());
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", column_array_ptr->getName());
 
                 column_array_ptr = column_const_array->convertToFullColumn();
                 column_array = assert_cast<const ColumnArray *>(column_array_ptr.get());
             }
 
             if constexpr (num_fixed_params)
-                return Impl::execute(
-                    *column_array,
-                    column_array->getDataPtr(),
-                    arguments.data());
+                return Impl::execute(*column_array, column_array->getDataPtr(), arguments.data());
             else
                 return Impl::execute(*column_array, column_array->getDataPtr());
         }
@@ -311,16 +324,14 @@ public:
                 {
                     const auto * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
                     if (!column_const_array)
-                        throw Exception(
-                            ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", column_array_ptr->getName());
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", column_array_ptr->getName());
 
                     column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
                     column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
                 }
 
                 if (!array_type)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected Array type, found {}", array_type_ptr->getName());
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected Array type, found {}", array_type_ptr->getName());
 
                 if (!offsets_column)
                 {
@@ -331,9 +342,7 @@ public:
                     /// The first condition is optimization: do not compare data if the pointers are equal.
                     if (column_array->getOffsetsPtr() != offsets_column
                         && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
-                        throw Exception(
-                            ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                                "Arrays passed to {} must have equal size", getName());
+                        throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Arrays passed to {} must have equal size", getName());
                 }
 
                 const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column_array->getData());
@@ -420,10 +429,7 @@ public:
             }
 
             if constexpr (num_fixed_params)
-                return Impl::execute(
-                    *column_first_array,
-                    lambda_result.column,
-                    arguments.data() + 1);
+                return Impl::execute(*column_first_array, lambda_result.column, arguments.data());
             else
                 return Impl::execute(*column_first_array, lambda_result.column);
         }
