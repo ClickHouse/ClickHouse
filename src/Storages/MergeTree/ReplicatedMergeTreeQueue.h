@@ -430,7 +430,7 @@ public:
     ActionBlocker pull_log_blocker;
 
     /// Adds a subscriber
-    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode, zkutil::ZooKeeperPtr & zookeeper, std::optional<String> srcReplica);
+    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode, zkutil::ZooKeeperPtr & zookeeper, std::unordered_set<String> srcReplicas);
 
     void notifySubscribersOnPartialShutdown();
 

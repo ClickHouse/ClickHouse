@@ -2624,7 +2624,7 @@ String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback,
                                         std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode,
-                                        zkutil::ZooKeeperPtr & zookeeper, std::optional<String> srcReplica)
+                                        zkutil::ZooKeeperPtr & zookeeper, std::unordered_set<String> srcReplicas)
 {
     std::lock_guard<std::mutex> lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);
@@ -2643,7 +2643,7 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
         };
 
         std::unordered_set<String> existing_replicas;
-        if (srcReplica)
+        if (!srcReplicas.empty())
        {
             existing_replicas = std::unordered_set<String>(
                 zookeeper->getChildren(zookeeper_path + "/replicas").begin(),
@@ -2658,10 +2658,10 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
             bool source_replica_condition = true;
 
             // Check if srcReplica condition should be applied
-            if (srcReplica && entry_matches)
+            if (!srcReplicas.empty() && entry_matches)
             {
-                // Condition: entry's source_replica is the specified one or not in the system anymore or is empty
-                source_replica_condition = entry->source_replica == srcReplica.value() ||
+                // Condition: entry's source_replica is one of the specified ones, or not in the system anymore, or is empty
+                source_replica_condition = srcReplicas.count(entry->source_replica) > 0 ||
                     existing_replicas.find(entry->source_replica) == existing_replicas.end() ||
                     entry->source_replica.empty();
             }

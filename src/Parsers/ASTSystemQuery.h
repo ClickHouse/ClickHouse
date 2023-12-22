@@ -138,7 +138,7 @@ public:
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
-    std::optional<String> src_replica;
+    std::unordered_set<String> src_replicas;
 
     ServerType server_type;
 
