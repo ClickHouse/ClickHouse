@@ -643,7 +643,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
            && !options.is_projection_optimized
         )
         {
-            if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
+            if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty() && metadata_snapshot->hasPrimaryKey())
             {
                 const auto primary_key = metadata_snapshot->getPrimaryKeyColumns()[0];
                 const auto main_table_name = getTableName(query.tables());
