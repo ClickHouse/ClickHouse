@@ -1018,8 +1018,11 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
         {
             auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-            auto primary_key =  metadata_snapshot->getPrimaryKeyColumns()[0];
-            required.insert(primary_key);
+            if (metadata_snapshot->hasPrimaryKey())
+            {
+                auto primary_key = metadata_snapshot->getPrimaryKeyColumns()[0];
+                required.insert(primary_key);
+            }
         }
     }
 
