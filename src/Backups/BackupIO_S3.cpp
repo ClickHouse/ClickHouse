@@ -68,7 +68,6 @@ namespace
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
         client_configuration.requestTimeoutMs = 60 * 60 * 1000;
-        client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(request_settings.retry_attempts);
 
         return S3::ClientFactory::instance().create(
             client_configuration,

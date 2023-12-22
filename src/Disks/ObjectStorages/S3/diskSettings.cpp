@@ -92,10 +92,6 @@ std::unique_ptr<S3::Client> getClient(
     HTTPHeaderEntries headers = S3::getHTTPHeaders(config_prefix, config);
     S3::ServerSideEncryptionKMSConfig sse_kms_config = S3::getSSEKMSConfig(config_prefix, config);
 
-    client_configuration.retryStrategy
-        = std::make_shared<Aws::Client::DefaultRetryStrategy>(
-            config.getUInt64(config_prefix + ".retry_attempts", settings.request_settings.retry_attempts));
-
     return S3::ClientFactory::instance().create(
         client_configuration,
         uri.is_virtual_hosted_style,
