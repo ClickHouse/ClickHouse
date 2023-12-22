@@ -8,6 +8,9 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ZlibDeflatingWriteBuffer.h>
 #include <IO/ZlibInflatingReadBuffer.h>
+#include <IO/PigzDeflatingWriteBuffer.h>
+#include <IO/PigzInflatingReadBuffer.h>
+#include <IO/PixzDeflatingWriteBuffer.h>
 #include <IO/ZstdDeflatingWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
 #include <IO/Lz4DeflatingWriteBuffer.h>
@@ -49,6 +52,10 @@ std::string toContentEncodingName(CompressionMethod method)
             return "bz2";
         case CompressionMethod::Snappy:
             return "snappy";
+        case CompressionMethod::PIGzip:
+            return "pigz";
+        case CompressionMethod::PIXz:
+            return "pixz";
         case CompressionMethod::None:
             return "";
     }
@@ -114,6 +121,10 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         return CompressionMethod::Bzip2;
     if (method_str == "snappy")
         return CompressionMethod::Snappy;
+    if (method_str == "pigz")
+        return CompressionMethod::PIGzip;
+    if (method_str == "pixz")
+        return CompressionMethod::PIXz;
     if (hint.empty() || hint == "auto" || hint == "none")
         return CompressionMethod::None;
 
@@ -153,6 +164,8 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
     if (method == CompressionMethod::Bzip2)
         return std::make_unique<Bzip2ReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #endif
+    if (method == CompressionMethod::PIGzip)
+        return std::make_unique<PigzInflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #if USE_SNAPPY
     if (method == CompressionMethod::Snappy)
         return std::make_unique<HadoopSnappyReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
@@ -196,6 +209,13 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     if (method == CompressionMethod::Snappy)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 #endif
+
+    if (method == CompressionMethod::PIGzip)
+        return std::make_unique<PigzDeflatingWriteBuffer>(std::move(nested), level);
+    
+    if (method == CompressionMethod::PIXz)
+        return std::make_unique<PixzDeflatingWriteBuffer>(std::move(nested), level);
+
     if (method == CompressionMethod::None)
         return nested;
 
