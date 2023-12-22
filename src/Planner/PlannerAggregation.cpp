@@ -25,15 +25,6 @@ AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggreg
         AggregateDescription aggregate_description;
         aggregate_description.function = aggregate_function_node_typed.getAggregateFunction();
 
-        // const auto & parameters_nodes = aggregate_function_node_typed.getParameters().getNodes();
-        // aggregate_description.parameters.reserve(parameters_nodes.size());
-
-        // for (const auto & parameter_node : parameters_nodes)
-        // {
-        //     /// Function parameters constness validated during analysis stage
-        //     aggregate_description.parameters.push_back(parameter_node->as<ConstantNode &>().getValue());
-        // }
-
         const auto & arguments_nodes = aggregate_function_node_typed.getArguments().getNodes();
         aggregate_description.argument_names.reserve(arguments_nodes.size());
 

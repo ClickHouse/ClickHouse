@@ -245,7 +245,7 @@ static void appendAggregateFunctions(
     {
         const auto & aggregate = aggregates[i];
         const auto & match = matched_aggregates[i];
-        auto type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, match.argument_types, aggregate.getParameters());
+        auto type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, match.argument_types, aggregate.function->getParameters());
 
         auto & input = inputs[match.description];
         if (!input)

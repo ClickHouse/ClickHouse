@@ -9,7 +9,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -22,16 +21,6 @@ void registerAggregateFunctionNothing(AggregateFunctionFactory & factory)
     {
         if (!parameters.empty())
         {
-            // if (parameters.size() != 1)
-            // {
-            //     Strings param_strs;
-            //     for (const auto & param : parameters)
-            //         param_strs.emplace_back(param.dump());
-            //     throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            //                     "Aggregate function {} requires exactly one parameter, got {}: [{}]",
-            //                     name, param_strs.size(), fmt::join(param_strs, ", "));
-            // }
-
             if (parameters[0].getType() != Field::Types::String)
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
