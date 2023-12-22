@@ -878,7 +878,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         bool in_subqueries = false;
         const auto & sets = query_analyzer->getPreparedSets();
         const auto subqueries = sets->getSubqueries();
-        for(const auto & subquery : subqueries)
+        for (const auto & subquery : subqueries)
         {
             if (subquery->isINSubquery())
             {
