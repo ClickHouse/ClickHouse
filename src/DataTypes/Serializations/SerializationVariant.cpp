@@ -276,7 +276,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     if (!col.hasGlobalVariantsOrder())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to deserialize data into Variant column with not global variants order");
 
-    /// First, deserialize new discriminators.
+    /// First, deserialize discriminators.
     settings.path.push_back(Substream::VariantDiscriminators);
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
@@ -451,7 +451,7 @@ std::unordered_map<TypeIndex, size_t> getTypesTextDeserializePriorityMap()
 /// then for types with the same depth we sort by the types priority, and last we sort by the depth of LowCardinality/Nullable types,
 /// so if we have types with the same level of nesting and the same priority, we will first try to deserialize LowCardinality/Nullable types
 /// (for example if we have types Array(Array(String)) and Array(Array(Nullable(String))).
-/// This is just a batch of heuristics,
+/// This is just a batch of heuristics.
 std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataTypePtr & type, size_t nested_depth, size_t simple_nested_depth, std::unordered_map<TypeIndex, size_t> & priority_map)
 {
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
@@ -553,7 +553,7 @@ bool SerializationVariant::tryDeserializeImpl(
     for (size_t global_discr : deserialize_text_order)
     {
         ReadBufferFromString variant_buf(field);
-        /// Usually try_deserialize_variant should not throw an exception, but let's use try/catch just in case.
+        /// Usually try_deserialize_variant should not throw any exception, but let's use try/catch just in case.
         try
         {
             auto & variant_column = column_variant.getVariantByGlobalDiscriminator(global_discr);
