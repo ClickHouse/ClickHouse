@@ -206,7 +206,7 @@ try
                 ++it;
             }
 
-            return Chunk(std::move(res_columns), rows_read);
+            return Chunk(std::move(res_columns), rows_read, nullptr, data_part->info.level);
         }
     }
     else

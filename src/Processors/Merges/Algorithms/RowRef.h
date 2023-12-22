@@ -129,14 +129,19 @@ struct RowRef
     size_t num_columns = 0;
     UInt64 row_num = 0;
 
+    int source_stream_index = -1;
+    bool source_may_contain_rows_with_same_primary_keys = true;
+
     bool empty() const { return sort_columns == nullptr; }
     void reset() { sort_columns = nullptr; }
 
-    void set(SortCursor & cursor)
+    void set(SortCursor & cursor, bool source_may_contain_rows_with_same_primary_keys_ = false)
     {
         sort_columns = cursor.impl->sort_columns.data();
         num_columns = cursor.impl->sort_columns.size();
         row_num = cursor.impl->getRow();
+        source_stream_index = static_cast<int>(cursor.impl->order);
+        source_may_contain_rows_with_same_primary_keys = source_may_contain_rows_with_same_primary_keys_;
     }
 
     static bool checkEquals(size_t size, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
@@ -155,6 +160,11 @@ struct RowRef
 
     bool hasEqualSortColumnsWith(const RowRef & other) const
     {
+        /// If both chunks are from a same source stream, and stream doesn't contains row with same primary keys
+        /// (e.g. stream read from a non-L0 part), then we don't need to compare them.
+        if (source_stream_index >= 0 && source_stream_index == other.source_stream_index && !source_may_contain_rows_with_same_primary_keys)
+            return false;
+
         return checkEquals(num_columns, sort_columns, row_num, other.sort_columns, other.row_num);
     }
 };
@@ -171,12 +181,15 @@ struct RowRefWithOwnedChunk
     ColumnRawPtrs * sort_columns = nullptr;
     UInt64 row_num = 0;
 
+    int source_stream_index = -1;
+
     void swap(RowRefWithOwnedChunk & other)
     {
         owned_chunk.swap(other.owned_chunk);
         std::swap(all_columns, other.all_columns);
         std::swap(sort_columns, other.sort_columns);
         std::swap(row_num, other.row_num);
+        std::swap(source_stream_index, other.source_stream_index);
     }
 
     bool empty() const { return owned_chunk == nullptr; }
@@ -187,6 +200,7 @@ struct RowRefWithOwnedChunk
         all_columns = nullptr;
         sort_columns = nullptr;
         row_num = 0;
+        source_stream_index = -1;
     }
 
     void set(SortCursor & cursor, SharedChunkPtr chunk)
@@ -195,10 +209,16 @@ struct RowRefWithOwnedChunk
         row_num = cursor.impl->getRow();
         all_columns = &owned_chunk->all_columns;
         sort_columns = &owned_chunk->sort_columns;
+        source_stream_index = static_cast<int>(cursor.impl->order);
     }
 
     bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
     {
+        /// If both chunks are from a same source stream, and stream doesn't contains row with same primary keys
+        /// (e.g. stream read from a non-L0 part), then we don't need to compare them.
+        if (source_stream_index >= 0 && source_stream_index == other.source_stream_index && !owned_chunk->mayContainRowsWithSamePrimaryKeys())
+            return false;
+
         return RowRef::checkEquals(sort_columns->size(), sort_columns->data(), row_num,
                                    other.sort_columns->data(), other.row_num);
     }

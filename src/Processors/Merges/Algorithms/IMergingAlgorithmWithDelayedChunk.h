@@ -24,6 +24,7 @@ protected:
     void initializeQueue(Inputs inputs);
     void updateCursor(Input & input, size_t source_num);
     bool skipLastRowFor(size_t input_number) const { return current_inputs[input_number].skip_last_row; }
+    void setRowRef(detail::RowRef & row, SortCursor & cursor) { row.set(cursor, current_inputs[cursor.impl->order].chunk.mayContainRowsWithSamePrimaryKeys()); }
 
 private:
     Block header;

@@ -171,9 +171,10 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 auto name = result_header.getByPosition(i).name;
                 ordered_columns.push_back(res.block.getByName(name).column);
             }
+            auto level = task->getInfo().data_part->info.level;
 
             return ChunkAndProgress{
-                .chunk = Chunk(ordered_columns, res.row_count),
+                .chunk = Chunk(ordered_columns, res.row_count, nullptr, level),
                 .num_read_rows = res.num_read_rows,
                 .num_read_bytes = res.num_read_bytes,
                 .is_finished = false};
