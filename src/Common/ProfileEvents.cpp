@@ -288,6 +288,13 @@ The server successfully detected this situation and will download merged part fr
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     \
+    M(ParallelReplicasHandleRequestMicroseconds, "Number of completely denied requests to the initiator") \
+    M(ParallelReplicasHandleAnnouncementMicroseconds, "Number of completely denied requests to the initiator") \
+    M(ParallelReplicasStealingByHashMicroseconds, "Number of completely denied requests to the initiator") \
+    M(ParallelReplicasProcessingPartsMicroseconds, "Number of completely denied requests to the initiator") \
+    M(ParallelReplicasStealingLeftoversMicroseconds, "Number of completely denied requests to the initiator") \
+    M(ParallelReplicasCollectingOwnedSegmentsMicroseconds, "Number of completely denied requests to the initiator") \
+    \
     M(PerfCpuCycles, "Total cycles. Be wary of what happens during CPU frequency scaling.")  \
     M(PerfInstructions, "Retired instructions. Be careful, these can be affected by various issues, most notably hardware interrupt counts.") \
     M(PerfCacheReferences, "Cache accesses. Usually this indicates Last Level Cache accesses but this may vary depending on your CPU. This may include prefetches and coherency messages; again this depends on the design of your CPU.") \

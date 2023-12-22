@@ -13,10 +13,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <Common/Exception.h>
-#include <Common/SipHash.h>
-#include <Common/logger_useful.h>
-#include <Common/thread_local_rng.h>
 #include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/IntersectionsIndexes.h>
@@ -26,8 +22,15 @@
 #include <Storages/MergeTree/RequestResponse.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <boost/algorithm/string/split.hpp>
 #include <fmt/core.h>
 #include <fmt/format.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
+#include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
 
 using namespace DB;
 
@@ -52,6 +55,16 @@ takeFromRange(const MarkRange & range, size_t min_number_of_marks, size_t & curr
     current_marks_amount += range_we_take.getNumberOfMarks();
     return range_we_take.getNumberOfMarks();
 }
+}
+
+namespace ProfileEvents
+{
+extern const Event ParallelReplicasHandleRequestMicroseconds;
+extern const Event ParallelReplicasHandleAnnouncementMicroseconds;
+extern const Event ParallelReplicasStealingByHashMicroseconds;
+extern const Event ParallelReplicasProcessingPartsMicroseconds;
+extern const Event ParallelReplicasStealingLeftoversMicroseconds;
+extern const Event ParallelReplicasCollectingOwnedSegmentsMicroseconds;
 }
 
 namespace DB
@@ -686,6 +699,8 @@ void SingleShardCoordinator::handleInitialAllRangesAnnouncement(InitialAllRanges
 void SingleShardCoordinator::tryToTakeFromDistributionQueue(
     size_t replica_num, ScanMode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasCollectingOwnedSegmentsMicroseconds);
+
     auto & distribution_queue = distribution_by_hash_queue[replica_num];
     auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartNameV1()].contains(replica); };
 
@@ -737,6 +752,8 @@ void SingleShardCoordinator::tryToStealFromQueues(
 {
     if (scan_mode == ScanMode::TakeWhatsMineForStealing)
     {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasStealingByHashMicroseconds);
+
         /// Try to steal from other replicas starting from replicas with longest queues
         std::vector<size_t> order(replicas_count);
         std::iota(order.begin(), order.end(), 0);
@@ -749,6 +766,8 @@ void SingleShardCoordinator::tryToStealFromQueues(
     }
     else
     {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasStealingLeftoversMicroseconds);
+
         /// Check orphaned ranges
         tryToStealFromQueue(ranges_for_stealing_queue, replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
     }
@@ -808,6 +827,8 @@ void SingleShardCoordinator::tryToStealFromQueue(
 void SingleShardCoordinator::processPartsFurther(
     size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasProcessingPartsMicroseconds);
+
     for (const auto & part : all_parts_to_read)
     {
         if (current_marks_amount >= min_number_of_marks)
@@ -1163,6 +1184,8 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
 
 void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
+
     std::lock_guard lock(mutex);
 
     if (!pimpl)
@@ -1176,6 +1199,8 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleRequestMicroseconds);
+
     std::lock_guard lock(mutex);
 
     if (!pimpl)
