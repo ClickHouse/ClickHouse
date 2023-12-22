@@ -59,7 +59,7 @@ using FutureSetPtr = std::shared_ptr<FutureSet>;
 class FutureSetFromStorage final : public FutureSet
 {
 public:
-    FutureSetFromStorage(SetPtr set_);
+    explicit FutureSetFromStorage(SetPtr set_);
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
@@ -97,7 +97,8 @@ public:
         std::unique_ptr<QueryPlan> source_,
         StoragePtr external_table_,
         FutureSetPtr external_table_set_,
-        const Settings & settings);
+        const Settings & settings,
+        bool in_subquery_);
 
     FutureSetFromSubquery(
         String key,
@@ -112,6 +113,8 @@ public:
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
+    void markAsINSubquery() { in_subquery = true; }
+    bool isINSubquery() const { return in_subquery; }
 
 private:
     SetAndKeyPtr set_and_key;
@@ -120,6 +123,7 @@ private:
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
+    bool in_subquery = false; // subquery used in IN operator
 };
 
 /// Container for all the sets used in query.
@@ -145,7 +149,8 @@ public:
         std::unique_ptr<QueryPlan> source,
         StoragePtr external_table,
         FutureSetPtr external_table_set,
-        const Settings & settings);
+        const Settings & settings,
+        bool in_subquery = false);
 
     FutureSetPtr addFromSubquery(
         const Hash & key,
@@ -155,6 +160,7 @@ public:
     FutureSetPtr findTuple(const Hash & key, const DataTypes & types) const;
     std::shared_ptr<FutureSetFromStorage> findStorage(const Hash & key) const;
     std::shared_ptr<FutureSetFromSubquery> findSubquery(const Hash & key) const;
+    void markAsINSubquery(const Hash & key);
 
     using Subqueries = std::vector<std::shared_ptr<FutureSetFromSubquery>>;
     Subqueries getSubqueries() const;
