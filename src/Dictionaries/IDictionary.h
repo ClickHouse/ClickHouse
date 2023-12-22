@@ -257,11 +257,10 @@ public:
       */
     virtual ColumnPtr getColumnOrDefaultShortCircuit(
         const std::string & attribute_name [[maybe_unused]],
-        const DataTypePtr & result_type [[maybe_unused]],
+        const DataTypePtr & attribute_type [[maybe_unused]],
         const Columns & key_columns [[maybe_unused]],
         const DataTypes & key_types [[maybe_unused]],
-        const ColumnWithTypeAndName & default_argument [[maybe_unused]],
-        const DataTypePtr & result_type_short_circuit [[maybe_unused]]) const
+        IColumn::Filter & default_mask [[maybe_unused]]) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Method getColumnOrDefault is not supported for {} dictionary.",
@@ -275,11 +274,10 @@ public:
       */
     virtual Columns getColumnsOrDefaultShortCircuit(
         const Strings & attribute_names,
-        const DataTypes & result_types,
+        const DataTypes & attribute_types,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnWithTypeAndName & default_argument,
-        const DataTypes & result_short_circuit_types) const
+        IColumn::Filter & default_mask) const
     {
         size_t attribute_names_size = attribute_names.size();
 
@@ -289,10 +287,9 @@ public:
         for (size_t i = 0; i < attribute_names_size; ++i)
         {
             const auto & attribute_name = attribute_names[i];
-            const auto & result_type = result_types[i];
-            const auto & result_short_circuit_type = result_short_circuit_types[i];
-            result.emplace_back(getColumnOrDefaultShortCircuit(attribute_name, result_type,
-                key_columns, key_types, default_argument, result_short_circuit_type));
+            const auto & attribute_type = attribute_types[i];
+            result.emplace_back(getColumnOrDefaultShortCircuit(attribute_name,
+                attribute_type, key_columns, key_types, default_mask));
         }
 
         return result;

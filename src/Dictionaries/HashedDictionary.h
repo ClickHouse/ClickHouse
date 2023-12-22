@@ -148,11 +148,10 @@ public:
 
     ColumnPtr getColumnOrDefaultShortCircuit(
         const std::string & attribute_name,
-        const DataTypePtr & result_type,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnWithTypeAndName & default_argument,
-        const DataTypePtr & result_type_short_circuit) const override;
+        IColumn::Filter & default_mask) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -252,14 +251,12 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType, bool is_nullable, typename DictionaryAttributeType, typename ValueSetter>
+    template <typename AttributeType, typename ValueSetter>
     void getItemsShortCircuitImpl(
         const Attribute & attribute,
         DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
         ValueSetter && set_value,
-        const ColumnWithTypeAndName & default_argument,
-        const DictionaryAttribute & dictionary_attribute,
-        const DataTypePtr & result_type_short_circuit) const;
+        IColumn::Filter & default_mask) const;
 
     template <typename GetContainersFunc>
     void getAttributeContainers(size_t attribute_index, GetContainersFunc && get_containers_func);
@@ -498,11 +495,10 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumnOrDefaultShortCircuit(
     const std::string & attribute_name,
-    const DataTypePtr & result_type,
+    const DataTypePtr & attribute_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnWithTypeAndName & default_argument,
-    const DataTypePtr & result_type_short_circuit) const
+    IColumn::Filter & default_mask) const
 {
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -514,7 +510,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumnOrDef
 
     const size_t size = extractor.getKeysSize();
 
-    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, attribute_type);
     const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     auto & attribute = attributes[attribute_index];
 
@@ -541,20 +537,18 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumnOrDef
         {
             auto * out = column.get();
 
-            getItemsShortCircuitImpl<ValueType, false, AttributeType>(
+            getItemsShortCircuitImpl<ValueType>(
                 attribute,
                 extractor,
                 [&](const size_t, const Array & value, bool) { out->insert(value); },
-                default_argument,
-                dictionary_attribute,
-                result_type_short_circuit);
+                default_mask);
         }
         else if constexpr (std::is_same_v<ValueType, StringRef>)
         {
             auto * out = column.get();
 
             if (is_attribute_nullable)
-                getItemsShortCircuitImpl<ValueType, true, AttributeType>(
+                getItemsShortCircuitImpl<ValueType>(
                     attribute,
                     extractor,
                     [&](size_t row, StringRef value, bool is_null)
@@ -562,24 +556,20 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumnOrDef
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
                     },
-                    default_argument,
-                    dictionary_attribute,
-                    result_type_short_circuit);
+                    default_mask);
             else
-                getItemsShortCircuitImpl<ValueType, false, AttributeType>(
+                getItemsShortCircuitImpl<ValueType>(
                     attribute,
                     extractor,
                     [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
-                    default_argument,
-                    dictionary_attribute,
-                    result_type_short_circuit);
+                    default_mask);
         }
         else
         {
             auto & out = column->getData();
 
             if (is_attribute_nullable)
-                getItemsShortCircuitImpl<ValueType, true, AttributeType>(
+                getItemsShortCircuitImpl<ValueType>(
                     attribute,
                     extractor,
                     [&](size_t row, const auto value, bool is_null)
@@ -587,17 +577,13 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumnOrDef
                         (*vec_null_map_to)[row] = is_null;
                         out[row] = value;
                     },
-                    default_argument,
-                    dictionary_attribute,
-                    result_type_short_circuit);
+                    default_mask);
             else
-                getItemsShortCircuitImpl<ValueType, false, AttributeType>(
+                getItemsShortCircuitImpl<ValueType>(
                     attribute,
                     extractor,
                     [&](size_t row, const auto value, bool) { out[row] = value; },
-                    default_argument,
-                    dictionary_attribute,
-                    result_type_short_circuit);
+                    default_mask);
         }
 
         result = std::move(column);
@@ -1151,19 +1137,17 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsImpl(
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-template <typename AttributeType, bool is_nullable, typename DictionaryAttributeType, typename ValueSetter>
+template <typename AttributeType, typename ValueSetter>
 void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCircuitImpl(
     const Attribute & attribute,
     DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
     ValueSetter && set_value,
-    const ColumnWithTypeAndName & default_argument,
-    const DictionaryAttribute & dictionary_attribute,
-    const DataTypePtr & result_type_short_circuit) const
+    IColumn::Filter & default_mask) const
 {
     const auto & attribute_containers = std::get<CollectionsHolder<AttributeType>>(attribute.containers);
     const size_t keys_size = keys_extractor.getKeysSize();
-    auto cond_col = ColumnVector<UInt8>::create(keys_size);
-    auto & cond = cond_col->getData();
+    default_mask.resize(keys_size);
+    size_t keys_found = 0;
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
@@ -1173,28 +1157,21 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsShortCircui
         const auto & container = attribute_containers[shard];
         const auto it = container.find(key);
 
-        cond[key_index] = (it != container.end()) ? 1 : 0;
+        if (it != container.end())
+        {
+            set_value(key_index, getValueFromCell(it), false);
+            default_mask[key_index] = 1;
+
+            ++keys_found;
+        }
+        else
+            default_mask[key_index] = 0;
+
         keys_extractor.rollbackCurrentKey();
     }
 
-    keys_extractor.reset();
-
-    IColumn::Filter mask(keys_size, 1);
-    auto mask_info = extractMask(mask, std::move(cond_col));
-    inverseMask(mask, mask_info);
-    ColumnWithTypeAndName column_before_cast = default_argument;
-    maskedExecute(column_before_cast, mask, mask_info);
-
-    ColumnWithTypeAndName column_to_cast = {
-        column_before_cast.column->convertToFullColumnIfConst(),
-        column_before_cast.type,
-        column_before_cast.name};
-    auto result = castColumnAccurate(column_to_cast, result_type_short_circuit);
-
-    DictionaryDefaultValueExtractor<DictionaryAttributeType> default_value_extractor(
-        dictionary_attribute.null_value, result);
-
-    getItemsImpl<AttributeType, is_nullable>(attribute, keys_extractor, set_value, default_value_extractor);
+    query_count.fetch_add(keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>

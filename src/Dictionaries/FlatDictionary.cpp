@@ -154,11 +154,10 @@ ColumnPtr FlatDictionary::getColumn(
 
 ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
         const std::string & attribute_name,
-        const DataTypePtr & result_type,
+        const DataTypePtr & atribute_type,
         const Columns & key_columns,
         const DataTypes & key_types [[maybe_unused]],
-        const ColumnWithTypeAndName & default_argument,
-        const DataTypePtr & result_type_short_circuit) const
+        IColumn::Filter & default_mask) const
 {
     ColumnPtr result;
 
@@ -167,7 +166,7 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
 
     auto size = ids.size();
 
-    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, atribute_type);
 
     size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     const auto & attribute = attributes[attribute_index];
@@ -195,20 +194,18 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
         {
             auto * out = column.get();
 
-            getItemsShortCircuitImpl<ValueType, false, AttributeType>(
+            getItemsShortCircuitImpl<ValueType, false>(
                 attribute,
                 ids,
                 [&](size_t, const Array & value, bool) { out->insert(value); },
-                default_argument,
-                dictionary_attribute,
-                result_type_short_circuit);
+                default_mask);
         }
         else if constexpr (std::is_same_v<ValueType, StringRef>)
         {
             auto * out = column.get();
 
             if (is_attribute_nullable)
-                getItemsShortCircuitImpl<ValueType, true, AttributeType>(
+                getItemsShortCircuitImpl<ValueType, true>(
                     attribute,
                     ids,
                     [&](size_t row, StringRef value, bool is_null)
@@ -216,24 +213,20 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
                         (*vec_null_map_to)[row] = is_null;
                         out->insertData(value.data, value.size);
                     },
-                    default_argument,
-                    dictionary_attribute,
-                    result_type_short_circuit);
+                    default_mask);
             else
-                getItemsShortCircuitImpl<ValueType, false, AttributeType>(
+                getItemsShortCircuitImpl<ValueType, false>(
                     attribute,
                     ids,
                     [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
-                    default_argument,
-                    dictionary_attribute,
-                    result_type_short_circuit);
+                    default_mask);
         }
         else
         {
             auto & out = column->getData();
 
             if (is_attribute_nullable)
-                getItemsShortCircuitImpl<ValueType, true, AttributeType>(
+                getItemsShortCircuitImpl<ValueType, true>(
                     attribute,
                     ids,
                     [&](size_t row, const auto value, bool is_null)
@@ -241,17 +234,13 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
                         (*vec_null_map_to)[row] = is_null;
                         out[row] = value;
                     },
-                    default_argument,
-                    dictionary_attribute,
-                    result_type_short_circuit);
+                    default_mask);
             else
-                getItemsShortCircuitImpl<ValueType, false, AttributeType>(
+                getItemsShortCircuitImpl<ValueType, false>(
                     attribute,
                     ids,
                     [&](size_t row, const auto value, bool) { out[row] = value; },
-                    default_argument,
-                    dictionary_attribute,
-                    result_type_short_circuit);
+                    default_mask);
         }
 
         result = std::move(column);
@@ -683,42 +672,39 @@ void FlatDictionary::getItemsImpl(
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
-template <typename AttributeType, bool is_nullable, typename DictionaryAttributeType,
-          typename ValueSetter>
+template <typename AttributeType, bool is_nullable, typename ValueSetter>
 void FlatDictionary::getItemsShortCircuitImpl(
     const Attribute & attribute,
     const PaddedPODArray<UInt64> & keys,
     ValueSetter && set_value,
-    const ColumnWithTypeAndName & default_argument,
-    const DictionaryAttribute & dictionary_attribute,
-    const DataTypePtr & result_type_short_circuit) const
+    IColumn::Filter & default_mask) const
 {
     const auto rows = keys.size();
-    auto cond_col = ColumnVector<UInt8>::create(rows);
-    auto & cond = cond_col->getData();
+    default_mask.resize(rows);
+    const auto & container = std::get<ContainerType<AttributeType>>(attribute.container);
+    size_t keys_found = 0;
 
     for (size_t row = 0; row < rows; ++row)
     {
         const auto key = keys[row];
-        cond[row] = (key < loaded_keys.size() && loaded_keys[key]) ? 1 : 0;
+
+        if (key < loaded_keys.size() && loaded_keys[key])
+        {
+            default_mask[row] = 1;
+
+            if constexpr (is_nullable)
+                set_value(keys_found, container[key], attribute.is_nullable_set->find(key) != nullptr);
+            else
+                set_value(keys_found, container[key], false);
+
+            ++keys_found;
+        }
+        else
+            default_mask[row] = 0;
     }
 
-    IColumn::Filter mask(rows, 1);
-    auto mask_info = extractMask(mask, std::move(cond_col));
-    inverseMask(mask, mask_info);
-    ColumnWithTypeAndName column_before_cast = default_argument;
-    maskedExecute(column_before_cast, mask, mask_info);
-
-    ColumnWithTypeAndName column_to_cast = {
-        column_before_cast.column->convertToFullColumnIfConst(),
-        column_before_cast.type,
-        column_before_cast.name};
-    auto result = castColumnAccurate(column_to_cast, result_type_short_circuit);
-
-    DictionaryDefaultValueExtractor<DictionaryAttributeType> default_value_extractor(
-        dictionary_attribute.null_value, result);
-
-    getItemsImpl<AttributeType, is_nullable>(attribute, keys, set_value, default_value_extractor);
+    query_count.fetch_add(rows, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
 template <typename T>
