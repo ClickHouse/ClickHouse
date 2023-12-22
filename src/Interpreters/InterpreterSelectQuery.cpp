@@ -1698,7 +1698,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         return step_raw_ptr;
                     };
 
-                    if (expressions.join->pipelineType() == JoinPipelineType::YShaped)
+                    if (expressions.join->pipelineType() == JoinPipelineType::YShaped && expressions.join->getTableJoin().kind() != JoinKind::Paste)
                     {
                         const auto & table_join = expressions.join->getTableJoin();
                         const auto & join_clause = table_join.getOnlyClause();

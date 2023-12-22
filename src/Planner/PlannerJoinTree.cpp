@@ -1312,7 +1312,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             return step_raw_ptr;
         };
 
-        if (join_algorithm->pipelineType() == JoinPipelineType::YShaped)
+        if (join_algorithm->pipelineType() == JoinPipelineType::YShaped && join_kind != JoinKind::Paste)
         {
             const auto & join_clause = table_join->getOnlyClause();
 
