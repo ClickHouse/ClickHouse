@@ -63,7 +63,7 @@ public:
     void addColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier)
     {
         if (hasColumn(column.name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column with name {} already exists");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column with name {} already exists", column.name);
 
         addColumnImpl(column, column_identifier);
     }

@@ -146,7 +146,7 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
 {
     auto objects = listObjects(*client, s3_uri, file_name);
     if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist");
+        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
     return objects[0].GetSize();
 }
 
@@ -299,7 +299,7 @@ UInt64 BackupWriterS3::getFileSize(const String & file_name)
 {
     auto objects = listObjects(*client, s3_uri, file_name);
     if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist");
+        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
     return objects[0].GetSize();
 }
 
