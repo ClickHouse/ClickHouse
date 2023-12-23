@@ -4833,6 +4833,7 @@ JSONExtractString(rdkafka_stat, 'type'): consumer
 
     kafka_delete_topic(admin_client, topic)
 
+
 def test_streaming_tail(kafka_cluster):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
@@ -4848,7 +4849,9 @@ def test_streaming_tail(kafka_cluster):
     )
 
     for i in range(5):
-        producer.send(topic=topic, value=json.dumps({"key": i, "value": i}), partition=0)
+        producer.send(
+            topic=topic, value=json.dumps({"key": i, "value": i}), partition=0
+        )
     producer.flush()
 
     instance.query(
@@ -4866,10 +4869,16 @@ def test_streaming_tail(kafka_cluster):
         """
     )
 
-    query = instance.get_query_request("SELECT * FROM test.kafka_streaming_tail SETTINGS allow_experimental_streaming_query_mode = 'streaming'", timeout=10, ignore_error=True)
+    query = instance.get_query_request(
+        "SELECT * FROM test.kafka_streaming_tail SETTINGS allow_experimental_streaming_query_mode = 'streaming'",
+        timeout=10,
+        ignore_error=True,
+    )
 
     for i in range(5):
-        producer.send(topic=topic, value=json.dumps({"key": i, "value": i}), partition=0)
+        producer.send(
+            topic=topic, value=json.dumps({"key": i, "value": i}), partition=0
+        )
     producer.flush()
 
     (result, err) = query.get_answer_and_error()
@@ -4891,6 +4900,7 @@ def test_streaming_tail(kafka_cluster):
 
     kafka_delete_topic(admin_client, topic)
 
+
 def test_streaming_global_aggregation(kafka_cluster):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
@@ -4906,7 +4916,9 @@ def test_streaming_global_aggregation(kafka_cluster):
     )
 
     for i in range(5):
-        producer.send(topic=topic, value=json.dumps({"key": i, "value": i}), partition=0)
+        producer.send(
+            topic=topic, value=json.dumps({"key": i, "value": i}), partition=0
+        )
     producer.flush()
 
     instance.query(
@@ -4924,18 +4936,26 @@ def test_streaming_global_aggregation(kafka_cluster):
         """
     )
 
-    query = instance.get_query_request("SELECT count(1) FROM test.kafka_streaming_aggr EMIT STREAM PERIODIC 3s SETTINGS allow_experimental_streaming_query_mode = 'streaming'", timeout=10, ignore_error=True)
+    query = instance.get_query_request(
+        "SELECT count(1) FROM test.kafka_streaming_aggr EMIT STREAM PERIODIC 3s SETTINGS allow_experimental_streaming_query_mode = 'streaming'",
+        timeout=10,
+        ignore_error=True,
+    )
 
     time.sleep(1)
 
     for i in range(5):
-        producer.send(topic=topic, value=json.dumps({"key": i, "value": i}), partition=0)
+        producer.send(
+            topic=topic, value=json.dumps({"key": i, "value": i}), partition=0
+        )
     producer.flush()
 
     time.sleep(4)
 
     for i in range(5):
-        producer.send(topic=topic, value=json.dumps({"key": i, "value": i}), partition=0)
+        producer.send(
+            topic=topic, value=json.dumps({"key": i, "value": i}), partition=0
+        )
     producer.flush()
 
     (result, err) = query.get_answer_and_error()
