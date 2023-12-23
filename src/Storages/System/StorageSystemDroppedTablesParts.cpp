@@ -13,8 +13,6 @@ namespace DB
 StoragesDroppedInfoStream::StoragesDroppedInfoStream(const SelectQueryInfo & query_info, ContextPtr context)
         : StoragesInfoStreamBase(context)
 {
-    needsLock = false;
-
     /// Will apply WHERE to subset of columns and then add more columns.
     /// This is kind of complicated, but we use WHERE to do less work.
 

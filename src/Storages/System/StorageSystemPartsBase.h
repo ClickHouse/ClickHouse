@@ -41,6 +41,9 @@ public:
         : query_id(context->getCurrentQueryId()), settings(context->getSettingsRef()), next_row(0), rows(0)
     {}
 
+    StoragesInfoStreamBase(const StoragesInfoStreamBase&) = default;
+    virtual ~StoragesInfoStreamBase() = default;
+
     StoragesInfo next()
     {
         while (next_row < rows)
@@ -68,16 +71,9 @@ public:
 
             info.storage = storages.at(storage_uuid);
 
-            if (needsLock)
-            {
-                /// For table not to be dropped and set of columns to remain constant.
-                info.table_lock = info.storage->tryLockForShare(query_id, settings.lock_acquire_timeout);
-                if (info.table_lock == nullptr)
-                {
-                    // Table was dropped while acquiring the lock, skipping table
-                    continue;
-                }
-            }
+            /// For table not to be dropped and set of columns to remain constant.
+            if (!tryLockTable(info))
+                continue;
 
             info.engine = info.storage->getName();
 
@@ -90,7 +86,13 @@ public:
 
         return {};
     }
-
+protected:
+    virtual bool tryLockTable(StoragesInfo & info)
+    {
+        info.table_lock = info.storage->tryLockForShare(query_id, settings.lock_acquire_timeout);
+        // nullptr means table was dropped while acquiring the lock
+        return info.table_lock != nullptr;
+    }
 protected:
     String query_id;
     Settings settings;
@@ -106,8 +108,6 @@ protected:
 
     using StoragesMap = std::unordered_map<UUID, StoragePtr>;
     StoragesMap storages;
-
-    bool needsLock = true;
 };
 
 

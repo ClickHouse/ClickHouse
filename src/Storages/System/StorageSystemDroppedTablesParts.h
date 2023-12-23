@@ -10,6 +10,12 @@ class StoragesDroppedInfoStream : public StoragesInfoStreamBase
 {
 public:
     StoragesDroppedInfoStream(const SelectQueryInfo & query_info, ContextPtr context);
+protected:
+    bool tryLockTable(StoragesInfo &) override
+    {
+        // we don't need to lock a dropped table
+        return true;
+    }
 };
 
 class Context;
