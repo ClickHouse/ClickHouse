@@ -126,7 +126,7 @@ private:
     bool in_subquery = false; // subquery used in IN operator
                               // the flag can be removed after enabling new analyzer and removing interpreter
                               // or after enabling support IN operator with subqueries in parallel replicas
-                              // Note: it's necessary with interpreter since prepaired sets used also for GLOBAL JOINs,
+                              // Note: it's necessary with interpreter since prepared sets used also for GLOBAL JOINs,
                               //       with new analyzer it's not a case
 };
 
