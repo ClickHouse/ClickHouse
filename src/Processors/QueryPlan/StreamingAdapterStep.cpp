@@ -20,15 +20,15 @@ static ITransformingStep::Traits getTraits()
         }
     };
 }
-
-StreamingAdapterStep::StreamingAdapterStep(const DataStream & input_stream, SubscriberPtr sub)
-    : ITransformingStep(input_stream, input_stream.header, getTraits()), subscriber(std::move(sub))
+StreamingAdapterStep::StreamingAdapterStep(const DataStream & input_stream, Block sample, SubscriberPtr sub)
+    : ITransformingStep(input_stream, input_stream.header, getTraits()), storage_sample(std::move(sample)), subscriber(std::move(sub))
 {
 }
 
 void StreamingAdapterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto transform = std::make_shared<StreamingAdapter>(pipeline.getHeader(), pipeline.getNumStreams(), subscriber);
+    auto transform = std::make_shared<StreamingAdapter>(
+        pipeline.getHeader(), pipeline.getNumStreams(), std::move(storage_sample), std::move(subscriber));
 
     pipeline.addTransform(std::move(transform));
 }

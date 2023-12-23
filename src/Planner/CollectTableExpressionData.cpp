@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_PREWHERE;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -192,32 +193,27 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
     }
 }
 
+// checks that there are only user configured columns in requested set
+void checkStreamingConstraints(const StoragePtr & storage, const TableExpressionData & data)
+{
+    Block sample = storage->getInMemoryMetadata().getSampleBlock();
+
+    for (const auto & column_name : data.getColumnNames())
+    {
+        auto * column = sample.findByName(column_name);
+
+        if (column == nullptr)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Only regular columns should be requested in streaming query, but '{}' is not", column_name);
+    }
+}
+
 }
 
 void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr & planner_context)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
     auto table_expressions_nodes = extractTableExpressions(query_node_typed.getJoinTree());
-
-    for (auto & table_expression_node : table_expressions_nodes)
-    {
-        auto & table_expression_data = planner_context->getOrCreateTableExpressionData(table_expression_node);
-
-        if (auto * table_node = table_expression_node->as<TableNode>())
-        {
-            bool storage_is_remote = table_node->getStorage()->isRemote();
-            bool storage_is_merge_tree = table_node->getStorage()->isMergeTree();
-            table_expression_data.setIsRemote(storage_is_remote);
-            table_expression_data.setIsMergeTree(storage_is_merge_tree);
-        }
-        else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>())
-        {
-            bool storage_is_remote = table_function_node->getStorage()->isRemote();
-            bool storage_is_merge_tree = table_function_node->getStorage()->isMergeTree();
-            table_expression_data.setIsRemote(storage_is_remote);
-            table_expression_data.setIsMergeTree(storage_is_merge_tree);
-        }
-    }
 
     CollectSourceColumnsVisitor collect_source_columns_visitor(*planner_context);
     for (auto & node : query_node_typed.getChildren())
@@ -230,6 +226,32 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
             continue;
 
         collect_source_columns_visitor.visit(node);
+    }
+
+    for (auto & table_expression_node : table_expressions_nodes)
+    {
+        auto & table_expression_data = planner_context->getOrCreateTableExpressionData(table_expression_node);
+
+        if (auto * table_node = table_expression_node->as<TableNode>())
+        {
+            bool storage_is_remote = table_node->getStorage()->isRemote();
+            bool storage_is_merge_tree = table_node->getStorage()->isMergeTree();
+            table_expression_data.setIsRemote(storage_is_remote);
+            table_expression_data.setIsMergeTree(storage_is_merge_tree);
+
+            if (table_node->hasTableExpressionModifiers() && table_node->getTableExpressionModifiers()->hasStream())
+                checkStreamingConstraints(table_node->getStorage(), table_expression_data);
+        }
+        else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>())
+        {
+            bool storage_is_remote = table_function_node->getStorage()->isRemote();
+            bool storage_is_merge_tree = table_function_node->getStorage()->isMergeTree();
+            table_expression_data.setIsRemote(storage_is_remote);
+            table_expression_data.setIsMergeTree(storage_is_merge_tree);
+
+            if (table_function_node->hasTableExpressionModifiers() && table_function_node->getTableExpressionModifiers()->hasStream())
+                checkStreamingConstraints(table_function_node->getStorage(), table_expression_data);
+        }
     }
 
     if (query_node_typed.hasPrewhere())

@@ -843,7 +843,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
 
                     auto streaming_step = std::make_unique<StreamingAdapterStep>(
-                        query_plan.getCurrentDataStream(), storage->subscribeForChanges());
+                        query_plan.getCurrentDataStream(), storage->getInMemoryMetadata().getSampleBlock(), storage->subscribeForChanges());
 
                     streaming_step->setStepDescription(fmt::format("table: {}", storage->getStorageID().getFullTableName()));
 

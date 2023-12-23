@@ -12,7 +12,7 @@ namespace DB
 class StreamingAdapter final : public IProcessor
 {
 public:
-    StreamingAdapter(const Block & header_, size_t num_streams, SubscriberPtr sub);
+    StreamingAdapter(const Block & header_, size_t num_streams, Block sample, SubscriberPtr sub);
 
     String getName() const override { return "StreamingAdapter"; }
 
@@ -41,10 +41,13 @@ private:
         PortsDataState state = PortsDataState::ReadingFromStorage;
     };
 
+    Chunk FilterStorageChunk(Chunk chunk, const Block& header);
+
     void updateState(PortsData & data);
     Status prepareStoragePair(PortsData & data);
     Status prepareSubscriptionPair(PortsData & data);
 
+    Block storage_sample;
     SubscriberPtr subscriber;
     std::list<Chunk> subscriber_chunks;
 

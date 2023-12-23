@@ -15,8 +15,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-StreamingAdapter::StreamingAdapter(const Block & header_, size_t num_streams, SubscriberPtr sub)
-    : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_)), subscriber(std::move(sub))
+StreamingAdapter::StreamingAdapter(const Block & header_, size_t num_streams, Block sample, SubscriberPtr sub)
+    : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
+    , storage_sample(std::move(sample))
+    , subscriber(std::move(sub))
 {
     ports_data.resize(num_streams);
 
@@ -220,6 +222,21 @@ IProcessor::Status StreamingAdapter::prepareSubscriptionPair(PortsData & data)
     return Status::PortFull;
 }
 
+Chunk StreamingAdapter::FilterStorageChunk(Chunk chunk, const Block & header)
+{
+    // chunk was inserted into storage -> it must have the same structure as in the storage sample
+    Block storage_block = storage_sample.cloneWithColumns(chunk.detachColumns());
+
+    Block result;
+    for (const auto & column_name : header.getNames())
+    {
+        auto column = storage_block.getByName(column_name);
+        result.insert(std::move(column));
+    }
+
+    return Chunk(result.getColumns(), result.rows());
+}
+
 void StreamingAdapter::work()
 {
     if (isCancelled())
@@ -246,7 +263,8 @@ void StreamingAdapter::work()
 
         if (data.need_next_subscriber_chunk)
         {
-            data.subscriber_chunk = std::move(subscriber_chunks.front());
+            Chunk new_chunk = std::move(subscriber_chunks.front());
+            data.subscriber_chunk = FilterStorageChunk(std::move(new_chunk), data.output_port->getHeader());
             subscriber_chunks.pop_front();
             data.need_next_subscriber_chunk = false;
         }
