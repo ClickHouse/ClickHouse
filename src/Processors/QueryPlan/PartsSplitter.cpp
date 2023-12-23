@@ -46,7 +46,6 @@ int compareValues(const Values & lhs, const Values & rhs)
     return 0;
 }
 
-
 /// Adaptor to access PK values from index.
 class IndexAccess
 {
@@ -190,7 +189,11 @@ struct PartsRangesIterator
             return ev_mark < other_ev_mark;
         }
 
-        return part_index < other.part_index;
+        if (event == other.event)
+            return part_index < other.part_index;
+
+        // Start event always before end event
+        return event < other.event;
     }
 
     [[maybe_unused]] bool operator==(const PartsRangesIterator & other) const
@@ -323,7 +326,7 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts)
 
     std::unordered_map<size_t, MarkRange> part_index_start_to_range;
 
-    chassert(parts_ranges.size() > 1);
+    chassert(!parts_ranges.empty());
     chassert(parts_ranges[0].event == PartsRangesIterator::EventType::RangeStart);
     part_index_start_to_range[parts_ranges[0].part_index] = parts_ranges[0].range;
 
