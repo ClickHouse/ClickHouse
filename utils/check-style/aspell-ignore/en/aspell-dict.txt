@@ -502,6 +502,7 @@ Memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
+MemoryResidentMax
 MemorySanitizer
 MemoryShared
 MemoryTracking
