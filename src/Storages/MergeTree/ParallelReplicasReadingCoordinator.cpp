@@ -578,10 +578,11 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         initialize();
     }
 
+    const auto replica_num = request.replica_num;
     auto response = pimpl->handleRequest(std::move(request));
     if (!response.finish)
     {
-        if (replicas_used.insert(request.replica_num).second)
+        if (replicas_used.insert(replica_num).second)
             ProfileEvents::increment(ProfileEvents::ParallelReplicasUsedCount);
     }
 
