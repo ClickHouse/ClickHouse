@@ -75,6 +75,13 @@ namespace ErrorCodes
 }
 namespace
 {
+    struct HDFSFileInfoDeleter
+    {
+        /// Can have only one entry (see hdfsGetPathInfo())
+        void operator()(hdfsFileInfo * info) { hdfsFreeFileInfo(info, 1); }
+    };
+    using HDFSFileInfoPtr = std::unique_ptr<hdfsFileInfo, HDFSFileInfoDeleter>;
+
     /* Recursive directory listing with matched paths as a result.
      * Have the same method in StorageFile.
      */
@@ -90,13 +97,12 @@ namespace
         if (first_glob_pos == std::string::npos)
         {
             const String path = fs::path(path_for_ls + for_match.substr(1)).lexically_normal();
-            HDFSFileInfo ls;
-            ls.file_info = hdfsGetPathInfo(fs.get(), path.c_str());
-            if (ls.file_info != nullptr) // NOLINT
+            HDFSFileInfoPtr hdfs_info(hdfsGetPathInfo(fs.get(), path.c_str()));
+            if (hdfs_info) // NOLINT
             {
                 result.push_back(StorageHDFS::PathWithInfo{
                         String(path),
-                        StorageHDFS::PathInfo{ls.file_info->mLastMod, static_cast<size_t>(ls.file_info->mSize)}});
+                        StorageHDFS::PathInfo{hdfs_info->mLastMod, static_cast<size_t>(hdfs_info->mSize)}});
             }
             return result;
         }
@@ -184,13 +190,6 @@ namespace
         }
         return res;
     }
-
-    struct HDFSFileInfoDeleter
-    {
-        /// Can have only one entry (see hdfsGetPathInfo())
-        void operator()(hdfsFileInfo * info) { hdfsFreeFileInfo(info, 1); }
-    };
-    using HDFSFileInfoPtr = std::unique_ptr<hdfsFileInfo, HDFSFileInfoDeleter>;
 }
 
 StorageHDFS::StorageHDFS(
@@ -610,7 +609,7 @@ bool HDFSSource::initialize()
         /// We should not return single chunk with all number of rows,
         /// because there is a chance that this chunk will be materialized later
         /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
-        /// Instead, we use special ConstChunkGenerator that will generate chunks
+        /// Instead, we use a special ConstChunkGenerator that will generate chunks
         /// with max_block_size rows until total number of rows is reached.
         auto source = std::make_shared<ConstChunkGenerator>(block_for_format, *num_rows_from_cache, max_block_size);
         builder.init(Pipe(source));
@@ -637,7 +636,7 @@ bool HDFSSource::initialize()
     }
 
     /// Add ExtractColumnsTransform to extract requested columns/subcolumns
-    /// from chunk read by IInputFormat.
+    /// from the chunk read by IInputFormat.
     builder.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<ExtractColumnsTransform>(header, requested_columns);

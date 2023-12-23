@@ -21,14 +21,15 @@ namespace
 SLRUFileCachePriority::SLRUFileCachePriority(
     size_t max_size_,
     size_t max_elements_,
-    double size_ratio)
+    double size_ratio_)
     : IFileCachePriority(max_size_, max_elements_)
+    , size_ratio(size_ratio_)
     , protected_queue(LRUFileCachePriority(getRatio(max_size_, size_ratio), getRatio(max_elements_, size_ratio)))
     , probationary_queue(LRUFileCachePriority(getRatio(max_size_, 1 - size_ratio), getRatio(max_elements_, 1 - size_ratio)))
 {
     LOG_DEBUG(
         log, "Using probationary queue size: {}, protected queue size: {}",
-        probationary_queue.getSizeLimit(), protected_queue.getSizeLimit());
+        probationary_queue.max_size, protected_queue.max_elements);
 }
 
 size_t SLRUFileCachePriority::getSize(const CacheGuard::Lock & lock) const
@@ -151,7 +152,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
     /// Entry is in probationary queue.
     /// We need to move it to protected queue.
     const size_t size = iterator.getEntry().size;
-    if (size > protected_queue.getSizeLimit())
+    if (size > protected_queue.getSizeLimit(lock))
     {
         /// Entry size is bigger than the whole protected queue limit.
         /// This is only possible if protected_queue_size_limit is less than max_file_segment_size,
@@ -221,10 +222,10 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
     iterator.is_protected = true;
 }
 
-std::vector<FileSegmentInfo> SLRUFileCachePriority::dump(FileCache & cache, const CacheGuard::Lock & lock)
+std::vector<FileSegmentInfo> SLRUFileCachePriority::dump(const CacheGuard::Lock & lock)
 {
-    auto res = probationary_queue.dump(cache, lock);
-    auto part_res = protected_queue.dump(cache, lock);
+    auto res = probationary_queue.dump(lock);
+    auto part_res = protected_queue.dump(lock);
     res.insert(res.end(), part_res.begin(), part_res.end());
     return res;
 }
@@ -233,6 +234,21 @@ void SLRUFileCachePriority::shuffle(const CacheGuard::Lock & lock)
 {
     protected_queue.shuffle(lock);
     probationary_queue.shuffle(lock);
+}
+
+bool SLRUFileCachePriority::modifySizeLimits(
+    size_t max_size_, size_t max_elements_, double size_ratio_, const CacheGuard::Lock & lock)
+{
+    if (max_size == max_size_ && max_elements == max_elements_ && size_ratio == size_ratio_)
+        return false; /// Nothing to change.
+
+    protected_queue.modifySizeLimits(getRatio(max_size_, size_ratio_), getRatio(max_elements_, size_ratio_), 0, lock);
+    probationary_queue.modifySizeLimits(getRatio(max_size_, 1 - size_ratio_), getRatio(max_elements_, 1 - size_ratio_), 0, lock);
+
+    max_size = max_size_;
+    max_elements = max_elements_;
+    size_ratio = size_ratio_;
+    return true;
 }
 
 SLRUFileCachePriority::SLRUIterator::SLRUIterator(

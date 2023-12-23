@@ -25,8 +25,8 @@ from commit_status_helper import (
     post_commit_status,
     update_mergeable_check,
 )
-from docker_pull_helper import DockerImage, get_image_with_version
-from env_helper import TEMP_PATH, REPORTS_PATH
+from docker_images_helper import get_docker_image, pull_image, DockerImage
+from env_helper import TEMP_PATH, REPORT_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from s3_helper import S3Helper
@@ -123,7 +123,7 @@ def main():
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
-    reports_path = Path(REPORTS_PATH)
+    reports_path = Path(REPORT_PATH)
 
     args = parse_args()
     check_name = args.check_name
@@ -133,7 +133,7 @@ def main():
     pr_info = PRInfo()
 
     commit = get_commit(gh, pr_info.sha)
-    atexit.register(update_mergeable_check, gh, pr_info, check_name)
+    atexit.register(update_mergeable_check, commit, pr_info, check_name)
 
     rerun_helper = RerunHelper(commit, check_name)
     if rerun_helper.is_already_finished_by_status():
@@ -141,7 +141,7 @@ def main():
         sys.exit(0)
 
     image_name = get_image_name()
-    docker_image = get_image_with_version(reports_path, image_name)
+    docker_image = pull_image(get_docker_image(image_name))
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
@@ -205,7 +205,9 @@ def main():
     )
 
     print(f"::notice:: {check_name} Report url: {report_url}")
-    post_commit_status(commit, state, report_url, description, check_name, pr_info)
+    post_commit_status(
+        commit, state, report_url, description, check_name, pr_info, dump_to_file=True
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

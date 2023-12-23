@@ -64,7 +64,7 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
             }
         }
 
-        auto cache = FileCacheFactory::instance().getOrCreate(name, file_cache_settings);
+        auto cache = FileCacheFactory::instance().getOrCreate(name, file_cache_settings, predefined_configuration ? "" : config_prefix);
         auto disk = disk_it->second;
         if (!dynamic_cast<const DiskObjectStorage *>(disk.get()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

@@ -142,7 +142,7 @@ Chain StorageXDBC::writeImpl(const ASTPtr & /* query */, const StorageMetadataPt
         local_context,
         ConnectionTimeouts::getHTTPTimeouts(
             local_context->getSettingsRef(),
-            {local_context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
+            local_context->getServerSettings().keep_alive_timeout),
         compression_method);
 }
 

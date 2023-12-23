@@ -115,13 +115,14 @@ namespace JSONUtils
         return {loadAtPosition(in, memory, pos), number_of_rows};
     }
 
-    std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+    std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(
+        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
     {
         return fileSegmentationEngineJSONEachRowImpl<'{', '}'>(in, memory, min_bytes, 1, max_rows);
     }
 
-    std::pair<bool, size_t>
-    fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
+    std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(
+        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
     {
         return fileSegmentationEngineJSONEachRowImpl<'[', ']'>(in, memory, min_bytes, min_rows, max_rows);
     }

@@ -168,9 +168,10 @@ bool DatabaseLazy::empty() const
     return tables_cache.empty();
 }
 
-void DatabaseLazy::attachTableUnlocked(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
+void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
 {
     LOG_DEBUG(log, "Attach table {}.", backQuote(table_name));
+    std::lock_guard lock(mutex);
     time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
     auto [it, inserted] = tables_cache.emplace(std::piecewise_construct,

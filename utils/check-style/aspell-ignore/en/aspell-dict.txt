@@ -502,6 +502,7 @@ Memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
+MemoryResidentMax
 MemorySanitizer
 MemoryShared
 MemoryTracking
@@ -711,6 +712,7 @@ Promtail
 Protobuf
 ProtobufSingle
 ProxySQL
+Punycode
 PyArrow
 PyCharm
 QEMU
@@ -1850,6 +1852,8 @@ mininum
 miniselect
 minmap
 minmax
+minSampleSizeContinuous
+minSampleSizeConversion
 mins
 misconfiguration
 mispredictions
@@ -2069,6 +2073,8 @@ pseudorandom
 pseudorandomize
 psql
 ptrs
+punycodeDecode
+punycodeEncode
 pushdown
 pwrite
 py
@@ -2233,6 +2239,7 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
 serverUUID

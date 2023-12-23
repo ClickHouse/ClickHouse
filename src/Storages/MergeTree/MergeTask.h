@@ -67,7 +67,6 @@ public:
         ReservationSharedPtr space_reservation_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
-        bool cleanup_,
         MergeTreeData::MergingParams merging_params_,
         bool need_prefix,
         IMergeTreeDataPart * parent_part_,
@@ -91,7 +90,6 @@ public:
             global_ctx->space_reservation = std::move(space_reservation_);
             global_ctx->deduplicate = std::move(deduplicate_);
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
-            global_ctx->cleanup = std::move(cleanup_);
             global_ctx->parent_part = std::move(parent_part_);
             global_ctx->data = std::move(data_);
             global_ctx->mutator = std::move(mutator_);
@@ -111,6 +109,13 @@ public:
     std::future<MergeTreeData::MutableDataPartPtr> getFuture()
     {
         return global_ctx->promise.get_future();
+    }
+
+    MergeTreeData::MutableDataPartPtr getUnfinishedPart()
+    {
+        if (global_ctx)
+            return global_ctx->new_data_part;
+        return nullptr;
     }
 
     bool execute();
@@ -153,8 +158,6 @@ private:
         ReservationSharedPtr space_reservation{nullptr};
         bool deduplicate{false};
         Names deduplicate_by_columns{};
-        bool cleanup{false};
-        size_t cleanedup_rows_count{0};
 
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};

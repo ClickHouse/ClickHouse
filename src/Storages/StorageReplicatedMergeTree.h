@@ -165,6 +165,7 @@ public:
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
     Chain writeImpl(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -177,7 +178,6 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ContextPtr query_context) override;
 
     void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
@@ -747,7 +747,6 @@ private:
         const MergeTreeDataPartFormat & merged_part_format,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);
@@ -758,10 +757,6 @@ private:
         Int64 mutation_version,
         int32_t alter_version,
         int32_t log_version);
-
-    /// Exchange parts.
-
-    ConnectionTimeouts getFetchPartHTTPTimeouts(ContextPtr context);
 
     /** Returns an empty string if no one has a part.
       */

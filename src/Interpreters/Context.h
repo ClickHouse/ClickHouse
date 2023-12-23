@@ -66,7 +66,7 @@ enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
-class IUserDefinedSQLObjectsLoader;
+class IUserDefinedSQLObjectsStorage;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -201,6 +201,9 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
+class PooledSessionFactory;
+using PooledSessionFactoryPtr = std::shared_ptr<PooledSessionFactory>;
 
 class SessionTracker;
 
@@ -801,8 +804,9 @@ public:
 
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
-    const IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader() const;
-    IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader();
+    const IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage() const;
+    IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
+    void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
@@ -955,8 +959,6 @@ public:
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
-    void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
-
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
     /// --- Caches ------------------------------------------------------------------------------------------
@@ -1082,11 +1084,13 @@ public:
     void setMaxTableSizeToDrop(size_t max_size);
     size_t getMaxTableSizeToDrop() const;
     void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const;
+    void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size, const size_t & max_table_size_to_drop) const;
 
     /// Prevents DROP PARTITION if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxPartitionSizeToDrop(size_t max_size);
     size_t getMaxPartitionSizeToDrop() const;
     void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const;
+    void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const;
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
@@ -1212,6 +1216,7 @@ public:
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
     OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
+    PooledSessionFactoryPtr getCommonFetchesSessionFactory() const;
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
 #if USE_LIBURING
@@ -1229,7 +1234,7 @@ public:
     WriteSettings getWriteSettings() const;
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
-    bool canUseParallelReplicas() const;
+    bool canUseTaskBasedParallelReplicas() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
 

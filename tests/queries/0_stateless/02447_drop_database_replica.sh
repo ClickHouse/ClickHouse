@@ -55,7 +55,15 @@ $CLICKHOUSE_CLIENT --allow_experimental_database_replicated=1 -q "create databas
 $CLICKHOUSE_CLIENT -q "system sync database replica $db4"
 $CLICKHOUSE_CLIENT -q "select cluster, shard_num, replica_num, database_shard_name, database_replica_name, is_active from system.clusters where cluster='$db4'"
 
+# Don't throw "replica doesn't exist" when removing all replicas [from a database]
+$CLICKHOUSE_CLIENT -q "system drop database replica 'doesntexist$CLICKHOUSE_DATABASE' from shard 'doesntexist'"
+
 $CLICKHOUSE_CLIENT -q "drop database $db"
 $CLICKHOUSE_CLIENT -q "drop database $db2"
 $CLICKHOUSE_CLIENT -q "drop database $db3"
+
+$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "create table $db4.rmt (n int) engine=ReplicatedMergeTree order by n"
+$CLICKHOUSE_CLIENT -q "system drop replica 'doesntexist$CLICKHOUSE_DATABASE' from database $db4"
+$CLICKHOUSE_CLIENT -q "system drop replica 'doesntexist$CLICKHOUSE_DATABASE'"
+
 $CLICKHOUSE_CLIENT -q "drop database $db4"
