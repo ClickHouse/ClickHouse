@@ -147,7 +147,7 @@ def test_backup_restore(cluster):
     print(get_azure_file_content("test_simple_write_c.csv", port))
     assert get_azure_file_content("test_simple_write_c.csv", port) == '1,"a"\n'
 
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_c_backup.csv', 'CSV')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_c_backup.csv')"
     azure_query(
         node,
         f"BACKUP TABLE test_simple_write_connection_string TO {backup_destination}",

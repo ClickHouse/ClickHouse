@@ -463,7 +463,7 @@ To write backups to an AzureBlobStorage container you need the following pieces 
 
 The destination for a backup will be specified like this:
 ```
-AzureBlobStorage('<connection string>/<url>', '<Container>', '<Path>', '<Account Name>', '<Account Key>)
+AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')
 ```
 
 ```sql

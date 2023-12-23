@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -54,20 +55,34 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 
         StorageAzureBlob::Configuration configuration;
 
-        if (args.size() == 4)
+        if (args.size() == 3)
         {
             configuration.connection_url = args[0].safeGet<String>();
             configuration.is_connection_string = true;
 
             configuration.container =  args[1].safeGet<String>();
             configuration.blob_path = args[2].safeGet<String>();
-            configuration.format = args[3].safeGet<String>();
 
             LOG_TRACE(&Poco::Logger::get("registerBackupEngineAzureBlobStorage"), "configuration.connection_url = {}"
                                                                                  "configuration.container = {}"
-                                                                                 "configuration.blob_path = {}"
-                                                                                 "configuration.format = {}",
-                                                                                 configuration.connection_url, configuration.container, configuration.blob_path, configuration.format);
+                                                                                 "configuration.blob_path = {}",
+                                                                                 configuration.connection_url, configuration.container, configuration.blob_path);
+        }
+        else if (args.size() == 5)
+        {
+            configuration.connection_url = args[0].safeGet<String>();
+            configuration.is_connection_string = false;
+
+            configuration.container =  args[1].safeGet<String>();
+            configuration.blob_path = args[2].safeGet<String>();
+            configuration.account_name = args[3].safeGet<String>();
+            configuration.account_key = args[4].safeGet<String>();
+
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "Backup AzureBlobStorage requires 3 or 5 arguments: connection string>/<url, container, path, [account name], [account key]");
         }
 
 
