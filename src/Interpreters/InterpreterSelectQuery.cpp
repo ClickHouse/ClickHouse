@@ -873,6 +873,8 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     if (!storage || !context->canUseParallelReplicasOnInitiator())
         return false;
 
+    /// check if IN operator with subquery is present in the query
+    /// if so, disable parallel replicas
     if (query_analyzer->getPreparedSets()->hasSubqueries())
     {
         bool in_subqueries = false;
@@ -886,8 +888,6 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
                 break;
             }
         }
-
-        // LOG_DEBUG(log, "Prepared sets: subqueries={} in_subqueries={}\n{}", subqueries.size(), in_subqueries, StackTrace().toString());
 
         if (in_subqueries)
         {

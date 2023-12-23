@@ -266,8 +266,6 @@ FutureSetPtr PreparedSets::addFromSubquery(
     const Settings & settings,
     bool in_subquery)
 {
-    // LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "in_subquery={}\n{}", in_subquery, StackTrace().toString());
-
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
         toString(key, {}),
         std::move(source),

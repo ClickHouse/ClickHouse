@@ -1464,7 +1464,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         }
 
         return data.prepared_sets->addFromSubquery(
-            set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef(), true);
+            set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef(), /*in_subquery=*/true);
     }
     else
     {
