@@ -102,7 +102,7 @@ ColumnVariant::ColumnVariant(MutableColumnPtr local_discriminators_, MutableColu
 {
 }
 
-ColumnVariant::ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumns && variants_, const std::vector<Discriminator> & global_discriminators) : ColumnVariant(std::move(local_discriminators_), nullptr, std::move(variants_), global_discriminators)
+ColumnVariant::ColumnVariant(MutableColumnPtr local_discriminators_, MutableColumns && variants_, const std::vector<Discriminator> & local_to_global_discriminators_) : ColumnVariant(std::move(local_discriminators_), nullptr, std::move(variants_), local_to_global_discriminators_)
 {
 }
 
@@ -449,12 +449,12 @@ void ColumnVariant::insertData(const char *, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 }
 
-void ColumnVariant::insert(const Field & field)
+void ColumnVariant::insert(const Field & x)
 {
-    if (field.isNull())
+    if (x.isNull())
         insertDefault();
     else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert field {} to column {}", toString(field), getName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert field {} to column {}", toString(x), getName());
 }
 
 void ColumnVariant::insertFrom(const IColumn & src_, size_t n)

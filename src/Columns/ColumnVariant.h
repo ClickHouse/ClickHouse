@@ -194,7 +194,7 @@ public:
     template <typename Type>
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
-    MutableColumns scatter(ColumnIndex num_variants, const Selector & selector) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
 
     /// Variant type is not comparable.

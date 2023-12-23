@@ -564,7 +564,7 @@ bool SerializationVariant::tryDeserializeImpl(
     IColumn & column,
     const String & field,
     std::function<bool(ReadBuffer &)> check_for_null,
-    std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &)> try_deserialize_variant) const
+    std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &)> try_deserialize_nested) const
 {
     auto & column_variant = assert_cast<ColumnVariant &>(column);
     ReadBufferFromString null_buf(field);
@@ -577,25 +577,17 @@ bool SerializationVariant::tryDeserializeImpl(
     for (size_t global_discr : deserialize_text_order)
     {
         ReadBufferFromString variant_buf(field);
-        /// Usually try_deserialize_variant should not throw any exception, but let's use try/catch just in case.
-        try
+        auto & variant_column = column_variant.getVariantByGlobalDiscriminator(global_discr);
+        size_t prev_size = variant_column.size();
+        if (try_deserialize_nested(variant_column, variants[global_discr], variant_buf) && variant_buf.eof())
         {
-            auto & variant_column = column_variant.getVariantByGlobalDiscriminator(global_discr);
-            size_t prev_size = variant_column.size();
-            if (try_deserialize_variant(variant_column, variants[global_discr], variant_buf) && variant_buf.eof())
-            {
-                column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(global_discr));
-                column_variant.getOffsets().push_back(prev_size);
-                return true;
-            }
-            else if (variant_column.size() > prev_size)
-            {
-                variant_column.popBack(1);
-            }
+            column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(global_discr));
+            column_variant.getOffsets().push_back(prev_size);
+            return true;
         }
-        catch (...)
+        else if (variant_column.size() > prev_size)
         {
-            /// Try next variant.
+            variant_column.popBack(1);
         }
     }
 
