@@ -119,8 +119,10 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         return Context::createCopy(context);
 
     auto new_context = Context::createCopy(context->getGlobalContext());
+    new_context->applySettingsChanges(context->getSettingsRef().changes());
     new_context->setClientInfo(context->getClientInfo());
-    new_context->setQueryContext(context->getQueryContext());
+    new_context->setQueryContext(new_context);
+    new_context->getQueryContext()->applySettingsChanges(context->getQueryContext()->getSettingsRef().changes());
 
     const auto & database = context->getCurrentDatabase();
     if (!database.empty())
@@ -139,7 +141,7 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->setUser(getDefinerID(context));
     auto user = new_context->getUser();
     new_context->applySettingsChanges(user->settings.toSettingsChanges());
-    new_context->applySettingsChanges(context->getSettingsRef().changes());
+
     return new_context;
 }
 
