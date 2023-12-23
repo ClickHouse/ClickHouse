@@ -30,6 +30,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/formatReadable.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
