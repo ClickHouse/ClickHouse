@@ -296,6 +296,7 @@ protected:
 
         const auto & thread_ids_data = assert_cast<const ColumnUInt64 &>(*thread_ids).getData();
 
+        /// NOTE: This is racy, so you may get incorrect thread_name.
         ThreadIdToName thread_names;
         if (read_thread_names)
             thread_names = getFilteredThreadNames(query, context, thread_ids_data, log);
@@ -322,6 +323,13 @@ protected:
             }
             else
             {
+                /// NOTE: This check is racy (thread can be
+                /// destroyed/replaced/...), but it is OK, since only the
+                /// following could happen:
+                /// - it will incorrectly detect that the signal is blocked and
+                ///   will not send it this time
+                /// - it will incorrectly detect that the signal is not blocked
+                ///   then it will wait storage_system_stack_trace_pipe_read_timeout_ms
                 bool signal_blocked = isSignalBlocked(tid, STACK_TRACE_SERVICE_SIGNAL);
                 if (!signal_blocked)
                 {
