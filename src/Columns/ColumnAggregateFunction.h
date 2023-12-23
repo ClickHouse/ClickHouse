@@ -43,6 +43,9 @@ using ConstArenas = std::vector<ConstArenaPtr>;
   * For example, this is a column obtained by permutation/filtering or other transformations from another column.
   * In this case, `src` will be `shared ptr` to the source column. Destruction of values will be handled by this source column.
   *
+  * 3. In streaming aggregation, the aggregator will own its data, and shared it with the column.
+  * In this case, `force_keep_state` will control whether the column will destroy the states in the destructor.
+  *
   * This solution is somewhat limited:
   * - the variant in which the column contains a part of "it's own" and a part of "another's" values is not supported;
   * - the option of having multiple source columns is not supported, which may be necessary for a more optimal merge of the two columns.
