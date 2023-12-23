@@ -2,11 +2,12 @@
 
 from enum import Enum
 import logging
-
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
+
+from integration_test_images import IMAGES
 
 
 class Labels(Enum):
@@ -145,20 +146,7 @@ upgrade_check_digest = DigestConfig(
 integration_check_digest = DigestConfig(
     include_paths=["./tests/ci/integration_test_check.py", "./tests/integration"],
     exclude_files=[".md"],
-    docker=[
-        "clickhouse/dotnet-client",
-        "clickhouse/integration-helper",
-        "clickhouse/integration-test",
-        "clickhouse/integration-tests-runner",
-        "clickhouse/kerberized-hadoop",
-        "clickhouse/kerberos-kdc",
-        "clickhouse/mysql-golang-client",
-        "clickhouse/mysql-java-client",
-        "clickhouse/mysql-js-client",
-        "clickhouse/mysql-php-client",
-        "clickhouse/nginx-dav",
-        "clickhouse/postgresql-java-client",
-    ],
+    docker=IMAGES.copy(),
 )
 
 ast_fuzzer_check_digest = DigestConfig(
@@ -202,20 +190,9 @@ bugfix_validate_check = DigestConfig(
         "./tests/ci/bugfix_validate_check.py",
     ],
     exclude_files=[".md"],
-    docker=[
+    docker=IMAGES.copy()
+    + [
         "clickhouse/stateless-test",
-        "clickhouse/dotnet-client",
-        "clickhouse/integration-helper",
-        "clickhouse/integration-test",
-        "clickhouse/integration-tests-runner",
-        "clickhouse/kerberized-hadoop",
-        "clickhouse/kerberos-kdc",
-        "clickhouse/mysql-golang-client",
-        "clickhouse/mysql-java-client",
-        "clickhouse/mysql-js-client",
-        "clickhouse/mysql-php-client",
-        "clickhouse/nginx-dav",
-        "clickhouse/postgresql-java-client",
     ],
 )
 # common test params

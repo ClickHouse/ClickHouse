@@ -2307,7 +2307,7 @@ def reportLogStats(args):
               'Attempt to read after eof', 'String size is too big ({}), maximum: {}'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(message), 1, 120),
-            min(if(notEmpty(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)') as prefix), prefix, length(message)) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate
+            min(if(length(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)')) as prefix_len > 0, prefix_len, length(message)) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate
         FROM system.text_log
         WHERE (now() - toIntervalMinute(240)) < event_time
             AND (length(message_format_string) < 16
