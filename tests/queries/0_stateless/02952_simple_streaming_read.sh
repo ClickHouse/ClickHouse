@@ -22,6 +22,7 @@ $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a, a || '-' || a, b * b FROM t_stream
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "INSERT INTO t_streaming_test (*) select number as a, number as b from numbers(7)"
 
 # stop reading by killing client job
+sleep 0.5
 pkill -P $$
 
 # clear table
@@ -35,4 +36,5 @@ $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a FROM t_streaming_test STREAM" &
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "INSERT INTO t_streaming_test (*) select 'same-x-2' as a, number as b from numbers(2)"
 
 # stop reading by killing client job
+sleep 0.5
 pkill -P $$
