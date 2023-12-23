@@ -291,28 +291,17 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(*col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, limit, 0);
         addToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsPtr());
     }
-
     settings.path.pop_back();
 
-    /// Iterate through new discriminators and calculate the limit for each variant.
-    /// While calculating limits we can also fill offsets column (we store offsets only in memory).
-    auto & discriminators_data = col.getLocalDiscriminators();
-    auto & offsets = col.getOffsets();
-    offsets.reserve(offsets.size() + limit);
+    /// Second, calculate limits for each variant by iterating through new discriminators.
     std::vector<size_t> variant_limits(variants.size(), 0);
+    auto & discriminators_data = col.getLocalDiscriminators();
     size_t discriminators_offset = discriminators_data.size() - limit;
     for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
     {
         ColumnVariant::Discriminator discr = discriminators_data[i];
-        if (discr == ColumnVariant::NULL_DISCRIMINATOR)
-        {
-            offsets.emplace_back();
-        }
-        else
-        {
-            offsets.push_back(col.getVariantByLocalDiscriminator(discr).size() + variant_limits[discr]);
+        if (discr != ColumnVariant::NULL_DISCRIMINATOR)
             ++variant_limits[discr];
-        }
     }
 
     /// Now we can deserialize variants according to their limits.
@@ -323,6 +312,41 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         addVariantElementToPath(settings.path, i);
         variants[i]->deserializeBinaryBulkWithMultipleStreams(col.getVariantPtrByLocalDiscriminator(i), variant_limits[i], settings, variant_state->states[i], cache);
         settings.path.pop_back();
+    }
+    settings.path.pop_back();
+
+    /// Fill offsets column.
+    /// It's important to do it after deserialization of all variants, because to fill offsets we need
+    /// initial variants sizes without values in current range, but some variants can be shared with
+    /// other columns via substream cache and they can already contain values from this range even
+    /// before we call deserialize for them. So, before deserialize we cannot know for sure if
+    /// variant columns already contain values from current range or not. But after calling deserialize
+    /// we know for sure that they contain these values, so we can use valiant limits and their
+    /// new sizes to calculate correct offsets.
+    settings.path.push_back(Substream::VariantOffsets);
+    if (auto cached_offsets = getFromSubstreamsCache(cache, settings.path))
+    {
+        col.getOffsetsPtr() = cached_offsets;
+    }
+    else
+    {
+        auto & offsets = col.getOffsets();
+        offsets.reserve(offsets.size() + limit);
+        std::vector<size_t> variant_offsets;
+        variant_offsets.reserve(variants.size());
+        for (size_t i = 0; i != variants.size(); ++i)
+            variant_offsets.push_back(col.getVariantByLocalDiscriminator(i).size() - variant_limits[i]);
+
+        for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
+        {
+            ColumnVariant::Discriminator discr = discriminators_data[i];
+            if (discr == ColumnVariant::NULL_DISCRIMINATOR)
+                offsets.emplace_back();
+            else
+                offsets.push_back(variant_offsets[discr]++);
+        }
+
+        addToSubstreamsCache(cache, settings.path, col.getOffsetsPtr());
     }
     settings.path.pop_back();
 }

@@ -124,15 +124,20 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & /* state */,
     SubstreamsCache * cache) const
 {
+    LOG_DEBUG(&Poco::Logger::get("ISerialization"), "Deserialize path {}. Initial column size: {}", settings.path.toString(), column->size());
+
     auto cached_column = getFromSubstreamsCache(cache, settings.path);
     if (cached_column)
     {
         column = cached_column;
+        LOG_DEBUG(&Poco::Logger::get("ISerialization"), "Use column from cache. Size: {}", cached_column->size());
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         auto mutable_column = column->assumeMutable();
+        LOG_DEBUG(&Poco::Logger::get("ISerialization"), "Deserialize column. Initial size: {}", mutable_column->size());
         deserializeBinaryBulk(*mutable_column, *stream, limit, settings.avg_value_size_hint);
+        LOG_DEBUG(&Poco::Logger::get("ISerialization"), "Deserialized column. Size: {}", mutable_column->size());
         column = std::move(mutable_column);
         addToSubstreamsCache(cache, settings.path, column);
     }
@@ -177,6 +182,8 @@ String getNameForSubstreamPath(
         }
         else if (it->type == Substream::VariantDiscriminators)
             stream_name += ".discr";
+        else if (it->type == Substream::VariantOffsets)
+            stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
             stream_name += "." + it->variant_element_name;
     }

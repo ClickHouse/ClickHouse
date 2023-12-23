@@ -108,7 +108,20 @@ ColumnPtr DataTypeVariant::createColumnConst(size_t size, const DB::Field & fiel
         auto field_type = applyVisitor(FieldToDataType(), field);
         auto discr = tryGetVariantDiscriminator(field_type);
         if (!discr)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot insert field \"{}\" into column with type {}", toString(field), getName());
+        {
+            for (size_t i = 0; i != variants.size(); ++i)
+            {
+                if (field.getType() == variants[i]->getDefault().getType())
+                {
+                    discr = i;
+                    break;
+                }
+            }
+        }
+
+        if (!discr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot insert field \"{}\" with type {} into column with type {}", toString(field), field.getTypeName(), getName());
+
         assert_cast<ColumnVariant &>(*column).insertIntoVariant(field, *discr);
     }
 

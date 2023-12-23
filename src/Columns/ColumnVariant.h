@@ -163,7 +163,7 @@ public:
 
     size_t size() const override
     {
-        return local_discriminators->size();
+        return offsets->size();
     }
 
     Field operator[](size_t n) const override;
