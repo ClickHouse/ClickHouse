@@ -14,11 +14,9 @@ $CLICKHOUSE_CLIENT "${opts[@]}" -q "CREATE TABLE t_streaming_test (a String, b U
 
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT count() FROM t_streaming_test"
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "INSERT INTO t_streaming_test VALUES ('a', 100)"
-$CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT '==='"
 
 # spawn stream
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a, a || '-' || a, b * b FROM t_streaming_test STREAM" &
-$CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT '==='"
 
 # insert some data into stream
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "INSERT INTO t_streaming_test (*) select number as a, number as b from numbers(7)"
@@ -32,7 +30,6 @@ $CLICKHOUSE_CLIENT "${opts[@]}" -q "TRUNCATE t_streaming_test"
 # spawn 2 streams
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a FROM t_streaming_test STREAM" &
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a FROM t_streaming_test STREAM" &
-$CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT '==='"
 
 # insert some data into stream
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "INSERT INTO t_streaming_test (*) select 'same-x-2' as a, number as b from numbers(2)"
