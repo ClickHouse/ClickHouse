@@ -3416,7 +3416,7 @@ bool InterpreterSelectQuery::hasStreamingGlobalAggregation() const
 void InterpreterSelectQuery::buildWatermarkQueryPlan(QueryPlan & query_plan) const
 {
     assert(isStreamingQuery());
-    auto params = std::make_shared<Streaming::WatermarkStamperParams>(query_info.query, !query_info.syntax_analyzer_result->aggregates.empty(), query_info.syntax_analyzer_result->has_group_by);
+    auto params = std::make_shared<Streaming::WatermarkStamperParams>(query_info.query, context, !query_info.syntax_analyzer_result->aggregates.empty(), query_info.syntax_analyzer_result->has_group_by);
     query_plan.addStep(std::make_unique<Streaming::WatermarkStep>(query_plan.getCurrentDataStream(), std::move(params), log));
 }
 

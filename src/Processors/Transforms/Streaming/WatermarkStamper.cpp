@@ -26,7 +26,7 @@ namespace
 {
 const std::pair<Int64, IntervalKind> DEFAULT_PERIODIC_INTERVAL = {2, IntervalKind::Second};
 
-void mergeEmitQuerySettings(const ASTPtr & emit_query, WatermarkStamperParams & params)
+void mergeEmitQuerySettings(const ASTPtr & emit_query, const ContextPtr & context, WatermarkStamperParams & params)
 {
     if (!emit_query)
         return;
@@ -34,9 +34,9 @@ void mergeEmitQuerySettings(const ASTPtr & emit_query, WatermarkStamperParams & 
     auto * emit = emit_query->as<ASTEmitQuery>();
     assert(emit);
 
-    if (emit->periodic_interval)
+    if (emit->periodic_interval && emit->periodic_interval->as<ASTFunction>())
     {
-        params.periodic_interval = extractInterval(emit->periodic_interval->as<ASTFunction>());
+        params.periodic_interval = extractInterval(emit->periodic_interval, context);
 
         params.mode = WatermarkStamperParams::EmitMode::PERIODIC;
     }
@@ -75,12 +75,12 @@ void setDefaultWatermarkParams(WatermarkStamperParams & params, bool has_aggrega
 }
 }
 
-WatermarkStamperParams::WatermarkStamperParams(ASTPtr query, bool has_aggregates, bool has_group_by)
+WatermarkStamperParams::WatermarkStamperParams(ASTPtr query, const ContextPtr & context, bool has_aggregates, bool has_group_by)
 {
     const auto * select_query = query->as<ASTSelectQuery>();
     assert(select_query);
 
-    mergeEmitQuerySettings(select_query->emit(), *this);
+    mergeEmitQuerySettings(select_query->emit(), context, *this);
 
     setDefaultWatermarkParams(*this, has_aggregates, has_group_by);
 }

@@ -21,7 +21,7 @@ namespace Streaming
 struct WatermarkStamperParams
 {
 public:
-    WatermarkStamperParams(ASTPtr query, bool has_aggregates, bool has_group_by);
+    WatermarkStamperParams(ASTPtr query, const ContextPtr & context, bool has_aggregates, bool has_group_by);
     WatermarkStamperParams(const QueryNode & query_node, bool has_aggregates);
 
     enum class EmitMode

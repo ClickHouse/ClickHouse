@@ -432,11 +432,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     else if (select_offset)
         current_query_tree->getOffset() = buildExpression(select_offset, current_context);
 
-    // TODO: proton, emit section
     auto select_emit = select_query_typed.emit();
     if (select_emit)
     {
-        // current_query_tree->getEmit() = buildExpression(select_emit, current_context);
         auto & emit_query = select_emit->as<ASTEmitQuery &>();
         EmitType emit_type;
 

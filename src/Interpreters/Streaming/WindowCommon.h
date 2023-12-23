@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/IntervalKind.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -20,10 +21,8 @@ struct WindowInterval
     operator bool() const { return interval != 0; }
 };
 
-void checkIntervalAST(const ASTPtr & ast, const String & msg = "Invalid interval");
-void extractInterval(const ASTFunction * ast, Int64 & interval, IntervalKind::Kind & kind);
-WindowInterval extractInterval(const ASTFunction * ast);
-WindowInterval extractInterval(const ColumnWithTypeAndName & interval_column);
+void checkIntervalAST(const ASTPtr & ast, const String & msg);
+WindowInterval extractInterval(const ASTPtr & ast, const ContextPtr & context);
 
 /// BaseScaleInterval util class converts interval in different scale to a common base scale.
 /// BaseScale-1: Nanosecond     Range: Nanosecond, Microsecond, Millisecond, Second, Minute, Hour, Day, Week

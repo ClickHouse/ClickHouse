@@ -4833,6 +4833,120 @@ JSONExtractString(rdkafka_stat, 'type'): consumer
 
     kafka_delete_topic(admin_client, topic)
 
+def test_streaming_tail(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic = "streaming_tail"
+    kafka_create_topic(admin_client, topic)
+
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+        value_serializer=producer_serializer,
+        key_serializer=producer_serializer,
+    )
+
+    for i in range(5):
+        producer.send(topic=topic, value=json.dumps({"key": i, "value": i}), partition=0)
+    producer.flush()
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka_streaming_tail;
+
+        CREATE TABLE test.kafka_streaming_tail (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 1,
+                     kafka_poll_timeout_ms = 200;
+        """
+    )
+
+    query = instance.get_query_request("SELECT * FROM test.kafka_streaming_tail SETTINGS allow_experimental_streaming_query_mode = 'streaming'", timeout=10, ignore_error=True)
+
+    for i in range(5):
+        producer.send(topic=topic, value=json.dumps({"key": i, "value": i}), partition=0)
+    producer.flush()
+
+    (result, err) = query.get_answer_and_error()
+    expected = TSV(
+        """0\t0
+1\t1
+2\t2
+3\t3
+4\t4
+0\t0
+1\t1
+2\t2
+3\t3
+4\t4"""
+    )
+    assert TSV(result) == expected
+
+    instance.query("DROP TABLE test.kafka_streaming_tail")
+
+    kafka_delete_topic(admin_client, topic)
+
+def test_streaming_global_aggregation(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    topic = "streaming_aggr"
+    kafka_create_topic(admin_client, topic)
+
+    producer = KafkaProducer(
+        bootstrap_servers="localhost:{}".format(cluster.kafka_port),
+        value_serializer=producer_serializer,
+        key_serializer=producer_serializer,
+    )
+
+    for i in range(5):
+        producer.send(topic=topic, value=json.dumps({"key": i, "value": i}), partition=0)
+    producer.flush()
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS test.kafka_streaming_aggr;
+
+        CREATE TABLE test.kafka_streaming_aggr (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = '{topic}',
+                     kafka_group_name = '{topic}',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 1,
+                     kafka_poll_timeout_ms = 200;
+        """
+    )
+
+    query = instance.get_query_request("SELECT count(1) FROM test.kafka_streaming_aggr EMIT STREAM PERIODIC 3s SETTINGS allow_experimental_streaming_query_mode = 'streaming'", timeout=10, ignore_error=True)
+
+    time.sleep(1)
+
+    for i in range(5):
+        producer.send(topic=topic, value=json.dumps({"key": i, "value": i}), partition=0)
+    producer.flush()
+
+    time.sleep(4)
+
+    for i in range(5):
+        producer.send(topic=topic, value=json.dumps({"key": i, "value": i}), partition=0)
+    producer.flush()
+
+    (result, err) = query.get_answer_and_error()
+
+    expected = TSV("10\n15")
+    assert TSV(result) == expected
+
+    instance.query("DROP TABLE test.kafka_streaming_aggr")
+
+    kafka_delete_topic(admin_client, topic)
+
 
 if __name__ == "__main__":
     cluster.start()

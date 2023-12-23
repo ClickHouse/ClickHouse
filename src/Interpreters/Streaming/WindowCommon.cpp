@@ -5,6 +5,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 namespace DB
 {
@@ -51,63 +52,30 @@ void checkIntervalAST(const ASTPtr & ast, const String & msg)
 {
     assert(ast);
     auto * func_node = ast->as<ASTFunction>();
-    if (func_node)
+    assert(func_node);
+
+    auto kind = mapIntervalKind(func_node->name);
+    if (kind)
     {
-        auto kind = mapIntervalKind(func_node->name);
-        if (kind)
-        {
-            if (*kind <= IntervalKind::Day)
-                return;
-            else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}: the max interval kind supported is DAY.", msg);
-        }
+        if (*kind <= IntervalKind::Day)
+            return;
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}: the max interval kind supported is DAY.", msg);
     }
-    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}", msg);
 }
 
-void extractInterval(const ASTFunction * ast, Int64 & interval, IntervalKind::Kind & kind)
+WindowInterval extractInterval(const ASTPtr & ast, const ContextPtr & context)
 {
-    assert(ast);
+    auto [field, type] = evaluateConstantExpression(ast, context);
 
-    if (auto opt_kind = mapIntervalKind(ast->name); opt_kind)
-        kind = opt_kind.value();
-    else
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid interval function");
+    if (const auto * type_interval = typeid_cast<const DataTypeInterval *>(type.get()))
+        return WindowInterval {
+            .interval = field.get<Int64>(),
+            .unit = type_interval->getKind()
+        };
 
-    const auto * val = ast->arguments ? ast->arguments->children.front()->as<ASTLiteral>() : nullptr;
-    if (!val)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid interval argument");
-
-    if (val->value.getType() == Field::Types::UInt64)
-    {
-        interval = val->value.safeGet<UInt64>();
-    }
-    else if (val->value.getType() == Field::Types::Int64)
-    {
-        interval = val->value.safeGet<Int64>();
-    }
-    else if (val->value.getType() == Field::Types::String)
-    {
-        interval = std::stoi(val->value.safeGet<String>());
-    }
-    else
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid interval argument");
-}
-
-WindowInterval extractInterval(const ASTFunction * ast)
-{
-    WindowInterval window_interval;
-    extractInterval(ast, window_interval.interval, window_interval.unit);
-    return window_interval;
-}
-
-WindowInterval extractInterval(const ColumnWithTypeAndName & interval_column)
-{
-    const auto * interval_type = checkAndGetDataType<DataTypeInterval>(interval_column.type.get());
-    assert(interval_type);
-    const auto * interval_column_const_int64 = checkAndGetColumnConst<ColumnInt64>(interval_column.column.get());
-    assert(interval_column_const_int64);
-    return {interval_column_const_int64->getValue<Int64>(), interval_type->getKind()};
+    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of EMIT expression, must be constant interval function", type->getName());
 }
 
 Int64 BaseScaleInterval::toIntervalKind(IntervalKind::Kind to_kind) const
