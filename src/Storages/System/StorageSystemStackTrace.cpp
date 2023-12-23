@@ -230,26 +230,35 @@ bool isSignalBlocked(UInt64 tid, int signal)
 {
     String buffer;
 
-    ReadBufferFromFile status(fmt::format("/proc/{}/status", tid));
-    while (!status.eof())
+    try
     {
-        readEscapedStringUntilEOL(buffer, status);
-        if (!status.eof())
-            ++status.position();
-        if (buffer.starts_with("SigBlk:"))
-            break;
+        ReadBufferFromFile status(fmt::format("/proc/{}/status", tid));
+        while (!status.eof())
+        {
+            readEscapedStringUntilEOL(buffer, status);
+            if (!status.eof())
+                ++status.position();
+            if (buffer.starts_with("SigBlk:"))
+                break;
+        }
+        status.close();
+
+        std::string_view line(buffer);
+        line = line.substr(strlen("SigBlk:"));
+        line = line.substr(0, line.rend() - std::find_if_not(line.rbegin(), line.rend(), ::isspace));
+
+        UInt64 sig_blk;
+        if (parseHexNumber(line, sig_blk))
+            return sig_blk & signal;
     }
-    status.close();
+    catch (const Exception & e)
+    {
+        /// Ignore TOCTOU error
+        if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+            throw;
+    }
 
-    std::string_view line(buffer);
-    line = line.substr(strlen("SigBlk:"));
-    line = line.substr(0, line.rend() - std::find_if_not(line.rbegin(), line.rend(), ::isspace));
-
-    UInt64 sig_blk;
-    if (parseHexNumber(line, sig_blk))
-        return sig_blk & signal;
-    else
-        return false;
+    return false;
 }
 
 /// Send a signal to every thread and wait for result.
