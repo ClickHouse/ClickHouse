@@ -185,11 +185,3 @@ function query_with_retry
     done
     echo "Query '$query' failed with '$result'"
 }
-
-# Add --foreground to avoid running setpgid() in timeout, otherwise
-# clickhouse-test will not kill those processes in case of timeout
-function timeout()
-{
-    command timeout --foreground "$@"
-}
-export -f timeout

@@ -1031,7 +1031,24 @@ class TestCase:
         if proc:
             if proc.returncode is None:
                 try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    pgid = os.getpgid(proc.pid)
+                    # NOTE: this still may leave some processes, that had been
+                    # created by timeout(1), since it also creates new process
+                    # group. But this should not be a problem with default
+                    # options, since the default time for each test is 10min,
+                    # and this is way more bigger then the timeout for each
+                    # timeout(1) invocation.
+                    #
+                    # But as a workaround we are sending SIGTERM first, and
+                    # only after SIGKILL, that way timeout(1) will have an
+                    # ability to terminate childrens (though not always since
+                    # signals are asynchronous).
+                    os.killpg(pgid, signal.SIGTERM)
+                    # This may not be enough, but this is at least something
+                    # (and anyway it is OK to spend 0.1 second more in case of
+                    # test timeout).
+                    sleep(0.1)
+                    os.killpg(pgid, signal.SIGKILL)
                 except OSError as e:
                     if e.errno != ESRCH:
                         raise
