@@ -7,8 +7,6 @@
 #include <memory>
 
 #include <boost/noncopyable.hpp>
-
-#include <base/strong_typedef.h>
 #include <base/getPageSize.h>
 
 #include <Common/Allocator.h>
