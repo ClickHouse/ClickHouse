@@ -1031,7 +1031,7 @@ class TestCase:
         if proc:
             if proc.returncode is None:
                 try:
-                    proc.kill()
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                 except OSError as e:
                     if e.errno != ESRCH:
                         raise
@@ -1307,7 +1307,7 @@ class TestCase:
 
         command = pattern.format(**params)
 
-        proc = Popen(command, shell=True, env=os.environ)
+        proc = Popen(command, shell=True, env=os.environ, start_new_session=True)
 
         while (
             datetime.now() - start_time

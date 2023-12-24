@@ -194,7 +194,7 @@ void BackupImpl::open()
 void BackupImpl::close()
 {
     std::lock_guard lock{mutex};
-    closeArchive();
+    closeArchive(/* finalize= */ false);
 
     if (!is_internal_backup && writer && !writing_finalized)
         removeAllFilesAfterFailure();
@@ -227,8 +227,11 @@ void BackupImpl::openArchive()
     }
 }
 
-void BackupImpl::closeArchive()
+void BackupImpl::closeArchive(bool finalize)
 {
+    if (finalize && archive_writer)
+        archive_writer->finalize();
+
     archive_reader.reset();
     archive_writer.reset();
 }
@@ -983,7 +986,7 @@ void BackupImpl::finalizeWriting()
     {
         LOG_TRACE(log, "Finalizing backup {}", backup_name_for_logging);
         writeBackupMetadata();
-        closeArchive();
+        closeArchive(/* finalize= */ true);
         setCompressedSize();
         removeLockFile();
         LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);

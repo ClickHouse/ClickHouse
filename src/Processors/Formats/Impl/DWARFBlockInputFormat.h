@@ -53,6 +53,7 @@ private:
         std::string unit_name;
         ColumnPtr filename_table; // from .debug_line
         size_t filename_table_size = 0;
+        /// Starting offset of this unit's data in .debug_addr and .debug_rnglists sections.
         uint64_t addr_base = UINT64_MAX;
         uint64_t rnglists_base = UINT64_MAX;
 
