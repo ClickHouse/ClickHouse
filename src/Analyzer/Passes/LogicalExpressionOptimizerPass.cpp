@@ -9,6 +9,8 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/Utils.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+
 namespace DB
 {
 
@@ -323,8 +325,21 @@ private:
             /// Because we reduce the number of operands here by eliminating the same equality checks,
             /// the only situation we can end up here is we had AND check where all the equality checks are the same so we know the type is UInt8.
             /// Otherwise, we will have > 1 operands and we don't have to do anything.
-            assert(!function_node.getResultType()->isNullable() && and_operands[0]->getResultType()->equals(*function_node.getResultType()));
-            node = std::move(and_operands[0]);
+
+            auto operand_type = and_operands[0]->getResultType();
+            auto function_type = function_node.getResultType();
+            assert(!function_type->isNullable());
+            if (!function_type->equals(*operand_type))
+            {
+                /// Result of equality operator can be low cardinality, while AND always returns UInt8.
+                /// In that case we replace `(lc = 1) AND (lc = 1)` with `(lc = 1) AS UInt8`
+                assert(function_type->equals(*removeLowCardinality(operand_type)));
+                node = createCastFunction(std::move(and_operands[0]), function_type, getContext());
+            }
+            else
+            {
+                node = std::move(and_operands[0]);
+            }
             return;
         }
 
@@ -389,11 +404,14 @@ private:
                 continue;
             }
 
+            bool is_any_nullable = false;
             Tuple args;
             args.reserve(equals_functions.size());
             /// first we create tuple from RHS of equals functions
             for (const auto & equals : equals_functions)
             {
+                is_any_nullable |= equals->getResultType()->isNullable();
+
                 const auto * equals_function = equals->as<FunctionNode>();
                 assert(equals_function && equals_function->getFunctionName() == "equals");
 
@@ -421,8 +439,20 @@ private:
 
             in_function->getArguments().getNodes() = std::move(in_arguments);
             in_function->resolveAsFunction(in_function_resolver);
-
-            or_operands.push_back(std::move(in_function));
+            /** For `k :: UInt8`, expression `k = 1 OR k = NULL` with result type Nullable(UInt8)
+              * is replaced with `k IN (1, NULL)` with result type UInt8.
+              * Convert it back to Nullable(UInt8).
+              */
+            if (is_any_nullable && !in_function->getResultType()->isNullable())
+            {
+                auto nullable_result_type = std::make_shared<DataTypeNullable>(in_function->getResultType());
+                auto in_function_nullable = createCastFunction(std::move(in_function), std::move(nullable_result_type), getContext());
+                or_operands.push_back(std::move(in_function_nullable));
+            }
+            else
+            {
+                or_operands.push_back(std::move(in_function));
+            }
         }
 
         if (or_operands.size() == function_node.getArguments().getNodes().size())

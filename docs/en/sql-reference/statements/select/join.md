@@ -43,6 +43,7 @@ Additional join types available in ClickHouse:
 - `LEFT ANTI JOIN` and `RIGHT ANTI JOIN`, a blacklist on “join keys”, without producing a cartesian product.
 - `LEFT ANY JOIN`, `RIGHT ANY JOIN` and `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
 - `ASOF JOIN` and `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
+- `PASTE JOIN`, performs a horizontal concatenation of two tables.
 
 :::note
 When [join_algorithm](../../../operations/settings/settings.md#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
@@ -268,6 +269,33 @@ For example, consider the following tables:
 :::note
 `ASOF` join is **not** supported in the [Join](../../../engines/table-engines/special/join.md) table engine.
 :::
+
+## PASTE JOIN Usage
+
+The result of `PASTE JOIN` is a table that contains all columns from left subquery followed by all columns from the right subquery.
+The rows are matched based on their positions in the original tables (the order of rows should be defined). 
+If the subqueries return a different number of rows, extra rows will be cut.
+
+Example:
+```SQL
+SELECT *
+FROM
+(
+    SELECT number AS a
+    FROM numbers(2)
+) AS t1
+PASTE JOIN
+(
+    SELECT number AS a
+    FROM numbers(2)
+    ORDER BY a DESC
+) AS t2
+
+┌─a─┬─t2.a─┐
+│ 0 │    1 │
+│ 1 │    0 │
+└───┴──────┘
+```
 
 ## Distributed JOIN
 

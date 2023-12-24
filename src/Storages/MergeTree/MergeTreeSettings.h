@@ -4,6 +4,7 @@
 #include <Core/Defines.h>
 #include <Core/BaseSettings.h>
 #include <Core/SettingsEnums.h>
+#include <Common/NamePrompter.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
@@ -248,7 +249,7 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 /** Settings for the MergeTree family of engines.
   * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
   */
-struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
+struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>, public IHints<2>
 {
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
@@ -269,6 +270,8 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks) const;
+
+    std::vector<String> getAllRegisteredNames() const override;
 };
 
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;

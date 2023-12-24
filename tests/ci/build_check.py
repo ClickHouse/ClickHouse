@@ -9,7 +9,7 @@ import sys
 import time
 
 from ci_config import CI_CONFIG, BuildConfig
-from ccache_utils import CargoCache
+from cache_utils import CargoCache
 
 from env_helper import (
     GITHUB_JOB_API_URL,

@@ -397,6 +397,21 @@ def _configure_jobs(
         else:
             jobs_to_skip += (job,)
 
+    if pr_labels:
+        jobs_requested_by_label = []  # type: List[str]
+        ci_controlling_labels = []  # type: List[str]
+        for label in pr_labels:
+            label_config = CI_CONFIG.get_label_config(label)
+            if label_config:
+                jobs_requested_by_label += label_config.run_jobs
+                ci_controlling_labels += [label]
+        if ci_controlling_labels:
+            print(f"NOTE: CI controlling labels are set: [{ci_controlling_labels}]")
+            print(
+                f"    :   following jobs will be executed: [{jobs_requested_by_label}]"
+            )
+            jobs_to_do = jobs_requested_by_label
+
     if commit_tokens:
         requested_jobs = [
             token[len("#job_") :]
@@ -416,7 +431,7 @@ def _configure_jobs(
                     if parent in jobs_to_do and parent not in jobs_to_do_requested:
                         jobs_to_do_requested.append(parent)
             print(
-                f"NOTE: Only specific job(s) were requested: [{jobs_to_do_requested}]"
+                f"NOTE: Only specific job(s) were requested by commit message tokens: [{jobs_to_do_requested}]"
             )
             jobs_to_do = jobs_to_do_requested
 
@@ -608,7 +623,7 @@ def main() -> int:
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
         if pr_info.number != 0 and not args.docker_digest_or_latest:
-            #FIXME: it runs style check before docker build if possible (style-check images is not changed)
+            # FIXME: it runs style check before docker build if possible (style-check images is not changed)
             #    find a way to do style check always before docker build and others
             _check_and_update_for_early_style_check(result)
         if pr_info.has_changes_in_documentation_only():
