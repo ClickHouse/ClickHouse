@@ -390,6 +390,40 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
             if (need[COL_TAG])
                 col_tag->insertValue(tag);
 
+            if (tag == llvm::dwarf::DW_TAG_compile_unit)
+            {
+                /// Pre-parse DW_AT_addr_base and DW_AT_rnglists_base because other attributes may
+                /// rely on them. (Why couldn't DWARF just promise that these attributes must appear
+                /// before any attributes that depend on them?)
+                uint64_t offset = unit.offset;
+                for (auto attr : abbrev->attributes())
+                {
+                    if (attr.Attr == llvm::dwarf::DW_AT_addr_base ||
+                        attr.Attr == llvm::dwarf::DW_AT_rnglists_base)
+                    {
+                        auto val = llvm::DWARFFormValue::createFromSValue(
+                            attr.Form, attr.isImplicitConst() ? attr.getImplicitConstValue() : 0);
+                        if (!val.extractValue(*extractor, &offset, form_params, unit.dwarf_unit))
+                            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                                "Failed to parse attribute {} of form {} at offset {}",
+                                llvm::dwarf::AttributeString(attr.Attr), attr.Form, unit.offset);
+                        uint64_t v = val.getRawUValue();
+                        if (attr.Attr == llvm::dwarf::DW_AT_addr_base)
+                            unit.addr_base = v;
+                        else
+                            unit.rnglists_base = v;
+                    }
+                    else
+                    {
+                        if (!llvm::DWARFFormValue::skipValue(
+                                attr.Form, *extractor, &offset, form_params))
+                            throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
+                                "Failed to skip attribute {} of form {} at offset {}",
+                                llvm::dwarf::AttributeString(attr.Attr), attr.Form, offset);
+                    }
+                }
+            }
+
             bool need_name = need[COL_NAME];
             bool need_linkage_name = need[COL_LINKAGE_NAME];
             bool need_decl_file = need[COL_DECL_FILE];
@@ -451,13 +485,6 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
 
                         if (attr.Attr == llvm::dwarf::DW_AT_decl_line && std::exchange(need_decl_line, false))
                             col_decl_line->insertValue(static_cast<UInt32>(val.getRawUValue()));
-
-                        /// Starting offset of this unit's data in .debug_addr section.
-                        if (attr.Attr == llvm::dwarf::DW_AT_addr_base)
-                            unit.addr_base = val.getRawUValue();
-                        /// Same for .debug_rnglists section.
-                        if (attr.Attr == llvm::dwarf::DW_AT_rnglists_base)
-                            unit.rnglists_base = val.getRawUValue();
 
                         if (attr.Attr == llvm::dwarf::DW_AT_high_pc)
                         {
@@ -740,7 +767,7 @@ void DWARFBlockInputFormat::parseFilenameTable(UnitState & unit, uint64_t offset
     auto error = prologue.parse(*debug_line_extractor, &offset, /*RecoverableErrorHandler*/ [&](auto e)
         {
             if (++seen_debug_line_warnings < 10)
-                LOG_INFO(&Poco::Logger::get("DWARF"), "{}", llvm::toString(std::move(e)));
+                LOG_INFO(&Poco::Logger::get("DWARF"), "Parsing error: {}", llvm::toString(std::move(e)));
         }, *dwarf_context, unit.dwarf_unit);
 
     if (error)

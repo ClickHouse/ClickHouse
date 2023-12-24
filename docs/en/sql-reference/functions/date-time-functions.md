@@ -1809,6 +1809,8 @@ Alias: `dateTrunc`.
     - `quarter`
     - `year`
 
+    `unit` argument is case-insensitive.
+
 - `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
 
