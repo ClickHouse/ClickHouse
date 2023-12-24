@@ -12,6 +12,8 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
 elseif (CMAKE_SYSTEM_NAME MATCHES "Darwin")
     set (OS_DARWIN 1)
     add_definitions(-D OS_DARWIN)
+    # For MAP_ANON/MAP_ANONYMOUS
+    add_definitions(-D _DARWIN_C_SOURCE)
 elseif (CMAKE_SYSTEM_NAME MATCHES "SunOS")
     set (OS_SUNOS 1)
     add_definitions(-D OS_SUNOS)
