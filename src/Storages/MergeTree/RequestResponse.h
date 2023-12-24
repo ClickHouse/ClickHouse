@@ -21,15 +21,11 @@ namespace DB
 enum class CoordinationMode : uint8_t
 {
     Default = 0,
-
     /// For reading in order
     WithOrder = 1,
     ReverseOrder = 2,
 
-    /// Attempt to make Default better for single-shard case
-    SingleShard = 3,
-
-    MAX = SingleShard,
+    MAX = ReverseOrder,
 };
 
 /// Represents a segment [left; right]
