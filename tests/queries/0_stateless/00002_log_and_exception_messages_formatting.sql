@@ -9,17 +9,61 @@ create view logs as select * from system.text_log where now() - toIntervalMinute
 
 -- Check that we don't have too many messages formatted with fmt::runtime or strings concatenation.
 -- 0.001 threshold should be always enough, the value was about 0.00025
-select 'runtime messages', greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.001) from logs
-    where message not like '% Received from %clickhouse-staging.com:9440%';
+WITH 0.001 AS threshold
+SELECT
+    'runtime messages',
+    greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0) as v, threshold),
+    v <= threshold ? [] :
+        (SELECT groupArray((message, c)) FROM (
+            SELECT message, count() as c FROM logs
+            WHERE
+                length(message_format_string) = 0
+              AND message not like '% Received from %clickhouse-staging.com:9440%'
+              AND source_file not like '%/AWSLogger.cpp%'
+            GROUP BY message ORDER BY c LIMIT 10
+        ))
+FROM logs
+WHERE
+    message NOT LIKE '% Received from %clickhouse-staging.com:9440%'
+  AND source_file not like '%/AWSLogger.cpp%';
 
 -- Check the same for exceptions. The value was 0.03
-select 'runtime exceptions', greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.05) from logs
-    where (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-    and message not like '% Received from %clickhouse-staging.com:9440%';
+WITH 0.05 AS threshold
+SELECT
+    'runtime exceptions',
+    greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0) as v, threshold),
+    v <= threshold ? [] :
+        (SELECT groupArray((message, c)) FROM (
+            SELECT message, count() as c FROM logs
+            WHERE
+                length(message_format_string) = 0
+              AND (message like '%DB::Exception%' or message like '%Coordination::Exception%')
+              AND message not like '% Received from %clickhouse-staging.com:9440%'
+            GROUP BY message ORDER BY c LIMIT 10
+        ))
+FROM logs
+WHERE
+    message NOT LIKE '% Received from %clickhouse-staging.com:9440%'
+  AND (message like '%DB::Exception%' or message like '%Coordination::Exception%');
 
-select 'unknown runtime exceptions', greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0), 0.01) from logs where
-    (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-    and message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%';
+WITH 0.01 AS threshold
+SELECT
+    'unknown runtime exceptions',
+    greatest(coalesce(sum(length(message_format_string) = 0) / countOrNull(), 0) as v, threshold),
+    v <= threshold ? [] :
+        (SELECT groupArray((message, c)) FROM (
+            SELECT message, count() as c FROM logs
+            WHERE
+                length(message_format_string) = 0
+              AND (message like '%DB::Exception%' or message like '%Coordination::Exception%')
+              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%'
+            GROUP BY message ORDER BY c LIMIT 10
+        ))
+FROM logs
+WHERE
+  (message like '%DB::Exception%' or message like '%Coordination::Exception%')
+  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%';
+
 
 -- FIXME some of the following messages are not informative and it has to be fixed
 create temporary table known_short_messages (s String) as select * from (select
@@ -51,15 +95,20 @@ create temporary table known_short_messages (s String) as select * from (select
 ] as arr) array join arr;
 
 -- Check that we don't have too many short meaningless message patterns.
+WITH 1 AS max_messages
 select 'messages shorter than 10',
-    greatest(uniqExact(message_format_string), 1)
+    (uniqExact(message_format_string) as c) <= max_messages,
+    c <= max_messages ? [] : groupUniqArray(message_format_string)
     from logs
     where length(message_format_string) < 10 and message_format_string not in known_short_messages;
 
 -- Same as above. Feel free to update the threshold or remove this query if really necessary
+WITH 3 AS max_messages
 select 'messages shorter than 16',
-    greatest(uniqExact(message_format_string), 3)
-    from logs where length(message_format_string) < 16 and message_format_string not in known_short_messages;
+    (uniqExact(message_format_string) as c) <= max_messages,
+    c <= max_messages ? [] : groupUniqArray(message_format_string)
+    from logs
+    where length(message_format_string) < 16 and message_format_string not in known_short_messages;
 
 -- Unlike above, here we look at length of the formatted message, not format string. Most short format strings are fine because they end up decorated with context from outer or inner exceptions, e.g.:
 -- "Expected end of line" -> "Code: 117. DB::Exception: Expected end of line: (in file/uri /var/lib/clickhouse/user_files/data_02118): (at row 1)"
@@ -68,40 +117,53 @@ select 'messages shorter than 16',
 -- This table currently doesn't have enough information to do this reliably, so we just regex search for " (ERROR_NAME_IN_CAPS)" and hope that's good enough.
 -- For the "Code: 123. DB::Exception: " part, we just subtract 26 instead of searching for it. Because sometimes it's not at the start, e.g.:
 -- "Unexpected error, will try to restart main thread: Code: 341. DB::Exception: Unexpected error: Code: 57. DB::Exception:[...]"
+WITH 3 AS max_messages
 select 'exceptions shorter than 30',
-    greatest(uniqExact(message_format_string), 3) AS c,
-    c = 3 ? [] : groupUniqArray(message_format_string)
+    (uniqExact(message_format_string) as c) <= max_messages,
+    c <= max_messages ? [] : groupUniqArray(message_format_string)
     from logs
     where message ilike '%DB::Exception%' and if(length(extract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) < 30 + 26 and message_format_string not in known_short_messages;
 
-
 -- Avoid too noisy messages: top 1 message frequency must be less than 30%. We should reduce the threshold
-select 'noisy messages',
-    greatest((select count() from logs group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.30);
+WITH 0.30 as threshold
+select
+    'noisy messages',
+    greatest(coalesce(((select message_format_string, count() from logs group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
+    r <= threshold ? '' : top_message.1;
 
 -- Same as above, but excluding Test level (actually finds top 1 Trace message)
-with ('Access granted: {}{}', '{} -> {}') as frequent_in_tests
-select 'noisy Trace messages',
-    greatest((select count() from logs where level!='Test' and message_format_string not in frequent_in_tests
-        group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.16);
+with 0.16 as threshold
+select
+    'noisy Trace messages',
+    greatest(coalesce(((select message_format_string, count() from logs where level = 'Trace' and message_format_string not in ('Access granted: {}{}', '{} -> {}')
+                        group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
+    r <= threshold ? '' : top_message.1;
 
 -- Same as above for Debug
+WITH 0.09 as threshold
 select 'noisy Debug messages',
-    greatest((select count() from logs where level <= 'Debug' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.09);
+       greatest(coalesce(((select message_format_string, count() from logs where level = 'Debug' group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
+       r <= threshold ? '' : top_message.1;
 
 -- Same as above for Info
+WITH 0.05 as threshold
 select 'noisy Info messages',
-    greatest((select count() from logs where level <= 'Information' group by message_format_string order by count() desc limit 1) / (select count() from logs), 0.05);
+       greatest(coalesce(((select message_format_string, count() from logs where level = 'Information' group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
+       r <= threshold ? '' : top_message.1;
 
 -- Same as above for Warning
-with ('Not enabled four letter command {}') as frequent_in_tests
-select 'noisy Warning messages',
-    greatest(coalesce((select count() from logs where level = 'Warning' and message_format_string not in frequent_in_tests
-    group by message_format_string order by count() desc limit 1), 0) / (select count() from logs), 0.01);
+with 0.01 as threshold
+select
+    'noisy Warning messages',
+    greatest(coalesce(((select message_format_string, count() from logs where level = 'Warning' and message_format_string not in ('Not enabled four letter command {}')
+                       group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
+    r <= threshold ? '' : top_message.1;
 
 -- Same as above for Error
+WITH 0.03 as threshold
 select 'noisy Error messages',
-    greatest(coalesce((select count() from logs where level = 'Error' group by message_format_string order by count() desc limit 1), 0) / (select count() from logs), 0.02);
+    greatest(coalesce(((select message_format_string, count() from logs where level = 'Error' group by message_format_string order by count() desc limit 1) as top_message).2, 0) / (select count() from logs), threshold) as r,
+    r <= threshold ? '' : top_message.1;
 
 select 'no Fatal messages', count() from logs where level = 'Fatal';
 

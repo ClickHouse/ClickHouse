@@ -36,4 +36,6 @@ EXPLAIN QUERY TREE SELECT * FROM 02668_logical_optimizer WHERE a <> 1 AND 3 <> a
 SELECT * FROM 02668_logical_optimizer WHERE a <> 1 AND 1 <> a;
 EXPLAIN QUERY TREE SELECT * FROM 02668_logical_optimizer WHERE a <> 1 AND 1 <> a;
 
+SELECT a FROM 02668_logical_optimizer WHERE (b = 'test') AND ('test' = b);
+
 SELECT (k = 3) OR ( (k = 1) OR (k = 2) OR ( (NULL OR 1) = k ) ) FROM ( SELECT materialize(1) AS k );

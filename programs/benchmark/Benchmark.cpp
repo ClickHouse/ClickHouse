@@ -35,7 +35,6 @@
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
-#include <filesystem>
 
 
 /** A tool for evaluating ClickHouse performance.
