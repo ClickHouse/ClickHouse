@@ -112,3 +112,25 @@ def test_cache_evicted_by_temporary_data(start_cluster):
     ), exc.value
 
     q("DROP TABLE IF EXISTS t1")
+
+
+def test_two_caches(start_cluster):
+    q = node.query
+    get_free_space = lambda: int(
+        q(
+            "SELECT free_space FROM system.disks WHERE name = 'tiny_local_cache_local_disk'"
+        ).strip()
+    )
+    get_cache_size = lambda: int(
+        q("SELECT sum(size) FROM system.filesystem_cache").strip()
+    )
+    # Codec is NONE to make cache size predictable
+    for storage_policy in ["tiny_local_cache", "tiny_local_cache2"]:
+        table_name = "test_two_caches_" + storage_policy
+        q(
+            f"CREATE TABLE {table_name} (x UInt64 CODEC(NONE), y UInt64 CODEC(NONE)) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = '{storage_policy}'"
+        )
+        q(f"INSERT INTO {table_name} SELECT number, number FROM numbers(1024 * 1024)")
+
+    print(get_cache_size())
+    print(get_free_space())

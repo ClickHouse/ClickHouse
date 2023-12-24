@@ -3,18 +3,33 @@
         <disks>
             <local_disk>
                 <type>local_blob_storage</type>
-                <path>/local_disk/</path>
+                <path>/local_disk/disk1/</path>
             </local_disk>
 
             <tiny_local_cache>
                 <type>cache</type>
                 <disk>local_disk</disk>
-                <path>/tiny_local_cache/</path>
+                <path>/tiny_local_cache/cache1</path>
                 <max_size>10M</max_size>
                 <max_file_segment_size>1M</max_file_segment_size>
                 <boundary_alignment>1M</boundary_alignment>
                 <cache_on_write_operations>1</cache_on_write_operations>
             </tiny_local_cache>
+
+            <local_disk2>
+                <type>local_blob_storage</type>
+                <path>/local_disk/disk2/</path>
+            </local_disk2>
+
+            <tiny_local_cache2>
+                <type>cache</type>
+                <disk>local_disk2</disk>
+                <path>/tiny_local_cache/cache2</path>
+                <max_size>10M</max_size>
+                <max_file_segment_size>1M</max_file_segment_size>
+                <boundary_alignment>1M</boundary_alignment>
+                <cache_on_write_operations>1</cache_on_write_operations>
+            </tiny_local_cache2>
 
             <!-- Used to check free space in `/tiny_local_cache` using `system.disks` -->
             <!-- Entry about tiny_local_cache shows incorrect info due to it uses DiskObjectStorage under the hood -->
@@ -32,6 +47,13 @@
                     </main>
                 </volumes>
             </tiny_local_cache>
+            <tiny_local_cache2>
+                <volumes>
+                    <main>
+                        <disk>tiny_local_cache2</disk>
+                    </main>
+                </volumes>
+            </tiny_local_cache2>
         </policies>
     </storage_configuration>
 
