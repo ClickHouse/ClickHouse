@@ -76,10 +76,11 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         LOG_INFO(log, "S3 configuration was updated");
 
-        auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
+        auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key, auth_settings.session_token);
         auto headers = auth_settings.headers;
 
         static constexpr size_t s3_max_redirects = 10;
+        static constexpr size_t s3_retry_attempts = 10;
         static constexpr bool enable_s3_requests_logging = false;
 
         if (!new_uri.key.empty())
@@ -90,7 +91,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             auth_settings.region,
-            RemoteHostFilter(), s3_max_redirects,
+            RemoteHostFilter(), s3_max_redirects, s3_retry_attempts,
             enable_s3_requests_logging,
             /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {},
             new_uri.uri.getScheme());
@@ -100,6 +101,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         auto client = S3::ClientFactory::instance().create(
             client_configuration,
             new_uri.is_virtual_hosted_style,
+            /* disable_checksum= */ false,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             auth_settings.server_side_encryption_customer_key_base64,
@@ -146,13 +148,14 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 
         const auto create_writer = [&](const auto & key)
         {
+            /// blob_storage_log is not used for keeper
             return WriteBufferFromS3(
-                s3_client->client,
                 s3_client->client,
                 s3_client->uri.bucket,
                 key,
                 DBMS_DEFAULT_BUFFER_SIZE,
-                request_settings_1
+                request_settings_1,
+                /* blob_log */ {}
             );
         };
 
@@ -205,6 +208,9 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
             return;
         }
 
+        /// To avoid reference to binding
+        const auto & snapshot_path_ref = snapshot_path;
+
         SCOPE_EXIT(
         {
             LOG_INFO(log, "Removing lock file");
@@ -214,12 +220,13 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
                 delete_request.SetBucket(s3_client->uri.bucket);
                 delete_request.SetKey(lock_file);
                 auto delete_outcome = s3_client->client->DeleteObject(delete_request);
+
                 if (!delete_outcome.IsSuccess())
                     throw S3Exception(delete_outcome.GetError().GetMessage(), delete_outcome.GetError().GetErrorType());
             }
             catch (...)
             {
-                LOG_INFO(log, "Failed to delete lock file for {} from S3", snapshot_file_info.path);
+                LOG_INFO(log, "Failed to delete lock file for {} from S3", snapshot_path_ref);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         });

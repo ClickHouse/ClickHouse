@@ -22,6 +22,7 @@ public:
 
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
+    bool isRemote() const override;
 
     bool hasInnerTable() const { return has_inner_table; }
 
@@ -53,7 +54,6 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ContextPtr context) override;
 
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
@@ -64,14 +64,14 @@ public:
 
     Pipe alterPartition(const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, ContextPtr context) override;
 
-    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override;
+    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings, ContextPtr local_context) const override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     void renameInMemory(const StorageID & new_table_id) override;
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
@@ -102,6 +102,7 @@ public:
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
 private:
     /// Will be initialized in constructor

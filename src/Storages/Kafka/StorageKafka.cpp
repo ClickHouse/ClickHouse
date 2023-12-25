@@ -41,11 +41,11 @@
 #include <Common/setThreadName.h>
 #include <Formats/FormatFactory.h>
 
-#include "Storages/ColumnDefault.h"
-#include "config_version.h"
-
+#include <Storages/ColumnDefault.h>
+#include <Common/config_version.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+
 #if USE_KRB5
 #include <Access/KerberosInit.h>
 #endif // USE_KRB5
@@ -268,7 +268,7 @@ StorageKafka::StorageKafka(
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
     , collection_name(collection_name_)
 {
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         kafka_settings->input_format_allow_errors_num = 0;
         kafka_settings->input_format_allow_errors_ratio = 0;
@@ -435,7 +435,7 @@ void StorageKafka::startup()
 }
 
 
-void StorageKafka::shutdown()
+void StorageKafka::shutdown(bool)
 {
     for (auto & task : tasks)
     {
@@ -513,8 +513,9 @@ KafkaConsumerPtr StorageKafka::createConsumer(size_t consumer_number)
     // that allows to prevent fast draining of the librdkafka queue
     // during building of single insert block. Improves performance
     // significantly, but may lead to bigger memory consumption.
-    size_t default_queued_min_messages = 100000; // we don't want to decrease the default
-    conf.set("queued.min.messages", std::max(getMaxBlockSize(),default_queued_min_messages));
+    size_t default_queued_min_messages = 100000; // must be greater than or equal to default
+    size_t max_allowed_queued_min_messages = 10000000; // must be less than or equal to max allowed value
+    conf.set("queued.min.messages", std::min(std::max(getMaxBlockSize(), default_queued_min_messages), max_allowed_queued_min_messages));
 
     /// a reference to the consumer is needed in statistic callback
     /// although the consumer does not exist when callback is being registered
@@ -660,10 +661,19 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config,
 
     if (kafka_consumer_weak_ptr_ptr)
     {
+        /// NOTE: statistics should be consumed, otherwise it creates too much
+        /// entries in the queue, that leads to memory leak and slow shutdown.
+        ///
+        /// This is the case when you have kafka table but no SELECT from it or
+        /// materialized view attached.
+        ///
+        /// So for now it is disabled by default, until properly fixed.
+#if 0
         if (!config.has(config_prefix + "." + "statistics_interval_ms"))
         {
             kafka_config.set("statistics.interval.ms", "3000"); // every 3 seconds by default. set to 0 to disable.
         }
+#endif
 
         if (kafka_config.get("statistics.interval.ms") != "0")
         {
@@ -1056,7 +1066,7 @@ NamesAndTypesList StorageKafka::getVirtuals() const
         {"_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3))},
         {"_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}};
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         result.push_back({"_raw_message", std::make_shared<DataTypeString>()});
         result.push_back({"_error", std::make_shared<DataTypeString>()});
@@ -1076,7 +1086,7 @@ Names StorageKafka::getVirtualColumnNames() const
         "_headers.name",
         "_headers.value",
     };
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         result.push_back({"_raw_message"});
         result.push_back({"_error"});

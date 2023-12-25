@@ -201,6 +201,7 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
              || element.function == RPNElement::FUNCTION_IN
              || element.function == RPNElement::FUNCTION_NOT_IN
              || element.function == RPNElement::FUNCTION_MULTI_SEARCH
+             || element.function == RPNElement::FUNCTION_HAS_ANY
              || element.function == RPNElement::ALWAYS_FALSE)
         {
             rpn_stack.push_back(false);
@@ -274,7 +275,8 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
             if (element.function == RPNElement::FUNCTION_NOT_IN)
                 rpn_stack.back() = !rpn_stack.back();
         }
-        else if (element.function == RPNElement::FUNCTION_MULTI_SEARCH)
+        else if (element.function == RPNElement::FUNCTION_MULTI_SEARCH
+            || element.function == RPNElement::FUNCTION_HAS_ANY)
         {
             std::vector<bool> result(element.set_bloom_filters.back().size(), true);
 
@@ -337,15 +339,22 @@ bool MergeTreeConditionFullText::extractAtomFromTree(const RPNBuilderTreeNode & 
         if (node.tryGetConstant(const_value, const_type))
         {
             /// Check constant like in KeyCondition
-            if (const_value.getType() == Field::Types::UInt64
-                || const_value.getType() == Field::Types::Int64
-                || const_value.getType() == Field::Types::Float64)
-            {
-                /// Zero in all types is represented in memory the same way as in UInt64.
-                out.function = const_value.get<UInt64>()
-                            ? RPNElement::ALWAYS_TRUE
-                            : RPNElement::ALWAYS_FALSE;
 
+            if (const_value.getType() == Field::Types::UInt64)
+            {
+                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
+            if (const_value.getType() == Field::Types::Int64)
+            {
+                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
+            if (const_value.getType() == Field::Types::Float64)
+            {
+                out.function = const_value.get<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -388,7 +397,8 @@ bool MergeTreeConditionFullText::extractAtomFromTree(const RPNBuilderTreeNode & 
                  function_name.starts_with("hasToken") ||
                  function_name == "startsWith" ||
                  function_name == "endsWith" ||
-                 function_name == "multiSearchAny")
+                 function_name == "multiSearchAny" ||
+                 function_name == "hasAny")
         {
             Field const_value;
             DataTypePtr const_type;
@@ -567,10 +577,13 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
         token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
-    else if (function_name == "multiSearchAny")
+    else if (function_name == "multiSearchAny"
+        || function_name == "hasAny")
     {
         out.key_column = *key_index;
-        out.function = RPNElement::FUNCTION_MULTI_SEARCH;
+        out.function = function_name == "multiSearchAny" ?
+            RPNElement::FUNCTION_MULTI_SEARCH :
+            RPNElement::FUNCTION_HAS_ANY;
 
         /// 2d vector is not needed here but is used because already exists for FUNCTION_IN
         std::vector<std::vector<BloomFilter>> bloom_filters;
@@ -672,7 +685,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleFullText>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorFullText>(index.column_names, index.name, params, token_extractor.get());
 }
@@ -737,7 +750,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
             data_type = WhichDataType(low_cardinality.getDictionaryType());
         }
 
-        if (!data_type.isString() && !data_type.isFixedString())
+        if (!data_type.isString() && !data_type.isFixedString() && !data_type.isIPv6())
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Ngram and token bloom filter indexes can only be used with column types `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }

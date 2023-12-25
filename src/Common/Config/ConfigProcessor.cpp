@@ -15,6 +15,7 @@
 #include <Poco/DOM/Comment.h>
 #include <Poco/XML/XMLWriter.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/NumberParser.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -254,6 +255,25 @@ void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
 
 #endif
 
+void ConfigProcessor::hideRecursive(Poco::XML::Node * config_root)
+{
+    for (Node * node = config_root->firstChild(); node;)
+    {
+        Node * next_node = node->nextSibling();
+        if (node->nodeType() == Node::ELEMENT_NODE)
+        {
+            Element & element = dynamic_cast<Element &>(*node);
+            if (element.hasAttribute("hide_in_preprocessed") && Poco::NumberParser::parseBool(element.getAttribute("hide_in_preprocessed")))
+            {
+                config_root->removeChild(node);
+            } else
+                hideRecursive(node);
+        }
+        node = next_node;
+    }
+}
+
+
 void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, const Node * with_root)
 {
     const NodeListPtr with_nodes = with_root->childNodes();
@@ -309,6 +329,12 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                 else
                 {
                     Element & config_element = dynamic_cast<Element &>(*config_node);
+
+                    /// Remove substitution attributes from the merge target node if source node already has a value
+                    bool source_has_value = with_element.hasChildNodes();
+                    if (source_has_value)
+                        for (const auto & attr_name: SUBSTITUTION_ATTRS)
+                            config_element.removeAttribute(attr_name);
 
                     mergeAttributes(config_element, with_element);
                     mergeRecursive(config, config_node, with_node);
@@ -493,6 +519,10 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_zk"]) /// we have zookeeper subst
     {
+        /// only allow substitution for nodes with no value and without "replace"
+        if (node->hasChildNodes() && !replace)
+            throw Poco::Exception("Element <" + node->nodeName() + "> has value and does not have 'replace' attribute, can't process from_zk substitution");
+
         contributing_zk_paths.insert(attr_nodes["from_zk"]->getNodeValue());
 
         if (zk_node_cache)
@@ -515,6 +545,10 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_env"]) /// we have env subst
     {
+        /// only allow substitution for nodes with no value and without "replace"
+        if (node->hasChildNodes() && !replace)
+            throw Poco::Exception("Element <" + node->nodeName() + "> has value and does not have 'replace' attribute, can't process from_env substitution");
+
         XMLDocumentPtr env_document;
         auto get_env_node = [&](const std::string & name) -> const Node *
         {
@@ -792,6 +826,24 @@ void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config)
 
 #endif
 
+XMLDocumentPtr ConfigProcessor::hideElements(XMLDocumentPtr xml_tree)
+{
+    /// Create a copy of XML Document because hiding elements from preprocessed_xml document
+    /// also influences on configuration which has a pointer to preprocessed_xml document.
+
+    XMLDocumentPtr xml_tree_copy = new Poco::XML::Document;
+
+    for (Node * node = xml_tree->firstChild(); node; node = node->nextSibling())
+    {
+        NodePtr new_node = xml_tree_copy->importNode(node, true);
+        xml_tree_copy->appendChild(new_node);
+    }
+    Node * new_config_root = getRootNode(xml_tree_copy.get());
+    hideRecursive(new_config_root);
+
+    return xml_tree_copy;
+}
+
 void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
     try
@@ -840,7 +892,8 @@ void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::
         writer.setNewLine("\n");
         writer.setIndent("    ");
         writer.setOptions(Poco::XML::XMLWriter::PRETTY_PRINT);
-        writer.writeNode(preprocessed_path, loaded_config.preprocessed_xml);
+        XMLDocumentPtr preprocessed_xml_without_hidden_elements = hideElements(loaded_config.preprocessed_xml);
+        writer.writeNode(preprocessed_path, preprocessed_xml_without_hidden_elements);
         LOG_DEBUG(log, "Saved preprocessed configuration to '{}'.", preprocessed_path);
     }
     catch (Poco::Exception & e)

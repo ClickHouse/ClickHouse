@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Compression/CompressedReadBufferFromFile.h>
+#include <Storages/BlockNumberColumn.h>
 
 
 namespace DB
@@ -52,6 +53,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+    const Statistics & stats_to_recalc_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity)
@@ -64,9 +66,15 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     ordered_columns_list.sort([this](const auto & lhs, const auto & rhs)
         { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
 
+    /// _block_number column is not added by user, but is persisted in a part after merge
+    /// If _block_number is not present in the parts to be merged, then it won't have a position
+    /// So check if its not present and add it at the end
+    if (columns_list.contains(BlockNumberColumn::name) && !ordered_columns_list.contains(BlockNumberColumn::name))
+        ordered_columns_list.emplace_back(NameAndTypePair{BlockNumberColumn::name, BlockNumberColumn::type});
+
     return std::make_unique<MergeTreeDataPartWriterCompact>(
         shared_from_this(), ordered_columns_list, metadata_snapshot,
-        indices_to_recalc, getMarksFileExtension(),
+        indices_to_recalc, stats_to_recalc_, getMarksFileExtension(),
         default_codec_, writer_settings, computed_index_granularity);
 }
 

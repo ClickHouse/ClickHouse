@@ -40,7 +40,6 @@ bool MergePlainMergeTreeTask::executeStep()
     if (merge_list_entry)
     {
         switcher.emplace((*merge_list_entry)->thread_group);
-
     }
 
     switch (state)
@@ -132,7 +131,6 @@ void MergePlainMergeTreeTask::prepare()
             merge_mutate_entry->tagger->reserved_space,
             deduplicate,
             deduplicate_by_columns,
-            cleanup,
             storage.merging_params,
             txn);
 }

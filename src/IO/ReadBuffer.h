@@ -18,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int NOT_IMPLEMENTED;
 }
 
 static constexpr auto DEFAULT_PREFETCH_PRIORITY = Priority{0};
@@ -235,14 +234,6 @@ public:
     virtual void setReadUntilPosition(size_t /* position */) {}
 
     virtual void setReadUntilEnd() {}
-
-    /// Read at most `size` bytes into data at specified offset `offset`. First ignore `ignore` bytes if `ignore` > 0.
-    /// Notice: this function only need to be implemented in synchronous read buffers to be wrapped in asynchronous read.
-    /// Such as ReadBufferFromRemoteFSGather and AsynchronousReadIndirectBufferFromRemoteFS.
-    virtual IAsynchronousReader::Result readInto(char * /*data*/, size_t /*size*/, size_t /*offset*/, size_t /*ignore*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "readInto not implemented");
-    }
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`

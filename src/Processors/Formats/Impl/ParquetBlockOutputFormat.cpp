@@ -13,6 +13,7 @@ namespace CurrentMetrics
 {
     extern const Metric ParquetEncoderThreads;
     extern const Metric ParquetEncoderThreadsActive;
+    extern const Metric ParquetEncoderThreadsScheduled;
 }
 
 namespace DB
@@ -79,7 +80,9 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
     {
         if (format_settings.parquet.parallel_encoding && format_settings.max_threads > 1)
             pool = std::make_unique<ThreadPool>(
-                CurrentMetrics::ParquetEncoderThreads, CurrentMetrics::ParquetEncoderThreadsActive,
+                CurrentMetrics::ParquetEncoderThreads,
+                CurrentMetrics::ParquetEncoderThreadsActive,
+                CurrentMetrics::ParquetEncoderThreadsScheduled,
                 format_settings.max_threads);
 
         using C = FormatSettings::ParquetCompression;

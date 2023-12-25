@@ -146,6 +146,18 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
+    struct UUIDs
+    {
+        UUID uuid = UUIDHelpers::Nil;
+        UUID to_inner_uuid = UUIDHelpers::Nil;
+        UUIDs() = default;
+        explicit UUIDs(const ASTCreateQuery & query);
+        String toString() const;
+        static UUIDs fromString(const String & str);
+    };
+    UUIDs generateRandomUUID(bool always_generate_new_uuid = false);
+    void setUUID(const UUIDs & uuids);
+
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 

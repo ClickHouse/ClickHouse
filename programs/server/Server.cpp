@@ -20,6 +20,7 @@
 #include <base/coverage.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
+#include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
@@ -42,7 +43,9 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
+#include <Common/FailPoint.h>
 #include <Server/waitServersToFinish.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -64,7 +67,7 @@
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <Common/NamedCollections/NamedCollectionUtils.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
@@ -90,6 +93,7 @@
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
+#include <Server/KeeperReadinessHandler.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Core/ServerSettings.h>
@@ -97,7 +101,7 @@
 #include <unordered_set>
 
 #include "config.h"
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if defined(OS_LINUX)
 #    include <cstdlib>
@@ -491,7 +495,7 @@ static void sanityChecks(Server & server)
         if (!fastClockSources.contains(readLine(filename)))
             server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -501,7 +505,7 @@ static void sanityChecks(Server & server)
         if (readNumber(filename) == 2)
             server.context()->addWarningMessage("Linux memory overcommit is disabled. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -511,7 +515,7 @@ static void sanityChecks(Server & server)
         if (readLine(filename).find("[always]") != std::string::npos)
             server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -521,7 +525,7 @@ static void sanityChecks(Server & server)
         if (readNumber(filename) < 30000)
             server.context()->addWarningMessage("Linux max PID is too low. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -531,7 +535,17 @@ static void sanityChecks(Server & server)
         if (readNumber(filename) < 30000)
             server.context()->addWarningMessage("Linux threads max count is too low. Check " + String(filename));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    try
+    {
+        const char * filename = "/proc/sys/kernel/task_delayacct";
+        if (readNumber(filename) == 0)
+            server.context()->addWarningMessage("Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. Check " + String(filename));
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -545,7 +559,7 @@ static void sanityChecks(Server & server)
         if (getAvailableMemoryAmount() < (2l << 30))
             server.context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -554,7 +568,7 @@ static void sanityChecks(Server & server)
         if (!enoughSpaceInDirectory(data_path, 1ull << 30))
             server.context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + String(data_path));
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -567,7 +581,7 @@ static void sanityChecks(Server & server)
                 server.context()->addWarningMessage("Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
         }
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -645,6 +659,11 @@ try
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
+    Poco::ThreadPool server_pool(3, server_settings.max_connections);
+    std::mutex servers_lock;
+    std::vector<ProtocolServerAdapter> servers;
+    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
+
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
@@ -665,6 +684,10 @@ try
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
 
+#if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
+    global_context->addWarningMessage("Server was built with code coverage. It will work slowly.");
+#endif
+
     const size_t physical_server_memory = getMemoryAmount();
 
     LOG_INFO(log, "Available RAM: {}; physical cores: {}; logical cores: {}.",
@@ -681,6 +704,68 @@ try
         server_settings.max_thread_pool_size,
         server_settings.max_thread_pool_free_size,
         server_settings.thread_pool_queue_size);
+    /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
+    SCOPE_EXIT({
+        Stopwatch watch;
+        LOG_INFO(log, "Waiting for background threads");
+        GlobalThreadPool::instance().shutdown();
+        LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
+    });
+
+    /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
+    /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
+    SCOPE_EXIT({
+        /** Ask to cancel background jobs all table engines,
+          *  and also query_log.
+          * It is important to do early, not in destructor of Context, because
+          *  table engines could use Context on destroy.
+          */
+        LOG_INFO(log, "Shutting down storages.");
+
+        global_context->shutdown();
+
+        LOG_DEBUG(log, "Shut down storages.");
+
+        if (!servers_to_start_before_tables.empty())
+        {
+            LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
+            size_t current_connections = 0;
+            {
+                std::lock_guard lock(servers_lock);
+                for (auto & server : servers_to_start_before_tables)
+                {
+                    server.stop();
+                    current_connections += server.currentConnections();
+                }
+            }
+
+            if (current_connections)
+                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
+            else
+                LOG_INFO(log, "Closed all listening sockets.");
+
+            if (current_connections > 0)
+                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, server_settings.shutdown_wait_unfinished);
+
+            if (current_connections)
+                LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
+            else
+                LOG_INFO(log, "Closed connections to servers for tables.");
+        }
+
+        global_context->shutdownKeeperDispatcher();
+
+        /// Wait server pool to avoid use-after-free of destroyed context in the handlers
+        server_pool.joinAll();
+
+        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
+          * At this moment, no one could own shared part of Context.
+          */
+        global_context.reset();
+        shared_context.reset();
+        LOG_DEBUG(log, "Destroyed global context.");
+    });
+
 
 #if USE_AZURE_BLOB_STORAGE
     /// It makes sense to deinitialize libxml after joining of all threads
@@ -739,10 +824,6 @@ try
         }
     }
 
-    Poco::ThreadPool server_pool(3, server_settings.max_connections);
-    std::mutex servers_lock;
-    std::vector<ProtocolServerAdapter> servers;
-    std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
         global_context,
@@ -883,6 +964,8 @@ try
             }
         }
     }
+
+    FailPointInjection::enableFromGlobalConfig(config());
 
     int default_oom_score = 0;
 
@@ -1038,41 +1121,6 @@ try
         fs::create_directories(path / "metadata_dropped/");
     }
 
-#if USE_ROCKSDB
-    /// Initialize merge tree metadata cache
-    if (config().has("merge_tree_metadata_cache"))
-    {
-        global_context->addWarningMessage("The setting 'merge_tree_metadata_cache' is enabled."
-            " But the feature of 'metadata cache in RocksDB' is experimental and is not ready for production."
-            " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production."
-            " See the corresponding report at https://github.com/ClickHouse/ClickHouse/issues/51182");
-
-        fs::create_directories(path / "rocksdb/");
-        size_t size = config().getUInt64("merge_tree_metadata_cache.lru_cache_size", 256 << 20);
-        bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
-        try
-        {
-            LOG_DEBUG(log, "Initializing MergeTree metadata cache, lru_cache_size: {} continue_if_corrupted: {}",
-                ReadableSize(size), continue_if_corrupted);
-            global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
-        }
-        catch (...)
-        {
-            if (continue_if_corrupted)
-            {
-                /// Rename rocksdb directory and reinitialize merge tree metadata cache
-                time_t now = time(nullptr);
-                fs::rename(path / "rocksdb", path / ("rocksdb.old." + std::to_string(now)));
-                global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
-            }
-            else
-            {
-                throw;
-            }
-        }
-    }
-#endif
-
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both http and https interserver ports are specified");
 
@@ -1180,6 +1228,8 @@ try
     size_t compiled_expression_cache_max_elements = config().getUInt64("compiled_expression_cache_elements_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
+
+    NamedCollectionUtils::loadIfNot();
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
@@ -1296,6 +1346,9 @@ try
 
             global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
             global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);
+            global_context->setMaxTableNumToWarn(server_settings_.max_table_num_to_warn);
+            global_context->setMaxDatabaseNumToWarn(server_settings_.max_database_num_to_warn);
+            global_context->setMaxPartNumToWarn(server_settings_.max_part_num_to_warn);
 
             ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
             if (server_settings_.concurrent_threads_soft_limit_num > 0 && server_settings_.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
@@ -1349,6 +1402,10 @@ try
             global_context->getSchedulePool().increaseThreadsCount(server_settings_.background_schedule_pool_size);
             global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
             global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
+
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, server_settings_.tables_loader_foreground_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, server_settings_.tables_loader_background_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundStartupPoolId, server_settings_.tables_loader_background_pool_size);
 
             getIOThreadPool().reloadConfiguration(
                 server_settings.max_io_thread_pool_size,
@@ -1414,6 +1471,8 @@ try
 #endif
             NamedCollectionUtils::reloadFromConfig(*config);
 
+            FileCacheFactory::instance().updateSettingsFromConfig(*config);
+
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
@@ -1425,7 +1484,7 @@ try
     const auto interserver_listen_hosts = getInterserverListenHosts(config());
     const auto listen_try = getListenTry(config());
 
-    if (config().has("keeper_server"))
+    if (config().has("keeper_server.server_id"))
     {
 #if USE_NURAFT
         //// If we don't have configured connection probably someone trying to use clickhouse-server instead
@@ -1497,6 +1556,34 @@ try
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
 #endif
                 });
+
+            /// HTTP control endpoints
+            port_name = "keeper_server.http_control.port";
+            createServer(config(), listen_host, port_name, listen_try, /* start_server: */ false,
+            servers_to_start_before_tables,
+            [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                auto http_context = httpContext();
+                Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
+                Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+                http_params->setTimeout(http_context->getReceiveTimeout());
+                http_params->setKeepAliveTimeout(keep_alive_timeout);
+
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config(), socket, listen_host, port);
+                socket.setReceiveTimeout(http_context->getReceiveTimeout());
+                socket.setSendTimeout(http_context->getSendTimeout());
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "HTTP Control: http://" + address.toString(),
+                    std::make_unique<HTTPServer>(
+                        std::move(http_context),
+                        createKeeperHTTPControlMainHandlerFactory(
+                            config_getter(),
+                            global_context->getKeeperDispatcher(),
+                            "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params));
+            });
         }
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
@@ -1506,7 +1593,7 @@ try
 
     {
         std::lock_guard lock(servers_lock);
-        /// We should start interserver communications before (and more imporant shutdown after) tables.
+        /// We should start interserver communications before (and more important shutdown after) tables.
         /// Because server can wait for a long-running queries (for example in tcp_handler) after interserver handler was already shut down.
         /// In this case we will have replicated tables which are unable to send any parts to other replicas, but still can
         /// communicate with zookeeper, execute merges, etc.
@@ -1548,11 +1635,13 @@ try
 
     global_context->setStopServersCallback([&](const ServerType & server_type)
     {
+        std::lock_guard lock(servers_lock);
         stopServers(servers, server_type);
     });
 
     global_context->setStartServersCallback([&](const ServerType & server_type)
     {
+        std::lock_guard lock(servers_lock);
         createServers(
             config(),
             listen_hosts,
@@ -1587,6 +1676,10 @@ try
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
+    /// Set the path for google proto files
+    if (config().has("google_protos_path"))
+        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
+
     /// Set path for filesystem caches
     fs::path filesystem_caches_path(config().getString("filesystem_caches_path", ""));
     if (!filesystem_caches_path.empty())
@@ -1600,60 +1693,6 @@ try
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
-
-    SCOPE_EXIT({
-        async_metrics.stop();
-
-        /** Ask to cancel background jobs all table engines,
-          *  and also query_log.
-          * It is important to do early, not in destructor of Context, because
-          *  table engines could use Context on destroy.
-          */
-        LOG_INFO(log, "Shutting down storages.");
-
-        global_context->shutdown();
-
-        LOG_DEBUG(log, "Shut down storages.");
-
-        if (!servers_to_start_before_tables.empty())
-        {
-            LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
-            size_t current_connections = 0;
-            {
-                std::lock_guard lock(servers_lock);
-                for (auto & server : servers_to_start_before_tables)
-                {
-                    server.stop();
-                    current_connections += server.currentConnections();
-                }
-            }
-
-            if (current_connections)
-                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
-            else
-                LOG_INFO(log, "Closed all listening sockets.");
-
-            if (current_connections > 0)
-                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
-
-            if (current_connections)
-                LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
-            else
-                LOG_INFO(log, "Closed connections to servers for tables.");
-
-            global_context->shutdownKeeperDispatcher();
-        }
-
-        /// Wait server pool to avoid use-after-free of destroyed context in the handlers
-        server_pool.joinAll();
-
-        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
-          * At this moment, no one could own shared part of Context.
-          */
-        global_context.reset();
-        shared_context.reset();
-        LOG_DEBUG(log, "Destroyed global context.");
-    });
 
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
     /// and thus this object must be created after the SCOPE_EXIT object where shared
@@ -1682,17 +1721,18 @@ try
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
+    LoadTaskPtrs load_metadata_tasks;
     try
     {
         auto & database_catalog = DatabaseCatalog::instance();
         /// We load temporary database first, because projections need it.
         database_catalog.initializeAndLoadTemporaryDatabase();
-        loadMetadataSystem(global_context);
-        maybeConvertSystemDatabase(global_context);
+        auto system_startup_tasks = loadMetadataSystem(global_context);
+        maybeConvertSystemDatabase(global_context, system_startup_tasks);
         /// This has to be done before the initialization of system logs,
         /// otherwise there is a race condition between the system database initialization
         /// and creation of new tables in the database.
-        startupSystemTables();
+        waitLoad(TablesLoaderForegroundPoolId, system_startup_tasks);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
@@ -1708,20 +1748,22 @@ try
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
         database_catalog.createBackgroundTasks();
-        /// Then, load remaining databases
-        loadMetadata(global_context, default_database);
-        convertDatabasesEnginesIfNeed(global_context);
-        database_catalog.startupBackgroundCleanup();
+        /// Then, load remaining databases (some of them maybe be loaded asynchronously)
+        load_metadata_tasks = loadMetadata(global_context, default_database, server_settings.async_load_databases);
+        /// If we need to convert database engines, disable async tables loading
+        convertDatabasesEnginesIfNeed(load_metadata_tasks, global_context);
+        database_catalog.startupBackgroundTasks();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
-        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
+        global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     catch (...)
     {
         tryLogCurrentException(log, "Caught exception while loading metadata");
         throw;
     }
+
     LOG_DEBUG(log, "Loaded metadata.");
 
     /// Init trace collector only after trace_log system table was created
@@ -1836,6 +1878,9 @@ try
         try
         {
             global_context->loadOrReloadDictionaries(config());
+
+            if (!config().getBool("dictionaries_lazy_load", true) && config().getBool("wait_dictionaries_load_at_startup", true))
+                global_context->waitForDictionariesLoad();
         }
         catch (...)
         {
@@ -1874,8 +1919,13 @@ try
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "distributed_ddl.pool_size should be greater then 0");
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
                                                                      "distributed_ddl", "DDLWorker",
-                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
+                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID),
+                                         load_metadata_tasks);
         }
+
+        /// Do not keep tasks in server, they should be kept inside databases. Used here to make dependent tasks only.
+        load_metadata_tasks.clear();
+        load_metadata_tasks.shrink_to_fit();
 
         {
             std::lock_guard lock(servers_lock);
@@ -1941,7 +1991,7 @@ try
                 global_context->getProcessList().killAllQueries();
 
             if (current_connections)
-                current_connections = waitServersToFinish(servers, servers_lock, config().getInt("shutdown_wait_unfinished", 5));
+                current_connections = waitServersToFinish(servers, servers_lock, server_settings.shutdown_wait_unfinished);
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
@@ -1981,7 +2031,8 @@ catch (...)
 {
     /// Poco does not provide stacktrace.
     tryLogCurrentException("Application");
-    throw;
+    auto code = getCurrentExceptionCode();
+    return code ? code : -1;
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
@@ -2077,10 +2128,9 @@ void Server::createServers(
 {
     const Settings & settings = global_context->getSettingsRef();
 
-    Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings.http_receive_timeout);
-    http_params->setKeepAliveTimeout(keep_alive_timeout);
+    http_params->setKeepAliveTimeout(global_context->getServerSettings().keep_alive_timeout);
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config.keys("protocols", protocols);
@@ -2334,10 +2384,9 @@ void Server::createInterserverServers(
 {
     const Settings & settings = global_context->getSettingsRef();
 
-    Poco::Timespan keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings.http_receive_timeout);
-    http_params->setKeepAliveTimeout(keep_alive_timeout);
+    http_params->setKeepAliveTimeout(global_context->getServerSettings().keep_alive_timeout);
 
     /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)

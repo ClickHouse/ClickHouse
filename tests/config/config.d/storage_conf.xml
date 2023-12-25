@@ -13,10 +13,22 @@
                 <type>cache</type>
                 <disk>s3_disk</disk>
                 <path>s3_cache/</path>
+                <max_size>64Mi</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
+                <cache_policy>LRU</cache_policy>
+                <slru_size_ratio>0.3</slru_size_ratio>
+            </s3_cache>
+            <s3_cache_02933>
+                <type>cache</type>
+                <disk>s3_disk</disk>
+                <path>s3_cache_02933/</path>
                 <max_size>128Mi</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
-            </s3_cache>
+                <background_download_threads>0</background_download_threads>
+                <background_download_queue_size_limit>0</background_download_queue_size_limit>
+            </s3_cache_02933>
             <!-- local disks -->
             <local_disk>
                 <type>local_blob_storage</type>
@@ -72,6 +84,12 @@
             </s3_cache_multi_2>
         </disks>
         <policies>
+            <local_remote>
+                <volumes>
+                    <local><disk>default</disk></local>
+                    <remote><disk>s3_disk</disk></remote>
+                </volumes>
+            </local_remote>
             <s3_cache>
                 <volumes>
                     <main>

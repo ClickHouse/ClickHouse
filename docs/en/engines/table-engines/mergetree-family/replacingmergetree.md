@@ -25,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [ORDER BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[SETTINGS name=value, clean_deleted_rows=value, ...]
+[SETTINGS name=value, ...]
 ```
 
 For a description of request parameters, see [statement description](../../../sql-reference/statements/create/table.md).
@@ -87,20 +87,6 @@ SELECT * FROM mySecondReplacingMT FINAL;
 │   1 │ first   │ 2020-01-01 01:01:01 │
 └─────┴─────────┴─────────────────────┘
 ```
-
-### is_deleted
-
-`is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a “deleted“ row, `0` is a “state“ row.
-
-  Column data type — `UInt8`.
-
-:::note
-`is_deleted` can only be enabled when `ver` is used.
-
-The row is deleted when `OPTIMIZE ... FINAL CLEANUP` or `OPTIMIZE ... FINAL` is used, or if the engine setting `clean_deleted_rows` has been set to `Always`.
-
-No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
-:::
 
 ## Query clauses
 

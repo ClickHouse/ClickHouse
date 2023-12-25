@@ -14,6 +14,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 
 
 namespace DB
@@ -231,7 +232,7 @@ void IPolygonDictionary::loadData()
 {
     QueryPipeline pipeline(source_ptr->loadAll());
 
-    PullingPipelineExecutor executor(pipeline);
+    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
     Block block;
     while (executor.pull(block))
         blockToAttributes(block);

@@ -36,14 +36,14 @@ public:
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
         bool is_http_method_head_,
-        size_t keep_alive_timeout_,
+        UInt64 keep_alive_timeout_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         CompressionMethod compression_method_ = CompressionMethod::None);
 
     ~WriteBufferFromHTTPServerResponse() override;
 
     /// Writes progress in repeating HTTP headers.
-    void onProgress(const Progress & progress, Int64 peak_memory_usage_);
+    void onProgress(const Progress & progress);
 
     /// Turn compression on or off.
     /// The setting has any effect only if HTTP headers haven't been sent yet.
@@ -89,13 +89,13 @@ private:
     ///  but not finish them with \r\n, allowing to send more headers subsequently.
     void startSendHeaders();
 
-    //  Used for write the header X-ClickHouse-Progress / X-ClickHouse-Summary
+    /// Used to write the header X-ClickHouse-Progress / X-ClickHouse-Summary
     void writeHeaderProgressImpl(const char * header_name);
-    // Used for write the header X-ClickHouse-Progress
+    /// Used to write the header X-ClickHouse-Progress
     void writeHeaderProgress();
-    // Used for write the header X-ClickHouse-Summary
+    /// Used to write the header X-ClickHouse-Summary
     void writeHeaderSummary();
-    // Use to write the header X-ClickHouse-Exception-Code even when progress has been sent
+    /// Use to write the header X-ClickHouse-Exception-Code even when progress has been sent
     void writeExceptionCode();
 
     /// This method finish headers with \r\n, allowing to start to send body.
@@ -127,8 +127,6 @@ private:
     Stopwatch progress_watch;
 
     int exception_code = 0;
-
-    Int64 peak_memory_usage = 0;
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };

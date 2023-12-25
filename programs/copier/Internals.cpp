@@ -269,7 +269,7 @@ ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std
     res.hostname_difference = std::numeric_limits<size_t>::max();
     for (const auto & replica : replicas)
     {
-        size_t difference = getHostNameDifference(local_hostname, replica.host_name);
+        size_t difference = getHostNamePrefixDistance(local_hostname, replica.host_name);
         res.hostname_difference = std::min(difference, res.hostname_difference);
     }
 

@@ -355,24 +355,52 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
     return function_node;
 }
 
-QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
+QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr & query_node,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
     auto table_expressions = extractTableExpressions(query_node_typed.getJoinTree());
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    size_t subquery_index = 0;
 
     for (auto & table_expression : table_expressions)
     {
         auto * table_node = table_expression->as<TableNode>();
         auto * table_function_node = table_expression->as<TableFunctionNode>();
-        if (!table_node && !table_function_node)
-            continue;
+        auto * subquery_node = table_expression->as<QueryNode>();
+        auto * union_node = table_expression->as<UnionNode>();
 
-        const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-        auto storage_dummy = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
-            storage_snapshot->metadata->getColumns());
+        StoragePtr storage_dummy;
+
+        if (table_node || table_function_node)
+        {
+            const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+
+            storage_dummy
+                = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), ColumnsDescription(storage_snapshot->getColumns(get_column_options)));
+        }
+        else if (subquery_node || union_node)
+        {
+            const auto & subquery_projection_columns
+                = subquery_node ? subquery_node->getProjectionColumns() : union_node->computeProjectionColumns();
+
+            NameSet unique_column_names;
+            NamesAndTypes storage_dummy_columns;
+            storage_dummy_columns.reserve(subquery_projection_columns.size());
+
+            for (const auto & projection_column : subquery_projection_columns)
+            {
+                auto [_, inserted] = unique_column_names.insert(projection_column.name);
+                if (inserted)
+                    storage_dummy_columns.emplace_back(projection_column);
+            }
+
+            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription(storage_dummy_columns));
+            ++subquery_index;
+        }
+
         auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
 
         if (result_replacement_map)
@@ -408,8 +436,8 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 
     auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
 
-    query_node->resolveProjectionColumns(projection_columns);
     query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
+    query_node->resolveProjectionColumns(projection_columns);
     query_node->getJoinTree() = table_expression;
     query_node->setIsSubquery(true);
 

@@ -157,6 +157,9 @@ public:
     /// Same, but return nullptr if node not found.
     const Node * tryFindInOutputs(const std::string & name) const;
 
+    /// Same, but for the list of names.
+    NodeRawConstPtrs findInOutpus(const Names & names) const;
+
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
     void addOrReplaceInOutputs(const Node & node);
@@ -181,6 +184,9 @@ public:
 
     /// Remove actions that are not needed to compute output nodes
     void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
+
+    /// Remove actions that are not needed to compute output nodes. Keep inputs from used_inputs.
+    void removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true);
 
     /// Remove actions that are not needed to compute output nodes with required names
     void removeUnusedActions(const Names & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
@@ -245,12 +251,6 @@ public:
         const std::unordered_map<const Node *, const Node *> & new_inputs,
         const NodeRawConstPtrs & required_outputs);
 
-    /// Reorder the output nodes using given position mapping.
-    void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
-
-    /// Add aggregate columns to output nodes from projection
-    void addAggregatesViaProjection(const Block & aggregates);
-
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
@@ -263,6 +263,8 @@ public:
 
     ActionsDAGPtr clone() const;
 
+    static ActionsDAGPtr cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
+
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.
     /// Actions are not changed, no expressions are compiled.
@@ -270,6 +272,12 @@ public:
     /// In addition, check that result constants are constants according to DAG.
     /// In case if function return constant, but arguments are not constant, materialize it.
     Block updateHeader(Block header) const;
+
+    using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
+    static ColumnsWithTypeAndName evaluatePartialResult(
+        IntermediateExecutionResult & node_to_column,
+        const NodeRawConstPtrs & outputs,
+        bool throw_on_error);
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
@@ -383,6 +391,16 @@ public:
         const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
         const ContextPtr & context,
         bool single_output_condition_node = true);
+
+    /// Check if `predicate` is a combination of AND functions.
+    /// Returns a list of nodes representing atomic predicates.
+    static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
+
+    /// Get a list of nodes. For every node, check if it can be compused using allowed subset of inputs.
+    /// Returns only those nodes from the list which can be computed.
+    static NodeRawConstPtrs filterNodesByAllowedInputs(
+        NodeRawConstPtrs nodes,
+        const std::unordered_set<const Node *> & allowed_inputs);
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;

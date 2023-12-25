@@ -4,6 +4,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <base/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/VersionNumber.h>
 #include <boost/algorithm/string/trim.hpp>
 
 namespace DB
@@ -137,6 +138,7 @@ public:
     bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
 
     String getVersionStr() const;
+    VersionNumber getVersionNumber() const;
 
 private:
     void fillOSUserHostNameAndVersionInfo();

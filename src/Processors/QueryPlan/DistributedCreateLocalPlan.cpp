@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 #include <Common/checkStackSize.h>
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ActionsDAG.h>
@@ -44,11 +44,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t shard_num,
-    size_t shard_count,
-    size_t replica_num,
-    size_t replica_count,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
-    UUID group_uuid)
+    size_t shard_count)
 {
     checkStackSize();
 
@@ -66,26 +62,6 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     auto select_query_options = SelectQueryOptions(processed_stage)
         .setShardInfo(static_cast<UInt32>(shard_num), static_cast<UInt32>(shard_count))
         .ignoreASTOptimizations();
-
-    /// There are much things that are needed for coordination
-    /// during reading with parallel replicas
-    if (coordinator)
-    {
-        new_context->parallel_reading_coordinator = coordinator;
-        new_context->setClientInterface(ClientInfo::Interface::LOCAL);
-        new_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
-        new_context->setReplicaInfo(true, replica_count, replica_num);
-        new_context->setConnectionClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
-        new_context->setParallelReplicasGroupUUID(group_uuid);
-        new_context->setMergeTreeAllRangesCallback([coordinator](InitialAllRangesAnnouncement announcement)
-        {
-            coordinator->handleInitialAllRangesAnnouncement(announcement);
-        });
-        new_context->setMergeTreeReadTaskCallback([coordinator](ParallelReadRequest request) -> std::optional<ParallelReadResponse>
-        {
-            return coordinator->handleRequest(request);
-        });
-    }
 
     if (context->getSettingsRef().allow_experimental_analyzer)
     {

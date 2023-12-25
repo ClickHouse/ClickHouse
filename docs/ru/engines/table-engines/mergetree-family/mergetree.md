@@ -20,9 +20,9 @@ sidebar_label: MergeTree
 
 -   **Поддерживает сэмплирование данных.** При необходимости можно задать способ сэмплирования данных в таблице.
 
-    :::info
-    Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
-    :::
+:::info Примечание
+Движок [Merge](../special/merge.md#merge) не относится к семейству `*MergeTree`.
+:::
 ## Создание таблицы {#table_engine-mergetree-creating-a-table}
 
 ``` sql
@@ -115,7 +115,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 <summary>Устаревший способ создания таблицы</summary>
 
-:::note "Attention"
+:::note Важно
 Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ, описанный выше.
 :::
 
@@ -337,7 +337,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     Поддерживаемые типы данных: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`.
 
-    Фильтром могут пользоваться функции: [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions.md), [notIn](../../../sql-reference/functions/in-functions.md), [has](../../../sql-reference/functions/array-functions.md#hasarr-elem), [hasAny](../../../sql-reference/functions/array-functions.md#hasany), [hasAll](../../../sql-reference/functions/array-functions.md#hasall).
+    Фильтром могут пользоваться функции: [equals](../../../sql-reference/functions/comparison-functions.md#equals), [notEquals](../../../sql-reference/functions/comparison-functions.md#notequals), [in](../../../sql-reference/functions/in-functions.md), [notIn](../../../sql-reference/functions/in-functions.md), [has](../../../sql-reference/functions/array-functions.md#hasarr-elem), [hasAny](../../../sql-reference/functions/array-functions.md#hasany), [hasAll](../../../sql-reference/functions/array-functions.md#hasall).
 
 **Примеры**
 
@@ -354,8 +354,8 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 
 | Функция (оператор) / Индекс                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
 |------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
-| [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [like](../../../sql-reference/functions/string-search-functions.md#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike)                    | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
@@ -363,12 +363,15 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
 | [in](../../../sql-reference/functions/in-functions.md#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [notIn](../../../sql-reference/functions/in-functions.md#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [less (\<)](../../../sql-reference/functions/comparison-functions.md#less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [greater (\>)](../../../sql-reference/functions/comparison-functions.md#greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [empty](../../../sql-reference/functions/array-functions.md#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
+| [has](../../../sql-reference/functions/array-functions.md#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            | ✔        |
+| [hasAny](../../../sql-reference/functions/array-functions.md#function-hasAny)                                 | ✗           | ✗      | ✔          | ✔          | ✔            | ✗        |
+| [hasAll](../../../sql-reference/functions/array-functions.md#function-hasAll)                                 | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
 | hasToken                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
 
 Функции с постоянным агрументом, который меньше, чем размер ngram не могут использовать индекс `ngrambf_v1` для оптимизации запроса.
@@ -681,7 +684,6 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 -   `disk` — диск, находящийся внутри тома.
 -   `max_data_part_size_bytes` — максимальный размер куска данных, который может находиться на любом из дисков этого тома. Если в результате слияния размер куска ожидается больше, чем max_data_part_size_bytes, то этот кусок будет записан в следующий том. В основном эта функция позволяет хранить новые / мелкие куски на горячем (SSD) томе и перемещать их на холодный (HDD) том, когда они достигают большого размера. Не используйте этот параметр, если политика имеет только один том.
 -   `move_factor` — доля доступного свободного места на томе, если места становится меньше, то данные начнут перемещение на следующий том, если он есть (по умолчанию 0.1). Для перемещения куски сортируются по размеру от большего к меньшему (по убыванию) и выбираются куски, совокупный размер которых достаточен для соблюдения условия `move_factor`, если совокупный размер всех партов недостаточен, будут перемещены все парты.
--   `prefer_not_to_merge` — Отключает слияние кусков данных, хранящихся на данном томе. Если данная настройка включена, то слияние данных, хранящихся на данном томе, не допускается. Это позволяет контролировать работу ClickHouse с медленными дисками.
 
 Примеры конфигураций:
 
@@ -718,7 +720,6 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
                 </main>
                 <external>
                     <disk>external</disk>
-                    <prefer_not_to_merge>true</prefer_not_to_merge>
                 </external>
             </volumes>
         </small_jbod_with_external_no_merges>
@@ -805,8 +806,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             <single_read_retries>4</single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
-            <cache_enabled>true</cache_enabled>
-            <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </s3>
     </disks>
@@ -832,8 +831,6 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 -   `single_read_retries` — число попыток выполнения запроса в случае возникновения ошибки в процессе чтения. Значение по умолчанию: `4`.
 -   `min_bytes_for_seek` — минимальное количество байтов, которые используются для операций поиска вместо последовательного чтения. Значение по умолчанию: 1 МБайт.
 -   `metadata_path` — путь к локальному файловому хранилищу для хранения файлов с метаданными для S3. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/`.
--   `cache_enabled` — признак, разрешено ли хранение кэша засечек и файлов индекса в локальной файловой системе. Значение по умолчанию: `true`.
--   `cache_path` — путь в локальной файловой системе, где будут храниться кэш засечек и файлы индекса. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/cache/`.
 -   `skip_access_check` — признак, выполнять ли проверку доступов при запуске диска. Если установлено значение `true`, то проверка не выполняется. Значение по умолчанию: `false`.
 
 Диск S3 может быть сконфигурирован как `main` или `cold`:

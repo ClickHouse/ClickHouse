@@ -36,11 +36,7 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
 
     WriteBufferFromOwnString progress_string_writer;
 
-    writeCString("{", progress_string_writer);
-    accumulated_progress.writeJSON(progress_string_writer, false);
-    writeCString(",\"peak_memory_usage\":\"", progress_string_writer);
-    writeText(peak_memory_usage, progress_string_writer);
-    writeCString("\"}", progress_string_writer);
+    accumulated_progress.writeJSON(progress_string_writer);
 
     if (response_header_ostr)
         *response_header_ostr << header_name << progress_string_writer.str() << "\r\n" << std::flush;
@@ -48,6 +44,7 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
 
 void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 {
+    accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
     writeHeaderProgressImpl("X-ClickHouse-Summary: ");
 }
 
@@ -139,7 +136,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
-    size_t keep_alive_timeout_,
+    UInt64 keep_alive_timeout_,
     bool compress_,
     CompressionMethod compression_method_)
     : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE)
@@ -152,7 +149,7 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
 }
 
 
-void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, Int64 peak_memory_usage_)
+void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 {
     std::lock_guard lock(mutex);
 
@@ -161,9 +158,9 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, In
         return;
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
-    peak_memory_usage = peak_memory_usage_;
     if (send_progress && progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
     {
+        accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
         progress_watch.restart();
 
         /// Send all common headers before our special progress headers.

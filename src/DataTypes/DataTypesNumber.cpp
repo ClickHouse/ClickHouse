@@ -35,6 +35,12 @@ static DataTypePtr createNumericDataType(const ASTPtr & arguments)
     return std::make_shared<DataTypeNumber<T>>();
 }
 
+bool isUInt64ThatCanBeInt64(const DataTypePtr & type)
+{
+    const DataTypeUInt64 * uint64_type = typeid_cast<const DataTypeUInt64 *>(type.get());
+    return uint64_type && uint64_type->canUnsignedBeSigned();
+}
+
 
 void registerDataTypeNumbers(DataTypeFactory & factory)
 {

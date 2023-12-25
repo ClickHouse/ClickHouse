@@ -416,6 +416,8 @@ void DataPartStorageOnDiskBase::backup(
 MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     const std::string & to,
     const std::string & dir_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
     std::function<void(const DiskPtr &)> save_metadata_callback,
     const ClonePartParams & params) const
 {
@@ -425,8 +427,17 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     else
         disk->createDirectories(to);
 
-    localBackup(disk, getRelativePath(), fs::path(to) / dir_path, params.make_source_readonly, {}, params.copy_instead_of_hardlink,
-                params.files_to_copy_instead_of_hardlinks, params.external_transaction);
+    localBackup(
+        disk,
+        getRelativePath(),
+        fs::path(to) / dir_path,
+        read_settings,
+        write_settings,
+        params.make_source_readonly,
+        /* max_level= */ {},
+        params.copy_instead_of_hardlink,
+        params.files_to_copy_instead_of_hardlinks,
+        params.external_transaction);
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
@@ -457,7 +468,10 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     const std::string & to,
     const std::string & dir_path,
     const DiskPtr & dst_disk,
-    Poco::Logger * log) const
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    Poco::Logger * log,
+    const std::function<void()> & cancellation_hook) const
 {
     String path_to_clone = fs::path(to) / dir_path / "";
     auto src_disk = volume->getDisk();
@@ -472,7 +486,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     try
     {
         dst_disk->createDirectories(to);
-        src_disk->copyDirectoryContent(getRelativePath(), dst_disk, path_to_clone);
+        src_disk->copyDirectoryContent(getRelativePath(), dst_disk, path_to_clone, read_settings, write_settings, cancellation_hook);
     }
     catch (...)
     {

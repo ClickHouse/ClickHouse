@@ -1,5 +1,6 @@
 #include <Interpreters/QueryLog.h>
 
+#include <base/getFQDNOrHostName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -55,6 +56,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
 
     return
     {
+        {"hostname", low_cardinality_string},
         {"type", std::move(query_status_datatype)},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
@@ -118,6 +120,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"log_comment", std::make_shared<DataTypeString>()},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+        {"peak_threads_usage", std::make_shared<DataTypeUInt64>()},
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>())},
         {"Settings", std::make_shared<DataTypeMap>(low_cardinality_string, low_cardinality_string)},
 
@@ -159,6 +162,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(type);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
@@ -229,6 +233,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
             threads_array.emplace_back(thread_id);
         columns[i++]->insert(threads_array);
     }
+
+    columns[i++]->insert(peak_threads_usage);
 
     if (profile_counters)
     {

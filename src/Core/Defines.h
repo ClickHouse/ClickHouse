@@ -32,7 +32,6 @@
 
 #define DEFAULT_PERIODIC_LIVE_VIEW_REFRESH_SEC 60
 #define SHOW_CHARS_ON_SYNTAX_ERROR ptrdiff_t(160)
-#define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
 /// each period reduces the error counter by 2 times
 /// too short a period can cause errors to disappear immediately after creation.
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD 60
@@ -48,7 +47,7 @@
 /// the number is unmotivated
 #define DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT 15
 
-#define DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT 10
+#define DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT 30
 
 #define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
 
@@ -73,11 +72,11 @@ static constexpr auto DEFAULT_MARK_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_MARK_CACHE_MAX_SIZE = 5368_MiB;
 static constexpr auto DEFAULT_MARK_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE = 0_MiB;
-static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5l;
+static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE = 0;
+static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5;
 static constexpr auto DEFAULT_INDEX_MARK_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_INDEX_MARK_CACHE_MAX_SIZE = 0_MiB;
-static constexpr auto DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO = 0.5l;
+static constexpr auto DEFAULT_INDEX_MARK_CACHE_MAX_SIZE = 5368_MiB;
+static constexpr auto DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO = 0.3;
 static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;

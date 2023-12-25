@@ -39,7 +39,7 @@
     <settings>
         <connect_timeout>3</connect_timeout>
         <!-- Sync insert is set forcibly, leave it here just in case. -->
-        <insert_distributed_sync>1</insert_distributed_sync>
+        <distributed_foreground_insert>1</distributed_foreground_insert>
     </settings>
 
     <!-- Copying tasks description.

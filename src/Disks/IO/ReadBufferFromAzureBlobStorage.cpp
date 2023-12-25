@@ -124,11 +124,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
                 read_settings.remote_throttler->add(bytes_read, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
             break;
         }
-        catch (const Azure::Core::Http::TransportException & e)
-        {
-            handle_exception(e, i);
-        }
-        catch (const Azure::Storage::StorageException & e)
+        catch (const Azure::Core::RequestFailedException & e)
         {
             handle_exception(e, i);
         }
@@ -239,10 +235,6 @@ void ReadBufferFromAzureBlobStorage::initialize()
             auto download_response = blob_client->Download(download_options);
             data_stream = std::move(download_response.Value.BodyStream);
             break;
-        }
-        catch (const Azure::Core::Http::TransportException & e)
-        {
-            handle_exception(e, i);
         }
         catch (const Azure::Core::RequestFailedException & e)
         {

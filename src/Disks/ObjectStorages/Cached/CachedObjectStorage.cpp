@@ -42,9 +42,9 @@ FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
     return cache->createKeyForPath(path);
 }
 
-std::string CachedObjectStorage::generateBlobNameForPath(const std::string & path)
+ObjectStorageKey CachedObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
-    return object_storage->generateBlobNameForPath(path);
+    return object_storage->generateObjectKeyForPath(path);
 }
 
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
@@ -98,7 +98,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
-        && FileCacheFactory::instance().getByName(cache_config_name).settings.cache_on_write_operations
+        && FileCacheFactory::instance().getByName(cache_config_name)->getSettings().cache_on_write_operations
         && fs::path(object.remote_path).extension() != ".tmp";
 
     /// Need to remove even if cache_on_write == false.
@@ -113,7 +113,8 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             implementation_buffer->getFileName(),
             key,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
-            modified_write_settings);
+            modified_write_settings,
+            Context::getGlobalContextInstance()->getFilesystemCacheLog());
     }
 
     return implementation_buffer;
@@ -159,16 +160,22 @@ void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
     IObjectStorage & object_storage_to,
     std::optional<ObjectAttributes> object_to_attributes)
 {
-    object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, object_storage_to, object_to_attributes);
+    object_storage->copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
 void CachedObjectStorage::copyObject( // NOLINT
-    const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> object_to_attributes)
+    const StoredObject & object_from,
+    const StoredObject & object_to,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    std::optional<ObjectAttributes> object_to_attributes)
 {
-    object_storage->copyObject(object_from, object_to, object_to_attributes);
+    object_storage->copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
 }
 
 std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(

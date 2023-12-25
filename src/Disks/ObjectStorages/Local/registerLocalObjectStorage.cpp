@@ -20,23 +20,25 @@ void registerDiskLocalObjectStorage(DiskFactory & factory, bool global_skip_acce
         ContextPtr context,
         const DisksMap & /*map*/) -> DiskPtr
     {
-        String path;
+        String object_key_prefix;
         UInt64 keep_free_space_bytes;
-        loadDiskLocalConfig(name, config, config_prefix, context, path, keep_free_space_bytes);
-        fs::create_directories(path);
+        loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
+        /// keys are mapped to the fs, object_key_prefix is a directory also
+        fs::create_directories(object_key_prefix);
 
         String type = config.getString(config_prefix + ".type");
         chassert(type == "local_blob_storage");
 
-        std::shared_ptr<LocalObjectStorage> local_storage = std::make_shared<LocalObjectStorage>();
+        std::shared_ptr<LocalObjectStorage> local_storage = std::make_shared<LocalObjectStorage>(object_key_prefix);
         MetadataStoragePtr metadata_storage;
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
-        metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, path);
+        metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, object_key_prefix);
 
         auto disk = std::make_shared<DiskObjectStorage>(
-            name, path, "Local", metadata_storage, local_storage, config, config_prefix);
+            name, object_key_prefix, "Local", metadata_storage, local_storage, config, config_prefix);
         disk->startup(context, global_skip_access_check);
         return disk;
+
     };
     factory.registerDiskType("local_blob_storage", creator);
 }

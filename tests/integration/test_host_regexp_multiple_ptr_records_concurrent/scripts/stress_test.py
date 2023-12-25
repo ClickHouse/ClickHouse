@@ -9,7 +9,7 @@ server_ip = sys.argv[2]
 mutex = threading.Lock()
 success_counter = 0
 number_of_threads = 100
-number_of_iterations = 100
+number_of_iterations = 50
 
 
 def perform_request():

@@ -7,15 +7,15 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 
 #include <magic_enum.hpp>
-#include <base/EnumReflection.h>
-
-namespace ErrorCodes
-{
-}
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 [[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
@@ -381,6 +381,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATION_QUEUES:
         case Type::STOP_PULLING_REPLICATION_LOG:
         case Type::START_PULLING_REPLICATION_LOG:
+        case Type::STOP_CLEANUP:
+        case Type::START_CLEANUP:
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
@@ -430,6 +432,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::DROP_DISK_METADATA_CACHE:
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+        }
         case Type::DROP_SCHEMA_CACHE:
         {
             if (ParserKeyword{"FOR"}.ignore(pos, expected))
@@ -449,7 +455,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             break;
         }
-
+        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        {
+            if (ParserKeyword{"FOR"}.ignore(pos, expected))
+            {
+                if (ParserKeyword{"Protobuf"}.ignore(pos, expected))
+                    res->schema_cache_format = "Protobuf";
+                else
+                    return false;
+            }
+            break;
+        }
         case Type::UNFREEZE:
         {
             ASTPtr ast;

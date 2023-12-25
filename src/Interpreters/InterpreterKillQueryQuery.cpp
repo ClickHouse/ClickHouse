@@ -420,7 +420,7 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 
-    auto io = executeQuery(select_query, getContext(), true);
+    auto io = executeQuery(select_query, getContext(), QueryFlags{ .internal = true }).second;
     PullingPipelineExecutor executor(io.pipeline);
     Block res;
     while (!res && executor.pull(res));

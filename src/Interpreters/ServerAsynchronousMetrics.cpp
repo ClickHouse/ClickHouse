@@ -15,7 +15,6 @@
 #include <IO/MMappedFileCache.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MarkCache.h>
@@ -55,13 +54,19 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     int update_period_seconds,
     int heavy_metrics_update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
-    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
-    , WithContext(global_context_)
+    : WithContext(global_context_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
     /// sanity check
     if (update_period_seconds == 0 || heavy_metrics_update_period_seconds == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting asynchronous_metrics_update_period_s and asynchronous_heavy_metrics_update_period_s must not be zero");
+}
+
+ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
+{
+    /// NOTE: stop() from base class is not enough, since this leads to leak on vptr
+    stop();
 }
 
 void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time)
@@ -124,14 +129,6 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
     }
-
-#if USE_ROCKSDB
-    if (auto metadata_cache = getContext()->tryGetMergeTreeMetadataCache())
-    {
-        new_values["MergeTreeMetadataCacheSize"] = { metadata_cache->getEstimateNumKeys(),
-            "The size of the metadata cache for tables. This cache is experimental and not used in production." };
-    }
-#endif
 
 #if USE_EMBEDDED_COMPILER
     if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())

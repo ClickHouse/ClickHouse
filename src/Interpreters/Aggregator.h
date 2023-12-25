@@ -512,7 +512,10 @@ struct AggregationMethodKeysFixed
             else
             {
                 size_t size = key_sizes[i];
-                observed_column->insertData(reinterpret_cast<const char *>(&key) + pos, size);
+                size_t offset_to = pos;
+                if constexpr (std::endian::native == std::endian::big)
+                   offset_to = sizeof(Key) - size - pos;
+                observed_column->insertData(reinterpret_cast<const char *>(&key) + offset_to, size);
                 pos += size;
             }
         }
@@ -1020,6 +1023,8 @@ public:
 
         bool enable_prefetch;
 
+        bool optimize_group_by_constant_keys;
+
         struct StatsCollectingParams
         {
             StatsCollectingParams();
@@ -1057,6 +1062,7 @@ public:
             size_t max_block_size_,
             bool enable_prefetch_,
             bool only_merge_, // true for projections
+            bool optimize_group_by_constant_keys_,
             const StatsCollectingParams & stats_collecting_params_ = {})
             : keys(keys_)
             , aggregates(aggregates_)
@@ -1077,6 +1083,7 @@ public:
             , max_block_size(max_block_size_)
             , only_merge(only_merge_)
             , enable_prefetch(enable_prefetch_)
+            , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
             , stats_collecting_params(stats_collecting_params_)
         {
         }
@@ -1276,6 +1283,7 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         bool no_more_keys = false,
+        bool all_keys_are_const = false,
         AggregateDataPtr overflow_row = nullptr) const;
 
     /// Process one data block, aggregate the data into a hash table.
@@ -1288,6 +1296,7 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         bool no_more_keys,
+        bool all_keys_are_const,
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
@@ -1299,6 +1308,7 @@ private:
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
+        bool all_keys_are_const,
         AggregateDataPtr overflow_row) const;
 
     /// For case when there are no keys (all aggregate into one row).

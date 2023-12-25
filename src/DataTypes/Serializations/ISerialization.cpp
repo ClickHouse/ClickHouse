@@ -261,6 +261,12 @@ void ISerialization::deserializeTextRaw(IColumn & column, ReadBuffer & istr, con
     deserializeWholeText(column, buf, settings);
 }
 
+void ISerialization::serializeTextMarkdown(
+    const DB::IColumn & column, size_t row_num, DB::WriteBuffer & ostr, const DB::FormatSettings & settings) const
+{
+    serializeTextEscaped(column, row_num, ostr, settings);
+}
+
 void ISerialization::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeText(column, row_num, ostr, settings);

@@ -870,7 +870,7 @@ NearestFieldType<std::decay_t<T>> & Field::get()
     // Disregard signedness when converting between int64 types.
     constexpr Field::Types::Which target = TypeToEnum<StoredType>::value;
     if (target != which
-           && (!isInt64OrUInt64orBoolFieldType(target) || !isInt64OrUInt64orBoolFieldType(which)))
+           && (!isInt64OrUInt64orBoolFieldType(target) || !isInt64OrUInt64orBoolFieldType(which)) && target != Field::Types::IPv4)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Invalid Field get from type {} to type {}", which, target);
 #endif

@@ -1,10 +1,11 @@
-#include <Parsers/IParserBase.h>
-#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/IParserBase.h>
+#include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/CommonParsers.h>
+#include <Parsers/ParserSetQuery.h>
 
 namespace DB
 {
@@ -14,8 +15,7 @@ bool ParserKQLStatement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKQLWithOutput query_with_output_p(end, allow_settings_after_format_in_insert);
     ParserSetQuery set_p;
 
-    bool res = query_with_output_p.parse(pos, node, expected)
-        || set_p.parse(pos, node, expected);
+    bool res = query_with_output_p.parse(pos, node, expected) || set_p.parse(pos, node, expected);
 
     return res;
 }
@@ -36,6 +36,7 @@ bool ParserKQLWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
 bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    // will support union next phase
     ASTPtr kql_query;
 
     if (!ParserKQLQuery().parse(pos, kql_query, expected))
@@ -58,33 +59,40 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
-bool ParserKQLTaleFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKQLWithUnionQuery kql_p;
     ASTPtr select;
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
 
     auto begin = pos;
-    auto paren_count = 0 ;
+    auto paren_count = 0;
     String kql_statement;
 
     if (s_lparen.ignore(pos, expected))
     {
-        ++paren_count;
-        while (!pos->isEnd())
+        if (pos->type == TokenType::HereDoc)
         {
-            if (pos->type == TokenType::ClosingRoundBracket)
-                --paren_count;
-            if (pos->type == TokenType::OpeningRoundBracket)
-                ++paren_count;
-
-            if (paren_count == 0)
-                break;
-
-            kql_statement = kql_statement + " " + String(pos->begin,pos->end);
-            ++pos;
+            kql_statement = String(pos->begin + 2, pos->end - 2);
         }
+        else
+        {
+            ++paren_count;
+            auto pos_start = pos;
+            while (!pos->isEnd())
+            {
+                if (pos->type == TokenType::ClosingRoundBracket)
+                    --paren_count;
+                if (pos->type == TokenType::OpeningRoundBracket)
+                    ++paren_count;
 
+                if (paren_count == 0)
+                    break;
+                ++pos;
+            }
+            kql_statement = String(pos_start->begin, (--pos)->end);
+        }
+        ++pos;
         Tokens token_kql(kql_statement.c_str(), kql_statement.c_str() + kql_statement.size());
         IParser::Pos pos_kql(token_kql, pos.max_depth);
 
@@ -95,8 +103,7 @@ bool ParserKQLTaleFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return true;
         }
     }
-    pos =  begin;
+    pos = begin;
     return false;
-};
-
+}
 }

@@ -68,6 +68,7 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/waitServersToFinish.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/ServerType.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTPRequestHandlerFactoryMain.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/KeeperReadinessHandler.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTP/HTTPServer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTP/ReadHeaders.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Server/HTTP/HTTPServerConnection.cpp
@@ -114,6 +115,7 @@ if (BUILD_STANDALONE_KEEPER)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/LocalDirectorySyncGuard.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/TemporaryFileOnDisk.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/loadLocalDiskConfig.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/DiskType.cpp
 
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/ObjectStorages/IObjectStorage.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../src/Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.cpp
@@ -174,7 +176,7 @@ if (BUILD_STANDALONE_KEEPER)
     clickhouse_add_executable(clickhouse-keeper ${CLICKHOUSE_KEEPER_STANDALONE_SOURCES})
 
     # Remove some redundant dependencies
-    target_compile_definitions (clickhouse-keeper PRIVATE -DCLICKHOUSE_PROGRAM_STANDALONE_BUILD)
+    target_compile_definitions (clickhouse-keeper PRIVATE -DCLICKHOUSE_KEEPER_STANDALONE_BUILD)
     target_compile_definitions (clickhouse-keeper PUBLIC -DWITHOUT_TEXT_LOG)
 
     if (ENABLE_CLICKHOUSE_KEEPER_CLIENT AND TARGET ch_rust::skim)

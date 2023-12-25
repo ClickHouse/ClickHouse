@@ -18,8 +18,8 @@ empty([x])
 
 Массив считается пустым, если он не содержит ни одного элемента.
 
-:::note "Примечание"
-    Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM TABLE` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
+:::note Примечание
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM TABLE` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
 :::
 
 Функция также поддерживает работу с типами [String](string-functions.md#empty) и [UUID](uuid-functions.md#empty).
@@ -62,8 +62,8 @@ notEmpty([x])
 
 Массив считается непустым, если он содержит хотя бы один элемент.
 
-:::note "Примечание"
-    Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
+:::note Примечание
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
 :::
 
 Функция также поддерживает работу с типами [String](string-functions.md#notempty) и [UUID](uuid-functions.md#notempty).
@@ -694,8 +694,8 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 └─────────┘
 ```
 
-:::note "Примечание"
-    Для улучшения эффективности сортировки применяется [преобразование Шварца](https://ru.wikipedia.org/wiki/%D0%9F%D1%80%D0%B5%D0%BE%D0%B1%D1%80%D0%B0%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5_%D0%A8%D0%B2%D0%B0%D1%80%D1%86%D0%B0).
+:::note Примечание
+Для улучшения эффективности сортировки применяется [преобразование Шварца](https://ru.wikipedia.org/wiki/%D0%9F%D1%80%D0%B5%D0%BE%D0%B1%D1%80%D0%B0%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5_%D0%A8%D0%B2%D0%B0%D1%80%D1%86%D0%B0).
 :::
 
 ## arrayPartialSort(\[func,\] limit, arr, …) {#array_functions-sort}

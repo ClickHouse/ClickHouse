@@ -325,7 +325,7 @@ Block MergeTreeDataWriter::mergeBlock(
                 return nullptr;
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0);
+                    block, 1, sort_description, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
@@ -365,7 +365,7 @@ Block MergeTreeDataWriter::mergeBlock(
 
     /// Check that after first merge merging_algorithm is waiting for data from input 0.
     if (status.required_source != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: required source after the first merge is not 0.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: required source after the first merge is not 0. Chunk rows: {}, is_finished: {}, required_source: {}, algorithm: {}", status.chunk.getNumRows(), status.is_finished, status.required_source, merging_algorithm->getName());
 
     status = merging_algorithm->merge();
 
@@ -569,6 +569,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         metadata_snapshot,
         columns,
         indices,
+        MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns()),
         compression_codec,
         context->getCurrentTransaction(),
         false,
@@ -701,6 +702,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         metadata_snapshot,
         columns,
         MergeTreeIndices{},
+        Statistics{}, /// TODO(hanfei): It should be helpful to write statistics for projection result.
         compression_codec,
         NO_TRANSACTION_PTR,
         false, false, data.getContext()->getWriteSettings());

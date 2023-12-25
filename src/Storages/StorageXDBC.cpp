@@ -142,11 +142,11 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         local_context,
         ConnectionTimeouts::getHTTPTimeouts(
             local_context->getSettingsRef(),
-            {local_context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
+            local_context->getServerSettings().keep_alive_timeout),
         compression_method);
 }
 
-bool StorageXDBC::supportsSubsetOfColumns() const
+bool StorageXDBC::supportsSubsetOfColumns(const ContextPtr &) const
 {
     return true;
 }

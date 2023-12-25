@@ -3,7 +3,7 @@
         <default>
             <password></password>
             <profile>default</profile>
-            <named_collection_control>1</named_collection_control>
+            <named_collection_admin>1</named_collection_admin>
         </default>
     </users>
 </clickhouse>

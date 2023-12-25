@@ -1,7 +1,5 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/Serializations/SerializationUUID.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -143,16 +141,16 @@ void SerializationUUID::serializeBinaryBulk(const IColumn & column, WriteBuffer 
     if (limit == 0)
         return;
 
-    if constexpr (std::endian::native == std::endian::big)
-    {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunreachable-code"
-        std::ranges::for_each(
-            x | std::views::drop(offset) | std::views::take(limit), [&ostr](const auto & uuid) { writeBinaryLittleEndian(uuid, ostr); });
-#pragma clang diagnostic pop
+    if constexpr (std::endian::native == std::endian::big)
+    {
+        for (size_t i = offset; i < offset + limit; ++i)
+            writeBinaryLittleEndian(x[i], ostr);
     }
     else
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(UUID) * limit);
+#pragma clang diagnostic pop
 }
 
 void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
@@ -166,8 +164,8 @@ void SerializationUUID::deserializeBinaryBulk(IColumn & column, ReadBuffer & ist
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunreachable-code"
     if constexpr (std::endian::native == std::endian::big)
-        std::ranges::for_each(
-            x | std::views::drop(initial_size), [](auto & uuid) { transformEndianness<std::endian::big, std::endian::little>(uuid); });
+        for (size_t i = initial_size; i < x.size(); ++i)
+            transformEndianness<std::endian::big, std::endian::little>(x[i]);
 #pragma clang diagnostic pop
 }
 }

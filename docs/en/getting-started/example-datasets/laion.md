@@ -56,10 +56,12 @@ os.system(f"rm {npy_file} {metadata_file} {text_npy}")
 To start the data preparation pipeline, run:
 
 ```bash
-seq 0 409 | xargs -P100 -I{} bash -c './download.sh {}'
+seq 0 409 | xargs -P1 -I{} bash -c './download.sh {}'
 ```
 
 The dataset is split into 410 files, each file contains ca. 1 million rows. If you like to work with a smaller subset of the data, simply adjust the limits, e.g. `seq 0 9 | ...`.
+
+(The python script above is very slow (~2-10 minutes per file), takes a lot of memory (41 GB per file), and the resulting csv files are big (10 GB each), so be careful. If you have enough RAM, increase the `-P1` number for more parallelism. If this is still too slow, consider coming up with a better ingestion procedure - maybe converting the .npy files to parquet, then doing all the other processing with clickhouse.)
 
 ## Create table
 
@@ -92,10 +94,10 @@ INSERT INTO laion FROM INFILE '{path_to_csv_files}/*.csv'
 To run a brute-force approximate nearest neighbor search, run:
 
 ```sql
-SELECT url, caption FROM laion WHERE similarity > 0.2 ORDER BY L2Distance(image_embedding, {target:Array(Float32)}) LIMIT 30
+SELECT url, caption FROM laion ORDER BY L2Distance(image_embedding, {target:Array(Float32)}) LIMIT 30
 ```
 
-The filter on `similarity` makes sure that the images correspond to the image captions in the query results. `target` is an array of 512 elements and a client parameter. A convenient way to obtain such arrays will be presented at the end of the article. For now, we can run the embedding of a random cat picture as `target`.
+`target` is an array of 512 elements and a client parameter. A convenient way to obtain such arrays will be presented at the end of the article. For now, we can run the embedding of a random cat picture as `target`.
 
 **Result**
 
@@ -116,10 +118,10 @@ The filter on `similarity` makes sure that the images correspond to the image ca
 
 ## Run a ANN with an ANN index
 
-Either create a new table or use [ALTER TABLE ADD INDEX](../../sql-reference/statements/alter/skipping-index.md) to add an ANN index:
+Create a new table with an ANN index and insert the data from the existing table:
 
 ```sql
-CREATE TABLE laion
+CREATE TABLE laion_annoy
 (
     `id` Int64,
     `url` String,
@@ -128,18 +130,20 @@ CREATE TABLE laion
     `similarity` Float32,
     `image_embedding` Array(Float32),
     `text_embedding` Array(Float32),
-    INDEX annoy_image image_embedding TYPE annoy(1000),
-    INDEX annoy_text text_embedding TYPE annoy(1000)
+    INDEX annoy_image image_embedding TYPE annoy(),
+    INDEX annoy_text text_embedding TYPE annoy()
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8192
+SETTINGS index_granularity = 8192;
+
+INSERT INTO laion_annoy SELECT * FROM laion;
 ```
 
 By default, Annoy indexes use the L2 distance as metric. Further tuning knobs for index creation and search are described in the Annoy index [documentation](../../engines/table-engines/mergetree-family/annindexes.md). Let's check now again with the same query:
 
 ```sql
-SELECT url, caption FROM test_indexes_laion WHERE similarity > 0.2 ORDER BY l2Distance(image_embedding, {target:Array(Float32)}) LIMIT 8
+SELECT url, caption FROM laion_annoy ORDER BY l2Distance(image_embedding, {target:Array(Float32)}) LIMIT 8
 ```
 
 **Result**

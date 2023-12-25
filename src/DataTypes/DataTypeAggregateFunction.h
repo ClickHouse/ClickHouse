@@ -45,7 +45,6 @@ public:
     String doGetName() const override;
     String getNameWithoutVersion() const;
     const char * getFamilyName() const override { return "AggregateFunction"; }
-    String getSQLCompatibleName() const override { return "TEXT"; }
     TypeIndex getTypeId() const override { return TypeIndex::AggregateFunction; }
 
     Array getParameters() const { return parameters; }
@@ -60,6 +59,7 @@ public:
 
     Field getDefault() const override;
 
+    static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type);
     bool equals(const IDataType & rhs) const override;
 
     bool isParametric() const override { return true; }

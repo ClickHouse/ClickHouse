@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
+from pathlib import Path
 from typing import List, Tuple
 import argparse
 import csv
 import logging
-import os
 
 from github import Github
 
@@ -16,13 +16,13 @@ from s3_helper import S3Helper
 from upload_result_helper import upload_results
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("status", nargs="+", help="Path to status file")
+    parser.add_argument("files", nargs="+", type=Path, help="Path to status files")
     return parser.parse_args()
 
 
-def post_commit_status_from_file(file_path: str) -> List[str]:
+def post_commit_status_from_file(file_path: Path) -> List[str]:
     with open(file_path, "r", encoding="utf-8") as f:
         res = list(csv.reader(f, delimiter="\t"))
     if len(res) < 1:
@@ -32,22 +32,36 @@ def post_commit_status_from_file(file_path: str) -> List[str]:
     return res[0]
 
 
-def process_result(file_path: str) -> Tuple[bool, TestResults]:
+def process_result(file_path: Path) -> Tuple[bool, TestResults]:
     test_results = []  # type: TestResults
     state, report_url, description = post_commit_status_from_file(file_path)
-    prefix = os.path.basename(os.path.dirname(file_path))
+    prefix = file_path.parent.name
+    if description.strip() in [
+        "Invalid check_status.tsv",
+        "Not found test_results.tsv",
+        "Empty test_results.tsv",
+    ]:
+        status = (
+            f'Check failed (<a href="{report_url}">Report</a>)'
+            if report_url != "null"
+            else "Check failed"
+        )
+        return False, [TestResult(f"{prefix}: {description}", status)]
+
     is_ok = state == "success"
     if is_ok and report_url == "null":
         return is_ok, test_results
 
-    status = f'OK: Bug reproduced (<a href="{report_url}">Report</a>)'
-    if not is_ok:
-        status = f'Bug is not reproduced (<a href="{report_url}">Report</a>)'
+    status = (
+        f'OK: Bug reproduced (<a href="{report_url}">Report</a>)'
+        if is_ok
+        else f'Bug is not reproduced (<a href="{report_url}">Report</a>)'
+    )
     test_results.append(TestResult(f"{prefix}: {description}", status))
     return is_ok, test_results
 
 
-def process_all_results(file_paths: str) -> Tuple[bool, TestResults]:
+def process_all_results(file_paths: List[Path]) -> Tuple[bool, TestResults]:
     any_ok = False
     all_results = []
     for status_path in file_paths:
@@ -59,26 +73,30 @@ def process_all_results(file_paths: str) -> Tuple[bool, TestResults]:
     return any_ok, all_results
 
 
-def main(args):
+def main():
     logging.basicConfig(level=logging.INFO)
+    args = parse_args()
+    status_files = args.files  # type: List[Path]
 
     check_name_with_group = "Bugfix validate check"
 
-    is_ok, test_results = process_all_results(args.status)
-
-    if not test_results:
-        logging.info("No results to upload")
-        return
+    is_ok, test_results = process_all_results(status_files)
 
     pr_info = PRInfo()
-    report_url = upload_results(
-        S3Helper(),
-        pr_info.number,
-        pr_info.sha,
-        test_results,
-        args.status,
-        check_name_with_group,
-    )
+    if not test_results:
+        description = "No results to upload"
+        report_url = ""
+        logging.info("No results to upload")
+    else:
+        description = "" if is_ok else "Changed tests don't reproduce the bug"
+        report_url = upload_results(
+            S3Helper(),
+            pr_info.number,
+            pr_info.sha,
+            test_results,
+            status_files,
+            check_name_with_group,
+        )
 
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
@@ -86,11 +104,12 @@ def main(args):
         commit,
         "success" if is_ok else "error",
         report_url,
-        "" if is_ok else "Changed tests don't reproduce the bug",
+        description,
         check_name_with_group,
         pr_info,
+        dump_to_file=True,
     )
 
 
 if __name__ == "__main__":
-    main(parse_args())
+    main()

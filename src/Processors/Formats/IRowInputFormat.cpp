@@ -71,7 +71,7 @@ void IRowInputFormat::logError()
         diagnostic = "Cannot get diagnostic: " + exception.message();
         raw_data = "Cannot get raw data: " + exception.message();
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
         /// Error while trying to obtain verbose diagnostic. Ok to ignore.
     }
@@ -128,7 +128,7 @@ Chunk IRowInputFormat::generate()
 
         RowReadExtension info;
         bool continue_reading = true;
-        for (size_t rows = 0; rows < params.max_block_size && continue_reading; ++rows)
+        for (size_t rows = 0; (rows < params.max_block_size || num_rows == 0) && continue_reading; ++rows)
         {
             try
             {
@@ -215,7 +215,7 @@ Chunk IRowInputFormat::generate()
         {
             verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
@@ -239,7 +239,7 @@ Chunk IRowInputFormat::generate()
         {
             verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }

@@ -9,7 +9,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Common/TimerDescriptor.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <sys/types.h>
 
 
@@ -28,6 +27,8 @@ struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
 class RemoteQueryExecutorReadContext;
+
+class ParallelReplicasReadingCoordinator;
 
 /// This is the same type as StorageS3Source::IteratorWrapper
 using TaskIterator = std::function<String()>;
@@ -164,10 +165,10 @@ public:
     Block getExtremes() { return std::move(extremes); }
 
     /// Set callback for progress. It will be called on Progress packet.
-    void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
+    void setProgressCallback(ProgressCallback callback);
 
     /// Set callback for profile info. It will be called on ProfileInfo packet.
-    void setProfileInfoCallback(ProfileInfoCallback callback) { profile_info_callback = std::move(callback); }
+    void setProfileInfoCallback(ProfileInfoCallback callback);
 
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
@@ -185,6 +186,8 @@ public:
     IConnections & getConnections() { return *connections; }
 
     bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
+
+    bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
 private:
     RemoteQueryExecutor(
@@ -283,7 +286,7 @@ private:
     void processReadTaskRequest();
 
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
-    void processMergeTreeInitialReadAnnounecement(InitialAllRangesAnnouncement announcement);
+    void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
 
     /// Cancel query and restart it with info about duplicate UUIDs
     /// only for `allow_experimental_query_deduplication`.
