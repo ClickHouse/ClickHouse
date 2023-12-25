@@ -15,8 +15,8 @@ clickhouse-client -udefault -mn --query="DROP TABLE IF EXISTS test_sync_server_s
                                          GRANT ALL ON test_sync_server_settings TO date_writter;"
 
 clickhouse-client -udate_writter --password 123 --query="INSERT INTO test_sync_server_settings VALUES (1, '20230101120107')"
-clickhouse-client -udate_writter --password 123 --query="SELECT * FROM test_sync_server_settings where id = 1"
+clickhouse-client -udate_writter --password 123 --query="SELECT id, toYYYYMMDDhhmmss(dt) = 20230101120107 FROM test_sync_server_settings where id = 1"
 clickhouse-client -udate_format_writter --password 123 --query="INSERT INTO test_sync_server_settings VALUES (2, '20230101120107');"
-clickhouse-client -udefault --query="SELECT * FROM test_sync_server_settings where id = 2"
+clickhouse-client -udefault --query="SELECT id, toYYYYMMDDhhmmss(dt) = 20230101120107  FROM test_sync_server_settings where id = 2"
 clickhouse-client -udefault --query="DROP TABLE IF EXISTS test_sync_server_settings;"
 
