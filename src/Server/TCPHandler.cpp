@@ -1587,7 +1587,7 @@ void TCPHandler::sendHello()
                 name_value.column->get(row, field);
                 if (!field.isNull())
                 {
-                    if (col_index == 0 )
+                    if (col_index == 0)
                         name = field.safeGet<String>();
                     else
                         value_field = field;
