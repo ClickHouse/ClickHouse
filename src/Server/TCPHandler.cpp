@@ -2351,7 +2351,8 @@ void TCPHandler::sendLogs()
     if (rows > 0)
     {
         Block block = InternalTextLogsQueue::getSampleBlock();
-        block.setColumns(std::move(logs_columns)); sendLogData(block);
+        block.setColumns(std::move(logs_columns));
+        sendLogData(block);
     }
 }
 
