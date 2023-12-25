@@ -48,7 +48,7 @@ fi
 ./setup_minio.sh stateless
 ./setup_hdfs_minicluster.sh
 
-if [ -f "setup_fdb.sh" ]; then
+if [ -f "setup_fdb.sh" ] && [ "$(uname -m)" == "x86_64" ]; then
     ./setup_fdb.sh
 fi
 
