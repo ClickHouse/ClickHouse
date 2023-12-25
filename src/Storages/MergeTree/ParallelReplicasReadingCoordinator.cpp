@@ -97,7 +97,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 }
 
 class ParallelReplicasReadingCoordinator::ImplInterface
@@ -117,8 +118,6 @@ public:
         size_t stolen_by_hash = 0;
 
         bool is_unavailable{false};
-        bool is_finished{false};
-        bool is_announcement_received{false};
     };
     using Stats = std::vector<Stat>;
     static String toString(Stats stats)
@@ -172,19 +171,20 @@ using PartRefs = std::deque<Parts::iterator>;
 /// (something between 16 and 128 granules i.e. ~100K and ~1M rows should work).
 /// This approach seems to work ok for all three main cases: full scan, reading random sub-ranges and reading only {pre,suf}-fix of parts.
 /// Also we could expect that more granular division will make distribution more even up to a certain point.
-class SingleShardCoordinator : public ParallelReplicasReadingCoordinator::ImplInterface
+class DefaultCoordinator : public ParallelReplicasReadingCoordinator::ImplInterface
 {
 public:
-    explicit SingleShardCoordinator(size_t replicas_count_, size_t mark_segment_size_)
+    explicit DefaultCoordinator(size_t replicas_count_, size_t mark_segment_size_)
         : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_)
         , mark_segment_size(mark_segment_size_)
+        , replica_status(replicas_count_)
         , distribution_by_hash_queue(replicas_count_)
     {
         if (mark_segment_size == 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero value provided for `mark_segment_size`");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Zero value provided for `mark_segment_size`");
     }
 
-    ~SingleShardCoordinator() override;
+    ~DefaultCoordinator() override;
 
     ParallelReadResponse handleRequest(ParallelReadRequest request) override;
 
@@ -200,7 +200,14 @@ private:
     bool state_initialized{false};
     size_t finished_replicas{0};
 
-    Poco::Logger * log = &Poco::Logger::get("SingleShardCoordinator");
+    struct ReplicaStatus
+    {
+        bool is_finished{false};
+        bool is_announcement_received{false};
+    };
+    std::vector<ReplicaStatus> replica_status;
+
+    Poco::Logger * log = &Poco::Logger::get("DefaultCoordinator");
 
     /// Workflow of a segment:
     /// 0. `all_parts_to_read` contains all the parts and thus all the segments initially present there (virtually)
@@ -290,12 +297,13 @@ private:
     void processPartsFurther(
         size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response);
 
+    bool possiblyCanReadPart(size_t replica, const MergeTreePartInfo & info) const;
     void enqueueSegment(const MergeTreePartInfo & info, const MarkRange & segment, size_t owner);
     void enqueueToStealerOrStealingQueue(const MergeTreePartInfo & info, const MarkRange & segment);
 };
 
 
-SingleShardCoordinator::~SingleShardCoordinator()
+DefaultCoordinator::~DefaultCoordinator()
 {
     try
     {
@@ -306,54 +314,48 @@ SingleShardCoordinator::~SingleShardCoordinator()
     }
 }
 
-void SingleShardCoordinator::initializeReadingState(InitialAllRangesAnnouncement announcement)
+void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement announcement)
 {
-    for (auto && part : announcement.description)
+    for (const auto & part : announcement.description)
     {
         /// We don't really care here if this part will be included into the working set or not
         part_visibility[part.info.getPartNameV1()].insert(announcement.replica_num);
+    }
 
-        auto same_it = std::find_if(
-            all_parts_to_read.begin(),
-            all_parts_to_read.end(),
-            [&part](const Part & other) { return other.description.info.getPartNameV1() == part.info.getPartNameV1(); });
+    /// If state is already initialized - just register availabitily info and leave
+    if (state_initialized)
+        return;
 
-        /// We have the same part - add the info about presence on current replica to it
-        if (same_it != all_parts_to_read.end())
-        {
-            same_it->replicas.insert(announcement.replica_num);
-            continue;
-        }
-
+    for (auto && part : announcement.description)
+    {
         auto intersecting_it = std::find_if(
             all_parts_to_read.begin(),
             all_parts_to_read.end(),
             [&part](const Part & other) { return !other.description.info.isDisjoint(part.info); });
 
-        /// It is covering part or we have covering - skip it
         if (intersecting_it != all_parts_to_read.end())
-            continue;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting parts found in announcement");
 
-        /// It was a completely new part. If we currently processing the first request - let's add it. If not - discard.
-        if (!state_initialized)
-            all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+        all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
     }
 
-    if (!state_initialized)
-    {
-        std::ranges::sort(
-            all_parts_to_read, [](const Part & lhs, const Part & rhs) { return BiggerPartsFirst()(lhs.description, rhs.description); });
-        state_initialized = true;
-        source_replica_for_parts_snapshot = announcement.replica_num;
-    }
+    std::ranges::sort(
+        all_parts_to_read, [](const Part & lhs, const Part & rhs) { return BiggerPartsFirst()(lhs.description, rhs.description); });
+    state_initialized = true;
+    source_replica_for_parts_snapshot = announcement.replica_num;
+
+    LOG_DEBUG(log, "Reading state is fully initialized: {}", fmt::join(all_parts_to_read, "; "));
 }
 
-void SingleShardCoordinator::markReplicaAsUnavailable(size_t replica_number)
+void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
     LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
 
     ++unavailable_replicas_count;
     stats[replica_number].is_unavailable = true;
+
+    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
+        setProgressCallback();
 
     for (const auto & segment : distribution_by_hash_queue[replica_number])
     {
@@ -361,12 +363,9 @@ void SingleShardCoordinator::markReplicaAsUnavailable(size_t replica_number)
         enqueueToStealerOrStealingQueue(segment.info, segment.ranges.front());
     }
     distribution_by_hash_queue[replica_number].clear();
-
-    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
-        setProgressCallback();
 }
 
-void SingleShardCoordinator::setProgressCallback()
+void DefaultCoordinator::setProgressCallback()
 {
     // Update progress with total rows
     if (progress_callback)
@@ -381,11 +380,9 @@ void SingleShardCoordinator::setProgressCallback()
 
         LOG_DEBUG(log, "Total rows to read: {}", total_rows_to_read);
     }
-
-    LOG_DEBUG(log, "Reading state is fully initialized: {}", fmt::join(all_parts_to_read, "; "));
 }
 
-void SingleShardCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
+void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     const auto replica_num = announcement.replica_num;
 
@@ -398,10 +395,13 @@ void SingleShardCoordinator::handleInitialAllRangesAnnouncement(InitialAllRanges
             ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
 
     ++stats[replica_num].number_of_requests;
-    stats[replica_num].is_announcement_received = true;
+    replica_status[replica_num].is_announcement_received = true;
 
     ++sent_initial_requests;
     LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
+
+    if (sent_initial_requests == replicas_count)
+        setProgressCallback();
 
     /// Sift the queue to move out all invisible segments
     for (const auto & segment : distribution_by_hash_queue[replica_num])
@@ -412,12 +412,9 @@ void SingleShardCoordinator::handleInitialAllRangesAnnouncement(InitialAllRanges
             enqueueToStealerOrStealingQueue(segment.info, segment.ranges.front());
         }
     }
-
-    if (sent_initial_requests == replicas_count)
-        setProgressCallback();
 }
 
-void SingleShardCoordinator::tryToTakeFromDistributionQueue(
+void DefaultCoordinator::tryToTakeFromDistributionQueue(
     size_t replica_num, ScanMode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasCollectingOwnedSegmentsMicroseconds);
@@ -425,50 +422,47 @@ void SingleShardCoordinator::tryToTakeFromDistributionQueue(
     auto & distribution_queue = distribution_by_hash_queue[replica_num];
     auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartNameV1()].contains(replica); };
 
-    if (!distribution_queue.empty() && current_marks_amount < min_number_of_marks)
+    RangesInDataPartDescription result;
+
+    while (!distribution_queue.empty() && current_marks_amount < min_number_of_marks)
     {
-        RangesInDataPartDescription result;
-
-        while (!distribution_queue.empty() && current_marks_amount < min_number_of_marks)
+        if (result.ranges.empty() || distribution_queue.begin()->info != result.info)
         {
-            if (result.ranges.empty() || distribution_queue.begin()->info != result.info)
-            {
-                if (!result.ranges.empty())
-                    /// We're switching to a different part, so have to save currently accumulated ranges
-                    response.description.push_back(result);
-                result = {.info = distribution_queue.begin()->info};
-            }
-
-            /// NOTE: this works because ranges are not considered by the comparator
-            auto & part_ranges = const_cast<RangesInDataPartDescription &>(*distribution_queue.begin());
-            chassert(part_ranges.ranges.size() == 1);
-            auto & range = part_ranges.ranges.front();
-
-            if (replica_can_read_part(replica_num, part_ranges.info))
-            {
-                if (auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result); taken == range.getNumberOfMarks())
-                    distribution_queue.erase(distribution_queue.begin());
-                else
-                {
-                    range.begin += taken;
-                    break;
-                }
-            }
-            else
-            {
-                /// It might be that `replica_num` is the stealer by hash itself - no problem,
-                /// we'll just have a redundant hash computation inside this function
-                enqueueToStealerOrStealingQueue(part_ranges.info, range);
-                distribution_queue.erase(distribution_queue.begin());
-            }
+            if (!result.ranges.empty())
+                /// We're switching to a different part, so have to save currently accumulated ranges
+                response.description.push_back(result);
+            result = {.info = distribution_queue.begin()->info};
         }
 
-        if (!result.ranges.empty())
-            response.description.push_back(result);
+        /// NOTE: this works because ranges are not considered by the comparator
+        auto & part_ranges = const_cast<RangesInDataPartDescription &>(*distribution_queue.begin());
+        chassert(part_ranges.ranges.size() == 1);
+        auto & range = part_ranges.ranges.front();
+
+        if (replica_can_read_part(replica_num, part_ranges.info))
+        {
+            if (auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result); taken == range.getNumberOfMarks())
+                distribution_queue.erase(distribution_queue.begin());
+            else
+            {
+                range.begin += taken;
+                break;
+            }
+        }
+        else
+        {
+            /// It might be that `replica_num` is the stealer by hash itself - no problem,
+            /// we'll just have a redundant hash computation inside this function
+            enqueueToStealerOrStealingQueue(part_ranges.info, range);
+            distribution_queue.erase(distribution_queue.begin());
+        }
     }
+
+    if (!result.ranges.empty())
+        response.description.push_back(result);
 }
 
-void SingleShardCoordinator::tryToStealFromQueues(
+void DefaultCoordinator::tryToStealFromQueues(
     size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response)
 {
     if (scan_mode == ScanMode::TakeWhatsMineForStealing)
@@ -494,7 +488,7 @@ void SingleShardCoordinator::tryToStealFromQueues(
     }
 }
 
-void SingleShardCoordinator::tryToStealFromQueue(
+void DefaultCoordinator::tryToStealFromQueue(
     auto & queue,
     size_t replica_num,
     ScanMode scan_mode,
@@ -545,7 +539,7 @@ void SingleShardCoordinator::tryToStealFromQueue(
         response.description.push_back(result);
 }
 
-void SingleShardCoordinator::processPartsFurther(
+void DefaultCoordinator::processPartsFurther(
     size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasProcessingPartsMicroseconds);
@@ -557,15 +551,6 @@ void SingleShardCoordinator::processPartsFurther(
             LOG_TEST(log, "Current mark size {} is bigger than min_number_marks {}", current_marks_amount, min_number_of_marks);
             return;
         }
-
-        if (part.description.ranges.empty())
-        {
-            LOG_TEST(log, "Part {} is already empty in reading state", part.description.info.getPartNameV1());
-            continue;
-        }
-
-        if (scan_mode == ScanMode::TakeEverythingAvailable)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Right now it should be true, just a check");
 
         RangesInDataPartDescription result{.info = part.description.info};
 
@@ -581,12 +566,11 @@ void SingleShardCoordinator::processPartsFurther(
                 const auto cur_segment
                     = MarkRange{std::max(range.begin, segment_begin), std::min(range.end, segment_begin + mark_segment_size)};
 
-                /// Let's figure out the owner (if scan_mode == TakeWhatsMineByHash) or stealer (if scan_mode == TakeWhatsMineForStealing) of this segment
-                const auto assignee = computeConsistentHash(part.description.info.getPartNameV1(), segment_begin, scan_mode);
-                if (assignee == replica_num)
+                const auto owner = computeConsistentHash(part.description.info.getPartNameV1(), segment_begin, scan_mode);
+                if (owner == replica_num)
                 {
-                    if (const auto taken = takeFromRange(cur_segment, min_number_of_marks, current_marks_amount, result);
-                        taken == range.getNumberOfMarks())
+                    const auto taken = takeFromRange(cur_segment, min_number_of_marks, current_marks_amount, result);
+                    if (taken == range.getNumberOfMarks())
                         part.description.ranges.pop_front();
                     else
                     {
@@ -594,9 +578,10 @@ void SingleShardCoordinator::processPartsFurther(
                         break;
                     }
                 }
-                else if (scan_mode == ScanMode::TakeWhatsMineByHash) /// Let's buffer only segments that are meant for this replica by hash
+                else
                 {
-                    enqueueSegment(part.description.info, cur_segment, assignee);
+                    chassert(scan_mode == ScanMode::TakeWhatsMineByHash);
+                    enqueueSegment(part.description.info, cur_segment, owner);
                     range.begin += cur_segment.getNumberOfMarks();
                     if (range.getNumberOfMarks() == 0)
                         part.description.ranges.pop_front();
@@ -609,11 +594,9 @@ void SingleShardCoordinator::processPartsFurther(
     }
 }
 
-void SingleShardCoordinator::selectPartsAndRanges(
+void DefaultCoordinator::selectPartsAndRanges(
     size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response)
 {
-    /// TODO: metrics
-
     if (scan_mode == ScanMode::TakeWhatsMineByHash)
     {
         tryToTakeFromDistributionQueue(replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
@@ -625,41 +608,35 @@ void SingleShardCoordinator::selectPartsAndRanges(
         tryToStealFromQueues(replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
 }
 
-void SingleShardCoordinator::enqueueSegment(const MergeTreePartInfo & info, const MarkRange & segment, size_t owner)
+bool DefaultCoordinator::possiblyCanReadPart(size_t replica, const MergeTreePartInfo & info) const
 {
-    auto surely_cannot_read_part = [&](auto replica)
-    {
-        return stats[replica].is_unavailable || stats[replica].is_finished
-            || (stats[replica].is_announcement_received && !part_visibility[info.getPartNameV1()].contains(replica));
-    };
-
     /// At this point we might not be sure if `owner` can read from the given part.
     /// Then we will check it while processing `owner`'s data requests - they are guaranteed to came after the announcement.
-    if (!surely_cannot_read_part(owner))
+    return !stats[replica].is_unavailable && !replica_status[replica].is_finished
+        && (!replica_status[replica].is_announcement_received || part_visibility.at(info.getPartNameV1()).contains(replica));
+}
+
+void DefaultCoordinator::enqueueSegment(const MergeTreePartInfo & info, const MarkRange & segment, size_t owner)
+{
+    if (possiblyCanReadPart(owner, info))
         /// TODO: optimize me (maybe we can store something lighter than RangesInDataPartDescription)
         distribution_by_hash_queue[owner].insert(RangesInDataPartDescription{.info = info, .ranges = {segment}});
     else
         enqueueToStealerOrStealingQueue(info, segment);
 }
 
-void SingleShardCoordinator::enqueueToStealerOrStealingQueue(const MergeTreePartInfo & info, const MarkRange & segment)
+void DefaultCoordinator::enqueueToStealerOrStealingQueue(const MergeTreePartInfo & info, const MarkRange & segment)
 {
-    auto surely_cannot_read_part = [&](auto replica)
-    {
-        return stats[replica].is_unavailable || stats[replica].is_finished
-            || (stats[replica].is_announcement_received && !part_visibility[info.getPartNameV1()].contains(replica));
-    };
-
     auto && range = RangesInDataPartDescription{.info = info, .ranges = {segment}};
     const auto stealer_by_hash = computeConsistentHash(
         info.getPartNameV1(), roundDownToMultiple(segment.begin, mark_segment_size), ScanMode::TakeWhatsMineForStealing);
-    if (!surely_cannot_read_part(stealer_by_hash))
+    if (possiblyCanReadPart(stealer_by_hash, info))
         distribution_by_hash_queue[stealer_by_hash].insert(std::move(range));
     else
         ranges_for_stealing_queue.push_back(std::move(range));
 }
 
-size_t SingleShardCoordinator::computeConsistentHash(const std::string & part_name, size_t segment_begin, ScanMode scan_mode) const
+size_t DefaultCoordinator::computeConsistentHash(const std::string & part_name, size_t segment_begin, ScanMode scan_mode) const
 {
     chassert(segment_begin % mark_segment_size == 0);
     auto hash = SipHash();
@@ -669,7 +646,7 @@ size_t SingleShardCoordinator::computeConsistentHash(const std::string & part_na
     return ConsistentHashing(hash.get64(), replicas_count);
 }
 
-ParallelReadResponse SingleShardCoordinator::handleRequest(ParallelReadRequest request)
+ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest request)
 {
     LOG_TRACE(log, "Handling request from replica {}, minimal marks size is {}", request.replica_num, request.min_number_of_marks);
 
@@ -679,30 +656,30 @@ ParallelReadResponse SingleShardCoordinator::handleRequest(ParallelReadRequest r
 
     /// 1. Try to select ranges meant for this replica by consistent hash
     selectPartsAndRanges(request.replica_num, ScanMode::TakeWhatsMineByHash, request.min_number_of_marks, current_mark_size, response);
-    const size_t mine_marks = current_mark_size;
+    const size_t assigned_to_me = current_mark_size;
 
     /// 2. Try to steal but with caching again (with different key)
     selectPartsAndRanges(request.replica_num, ScanMode::TakeWhatsMineForStealing, request.min_number_of_marks, current_mark_size, response);
-    const size_t stolen_by_hash = current_mark_size - mine_marks;
+    const size_t stolen_by_hash = current_mark_size - assigned_to_me;
 
     /// 3. Try to steal with no preference. We're trying to postpone it as much as possible.
     if (current_mark_size == 0 && request.replica_num == source_replica_for_parts_snapshot)
         selectPartsAndRanges(
             request.replica_num, ScanMode::TakeEverythingAvailable, request.min_number_of_marks, current_mark_size, response);
-    const size_t stolen_rest = current_mark_size - stolen_by_hash - mine_marks;
+    const size_t stolen_unassigned = current_mark_size - stolen_by_hash - assigned_to_me;
 
     stats[request.replica_num].number_of_requests += 1;
     stats[request.replica_num].sum_marks += current_mark_size;
 
-    stats[request.replica_num].assigned_to_me += mine_marks;
+    stats[request.replica_num].assigned_to_me += assigned_to_me;
     stats[request.replica_num].stolen_by_hash += stolen_by_hash;
-    stats[request.replica_num].stolen_unassigned += stolen_rest;
+    stats[request.replica_num].stolen_unassigned += stolen_unassigned;
 
     if (response.description.empty())
     {
         response.finish = true;
 
-        stats[request.replica_num].is_finished = true;
+        replica_status[request.replica_num].is_finished = true;
 
         if (++finished_replicas == replicas_count - unavailable_replicas_count)
         {
@@ -722,9 +699,9 @@ ParallelReadResponse SingleShardCoordinator::handleRequest(ParallelReadRequest r
         "Going to respond to replica {} with {}; mine_marks={}, stolen_by_hash={}, stolen_rest={}",
         request.replica_num,
         response.describe(),
-        mine_marks,
+        assigned_to_me,
         stolen_by_hash,
-        stolen_rest);
+        stolen_unassigned);
 
     return response;
 }
@@ -799,7 +776,6 @@ void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRang
     }
 
     ++stats[announcement.replica_num].number_of_requests;
-    stats[announcement.replica_num].is_announcement_received = true;
 
     if (new_rows_to_read > 0)
     {
@@ -890,10 +866,7 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
     }
 
     if (!overall_number_of_marks)
-    {
-        stats[request.replica_num].is_finished = true;
         response.finish = true;
-    }
 
     stats[request.replica_num].number_of_requests += 1;
     stats[request.replica_num].sum_marks += overall_number_of_marks;
@@ -948,7 +921,7 @@ void ParallelReplicasReadingCoordinator::initialize()
     switch (mode)
     {
         case CoordinationMode::Default:
-            pimpl = std::make_unique<SingleShardCoordinator>(replicas_count, mark_segment_size);
+            pimpl = std::make_unique<DefaultCoordinator>(replicas_count, mark_segment_size);
             break;
         case CoordinationMode::WithOrder:
             pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::WithOrder>>(replicas_count);
