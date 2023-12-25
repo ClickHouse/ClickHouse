@@ -20,7 +20,7 @@ SELECT
     attribute_date,
     toDayOfWeek(attribute_date) AS wk,
     count()
-FROM test.order_by_key_filter_test_local
+FROM order_by_key_filter_test_local
 WHERE (date = '2023-12-15') AND (attribute_date = '2023-12-12') AND (toDayOfWeek(attribute_date) = 2)
 GROUP BY
     attribute_date, wk
@@ -32,7 +32,7 @@ SELECT
     attribute_date,
     toDayOfWeek(attribute_date) AS wk,
     count()
-FROM test.order_by_key_filter_test_local
+FROM order_by_key_filter_test_local
 WHERE (date = '2023-12-15') AND (attribute_date = '2023-12-12') AND (toDayOfWeek(CAST(attribute_date, 'Date')) = 2)
 GROUP BY
     attribute_date, wk
