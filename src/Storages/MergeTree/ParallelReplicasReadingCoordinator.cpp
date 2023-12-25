@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <consistent_hashing.h>
+#include <cstddef>
 #include <iterator>
 #include <map>
 #include <mutex>
@@ -12,6 +12,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
+#include <consistent_hashing.h>
 
 #include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
@@ -61,10 +62,15 @@ namespace ProfileEvents
 {
 extern const Event ParallelReplicasHandleRequestMicroseconds;
 extern const Event ParallelReplicasHandleAnnouncementMicroseconds;
+
 extern const Event ParallelReplicasStealingByHashMicroseconds;
 extern const Event ParallelReplicasProcessingPartsMicroseconds;
 extern const Event ParallelReplicasStealingLeftoversMicroseconds;
 extern const Event ParallelReplicasCollectingOwnedSegmentsMicroseconds;
+
+extern const Event ParallelReplicasReadAssignedMarks;
+extern const Event ParallelReplicasReadUnassignedMarks;
+extern const Event ParallelReplicasReadAssignedForStealingMarks;
 }
 
 namespace DB
@@ -148,7 +154,16 @@ public:
         , replicas_count(replicas_count_)
     {}
 
-    virtual ~ImplInterface() = default;
+    virtual ~ImplInterface()
+    {
+        for (size_t replica = 0; replica < replicas_count; ++replica)
+        {
+            ProfileEvents::increment(ProfileEvents::ParallelReplicasReadAssignedMarks, stats[replica].assigned_to_me);
+            ProfileEvents::increment(ProfileEvents::ParallelReplicasReadUnassignedMarks, stats[replica].stolen_unassigned);
+            ProfileEvents::increment(ProfileEvents::ParallelReplicasReadAssignedForStealingMarks, stats[replica].stolen_by_hash);
+        }
+    }
+
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
