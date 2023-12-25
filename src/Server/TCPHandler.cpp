@@ -51,6 +51,7 @@
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/thread_local_rng.h>
+#include <Common/escapeString.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -1564,34 +1565,62 @@ void TCPHandler::sendHello()
     /// If client is Clickhouse-client we will send server profile settings of this user
     if (client_name == (std::string(VERSION_NAME) + " client"))
     {
-        const auto & profile_ids = session->sessionContext()->getUser()->settings.toProfileIDs();
-        auto & access_control = server.context()->getAccessControl();
-        std::vector<SettingChange> settings;
-
-        for (const auto & profile_id : profile_ids)
+        const auto & user = session->sessionContext()->getUser();
+        String query = fmt::format(
+                R"(SELECT setting_name, value FROM system.settings_profile_elements WHERE user_name = '{0}')",
+                escapeString(user->getName()));
+        const auto & res_const = executeQuery(query,server.context(), QueryFlags{ .internal = true }).second;
+        auto & res = const_cast<BlockIO &>(res_const);
+        PullingPipelineExecutor pulling_executor(res.pipeline);
+        Block block;
+        pulling_executor.pull(block);
+        /// filter data
+        std::map<String, Field> server_settings;
+        for (size_t row = 0; row < block.rows(); ++row)
         {
-            const auto & profile = access_control.getSettingsProfileInfo(profile_id);
-            for (const auto & setting : profile->settings)
-                settings.emplace_back(setting);
+            size_t col_index = 0;
+            String name;
+            Field value_field;
+            for (const auto & name_value: block)
+            {
+                Field field;
+                name_value.column->get(row, field);
+                if (!field.isNull())
+                {
+                    if (col_index == 0 )
+                        name = field.safeGet<String>();
+                    else
+                        value_field = field;
+                }
+                else
+                    continue;
+
+                ++col_index;
+            }
+            if (!name.empty())
+                server_settings[name] = value_field;
+
         }
 
-        writeVarUInt(settings.size(), *out);
-
-        for (const auto & setting : settings)
+        writeVarUInt(server_settings.size(), *out);
+        if (!server_settings.empty())
         {
-            writeStringBinary(setting.name, *out);
-            writeVarUInt(setting.value.getType(), *out);
-
-            switch (setting.value.getType())
+            for (const auto & setting : server_settings)
             {
-                case Which::UInt64:
-                    writeVarUInt(setting.value.safeGet<UInt64>(), *out);break;
-                case Which::String:
-                    writeStringBinary(setting.value.safeGet<String>(), *out);break;
-                case Which::Bool:
-                    writeVarUInt(setting.value.get<UInt64>(), *out);break;
-                default:
-                    break;
+                writeStringBinary(setting.first, *out);
+                writeVarUInt(setting.second.getType(), *out);
+                switch (setting.second.getType())
+                {
+                    case Which::UInt64:
+                        writeVarUInt(setting.second.safeGet<UInt64>(), *out);break;
+                    case Which::String:
+                        writeStringBinary(setting.second.safeGet<String>(), *out);break;
+                    case Which::Bool:
+                        writeVarUInt(setting.second.get<UInt64>(), *out);break;
+                    default:
+                        break;
+                }
+
             }
         }
     }
@@ -2322,8 +2351,7 @@ void TCPHandler::sendLogs()
     if (rows > 0)
     {
         Block block = InternalTextLogsQueue::getSampleBlock();
-        block.setColumns(std::move(logs_columns));
-        sendLogData(block);
+        block.setColumns(std::move(logs_columns)); sendLogData(block);
     }
 }
 
