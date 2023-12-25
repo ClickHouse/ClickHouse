@@ -17,7 +17,7 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
     , log(&Poco::Logger::get(fmt::format("VFSGC({})", storage_.getName())))
     , gc_lock(fs::path(storage.traits.locks_node) / "gc_lock")
 {
-    LOG_DEBUG(log, "Garbage collector started with interval {}ms", storage.gc_thread_sleep_ms);
+    LOG_DEBUG(log, "GC started with interval {}ms", storage.gc_thread_sleep_ms);
     storage.zookeeper()->createAncestors(gc_lock);
 
     task = pool.createTask(
@@ -42,8 +42,6 @@ void ObjectStorageVFSGCThread::run()
 {
     SCOPE_EXIT(task->scheduleAfter(storage.gc_thread_sleep_ms));
 
-    // We can't use ZooKeeperLock as it captures a ZooKeeperPtr (that can expire) by value and we can't
-    // reinitialize the lock after construction
     using enum Coordination::Error;
     if (auto code = storage.zookeeper()->tryCreate(gc_lock, "", zkutil::CreateMode::Ephemeral); code == ZNODEEXISTS)
     {
@@ -52,26 +50,27 @@ void ObjectStorageVFSGCThread::run()
     }
     else if (code != ZOK)
         throw Coordination::Exception(code);
-    SCOPE_EXIT(storage.zookeeper()->remove(gc_lock));
+
+    bool successful_run = false;
+    SCOPE_EXIT(if (!successful_run) storage.zookeeper()->remove(gc_lock));
 
     Strings log_items_batch = storage.zookeeper()->getChildren(storage.traits.log_base_node);
-    constexpr size_t batch_min_size = 1; // TODO myrrc should be a setting
     // TODO myrrc should (possibly?) be a setting. The batch size must not be too large as we put it in memory
-    constexpr size_t batch_max_size = 5000;
+    constexpr size_t batch_min_size = 1, batch_max_size = 5000;
     if (log_items_batch.size() < batch_min_size)
         return;
 
     // TODO myrrc ZK should return children in lexicographical order. If it were true, we could
     // get minmax by (begin(), rbegin()), but it's not the case so we have to traverse all range
-    const auto [start_str, end_str] = std::ranges::minmax(log_items_batch);
+    const auto [start_str, end_str] = std::ranges::minmax(std::move(log_items_batch));
     const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4)); // log- is a prefix
     const size_t end_logpointer = std::min(parseFromString<size_t>(end_str.substr(4)), start_logpointer + batch_max_size);
-    log_items_batch = {};
 
     LOG_DEBUG(log, "Acquired lock for log range [{};{}]", start_logpointer, end_logpointer);
     updateSnapshotWithLogEntries(start_logpointer, end_logpointer);
     removeBatch(start_logpointer, end_logpointer);
     LOG_DEBUG(log, "Removed lock for log range [{};{}]", start_logpointer, end_logpointer);
+    successful_run = true;
 }
 
 void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer)
@@ -133,9 +132,11 @@ void ObjectStorageVFSGCThread::removeBatch(size_t start_logpointer, size_t end_l
     LOG_DEBUG(log, "Removing log range [{};{}]", start_logpointer, end_logpointer);
 
     const size_t log_batch_length = end_logpointer - start_logpointer + 1;
-    Coordination::Requests requests(log_batch_length);
+    Coordination::Requests requests(log_batch_length + 1);
     for (size_t i = 0; i < log_batch_length; ++i)
-        requests[i] = zkutil::makeRemoveRequest(getNode(start_logpointer + i), -1);
+        requests[i] = zkutil::makeRemoveRequest(getNode(start_logpointer + i), 0);
+    requests[log_batch_length] = zkutil::makeRemoveRequest(gc_lock, 0);
+
     storage.zookeeper()->multi(requests);
 }
 
