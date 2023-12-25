@@ -1935,7 +1935,7 @@ void StorageFile::parseFileSource(String source, String & filename, String & pat
     }
 
     std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
-    while (path_to_archive_view.back() == ' ')
+    while (path_to_archive_view.ends_with(' '))
         path_to_archive_view.remove_suffix(1);
 
     if (path_to_archive_view.empty())

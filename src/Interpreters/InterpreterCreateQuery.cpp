@@ -1730,7 +1730,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
         throw Exception(ErrorCodes::INCORRECT_QUERY,
                         "Seems like cluster is configured for cross-replication, "
-                        "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
+                        "but zookeeper_path for ReplicatedMergeTree is not specified or contains {{uuid}} macro. "
                         "It's not supported for cross replication, because tables must have different UUIDs. "
                         "Please specify unique zookeeper_path explicitly.");
     }
