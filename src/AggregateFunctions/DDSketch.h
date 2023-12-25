@@ -197,32 +197,41 @@ private:
 
     BaseQuantileDDSketch changeMapping(Float64 new_gamma) const
     {
-        Float64 old_gamma = mapping->getGamma();
-
-        // Create new Stores to hold the remapped bins
-        auto new_store = std::make_unique<DenseStore>();
-        auto new_negative_store = std::make_unique<DenseStore>();
-
-        // Change mapping for the positive store
-        for (int i = 0; i < store->length(); ++i)
-        {
-            int old_key = i + store->offset;
-            int new_key = static_cast<int>(std::round(old_key * std::log(new_gamma) / std::log(old_gamma)));
-            new_store->add(new_key, store->bins[i]);
-        }
-
-        // Change mapping for the negative store
-        for (int i = 0; i < negative_store->length(); ++i)
-        {
-            int old_key = i + negative_store->offset;
-            int new_key = static_cast<int>(std::round(old_key * std::log(new_gamma) / std::log(old_gamma)));
-            new_negative_store->add(new_key, negative_store->bins[i]);
-        }
-
         auto new_mapping = std::make_unique<LogarithmicMapping>((new_gamma - 1) / (new_gamma + 1));
 
-        // Construct a new BaseQuantileDDSketch object with the new components
-        return BaseQuantileDDSketch(std::move(new_mapping), std::move(new_store), std::move(new_negative_store), zero_count);
+        auto new_positive_store = std::make_unique<DenseStore>();
+        auto new_negative_store = std::make_unique<DenseStore>();
+
+        auto remap_store = [this, &new_mapping](DenseStore& old_store, std::unique_ptr<DenseStore>& target_store)
+        {
+            for (int i = 0; i < old_store.length(); ++i)
+            {
+                int old_index = i + old_store.offset;
+                Float64 old_bin_count = old_store.bins[i];
+
+                Float64 in_lower_bound = this->mapping->lowerBound(old_index);
+                Float64 in_upper_bound = this->mapping->lowerBound(old_index + 1);
+                Float64 in_size = in_upper_bound - in_lower_bound;
+
+                int new_index = new_mapping->key(in_lower_bound);
+                // Distribute counts to new bins
+                for (; new_mapping->lowerBound(new_index) < in_upper_bound; ++new_index)
+                {
+                    Float64 out_lower_bound = new_mapping->lowerBound(new_index);
+                    Float64 out_upper_bound = new_mapping->lowerBound(new_index + 1);
+                    Float64 lower_intersection_bound = std::max(out_lower_bound, in_lower_bound);
+                    Float64 higher_intersection_bound = std::min(out_upper_bound, in_upper_bound);
+                    Float64 intersection_size = higher_intersection_bound - lower_intersection_bound;
+                    Float64 proportion = intersection_size / in_size;
+                    target_store->add(new_index, proportion * old_bin_count);
+                }
+            }
+        };
+
+        remap_store(*store, new_positive_store);
+        remap_store(*negative_store, new_negative_store);
+
+        return BaseQuantileDDSketch(std::move(new_mapping), std::move(new_positive_store), std::move(new_negative_store), zero_count);
     }
 };
 
