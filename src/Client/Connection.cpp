@@ -436,8 +436,9 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
         }
 
         //Synchronize settings from server
-        size_t settings_size;
-        readVarUInt(settings_size, *in);
+        size_t settings_size = 0;
+        if (client_name == "client")
+            readVarUInt(settings_size, *in);
         for (size_t i = 0; i < settings_size; ++i)
         {
             String name;
