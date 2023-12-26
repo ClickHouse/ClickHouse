@@ -786,10 +786,28 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
         else
         {
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
-                getContext(),
-                false /* is_subquery */,
-                create.isParameterizedView());
+            /** To get valid sample block we need to prepare query without only_analyze, because we need to execute scalar
+              * subqueries. Otherwise functions that expect only constant arguments will throw error during query analysis,
+              * because the result of scalar subquery is not a constant.
+              *
+              * Example:
+              * CREATE MATERIALIZED VIEW test_mv ENGINE=MergeTree ORDER BY arr
+              * AS
+              * WITH (SELECT '\d[a-z]') AS constant_value
+              * SELECT extractAll(concat(toString(number), 'a'), assumeNotNull(constant_value)) AS arr
+              * FROM test_table;
+              *
+              * For new analyzer this issue does not exists because we always execute scalar subqueries.
+              * We can improve this in new analyzer, and execute scalar subqueries only in contexts when we expect constant
+              * for example: LIMIT, OFFSET, functions parameters, functions constant only arguments.
+              */
+
+            SelectQueryOptions options;
+            if (create.isParameterizedView())
+                options = options.createParameterizedView();
+
+            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), options);
+            as_select_sample = interpreter.getSampleBlock();
         }
 
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
@@ -1223,7 +1241,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             {
                 input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
                     getContext(),
-                    SelectQueryOptions().analyze()).getSampleBlock();
+                    {}).getSampleBlock();
             }
 
             Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
@@ -1251,6 +1269,23 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+
+    if (database && database->getEngineName() == "Replicated" && create.select)
+    {
+        bool is_storage_replicated = false;
+        if (create.storage && create.storage->engine)
+        {
+            const auto & storage_name = create.storage->engine->name;
+            if (storage_name.starts_with("Replicated") || storage_name.starts_with("Shared"))
+                is_storage_replicated = true;
+        }
+
+        const bool allow_create_select_for_replicated = create.isView() || create.is_create_empty || !is_storage_replicated;
+        if (!allow_create_select_for_replicated)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "CREATE AS SELECT is not supported with Replicated databases. Use separate CREATE and INSERT queries");
+    }
 
     if (need_add_to_database && database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
@@ -1712,7 +1747,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
         throw Exception(ErrorCodes::INCORRECT_QUERY,
                         "Seems like cluster is configured for cross-replication, "
-                        "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
+                        "but zookeeper_path for ReplicatedMergeTree is not specified or contains {{uuid}} macro. "
                         "It's not supported for cross replication, because tables must have different UUIDs. "
                         "Please specify unique zookeeper_path explicitly.");
     }

@@ -239,6 +239,10 @@ The amount of virtual memory mapped for the pages of machine code of the server 
 
 The amount of virtual memory mapped for the use of stack and for the allocated memory, in bytes. It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call. This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring.
 
+### MemoryResidentMax
+
+Maximum amount of physical memory used by the server process, in bytes.
+
 ### MemoryResident
 
 The amount of physical memory used by the server process, in bytes.

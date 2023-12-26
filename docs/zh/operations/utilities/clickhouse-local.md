@@ -45,6 +45,7 @@ clickhouse-local --structure "table_structure" --input-format "format_of_incomin
 -   `--logger.level` — 日志级别。
 -   `--ignore-error` — 当查询失败时，不停止处理。
 -   `-c`, `--config-file` — 与ClickHouse服务器格式相同配置文件的路径，默认情况下配置为空。
+-   `--no-system-tables` — 不附加系统表。
 -   `--help` — `clickhouse-local`使用帮助信息。
 -   `-V`, `--version` — 打印版本信息并退出。
 

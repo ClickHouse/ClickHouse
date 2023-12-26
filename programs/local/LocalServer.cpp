@@ -43,7 +43,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -744,7 +744,7 @@ void LocalServer::processConfig()
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         auto startup_system_tasks = loadMetadataSystem(global_context);
-        attachSystemTablesLocal</* lazy= */ true>(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         waitLoad(TablesLoaderForegroundPoolId, startup_system_tasks);
@@ -757,13 +757,13 @@ void LocalServer::processConfig()
         }
 
         /// For ClickHouse local if path is not set the loader will be disabled.
-        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
+        global_context->getUserDefinedSQLObjectsStorage().loadObjects();
 
         LOG_DEBUG(log, "Loaded metadata.");
     }
-    else
+    else if (!config().has("no-system-tables"))
     {
-        attachSystemTablesLocal</* lazy= */ true>(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
@@ -776,6 +776,7 @@ void LocalServer::processConfig()
 
     global_context->setQueryKindInitial();
     global_context->setQueryKind(query_kind);
+    global_context->setQueryParameters(query_parameters);
 }
 
 
@@ -822,6 +823,7 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
     std::cout << getHelpFooter() << "\n";
+    std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
 #endif
 }
 
@@ -842,6 +844,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
 
+        ("no-system-tables", "do not attach system tables (better startup time)")
         ("path", po::value<std::string>(), "Storage path")
         ("only-system-tables", "attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
@@ -870,6 +873,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("table-file", options["file"].as<std::string>());
     if (options.count("structure"))
         config().setString("table-structure", options["structure"].as<std::string>());
+    if (options.count("no-system-tables"))
+        config().setBool("no-system-tables", true);
     if (options.count("only-system-tables"))
         config().setBool("only-system-tables", true);
     if (options.count("database"))
@@ -895,7 +900,31 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
-        if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
+        /// Parameter arg after underline.
+        if (arg.starts_with("--param_"))
+        {
+            auto param_continuation = arg.substr(strlen("--param_"));
+            auto equal_pos = param_continuation.find_first_of('=');
+
+            if (equal_pos == std::string::npos)
+            {
+                /// param_name value
+                ++arg_num;
+                if (arg_num >= argc)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter requires value");
+                arg = argv[arg_num];
+                query_parameters.emplace(String(param_continuation), String(arg));
+            }
+            else
+            {
+                if (equal_pos == 0)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
+
+                /// param_name=value
+                query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
+            }
+        }
+        else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
         {
             /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
             ++arg_num;

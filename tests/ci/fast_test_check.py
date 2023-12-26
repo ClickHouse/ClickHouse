@@ -7,8 +7,7 @@ import csv
 import sys
 import atexit
 from pathlib import Path
-from typing import List, Tuple
-
+from typing import Tuple
 from github import Github
 
 from build_check import get_release_or_pr
@@ -23,8 +22,9 @@ from commit_status_helper import (
     update_mergeable_check,
     format_description,
 )
-from docker_pull_helper import get_image_with_version, DockerImage
-from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPO_COPY, REPORTS_PATH
+
+from docker_images_helper import DockerImage, get_docker_image, pull_image
+from env_helper import S3_BUILDS_BUCKET, TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import FORCE_TESTS_LABEL, PRInfo
 from report import TestResult, TestResults, read_test_results
@@ -72,7 +72,7 @@ def process_results(result_directory: Path) -> Tuple[str, str, TestResults]:
     status = []
     status_path = result_directory / "check_status.tsv"
     if status_path.exists():
-        logging.info("Found test_results.tsv")
+        logging.info("Found %s", status_path.name)
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
     if len(status) != 1 or len(status[0]) != 2:
@@ -118,15 +118,13 @@ def main():
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path = Path(REPORTS_PATH)
-    reports_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
-    atexit.register(update_mergeable_check, gh, pr_info, NAME)
+    atexit.register(update_mergeable_check, commit, pr_info, NAME)
 
     rerun_helper = RerunHelper(commit, NAME)
     if rerun_helper.is_already_finished_by_status():
@@ -136,7 +134,7 @@ def main():
             sys.exit(1)
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, "clickhouse/fasttest")
+    docker_image = pull_image(get_docker_image("clickhouse/fasttest"))
 
     s3_helper = S3Helper()
 
@@ -233,7 +231,9 @@ def main():
         build_urls,
     )
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(commit, state, report_url, description, NAME, pr_info)
+    post_commit_status(
+        commit, state, report_url, description, NAME, pr_info, dump_to_file=True
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
