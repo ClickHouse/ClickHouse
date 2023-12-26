@@ -209,7 +209,7 @@ protected:
         {
             size_t length = right_rounded_down - left_rounded_up;
             if (0 != mprotect(left_rounded_up, length, prot))
-                throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+                throw ErrnoException(ErrorCodes::CANNOT_MPROTECT, "Cannot mprotect memory region");
         }
     }
 

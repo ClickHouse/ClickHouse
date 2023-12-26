@@ -331,7 +331,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     if (!table_id)
     {
         if (exception)
-            exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Cannot find table: StorageID is empty");
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot find table: StorageID is empty"));
         return {};
     }
 
