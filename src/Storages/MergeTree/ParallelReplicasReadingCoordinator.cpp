@@ -326,6 +326,7 @@ DefaultCoordinator::~DefaultCoordinator()
     }
     catch (...)
     {
+        tryLogCurrentException(log);
     }
 }
 
