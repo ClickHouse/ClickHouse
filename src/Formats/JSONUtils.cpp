@@ -24,7 +24,6 @@ namespace ErrorCodes
 
 namespace JSONUtils
 {
-
     template <const char opening_bracket, const char closing_bracket>
     static std::pair<bool, size_t>
     fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
@@ -72,7 +71,7 @@ namespace JSONUtils
             }
             else
             {
-                pos = find_first_symbols<opening_bracket, closing_bracket, '\\', '"'>(pos, in.buffer().end());
+                pos = find_first_symbols<opening_bracket, closing_bracket, '"'>(pos, in.buffer().end());
 
                 if (pos > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
@@ -89,19 +88,13 @@ namespace JSONUtils
                     --balance;
                     ++pos;
                 }
-                else if (*pos == '\\')
-                {
-                    ++pos;
-                    if (loadAtPosition(in, memory, pos))
-                        ++pos;
-                }
                 else if (*pos == '"')
                 {
                     quotes = true;
                     ++pos;
                 }
 
-                if (balance == 0)
+                if (!quotes && balance == 0)
                 {
                     ++number_of_rows;
                     if ((number_of_rows >= min_rows)

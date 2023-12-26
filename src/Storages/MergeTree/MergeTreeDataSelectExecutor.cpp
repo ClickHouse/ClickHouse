@@ -92,7 +92,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 
     for (const auto & part : parts)
     {
-        MarkRanges ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
+        MarkRanges ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, settings, log);
 
         /** In order to get a lower bound on the number of rows that match the condition on PK,
           *  consider only guaranteed full marks.
@@ -770,6 +770,35 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     return sampling;
 }
 
+void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
+    std::optional<KeyCondition> & part_offset_condition, const ActionsDAGPtr & filter_dag, ContextPtr context)
+{
+    if (!filter_dag)
+        return;
+
+    auto part_offset_type = std::make_shared<DataTypeUInt64>();
+    auto part_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    Block sample
+        = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
+           ColumnWithTypeAndName(part_type->createColumn(), part_type, "_part")};
+
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), sample);
+    if (!dag)
+        return;
+
+    /// The _part filter should only be effective in conjunction with the _part_offset filter.
+    auto required_columns = dag->getRequiredColumnsNames();
+    if (std::find(required_columns.begin(), required_columns.end(), "_part_offset") == required_columns.end())
+        return;
+
+    part_offset_condition.emplace(KeyCondition{
+        dag,
+        context,
+        sample.getNames(),
+        std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
+        {}});
+}
+
 std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
     const MergeTreeData & data,
     const MergeTreeData::DataPartsVector & parts,
@@ -909,6 +938,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     StorageMetadataPtr metadata_snapshot,
     const ContextPtr & context,
     const KeyCondition & key_condition,
+    const std::optional<KeyCondition> & part_offset_condition,
     const UsefulSkipIndexes & skip_indexes,
     const MergeTreeReaderSettings & reader_settings,
     Poco::Logger * log,
@@ -928,7 +958,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         Strings forced_indices;
         {
-            Tokens tokens(indices.data(), &indices[indices.size()], settings.max_query_size);
+            Tokens tokens(indices.data(), indices.data() + indices.size(), settings.max_query_size);
             IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth));
             Expected expected;
             if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
@@ -983,8 +1013,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             RangesInDataPart ranges(part, alter_conversions_for_part, part_index);
             size_t total_marks_count = part->index_granularity.getMarksCountWithoutFinal();
 
-            if (metadata_snapshot->hasPrimaryKey())
-                ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
+            if (metadata_snapshot->hasPrimaryKey() || part_offset_condition)
+                ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, part_offset_condition, settings, log);
             else if (total_marks_count)
                 ranges.ranges = MarkRanges{{MarkRange{0, total_marks_count}}};
 
@@ -1404,6 +1434,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const MergeTreeData::DataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
     const KeyCondition & key_condition,
+    const std::optional<KeyCondition> & part_offset_condition,
     const Settings & settings,
     Poco::Logger * log)
 {
@@ -1417,7 +1448,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     bool has_final_mark = part->index_granularity.hasFinalMark();
 
     /// If index is not used.
-    if (key_condition.alwaysUnknownOrTrue())
+    if (key_condition.alwaysUnknownOrTrue() && (!part_offset_condition || part_offset_condition->alwaysUnknownOrTrue()))
     {
         if (has_final_mark)
             res.push_back(MarkRange(0, marks_count - 1));
@@ -1467,32 +1498,69 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> index_left(used_key_size);
     std::vector<FieldRef> index_right(used_key_size);
 
+    /// For _part_offset and _part virtual columns
+    DataTypes part_offset_types
+        = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
+    std::vector<FieldRef> part_offset_left(2);
+    std::vector<FieldRef> part_offset_right(2);
+
     auto may_be_true_in_range = [&](MarkRange & range)
     {
-        if (range.end == marks_count && !has_final_mark)
+        bool key_condition_maybe_true = true;
+        if (!key_condition.alwaysUnknownOrTrue())
         {
-            for (size_t i = 0; i < used_key_size; ++i)
+            if (range.end == marks_count && !has_final_mark)
             {
-                create_field_ref(range.begin, i, index_left[i]);
-                index_right[i] = POSITIVE_INFINITY;
+                for (size_t i = 0; i < used_key_size; ++i)
+                {
+                    create_field_ref(range.begin, i, index_left[i]);
+                    index_right[i] = POSITIVE_INFINITY;
+                }
             }
-        }
-        else
-        {
-            if (has_final_mark && range.end == marks_count)
-                range.end -= 1; /// Remove final empty mark. It's useful only for primary key condition.
+            else
+            {
+                if (has_final_mark && range.end == marks_count)
+                    range.end -= 1; /// Remove final empty mark. It's useful only for primary key condition.
 
-            for (size_t i = 0; i < used_key_size; ++i)
+                for (size_t i = 0; i < used_key_size; ++i)
+                {
+                    create_field_ref(range.begin, i, index_left[i]);
+                    create_field_ref(range.end, i, index_right[i]);
+                }
+            }
+            key_condition_maybe_true = key_condition.mayBeTrueInRange(used_key_size, index_left.data(), index_right.data(), key_types);
+        }
+
+        bool part_offset_condition_maybe_true = true;
+
+        if (part_offset_condition && !part_offset_condition->alwaysUnknownOrTrue())
+        {
+            auto begin = part->index_granularity.getMarkStartingRow(range.begin);
+            auto end = part->index_granularity.getMarkStartingRow(range.end) - 1;
+            if (begin > end)
             {
-                create_field_ref(range.begin, i, index_left[i]);
-                create_field_ref(range.end, i, index_right[i]);
+                /// Empty mark (final mark)
+                part_offset_condition_maybe_true = false;
+            }
+            else
+            {
+                part_offset_left[0] = part->index_granularity.getMarkStartingRow(range.begin);
+                part_offset_right[0] = part->index_granularity.getMarkStartingRow(range.end) - 1;
+                part_offset_left[1] = part->name;
+                part_offset_right[1] = part->name;
+
+                part_offset_condition_maybe_true
+                    = part_offset_condition->mayBeTrueInRange(2, part_offset_left.data(), part_offset_right.data(), part_offset_types);
             }
         }
-        return key_condition.mayBeTrueInRange(used_key_size, index_left.data(), index_right.data(), key_types);
+        return key_condition_maybe_true && part_offset_condition_maybe_true;
     };
 
+    bool key_condition_exact_range = key_condition.alwaysUnknownOrTrue() || key_condition.matchesExactContinuousRange();
+    bool part_offset_condition_exact_range
+        = !part_offset_condition || part_offset_condition->alwaysUnknownOrTrue() || part_offset_condition->matchesExactContinuousRange();
     const String & part_name = part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPart()->name) : part->name;
-    if (!key_condition.matchesExactContinuousRange())
+    if (!key_condition_exact_range || !part_offset_condition_exact_range)
     {
         // Do exclusion search, where we drop ranges that do not match
 
