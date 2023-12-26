@@ -1525,8 +1525,8 @@ TEST_P(FDBKeeperChrootSuite, MultiRead)
             multi,
             {
                 makeGetRequest("/a"),
-                makeExistsRequest("/b"),
                 makeGetRequest("/b"),
+                makeGetRequest("/c"),
             });
         auto resps = wait(multi_future);
         ASSERT_EQ(resps.error, Error::ZNONODE);
@@ -1535,12 +1535,53 @@ TEST_P(FDBKeeperChrootSuite, MultiRead)
         auto resp0 = dynamic_cast<const Coordination::GetResponse &>(*resps.responses[0]);
         ASSERT_EQ(resp0.data, "aaa");
 
-        auto resp1 = dynamic_cast<const Coordination::ExistsResponse &>(*resps.responses[1]);
+        auto resp1 = dynamic_cast<const Coordination::GetResponse &>(*resps.responses[1]);
         ASSERT_EQ(resp1.error, Error::ZNONODE);
 
         auto resp2 = dynamic_cast<const Coordination::GetResponse &>(*resps.responses[2]);
         ASSERT_EQ(resp2.error, Error::ZRUNTIMEINCONSISTENCY);
     }
+}
+
+TEST_P(FDBKeeperChrootSuite, MultiExists)
+{
+    ASSERT_TRUE(keeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ));
+
+    auto create_node = [&](const std::string & name)
+    {
+        KEEPER_CREATE(create, name, "abc", false, false, {});
+        ASSERT_EQ(wait(create_future).error, Error::ZOK);
+    };
+    create_node("/a");
+    create_node("/b");
+    create_node("/d");
+
+    using namespace zkutil;
+    KEEPER_MULTI(
+        multi,
+        {
+            makeExistsRequest("/a"),
+            makeExistsRequest("/b"),
+            makeExistsRequest("/c"),
+            makeExistsRequest("/d"),
+        });
+    auto resps = wait(multi_future);
+    ASSERT_EQ(resps.error, Error::ZOK);
+    ASSERT_EQ(resps.responses.size(), 4);
+
+    std::vector<Error> actual_results;
+    for (auto & resp : resps.responses)
+    {
+        auto resp_exists = dynamic_cast<const Coordination::ExistsResponse &>(*resp);
+        actual_results.emplace_back(resp_exists.error);
+    }
+    std::vector<Error> expect_results = {
+        Error::ZOK,
+        Error::ZOK,
+        Error::ZNONODE,
+        Error::ZOK,
+    };
+    ASSERT_EQ(actual_results, expect_results);
 }
 
 TEST_P(FDBKeeperChrootSuite, CreateIgnoreExists)

@@ -399,7 +399,8 @@ static std::shared_ptr<Response> createResponseInMulti(AsyncTrxBuilder::Context 
     auto out_resp = std::make_shared<TResponse>();
     if (likely(error == Error::ZOK))
         *out_resp = std::move(resp);
-    out_resp->error = error;
+    else
+        out_resp->error = error;
     return out_resp;
 }
 
@@ -582,7 +583,7 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
 
             ZNodeLayer znode(trxb, chrooted_path, *keys);
             auto var_resp = trxb.var<ExistsResponse>();
-            znode.stat(var_resp);
+            znode.stat(var_resp, false);
 
             all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<ExistsResponse>);
         }
