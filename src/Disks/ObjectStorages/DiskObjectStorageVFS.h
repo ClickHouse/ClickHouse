@@ -37,6 +37,7 @@ public:
 
 private:
     friend struct RemoveRecursiveObjectStorageVFSOperation;
+    friend struct RemoveManyObjectStorageVFSOperation;
     friend struct CopyFileObjectStorageVFSOperation;
     friend struct DiskObjectStorageVFSTransaction;
     friend class ObjectStorageVFSGCThread;

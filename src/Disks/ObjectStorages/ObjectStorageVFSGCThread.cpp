@@ -60,7 +60,7 @@ void ObjectStorageVFSGCThread::run()
     if (log_items_batch.size() < batch_min_size)
         return;
 
-    // TODO myrrc ZK should return children in lexicographical order. If it were true, we could
+    // ZK should return children in lexicographical order. If it were true, we could
     // get minmax by (begin(), rbegin()), but it's not the case so we have to traverse all range
     const auto [start_str, end_str] = std::ranges::minmax(std::move(log_items_batch));
     const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4)); // log- is a prefix

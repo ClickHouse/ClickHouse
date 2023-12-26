@@ -23,6 +23,7 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
         config,
         config_prefix)
     , allow_gc(allow_gc_)
+    // TODO myrrc add to docs
     , gc_thread_sleep_ms(config.getUInt64(config_prefix + ".object_storage_vfs_gc_period", 10'000))
     , traits(VFSTraits{name_})
 {
@@ -96,6 +97,7 @@ void DiskObjectStorageVFS::unlock(std::string_view path)
 
 zkutil::ZooKeeperPtr DiskObjectStorageVFS::zookeeper()
 {
+    // TODO myrrc support remote_fs_zero_copy_zookeeper_path
     if (!cached_zookeeper || cached_zookeeper->expired()) [[unlikely]]
         cached_zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
     return cached_zookeeper;

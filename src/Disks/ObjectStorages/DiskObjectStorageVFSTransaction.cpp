@@ -70,26 +70,51 @@ void DiskObjectStorageVFSTransaction::removeSharedRecursive(const String & path,
     operations_to_execute.emplace_back(std::make_unique<RemoveRecursiveObjectStorageVFSOperation>(disk, path));
 }
 
+struct RemoveManyObjectStorageVFSOperation final : RemoveManyObjectStorageOperation
+{
+    DiskObjectStorageVFS & disk;
+
+    RemoveManyObjectStorageVFSOperation(DiskObjectStorageVFS & disk_, const RemoveBatchRequest & request_)
+        : RemoveManyObjectStorageOperation(
+            *disk_.object_storage,
+            *disk_.metadata_storage,
+            request_,
+            /*keep_all_batch_data=*/false, // Different behaviour compared to RemoveObjectStorageOperation
+            {})
+        , disk(disk_)
+    {
+    }
+
+    void execute(MetadataTransactionPtr tx) override
+    {
+        RemoveManyObjectStorageOperation::execute(tx);
+        StoredObjects unlink;
+        for (auto && [objects, _] : objects_to_remove)
+            std::ranges::move(objects, std::back_inserter(unlink));
+        const String entry = VFSLogItem::getSerialised({}, std::move(unlink));
+        disk.zookeeper()->create(disk.traits.log_item, entry, zkutil::CreateMode::PersistentSequential);
+    }
+
+    void finalize() override { }
+};
+
 void DiskObjectStorageVFSTransaction::removeSharedFiles(const RemoveBatchRequest & files, bool, const NameSet &)
 {
-    // TODO myrrc should have something better than that, but not critical as for now
-    for (const auto & file : files)
-        removeSharedFileIfExists(file.path, false);
+    operations_to_execute.emplace_back(std::make_unique<RemoveManyObjectStorageVFSOperation>(disk, files));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeFile(
     const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings, bool autocommit)
 {
     const bool is_metadata_file_for_vfs = path.ends_with(":vfs");
-    const String & path_without_tag = is_metadata_file_for_vfs ? path.substr(0, path.size() - 4) : path;
+    const String path_without_tag = is_metadata_file_for_vfs ? path.substr(0, path.size() - 4) : path;
 
     LOG_TRACE(disk.log, "writeFile(is_metadata={})", is_metadata_file_for_vfs);
 
     // This is a metadata file we got from some replica, we need to load it on local metadata disk
-    // and add a Link entry
     if (is_metadata_file_for_vfs)
-        // TODO myrrc transaction per file is slow, should revisit whether it's grouped in a DataPart
-        // transaction (see DataPartsExchange.cpp -- downloadPartTodisk -> beginTransaction)
+    {
+        chassert(autocommit);
         // TODO myrrc research whether there's any optimal way except for writing file and immediately
         // reading it back
         return std::make_unique<WriteBufferWithFinalizeCallback>(
@@ -100,6 +125,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
                 tx->commit();
             },
             "");
+    }
 
     StoredObjects currently_existing_blobs
         = metadata_storage.exists(path_without_tag) ? metadata_storage.getStorageObjects(path_without_tag) : StoredObjects{};
@@ -128,10 +154,6 @@ void DiskObjectStorageVFSTransaction::createHardLink(const String & src_path, co
     addStoredObjectsOp(metadata_storage.getStorageObjects(src_path), {});
 }
 
-// Unfortunately, knowledge of object storage blob path doesn't go beyond
-// this structure, so we need to write to Zookeeper inside of execute().
-// Another option is to add another operation that would deserialize metadata file at to_path,
-// get remote path and write to Zookeeper, but the former seems less ugly to me
 struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
 {
     DiskObjectStorageVFS & disk;
