@@ -2803,8 +2803,6 @@ void MergeTreeData::dropAllData()
 
 void MergeTreeData::dropIfEmpty()
 {
-    LOG_TRACE(log, "dropIfEmpty");
-
     auto lock = lockParts();
 
     if (!data_parts_by_info.empty())
