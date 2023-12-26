@@ -39,6 +39,12 @@ private:
     std::atomic<bool> initialized{false};
     std::unique_ptr<ImplInterface> pimpl;
     ProgressCallback progress_callback; // store the callback only to bypass it to coordinator implementation
+    std::set<size_t> replicas_used;
+
+    /// To initialize `pimpl` we need to know the coordinator mode. We can know it only from initial announcement or regular request.
+    /// The problem is `markReplicaAsUnavailable` might be called before any of these requests happened.
+    /// In this case we will remember the numbers of unavailable replicas and apply this knowledge later on initialization.
+    std::vector<size_t> unavailable_nodes_registered_before_initialization;
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;

@@ -914,7 +914,7 @@ void KeeperStorage::unregisterEphemeralPath(int64_t session_id, const std::strin
 {
     auto ephemerals_it = ephemerals.find(session_id);
     if (ephemerals_it == ephemerals.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path", session_id);
 
     ephemerals_it->second.erase(path);
     if (ephemerals_it->second.empty())
@@ -1081,7 +1081,8 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
         Coordination::ZooKeeperGetRequest & request = dynamic_cast<Coordination::ZooKeeperGetRequest &>(*zk_request);
 
         if (request.path == Coordination::keeper_api_feature_flags_path
-            || request.path == Coordination::keeper_config_path)
+            || request.path == Coordination::keeper_config_path
+            || request.path == Coordination::keeper_availability_zone_path)
             return {};
 
         if (!storage.uncommitted_state.getNode(request.path))

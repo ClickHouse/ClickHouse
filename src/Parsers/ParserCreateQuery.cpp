@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTStatisticDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -157,6 +158,33 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
 
     node = index;
+
+    return true;
+}
+
+bool ParserStatisticDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_type("TYPE");
+
+    ParserList columns_p(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserIdentifier type_p;
+
+    ASTPtr columns;
+    ASTPtr type;
+
+    if (!columns_p.parse(pos, columns, expected))
+        return false;
+
+    if (!s_type.ignore(pos, expected))
+        return false;
+
+    if (!type_p.parse(pos, type, expected))
+        return false;
+
+    auto stat = std::make_shared<ASTStatisticDeclaration>();
+    stat->set(stat->columns, columns);
+    stat->type = type->as<ASTIdentifier &>().name();
+    node = stat;
 
     return true;
 }

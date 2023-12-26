@@ -268,7 +268,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     }
     else
     {
-        const auto & main_stream = iter->node->children.front()->step->getOutputStream();
+        const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputStream();
         const auto * proj_stream = &next_node->step->getOutputStream();
 
         if (auto materializing = makeMaterializingDAG(proj_stream->header, main_stream.header))
@@ -284,7 +284,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         auto & union_node = nodes.emplace_back();
         DataStreams input_streams = {main_stream, *proj_stream};
         union_node.step = std::make_unique<UnionStep>(std::move(input_streams));
-        union_node.children = {iter->node->children.front(), next_node};
+        union_node.children = {iter->node->children[iter->next_child - 1], next_node};
         iter->node->children[iter->next_child - 1] = &union_node;
     }
 

@@ -2453,6 +2453,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     };
 
     auto result_dag = std::make_shared<ActionsDAG>();
+    std::unordered_map<std::string, const ActionsDAG::Node *> result_inputs;
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
 
     size_t filter_nodes_size = filter_nodes.size();
@@ -2504,7 +2505,10 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
         {
             case ActionsDAG::ActionType::INPUT:
             {
-                result_node = &result_dag->addInput({node->column, node->result_type, node->result_name});
+                auto & result_input = result_inputs[node->result_name];
+                if (!result_input)
+                    result_input = &result_dag->addInput({node->column, node->result_type, node->result_name});
+                result_node = result_input;
                 break;
             }
             case ActionsDAG::ActionType::COLUMN:

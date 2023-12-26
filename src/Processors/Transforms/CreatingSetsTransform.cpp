@@ -38,6 +38,18 @@ CreatingSetsTransform::~CreatingSetsTransform()
             tryLogCurrentException(log, "Failed to set_exception for promise");
         }
     }
+
+    if (executor)
+    {
+        try
+        {
+            executor->cancel();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to cancel PushingPipelineExecutor");
+        }
+    }
 }
 
 CreatingSetsTransform::CreatingSetsTransform(

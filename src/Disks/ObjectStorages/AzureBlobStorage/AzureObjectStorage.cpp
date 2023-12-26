@@ -14,11 +14,12 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 
+
 namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
-
+    extern const Metric ObjectStorageAzureThreadsScheduled;
 }
 
 namespace DB
@@ -45,6 +46,7 @@ public:
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageAzureThreads,
             CurrentMetrics::ObjectStorageAzureThreadsActive,
+            CurrentMetrics::ObjectStorageAzureThreadsScheduled,
             "ListObjectAzure")
         , client(client_)
     {
