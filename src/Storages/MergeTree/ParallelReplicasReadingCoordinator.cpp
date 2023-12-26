@@ -303,6 +303,7 @@ private:
 
     void tryToStealFromQueue(
         auto & queue,
+        ssize_t owner, /// In case `queue` is `distribution_by_hash_queue[replica]`
         size_t replica_num,
         ScanMode scan_mode,
         size_t min_number_of_marks,
@@ -481,10 +482,8 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
 void DefaultCoordinator::tryToStealFromQueues(
     size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response)
 {
-    if (scan_mode == ScanMode::TakeWhatsMineForStealing)
+    auto steal_from_other_replicas = [&]()
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasStealingByHashMicroseconds);
-
         /// Try to steal from other replicas starting from replicas with longest queues
         std::vector<size_t> order(replicas_count);
         std::iota(order.begin(), order.end(), 0);
@@ -493,19 +492,28 @@ void DefaultCoordinator::tryToStealFromQueues(
 
         for (auto replica : order)
             tryToStealFromQueue(
-                distribution_by_hash_queue[replica], replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
+                distribution_by_hash_queue[replica], replica, replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
+    };
+
+    if (scan_mode == ScanMode::TakeWhatsMineForStealing)
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasStealingByHashMicroseconds);
+        steal_from_other_replicas();
     }
     else
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasStealingLeftoversMicroseconds);
-
         /// Check orphaned ranges
-        tryToStealFromQueue(ranges_for_stealing_queue, replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
+        tryToStealFromQueue(
+            ranges_for_stealing_queue, /*owner=*/-1, replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
+        /// Last hope. In case we haven't yet figured out that some node is unavailable its segments are still in the distribution queue.
+        steal_from_other_replicas();
     }
 }
 
 void DefaultCoordinator::tryToStealFromQueue(
     auto & queue,
+    ssize_t owner,
     size_t replica_num,
     ScanMode scan_mode,
     size_t min_number_of_marks,
@@ -533,9 +541,18 @@ void DefaultCoordinator::tryToStealFromQueue(
 
         if (replica_can_read_part(replica_num, part_ranges.info))
         {
-            const size_t segment_begin = roundDownToMultiple(range.begin, mark_segment_size);
-            const bool can_take = (scan_mode == ScanMode::TakeEverythingAvailable)
-                || computeConsistentHash(part_ranges.info.getPartNameV1(), segment_begin, scan_mode) == replica_num;
+            bool can_take = false;
+            if (scan_mode == ScanMode::TakeWhatsMineForStealing)
+            {
+                chassert(owner >= 0);
+                const size_t segment_begin = roundDownToMultiple(range.begin, mark_segment_size);
+                can_take = computeConsistentHash(part_ranges.info.getPartNameV1(), segment_begin, scan_mode) == replica_num;
+            }
+            else
+            {
+                /// Don't steal segments with alive owner that sees them
+                can_take = owner == -1 || stats[owner].is_unavailable || !replica_status[owner].is_announcement_received;
+            }
             if (can_take)
             {
                 if (auto taken = takeFromRange(range, min_number_of_marks, current_marks_amount, result); taken == range.getNumberOfMarks())
