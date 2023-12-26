@@ -1,4 +1,5 @@
 #include "DiskObjectStorageVFS.h"
+#include "DiskObjectStorageMetadata.h"
 #include "DiskObjectStorageVFSTransaction.h"
 #include "Interpreters/Context.h"
 #include "ObjectStorageVFSGCThread.h"
@@ -13,8 +14,8 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
-    bool allow_gc_)
-    : DiskObjectStorage( //NOLINT
+    bool enable_gc_)
+    : DiskObjectStorage( //
         name_,
         object_storage_root_path_,
         log_name,
@@ -22,11 +23,12 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
         std::move(object_storage_),
         config,
         config_prefix)
-    , allow_gc(allow_gc_)
+    , enable_gc(enable_gc_)
     // TODO myrrc add to docs
-    , gc_thread_sleep_ms(config.getUInt64(config_prefix + ".object_storage_vfs_gc_period", 10'000))
+    , gc_sleep_ms(config.getUInt64(config_prefix + ".object_storage_vfs_gc_period", 10'000))
     , traits(VFSTraits{name_})
 {
+    //chassert(!send_metadata); TODO myrrc this fails in integration tests
     zookeeper()->createAncestors(traits.log_item);
 }
 
@@ -41,13 +43,13 @@ DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),
         config_prefix,
-        allow_gc);
+        enable_gc);
 }
 
 void DiskObjectStorageVFS::startupImpl(ContextPtr context)
 {
     DiskObjectStorage::startupImpl(context);
-    if (!allow_gc)
+    if (!enable_gc)
         return;
     garbage_collector.emplace(*this, context->getSchedulePool());
 }
@@ -93,6 +95,38 @@ void DiskObjectStorageVFS::unlock(std::string_view path)
     const String lock_path_full = lockPathToFullPath(path);
     LOG_TRACE(log, "Removing lock {} (zk path {})", path, lock_path_full);
     zookeeper()->remove(lock_path_full);
+}
+
+bool DiskObjectStorageVFS::moveOrLoadMetadata(const String & lock_prefix, const String & path)
+{
+    auto obj = StoredObject{fmt::format("data/vfs/{}", lock_prefix)};
+
+    if (!object_storage->exists(obj))
+    {
+        // First replica, TODO move object to object storage
+        Strings files;
+        listFiles(path, files);
+        auto buf = object_storage->writeObject(obj, WriteMode::Rewrite);
+
+        for (auto & [filename, metadata] : getSerializedMetadata(files))
+            writeString(filename + "\n" + metadata, *buf);
+
+        return true;
+    }
+
+    auto buf = object_storage->readObject(obj); // Other replica finished loading part to object storage
+    while (!buf->eof())
+    {
+        String filename;
+        readString(filename, *buf);
+        DiskObjectStorageMetadata md(metadata_storage->compatible_key_prefix, path + filename);
+        md.deserialize(*buf); // TODO myrrc just write to local filesystem
+        auto tx = metadata_storage->createTransaction();
+        tx->writeStringToFile(fs::path(path) / filename, md.serializeToString());
+        tx->commit();
+    }
+
+    return true;
 }
 
 zkutil::ZooKeeperPtr DiskObjectStorageVFS::zookeeper()

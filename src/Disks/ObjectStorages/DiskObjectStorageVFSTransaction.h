@@ -10,9 +10,6 @@ struct DiskObjectStorageVFSTransaction final : public DiskObjectStorageTransacti
     DiskObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_); // NOLINT
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    // createFile creates an empty file. If the file is written using writeFile, we'd
-    // account hardlinks, if it's not, no need to track it.
-
     void copyFile(
         const String & from_file_path,
         const String & to_file_path,

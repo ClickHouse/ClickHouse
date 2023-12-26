@@ -7785,12 +7785,20 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                     }
                 }
             }
-            else /// Ordinary move as it should be
+            else if (disk->isObjectStorageVFS())
             {
+                chassert(!wait_for_move_if_zero_copy);
+
+                // V2: acquire lock only for uploading metadata, upload metadata before uploading part files
+                // V3 upload per-file, load multiple files in parallel
+                // Acquire lock
+                // Check part s3 metadata file, if not present, load part to s3.
+                // If present but not finished, retry
+                // If finished, download and unpack
+                // Remove lock
                 const String path = fs::path(getTableSharedID()) / moving_part.part->name;
-                if (!disk->lock(path, wait_for_move_if_zero_copy))
+                if (!disk->lock(path, wait_for_move_if_zero_copy)) // Contention on MOVE TTL
                 {
-                    LOG_DEBUG(log, "Move of {} postponed as other replica is altering this path", moving_part.part->name);
                     write_part_log({});
                     return MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy;
                 }
@@ -7798,6 +7806,11 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                 cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
                 parts_mover.swapClonedPart(cloned_part);
                 disk->unlock(path);
+            }
+            else /// Ordinary move as it should be
+            {
+                cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
+                parts_mover.swapClonedPart(cloned_part);
             }
             write_part_log({});
         }

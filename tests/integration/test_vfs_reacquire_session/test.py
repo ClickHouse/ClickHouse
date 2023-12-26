@@ -36,9 +36,7 @@ def test_vfs_reacquire_session(started_cluster):
         time.sleep(4)
     time.sleep(2)  # Wait for CH to reconnect to ZK before next GC run
 
-    assert (
-        int(node.count_in_log("Removed lock for log range")) == 2
-    ), "GC must run twice"
+    assert int(node.count_in_log("Removed lock for")) == 2, "GC must run twice"
     assert (
         int(node.count_in_log("Trying to establish a new connection with ZooKeeper"))
         > 1

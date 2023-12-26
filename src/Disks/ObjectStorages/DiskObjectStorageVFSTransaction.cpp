@@ -7,6 +7,7 @@
 namespace DB
 {
 DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_)
+    // TODO myrrc we don't prohibit send_metadata yet, pay attention to nullptr passed
     : DiskObjectStorageTransaction(*disk_.object_storage, *disk_.metadata_storage, nullptr), disk(disk_)
 {
 }
@@ -102,6 +103,10 @@ void DiskObjectStorageVFSTransaction::removeSharedFiles(const RemoveBatchRequest
 {
     operations_to_execute.emplace_back(std::make_unique<RemoveManyObjectStorageVFSOperation>(disk, files));
 }
+
+// createFile creates an empty file. If writeFile is called, we'd
+// account hardlinks, if it's not, no need to track it.
+// If we create a hardlink to an empty file or copy it, there will be no associated metadata
 
 std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeFile(
     const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings, bool autocommit)

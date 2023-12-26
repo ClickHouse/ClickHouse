@@ -6,8 +6,8 @@
 
 namespace DB
 {
-// A wrapper for object storage which counts references to objects using a transaction log in Keeper. Disk
-// operations don't remove data from object storage immediately, a garbage collector is responsible for that.
+// A wrapper for object storage which counts references to objects using a transaction log in Keeper.
+// Operations don't remove data from object storage immediately -- a garbage collector is responsible for that.
 class DiskObjectStorageVFS final : public DiskObjectStorage
 {
 public:
@@ -19,7 +19,7 @@ public:
         ObjectStoragePtr object_storage_,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        bool allow_gc);
+        bool enable_gc_);
     ~DiskObjectStorageVFS() override = default;
 
     void startupImpl(ContextPtr context) override;
@@ -35,6 +35,9 @@ public:
     bool lock(std::string_view path, bool block) override;
     void unlock(std::string_view path) override;
 
+    bool shouldMoveMetadata(const String & lock_prefix);
+    bool moveOrLoadMetadata(const String & lock_prefix, const String & path);
+
 private:
     friend struct RemoveRecursiveObjectStorageVFSOperation;
     friend struct RemoveManyObjectStorageVFSOperation;
@@ -44,8 +47,8 @@ private:
 
     std::optional<ObjectStorageVFSGCThread> garbage_collector;
 
-    const bool allow_gc;
-    const UInt64 gc_thread_sleep_ms;
+    const bool enable_gc;
+    const UInt64 gc_sleep_ms;
     const VFSTraits traits;
 
     zkutil::ZooKeeperPtr cached_zookeeper;

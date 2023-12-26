@@ -305,6 +305,7 @@ An alternate reference counting mechanism for object storages. Mutually exclusiv
 `allow_remote_fs_zero_copy_replication`. Unlike the 0copy setting, can't be set in runtime,
 a server restart is needed.
 ClickHouse Keeper can not use VFS disk as a storage backend.
+VFS is incompatible with `send_metadata`.
 
 When turned on, reuses the following settings:
 - `remote_fs_execute_merges_on_single_replica_time_threshold`

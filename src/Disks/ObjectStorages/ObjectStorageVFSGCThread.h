@@ -8,30 +8,22 @@ namespace DB
 {
 class DiskObjectStorageVFS;
 
-// Despite the name, this thread handles not only garbage collection but also snapshot making and uploading
-// it to corresponding object storage.
-// TODO myrrc we should think about dropping the snapshot for log (at some point we want to remove
-// even the latest snapshot if we e.g. clean the bucket)
 class ObjectStorageVFSGCThread
 {
 public:
     ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool);
-    ~ObjectStorageVFSGCThread();
-
     inline void stop() { task->deactivate(); }
 
 private:
     DiskObjectStorageVFS & storage;
     Poco::Logger * const log;
-    BackgroundSchedulePool::TaskHolder task;
-    const String gc_lock;
+    BackgroundSchedulePoolTaskHolder task;
+    const String lock_path;
 
-    void run();
-
-    void updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer);
+    void run() const;
+    void updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const;
     VFSLogItem getBatch(size_t start_logpointer, size_t end_logpointer) const;
-    void removeBatch(size_t start_logpointer, size_t end_logpointer);
-
+    void removeBatch(size_t start_logpointer, size_t end_logpointer) const;
     String getNode(size_t id) const;
     StoredObject getSnapshotObject(size_t logpointer) const;
 };

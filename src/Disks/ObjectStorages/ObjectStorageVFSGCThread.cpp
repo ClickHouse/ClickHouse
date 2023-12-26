@@ -12,13 +12,15 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
+// TODO myrrc we should think about dropping the snapshot for log (at some point we want to remove
+// even the latest snapshot if we e.g. clean the bucket)
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool)
     : storage(storage_)
     , log(&Poco::Logger::get(fmt::format("VFSGC({})", storage_.getName())))
-    , gc_lock(fs::path(storage.traits.locks_node) / "gc_lock")
+    , lock_path(fs::path(storage.traits.locks_node) / "gc_lock")
 {
-    LOG_DEBUG(log, "GC started with interval {}ms", storage.gc_thread_sleep_ms);
-    storage.zookeeper()->createAncestors(gc_lock);
+    LOG_DEBUG(log, "GC started with interval {}ms", storage.gc_sleep_ms);
+    storage.zookeeper()->createAncestors(lock_path);
 
     task = pool.createTask(
         log->name(),
@@ -32,18 +34,15 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
             {
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
             }
+            task->scheduleAfter(storage.gc_sleep_ms);
         });
     task->activateAndSchedule();
 }
 
-ObjectStorageVFSGCThread::~ObjectStorageVFSGCThread() = default;
-
-void ObjectStorageVFSGCThread::run()
+void ObjectStorageVFSGCThread::run() const
 {
-    SCOPE_EXIT(task->scheduleAfter(storage.gc_thread_sleep_ms));
-
     using enum Coordination::Error;
-    if (auto code = storage.zookeeper()->tryCreate(gc_lock, "", zkutil::CreateMode::Ephemeral); code == ZNODEEXISTS)
+    if (auto code = storage.zookeeper()->tryCreate(lock_path, "", zkutil::CreateMode::Ephemeral); code == ZNODEEXISTS)
     {
         LOG_DEBUG(log, "Failed to acquire lock, sleeping");
         return;
@@ -52,7 +51,7 @@ void ObjectStorageVFSGCThread::run()
         throw Coordination::Exception(code);
 
     bool successful_run = false;
-    SCOPE_EXIT(if (!successful_run) storage.zookeeper()->remove(gc_lock));
+    SCOPE_EXIT(if (!successful_run) storage.zookeeper()->remove(lock_path));
 
     Strings log_items_batch = storage.zookeeper()->getChildren(storage.traits.log_base_node);
     // TODO myrrc should (possibly?) be a setting. The batch size must not be too large as we put it in memory
@@ -66,14 +65,14 @@ void ObjectStorageVFSGCThread::run()
     const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4)); // log- is a prefix
     const size_t end_logpointer = std::min(parseFromString<size_t>(end_str.substr(4)), start_logpointer + batch_max_size);
 
-    LOG_DEBUG(log, "Acquired lock for log range [{};{}]", start_logpointer, end_logpointer);
+    LOG_DEBUG(log, "Acquired lock for [{};{}]", start_logpointer, end_logpointer);
     updateSnapshotWithLogEntries(start_logpointer, end_logpointer);
     removeBatch(start_logpointer, end_logpointer);
-    LOG_DEBUG(log, "Removed lock for log range [{};{}]", start_logpointer, end_logpointer);
+    LOG_DEBUG(log, "Removed lock for [{};{}]", start_logpointer, end_logpointer);
     successful_run = true;
 }
 
-void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer)
+void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const
 {
     const bool should_have_previous_snapshot = start_logpointer > 0;
 
@@ -117,17 +116,13 @@ VFSLogItem ObjectStorageVFSGCThread::getBatch(size_t start_logpointer, size_t en
 
     VFSLogItem out;
     for (size_t i = 0; i < log_batch_length; ++i)
-    {
-        auto item = VFSLogItem::parse(responses[i].data);
-        LOG_TRACE(log, "Log item {}", item);
-        out.merge(std::move(item));
-    }
+        out.merge(VFSLogItem::parse(responses[i].data));
     LOG_TRACE(log, "Merged batch:\n{}", out);
 
     return out;
 }
 
-void ObjectStorageVFSGCThread::removeBatch(size_t start_logpointer, size_t end_logpointer)
+void ObjectStorageVFSGCThread::removeBatch(size_t start_logpointer, size_t end_logpointer) const
 {
     LOG_DEBUG(log, "Removing log range [{};{}]", start_logpointer, end_logpointer);
 
@@ -135,7 +130,7 @@ void ObjectStorageVFSGCThread::removeBatch(size_t start_logpointer, size_t end_l
     Coordination::Requests requests(log_batch_length + 1);
     for (size_t i = 0; i < log_batch_length; ++i)
         requests[i] = zkutil::makeRemoveRequest(getNode(start_logpointer + i), 0);
-    requests[log_batch_length] = zkutil::makeRemoveRequest(gc_lock, 0);
+    requests[log_batch_length] = zkutil::makeRemoveRequest(lock_path, 0);
 
     storage.zookeeper()->multi(requests);
 }
