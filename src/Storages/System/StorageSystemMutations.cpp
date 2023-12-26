@@ -28,6 +28,7 @@ NamesAndTypesList StorageSystemMutations::getNamesAndTypes()
         { "parts_to_do_names",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
         { "parts_to_do",                std::make_shared<DataTypeInt64>() },
         { "is_done",                    std::make_shared<DataTypeUInt8>() },
+        { "is_killed",                  std::make_shared<DataTypeUInt8>() },
         { "latest_failed_part",         std::make_shared<DataTypeString>() },
         { "latest_fail_time",           std::make_shared<DataTypeDateTime>() },
         { "latest_fail_reason",         std::make_shared<DataTypeString>() },
@@ -138,6 +139,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[col_num++]->insert(parts_to_do_names);
             res_columns[col_num++]->insert(parts_to_do_names.size());
             res_columns[col_num++]->insert(status.is_done);
+            res_columns[col_num++]->insert(status.is_killed);
             res_columns[col_num++]->insert(status.latest_failed_part);
             res_columns[col_num++]->insert(UInt64(status.latest_fail_time));
             res_columns[col_num++]->insert(status.latest_fail_reason);

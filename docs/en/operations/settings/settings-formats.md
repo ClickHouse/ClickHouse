@@ -1130,6 +1130,13 @@ Result
 a  0  1971-01-01
 ```
 
+## input_format_csv_try_infer_numbers_from_strings {#input_format_csv_try_infer_numbers_from_strings}
+
+If enabled, during schema inference ClickHouse will try to infer numbers from string fields.
+It can be useful if CSV data contains quoted UInt64 numbers.
+
+Disabled by default.
+
 ## Values format settings {#values-format-settings}
 
 ### input_format_values_interpret_expressions {#input_format_values_interpret_expressions}

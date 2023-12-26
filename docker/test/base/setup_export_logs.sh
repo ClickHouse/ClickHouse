@@ -21,7 +21,7 @@ EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name, "}
 
 # trace_log needs more columns for symbolization
 EXTRA_COLUMNS_TRACE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), lines Array(LowCardinality(String)), "
-EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> toLowCardinality(demangle(addressToSymbol(x))), trace) AS symbols, arrayMap(x -> toLowCardinality(addressToLine(x)), trace) AS lines"
+EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), trace)::Array(LowCardinality(String)) AS symbols, arrayMap(x -> addressToLine(x), trace)::Array(LowCardinality(String)) AS lines"
 
 
 function __set_connection_args
@@ -126,6 +126,9 @@ function setup_logs_replication
     # It's doesn't make sense to try creating tables if SYNC fails
     echo "SYSTEM SYNC DATABASE REPLICA default" | clickhouse-client "${CONNECTION_ARGS[@]}" || return 0
 
+    debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
+    echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
+
     # For each system log table:
     echo 'Create %_log tables'
     clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
@@ -133,7 +136,14 @@ function setup_logs_replication
         if [[ "$table" = "trace_log" ]]
         then
             EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_TRACE_LOG}"
-            EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_TRACE_LOG}"
+            # Do not try to resolve stack traces in case of debug/sanitizers
+            # build, since it is too slow (flushing of trace_log can take ~1min
+            # with such MV attached)
+            if [[ "$debug_or_sanitizer_build" = 1 ]]; then
+                EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
+            else
+                EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_TRACE_LOG}"
+            fi
         else
             EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS}"
             EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
@@ -182,3 +192,13 @@ function setup_logs_replication
         " || continue
     done
 )
+
+function stop_logs_replication
+{
+    echo "Detach all logs replication"
+    clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
+        tee /dev/stderr
+    } | {
+        xargs -n1 -r -i clickhouse-client --query "drop table {}"
+    }
+}

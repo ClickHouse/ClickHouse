@@ -105,7 +105,6 @@ namespace DB
 {
 
 static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context, const std::string & expr);
-static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
 
 namespace ErrorCodes
 {
@@ -482,7 +481,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     /// Check support for FINAL for parallel replicas
     bool is_query_with_final = isQueryWithFinal(query_info);
-    if (is_query_with_final && settings.allow_experimental_parallel_reading_from_replicas > 0)
+    if (is_query_with_final && context->canUseTaskBasedParallelReplicas())
     {
         if (settings.allow_experimental_parallel_reading_from_replicas == 1)
         {
@@ -579,7 +578,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     settings.parallel_replica_offset,
                     std::move(custom_key_ast),
                     settings.parallel_replicas_custom_key_filter_type,
-                    *storage,
+                    storage->getInMemoryMetadataPtr()->columns,
                     context);
             }
             else if (settings.parallel_replica_offset > 0)
@@ -659,6 +658,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
+                    storage->getConditionEstimatorByPredicate(query_info, storage_snapshot, context),
                     queried_columns,
                     supported_prewhere_columns,
                     log};
@@ -870,7 +870,38 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     ASTSelectQuery & query = getSelectQuery();
 
     /// While only_analyze we don't know anything about parts, so any decision about how many parallel replicas to use would be wrong
-    if (!storage || options.only_analyze || !context->canUseParallelReplicasOnInitiator())
+    if (!storage || !context->canUseParallelReplicasOnInitiator())
+        return false;
+
+    /// check if IN operator with subquery is present in the query
+    /// if so, disable parallel replicas
+    if (query_analyzer->getPreparedSets()->hasSubqueries())
+    {
+        bool in_subqueries = false;
+        const auto & sets = query_analyzer->getPreparedSets();
+        const auto subqueries = sets->getSubqueries();
+        for (const auto & subquery : subqueries)
+        {
+            if (subquery->isINSubquery())
+            {
+                in_subqueries = true;
+                break;
+            }
+        }
+
+        if (in_subqueries)
+        {
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
+
+            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("max_parallel_replicas", UInt64{0});
+            LOG_DEBUG(log, "Disabling parallel replicas to execute a query with IN with subquery");
+            return true;
+        }
+    }
+
+    if (options.only_analyze)
         return false;
 
     if (getTrivialCount(0).has_value())
@@ -1050,6 +1081,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             if (analysis_result.before_window)
                 return analysis_result.before_window->getResultColumns();
 
+            // NOTE: should not handle before_limit_by specially since
+            // WithMergeableState does not process LIMIT BY
+
             return analysis_result.before_order_by->getResultColumns();
         }
 
@@ -1092,6 +1126,12 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         // WithMergeableState stage.
         if (analysis_result.before_window)
             return analysis_result.before_window->getResultColumns();
+
+        // In case of query on remote shards executed up to
+        // WithMergeableStateAfterAggregation*, they can process LIMIT BY,
+        // since the initiator will not apply LIMIT BY again.
+        if (analysis_result.before_limit_by)
+            return analysis_result.before_limit_by->getResultColumns();
 
         return analysis_result.before_order_by->getResultColumns();
     }
@@ -1304,19 +1344,19 @@ static UInt64 getLimitUIntValue(const ASTPtr & node, const ContextPtr & context,
 }
 
 
-static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context)
+std::pair<UInt64, UInt64> InterpreterSelectQuery::getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context_)
 {
     UInt64 length = 0;
     UInt64 offset = 0;
 
     if (query.limitLength())
     {
-        length = getLimitUIntValue(query.limitLength(), context, "LIMIT");
+        length = getLimitUIntValue(query.limitLength(), context_, "LIMIT");
         if (query.limitOffset() && length)
-            offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
+            offset = getLimitUIntValue(query.limitOffset(), context_, "OFFSET");
     }
     else if (query.limitOffset())
-        offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
+        offset = getLimitUIntValue(query.limitOffset(), context_, "OFFSET");
     return {length, offset};
 }
 
@@ -1539,7 +1579,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 if (query.limitLength())
                     executeDistinct(query_plan, false, expressions.selected_columns, false);
 
-                if (expressions.hasLimitBy())
+                /// In case of query executed on remote shards (up to
+                /// WithMergeableState*) LIMIT BY cannot be applied, since it
+                /// will be applied on the initiator as well, and the header
+                /// may not match in some obscure cases.
+                if (options.to_stage == QueryProcessingStage::FetchColumns && expressions.hasLimitBy())
                 {
                     executeExpression(query_plan, expressions.before_limit_by, "Before LIMIT BY");
                     executeLimitBy(query_plan);
@@ -1685,7 +1729,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         return step_raw_ptr;
                     };
 
-                    if (expressions.join->pipelineType() == JoinPipelineType::YShaped)
+                    if (expressions.join->pipelineType() == JoinPipelineType::YShaped && expressions.join->getTableJoin().kind() != JoinKind::Paste)
                     {
                         const auto & table_join = expressions.join->getTableJoin();
                         const auto & join_clause = table_join.getOnlyClause();

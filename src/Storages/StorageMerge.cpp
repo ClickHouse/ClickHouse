@@ -34,6 +34,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/narrowPipe.h>
@@ -84,6 +85,7 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int LOGICAL_ERROR;
 }
 
 StorageMerge::StorageMerge(
@@ -378,6 +380,37 @@ void StorageMerge::read(
     query_plan.addStep(std::move(step));
 }
 
+/// An object of this helper class is created
+///  when processing a Merge table data source (subordinary table)
+///  that has row policies
+///  to guarantee that these row policies are applied
+class ReadFromMerge::RowPolicyData
+{
+public:
+    RowPolicyData(RowPolicyFilterPtr, std::shared_ptr<DB::IStorage>, ContextPtr);
+
+    /// Add to data stream columns that are needed only for row policies
+    ///  SELECT x from T  if  T has row policy  y=42
+    ///  required y in data pipeline
+    void extendNames(Names &) const;
+
+    /// Use storage facilities to filter data
+    ///  optimization
+    ///  does not guarantee accuracy, but reduces number of rows
+    void addStorageFilter(SourceStepWithFilter *) const;
+
+    /// Create explicit filter transform to exclude
+    /// rows that are not conform to row level policy
+    void addFilterTransform(QueryPipelineBuilder &) const;
+
+private:
+    std::string filter_column_name; // complex filter, may contain logic operations
+    ActionsDAGPtr actions_dag;
+    ExpressionActionsPtr filter_actions;
+    StorageMetadataPtr storage_metadata_snapshot;
+};
+
+
 ReadFromMerge::ReadFromMerge(
     Block common_header_,
     StorageListWithLocks selected_tables_,
@@ -421,6 +454,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
     chassert(selected_tables.size() == child_plans.size());
     chassert(selected_tables.size() == table_aliases.size());
+    chassert(selected_tables.size() == table_row_policy_data_opts.size());
     auto table_it = selected_tables.begin();
     for (size_t i = 0; i < selected_tables.size(); ++i, ++table_it)
     {
@@ -434,7 +468,15 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         auto modified_query_info = getModifiedQueryInfo(query_info, context, table, nested_storage_snaphsot);
 
         auto source_pipeline = createSources(
-            plan, nested_storage_snaphsot, modified_query_info, common_processed_stage, common_header, table_aliases.at(i), table, context);
+            plan,
+            nested_storage_snaphsot,
+            modified_query_info,
+            common_processed_stage,
+            common_header,
+            table_aliases.at(i),
+            table_row_policy_data_opts.at(i),
+            table,
+            context);
 
         if (source_pipeline && source_pipeline->initialized())
         {
@@ -523,11 +565,25 @@ void ReadFromMerge::createChildPlans()
             throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table {} doesn't support sampling", storage->getStorageID().getNameForLogs());
 
         auto & aliases = table_aliases.emplace_back();
+        auto & row_policy_data_opt = table_row_policy_data_opts.emplace_back();
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto nested_storage_snaphsot = storage->getStorageSnapshot(storage_metadata_snapshot, context);
 
         auto modified_query_info = getModifiedQueryInfo(query_info, context, table, nested_storage_snaphsot);
         Names column_names_as_aliases;
+        Names real_column_names = column_names;
+
+        const auto & database_name = std::get<0>(table);
+        const auto & table_name = std::get<3>(table);
+        auto row_policy_filter_ptr = context->getRowPolicyFilter(
+            database_name,
+            table_name,
+            RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter_ptr)
+        {
+            row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, context);
+            row_policy_data_opt->extendNames(real_column_names);
+        }
 
         if (!context->getSettingsRef().allow_experimental_analyzer)
         {
@@ -543,7 +599,7 @@ void ReadFromMerge::createChildPlans()
 
                 auto sample_block = merge_storage_snapshot->getMetadataForQuery()->getSampleBlock();
 
-                for (const auto & column : column_names)
+                for (const auto & column : real_column_names)
                 {
                     const auto column_default = storage_columns.getDefault(column);
                     bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
@@ -559,7 +615,10 @@ void ReadFromMerge::createChildPlans()
                                                             storage_metadata_snapshot->getColumns().getAll(), context);
                         column_expr = setAlias(column_expr, column);
 
-                        auto type = sample_block.getByName(column).type;
+                        /// use storage type for transient columns that are not represented in result
+                        ///  e.g. for columns that needed to evaluate row policy
+                        auto type = sample_block.has(column) ? sample_block.getByName(column).type : column_description.type;
+
                         aliases.push_back({ .name = column, .type = type, .expression = column_expr->clone() });
                     }
                     else
@@ -585,7 +644,8 @@ void ReadFromMerge::createChildPlans()
             common_processed_stage,
             required_max_block_size,
             table,
-            column_names_as_aliases.empty() ? column_names : column_names_as_aliases,
+            column_names_as_aliases.empty() ? std::move(real_column_names) : std::move(column_names_as_aliases),
+            row_policy_data_opt,
             context,
             current_streams));
     }
@@ -676,9 +736,10 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
     QueryPlan & plan,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & modified_query_info,
-    const QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const Block & header,
     const Aliases & aliases,
+    const RowPolicyDataOpt & row_policy_data_opt,
     const StorageWithLockAndName & storage_with_lock,
     ContextMutablePtr modified_context,
     bool concat_streams) const
@@ -750,7 +811,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 
         /// Subordinary tables could have different but convertible types, like numeric types of different width.
         /// We must return streams with structure equals to structure of Merge table.
-        convertingSourceStream(header, storage_snapshot->metadata, aliases, modified_context, *builder, processed_stage);
+        convertAndFilterSourceStream(header, storage_snapshot->metadata, aliases, row_policy_data_opt, modified_context, *builder, processed_stage);
     }
 
     return builder;
@@ -759,14 +820,16 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
 QueryPlan ReadFromMerge::createPlanForTable(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & modified_query_info,
-    const QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     UInt64 max_block_size,
     const StorageWithLockAndName & storage_with_lock,
-    Names real_column_names,
+    Names && real_column_names,
+    const RowPolicyDataOpt & row_policy_data_opt,
     ContextMutablePtr modified_context,
     size_t streams_num)
 {
     const auto & [database_name, storage, _, table_name] = storage_with_lock;
+
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
 
     if (!InterpreterSelectQuery::isQueryWithFinal(modified_query_info) && storage->needRewriteQueryWithFinal(real_column_names))
@@ -824,6 +887,14 @@ QueryPlan ReadFromMerge::createPlanForTable(
         if (!plan.isInitialized())
             return {};
 
+        if (row_policy_data_opt)
+        {
+            if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter*>((plan.getRootNode()->step.get())))
+            {
+                row_policy_data_opt->addStorageFilter(source_step_with_filter);
+            }
+        }
+
         applyFilters(plan);
     }
     else if (processed_stage > storage_stage || (allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns))
@@ -853,6 +924,69 @@ QueryPlan ReadFromMerge::createPlanForTable(
     }
 
     return plan;
+}
+
+ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter_ptr,
+    std::shared_ptr<DB::IStorage> storage,
+    ContextPtr local_context)
+{
+    storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto storage_columns = storage_metadata_snapshot->getColumns();
+    auto needed_columns = storage_columns.getAll();
+
+    ASTPtr expr = row_policy_filter_ptr->expression;
+
+    auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
+    auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
+
+    actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
+    filter_actions = std::make_shared<ExpressionActions>(actions_dag,
+        ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
+    const auto & required_columns = filter_actions->getRequiredColumnsWithTypes();
+    const auto & sample_block_columns = filter_actions->getSampleBlock().getNamesAndTypesList();
+
+    NamesAndTypesList added, deleted;
+    sample_block_columns.getDifference(required_columns, added, deleted);
+    if (!deleted.empty() || added.size() != 1)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot determine row level filter; {} columns deleted, {} columns added",
+            deleted.size(), added.size());
+    }
+
+    filter_column_name = added.getNames().front();
+}
+
+void ReadFromMerge::RowPolicyData::extendNames(Names & names) const
+{
+    boost::container::flat_set<std::string_view> names_set(names.begin(), names.end());
+    NameSet added_names;
+
+    for (const auto & req_column : filter_actions->getRequiredColumns())
+    {
+        if (!names_set.contains(req_column))
+        {
+            added_names.emplace(req_column);
+        }
+    }
+
+    if (!added_names.empty())
+    {
+        std::copy(added_names.begin(), added_names.end(), std::back_inserter(names));
+    }
+}
+
+void ReadFromMerge::RowPolicyData::addStorageFilter(SourceStepWithFilter * step) const
+{
+    step->addFilter(actions_dag, filter_column_name);
+}
+
+void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPipelineBuilder & builder) const
+{
+    builder.addSimpleTransform([&](const Block & stream_header)
+    {
+        return std::make_shared<FilterTransform>(stream_header, filter_actions, filter_column_name, true /* remove filter column */);
+    });
 }
 
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
@@ -1025,13 +1159,14 @@ void StorageMerge::alter(
     setInMemoryMetadata(storage_metadata);
 }
 
-void ReadFromMerge::convertingSourceStream(
+void ReadFromMerge::convertAndFilterSourceStream(
     const Block & header,
     const StorageMetadataPtr & metadata_snapshot,
     const Aliases & aliases,
+    const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
     QueryPipelineBuilder & builder,
-    const QueryProcessingStage::Enum & processed_stage)
+    QueryProcessingStage::Enum processed_stage)
 {
     Block before_block_header = builder.getHeader();
 
@@ -1059,6 +1194,11 @@ void ReadFromMerge::convertingSourceStream(
 
     if (local_context->getSettingsRef().allow_experimental_analyzer && processed_stage != QueryProcessingStage::FetchColumns)
         convert_actions_match_columns_mode = ActionsDAG::MatchColumnsMode::Position;
+
+    if (row_policy_data_opt)
+    {
+        row_policy_data_opt->addFilterTransform(builder);
+    }
 
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(builder.getHeader().getColumnsWithTypeAndName(),
                                                                 header.getColumnsWithTypeAndName(),
@@ -1153,6 +1293,37 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
     return {false, ast};
 }
 
+bool StorageMerge::supportsTrivialCountOptimization() const
+{
+    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(); }) == nullptr;
+}
+
+std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const
+{
+    return totalRowsOrBytes([&](const auto & table) { return table->totalRows(settings); });
+}
+
+std::optional<UInt64> StorageMerge::totalBytes(const Settings & settings) const
+{
+    return totalRowsOrBytes([&](const auto & table) { return table->totalBytes(settings); });
+}
+
+template <typename F>
+std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
+{
+    UInt64 total_rows_or_bytes = 0;
+    auto first_table = getFirstTable([&](const auto & table)
+    {
+        if (auto rows_or_bytes = func(table))
+        {
+            total_rows_or_bytes += *rows_or_bytes;
+            return false;
+        }
+        return true;
+    });
+
+    return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
+}
 
 void registerStorageMerge(StorageFactory & factory)
 {

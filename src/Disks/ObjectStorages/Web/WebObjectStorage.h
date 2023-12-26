@@ -118,6 +118,9 @@ protected:
     mutable Files files;
     mutable std::shared_mutex metadata_mutex;
 
+    std::optional<FileData> tryGetFileInfo(const String & path) const;
+    FileData getFileInfo(const String & path) const;
+
 private:
     void initialize(const String & path, const std::unique_lock<std::shared_mutex> &) const;
 

@@ -415,10 +415,13 @@ class BuildResult:
     def _set_properties(self) -> None:
         if all(p is not None for p in (self._job_name, self._job_html_url)):
             return
-        try:
-            job_data = get_gh_api(self.job_api_url).json()
-        except Exception:
-            job_data = {}
+        job_data = {}
+        # quick check @self.job_api_url is valid url before request. it's set to "missing" for dummy BuildResult
+        if "http" in self.job_api_url:
+            try:
+                job_data = get_gh_api(self.job_api_url).json()
+            except Exception:
+                pass
         # job_name can be set manually
         self._job_name = self._job_name or job_data.get("name", "unknown")
         self._job_html_url = job_data.get("html_url", "")

@@ -70,6 +70,15 @@ public:
     int queryConvert(const unsigned char * bytes, int length) const;
     int sequenceLength(const unsigned char * bytes, int length) const;
 
+protected:
+	static int safeToInt(Poco::UInt32 value)
+	{
+		if (value <= 0x10FFFF)
+			return static_cast<int>(value);
+		else
+			return -1;
+	}
+
 private:
     bool _flipBytes;
     static const char * _names[];

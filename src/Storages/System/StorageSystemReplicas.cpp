@@ -23,6 +23,7 @@ namespace CurrentMetrics
 {
     extern const Metric SystemReplicasThreads;
     extern const Metric SystemReplicasThreadsActive;
+    extern const Metric SystemReplicasThreadsScheduled;
 }
 
 namespace DB
@@ -59,7 +60,7 @@ private:
 
 public:
     explicit StatusRequestsPool(size_t max_threads)
-        : thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, max_threads)
+        : thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, CurrentMetrics::SystemReplicasThreadsScheduled, max_threads)
         , log(&Poco::Logger::get("StatusRequestsPool"))
     {}
 

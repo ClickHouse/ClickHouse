@@ -100,7 +100,16 @@ public:
 
         if (has_null_types)
         {
-            /// Currently the only functions that returns not-NULL on all NULL arguments are count and uniq, and they returns UInt64.
+            /** Some functions, such as `count`, `uniq`, and others, return 0 :: UInt64 instead of NULL for a NULL argument.
+              * These functions have the `returns_default_when_only_null` property, so we explicitly specify the result type
+              * when replacing the function with `nothing`.
+              *
+              * Note: It's a bit dangerous to have the function result type depend on properties because we do not serialize properties in AST,
+              * and we can lose this information. For example, when we have `count(NULL)` replaced with `nothing(NULL) as "count(NULL)"` and send it
+              * to the remote server, the remote server will execute `nothing(NULL)` and return `NULL` while `0` is expected.
+              *
+              * To address this, we handle `nothing` in a special way in `FunctionNode::toASTImpl`.
+              */
             if (properties.returns_default_when_only_null)
                 return std::make_shared<AggregateFunctionNothing>(arguments, params, std::make_shared<DataTypeUInt64>());
             else
@@ -144,10 +153,17 @@ public:
             }
             else
             {
+                return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+#if 0
                 if (serialize_flag)
                     return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
                 else
+                    /// This should be <false, false> (no serialize flag) but it was initially added incorrectly and
+                    /// changing it would break the binary compatibility of aggregation states using this method
+                    // (such as AggregateFunction(argMaxOrNull, Nullable(Int64), UInt64)). The extra flag is harmless
                     return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+            }
+#endif
             }
         }
     }

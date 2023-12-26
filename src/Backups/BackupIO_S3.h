@@ -8,7 +8,7 @@
 #include <IO/S3Common.h>
 #include <Storages/StorageS3Settings.h>
 #include <Interpreters/Context_fwd.h>
-
+#include <IO/S3/BlobStorageLogWriter.h>
 
 namespace DB
 {
@@ -32,6 +32,8 @@ private:
     const DataSourceDescription data_source_description;
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
+
+    BlobStorageLogWriterPtr blob_storage_log;
 };
 
 
@@ -49,6 +51,8 @@ public:
     void copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
                           bool copy_encrypted, UInt64 start_pos, UInt64 length) override;
 
+    void copyFile(const String & destination, const String & source, size_t size) override;
+
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
 
@@ -61,6 +65,8 @@ private:
     S3Settings s3_settings;
     std::shared_ptr<S3::Client> client;
     std::optional<bool> supports_batch_delete;
+
+    BlobStorageLogWriterPtr blob_storage_log;
 };
 
 }

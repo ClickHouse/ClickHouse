@@ -89,6 +89,8 @@ String BackupFileInfo::describe() const
     result += fmt::format("data_file_name: {};\n", data_file_name);
     result += fmt::format("data_file_index: {};\n", data_file_index);
     result += fmt::format("encrypted_by_disk: {};\n", encrypted_by_disk);
+    if (!reference_target.empty())
+        result += fmt::format("reference_target: {};\n", reference_target);
     return result;
 }
 
@@ -104,6 +106,14 @@ BackupFileInfo buildFileInfoForBackupEntry(
 
     BackupFileInfo info;
     info.file_name = adjusted_path;
+
+    /// If it's a "reference" just set the target to a concrete file
+    if (backup_entry->isReference())
+    {
+        info.reference_target = removeLeadingSlash(backup_entry->getReferenceTarget());
+        return info;
+    }
+
     info.size = backup_entry->getSize();
     info.encrypted_by_disk = backup_entry->isEncryptedByDisk();
 

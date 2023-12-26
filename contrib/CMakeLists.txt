@@ -44,6 +44,7 @@ else ()
 endif ()
 add_contrib (miniselect-cmake miniselect)
 add_contrib (pdqsort-cmake pdqsort)
+add_contrib (pocketfft-cmake pocketfft)
 add_contrib (crc32-vpmsum-cmake crc32-vpmsum)
 add_contrib (sparsehash-c11-cmake sparsehash-c11)
 add_contrib (abseil-cpp-cmake abseil-cpp)
@@ -134,9 +135,9 @@ add_contrib (libuv-cmake libuv)
 add_contrib (liburing-cmake liburing)
 add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
 add_contrib (cassandra-cmake cassandra) # requires: libuv
+add_contrib (curl-cmake curl)
+add_contrib (azure-cmake azure) # requires: curl
 if (NOT OS_DARWIN)
-    add_contrib (curl-cmake curl)
-    add_contrib (azure-cmake azure) # requires: curl
     add_contrib (sentry-native-cmake sentry-native) # requires: curl
 endif()
 add_contrib (fmtlib-cmake fmtlib)
@@ -153,8 +154,10 @@ add_contrib (libpqxx-cmake libpqxx)
 add_contrib (libpq-cmake libpq)
 add_contrib (nuraft-cmake NuRaft)
 add_contrib (fast_float-cmake fast_float)
+add_contrib (idna-cmake idna)
 add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
+add_contrib (sqids-cpp-cmake sqids-cpp)
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)

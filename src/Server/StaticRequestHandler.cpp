@@ -34,7 +34,7 @@ namespace ErrorCodes
 }
 
 static inline WriteBufferPtr
-responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, unsigned int keep_alive_timeout)
+responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, UInt64 keep_alive_timeout)
 {
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -90,7 +90,7 @@ static inline void trySendExceptionToClient(
 
 void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
+    auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
     const auto & out = responseWriteBuffer(request, response, keep_alive_timeout);
 
     try

@@ -22,6 +22,7 @@ if [ "$EXTRACT_TOOLCHAIN_DARWIN" = "1" ]; then
   fi
 fi
 
+
 # Uncomment to debug ccache. Don't put ccache log in /output right away, or it
 # will be confusingly packed into the "performance" package.
 # export CCACHE_LOGFILE=/build/ccache.log
@@ -31,6 +32,7 @@ fi
 mkdir -p /build/build_docker
 cd /build/build_docker
 rm -f CMakeCache.txt
+
 
 if [ -n "$MAKE_DEB" ]; then
   rm -rf /build/packages/root
@@ -147,7 +149,7 @@ then
     mkdir -p "$PERF_OUTPUT"
     cp -r ../tests/performance "$PERF_OUTPUT"
     cp -r ../tests/config/top_level_domains  "$PERF_OUTPUT"
-    cp -r ../docker/test/performance-comparison/config "$PERF_OUTPUT" ||:
+    cp -r ../tests/performance/scripts/config "$PERF_OUTPUT" ||:
     for SRC in /output/clickhouse*; do
         # Copy all clickhouse* files except packages and bridges
         [[ "$SRC" != *.* ]] && [[ "$SRC" != *-bridge ]] && \
@@ -158,7 +160,7 @@ then
         ln -sf clickhouse "$PERF_OUTPUT"/clickhouse-keeper
     fi
 
-    cp -r ../docker/test/performance-comparison "$PERF_OUTPUT"/scripts ||:
+    cp -r ../tests/performance/scripts "$PERF_OUTPUT"/scripts ||:
     prepare_combined_output "$PERF_OUTPUT"
 
     # We have to know the revision that corresponds to this binary build.

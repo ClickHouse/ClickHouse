@@ -354,9 +354,10 @@ static const Pattern & appendGraphitePattern(
                 aggregate_function_name_with_params, aggregate_function_name, params_row, "GraphiteMergeTree storage initialization", context);
 
             /// TODO Not only Float64
+            auto action = NullsAction::EMPTY;
             AggregateFunctionProperties properties;
             pattern.function = AggregateFunctionFactory::instance().get(
-                aggregate_function_name, {std::make_shared<DataTypeFloat64>()}, params_row, properties);
+                aggregate_function_name, action, {std::make_shared<DataTypeFloat64>()}, params_row, properties);
         }
         else if (key == "rule_type")
         {

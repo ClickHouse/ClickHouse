@@ -102,6 +102,7 @@ public:
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, TableExclusiveLockHolder &) override;
 
     NamesAndTypesList getVirtuals() const override;
+    static Names getVirtualColumnNames();
 
     bool supportsPartitionBy() const override;
 
@@ -123,21 +124,6 @@ public:
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
         bool distributed_processing = false);
-
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const RelativePathsWithMetadata::const_iterator & begin,
-        const RelativePathsWithMetadata::const_iterator & end,
-        const StorageAzureBlob::Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & ctx);
-
-    static void addColumnsToCache(
-        const RelativePathsWithMetadata & keys,
-        const ColumnsDescription & columns,
-        const Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        const String & format_name,
-        const ContextPtr & ctx);
 
 private:
     std::string name;
