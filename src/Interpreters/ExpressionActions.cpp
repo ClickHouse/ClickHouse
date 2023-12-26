@@ -190,6 +190,18 @@ static void setLazyExecutionInfo(
                     lazy_execution_info.can_be_lazy_executed = false;
             }
 
+            /// Currently only used in dictGetOrDefault.
+            if (parent->children.size() == 4 && node == parent->children[2] &&
+                !short_circuit_nodes.at(parent).enable_lazy_execution_for_third_argument)
+            {
+                /// We shouldn't add 2 index in node info in this case.
+                indexes.erase(2);
+                /// Disable lazy execution for current node only if it's disabled for short-circuit node,
+                /// because we can have nested short-circuit nodes.
+                if (!lazy_execution_infos[parent].can_be_lazy_executed)
+                    lazy_execution_info.can_be_lazy_executed = false;
+            }
+
             lazy_execution_info.short_circuit_ancestors_info[parent].insert(indexes.begin(), indexes.end());
         }
         else

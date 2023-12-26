@@ -331,6 +331,7 @@ public:
         settings.enable_lazy_execution_for_first_argument = false;
         settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
         settings.force_enable_lazy_execution = false;
+        settings.enable_lazy_execution_for_third_argument = false;
         return true;
     }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }

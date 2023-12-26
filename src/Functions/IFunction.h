@@ -258,6 +258,9 @@ public:
         /// Example: toTypeName(expr), even if expr contains functions that are not suitable for
         /// lazy execution (because of their simplicity), we shouldn't execute them at all.
         bool force_enable_lazy_execution;
+        /// Currently only useful for dictGetOrDefault, the 3rd argument of it should always be 
+        /// calculated, so set it to false in dictGetOrDefault, while true in other cases.
+        bool enable_lazy_execution_for_third_argument = true;
     };
 
     /** Function is called "short-circuit" if it's arguments can be evaluated lazily
