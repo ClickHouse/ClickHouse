@@ -322,7 +322,7 @@ public:
 
             if (!key_condition.alwaysFalse())
                 mark_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
-                    data_part, metadata_snapshot, key_condition, context->getSettingsRef(), log);
+                    data_part, metadata_snapshot, key_condition, {}, context->getSettingsRef(), log);
 
             if (mark_ranges && mark_ranges->empty())
             {
