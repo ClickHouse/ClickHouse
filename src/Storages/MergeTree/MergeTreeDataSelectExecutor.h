@@ -71,6 +71,7 @@ public:
         const MergeTreeData::DataPartPtr & part,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
+        const std::optional<KeyCondition> & part_offset_condition,
         const Settings & settings,
         Poco::Logger * log);
 
@@ -161,6 +162,9 @@ public:
         size_t bytes_granularity,
         size_t max_marks);
 
+    static void buildKeyConditionFromPartOffset(
+        std::optional<KeyCondition> & part_offset_condition, const ActionsDAGPtr & filter_dag, ContextPtr context);
+
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
     /// If expression found, return a set with allowed part names (std::nullopt otherwise).
@@ -199,6 +203,7 @@ public:
         StorageMetadataPtr metadata_snapshot,
         const ContextPtr & context,
         const KeyCondition & key_condition,
+        const std::optional<KeyCondition> & part_offset_condition,
         const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         Poco::Logger * log,
