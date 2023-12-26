@@ -928,7 +928,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         Strings forced_indices;
         {
-            Tokens tokens(indices.data(), &indices[indices.size()], settings.max_query_size);
+            Tokens tokens(indices.data(), indices.data() + indices.size(), settings.max_query_size);
             IParser::Pos pos(tokens, static_cast<unsigned>(settings.max_parser_depth));
             Expected expected;
             if (!parseIdentifiersOrStringLiterals(pos, expected, forced_indices))
