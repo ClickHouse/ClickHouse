@@ -1,3 +1,4 @@
+SET allow_experimental_analyzer = 1;
 DROP TABLE IF EXISTS tokenbf_tab;
 DROP TABLE IF EXISTS ngrambf_tab;
 
@@ -85,6 +86,7 @@ SELECT * FROM ngrambf_tab WHERE match(str, 'OLAP.*') ORDER BY id;
 -- Required string: 'OLAP'
 -- Alternatives: -
 
+set allow_experimental_analyzer = 1;
 SELECT *
 FROM
 (
