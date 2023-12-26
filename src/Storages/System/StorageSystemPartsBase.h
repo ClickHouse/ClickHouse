@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 class Context;
 
 struct StoragesInfo
@@ -34,64 +29,13 @@ struct StoragesInfo
 };
 
 /** A helper class that enumerates the storages that match given query. */
-class StoragesInfoStreamBase
+class StoragesInfoStream
 {
 public:
-    StoragesInfoStreamBase(ContextPtr context)
-        : query_id(context->getCurrentQueryId()), settings(context->getSettingsRef()), next_row(0), rows(0)
-    {}
+    StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context);
+    StoragesInfo next();
 
-    StoragesInfo next()
-    {
-        while (next_row < rows)
-        {
-            StoragesInfo info;
-
-            info.database = (*database_column)[next_row].get<String>();
-            info.table = (*table_column)[next_row].get<String>();
-            UUID storage_uuid = (*storage_uuid_column)[next_row].get<UUID>();
-
-            auto is_same_table = [&storage_uuid, this] (size_t row) -> bool
-            {
-                return (*storage_uuid_column)[row].get<UUID>() == storage_uuid;
-            };
-
-            /// We may have two rows per table which differ in 'active' value.
-            /// If rows with 'active = 0' were not filtered out, this means we
-            /// must collect the inactive parts. Remember this fact in StoragesInfo.
-            for (; next_row < rows && is_same_table(next_row); ++next_row)
-            {
-                const auto active = (*active_column)[next_row].get<UInt64>();
-                if (active == 0)
-                    info.need_inactive_parts = true;
-            }
-
-            info.storage = storages.at(storage_uuid);
-
-            if (needsLock)
-            {
-                /// For table not to be dropped and set of columns to remain constant.
-                info.table_lock = info.storage->tryLockForShare(query_id, settings.lock_acquire_timeout);
-                if (info.table_lock == nullptr)
-                {
-                    // Table was dropped while acquiring the lock, skipping table
-                    continue;
-                }
-            }
-
-            info.engine = info.storage->getName();
-
-            info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
-            if (!info.data)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
-
-            return info;
-        }
-
-        return {};
-    }
-
-protected:
+private:
     String query_id;
     Settings settings;
 
@@ -99,22 +43,12 @@ protected:
     ColumnPtr database_column;
     ColumnPtr table_column;
     ColumnPtr active_column;
-    ColumnPtr storage_uuid_column;
 
     size_t next_row;
     size_t rows;
 
-    using StoragesMap = std::unordered_map<UUID, StoragePtr>;
+    using StoragesMap = std::map<std::pair<String, String>, StoragePtr>;
     StoragesMap storages;
-
-    bool needsLock = true;
-};
-
-
-class StoragesInfoStream : public StoragesInfoStreamBase
-{
-public:
-    StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context);
 };
 
 /** Implements system table 'parts' which allows to get information about data parts for tables of MergeTree family.
@@ -142,11 +76,6 @@ protected:
     const FormatSettings format_settings = {};
 
     StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_);
-
-    virtual std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)
-    {
-        return std::make_unique<StoragesInfoStream>(query_info, context);
-    }
 
     virtual void
     processNextStorage(ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) = 0;

@@ -1087,6 +1087,7 @@ CREATE TABLE system.tables
     `storage_policy` String,
     `total_rows` Nullable(UInt64),
     `total_bytes` Nullable(UInt64),
+    `total_bytes_uncompressed` Nullable(UInt64),
     `parts` Nullable(UInt64),
     `active_parts` Nullable(UInt64),
     `total_marks` Nullable(UInt64),

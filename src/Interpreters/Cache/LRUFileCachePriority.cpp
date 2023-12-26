@@ -16,6 +16,9 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictionSkippedFileSegments;
     extern const Event FilesystemCacheEvictionTries;
+    extern const Event FilesystemCacheEvictMicroseconds;
+    extern const Event FilesystemCacheEvictedBytes;
+    extern const Event FilesystemCacheEvictedFileSegments;
 }
 
 namespace DB
@@ -36,7 +39,7 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
     return std::make_shared<LRUIterator>(add(Entry(key_metadata->key, offset, size, key_metadata), lock));
 }
 
-LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(Entry && entry, const CacheGuard::Lock &)
+LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(Entry && entry, const CacheGuard::Lock & lock)
 {
     if (entry.size == 0)
     {
@@ -59,7 +62,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(Entry && entry, cons
     }
 #endif
 
-    const auto & size_limit = getSizeLimit();
+    const auto & size_limit = getSizeLimit(lock);
     if (size_limit && current_size + entry.size > size_limit)
     {
         throw Exception(
@@ -286,6 +289,51 @@ std::vector<FileSegmentInfo> LRUFileCachePriority::dump(const CacheGuard::Lock &
         return IterationResult::CONTINUE;
     }, lock);
     return res;
+}
+
+bool LRUFileCachePriority::modifySizeLimits(
+    size_t max_size_, size_t max_elements_, double /* size_ratio_ */, const CacheGuard::Lock & lock)
+{
+    if (max_size == max_size_ && max_elements == max_elements_)
+        return false; /// Nothing to change.
+
+    auto check_limits_satisfied = [&]()
+    {
+        return (max_size_ == 0 || current_size <= max_size_)
+            && (max_elements_ == 0 || current_elements_num <= max_elements_);
+    };
+
+    if (check_limits_satisfied())
+    {
+        max_size = max_size_;
+        max_elements = max_elements_;
+        return true;
+    }
+
+    auto iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+    {
+        chassert(segment_metadata->file_segment->assertCorrectness());
+
+        if (!segment_metadata->releasable())
+            return IterationResult::CONTINUE;
+
+        auto segment = segment_metadata->file_segment;
+        locked_key.removeFileSegment(segment->offset(), segment->lock());
+
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize());
+        return IterationResult::REMOVE_AND_CONTINUE;
+    };
+
+    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::FilesystemCacheEvictMicroseconds);
+    iterate(
+        [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+        { return check_limits_satisfied() ? IterationResult::BREAK : iterate_func(locked_key, segment_metadata); },
+        lock);
+
+    max_size = max_size_;
+    max_elements = max_elements_;
+    return true;
 }
 
 void LRUFileCachePriority::LRUIterator::remove(const CacheGuard::Lock & lock)
