@@ -8261,6 +8261,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     new_data_part->setColumns(columns, {}, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
+    new_data_part->existing_rows_count = block.rows();
 
     new_data_part->partition = partition;
 
