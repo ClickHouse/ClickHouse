@@ -220,7 +220,20 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, c
     bool host_in_hostlist = false;
     std::exception_ptr first_exception = nullptr;
 
-    auto maybe_secure_port = global_context->getTCPPortSecure();
+    const auto maybe_secure_port = global_context->getTCPPortSecure();
+    const auto port = global_context->getTCPPort()
+
+    if (config_host_name)
+    {
+        bool is_local_port = (maybe_secure_port && HostID(*config_host_name, *maybe_secure_port).isLocalAddress(*maybe_secure_port)) ||
+                             HostID(*config_host_name, port).isLocalAddress(port);
+
+        if (!is_local_port)
+            throw Exception(
+                ErrorCodes::DNS_ERROR,
+                "{} is not a local adress. Check parameter 'host_name' in the configuration",
+                *config_host_name)
+    }
 
     for (const HostID & host : entry.hosts)
     {
@@ -229,7 +242,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, c
             if (config_host_name != host.host_name)
                 continue;
 
-            if (maybe_secure_port != host.port && global_context->getTCPPort() != host.port)
+            if (maybe_secure_port != host.port && port != host.port)
                 continue;
 
             host_in_hostlist = true;
@@ -242,7 +255,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, c
         {
             /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
             bool is_local_port
-                = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port)) || host.isLocalAddress(global_context->getTCPPort());
+                = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port)) || host.isLocalAddress(port);
 
             if (!is_local_port)
                 continue;
