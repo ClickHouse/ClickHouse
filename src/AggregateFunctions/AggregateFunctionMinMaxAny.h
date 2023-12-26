@@ -43,14 +43,12 @@ namespace ErrorCodes
 template <typename T>
 struct SingleValueDataFixed
 {
-private:
     using Self = SingleValueDataFixed;
     using ColVecType = ColumnVectorOrDecimal<T>;
 
     bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
     T value = T{};
 
-public:
     static constexpr bool result_is_nullable = false;
     static constexpr bool should_skip_null_arguments = true;
     static constexpr bool is_any = false;
@@ -157,6 +155,15 @@ public:
             return false;
     }
 
+    void changeIfLess(T from)
+    {
+        if (!has() || from < value)
+        {
+            has_value = true;
+            value = from;
+        }
+    }
+
     bool changeIfGreater(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (!has() || assert_cast<const ColVecType &>(column).getData()[row_num] > value)
@@ -177,6 +184,15 @@ public:
         }
         else
             return false;
+    }
+
+    void changeIfGreater(T & from)
+    {
+        if (!has() || from > value)
+        {
+            has_value = true;
+            value = from;
+        }
     }
 
     bool isEqualTo(const Self & to) const
@@ -448,7 +464,6 @@ public:
     }
 
 #endif
-
 };
 
 struct Compatibility
@@ -1214,7 +1229,7 @@ struct AggregateFunctionAnyHeavyData : Data
 
 
 template <typename Data>
-class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
+class AggregateFunctionsSingleValue : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
 {
     static constexpr bool is_any = Data::is_any;
 
