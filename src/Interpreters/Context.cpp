@@ -4539,7 +4539,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (!storage_id)
     {
         if (exception)
-            exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty");
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty"));
         return storage_id;
     }
 
@@ -4600,7 +4600,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         if (current_database.empty())
         {
             if (exception)
-                exception->emplace(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
+                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected"));
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;
