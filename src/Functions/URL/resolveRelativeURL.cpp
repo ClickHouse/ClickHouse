@@ -5,7 +5,8 @@
 #include <Functions/FunctionFactory.h>
 #include <base/find_symbols.h>
 #include <Functions/URL/protocol.h>
-
+#include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/registerTableFunctions.h>
 namespace DB
 {
 
@@ -22,15 +23,15 @@ bool isAbsoluteURL(const char * url_begin, const char * url_end)
     {
         return false;
     }
-    return pos[1] == '/';
+    return  pos + 2 < url_end && pos[1] == '/' && pos[2] == '/';
 }
 
 Pos getDomainNameBeginPos(const char * url_begin, const char * url_end)
 {
     Pos pos = find_first_symbols<':'>(url_begin, url_end);
-    if (pos == url_end)
+    if (pos == url_end || pos + 2 >= url_end)
     {
-        return pos;
+        return url_end;
     }
     bool has_subsequent_slash = pos[1] == '/' && pos[2] == '/';
     if (has_subsequent_slash)
@@ -43,9 +44,9 @@ Pos getDomainNameBeginPos(const char * url_begin, const char * url_end)
 Pos getDomainNameEndPos(const char * url_begin, const char * url_end)
 {
     Pos pos = find_first_symbols<':'>(url_begin, url_end);
-    if (pos == url_end)
+    if (pos == url_end || pos + 2 >= url_end)
     {
-        return pos;
+        return url_end;
     }
     bool has_subsequent_slash = pos[1] == '/' && pos[2] == '/';
     if (has_subsequent_slash)
@@ -56,11 +57,11 @@ Pos getDomainNameEndPos(const char * url_begin, const char * url_end)
     return url_end;
 }
 
-class FunctionrResolveRelativeURL : public IFunction
+class FunctionResolveRelativeURL : public IFunction
 {
 public:
     static constexpr auto name = "resolveRelativeURL";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionrResolveRelativeURL>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionResolveRelativeURL>(); }
 
     String getName() const override { return name; }
 
@@ -136,15 +137,17 @@ public:
 
             const char * relative_url_begin = reinterpret_cast<const char *>(&relative_url_data[relative_url_prev_offset]);
             const char * relative_url_end = reinterpret_cast<const char *>(&relative_url_data[relative_url_offset]);
-            size_t relative_size = relative_url_end - relative_url_begin - 1;
-            char * relative_url_ptr = const_cast<char *>(relative_url_begin);
+            size_t relative_size = relative_url_offset - relative_url_prev_offset - 1;
+            const char * relative_url_ptr = relative_url_begin;
 
             const char * base_url_begin = reinterpret_cast<const char *>(&base_url_data[base_url_prev_offset]);
             const char * base_url_end = reinterpret_cast<const char *>(&base_url_data[base_url_offset]);
             size_t base_size = base_url_end - base_url_begin - 1;
 
-            /// relative url is a absolute utl, add it to the result directly
-            if (isAbsoluteURL(relative_url_begin, relative_url_end))
+
+            /// Relative url is an absolute url or relative url is not an absolute url, add relative url to the result directly
+            if (isAbsoluteURL(relative_url_begin, relative_url_end)
+                || !isAbsoluteURL(base_url_begin, base_url_end))
             {
                 res_data.resize(res_offset + relative_size);
                 memcpy(&res_data[res_offset], relative_url_begin, relative_size);
@@ -154,22 +157,36 @@ public:
             {
                 relative_url_ptr++;
                 Pos domain_pos;
-                /// relative url begin with double slash
+                /// Relative url begins with double or more slashes
                 if (relative_url_ptr != relative_url_end && *relative_url_ptr == '/')
                 {
-                    relative_url_ptr = const_cast<char *>(find_first_not_symbols<'/'>(relative_url_ptr, relative_url_end));
-                    if (*relative_url_ptr == '\0' || relative_url_ptr == relative_url_end)
+                    relative_url_ptr++;
+                    /// Relative url begins with three or more slashes
+                    if (*relative_url_ptr == '/')
                     {
-                        domain_pos = base_url_end - 1;
-                    }
-                    else
-                    {
-                        domain_pos = getDomainNameBeginPos(base_url_begin, base_url_end);
+                        domain_pos = getDomainNameEndPos(base_url_begin, base_url_end);
                         if (domain_pos == base_url_end)
                             continue;
                     }
+                    /// Relative url begins with double slashes
+                    else
+                    {
+                        relative_url_ptr = const_cast<char *>(find_first_not_symbols<'/'>(relative_url_ptr, relative_url_end));
+                        /// Relative url only contains double slashes
+                        if (*relative_url_ptr == '\0' || relative_url_ptr == relative_url_end)
+                        {
+                            domain_pos = base_url_end - 1;
+                        }
+                        else
+                        {
+                            domain_pos = getDomainNameBeginPos(base_url_begin, base_url_end);
+                            if (domain_pos == base_url_end)
+                                continue;
+                        }
+                    }
+
                 }
-                /// relative url begin with single slash
+                /// Relative url begin with single slash
                 else
                 {
                     domain_pos = getDomainNameEndPos(base_url_begin, base_url_end);
@@ -191,6 +208,10 @@ public:
                 Pos base_url_last_slash;
                 Pos base_url_domain_name_end = getDomainNameEndPos(base_url_begin, base_url_end);
                 base_url_last_slash = find_last_symbols_or_null<'/'>(base_url_domain_name_end, base_url_end);
+                if (base_url_last_slash == nullptr)
+                {
+                    base_url_last_slash = base_url_end - 1;
+                }
                 base_size = base_url_last_slash - base_url_begin;
                 res_data.resize(res_offset + base_size + relative_size + 2);
                 memcpy(&res_data[res_offset], base_url_begin, base_size);
@@ -212,7 +233,16 @@ public:
 
 REGISTER_FUNCTION(ResolveRelativeURL)
 {
-    factory.registerFunction<FunctionrResolveRelativeURL>();
+    factory.registerFunction<FunctionResolveRelativeURL>(
+        FunctionDocumentation{
+            .description=R"(
+                resolves a relative URL to its absolute form based on a given base URL.
+                This is particularly useful to resolve relative URLs from HTML pages.]
+                 )",
+            .examples={{"", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}}
+        }
+    );
 }
 
 }
+

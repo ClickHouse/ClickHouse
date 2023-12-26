@@ -618,7 +618,6 @@ replaceOne
 replaceRegexpAll
 replaceRegexpOne
 replicate
-resolveRelativeURL
 reverse
 reverseUTF8
 revision
