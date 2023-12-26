@@ -162,6 +162,7 @@ public:
         size_t bytes_granularity,
         size_t max_marks);
 
+    /// If possible, construct optional key condition from predicates containing _part_offset column.
     static void buildKeyConditionFromPartOffset(
         std::optional<KeyCondition> & part_offset_condition, const ActionsDAGPtr & filter_dag, ContextPtr context);
 
