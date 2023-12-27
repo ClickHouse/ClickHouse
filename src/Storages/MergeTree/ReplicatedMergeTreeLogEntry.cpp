@@ -269,12 +269,6 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
 
                     deduplicate_by_columns = std::move(new_deduplicate_by_columns);
                 }
-                else if (checkString("cleanup: ", in))
-                {
-                    /// Obsolete option, does nothing.
-                    bool cleanup = false;
-                    in >> cleanup;
-                }
                 else
                     trailing_newline_found = true;
             }
