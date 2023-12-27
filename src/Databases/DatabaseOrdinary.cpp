@@ -62,6 +62,67 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLev
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
 }
 
+static void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, QualifiedTableName qualified_name, ContextPtr context, Poco::Logger * log, fs::path full_path)
+{
+    auto * create_query = ast->as<ASTCreateQuery>();
+
+    if (!create_query->storage || !create_query->storage->engine->name.ends_with("MergeTree") || create_query->storage->engine->name.starts_with("Replicated"))
+        return;
+
+    auto convert_to_replicated_flag_path = fs::path(context->getPath()) / "data" / qualified_name.database / qualified_name.table / "flags" / "convert_to_replicated";
+
+    LOG_INFO(log, "Searching for convert_to_replicated flag at {}.", backQuote(convert_to_replicated_flag_path.string()));
+
+    if (!fs::exists(convert_to_replicated_flag_path))
+        return;
+
+    LOG_INFO(log, "Found convert_to_replicated flag for table {}. Will try to change it's engine in metadata to replicated table.", backQuote(qualified_name.getFullName()));
+
+    /// Get storage definition
+    /// Set uuid explicitly, because it is forbidden to use the 'uuid' macro without ON CLUSTER
+    auto * storage = create_query->storage;
+
+    const auto & config = context->getConfigRef();
+    String replica_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
+    replica_path = boost::algorithm::replace_all_copy(replica_path, "{uuid}", fmt::format("{}", create_query->uuid));
+    String replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
+    String replicated_args = fmt::format("('{}', '{}')", replica_path, replica_name);
+    String replicated_engine = "ENGINE = Replicated" + storage->engine->name + replicated_args;
+
+    ParserStorage parser_storage{ParserStorage::TABLE_ENGINE};
+    auto replicated_storage_ast = parseQuery(parser_storage, replicated_engine, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    auto * replicated_storage = replicated_storage_ast->as<ASTStorage>();
+
+    /// Add old engine's arguments
+    if (storage->engine->arguments)
+    {
+        for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
+            replicated_storage->engine->arguments->children.push_back(storage->engine->arguments->children[i]->clone());
+    }
+
+    /// Set new engine for the old query
+    create_query->storage->set(create_query->storage->engine, replicated_storage->engine->clone());
+
+    /// Write changes to metadata
+    String table_metadata_path = full_path;
+    String table_metadata_tmp_path = table_metadata_path + ".tmp";
+    String statement = getObjectDefinitionFromCreateQuery(ast);
+    {
+        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+        writeString(statement, out);
+        out.next();
+        if (context->getSettingsRef().fsync_metadata)
+            out.sync();
+        out.close();
+    }
+    fs::rename(table_metadata_tmp_path, table_metadata_path);
+
+    LOG_INFO(
+        log,
+        "Table {} is loaded as replicated. Not removing convert_to_replicated flag until metadata in zookeeper is restored.",
+        backQuote(qualified_name.getFullName()));
+}
+
 void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
 {
     size_t prev_tables_count = metadata.parsed_tables.size();
@@ -111,62 +172,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                 QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
 
-                if (create_query->storage && create_query->storage->engine->name.ends_with("MergeTree") && !create_query->storage->engine->name.starts_with("Replicated"))
-                {
-                    auto convert_to_replicated_flag_path = fs::path(getContext()->getPath()) / "data" / qualified_name.database / qualified_name.table / "flags" / "convert_to_replicated";
-
-                    LOG_INFO(log, "Searching for convert_to_replicated flag at {}.", backQuote(convert_to_replicated_flag_path.string()));
-
-                    if (fs::exists(convert_to_replicated_flag_path))
-                    {
-                        LOG_INFO(log, "Found convert_to_replicated flag for table {}. Will try to load it as replicated table.", backQuote(qualified_name.getFullName()));
-
-                        /// Get storage definition
-                        /// Set uuid explicitly, because it is forbidden to use the 'uuid' macro without ON CLUSTER
-                        auto * storage = create_query->storage;
-
-                        String replica_path = getContext()->getConfigRef().getString("default_replica_path", "/clickhouse/tables/{uuid}/{shard}");
-                        replica_path = boost::algorithm::replace_all_copy(replica_path, "{uuid}", fmt::format("{}", create_query->uuid));
-                        String replica_name = getContext()->getConfigRef().getString("default_replica_name", "{replica}");
-                        String replicated_args = fmt::format("('{}', '{}')", replica_path, replica_name);
-                        String replicated_engine = "ENGINE = Replicated" + storage->engine->name + replicated_args;
-
-                        ParserStorage parser_storage{ParserStorage::TABLE_ENGINE};
-                        auto replicated_storage_ast = parseQuery(parser_storage, replicated_engine, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-                        auto * replicated_storage = replicated_storage_ast->as<ASTStorage>();
-
-                        /// Add old engine's arguments
-                        if (storage->engine->arguments)
-                        {
-                            for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
-                                replicated_storage->engine->arguments->children.push_back(storage->engine->arguments->children[i]->clone());
-                        }
-
-                        /// Set new engine for the old query
-                        create_query->storage->set(create_query->storage->engine, replicated_storage->engine->clone());
-
-                        /// Write changes to metadata
-                        String table_metadata_path = full_path;
-                        String table_metadata_tmp_path = table_metadata_path + ".tmp";
-                        String statement = getObjectDefinitionFromCreateQuery(ast);
-                        {
-                            WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-                            writeString(statement, out);
-                            out.next();
-                            if (getContext()->getSettingsRef().fsync_metadata)
-                                out.sync();
-                            out.close();
-                        }
-                        fs::rename(table_metadata_tmp_path, table_metadata_path);
-
-                        LOG_INFO
-                        (
-                            log,
-                            "Table {} is loaded as replicated. Not removing convert_to_replicated flag until metadata in zookeeper is restored.",
-                            backQuote(qualified_name.getFullName())
-                        );
-                    }
-                }
+                convertMergeTreeToReplicatedIfNeeded(ast, qualified_name, getContext(), log, full_path);
 
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
