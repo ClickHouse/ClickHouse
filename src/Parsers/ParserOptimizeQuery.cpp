@@ -28,7 +28,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ParserKeyword s_partition("PARTITION");
     ParserKeyword s_final("FINAL");
     ParserKeyword s_deduplicate("DEDUPLICATE");
-    ParserKeyword s_cleanup("CLEANUP");
     ParserKeyword s_by("BY");
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
@@ -76,9 +75,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
                 .parse(pos, deduplicate_by_columns, expected))
             return false;
     }
-
-    /// Obsolete feature, ignored for backward compatibility.
-    s_cleanup.ignore(pos, expected);
 
     auto query = std::make_shared<ASTOptimizeQuery>();
     node = query;
