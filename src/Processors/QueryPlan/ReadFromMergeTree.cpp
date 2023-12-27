@@ -1338,7 +1338,7 @@ static void buildIndexes(
             context,
             primary_key_column_names,
             primary_key.expression,
-            array_join_name_set}, {}, {}, {}, false, {}});
+            array_join_name_set}, {}, {}, {}, {}, false, {}});
     }
     else
     {
@@ -1346,7 +1346,7 @@ static void buildIndexes(
             query_info,
             context,
             primary_key_column_names,
-            primary_key.expression}, {}, {}, {}, false, {}});
+            primary_key.expression}, {}, {}, {}, {}, false, {}});
     }
 
     if (metadata_snapshot->hasPartitionKey())
@@ -1364,6 +1364,8 @@ static void buildIndexes(
         indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, filter_actions_dag, context);
     else
         indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, query_info.query, context);
+
+    MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_actions_dag, context);
 
     indexes->use_skip_indexes = settings.use_skip_indexes;
     bool final = query_info.isFinal();
@@ -1549,6 +1551,9 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     }
     LOG_DEBUG(log, "Key condition: {}", indexes->key_condition.toString());
 
+    if (indexes->part_offset_condition)
+        LOG_DEBUG(log, "Part offset condition: {}", indexes->part_offset_condition->toString());
+
     if (indexes->key_condition.alwaysFalse())
         return std::make_shared<MergeTreeDataSelectAnalysisResult>(MergeTreeDataSelectAnalysisResult{.result = std::move(result)});
 
@@ -1595,6 +1600,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
             metadata_snapshot,
             context,
             indexes->key_condition,
+            indexes->part_offset_condition,
             indexes->skip_indexes,
             reader_settings,
             log,
