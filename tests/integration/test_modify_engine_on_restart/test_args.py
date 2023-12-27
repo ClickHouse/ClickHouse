@@ -54,15 +54,6 @@ def check_tables():
         == "collapsing_ver\nreplacing_ver"
     )
 
-    replacing_uuid = q(
-        ch1,
-        f"SELECT uuid FROM system.tables WHERE database = '{database_name}' and name = 'replacing_ver'",
-    ).strip()
-    collapsing_uuid = q(
-        ch1,
-        f"SELECT uuid FROM system.tables WHERE database = '{database_name}' and name = 'collapsing_ver'",
-    ).strip()
-
     # Check engines
     assert (
         q(
@@ -71,7 +62,7 @@ def check_tables():
         )
         .strip()
         .startswith(
-            f"ReplicatedReplacingMergeTree(\\'/clickhouse/tables/{replacing_uuid}/{{shard}}\\', \\'{{replica}}\\', D)"
+            "ReplicatedReplacingMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\', D)"
         )
     )
     assert (
@@ -81,7 +72,7 @@ def check_tables():
         )
         .strip()
         .startswith(
-            f"ReplicatedVersionedCollapsingMergeTree(\\'/clickhouse/tables/{collapsing_uuid}/{{shard}}\\', \\'{{replica}}\\', Sign, Version)"
+            "ReplicatedVersionedCollapsingMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\', Sign, Version)"
         )
     )
 

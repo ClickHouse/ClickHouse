@@ -67,10 +67,8 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     auto * storage = create_query->storage;
 
     /// Get replicated engine
-    /// Set uuid explicitly, because it is forbidden to use the 'uuid' macro without ON CLUSTER
     const auto & config = context->getConfigRef();
     String replica_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
-    replica_path = boost::algorithm::replace_all_copy(replica_path, "{uuid}", fmt::format("{}", create_query->uuid));
     String replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
 
     auto args = std::make_shared<ASTExpressionList>();
