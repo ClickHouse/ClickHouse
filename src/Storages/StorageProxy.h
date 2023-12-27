@@ -121,15 +121,16 @@ public:
     }
 
     bool optimize(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ASTPtr & partition,
-        bool final,
-        bool deduplicate,
-        const Names & deduplicate_by_columns,
-        ContextPtr context) override
+            const ASTPtr & query,
+            const StorageMetadataPtr & metadata_snapshot,
+            const ASTPtr & partition,
+            bool final,
+            bool deduplicate,
+            const Names & deduplicate_by_columns,
+            bool cleanup,
+            ContextPtr context) override
     {
-        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, context);
+        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, context);
     }
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
