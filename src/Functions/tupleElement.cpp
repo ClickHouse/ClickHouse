@@ -9,6 +9,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include "Columns/ColumnNullable.h"
 #include <memory>
 
 
@@ -50,15 +51,15 @@ public:
                             "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
                             getName(), number_of_arguments);
 
-        size_t count_arrays = 0;
-        const IDataType * input_type = arguments[0].type.get();
-        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(input_type))
+        std::vector<bool> arrays_is_nullable;
+        DataTypePtr input_type = arguments[0].type;
+        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(removeNullable(input_type).get()))
         {
-            input_type = array->getNestedType().get();
-            ++count_arrays;
+            arrays_is_nullable.push_back(input_type->isNullable());
+            input_type = array->getNestedType();
         }
 
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(input_type);
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(input_type).get());
         if (!tuple)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be tuple or array of tuple. Actual {}",
@@ -70,8 +71,19 @@ public:
         {
             DataTypePtr return_type = tuple->getElements()[index.value()];
 
-            for (; count_arrays; --count_arrays)
+            /// Tuple may be wrapped in Nullable
+            if (input_type->isNullable())
+                return_type = makeNullable(return_type);
+
+            /// Array may be wrapped in Nullable
+            for (auto it = arrays_is_nullable.rbegin(); it != arrays_is_nullable.rend(); ++it)
+            {
                 return_type = std::make_shared<DataTypeArray>(return_type);
+                if (*it)
+                    return_type = makeNullable(return_type);
+            }
+
+            // std::cout << "return_type:" << return_type->getName() << std::endl;
 
             return return_type;
         }
@@ -82,7 +94,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto & input_arg = arguments[0];
-        const IDataType * input_type = input_arg.type.get();
+        DataTypePtr input_type = input_arg.type;
         const IColumn * input_col = input_arg.column.get();
 
         bool input_arg_is_const = false;
@@ -93,48 +105,86 @@ public:
         }
 
         Columns array_offsets;
-        while (const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(input_type))
+        Columns null_maps;
+        while (const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(input_type).get()))
         {
-            const ColumnArray * array_col = assert_cast<const ColumnArray *>(input_col);
+            const ColumnNullable * nullable_array_col = input_type->isNullable() ? checkAndGetColumn<ColumnNullable>(input_col) : nullptr;
+            const ColumnArray * array_col = nullable_array_col ? checkAndGetColumn<ColumnArray>(&nullable_array_col->getNestedColumn())
+                                                               : checkAndGetColumn<ColumnArray>(input_col);
 
-            input_type = array_type->getNestedType().get();
-            input_col = &array_col->getData();
             array_offsets.push_back(array_col->getOffsetsPtr());
+            null_maps.push_back(nullable_array_col ? nullable_array_col->getNullMapColumnPtr() : nullptr);
+            input_type = array_type->getNestedType();
+            input_col = &array_col->getData();
         }
 
-        const DataTypeTuple * input_type_as_tuple = checkAndGetDataType<DataTypeTuple>(input_type);
-        const ColumnTuple * input_col_as_tuple = checkAndGetColumn<ColumnTuple>(input_col);
-        if (!input_type_as_tuple || !input_col_as_tuple)
+        const DataTypeTuple * input_type_as_tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(input_type).get());
+        if (!input_type_as_tuple)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be tuple or array of tuple. Actual {}", getName(), input_arg.type->getName());
 
-        std::optional<size_t> index = getElementIndex(arguments[1].column, *input_type_as_tuple, arguments.size());
+        const ColumnNullable * input_col_as_nullable_tuple
+            = input_type->isNullable() ? checkAndGetColumn<ColumnNullable>(input_col) : nullptr;
+        const ColumnTuple * input_col_as_tuple = input_col_as_nullable_tuple
+            ? checkAndGetColumn<ColumnTuple>(&input_col_as_nullable_tuple->getNestedColumn())
+            : checkAndGetColumn<ColumnTuple>(input_col);
 
+        std::optional<size_t> index = getElementIndex(arguments[1].column, *input_type_as_tuple, arguments.size());
         if (!index.has_value())
             return arguments[2].column;
 
         ColumnPtr res = input_col_as_tuple->getColumns()[index.value()];
 
+        /// Wrap into Nullable if needed
+        if (input_col_as_nullable_tuple)
+        {
+            auto res_type = input_type_as_tuple->getElements()[index.value()];
+            ColumnPtr res_null_map = input_col_as_nullable_tuple->getNullMapColumnPtr();
+            if (res_type->isNullable())
+            {
+                MutableColumnPtr mutable_res_null_map = IColumn::mutate(std::move(res_null_map));
+
+                NullMap & res_null_map_data = assert_cast<ColumnUInt8 &>(*mutable_res_null_map).getData();
+                const NullMap & src_null_map = assert_cast<const ColumnNullable &>(*res).getNullMapData();
+
+                for (size_t i = 0, size = res_null_map_data.size(); i < size; ++i)
+                    res_null_map_data[i] |= src_null_map[i];
+
+                res_null_map = std::move(mutable_res_null_map);
+                res = ColumnNullable::create(assert_cast<const ColumnNullable &>(*res).getNestedColumnPtr(), res_null_map);
+            }
+            else
+                res = ColumnNullable::create(res, res_null_map);
+        }
+
         /// Wrap into Arrays
-        for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
-            res = ColumnArray::create(res, *it);
+        for (ssize_t i = array_offsets.size() - 1; i >= 0; --i)
+        {
+            res = ColumnArray::create(res, array_offsets[i]);
+
+            /// Wrap into Nullable if needed
+            if (null_maps[i])
+                res = ColumnNullable::create(res, null_maps[i]);
+        }
 
         if (input_arg_is_const)
             res = ColumnConst::create(res, input_rows_count);
+
+        // std::cout << "res column:" << res->getName() << std::endl;
+
         return res;
     }
 
 private:
     std::optional<size_t> getElementIndex(const ColumnPtr & index_column, const DataTypeTuple & tuple, size_t argument_size) const
     {
-        if (checkAndGetColumnConst<ColumnUInt8>(index_column.get())
-            || checkAndGetColumnConst<ColumnUInt16>(index_column.get())
-            || checkAndGetColumnConst<ColumnUInt32>(index_column.get())
-            || checkAndGetColumnConst<ColumnUInt64>(index_column.get()))
+        if (checkAndGetColumnConst<ColumnUInt8>(index_column.get()) || checkAndGetColumnConst<ColumnUInt16>(index_column.get())
+            || checkAndGetColumnConst<ColumnUInt32>(index_column.get()) || checkAndGetColumnConst<ColumnUInt64>(index_column.get())
+            || checkAndGetColumnConst<ColumnInt8>(index_column.get()) || checkAndGetColumnConst<ColumnInt16>(index_column.get())
+            || checkAndGetColumnConst<ColumnInt32>(index_column.get()) || checkAndGetColumnConst<ColumnInt64>(index_column.get()))
         {
-            const size_t index = index_column->getUInt(0);
-
-            if (index > 0 && index <= tuple.getElements().size())
+            const ssize_t index = index_column->getInt(0);
+            if (index > 0 && index <= static_cast<ssize_t>(tuple.getElements().size()))
                 return {index - 1};
             else
             {
