@@ -138,7 +138,6 @@ namespace ErrorCodes
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
     ProfileEvents::increment(ProfileEvents::Query);
-    
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         ProfileEvents::increment(ProfileEvents::InitialQuery);
     /// SELECT and INSERT query will handle QueriesWithSubqueries on their own.
