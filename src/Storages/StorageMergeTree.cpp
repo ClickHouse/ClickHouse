@@ -62,6 +62,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
     extern const int ABORTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace ActionLocks
@@ -1529,6 +1530,9 @@ bool StorageMergeTree::optimize(
             disable_reason = "only ReplacingMergeTree can be CLEANUP";
             throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason);
         }
+
+        if (cleanup && !getSettings()->allow_experimental_replacing_merge_with_cleanup)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
         DataPartsVector data_parts = getVisibleDataPartsVector(local_context);
         std::unordered_set<String> partition_ids;

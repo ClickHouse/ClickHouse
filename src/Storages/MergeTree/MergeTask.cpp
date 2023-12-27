@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -1005,10 +1006,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             break;
 
         case MergeTreeData::MergingParams::Replacing:
+            if (global_ctx->cleanup && !data_settings->allow_experimental_replacing_merge_with_cleanup)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
+
             merged_transform = std::make_shared<ReplacingSortedTransform>(
                 header, pipes.size(), sort_description, ctx->merging_params.is_deleted_column, ctx->merging_params.version_column,
                 merge_block_size_rows, merge_block_size_bytes, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size,
-                (data_settings->clean_deleted_rows != CleanDeletedRows::Never) || global_ctx->cleanup);
+                global_ctx->cleanup);
             break;
 
         case MergeTreeData::MergingParams::Graphite:
@@ -1085,6 +1089,8 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
     if (global_ctx->future_part->part_format.part_type != MergeTreeDataPartType::Wide)
         return MergeAlgorithm::Horizontal;
     if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)
+        return MergeAlgorithm::Horizontal;
+    if (global_ctx->cleanup)
         return MergeAlgorithm::Horizontal;
 
     if (!data_settings->allow_vertical_merges_from_compact_to_wide_parts)
