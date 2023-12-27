@@ -119,6 +119,14 @@ private:
         }
     }
 
+    struct KVPair
+    {
+        StringRef key;
+        V value;
+    };
+
+    using KVPointer = std::shared_ptr<KVPair>;
+
 public:
 
     using Node = V;
@@ -258,12 +266,12 @@ public:
         return ret;
     }
 
-    const_iterator find(StringRef key) const
+    KVPointer find(StringRef key) const
     {
         auto map_it = map.find(key);
         if (map_it != map.end())
-            return map_it->getMapped();
-        return list.end();
+            return std::make_shared<KVPair>(KVPair{map_it->getMapped()->key, map_it->getMapped()->value});
+        return nullptr;
     }
 
 

@@ -2950,7 +2950,7 @@ TEST_P(CoordinationTest, TestCheckNotExistsRequest)
 
     create_path("/test_node");
     auto node_it = storage.container.find("/test_node");
-    ASSERT_NE(node_it, storage.container.end());
+    ASSERT_NE(node_it, nullptr);
     auto node_version = node_it->value.stat.version;
 
     {

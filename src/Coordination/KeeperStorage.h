@@ -20,6 +20,29 @@ using ResponseCallback = std::function<void(const Coordination::ZooKeeperRespons
 using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
+struct KeeperRocksNode
+{
+    struct KeeperRocksNodeInfo
+    {
+        uint64_t acl_id = 0; /// 0 -- no ACL by default
+        bool is_sequental = false;
+        Coordination::Stat stat{};
+        int32_t seq_num = 0;
+        UInt64 digest = 0; /// we cached digest for this node.
+    } meta;
+
+    uint64_t sizeInBytes() const { return data.size() + sizeof(KeeperRocksNodeInfo); }
+    void setData(String new_data) {data = new_data;}
+    const auto & getData() const noexcept { return data; }
+    void shallowCopy(const KeeperRocksNode & other)
+    {
+        *this = other;
+    }
+private:
+    /// TODO(hanfei): Maybe we can store data and meta seperately.
+    String data;
+};
+
 struct KeeperMemNode
 {
     uint64_t acl_id = 0; /// 0 -- no ACL by default
@@ -135,6 +158,8 @@ class KeeperStorage : public KeeperStorageBase
 public:
     using Container = Container_;
     using Node = Container::Node;
+
+    /// static constexpr bool use_rocksdb = std::is_same_v<Container_, RocksDBContainer>;
 
     static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V2;
 
@@ -500,5 +525,6 @@ private:
 };
 
 using KeeperMemoryStorage = KeeperStorage<SnapshotableHashTable<KeeperMemNode>>;
+//using KeeperRocksStorage = KeeperStorage<RocksDBContainer<KeeperRocksNode>>;
 
 }

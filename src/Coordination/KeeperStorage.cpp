@@ -261,7 +261,7 @@ void KeeperStorage<Container>::initializeSystemNodes()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes initialized twice");
 
     // insert root system path if it isn't already inserted
-    if (container.find(keeper_system_path) == container.end())
+    if (container.find(keeper_system_path) == nullptr)
     {
         Node system_node;
         container.insert(keeper_system_path, system_node);
@@ -320,7 +320,7 @@ Overloaded(Ts...) -> Overloaded<Ts...>;
 template<typename Container>
 std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedState::tryGetNodeFromStorage(StringRef path) const
 {
-    if (auto node_it = storage.container.find(path); node_it != storage.container.end())
+    if (auto node_it = storage.container.find(path); node_it)
     {
         const auto & committed_node = node_it->value;
         auto node = std::make_shared<KeeperStorage<Container>::Node>();
@@ -570,7 +570,7 @@ Coordination::ACLs KeeperStorage<Container>::UncommittedState::getACLs(StringRef
         return node_it->second.acls;
 
     auto node_it = storage.container.find(path);
-    if (node_it == storage.container.end())
+    if (node_it == nullptr)
         return {};
 
     return storage.acl_map.convertNumber(node_it->value.acl_id);
@@ -673,7 +673,7 @@ Coordination::Error KeeperStorage<Container>::commit(int64_t commit_zxid)
                 else if constexpr (std::same_as<DeltaType, UpdateNodeDelta>)
                 {
                     auto node_it = container.find(path);
-                    if (node_it == container.end())
+                    if (node_it == nullptr)
                         onStorageInconsistency();
 
                     if (operation.version != -1 && operation.version != node_it->value.stat.version)
@@ -695,7 +695,7 @@ Coordination::Error KeeperStorage<Container>::commit(int64_t commit_zxid)
                 else if constexpr (std::same_as<DeltaType, SetACLDelta>)
                 {
                     auto node_it = container.find(path);
-                    if (node_it == container.end())
+                    if (node_it == nullptr)
                         onStorageInconsistency();
 
                     if (operation.version != -1 && operation.version != node_it->value.stat.aversion)
@@ -751,7 +751,7 @@ bool KeeperStorage<Container>::createNode(
     auto parent_path = parentNodePath(path);
     auto node_it = container.find(parent_path);
 
-    if (node_it == container.end())
+    if (node_it == nullptr)
         return false;
 
     if (node_it->value.stat.ephemeralOwner != 0)
@@ -789,7 +789,7 @@ template<typename Container>
 bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t version)
 {
     auto node_it = container.find(path);
-    if (node_it == container.end())
+    if (node_it == nullptr)
         return false;
 
     if (version != -1 && version != node_it->value.stat.version)
@@ -885,7 +885,7 @@ Coordination::ACLs getNodeACLs(Storage & storage, StringRef path, bool is_local)
     if (is_local)
     {
         auto node_it = storage.container.find(path);
-        if (node_it == storage.container.end())
+        if (node_it == nullptr)
             return {};
 
         return storage.acl_map.convertNumber(node_it->value.acl_id);
@@ -1146,7 +1146,7 @@ struct KeeperStorageGetRequestProcessor final : public KeeperStorageRequestProce
 
         auto & container = storage.container;
         auto node_it = container.find(request.path);
-        if (node_it == container.end())
+        if (node_it == nullptr)
         {
             if constexpr (local)
                 response.error = Coordination::Error::ZNONODE;
@@ -1308,7 +1308,7 @@ struct KeeperStorageExistsRequestProcessor final : public KeeperStorageRequestPr
 
         auto & container = storage.container;
         auto node_it = container.find(request.path);
-        if (node_it == container.end())
+        if (node_it == nullptr)
         {
             if constexpr (local)
                 response.error = Coordination::Error::ZNONODE;
@@ -1415,7 +1415,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
         }
 
         auto node_it = container.find(request.path);
-        if (node_it == container.end())
+        if (node_it == nullptr)
             onStorageInconsistency();
 
         response.stat = node_it->value.stat;
@@ -1472,7 +1472,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         auto & container = storage.container;
 
         auto node_it = container.find(request.path);
-        if (node_it == container.end())
+        if (node_it == nullptr)
         {
             if constexpr (local)
                 response.error = Coordination::Error::ZNONODE;
@@ -1503,7 +1503,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
 
                 auto child_path = (std::filesystem::path(request.path) / child.toView()).generic_string();
                 auto child_it = container.find(child_path);
-                if (child_it == container.end())
+                if (child_it == nullptr)
                     onStorageInconsistency();
 
                 const auto is_ephemeral = child_it->value.stat.ephemeralOwner != 0;
@@ -1604,14 +1604,14 @@ struct KeeperStorageCheckRequestProcessor final : public KeeperStorageRequestPro
 
         if (check_not_exists)
         {
-            if (node_it != container.end() && (request.version == -1 || request.version == node_it->value.stat.version))
+            if (node_it && (request.version == -1 || request.version == node_it->value.stat.version))
                 on_error(Coordination::Error::ZNODEEXISTS);
             else
                 response.error = Coordination::Error::ZOK;
         }
         else
         {
-            if (node_it == container.end())
+            if (node_it == nullptr)
                 on_error(Coordination::Error::ZNONODE);
             else if (request.version != -1 && request.version != node_it->value.stat.version)
                 on_error(Coordination::Error::ZBADVERSION);
@@ -1710,7 +1710,7 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
         }
 
         auto node_it = storage.container.find(request.path);
-        if (node_it == storage.container.end())
+        if (node_it == nullptr)
             onStorageInconsistency();
         response.stat = node_it->value.stat;
         response.error = Coordination::Error::ZOK;
@@ -1758,7 +1758,7 @@ struct KeeperStorageGetACLRequestProcessor final : public KeeperStorageRequestPr
 
         auto & container = storage.container;
         auto node_it = container.find(request.path);
-        if (node_it == container.end())
+        if (node_it == nullptr)
         {
             if constexpr (local)
                 response.error = Coordination::Error::ZNONODE;

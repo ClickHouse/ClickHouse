@@ -6,6 +6,11 @@
 #include <cstdint>
 #include <memory>
 
+namespace rocksdb
+{
+struct Options;
+}
+
 namespace DB
 {
 
@@ -53,6 +58,10 @@ public:
 
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
 
+    DiskPtr getTemporaryRocksDBDisk() const;
+
+    std::shared_ptr<rocksdb::Options> getRocksDBOptions() const { return rocksdb_options; }
+
     /// set to true when we have preprocessed or committed all the logs
     /// that were already present locally during startup
     std::atomic<bool> local_logs_preprocessed = false;
@@ -64,6 +73,7 @@ private:
     void initializeFeatureFlags(const Poco::Util::AbstractConfiguration & config);
     void initializeDisks(const Poco::Util::AbstractConfiguration & config);
 
+    Storage getRocksDBPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
@@ -77,11 +87,14 @@ private:
 
     std::shared_ptr<DiskSelector> disk_selector;
 
+    Storage rocksdb_storage;
     Storage log_storage;
     Storage latest_log_storage;
     Storage snapshot_storage;
     Storage latest_snapshot_storage;
     Storage state_file_storage;
+
+    std::shared_ptr<rocksdb::Options> rocksdb_options;
 
     std::vector<std::string> old_log_disk_names;
     std::vector<std::string> old_snapshot_disk_names;
