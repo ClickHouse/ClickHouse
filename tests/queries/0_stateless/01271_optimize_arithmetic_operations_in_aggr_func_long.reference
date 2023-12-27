@@ -1,8 +1,8 @@
 SELECT
-    sum(n + 1),
-    sum(1 + n),
-    sum(n - 1),
-    sum(1 - n)
+    sum(n) + (1 * count(n)),
+    sum(n) + (1 * count(n)),
+    sum(n) - (1 * count(n)),
+    sum(n) - (1 * count(n))
 FROM
 (
     SELECT number AS n
@@ -59,10 +59,10 @@ FROM
     FROM numbers(10)
 )
 SELECT
-    sum(n + -1),
-    sum(-1 + n),
-    sum(n - -1),
-    sum(-1 - n)
+    sum(n) + (-1 * count(n)),
+    sum(n) + (-1 * count(n)),
+    sum(n) - (-1 * count(n)),
+    sum(n) - (-1 * count(n))
 FROM
 (
     SELECT number AS n
@@ -418,7 +418,7 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-SELECT ((sum(n + 1) + sum(1 + n)) + sum(n - 1)) + sum(1 - n)
+SELECT (((sum(n) + (1 * count(n))) + (sum(n) + (1 * count(n)))) + (sum(n) - (1 * count(n)))) + (sum(n) - (1 * count(n)))
 FROM
 (
     SELECT number AS n
@@ -454,13 +454,13 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-55	55	35	-35
+55	55	35	35
 90	90	22.5	inf
 1	1	-1	-8
 0	0	0	0.1111111111111111
 10	10	8	1
 18	18	4.5	inf
-35	35	55	-55
+35	35	55	55
 -90	-90	-22.5	-inf
 -1	-1	1	-10
 -18	-18	-4.5	-inf
@@ -496,7 +496,7 @@ FROM
 0	0	0	0.1111111111111111
 7	7	9	-2
 18	18	4.5	inf
-110
+180
 inf
 -7
 0.1111111111111111
@@ -505,13 +505,13 @@ inf
 -15444
 68.62157087543459
 243
-55	55	35	-35
+55	55	35	35
 90	90	22.5	inf
 1	1	-1	-8
 0	0	0	0.1111111111111111
 10	10	8	1
 18	18	4.5	inf
-35	35	55	-55
+35	35	55	55
 -90	-90	-22.5	-inf
 -1	-1	1	-10
 -18	-18	-4.5	-inf
@@ -547,7 +547,7 @@ inf
 0	0	0	0.1111111111111111
 7	7	9	-2
 18	18	4.5	inf
-110
+180
 inf
 -7
 0.1111111111111111
