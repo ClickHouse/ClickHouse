@@ -504,7 +504,7 @@ void ReadFromMerge::filterTablesAndCreateChildPlans()
             column_names.push_back(column_name);
     }
 
-    selected_tables = getSelectedTables(context, query_info.query, has_database_virtual_column, has_table_virtual_column);
+    selected_tables = getSelectedTables(context, has_database_virtual_column, has_table_virtual_column);
 
     child_plans = createChildPlans(query_info);
 }
@@ -994,16 +994,9 @@ void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPipelineBuilder & bui
 
 StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     ContextPtr query_context,
-    const ASTPtr & query /* = nullptr */,
-    bool filter_by_database_virtual_column /* = false */,
-    bool filter_by_table_virtual_column /* = false */) const
+    bool filter_by_database_virtual_column,
+    bool filter_by_table_virtual_column) const
 {
-    /// FIXME: filtering does not work with allow_experimental_analyzer due to
-    /// different column names there (it has "table_name._table" not just
-    /// "_table")
-
-    assert(!filter_by_database_virtual_column || !filter_by_table_virtual_column || query);
-
     const Settings & settings = query_context->getSettingsRef();
     StorageListWithLocks res;
     DatabaseTablesIterators database_table_iterators = assert_cast<StorageMerge &>(*storage_merge).getDatabaseIterators(query_context);
@@ -1030,9 +1023,6 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
             if (!storage)
                 continue;
 
-            if (query && query->as<ASTSelectQuery>()->prewhere() && !storage->supportsPrewhere())
-                throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE.", storage->getName());
-
             if (storage.get() != storage_merge.get())
             {
                 auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings.lock_acquire_timeout);
@@ -1045,12 +1035,21 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
         }
     }
 
+    if (!filter_by_database_virtual_column && !filter_by_table_virtual_column)
+        return res;
+
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    if (!filter_actions_dag)
+        return res;
+
+    const auto * predicate = filter_actions_dag->getOutputs().at(0);
+
     if (filter_by_database_virtual_column)
     {
         /// Filter names of selected tables if there is a condition on "_database" virtual column in WHERE clause
         Block virtual_columns_block
             = Block{ColumnWithTypeAndName(std::move(database_name_virtual_column), std::make_shared<DataTypeString>(), "_database")};
-        VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, query_context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, virtual_columns_block, query_context);
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_database");
 
         /// Remove unused databases from the list
@@ -1061,7 +1060,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     {
         /// Filter names of selected tables if there is a condition on "_table" virtual column in WHERE clause
         Block virtual_columns_block = Block{ColumnWithTypeAndName(std::move(table_name_virtual_column), std::make_shared<DataTypeString>(), "_table")};
-        VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, query_context);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, virtual_columns_block, query_context);
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
         /// Remove unused tables from the list

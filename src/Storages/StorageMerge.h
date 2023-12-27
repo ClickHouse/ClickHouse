@@ -287,9 +287,8 @@ private:
 
     StorageMerge::StorageListWithLocks getSelectedTables(
         ContextPtr query_context,
-        const ASTPtr & query = nullptr,
-        bool filter_by_database_virtual_column = false,
-        bool filter_by_table_virtual_column = false) const;
+        bool filter_by_database_virtual_column,
+        bool filter_by_table_virtual_column) const;
 };
 
 }
