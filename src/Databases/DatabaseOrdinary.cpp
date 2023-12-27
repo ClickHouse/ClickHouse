@@ -80,6 +80,10 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     if (!fs::exists(convert_to_replicated_flag_path))
         return;
 
+    if (getUUID() == UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Table engine conversion to replicated is supported only for Atomic databases. Convert your database engine to Atomic first.");
+
     LOG_INFO(log, "Found convert_to_replicated flag for table {}. Will try to change it's engine in metadata to replicated table.", backQuote(qualified_name.getFullName()));
 
     /// Get storage definition
