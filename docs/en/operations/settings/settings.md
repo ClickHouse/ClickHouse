@@ -5147,12 +5147,6 @@ Allows to set default `DEFINER` option while creating a view. [More about SQL se
 
 The default value is `CURRENT_USER`.
 
-## stop_insert_if_fail_to_update_dependent_view
-
-Allows to throw an exception on insert if some of underlying materialized views have failed to propagate the data.
-
-The default value is `true`.
-
 ## max_partition_size_to_drop
 
 Restriction on dropping partitions in query time.

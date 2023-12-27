@@ -435,10 +435,7 @@ Chain buildPushingToViewsChain(
         catch (const Exception & e)
         {
             LOG_ERROR(&Poco::Logger::get("PushingToViews"), "Failed to push block to view {}, {}", view_id, e.message());
-            if (context->getSettingsRef().stop_insert_if_fail_to_update_dependent_view)
-                throw;
-
-            continue;
+            throw;
         }
     }
 

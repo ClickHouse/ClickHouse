@@ -147,7 +147,7 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_mv_3"
 ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT ON $db.test_mv_data FROM $user1"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_4" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 (( $(${CLICKHOUSE_CLIENT} --query "INSERT INTO $db.test_table VALUES ('foo'), ('bar');" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
-(( $(${CLICKHOUSE_CLIENT} --stop_insert_if_fail_to_update_dependent_view 0 --query "INSERT INTO $db.test_table VALUES ('foo'), ('bar');" 2>&1 | grep -c "Failed to push block to view") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+(( $(${CLICKHOUSE_CLIENT} --materialized_views_ignore_errors 0 --query "INSERT INTO $db.test_table VALUES ('foo'), ('bar');" 2>&1 | grep -c "Failed to push block to view") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
 ${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON $db.test_mv_data TO $user1"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_data TO $user1"

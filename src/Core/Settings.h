@@ -844,7 +844,6 @@ class IColumn;
     M(Bool, allow_named_collection_override_by_default, true, "Allow named collections' fields override by default.", 0)\
     M(String, default_view_sql_security, "DEFINER", "Allows to set a default value for SQL SECURITY option when creating view.", 0) \
     M(String, default_view_definer, "CURRENT_USER", "Allows to set a default value for DEFINER option when creating view.", 0) \
-    M(Bool, stop_insert_if_fail_to_update_dependent_view, true, "If true, insert queries will fail if any of the underlying materialized view inserts have failed.", 0) \
     M(Bool, allow_experimental_shared_merge_tree, false, "Only available in ClickHouse Cloud", 0) \
     M(UInt64, cache_warmer_threads, 4, "Only available in ClickHouse Cloud", 0) \
     M(Int64, ignore_cold_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
