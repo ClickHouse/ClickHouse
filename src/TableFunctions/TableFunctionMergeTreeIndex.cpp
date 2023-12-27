@@ -8,6 +8,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Common/escapeForFileName.h>
 
 namespace DB
 {
@@ -16,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 class TableFunctionMergeTreeIndex : public ITableFunction
@@ -74,19 +76,22 @@ void TableFunctionMergeTreeIndex::parseArguments(const ASTPtr & ast_function, Co
     source_table_id = StorageID{database, table};
 }
 
-static std::unordered_set<String> getAllPossibleStreamNames(
-    const MergeTreeDataPartsVector & data_parts, const NameAndTypePair & column)
+static NameSet getAllPossibleStreamNames(
+    const NameAndTypePair & column,
+    const MergeTreeDataPartsVector & data_parts)
 {
-    std::unordered_set<String> all_streams;
+    NameSet all_streams;
+
+    auto main_stream_name = escapeForFileName(column.name);
+    all_streams.insert(Nested::concatenateName(main_stream_name, "mark"));
 
     auto callback = [&](const auto & substream_path)
     {
-        auto subcolumn_name = ISerialization::getSubcolumnNameForStream(substream_path);
-        auto full_name = Nested::concatenateName(column.name, subcolumn_name);
-        all_streams.insert(Nested::concatenateName(full_name, "mark"));
+        auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
+        all_streams.insert(Nested::concatenateName(stream_name, "mark"));
     };
 
-    auto serialization = column.type->getDefaultSerialization();
+    auto serialization = IDataType::getSerialization(column);
     serialization->enumerateStreams(callback);
 
     if (!column.type->supportsSparseSerialization())
@@ -94,8 +99,8 @@ static std::unordered_set<String> getAllPossibleStreamNames(
 
     for (const auto & part : data_parts)
     {
-        serialization = part->getSerialization(column.name);
-        if (serialization->getKind() == ISerialization::Kind::SPARSE)
+        serialization = part->tryGetSerialization(column.name);
+        if (serialization && serialization->getKind() == ISerialization::Kind::SPARSE)
         {
             serialization->enumerateStreams(callback);
             break;
@@ -129,11 +134,16 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
 
         auto data_parts = merge_tree->getDataPartsVectorForInternalUsage();
-        for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+        auto columns_list = Nested::convertToSubcolumns(metadata_snapshot->getColumns().getAllPhysical());
+
+        for (const auto & column : columns_list)
         {
-            auto all_streams = getAllPossibleStreamNames(data_parts, column);
+            auto all_streams = getAllPossibleStreamNames(column, data_parts);
             for (const auto & stream_name : all_streams)
-                columns.add({stream_name, mark_type});
+            {
+                if (!columns.has(stream_name))
+                    columns.add({stream_name, mark_type});
+            }
         }
     }
 

@@ -70,7 +70,7 @@ std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
     auto res = getKeyValueFromAST(ast, true, context);
 
     if (!res || !std::holds_alternative<Field>(res->second))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get key value from ast {}", queryToString(ast));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to get key value from ast {}", queryToString(ast));
 
     return {res->first, std::get<Field>(res->second)};
 }

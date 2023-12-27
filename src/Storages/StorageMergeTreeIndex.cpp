@@ -1,4 +1,5 @@
 
+#include "Common/escapeForFileName.h"
 #include "Storages/MergeTree/MergeTreeData.h"
 #include <Storages/StorageMergeTreeIndex.h>
 #include <Columns/ColumnTuple.h>
@@ -23,7 +24,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -80,12 +80,12 @@ protected:
             }
             else if (column_name == part_name_column.name)
             {
-                auto column = part_name_column.type->createColumnConst(num_rows, part->name);
+                auto column = column_type->createColumnConst(num_rows, part->name);
                 result_columns[pos] = column->convertToFullColumnIfConst();
             }
             else if (column_name == mark_number_column.name)
             {
-                auto column = mark_number_column.type->createColumn();
+                auto column = column_type->createColumn();
                 auto & data = assert_cast<ColumnUInt64 &>(*column).getData();
 
                 data.resize(num_rows);
@@ -95,7 +95,7 @@ protected:
             }
             else if (column_name == rows_in_granule_column.name)
             {
-                auto column = rows_in_granule_column.type->createColumn();
+                auto column = column_type->createColumn();
                 auto & data = assert_cast<ColumnUInt64 &>(*column).getData();
 
                 data.resize(num_rows);
@@ -157,7 +157,8 @@ private:
         }
         else if (isCompactPart(part))
         {
-            if (auto col_idx_opt = part->getColumnPosition(column_name))
+            auto unescaped_name = unescapeForFileName(column_name);
+            if (auto col_idx_opt = part->getColumnPosition(unescaped_name))
             {
                 col_idx = *col_idx_opt;
                 has_marks_in_part = true;
@@ -252,9 +253,11 @@ Pipe StorageMergeTreeIndex::read(
         if (with_marks)
         {
             auto [first, second] = Nested::splitName(column_name, true);
-            if (second == "mark" && storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, first))
+            auto unescaped_name = unescapeForFileName(first);
+
+            if (second == "mark" && storage_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, unescapeForFileName(unescaped_name)))
             {
-                columns_from_storage.push_back(column_name);
+                columns_from_storage.push_back(unescaped_name);
                 continue;
             }
         }
