@@ -2,10 +2,8 @@ import re
 import os
 import logging
 import pytest
-import json
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 from minio.error import S3Error
 from pathlib import Path
 
@@ -33,20 +31,25 @@ node2 = cluster.add_instance(
 
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
-def upload_to_minio(minio_client, bucket_name, local_path, minio_path=''):
+
+def upload_to_minio(minio_client, bucket_name, local_path, minio_path=""):
     local_path = Path(local_path)
     for root, _, files in os.walk(local_path):
         for file in files:
             local_file_path = Path(root) / file
-            minio_object_name = minio_path + str(local_file_path.relative_to(local_path))
+            minio_object_name = minio_path + str(
+                local_file_path.relative_to(local_path)
+            )
 
             try:
-                with open(local_file_path, 'rb') as data:
+                with open(local_file_path, "rb") as data:
                     file_stat = os.stat(local_file_path)
-                    minio_client.put_object(bucket_name, minio_object_name, data, file_stat.st_size)
-                logging.info(f'Uploaded {local_file_path} to {minio_object_name}')
+                    minio_client.put_object(
+                        bucket_name, minio_object_name, data, file_stat.st_size
+                    )
+                logging.info(f"Uploaded {local_file_path} to {minio_object_name}")
             except S3Error as e:
-                logging.error(f'Error uploading {local_file_path}: {e}')
+                logging.error(f"Error uploading {local_file_path}: {e}")
 
 
 @pytest.fixture(scope="module")
@@ -62,7 +65,7 @@ def started_cluster():
 def test_attach_table_from_s3_plain_readonly(started_cluster):
     # Create an atomic DB with mergetree sample data
     node1.query(
-    """
+        """
     create database local_db;
 
     create table local_db.test_table (num UInt32) engine=MergeTree() order by num;
@@ -72,23 +75,31 @@ def test_attach_table_from_s3_plain_readonly(started_cluster):
     )
 
     assert int(node1.query("select num from local_db.test_table limit 1")) == 5
-    
+
     # Copy local MergeTree data into minio bucket
     table_data_path = os.path.join(node1.path, f"database/store")
     minio = cluster.minio_client
-    upload_to_minio(minio, cluster.minio_bucket, table_data_path, "data/disks/disk_s3_plain/store/")
+    upload_to_minio(
+        minio, cluster.minio_bucket, table_data_path, "data/disks/disk_s3_plain/store/"
+    )
 
     # Drop the non-replicated table, we don't need it anymore
-    table_uuid = node1.query("SELECT uuid FROM system.tables WHERE database='local_db' AND table='test_table'").strip()
+    table_uuid = node1.query(
+        "SELECT uuid FROM system.tables WHERE database='local_db' AND table='test_table'"
+    ).strip()
     node1.query("drop table local_db.test_table SYNC;")
 
     # Create a replicated database
-    node1.query("create database s3_plain_test_db ENGINE = Replicated('/test/s3_plain_test_db', 'shard1', 'replica1');")
-    node2.query("create database s3_plain_test_db ENGINE = Replicated('/test/s3_plain_test_db', 'shard1', 'replica2');")
+    node1.query(
+        "create database s3_plain_test_db ENGINE = Replicated('/test/s3_plain_test_db', 'shard1', 'replica1');"
+    )
+    node2.query(
+        "create database s3_plain_test_db ENGINE = Replicated('/test/s3_plain_test_db', 'shard1', 'replica2');"
+    )
 
     # Create a MergeTree table at one node, by attaching the merge tree data
     node1.query(
-    f"""
+        f"""
     attach table s3_plain_test_db.test_table UUID '{table_uuid}' (num UInt32)
     engine=MergeTree()
     order by num
