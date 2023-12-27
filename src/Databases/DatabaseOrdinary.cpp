@@ -71,7 +71,7 @@ static void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, QualifiedTableName 
 
     auto convert_to_replicated_flag_path = fs::path(context->getPath()) / "data" / qualified_name.database / qualified_name.table / "flags" / "convert_to_replicated";
 
-    LOG_INFO(log, "Searching for convert_to_replicated flag at {}.", backQuote(convert_to_replicated_flag_path.string()));
+    LOG_DEBUG(log, "Searching for convert_to_replicated flag at {}.", backQuote(convert_to_replicated_flag_path.string()));
 
     if (!fs::exists(convert_to_replicated_flag_path))
         return;
@@ -119,8 +119,9 @@ static void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, QualifiedTableName 
 
     LOG_INFO(
         log,
-        "Table {} is loaded as replicated. Not removing convert_to_replicated flag until metadata in zookeeper is restored.",
-        backQuote(qualified_name.getFullName()));
+        "Engine of table {} is set to replicated in metadata. Not removing convert_to_replicated flag until table is loaded and metadata in zookeeper is restored.",
+        backQuote(qualified_name.getFullName())
+    );
 }
 
 void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
