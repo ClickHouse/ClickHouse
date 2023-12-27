@@ -44,3 +44,24 @@ SELECT 'Hashed dictionary';
 SELECT dictGetOrDefault('hashed_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), intDiv(1, id)))
 FROM dictionary_source_table;
 DROP DICTIONARY hashed_dictionary;
+
+
+DROP DICTIONARY IF EXISTS hashed_array_dictionary;
+CREATE DICTIONARY hashed_array_dictionary
+(
+    id UInt64,
+    v1 String,
+    v2 Nullable(String) DEFAULT NULL
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'dictionary_source_table'))
+LIFETIME(MIN 0 MAX 0)
+LAYOUT(HASHED_ARRAY());
+
+SELECT 'Hashed array dictionary';
+SELECT dictGetOrDefault('hashed_array_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), intDiv(1, id)))
+FROM dictionary_source_table;
+DROP DICTIONARY hashed_array_dictionary;
+
+
+DROP TABLE dictionary_source_table;

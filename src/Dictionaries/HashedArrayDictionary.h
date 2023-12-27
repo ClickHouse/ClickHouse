@@ -105,6 +105,20 @@ public:
         const DataTypes & key_types,
         const Columns & default_values_columns) const override;
 
+    ColumnPtr getColumnOrDefaultShortCircuit(
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        IColumn::Filter & default_mask) const override;
+
+    Columns getColumnsOrDefaultShortCircuit(
+        const Strings & attribute_names,
+        const DataTypes & attribute_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        IColumn::Filter & default_mask) const override;
+
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::Simple && dict_struct.hierarchical_attribute_index.has_value(); }
@@ -219,6 +233,14 @@ private:
         ColumnPtr default_values_column,
         KeysProvider && keys_object) const;
 
+    template <typename KeysProvider>
+    ColumnPtr getAttributeColumnShortCircuit(
+        const Attribute & attribute,
+        const DictionaryAttribute & dictionary_attribute,
+        size_t keys_size,
+        KeysProvider && keys_object,
+        IColumn::Filter & default_mask) const;
+
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
@@ -226,6 +248,12 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
+    template <typename AttributeType, bool is_nullable, typename ValueSetter>
+    void getItemsShortCircuitImpl(
+        const Attribute & attribute,
+        DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask) const;
 
     using KeyIndexToElementIndex = std::conditional_t<sharded, PaddedPODArray<std::pair<ssize_t, UInt8>>, PaddedPODArray<ssize_t>>;
 
@@ -235,6 +263,13 @@ private:
         const KeyIndexToElementIndex & key_index_to_element_index,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
+
+    template <typename AttributeType, bool is_nullable, typename ValueSetter>
+    void getItemsShortCircuitImpl(
+        const Attribute & attribute,
+        const KeyIndexToElementIndex & key_index_to_element_index,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask [[maybe_unused]]) const;
 
     template <typename GetContainerFunc>
     void getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func);
