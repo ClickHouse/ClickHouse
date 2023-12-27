@@ -1161,9 +1161,9 @@ class TestCase:
                 universal_newlines=True,
             )
             if self.show_whitespaces_in_diff:
-                cat_proc = Popen(["cat", "-te"], stdin=diff_proc.stdout, stdout=PIPE)
+                sed_proc = Popen(["sed", "-e", "s/[ \t]\\+$/&$/g"], stdin=diff_proc.stdout, stdout=PIPE)
                 diff_proc.stdout.close()  # Allow diff to receive a SIGPIPE if cat exits.
-                diff = cat_proc.communicate()[0].decode("utf-8", errors="ignore")
+                diff = sed_proc.communicate()[0].decode("utf-8", errors="ignore")
             else:
                 diff = diff_proc.communicate()[0]
 
@@ -2767,7 +2767,7 @@ def parse_args():
     parser.add_argument(
         "--show-whitespaces-in-diff",
         action="store_true",
-        help="Display TAB characters as ^I and trailing spaces as $ in diff",
+        help="Display $ characters after line with trailing whitespaces in diff output",
     )
 
     group = parser.add_mutually_exclusive_group(required=False)
