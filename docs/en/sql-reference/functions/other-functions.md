@@ -2839,7 +2839,7 @@ Extracts a column with specified type from a `Variant` column.
 **Syntax**
 
 ```sql
-tupleElement(variant, type_name, [, default_value])
+variantElement(variant, type_name, [, default_value])
 ```
 
 **Arguments**
