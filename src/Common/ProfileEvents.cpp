@@ -483,7 +483,7 @@ The server successfully detected this situation and will download merged part fr
     M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
     \
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.") \
-    M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.") \
+    M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were initialiseded as two-level for aggregation.") \
     \
     M(KafkaRebalanceRevocations, "Number of partition revocations (the first stage of consumer group rebalance)") \
     M(KafkaRebalanceAssignments, "Number of partition assignments (the final stage of consumer group rebalance)") \

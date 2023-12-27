@@ -572,6 +572,16 @@ public:
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
+[[ maybe_unused ]] static std::string getHelpHeader()
+{
+    return
+        "Usage: clickhouse benchmark [options] < queries.txt\n"
+        "Usage: clickhouse benchmark [options] --query \"query text\"\n"
+
+        "clickhouse-benchmark connects to ClickHouse server,"
+        " repeatedly sends specified queries and produces reports query statistics.\n";
+}
+
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;
@@ -638,7 +648,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
+            std::cout << getHelpHeader();
             std::cout << desc << "\n";
             return 1;
         }

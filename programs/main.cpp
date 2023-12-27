@@ -78,16 +78,42 @@ int mainEntryClickHouseRestart(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv);
 #endif
 
-int mainEntryClickHouseHashBinary(int, char **)
+bool hasHelpArg (char* arg)
 {
-    /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
+    return (strcmp(arg, "--help") == 0 || (strcmp(arg, "-h") == 0) || (strcmp(arg, "help") == 0));
+}
+
+int mainEntryClickHouseHashBinary(int argc_, char ** argv_)
+{
+    std::vector<char *> argv(argv_, argv_ + argc_);
+    auto it = std::find_if(argv.begin(), argv.end(), hasHelpArg);
+    if (it != argv.end())
+    {
+        std::cout << "Usage: clickhouse hash\nPrints hash of clickhouse binary.\n";
+        std::cout << " -h, --help   Prints this message\n";
+        std::cout << "Result is intentionally without newline. So you can run:\n";
+        std::cout << "objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse.\n\n";
+        std::cout << "Current binary hash: ";
+    }
     std::cout << getHashOfLoadedBinaryHex();
     return 0;
 }
-
 namespace
 {
+
+void printHelp();
+
+int mainEntryHelp(int, char **)
+{
+    printHelp();
+    return 0;
+}
+
+int printHelpOnError(int, char **)
+{
+    printHelp();
+    return -1;
+}
 
 using MainFunc = int (*)(int, char**);
 
@@ -152,6 +178,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_DISKS
     {"disks", mainEntryClickHouseDisks},
 #endif
+    {"help", mainEntryHelp},
 };
 
 /// Add an item here to register a new short name
@@ -166,14 +193,12 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 #endif
 };
 
-int printHelp(int, char **)
+void printHelp()
 {
-    std::cerr << "Use one of the following commands:" << std::endl;
+    std::cout << "Use one of the following commands:" << std::endl;
     for (auto & application : clickhouse_applications)
-        std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
-    return -1;
-}
-#endif
+        std::cout << "clickhouse " << application.first << " [args] " << std::endl;
+};
 
 
 enum class InstructionFail
@@ -491,7 +516,7 @@ int main(int argc_, char ** argv_)
     std::vector<char *> argv(argv_, argv_ + argc_);
 
     /// Print a basic help if nothing was matched
-    MainFunc main_func = printHelp;
+    MainFunc main_func = printHelpOnError;
 
     for (auto & application : clickhouse_applications)
     {

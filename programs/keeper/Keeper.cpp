@@ -147,7 +147,7 @@ int Keeper::run()
                                       "{0} client [OPTION]\n"
 #endif
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      commandName());
+                                      commandName() == "clickhouse-keeper" ? "clickhouse-keeper" : commandName() + " keeper");
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
