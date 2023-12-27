@@ -1,4 +1,5 @@
--- Tags: distributed
+#!/usr/bin/env bash
+# Tags:no-parallel shard
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,7 +39,7 @@ query_countI=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.events WHERE even
 query_countQ=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.events WHERE event = 'Query'")
 
 # Execute SELECT * FROM distributed
-$CLICKHOUSE_CLIENT -q "SELECT * FROM distributed" > /dev/null
+$CLICKHOUSE_CLIENT -q "SELECT * FROM distributed SETTINGS prefer_localhost_replica = 0" > /dev/null
 
 # Counts after SELECT * FROM distributed
 After_query_countI=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.events WHERE event = 'InitialQuery'")
@@ -50,5 +51,3 @@ query_diff=$(($After_query_countQ-$query_countQ-2))
 
 echo "Initial Query Difference: $Initial_query_diff"
 echo "Query Difference: $query_diff"
-
-

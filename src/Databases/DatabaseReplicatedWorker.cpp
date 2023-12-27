@@ -6,7 +6,6 @@
 #include <filesystem>
 
 namespace fs = std::filesystem;
-namespace ProfileEvents
 
 namespace DB
 {
@@ -265,7 +264,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     chassert(!task->entry.query.empty());
     assert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
-    
+
     LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
     UInt64 timeout = query_context->getSettingsRef().database_replicated_initial_query_timeout_sec;
     {
