@@ -19,6 +19,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/parseIntervalKind.h>
+#include <Parsers/Streaming/ParserIntervalAliasExpression.h>
 #include <Common/assert_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 
@@ -2373,6 +2374,20 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         return false;
     }
+}
+
+bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (ParserIntervalAliasExpression().parse(pos, node, expected))
+        return true;
+
+    if (ParserKeyword("INTERVAL").ignore(pos, expected))
+    {
+        auto start = std::make_unique<IntervalLayer>();
+        return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
+    }
+
+    return false;
 }
 
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::operators_table

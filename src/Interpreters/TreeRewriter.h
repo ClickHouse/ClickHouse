@@ -63,6 +63,10 @@ struct TreeRewriterResult
     /// Note: not used further.
     NameToNameMap array_join_name_to_alias;
 
+    bool streaming = true;
+    bool has_group_by = false;
+    bool hasAggregation() const noexcept { return has_group_by || !aggregates.empty(); }
+
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
 

@@ -209,6 +209,13 @@ protected:
     }
 };
 
+class ParserIntervalOperatorExpression : public IParserBase
+{
+protected:
+    const char * getName() const  override { return "INTERVAL operator expression"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /** A comma-separated list of expressions, probably empty. */
 class ParserExpressionList : public IParserBase

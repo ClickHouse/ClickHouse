@@ -1,10 +1,77 @@
 #pragma once
 
+#include <Core/Streaming/Watermark.h>
 #include <Columns/IColumn.h>
 #include <unordered_map>
 
 namespace DB
 {
+
+struct ChunkContext
+{
+    static constexpr UInt64 WATERMARK_FLAG = 0x1;
+    static constexpr UInt64 APPEND_TIME_FLAG = 0x2;
+    static constexpr UInt64 RETRACTED_DATA_FLAG = 0x10;
+    static constexpr UInt64 AVOID_WATERMARK_FLAG = 0x8000'0000'0000'0000;
+
+    /// A pair of Int64, flags represent what they mean
+    Int64 ts_1 = 0;
+    UInt64 flags = 0;
+
+    ALWAYS_INLINE void setMark(UInt64 mark) { flags |= mark; }
+
+    ALWAYS_INLINE explicit operator bool () const { return flags != 0; }
+
+    ALWAYS_INLINE bool hasWatermark() const { return flags & WATERMARK_FLAG; }
+
+    ALWAYS_INLINE void setWatermark(Int64 watermark)
+    {
+        assert(watermark != Streaming::INVALID_WATERMARK);
+        flags |= WATERMARK_FLAG;
+        ts_1 = watermark;
+    }
+
+    ALWAYS_INLINE Int64 getWatermark() const
+    {
+        assert(hasWatermark());
+
+        return ts_1;
+    }
+
+    ALWAYS_INLINE void clearWatermark()
+    {
+        if (hasWatermark())
+        {
+            flags &= ~WATERMARK_FLAG;
+            ts_1 = 0;
+        }
+    }
+
+    ALWAYS_INLINE void setRetractedDataFlag()
+    {
+        flags |= RETRACTED_DATA_FLAG;
+        setAvoidWatermark();
+    }
+
+    ALWAYS_INLINE bool isRetractedData() const { return flags & RETRACTED_DATA_FLAG; }
+
+    ALWAYS_INLINE void setAvoidWatermark() { flags |= AVOID_WATERMARK_FLAG; }
+
+    ALWAYS_INLINE bool avoidWatermark() const { return flags & AVOID_WATERMARK_FLAG; }
+
+    ALWAYS_INLINE bool hasAppendTime() const { return flags & APPEND_TIME_FLAG; }
+    ALWAYS_INLINE void setAppendTime(Int64 append_time)
+    {
+        if (append_time > 0)
+        {
+            flags |= APPEND_TIME_FLAG;
+            ts_1 = append_time;
+        }
+    }
+
+    ALWAYS_INLINE Int64 getAppendTime() const { assert(hasAppendTime()); return ts_1; }
+};
+using ChunkContextPtr = std::shared_ptr<ChunkContext>;
 
 class ChunkInfo
 {
@@ -38,6 +105,7 @@ public:
         : columns(std::move(other.columns))
         , num_rows(other.num_rows)
         , chunk_info(std::move(other.chunk_info))
+        , chunk_ctx(std::move(other.chunk_ctx))
     {
         other.num_rows = 0;
     }
@@ -52,6 +120,7 @@ public:
     {
         columns = std::move(other.columns);
         chunk_info = std::move(other.chunk_info);
+        chunk_ctx = std::move(other.chunk_ctx);
         num_rows = other.num_rows;
         other.num_rows = 0;
         return *this;
@@ -63,6 +132,7 @@ public:
     {
         columns.swap(other.columns);
         chunk_info.swap(other.chunk_info);
+        chunk_ctx.swap(other.chunk_ctx);
         std::swap(num_rows, other.num_rows);
     }
 
@@ -71,6 +141,7 @@ public:
         num_rows = 0;
         columns.clear();
         chunk_info.reset();
+        chunk_ctx.reset();
     }
 
     const Columns & getColumns() const { return columns; }
@@ -104,10 +175,58 @@ public:
     void append(const Chunk & chunk);
     void append(const Chunk & chunk, size_t from, size_t length); // append rows [from, from+length) of chunk
 
+    bool hasWatermark() const { return chunk_ctx && chunk_ctx->hasWatermark(); }
+    bool hasChunkContext() const { return chunk_ctx && chunk_ctx->operator bool(); }
+    void setChunkContext(ChunkContextPtr chunk_ctx_) { chunk_ctx = std::move(chunk_ctx_); }
+    ChunkContextPtr getChunkContext() const { return chunk_ctx; }
+
+    ChunkContextPtr getOrCreateChunkContext()
+    {
+        if (chunk_ctx)
+            return chunk_ctx;
+
+        setChunkContext(std::make_shared<ChunkContext>());
+
+        return chunk_ctx;
+    }
+
+
+    Int64 getWatermark() const
+    {
+        assert(chunk_ctx);
+        return chunk_ctx->getWatermark();
+    }
+
+    void reserve(size_t num_columns)
+    {
+        columns.reserve(num_columns);
+    }
+
+    bool isRetractedData() const
+    {
+        return chunk_ctx && chunk_ctx->isRetractedData();
+    }
+
+    bool avoidWatermark() const
+    {
+        return chunk_ctx && chunk_ctx->avoidWatermark();
+    }
+
+    void clearWatermark() const
+    {
+        if (chunk_ctx)
+            chunk_ctx->clearWatermark();
+    }
+
+    /// Dummy interface to make RefCountBlockList happy
+    Int64 minTimestamp() const { return 0; }
+    Int64 maxTimestamp() const { return 0;}
+
 private:
     Columns columns;
     UInt64 num_rows = 0;
     ChunkInfoPtr chunk_info;
+    ChunkContextPtr chunk_ctx;
 
     void checkNumRowsIsConsistent();
 };

@@ -360,11 +360,13 @@ Pipe StorageKafka::read(
     if (shutdown_called)
         throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
-    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
+    /// We allow (ad-hoc) streaming query always
+    bool is_streaming_query = (local_context->getSettingsRef().allow_experimental_streaming_query_mode.value == "streaming");
+    if (!is_streaming_query && !local_context->getSettingsRef().stream_like_engine_allow_direct_select)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
                         "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 
-    if (mv_attached)
+    if (!is_streaming_query && mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
 
     ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
@@ -581,10 +583,16 @@ KafkaConsumerPtr StorageKafka::createKafkaConsumer(size_t consumer_number)
 
 cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number)
 {
+    return createConsumer(consumer_number, group);
+}
+
+
+KafkaConsumerPtr StorageKafka::createConsumer(size_t consumer_number, String consumer_group)
+{
     cppkafka::Configuration conf;
 
     conf.set("metadata.broker.list", brokers);
-    conf.set("group.id", group);
+    conf.set("group.id", consumer_group);
     if (num_consumers > 1)
     {
         conf.set("client.id", fmt::format("{}-{}", client_id, consumer_number));

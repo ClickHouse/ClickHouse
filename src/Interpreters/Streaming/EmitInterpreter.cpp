@@ -1,0 +1,28 @@
+#include <Interpreters/Streaming/EmitInterpreter.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/Streaming/ASTEmitQuery.h>
+#include <Interpreters/Streaming/WindowCommon.h>
+
+namespace DB
+{
+namespace Streaming
+{
+
+void EmitInterpreter::checkEmitAST(ASTPtr & query)
+{
+    auto * select_query = query->as<ASTSelectQuery>();
+    if (!select_query)
+        return;
+
+    auto emit_query = select_query->emit();
+    if (!emit_query)
+        return;
+
+    auto * emit = emit_query->as<ASTEmitQuery>();
+    assert(emit);
+
+    if (emit->periodic_interval)
+        checkIntervalAST(emit->periodic_interval, "Invalid EMIT PERIODIC interval");
+}
+}
+}

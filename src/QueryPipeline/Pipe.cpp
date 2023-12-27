@@ -6,14 +6,13 @@
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/ExtremesTransform.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
 
 #include <QueryPipeline/printPipeline.h>
+#include <Processors/Streaming/ResizeProcessor.h>
 
 namespace DB
 {
@@ -21,6 +20,22 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+ProcessorPtr getStreamingResizeProcessor(const Block & header, size_t from_num_streams, size_t to_num_streams)
+{
+    if (from_num_streams == to_num_streams)
+        return std::make_shared<Streaming::StrictResizeProcessor>(header, to_num_streams);
+    else if (to_num_streams == 1)
+        return std::make_shared<Streaming::ShrinkResizeProcessor>(header, from_num_streams);
+    else if (from_num_streams == 1)
+        return std::make_shared<Streaming::ExpandResizeProcessor>(header, to_num_streams);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Don't support resize combination from {} to {}", from_num_streams, to_num_streams);
+}
 }
 
 static void checkSource(const IProcessor & source)
@@ -686,6 +701,9 @@ void Pipe::addChains(std::vector<Chain> chains)
 
 void Pipe::resize(size_t num_streams, bool force, bool strict)
 {
+    if (isStreaming())
+        return resizeStreaming(num_streams, force);
+
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot resize an empty Pipe");
 
@@ -842,5 +860,17 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
 
+void Pipe::resizeStreaming(size_t num_streams, bool force)
+{
+    assert(isStreaming());
+    if (output_ports.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot resize an empty Pipe");
+
+    ProcessorPtr resize;
+    if (num_streams == numOutputPorts() && !force)
+        return;
+
+    addTransform(getStreamingResizeProcessor(getHeader(), numOutputPorts(), num_streams));
+}
 
 }

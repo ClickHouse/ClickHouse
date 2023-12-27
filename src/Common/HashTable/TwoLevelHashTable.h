@@ -2,6 +2,7 @@
 
 #include <Common/HashTable/HashTable.h>
 
+#include <numeric>
 
 /** Two-level hash table.
   * Represents 256 (or 1ULL << BITS_FOR_BUCKET) small hash tables (buckets of the first level).
@@ -344,5 +345,12 @@ public:
             res += impls[i].getBufferSizeInBytes();
 
         return res;
+    }
+
+    std::vector<size_t> getBucketIds() const
+    {
+        std::vector<size_t> bucket_ids(NUM_BUCKETS);
+        std::iota(bucket_ids.begin(), bucket_ids.end(), 0);
+        return bucket_ids;
     }
 };

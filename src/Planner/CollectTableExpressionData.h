@@ -21,4 +21,8 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
   */
 void collectSourceColumns(QueryTreeNodePtr & expression_node, PlannerContextPtr & planner_context);
 
+/**
+ * Collects table expression data for streaming storage.
+*/
+void collectStreamingStorage(QueryTreeNodePtr & node, PlannerContextPtr & planner_context);
 }

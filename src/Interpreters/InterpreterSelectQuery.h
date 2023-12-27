@@ -116,6 +116,9 @@ public:
 
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
 
+    bool isStreamingQuery() const override;
+    bool hasStreamingGlobalAggregation() const override;
+
     static void addEmptySourceToQueryPlan(
         QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, const ContextPtr & context_);
 
@@ -200,6 +203,11 @@ private:
     /// Check if we can limit block size to read based on LIMIT clause
     UInt64 maxBlockSizeByLimit() const;
 
+    void executeStreamingAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final);
+    void checkAggregateAndWindowFunctions();
+    void buildWatermarkQueryPlan(QueryPlan & query_plan) const;
+    void buildStreamingProcessingQueryPlanAfterJoin(QueryPlan & query_plan);
+
     enum class Modificator
     {
         ROLLUP = 0,
@@ -238,6 +246,8 @@ private:
     Names required_columns;
     /// Structure of query source (table, subquery, etc).
     Block source_header;
+
+    mutable std::optional<bool> is_streaming_query;
 
     /// Actions to calculate ALIAS if required.
     ActionsDAGPtr alias_actions;

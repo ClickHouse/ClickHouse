@@ -44,10 +44,12 @@ KafkaSource::KafkaSource(
     , log(log_)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
+    , header_chunk(storage_snapshot_->getSampleBlockForColumns(columns).getColumns(), 0)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
     , virtual_header(storage_snapshot->getSampleBlockForColumns(storage.getVirtualColumnNames()))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
 {
+    setStreaming(context->getSettingsRef().allow_experimental_streaming_query_mode.value == "streaming");
 }
 
 KafkaSource::~KafkaSource()
@@ -58,7 +60,8 @@ KafkaSource::~KafkaSource()
     if (broken)
         consumer->unsubscribe();
 
-    storage.pushConsumer(consumer);
+    if (!isStreaming())
+        storage.pushConsumer(consumer);
 }
 
 bool KafkaSource::checkTimeLimit() const
@@ -78,8 +81,15 @@ Chunk KafkaSource::generateImpl()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
-        consumer = storage.popConsumer(timeout);
+        if (isStreaming())
+        {
+            consumer = storage.createConsumer(0, context->getCurrentQueryId());
+        }
+        else
+        {
+            auto timeout = std::chrono::milliseconds(context->getSettingsRef().kafka_max_wait_ms.totalMilliseconds());
+            consumer = storage.popConsumer(timeout);
+        }
 
         if (!consumer)
             return {};
@@ -92,7 +102,9 @@ Chunk KafkaSource::generateImpl()
     if (is_finished)
         return {};
 
-    is_finished = true;
+    if (!isStreaming())
+        is_finished = true;
+
     // now it's one-time usage InputStream
     // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
     // otherwise external iteration will reuse that and logic will became even more fuzzy
@@ -144,7 +156,7 @@ Chunk KafkaSource::generateImpl()
     {
         size_t new_rows = 0;
         exception_message.reset();
-        if (auto buf = consumer->consume())
+        if (auto buf = consumer->consume(isStreaming()))
         {
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
             new_rows = executor.execute(*buf);
@@ -238,6 +250,9 @@ Chunk KafkaSource::generateImpl()
             LOG_DEBUG(log, "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.", consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
         }
 
+        if (isStreaming())
+            break;
+
         if (!consumer->hasMorePolledMessages()
             && (total_rows >= max_block_size || !checkTimeLimit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
@@ -247,7 +262,10 @@ Chunk KafkaSource::generateImpl()
 
     if (total_rows == 0)
     {
-        return {};
+        if (isStreaming())
+            return header_chunk.clone();
+        else
+            return {};
     }
     else if (consumer->polledDataUnusable())
     {

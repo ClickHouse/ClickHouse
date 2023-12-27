@@ -78,4 +78,8 @@ private:
     std::set<std::string> used_row_policies;
 };
 
+PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
+    const SelectQueryOptions & select_query_options,
+    GlobalPlannerContextPtr global_planner_context);
+
 }

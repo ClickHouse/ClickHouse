@@ -45,6 +45,8 @@ public:
 
     bool noPushingToViews() const override { return true; }
 
+    bool supportsStreamingQuery() const override { return true; }
+
     void startup() override;
     void shutdown(bool is_drop) override;
 
@@ -69,6 +71,8 @@ public:
     void pushConsumer(KafkaConsumerPtr consumer);
     KafkaConsumerPtr popConsumer();
     KafkaConsumerPtr popConsumer(std::chrono::milliseconds timeout);
+
+    KafkaConsumerPtr createConsumer(size_t consumer_number, String consumer_group);
 
     const auto & getFormatName() const { return format_name; }
 

@@ -410,4 +410,24 @@ void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & e
     }
 }
 
+bool InterpreterSelectWithUnionQuery::isStreamingQuery() const
+{
+    for (const auto & interpreter : nested_interpreters)
+    {
+        if (interpreter->isStreamingQuery())
+            return true;
+    }
+    return false;
+}
+
+bool InterpreterSelectWithUnionQuery::hasStreamingGlobalAggregation() const
+{
+    for (const auto & interpreter : nested_interpreters)
+    {
+        if (interpreter->hasStreamingGlobalAggregation())
+            return true;
+    }
+    return false;
+}
+
 }

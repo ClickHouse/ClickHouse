@@ -598,6 +598,9 @@ public:
     std::atomic<bool> is_detached{false};
     std::atomic<bool> is_being_restarted{false};
 
+    /// Does table support incremental streaming processing
+    virtual bool supportsStreamingQuery() const { return false; }
+
     /// Does table support index for IN sections
     virtual bool supportsIndexForIn() const { return false; }
 

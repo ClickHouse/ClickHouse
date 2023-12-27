@@ -31,6 +31,7 @@ public:
         LIMIT_BY,
         LIMIT_OFFSET,
         LIMIT_LENGTH,
+        EMIT,
         SETTINGS,
         INTERPOLATE
     };
@@ -67,6 +68,8 @@ public:
                 return "LIMIT OFFSET";
             case Expression::LIMIT_LENGTH:
                 return "LIMIT LENGTH";
+            case Expression::EMIT:
+                return "EMIT";
             case Expression::SETTINGS:
                 return "SETTINGS";
             case Expression::INTERPOLATE:
@@ -110,6 +113,7 @@ public:
     ASTPtr limitBy()        const { return getExpression(Expression::LIMIT_BY); }
     ASTPtr limitOffset()    const { return getExpression(Expression::LIMIT_OFFSET); }
     ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
+    ASTPtr emit()           const { return getExpression(Expression::EMIT); }
     ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
     ASTPtr interpolate()    const { return getExpression(Expression::INTERPOLATE); }
 

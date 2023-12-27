@@ -41,6 +41,7 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::ARRAY_JOIN: return "ARRAY_JOIN";
         case QueryTreeNodeType::JOIN: return "JOIN";
         case QueryTreeNodeType::UNION: return "UNION";
+        case QueryTreeNodeType::EMIT: return "EMIT";
     }
 }
 

@@ -20,6 +20,9 @@ DataStream ITransformingStep::createOutputStream(
 {
     DataStream output_stream{.header = std::move(output_header)};
 
+    /// Propagate streaming flag to output stream
+    output_stream.is_streaming = input_stream.is_streaming;
+
     output_stream.has_single_port = stream_traits.returns_single_stream
                                      || (input_stream.has_single_port && stream_traits.preserves_number_of_streams);
 

@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 static Block getCommonHeader(const Blocks & headers)
@@ -210,4 +211,23 @@ void InterpreterSelectIntersectExceptQuery::extendQueryLogElemImpl(QueryLogEleme
     }
 }
 
+bool InterpreterSelectIntersectExceptQuery::isStreamingQuery() const
+{
+    for (const auto & interpreter : nested_interpreters)
+    {
+        if (interpreter->isStreamingQuery())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Intersect is not supported in streaming query");
+    }
+    return false;
+}
+
+bool InterpreterSelectIntersectExceptQuery::hasStreamingGlobalAggregation() const
+{
+    for (const auto & interpreter : nested_interpreters)
+    {
+        if (interpreter->hasStreamingGlobalAggregation())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Intersect is not supported in streaming query");
+    }
+    return false;
+}
 }

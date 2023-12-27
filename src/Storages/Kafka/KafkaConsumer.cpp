@@ -15,6 +15,8 @@
 #include <Common/ProfileEvents.h>
 #include <base/defines.h>
 
+#include <Common/Exception.h>
+
 namespace CurrentMetrics
 {
     extern const Metric KafkaAssignedPartitions;
@@ -38,6 +40,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMMIT_OFFSET;
+    extern const int FAILED_TO_POLL_MESSAGE;
 }
 
 using namespace std::chrono_literals;
@@ -403,7 +406,7 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
 }
 
 // it do the poll when needed
-ReadBufferPtr KafkaConsumer::consume()
+ReadBufferPtr KafkaConsumer::consume(bool is_streaming)
 {
     resetIfStopped();
 
@@ -465,6 +468,9 @@ ReadBufferPtr KafkaConsumer::consume()
                 }
                 else
                 {
+                    if (is_streaming)
+                        throw Exception(ErrorCodes::FAILED_TO_POLL_MESSAGE, "Can't get kafka assignment.");
+
                     LOG_WARNING(log, "Can't get assignment. Will keep trying.");
                     stalled_status = NO_ASSIGNMENT;
                     return nullptr;
@@ -483,6 +489,11 @@ ReadBufferPtr KafkaConsumer::consume()
         }
         else
         {
+            if (is_streaming
+                && new_messages.size() == 1
+                && new_messages[0].get_error() == RD_KAFKA_RESP_ERR_UNKNOWN_TOPIC_OR_PART)
+                throw Exception(ErrorCodes::FAILED_TO_POLL_MESSAGE, "Unknown topic or partition.");
+
             messages = std::move(new_messages);
             current = messages.begin();
             LOG_TRACE(log, "Polled batch of {} messages. Offsets position: {}",

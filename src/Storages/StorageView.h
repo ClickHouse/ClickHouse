@@ -26,6 +26,8 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
 
+    bool isStreamingQuery(ContextPtr query_context) const;
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,

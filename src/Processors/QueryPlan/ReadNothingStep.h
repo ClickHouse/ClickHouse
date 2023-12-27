@@ -8,7 +8,7 @@ namespace DB
 class ReadNothingStep : public ISourceStep
 {
 public:
-    explicit ReadNothingStep(Block output_header);
+    explicit ReadNothingStep(Block output_header, bool is_streaming = false);
 
     String getName() const override { return "ReadNothing"; }
 

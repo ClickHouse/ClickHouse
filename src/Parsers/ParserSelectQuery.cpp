@@ -14,6 +14,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/Streaming/ParserEmitQuery.h>
 #include <Poco/String.h>
 
 
@@ -51,6 +52,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_window("WINDOW");
     ParserKeyword s_order_by("ORDER BY");
     ParserKeyword s_limit("LIMIT");
+    ParserKeyword s_emit("EMIT");
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_by("BY");
     ParserKeyword s_rollup("ROLLUP");
@@ -95,6 +97,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr limit_offset;
     ASTPtr limit_length;
     ASTPtr top_length;
+    ASTPtr emit;
     ASTPtr settings;
 
     /// WITH expr_list
@@ -472,6 +475,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!order_expression_list && select_query->limit_with_ties)
         throw Exception(ErrorCodes::WITH_TIES_WITHOUT_ORDER_BY, "Can not use WITH TIES without ORDER BY");
 
+    if (s_emit.ignore(pos, expected))
+    {
+        ParserEmitQuery parser_emit(true);
+        if (!parser_emit.parse(pos, emit, expected))
+            return false;
+    }
+
     /// SETTINGS key1 = value1, key2 = value2, ...
     if (s_settings.ignore(pos, expected))
     {
@@ -495,6 +505,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, std::move(limit_by_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(limit_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
+    select_query->setExpression(ASTSelectQuery::Expression::EMIT, std::move(emit));
     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings));
     select_query->setExpression(ASTSelectQuery::Expression::INTERPOLATE, std::move(interpolate_expression_list));
     return true;

@@ -109,6 +109,22 @@ public:
 
     std::shared_ptr<Processors> getProcessorsPtr() { return processors; }
 
+    bool isStreaming() const
+    {
+        if (!output_ports.empty())
+            return std::any_of(output_ports.begin(), output_ports.end(), [](const auto * output)
+            {
+                assert(output);
+                return output->getProcessor().isStreaming();
+            });
+        else
+            /// Check if the last sink processor is streaming, when a query is streaming, the last sink
+            /// processor will be set to streaming.
+            return !processors->empty() ? processors->back()->isStreaming() : false;
+    }
+
+    void resizeStreaming(size_t num_streams, bool force = false);
+
 private:
     /// Header is common for all output below.
     Block header;

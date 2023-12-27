@@ -50,6 +50,9 @@ public:
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
 
+    bool isStreamingQuery() const override;
+    bool hasStreamingGlobalAggregation() const override;
+
 private:
     std::vector<std::unique_ptr<IInterpreterUnionOrSelectQuery>> nested_interpreters;
 

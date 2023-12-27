@@ -13,7 +13,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/FunctionParameterValuesVisitor.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -41,7 +40,9 @@
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
-
+#include <Interpreters/GetAggregatesVisitor.h>
+#include <Interpreters/Streaming/EmitInterpreter.h>
+#include <Interpreters/Streaming/Aggregator.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -66,6 +67,9 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Streaming/WatermarkStep.h>
+#include <Processors/QueryPlan/Streaming/AggregatingStep.h>
+#include <Processors/Transforms/Streaming/WatermarkStamper.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -82,7 +86,6 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
-#include <Functions/IFunction.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -429,6 +432,23 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         RewriteUniqToCountMatcher::Data data_rewrite_uniq_count;
         RewriteUniqToCountVisitor(data_rewrite_uniq_count).visit(query_ptr);
     }
+    /// FIXME: seems a simple function can checking Emit AST (Or a Visitor)
+    /// Try to process the streaming query extension grammar.
+    /// we need to process before table storage generation (maybe has table function)
+    if (auto emit = getSelectQuery().emit())
+    {
+        Streaming::EmitInterpreter::handleRules(query_ptr, Streaming::EmitInterpreter::checkEmitAST);
+
+        /// After handling, update setting for context.
+        if (getSelectQuery().settings())
+            InterpreterSetQuery(getSelectQuery().settings(), context).executeForCurrentContext();
+    }
+
+    if (settings.optimize_uniq_to_count)
+    {
+        RewriteUniqToCountMatcher::Data data_rewrite_uniq_count;
+        RewriteUniqToCountVisitor(data_rewrite_uniq_count).visit(query_ptr);
+    }
 
     JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
 
@@ -613,14 +633,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
         }
 
+        TreeRewriterResult tree_rewriter_result(source_header.getNamesAndTypesList(), storage, storage_snapshot);
+        tree_rewriter_result.streaming = isStreamingQuery();
+
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,
-            TreeRewriterResult(source_header.getNamesAndTypesList(), storage, storage_snapshot),
+            std::move(tree_rewriter_result),
             options,
             joined_tables.tablesWithColumns(),
             required_result_column_names,
             table_join);
-
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         context->setDistributed(syntax_analyzer_result->is_remote_storage);
@@ -779,6 +801,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// Calculate structure of the result.
         result_header = getSampleBlockImpl();
     };
+
+    checkAggregateAndWindowFunctions();
 
     analyze(shouldMoveToPrewhere());
 
@@ -1483,7 +1507,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
     if (options.only_analyze)
     {
-        auto read_nothing = std::make_unique<ReadNothingStep>(source_header);
+        /// Propagate streaming flag to NullSource
+        auto read_nothing = std::make_unique<ReadNothingStep>(source_header, isStreamingQuery());
         query_plan.addStep(std::move(read_nothing));
 
         if (expressions.filter_info)
@@ -1787,6 +1812,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     query_plan.unitePlans(std::move(join_step), {std::move(plans)});
                 }
             }
+
+            /// Build some streaming processing steps after joined multiples streams
+            buildStreamingProcessingQueryPlanAfterJoin(query_plan);
 
             if (!query_info.projection && expressions.hasWhere())
                 executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter);
@@ -2353,6 +2381,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
     const Settings & settings = context->getSettingsRef();
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
+        && !syntax_analyzer_result->streaming
         && (max_parallel_replicas <= 1)
         && !settings.allow_experimental_query_deduplication
         && !settings.empty_result_for_aggregation_by_empty_set
@@ -2708,9 +2737,10 @@ static Aggregator::Params getAggregatorParams(
     };
 }
 
-static GroupingSetsParamsList getAggregatorGroupingSetsParams(const SelectQueryExpressionAnalyzer & query_analyzer, const Names & all_keys)
+template<typename T>
+static T getAggregatorGroupingSetsParams(const SelectQueryExpressionAnalyzer & query_analyzer, const Names & all_keys)
 {
-    GroupingSetsParamsList result;
+    T result;
     if (query_analyzer.useGroupingSetKey())
     {
         auto const & aggregation_keys_list = query_analyzer.aggregationKeysList();
@@ -2734,6 +2764,12 @@ static GroupingSetsParamsList getAggregatorGroupingSetsParams(const SelectQueryE
 
 void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
+    if (isStreamingQuery())
+    {
+        executeStreamingAggregation(query_plan, expression, overflow_row, final);
+        return;
+    }
+
     auto expression_before_aggregation = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
     expression_before_aggregation->setStepDescription("Before GROUP BY");
     query_plan.addStep(std::move(expression_before_aggregation));
@@ -2758,7 +2794,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         settings.group_by_two_level_threshold,
         settings.group_by_two_level_threshold_bytes);
 
-    auto grouping_sets_params = getAggregatorGroupingSetsParams(*query_analyzer, keys);
+    auto grouping_sets_params = getAggregatorGroupingSetsParams<GroupingSetsParamsList>(*query_analyzer, keys);
 
     SortDescription group_by_sort_description;
     SortDescription sort_description_for_merging;
@@ -3010,6 +3046,9 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 
 void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfoPtr input_sorting_info)
 {
+    if (isStreamingQuery())
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Sorting in streaming query is not supported");
+
     auto & query = getSelectQuery();
     SortDescription output_order_descr = getSortDescription(query, context);
     UInt64 limit = getLimitForSorting(query, context);
@@ -3304,6 +3343,10 @@ void InterpreterSelectQuery::initSettings()
         context->setSetting("group_by_two_level_threshold_bytes", Field(0));
 
     }
+
+    if (query.emit())
+        /// Setup request query mode as streaming
+        context->setSetting("allow_experimental_streaming_query_mode", Field("streaming"));
 }
 
 bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
@@ -3315,5 +3358,134 @@ bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
     return result;
 }
 
+void InterpreterSelectQuery::executeStreamingAggregation(
+    QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final)
+{
+    assert(isStreamingQuery());
 
+    auto expression_before_aggregation = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
+    expression_before_aggregation->setStepDescription("Before GROUP BY");
+    query_plan.addStep(std::move(expression_before_aggregation));
+
+    if (options.is_projection_query)
+        return;
+
+    auto streaming_group_by = Streaming::Aggregator::Params::GroupBy::OTHER;
+
+    const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
+    const auto & keys = query_analyzer->aggregationKeys().getNames();
+
+    AggregateDescriptions aggregates = query_analyzer->aggregates();
+
+    const Settings & settings = context->getSettingsRef();
+
+    Streaming::Aggregator::Params params(
+        header_before_aggregation,
+        keys,
+        aggregates,
+        overflow_row,
+        settings.max_rows_to_group_by,
+        settings.group_by_overflow_mode,
+        settings.group_by_two_level_threshold,
+        settings.group_by_two_level_threshold_bytes,
+        settings.max_bytes_before_external_group_by,
+        settings.empty_result_for_aggregation_by_empty_set
+            || (settings.empty_result_for_aggregation_by_constant_keys_on_empty_set && keys.empty()
+                && query_analyzer->hasConstAggregationKeys()),
+        context->getGlobalTemporaryVolume(),
+        settings.max_threads,
+        settings.min_free_disk_space_for_temporary_data,
+        settings.compile_aggregate_expressions,
+        settings.min_count_to_compile_aggregate_expression,
+        {},
+        true,
+        streaming_group_by);
+
+    auto merge_threads = max_streams;
+    auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
+        ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+        : static_cast<size_t>(settings.max_threads);
+
+    query_plan.addStep(std::make_unique<Streaming::AggregatingStep>(
+        query_plan.getCurrentDataStream(), params, final, merge_threads, temporary_data_merge_threads));
+}
+
+bool InterpreterSelectQuery::isStreamingQuery() const
+{
+    if (context->getSettingsRef().allow_experimental_streaming_query_mode.value != "streaming")
+        return false;
+
+    if (is_streaming_query.has_value())
+        return *is_streaming_query;
+
+    bool streaming = false;
+    if (storage)
+    {
+        if (auto * view = storage->as<StorageView>(); view)
+            streaming = view->isStreamingQuery(context);
+        else if (storage->supportsStreamingQuery())
+            streaming = context->getSettingsRef().allow_experimental_streaming_query_mode.value == "streaming";
+    }
+    else if (interpreter_subquery)
+    {
+        /// We already setup query mode in context settings before init `interpreter_subquery`,
+        /// so the allow_experimental_streaming_query_mode will be propagated to subquery correctly.
+        streaming = interpreter_subquery->isStreamingQuery();
+    }
+
+    is_streaming_query = streaming;
+
+    return streaming;
+}
+
+bool InterpreterSelectQuery::hasStreamingGlobalAggregation() const
+{
+    /// For now, we only support global aggregation. Once we have window table function
+    /// we will extend the check and support window aggregation.
+    return isStreamingQuery() && hasAggregation();
+}
+
+void InterpreterSelectQuery::buildWatermarkQueryPlan(QueryPlan & query_plan) const
+{
+    assert(isStreamingQuery());
+    auto params = std::make_shared<Streaming::WatermarkStamperParams>(query_info.query, context, !query_info.syntax_analyzer_result->aggregates.empty(), query_info.syntax_analyzer_result->has_group_by);
+    query_plan.addStep(std::make_unique<Streaming::WatermarkStep>(query_plan.getCurrentDataStream(), std::move(params), log));
+}
+
+void InterpreterSelectQuery::buildStreamingProcessingQueryPlanAfterJoin(QueryPlan & query_plan)
+{
+    if (!isStreamingQuery())
+        return;
+
+    if (!hasStreamingGlobalAggregation())
+        return;
+
+    /// An optimizing path, skip duplicate periodic watermark.
+    /// But if there is join query, we must establish new periodic watermark for joined data
+    if (!analysis_result.hasJoin())
+    {
+        /// nested global aggregation
+        if (interpreter_subquery && interpreter_subquery->hasStreamingGlobalAggregation())
+            return;
+    }
+
+    /// Build global periodic watermark
+    buildWatermarkQueryPlan(query_plan);
+}
+
+void InterpreterSelectQuery::checkAggregateAndWindowFunctions()
+{
+    /// Prepare streaming version of the functions
+    bool streaming = isStreamingQuery();
+    if (!streaming)
+        return;
+
+    /// Prepare streaming window functions
+    GetAggregatesVisitor::Data data;
+    GetAggregatesVisitor(data).visit(query_ptr);
+
+    if (!data.aggregates.empty() && !data.window_functions.empty())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Window over aggregation is not compatible with non-window over aggregation in the same query");
+}
 }

@@ -236,6 +236,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getOffset()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
+    if (hasEmit())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "EMIT\n";
+        getEmit()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
     if (hasSettingsChanges())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
@@ -394,6 +400,9 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (hasOffset())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST(options));
+
+    if (hasEmit())
+        select_query->setExpression(ASTSelectQuery::Expression::EMIT, getEmit()->toAST(options));
 
     if (hasSettingsChanges())
     {

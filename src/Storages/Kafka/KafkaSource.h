@@ -49,6 +49,8 @@ private:
     bool is_finished = false;
     bool commit_in_suffix;
 
+    Chunk header_chunk;
+
     const Block non_virtual_header;
     const Block virtual_header;
     const StreamingHandleErrorMode handle_error_mode;
