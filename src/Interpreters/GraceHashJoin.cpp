@@ -271,7 +271,7 @@ GraceHashJoin::GraceHashJoin(
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(std::make_unique<TemporaryDataOnDisk>(tmp_data_, CurrentMetrics::TemporaryFilesForJoin))
-    , hash_join(makeInMemoryJoin())
+    , hash_join(makeInMemoryJoin("grace0"))
     , hash_join_sample_block(hash_join->savedBlockSample())
 {
     if (!GraceHashJoin::isSupported(table_join))
@@ -424,8 +424,10 @@ void GraceHashJoin::initialize(const Block & sample_block)
 {
     left_sample_block = sample_block.cloneEmpty();
     output_sample_block = left_sample_block.cloneEmpty();
-    ExtraBlockPtr not_processed;
+    ExtraBlockPtr not_processed = nullptr;
     hash_join->joinBlock(output_sample_block, not_processed);
+    if (not_processed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled not processed block in GraceHashJoin");
     initBuckets();
 }
 
@@ -447,9 +449,6 @@ void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_p
     block = std::move(blocks[current_bucket->idx]);
 
     hash_join->joinBlock(block, not_processed);
-    if (not_processed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled not processed block in GraceHashJoin");
-
     flushBlocksToBuckets<JoinTableSide::Left>(blocks, buckets);
 }
 
@@ -528,6 +527,29 @@ public:
 
     Block nextImpl() override
     {
+        ExtraBlockPtr not_processed = nullptr;
+
+        {
+            std::lock_guard lock(extra_block_mutex);
+            if (!not_processed_blocks.empty())
+            {
+                not_processed = std::move(not_processed_blocks.front());
+                not_processed_blocks.pop_front();
+            }
+        }
+
+        if (not_processed)
+        {
+            Block block = std::move(not_processed->block);
+            hash_join->joinBlock(block, not_processed);
+            if (not_processed)
+            {
+                std::lock_guard lock(extra_block_mutex);
+                not_processed_blocks.emplace_back(std::move(not_processed));
+            }
+            return block;
+        }
+
         Block block;
         size_t num_buckets = buckets.size();
         size_t current_idx = buckets[current_bucket]->idx;
@@ -565,12 +587,12 @@ public:
             }
         } while (block.rows() == 0);
 
-        ExtraBlockPtr not_processed;
         hash_join->joinBlock(block, not_processed);
-
         if (not_processed)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported hash join type");
-
+        {
+            std::lock_guard lock(extra_block_mutex);
+            not_processed_blocks.emplace_back(std::move(not_processed));
+        }
         return block;
     }
 
@@ -582,6 +604,9 @@ public:
 
     Names left_key_names;
     Names right_key_names;
+
+    std::mutex extra_block_mutex;
+    std::list<ExtraBlockPtr> not_processed_blocks TSA_GUARDED_BY(extra_block_mutex);
 };
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
@@ -611,7 +636,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             continue;
         }
 
-        hash_join = makeInMemoryJoin(prev_keys_num);
+        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed
         while (Block block = right_reader.read())
@@ -632,10 +657,9 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
     return nullptr;
 }
 
-GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(size_t reserve_num)
+GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num)
 {
-    auto ret = std::make_unique<InMemoryJoin>(table_join, right_sample_block, any_take_last_row, reserve_num);
-    return std::move(ret);
+    return std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id);
 }
 
 Block GraceHashJoin::prepareRightBlock(const Block & block)
@@ -661,7 +685,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
     {
         std::lock_guard lock(hash_join_mutex);
         if (!hash_join)
-            hash_join = makeInMemoryJoin();
+            hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index));
 
         // buckets size has been changed in other threads. Need to scatter current_block again.
         // rehash could only happen under hash_join_mutex's scope.
@@ -705,7 +729,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
                 current_block = concatenateBlocks(current_blocks);
         }
 
-        hash_join = makeInMemoryJoin(prev_keys_num);
+        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num);
 
         if (current_block.rows() > 0)
             hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
