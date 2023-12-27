@@ -24,9 +24,4 @@ WHERE cur < prev
 LIMIT 2
 SETTINGS max_threads = 1;
 
--- I would like just to check whether the sorting order is not broken.
-SELECT *
-FROM ttl_group_by_bug
-SETTINGS max_threads=1;
-
 DROP TABLE IF EXISTS ttl_group_by_bug;
