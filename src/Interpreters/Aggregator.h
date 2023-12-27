@@ -5,8 +5,10 @@
 #include <mutex>
 #include <type_traits>
 
+#include <Common/logger_useful.h>
 
 #include <base/StringRef.h>
+#include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
@@ -45,10 +47,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
 }
-
-class Arena;
-using ArenaPtr = std::shared_ptr<Arena>;
-using Arenas = std::vector<ArenaPtr>;
 
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
@@ -292,7 +290,7 @@ struct AggregationMethodStringNoCache
     {
     }
 
-    using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false, false, nullable>;
+    using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false, false ,nullable>;
 
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = nullable;
@@ -512,10 +510,7 @@ struct AggregationMethodKeysFixed
             else
             {
                 size_t size = key_sizes[i];
-                size_t offset_to = pos;
-                if constexpr (std::endian::native == std::endian::big)
-                   offset_to = sizeof(Key) - size - pos;
-                observed_column->insertData(reinterpret_cast<const char *>(&key) + offset_to, size);
+                observed_column->insertData(reinterpret_cast<const char *>(&key) + pos, size);
                 pos += size;
             }
         }
@@ -1023,8 +1018,6 @@ public:
 
         bool enable_prefetch;
 
-        bool optimize_group_by_constant_keys;
-
         struct StatsCollectingParams
         {
             StatsCollectingParams();
@@ -1062,7 +1055,6 @@ public:
             size_t max_block_size_,
             bool enable_prefetch_,
             bool only_merge_, // true for projections
-            bool optimize_group_by_constant_keys_,
             const StatsCollectingParams & stats_collecting_params_ = {})
             : keys(keys_)
             , aggregates(aggregates_)
@@ -1083,7 +1075,6 @@ public:
             , max_block_size(max_block_size_)
             , only_merge(only_merge_)
             , enable_prefetch(enable_prefetch_)
-            , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
             , stats_collecting_params(stats_collecting_params_)
         {
         }
@@ -1125,54 +1116,8 @@ public:
         AggregateColumns & aggregate_columns, /// Passed to not create them anew for each block
         bool & no_more_keys) const;
 
-    /** This array serves two purposes.
-      *
-      * Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
-      * The inner loop (for the case without_key) is almost twice as compact; performance gain of about 30%.
-      */
-    struct AggregateFunctionInstruction
-    {
-        const IAggregateFunction * that{};
-        size_t state_offset{};
-        const IColumn ** arguments{};
-        const IAggregateFunction * batch_that{};
-        const IColumn ** batch_arguments{};
-        const UInt64 * offsets{};
-        bool has_sparse_arguments = false;
-    };
-
-    /// Used for optimize_aggregation_in_order:
-    /// - No two-level aggregation
-    /// - No external aggregation
-    /// - No without_key support (it is implemented using executeOnIntervalWithoutKey())
-    void executeOnBlockSmall(
-        AggregatedDataVariants & result,
-        size_t row_begin,
-        size_t row_end,
-        ColumnRawPtrs & key_columns,
-        AggregateFunctionInstruction * aggregate_instructions) const;
-
-    void executeOnIntervalWithoutKey(
-        AggregatedDataVariants & data_variants,
-        size_t row_begin,
-        size_t row_end,
-        AggregateFunctionInstruction * aggregate_instructions) const;
-
     /// Used for aggregate projection.
     bool mergeOnBlock(Block block, AggregatedDataVariants & result, bool & no_more_keys) const;
-
-    void mergeOnBlockSmall(
-        AggregatedDataVariants & result,
-        size_t row_begin,
-        size_t row_end,
-        const AggregateColumnsConstData & aggregate_columns_data,
-        const ColumnRawPtrs & key_columns) const;
-
-    void mergeOnIntervalWithoutKey(
-        AggregatedDataVariants & data_variants,
-        size_t row_begin,
-        size_t row_end,
-        const AggregateColumnsConstData & aggregate_columns_data) const;
 
     /** Convert the aggregation data structure into a block.
       * If overflow_row = true, then aggregates for rows that are not included in max_rows_to_group_by are put in the first block.
@@ -1231,6 +1176,22 @@ private:
 
     AggregateFunctionsPlainPtrs aggregate_functions;
 
+    /** This array serves two purposes.
+      *
+      * Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
+      * The inner loop (for the case without_key) is almost twice as compact; performance gain of about 30%.
+      */
+    struct AggregateFunctionInstruction
+    {
+        const IAggregateFunction * that{};
+        size_t state_offset{};
+        const IColumn ** arguments{};
+        const IAggregateFunction * batch_that{};
+        const IColumn ** batch_arguments{};
+        const UInt64 * offsets{};
+        bool has_sparse_arguments = false;
+    };
+
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
     using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
 
@@ -1276,6 +1237,26 @@ private:
       */
     void destroyAllAggregateStates(AggregatedDataVariants & result) const;
 
+
+    /// Used for optimize_aggregation_in_order:
+    /// - No two-level aggregation
+    /// - No external aggregation
+    /// - No without_key support (it is implemented using executeOnIntervalWithoutKeyImpl())
+    void executeOnBlockSmall(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions) const;
+    void mergeOnBlockSmall(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data,
+        const ColumnRawPtrs & key_columns) const;
+
+    void mergeOnBlockImpl(Block block, AggregatedDataVariants & result, bool no_more_keys) const;
+
     void executeImpl(
         AggregatedDataVariants & result,
         size_t row_begin,
@@ -1283,7 +1264,6 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         bool no_more_keys = false,
-        bool all_keys_are_const = false,
         AggregateDataPtr overflow_row = nullptr) const;
 
     /// Process one data block, aggregate the data into a hash table.
@@ -1296,7 +1276,6 @@ private:
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         bool no_more_keys,
-        bool all_keys_are_const,
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
@@ -1308,7 +1287,6 @@ private:
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        bool all_keys_are_const,
         AggregateDataPtr overflow_row) const;
 
     /// For case when there are no keys (all aggregate into one row).
@@ -1319,6 +1297,17 @@ private:
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
         Arena * arena) const;
+
+    void executeOnIntervalWithoutKeyImpl(
+        AggregatedDataVariants & data_variants,
+        size_t row_begin,
+        size_t row_end,
+        AggregateFunctionInstruction * aggregate_instructions) const;
+    void mergeOnIntervalWithoutKeyImpl(
+        AggregatedDataVariants & data_variants,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data) const;
 
     template <typename Method>
     void writeToTemporaryFileImpl(

@@ -1,30 +1,21 @@
 #pragma once
 
-#include <list>
-#include <memory>
-
-#include <Common/filesystemHelpers.h>
-
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedReadBufferFromFile.h>
-
-#include <Interpreters/TemporaryDataOnDisk.h>
-
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-
-#include <QueryPipeline/QueryPipeline.h>
-
-#include <Storages/BlockNumberColumn.h>
-#include <Storages/MergeTree/ColumnSizeEstimator.h>
-#include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
-#include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/IMergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/ColumnSizeEstimator.h>
+#include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Common/filesystemHelpers.h>
 
+#include <memory>
+#include <list>
 
 namespace DB
 {
@@ -154,7 +145,6 @@ private:
         bool deduplicate{false};
         Names deduplicate_by_columns{};
         bool cleanup{false};
-        size_t cleanedup_rows_count{0};
 
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};
@@ -203,12 +193,13 @@ private:
         bool need_prefix;
         MergeTreeData::MergingParams merging_params{};
 
-        TemporaryDataOnDiskPtr tmp_disk{nullptr};
+        DiskPtr tmp_disk{nullptr};
         DiskPtr disk{nullptr};
         bool need_remove_expired_values{false};
         bool force_ttl{false};
         CompressionCodecPtr compression_codec{nullptr};
         size_t sum_input_rows_upper_bound{0};
+        std::unique_ptr<PocoTemporaryFile> rows_sources_file{nullptr};
         std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes{};
@@ -271,11 +262,12 @@ private:
     struct VerticalMergeRuntimeContext : public IStageRuntimeContext
     {
         /// Begin dependencies from previous stage
+        std::unique_ptr<PocoTemporaryFile> rows_sources_file;
         std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf{nullptr};
         std::unique_ptr<WriteBuffer> rows_sources_write_buf{nullptr};
         std::optional<ColumnSizeEstimator> column_sizes;
         CompressionCodecPtr compression_codec;
-        TemporaryDataOnDiskPtr tmp_disk{nullptr};
+        DiskPtr tmp_disk{nullptr};
         std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
         size_t column_num_for_vertical_merge{0};
         bool read_with_direct_io{false};
@@ -394,12 +386,6 @@ private:
     };
 
     Stages::iterator stages_iterator = stages.begin();
-
-    /// Check for persisting block number column
-    static bool supportsBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
-    {
-        return global_ctx->data->getSettings()->allow_experimental_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
-    }
 
 };
 

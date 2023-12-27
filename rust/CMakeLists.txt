@@ -14,29 +14,8 @@ macro(configure_rustc)
         set(RUST_CFLAGS "${RUST_CFLAGS} --sysroot ${CMAKE_SYSROOT}")
     endif()
 
-    if (USE_MUSL)
-        set(RUST_CXXFLAGS "${RUST_CXXFLAGS} -D_LIBCPP_HAS_MUSL_LIBC=1")
-    endif ()
-
-    if(CCACHE_EXECUTABLE MATCHES "/sccache$")
-        message(STATUS "Using RUSTC_WRAPPER: ${CCACHE_EXECUTABLE}")
-        set(RUSTCWRAPPER "rustc-wrapper = \"${CCACHE_EXECUTABLE}\"")
-    else()
-        set(RUSTCWRAPPER "")
-    endif()
-
-    set(RUSTFLAGS "[]")
-    set(RUST_CARGO_BUILD_STD "")
-    # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
-    if (SANITIZE STREQUAL "memory")
-        set(RUST_CARGO_BUILD_STD "build-std = [\"std\", \"panic_abort\", \"core\", \"alloc\"]")
-        set(RUSTFLAGS "[\"-Zsanitizer=memory\", \"-Zsanitizer-memory-track-origins\"]")
-    endif()
-
     message(STATUS "RUST_CFLAGS: ${RUST_CFLAGS}")
     message(STATUS "RUST_CXXFLAGS: ${RUST_CXXFLAGS}")
-    message(STATUS "RUSTFLAGS: ${RUSTFLAGS}")
-    message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
     # NOTE: requires RW access for the source dir
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/.cargo/config.toml.in" "${CMAKE_CURRENT_SOURCE_DIR}/.cargo/config.toml" @ONLY)
@@ -55,20 +34,9 @@ function(clickhouse_import_crate)
     else()
         set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};debug")
     endif()
+    # NOTE: we may use LTO for rust too
 
-    if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-        set(profile "")
-    else()
-        if (ENABLE_THINLTO)
-            set(profile "release-thinlto")
-        else()
-            set(profile "release")
-        endif()
-    endif()
-
-    # Note, here --offline is not used, since on CI vendor archive is used, and
-    # passing --offline here will be inconvenient for local development.
-    corrosion_import_crate(NO_STD ${ARGN} PROFILE ${profile})
+    corrosion_import_crate(NO_STD ${ARGN})
 endfunction()
 
 # Add crate from the build directory.
@@ -101,4 +69,3 @@ endfunction()
 
 add_rust_subdirectory (BLAKE3)
 add_rust_subdirectory (skim)
-add_rust_subdirectory (prql)

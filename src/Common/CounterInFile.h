@@ -4,6 +4,7 @@
 #include <sys/file.h>
 
 #include <string>
+#include <iostream>
 #include <mutex>
 #include <filesystem>
 

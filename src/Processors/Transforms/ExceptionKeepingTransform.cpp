@@ -2,6 +2,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
 #include <base/scope_guard.h>
+#include <iostream>
 
 namespace DB
 {
@@ -75,7 +76,7 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
         if (data.exception)
         {
             stage = Stage::Exception;
-            onException(data.exception);
+            onException();
             output.pushData(std::move(data));
             return Status::PortFull;
         }
@@ -138,7 +139,7 @@ void ExceptionKeepingTransform::work()
             stage = Stage::Exception;
             ready_output = true;
             data.exception = exception;
-            onException(data.exception);
+            onException();
         }
     }
     else if (stage == Stage::Consume || stage == Stage::Generate)
@@ -152,7 +153,7 @@ void ExceptionKeepingTransform::work()
                 stage = Stage::Exception;
                 ready_output = true;
                 data.exception = exception;
-                onException(data.exception);
+                onException();
             }
             else
                 stage = Stage::Generate;
@@ -166,7 +167,7 @@ void ExceptionKeepingTransform::work()
                 stage = Stage::Exception;
                 ready_output = true;
                 data.exception = exception;
-                onException(data.exception);
+                onException();
             }
             else
             {
@@ -188,7 +189,7 @@ void ExceptionKeepingTransform::work()
             stage = Stage::Exception;
             ready_output = true;
             data.exception = exception;
-            onException(data.exception);
+            onException();
         }
     }
 }

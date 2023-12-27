@@ -2,12 +2,8 @@
 
 #include <memory>
 #include <optional>
-#include <queue>
 
 #include <Disks/IVolume.h>
-#include <base/defines.h>
-#include <base/types.h>
-#include <Common/Stopwatch.h>
 
 
 namespace DB
@@ -26,10 +22,9 @@ using VolumesJBOD = std::vector<VolumeJBODPtr>;
 class VolumeJBOD : public IVolume
 {
 public:
-    VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_avoided_, bool perform_ttl_move_on_insert_, VolumeLoadBalancing load_balancing_, UInt64 least_used_ttl_ms_)
+    VolumeJBOD(String name_, Disks disks_, UInt64 max_data_part_size_, bool are_merges_avoided_, bool perform_ttl_move_on_insert_, VolumeLoadBalancing load_balancing_)
         : IVolume(name_, disks_, max_data_part_size_, perform_ttl_move_on_insert_, load_balancing_)
         , are_merges_avoided(are_merges_avoided_)
-        , least_used_ttl_ms(least_used_ttl_ms_)
     {
     }
 
@@ -72,9 +67,9 @@ private:
     struct DiskWithSize
     {
         DiskPtr disk;
-        std::optional<UInt64> free_size = 0;
+        uint64_t free_size = 0;
 
-        explicit DiskWithSize(DiskPtr disk_)
+        DiskWithSize(DiskPtr disk_)
             : disk(disk_)
             , free_size(disk->getUnreservedSpace())
         {}
@@ -84,7 +79,7 @@ private:
             return free_size < rhs.free_size;
         }
 
-        ReservationPtr reserve(UInt64 bytes)
+        ReservationPtr reserve(uint64_t bytes)
         {
             ReservationPtr reservation = disk->reserve(bytes);
             if (!reservation)
@@ -101,10 +96,7 @@ private:
     /// Index of last used disk, for load_balancing=round_robin
     mutable std::atomic<size_t> last_used = 0;
     /// Priority queue of disks sorted by size, for load_balancing=least_used
-    using LeastUsedDisksQueue = std::priority_queue<DiskWithSize>;
-    mutable LeastUsedDisksQueue disks_by_size TSA_GUARDED_BY(mutex);
-    mutable Stopwatch least_used_update_watch TSA_GUARDED_BY(mutex);
-    UInt64 least_used_ttl_ms = 0;
+    mutable std::priority_queue<DiskWithSize> disks_by_size;
 
     /// True if parts on this volume participate in merges according to START/STOP MERGES ON VOLUME.
     std::atomic<std::optional<bool>> are_merges_avoided_user_override{std::nullopt};

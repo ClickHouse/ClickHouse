@@ -25,7 +25,6 @@ struct HashedArrayDictionaryStorageConfiguration
 {
     const bool require_nonempty;
     const DictionaryLifetime lifetime;
-    bool use_async_executor = false;
 };
 
 template <DictionaryKeyType dictionary_key_type>
@@ -213,7 +212,7 @@ private:
     template <typename GetContainerFunc>
     void getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func) const;
 
-    void resize(size_t total_rows);
+    void resize(size_t added_rows);
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;

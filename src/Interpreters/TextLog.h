@@ -14,6 +14,7 @@ struct TextLogElement
 {
     time_t event_time{};
     Decimal64 event_time_microseconds{};
+    UInt32 microseconds{};
 
     String thread_name;
     UInt64 thread_id{};
@@ -39,17 +40,12 @@ struct TextLogElement
 class TextLog : public SystemLog<TextLogElement>
 {
 public:
-    using Queue = SystemLogQueue<TextLogElement>;
-
-    explicit TextLog(ContextPtr context_, const SystemLogSettings & settings);
-
-    static std::shared_ptr<Queue> getLogQueue(const SystemLogQueueSettings & settings)
-    {
-        static std::shared_ptr<Queue> queue = std::make_shared<Queue>(settings);
-        return queue;
-    }
-
-    static consteval bool shouldTurnOffLogger() { return true; }
+    TextLog(
+        ContextPtr context_,
+        const String & database_name_,
+        const String & table_name_,
+        const String & storage_def_,
+        size_t flush_interval_milliseconds_);
 };
 
 }

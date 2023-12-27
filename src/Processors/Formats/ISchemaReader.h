@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 /// Base class for schema inference for the data in some specific format.
-/// It reads some data from read buffer and tries to determine the schema
+/// It reads some data from read buffer and try to determine the schema
 /// from read data.
 class ISchemaReader
 {
@@ -25,10 +25,6 @@ public:
 
     virtual NamesAndTypesList readSchema() = 0;
 
-    /// Some formats like Parquet contains number of rows in metadata
-    /// and we can read it once during schema inference and reuse it later for fast count;
-    virtual std::optional<size_t> readNumberOrRows() { return std::nullopt; }
-
     /// True if order of columns is important in format.
     /// Exceptions: JSON, TSKV.
     virtual bool hasStrictOrderOfColumns() const { return true; }
@@ -36,11 +32,8 @@ public:
     virtual bool needContext() const { return false; }
     virtual void setContext(ContextPtr &) {}
 
-    virtual void setMaxRowsAndBytesToRead(size_t, size_t) {}
+    virtual void setMaxRowsToRead(size_t) {}
     virtual size_t getNumRowsRead() const { return 0; }
-
-    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
-    virtual void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) { transformTypesIfNeeded(type, new_type); }
 
     virtual ~ISchemaReader() = default;
 
@@ -58,18 +51,15 @@ public:
     bool needContext() const override { return !hints_str.empty(); }
     void setContext(ContextPtr & context) override;
 
+    virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
+
 protected:
-    void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
-    {
-        max_rows_to_read = max_rows;
-        max_bytes_to_read = max_bytes;
-    }
+    void setMaxRowsToRead(size_t max_rows) override { max_rows_to_read = max_rows; }
     size_t getNumRowsRead() const override { return rows_read; }
 
     virtual void transformFinalTypeIfNeeded(DataTypePtr &) {}
 
     size_t max_rows_to_read;
-    size_t max_bytes_to_read;
     size_t rows_read = 0;
     DataTypePtr default_type;
     String hints_str;
@@ -98,12 +88,10 @@ protected:
     /// Read one row and determine types of columns in it.
     /// Return types in the same order in which the values were in the row.
     /// If it's impossible to determine the type for some column, return nullptr for it.
-    /// Return std::nullopt if can't read more data.
-    virtual std::optional<DataTypes> readRowAndGetDataTypes() = 0;
+    /// Return empty list if can't read more data.
+    virtual DataTypes readRowAndGetDataTypes() = 0;
 
     void setColumnNames(const std::vector<String> & names) { column_names = names; }
-
-    virtual bool allowVariableNumberOfColumns() const { return false; }
 
     size_t field_index;
 

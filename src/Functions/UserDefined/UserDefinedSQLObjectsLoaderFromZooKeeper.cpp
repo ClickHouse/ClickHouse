@@ -223,7 +223,7 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::storeObject(
     {
         auto code = zookeeper->tryCreate(path, create_statement, zkutil::CreateMode::Persistent);
         if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
-            throw zkutil::KeeperException::fromPath(code, path);
+            throw zkutil::KeeperException(code, path);
 
         if (code == Coordination::Error::ZNODEEXISTS)
         {
@@ -234,14 +234,14 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::storeObject(
 
             code = zookeeper->trySet(path, create_statement);
             if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNONODE))
-                throw zkutil::KeeperException::fromPath(code, path);
+                throw zkutil::KeeperException(code, path);
         }
 
         if (code == Coordination::Error::ZOK)
             break;
 
         if (!--num_attempts)
-            throw zkutil::KeeperException::fromPath(code, path);
+            throw zkutil::KeeperException(code, path);
     }
     LOG_DEBUG(log, "Object {} stored", backQuote(object_name));
 
@@ -262,7 +262,7 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::removeObject(
 
     auto code = zookeeper->tryRemove(path);
     if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNONODE))
-        throw zkutil::KeeperException::fromPath(code, path);
+        throw zkutil::KeeperException(code, path);
 
     if (code == Coordination::Error::ZNONODE)
     {
@@ -283,11 +283,11 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::getObjectDataAndSetWatch(
     UserDefinedSQLObjectType object_type,
     const String & object_name)
 {
-    const auto object_watcher = [my_watch_queue = watch_queue, object_type, object_name](const Coordination::WatchResponse & response)
+    const auto object_watcher = [watch_queue = watch_queue, object_type, object_name](const Coordination::WatchResponse & response)
     {
         if (response.type == Coordination::Event::CHANGED)
         {
-            [[maybe_unused]] bool inserted = my_watch_queue->emplace(object_type, object_name);
+            [[maybe_unused]] bool inserted = watch_queue->emplace(object_type, object_name);
             /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
         }
         /// Event::DELETED is processed as child event by getChildren watch
@@ -346,9 +346,9 @@ ASTPtr UserDefinedSQLObjectsLoaderFromZooKeeper::tryLoadObject(
 Strings UserDefinedSQLObjectsLoaderFromZooKeeper::getObjectNamesAndSetWatch(
     const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type)
 {
-    auto object_list_watcher = [my_watch_queue = watch_queue, object_type](const Coordination::WatchResponse &)
+    auto object_list_watcher = [watch_queue = watch_queue, object_type](const Coordination::WatchResponse &)
     {
-        [[maybe_unused]] bool inserted = my_watch_queue->emplace(object_type, "");
+        [[maybe_unused]] bool inserted = watch_queue->emplace(object_type, "");
         /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
     };
 

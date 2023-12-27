@@ -8,7 +8,7 @@
 
 /*
  * (all numbers are written in big-endian manner: the least significant digit on the right)
- * (only bit representations are used - no hex or octal, leading zeroes are omitted)
+ * (only bit representations are used - no hex or octal, leading zeroes are ommited)
  *
  * Consistent hashing scheme:
  *

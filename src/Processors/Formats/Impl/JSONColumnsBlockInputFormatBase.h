@@ -67,7 +67,7 @@ protected:
     Serializations serializations;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     BlockMissingValues block_missing_values;
-    size_t approx_bytes_read_for_chunk = 0;
+    size_t approx_bytes_read_for_chunk;
 };
 
 
@@ -80,25 +80,16 @@ class JSONColumnsSchemaReaderBase : public ISchemaReader
 public:
     JSONColumnsSchemaReaderBase(ReadBuffer & in_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
 
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
-    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
 
     bool needContext() const override { return !hints_str.empty(); }
     void setContext(ContextPtr & ctx) override;
 
-    void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
-    {
-        max_rows_to_read = max_rows;
-        max_bytes_to_read = max_bytes;
-    }
-
-    size_t getNumRowsRead() const override { return total_rows_read; }
-
 private:
     NamesAndTypesList readSchema() override;
 
-    /// Read whole column in the block (up to max_rows rows) and extract the data type.
-    DataTypePtr readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows);
+    /// Read whole column in the block (up to max_rows_to_read rows) and extract the data type.
+    DataTypePtr readColumnAndGetDataType(const String & column_name, size_t & rows_read, size_t max_rows_to_read);
 
     const FormatSettings format_settings;
     String hints_str;
@@ -107,10 +98,6 @@ private:
     std::unique_ptr<JSONColumnsReaderBase> reader;
     Names column_names_from_settings;
     JSONInferenceInfo inference_info;
-
-    size_t total_rows_read = 0;
-    size_t max_rows_to_read;
-    size_t max_bytes_to_read;
 };
 
 }

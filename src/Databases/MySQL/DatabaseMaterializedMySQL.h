@@ -11,7 +11,6 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/MySQL/MaterializedMySQLSettings.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -46,19 +45,16 @@ protected:
 
     std::atomic_bool started_up{false};
 
-    LoadTaskPtr startup_mysql_database_task;
-
-    void attachTableUnlocked(ContextPtr context_, const String & name, const StoragePtr & table, const String & relative_table_path) TSA_REQUIRES(mutex) override;
-
 public:
     String getEngineName() const override { return "MaterializedMySQL"; }
 
-    LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
-    void waitDatabaseStarted(bool no_throw) const override;
+    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
 
     void createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 
     void dropTable(ContextPtr context_, const String & name, bool sync) override;
+
+    void attachTable(ContextPtr context_, const String & name, const StoragePtr & table, const String & relative_table_path) override;
 
     StoragePtr detachTable(ContextPtr context_, const String & name) override;
 

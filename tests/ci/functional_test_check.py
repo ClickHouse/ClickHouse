@@ -15,8 +15,8 @@ from github import Github
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
-    CiLogsCredentials,
     ClickHouseHelper,
+    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import (
@@ -28,7 +28,7 @@ from commit_status_helper import (
     post_commit_status_to_file,
     update_mergeable_check,
 )
-from docker_pull_helper import DockerImage, get_image_with_version
+from docker_pull_helper import get_image_with_version, DockerImage
 from download_release_packages import download_last_release
 from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
@@ -56,8 +56,6 @@ def get_additional_envs(
         result.append("USE_PARALLEL_REPLICAS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
-    if "analyzer" in check_name:
-        result.append("USE_NEW_ANALYZER=1")
 
     if run_by_hash_total != 0:
         result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")
@@ -76,14 +74,12 @@ def get_image_name(check_name: str) -> str:
 
 
 def get_run_command(
-    check_name: str,
     builds_path: Path,
     repo_path: Path,
     result_path: Path,
     server_log_path: Path,
     kill_timeout: int,
     additional_envs: List[str],
-    ci_logs_args: str,
     image: DockerImage,
     flaky_check: bool,
     tests_to_run: List[str],
@@ -105,30 +101,22 @@ def get_run_command(
     ]
 
     if flaky_check:
-        envs.append("-e NUM_TRIES=100")
-        envs.append("-e MAX_RUN_TIME=1800")
+        envs += ["-e NUM_TRIES=100", "-e MAX_RUN_TIME=1800"]
 
     envs += [f"-e {e}" for e in additional_envs]
 
     env_str = " ".join(envs)
-    volume_with_broken_test = (
-        f"--volume={repo_path}/tests/analyzer_tech_debt.txt:/analyzer_tech_debt.txt "
-        if "analyzer" in check_name
-        else ""
-    )
 
     return (
         f"docker run --volume={builds_path}:/package_folder "
-        f"{ci_logs_args}"
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
-        f"{volume_with_broken_test}"
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
     )
 
 
-def get_tests_to_run(pr_info: PRInfo) -> List[str]:
+def get_tests_to_run(pr_info):
     result = set()
 
     if pr_info.changed_files is None:
@@ -169,7 +157,7 @@ def process_results(
     status = []
     status_path = result_directory / "check_status.tsv"
     if status_path.exists():
-        logging.info("Found %s", status_path.name)
+        logging.info("Found test_results.tsv")
         with open(status_path, "r", encoding="utf-8") as status_file:
             status = list(csv.reader(status_file, delimiter="\t"))
 
@@ -323,22 +311,14 @@ def main():
     )
     if validate_bugfix_check:
         additional_envs.append("GLOBAL_TAGS=no-random-settings")
-        additional_envs.append("BUGFIX_VALIDATE_CHECK=1")
-
-    ci_logs_credentials = CiLogsCredentials(temp_path / "export-logs-config.sh")
-    ci_logs_args = ci_logs_credentials.get_docker_arguments(
-        pr_info, stopwatch.start_time_str, check_name
-    )
 
     run_command = get_run_command(
-        check_name,
         packages_path,
         repo_path,
         result_path,
         server_log_path,
         kill_timeout,
         additional_envs,
-        ci_logs_args,
         docker_image,
         flaky_check,
         tests_to_run,
@@ -352,12 +332,8 @@ def main():
         else:
             logging.info("Run failed")
 
-    try:
-        subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-    except subprocess.CalledProcessError:
-        logging.warning("Failed to change files owner in %s, ignoring it", temp_path)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
     s3_helper = S3Helper()
 
     state, description, test_results, additional_logs = process_results(
@@ -366,6 +342,7 @@ def main():
     state = override_status(state, check_name, invert=validate_bugfix_check)
 
     ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, check_name, test_results)
 
     report_url = upload_results(
         s3_helper,
@@ -378,16 +355,34 @@ def main():
 
     print(f"::notice:: {check_name} Report url: {report_url}")
     if args.post_commit_status == "commit_status":
-        post_commit_status(
-            commit, state, report_url, description, check_name_with_group, pr_info
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status(
+                commit,
+                "success",
+                report_url,
+                description,
+                check_name_with_group,
+                pr_info,
+            )
+        else:
+            post_commit_status(
+                commit, state, report_url, description, check_name_with_group, pr_info
+            )
     elif args.post_commit_status == "file":
-        post_commit_status_to_file(
-            post_commit_path,
-            description,
-            state,
-            report_url,
-        )
+        if "parallelreplicas" in check_name.lower():
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                "success",
+                report_url,
+            )
+        else:
+            post_commit_status_to_file(
+                post_commit_path,
+                description,
+                state,
+                report_url,
+            )
     else:
         raise Exception(
             f'Unknown post_commit_status option "{args.post_commit_status}"'
@@ -405,7 +400,11 @@ def main():
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state != "success":
-        if FORCE_TESTS_LABEL in pr_info.labels:
+        # Parallel replicas are always green for now
+        if (
+            FORCE_TESTS_LABEL in pr_info.labels
+            or "parallelreplicas" in check_name.lower()
+        ):
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)

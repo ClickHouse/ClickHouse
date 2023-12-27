@@ -21,7 +21,6 @@ namespace
 REGISTER_FUNCTION(FormatReadableSize)
 {
     factory.registerFunction<FunctionFormatReadable<Impl>>();
-    factory.registerAlias("FORMAT_BYTES", Impl::name, FunctionFactory::CaseInsensitive);
 }
 
 }

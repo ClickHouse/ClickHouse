@@ -20,10 +20,11 @@ public:
     {
         command_name = "read";
         command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "Read a file from `FROM_PATH` to `TO_PATH`";
-        usage = "read [OPTION]... <FROM_PATH> [<TO_PATH>]";
+        description = "read File `from_path` to `to_path` or to stdout\nPath should be in format './' or './path' or 'path'";
+        usage = "read [OPTION]... <FROM_PATH> <TO_PATH>\nor\nread [OPTION]... <FROM_PATH>";
         command_option_description->add_options()
-            ("output", po::value<String>(), "file to which we are reading, defaults to `stdout`");
+            ("output", po::value<String>(), "set path to file to which we are read")
+            ;
     }
 
     void processOptions(
@@ -36,7 +37,7 @@ public:
 
     void execute(
         const std::vector<String> & command_arguments,
-       std::shared_ptr<DiskSelector> & disk_selector,
+        DB::ContextMutablePtr & global_context,
         Poco::Util::LayeredConfiguration & config) override
     {
         if (command_arguments.size() != 1)
@@ -47,7 +48,7 @@ public:
 
         String disk_name = config.getString("disk", "default");
 
-        DiskPtr disk = disk_selector->get(disk_name);
+        DiskPtr disk = global_context->getDisk(disk_name);
 
         String relative_path = validatePathAndGetAsRelative(command_arguments[0]);
 

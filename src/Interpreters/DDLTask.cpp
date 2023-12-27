@@ -104,17 +104,6 @@ String DDLLogEntry::toString() const
 
     if (version >= OPENTELEMETRY_ENABLED_VERSION)
         wb << "tracing: " << this->tracing_context;
-    /// NOTE: OPENTELEMETRY_ENABLED_VERSION has new line in TracingContext::serialize(), so no need to add one more
-
-    if (version >= PRESERVE_INITIAL_QUERY_ID_VERSION)
-    {
-        writeString("initial_query_id: ", wb);
-        writeEscapedString(initial_query_id, wb);
-        writeChar('\n', wb);
-    }
-
-    if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
-        wb << "is_backup_restore: " << is_backup_restore << "\n";
 
     return wb.str();
 }
@@ -161,20 +150,6 @@ void DDLLogEntry::parse(const String & data)
             rb >> "tracing: " >> this->tracing_context;
     }
 
-    if (version >= PRESERVE_INITIAL_QUERY_ID_VERSION)
-    {
-        checkString("initial_query_id: ", rb);
-        readEscapedString(initial_query_id, rb);
-        checkChar('\n', rb);
-    }
-
-    if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
-    {
-        checkString("is_backup_restore: ", rb);
-        readBoolText(is_backup_restore, rb);
-        checkChar('\n', rb);
-    }
-
     assertEOF(rb);
 
     if (!host_id_strings.empty())
@@ -208,14 +183,14 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     auto query_context = Context::createCopy(from_context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
-    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     if (entry.settings)
         query_context->applySettingsChanges(*entry.settings);
     return query_context;
 }
 
 
-bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, const ZooKeeperPtr & zookeeper)
+bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log)
 {
     bool host_in_hostlist = false;
     std::exception_ptr first_exception = nullptr;
@@ -262,22 +237,6 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, c
 
     if (!host_in_hostlist && first_exception)
     {
-        if (zookeeper->exists(getFinishedNodePath()))
-        {
-            LOG_WARNING(log, "Failed to find current host ID, but assuming that {} is finished because {} exists. Skipping the task. Error: {}",
-                        entry_name, getFinishedNodePath(), getExceptionMessage(first_exception, /*with_stacktrace*/ true));
-            return false;
-        }
-
-        size_t finished_nodes_count = zookeeper->getChildren(fs::path(entry_path) / "finished").size();
-        if (entry.hosts.size() == finished_nodes_count)
-        {
-            LOG_WARNING(log, "Failed to find current host ID, but assuming that {} is finished because the number of finished nodes ({}) "
-                        "equals to the number of hosts in list. Skipping the task. Error: {}",
-                        entry_name, finished_nodes_count, getExceptionMessage(first_exception, /*with_stacktrace*/ true));
-            return false;
-        }
-
         /// We don't know for sure if we should process task or not
         std::rethrow_exception(first_exception);
     }
@@ -464,8 +423,8 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
-    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
-    query_context->setQueryKindReplicatedDatabaseInternal();
+    query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    query_context->getClientInfo().is_replicated_database_internal = true;
     query_context->setCurrentDatabase(database->getDatabaseName());
 
     auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query, entry_path);

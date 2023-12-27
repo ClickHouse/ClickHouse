@@ -3,14 +3,11 @@
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/executeQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/AsyncLoader.h>
-#include <Common/PoolId.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 #include <QueryPipeline/BlockIO.h>
 
 #include <ctime>
@@ -77,17 +74,12 @@ private:
     Tables tables;
     Tables::iterator it;
 
-    // Tasks to wait before returning a table
-    using Tasks = std::unordered_map<String, LoadTaskPtr>;
-    Tasks tasks;
-
 protected:
     DatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && other) noexcept
     : IDatabaseTablesIterator(std::move(other.database_name))
     {
         size_t idx = std::distance(other.tables.begin(), other.it);
         std::swap(tables, other.tables);
-        std::swap(tasks, other.tasks);
         other.it = other.tables.end();
         it = tables.begin();
         std::advance(it, idx);
@@ -110,20 +102,11 @@ public:
 
     const String & name() const override { return it->first; }
 
-    const StoragePtr & table() const override
-    {
-        if (auto task = tasks.find(it->first); task != tasks.end())
-            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task->second);
-        return it->second;
-    }
-
-    void setLoadTasks(const Tasks & tasks_)
-    {
-        tasks = tasks_;
-    }
+    const StoragePtr & table() const override { return it->second; }
 };
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
+
 
 /** Database engine.
   * It is responsible for:
@@ -137,12 +120,8 @@ using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
 class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
-    using LazyTableCreator = std::function<StoragePtr()>;
-    /// Map{table_name, Pair{relative_table_path, LazyTableCreator}}
-    using LazyTables = std::map<String, std::pair<String, LazyTableCreator>>;
-
     IDatabase() = delete;
-    explicit IDatabase(String database_name_);
+    explicit IDatabase(String database_name_) : database_name(std::move(database_name_)) {}
 
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
@@ -155,7 +134,8 @@ public:
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects( /// NOLINT
         ContextMutablePtr /*context*/,
-        LoadingStrictnessLevel /*mode*/)
+        LoadingStrictnessLevel /*mode*/,
+        bool /* skip_startup_tables */)
     {
     }
 
@@ -171,59 +151,13 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    virtual void loadTableFromMetadata(
-        ContextMutablePtr /*local_context*/,
-        const String & /*file_path*/,
-        const QualifiedTableName & /*name*/,
-        const ASTPtr & /*ast*/,
+    virtual void loadTableFromMetadata(ContextMutablePtr /*local_context*/, const String & /*file_path*/, const QualifiedTableName & /*name*/, const ASTPtr & /*ast*/,
         LoadingStrictnessLevel /*mode*/)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    /// Create a task to load table `name` after specified dependencies `startup_after` using `async_loader`.
-    /// `load_after` must contain the tasks returned by `loadTableFromMetadataAsync()` for dependent tables (see TablesLoader).
-    /// The returned task is also stored inside the database for cancellation on destruction.
-    virtual LoadTaskPtr loadTableFromMetadataAsync(
-        AsyncLoader & /*async_loader*/,
-        LoadJobSet /*load_after*/,
-        ContextMutablePtr /*local_context*/,
-        const String & /*file_path*/,
-        const QualifiedTableName & /*name*/,
-        const ASTPtr & /*ast*/,
-        LoadingStrictnessLevel /*mode*/)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-    }
-
-    /// Create a task to startup table `name` after specified dependencies `startup_after` using `async_loader`.
-    /// The returned task is also stored inside the database for cancellation on destruction.
-    [[nodiscard]] virtual LoadTaskPtr startupTableAsync(
-        AsyncLoader & /*async_loader*/,
-        LoadJobSet /*startup_after*/,
-        const QualifiedTableName & /*name*/,
-        LoadingStrictnessLevel /*mode*/)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-    }
-
-    /// Create a task to startup database after specified dependencies `startup_after` using `async_loader`.
-    /// `startup_after` must contain all the tasks returned by `startupTableAsync()` for every table (see TablesLoader).
-    /// The returned task is also stored inside the database for cancellation on destruction.
-    [[nodiscard]] virtual LoadTaskPtr startupDatabaseAsync(
-        AsyncLoader & /*async_loader*/,
-        LoadJobSet /*startup_after*/,
-        LoadingStrictnessLevel /*mode*/)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-    }
-
-    /// Waits for specific table to be started up, i.e. task returned by `startupTableAsync()` is done
-    virtual void waitTableStarted(const String & /*name*/) const {}
-
-    /// Waits for the database to be started up, i.e. task returned by `startupDatabaseAsync()` is done
-    /// NOTE: `no_throw` wait should be used during shutdown to (1) prevent race with startup and (2) avoid exceptions if startup failed
-    virtual void waitDatabaseStarted(bool /*no_throw*/) const {}
+    virtual void startupTables(ThreadPool & /*thread_pool*/, LoadingStrictnessLevel /*mode*/) {}
 
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
@@ -236,7 +170,7 @@ public:
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
 
-    virtual StoragePtr getTable(const String & name, ContextPtr context) const;
+    StoragePtr getTable(const String & name, ContextPtr context) const;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
@@ -248,8 +182,6 @@ public:
 
     /// Is the database empty.
     virtual bool empty() const = 0;
-
-    virtual bool isReadOnly() const { return false; }
 
     /// Add the table to the database. Record its presence in the metadata.
     virtual void createTable(
@@ -272,17 +204,11 @@ public:
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///
-    /// @param relative_table_path - only for Atomic engine
-    ///
-    /// Note:
-    /// - ATTACH TABLE statement actually uses createTable method.
-    /// - Instead of overriding this method you should override attachTableUnlocked()
-    ///   (This method is only for DatabasesOverlay to override)
-    virtual void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path = {}); /// NOLINT
-
-    /// Register tables lazily (attach will be done only when the table will be used) instead of attaching it.
-    /// This is needed to improve startup time of clickhouse-local.
-    virtual void registerLazyTable(ContextPtr context, const String & table_name, LazyTableCreator table_creator, const String & relative_table_path = {});
+    /// Note: ATTACH TABLE statement actually uses createTable method.
+    virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {}) /// NOLINT
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
+    }
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
     virtual StoragePtr detachTable(ContextPtr /* context */, const String & /*name*/)
@@ -327,9 +253,6 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
     }
-
-    /// Special method for ReplicatedMergeTree and DatabaseReplicated
-    virtual bool canExecuteReplicatedMetadataAlter() const { return true; }
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
     virtual time_t getObjectMetadataModificationTime(const String & /*name*/) const
@@ -418,7 +341,7 @@ public:
 
     virtual bool shouldReplicateQuery(const ContextPtr & /*query_context*/, const ASTPtr & /*query_ptr*/) const { return false; }
 
-    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags = {}) /// NOLINT
+    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] bool internal = false) /// NOLINT
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not have replicated DDL queue", getEngineName());
     }
@@ -429,7 +352,7 @@ public:
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
 
-    virtual ~IDatabase();
+    virtual ~IDatabase() = default;
 
 protected:
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const
@@ -439,23 +362,12 @@ protected:
         return nullptr;
     }
 
-    virtual void attachTableUnlocked(ContextPtr /*context*/, const String & /*name*/, const StoragePtr & /*table*/, const String & /*relative_table_path*/ = {}) TSA_REQUIRES(mutex) /// NOLINT
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
-    }
-
-    virtual void registerLazyTableUnlocked(const String & /* table_name */, LazyTableCreator /* table_creator */, const String & /* relative_table_path */) TSA_REQUIRES(mutex) /// NOLINT
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There lazy table initialization support for Database{}", getEngineName());
-    }
-
     mutable std::mutex mutex;
     String database_name TSA_GUARDED_BY(mutex);
     String comment TSA_GUARDED_BY(mutex);
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;
-using ConstDatabasePtr = std::shared_ptr<const IDatabase>;
 using Databases = std::map<String, DatabasePtr>;
 
 }

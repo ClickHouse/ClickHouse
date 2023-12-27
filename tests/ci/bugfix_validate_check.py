@@ -36,18 +36,6 @@ def process_result(file_path: Path) -> Tuple[bool, TestResults]:
     test_results = []  # type: TestResults
     state, report_url, description = post_commit_status_from_file(file_path)
     prefix = file_path.parent.name
-    if description.strip() in [
-        "Invalid check_status.tsv",
-        "Not found test_results.tsv",
-        "Empty test_results.tsv",
-    ]:
-        status = (
-            f'Check failed (<a href="{report_url}">Report</a>)'
-            if report_url != "null"
-            else "Check failed"
-        )
-        return False, [TestResult(f"{prefix}: {description}", status)]
-
     is_ok = state == "success"
     if is_ok and report_url == "null":
         return is_ok, test_results

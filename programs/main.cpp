@@ -2,12 +2,15 @@
 #include <csetjmp>
 #include <unistd.h>
 
+#ifdef OS_LINUX
+#include <sys/mman.h>
+#endif
+
 #include <new>
 #include <iostream>
 #include <vector>
 #include <string>
 #include <tuple>
-#include <string_view>
 #include <utility> /// pair
 
 #include <fmt/format.h>
@@ -19,6 +22,7 @@
 #include <Common/IO.h>
 
 #include <base/phdr_cache.h>
+#include <base/scope_guard.h>
 
 
 /// Universal executable for various clickhouse applications
@@ -58,9 +62,6 @@ int mainEntryClickHouseKeeper(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
-int mainEntryClickHouseKeeperClient(int argc, char ** argv);
-#endif
 #if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 #endif
@@ -94,7 +95,7 @@ using MainFunc = int (*)(int, char**);
 #if !defined(FUZZING_MODE)
 
 /// Add an item here to register new application
-std::pair<std::string_view, MainFunc> clickhouse_applications[] =
+std::pair<const char *, MainFunc> clickhouse_applications[] =
 {
 #if ENABLE_CLICKHOUSE_LOCAL
     {"local", mainEntryClickHouseLocal},
@@ -132,9 +133,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
     {"keeper-converter", mainEntryClickHouseKeeperConverter},
 #endif
-#if ENABLE_CLICKHOUSE_KEEPER_CLIENT
-    {"keeper-client", mainEntryClickHouseKeeperClient},
-#endif
 #if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
@@ -154,24 +152,32 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #endif
 };
 
-/// Add an item here to register a new short name
-std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
-{
-#if ENABLE_CLICKHOUSE_LOCAL
-    {"ch", "local"},
-    {"chl", "local"},
-#endif
-#if ENABLE_CLICKHOUSE_CLIENT
-    {"chc", "client"},
-#endif
-};
-
 int printHelp(int, char **)
 {
     std::cerr << "Use one of the following commands:" << std::endl;
     for (auto & application : clickhouse_applications)
         std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
     return -1;
+}
+
+bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
+{
+    /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
+    if (argv.size() >= 2)
+    {
+        auto first_arg = argv.begin() + 1;
+
+        /// 'clickhouse --client ...' and 'clickhouse client ...' are Ok
+        if (*first_arg == "--" + app_suffix || *first_arg == app_suffix)
+        {
+            argv.erase(first_arg);
+            return true;
+        }
+    }
+
+    /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
+    std::string app_name = "clickhouse-" + app_suffix;
+    return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
 }
 #endif
 
@@ -339,7 +345,7 @@ struct Checker
 ;
 
 
-#if !defined(FUZZING_MODE) && !defined(USE_MUSL)
+#if !defined(USE_MUSL)
 /// NOTE: We will migrate to full static linking or our own dynamic loader to make this code obsolete.
 void checkHarmfulEnvironmentVariables(char ** argv)
 {
@@ -395,31 +401,6 @@ void checkHarmfulEnvironmentVariables(char ** argv)
 
 }
 
-bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
-{
-    for (const auto & [alias, name] : clickhouse_short_names)
-        if (app_suffix == name
-            && !argv.empty() && (alias == argv[0] || endsWith(argv[0], "/" + std::string(alias))))
-            return true;
-
-    /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
-    if (argv.size() >= 2)
-    {
-        auto first_arg = argv.begin() + 1;
-
-        /// 'clickhouse --client ...' and 'clickhouse client ...' are Ok
-        if (*first_arg == app_suffix
-            || (std::string_view(*first_arg).starts_with("--") && std::string_view(*first_arg).substr(2) == app_suffix))
-        {
-            argv.erase(first_arg);
-            return true;
-        }
-    }
-
-    /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
-    std::string app_name = "clickhouse-" + std::string(app_suffix);
-    return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
-}
 
 /// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
 /// We don't use it. But it can be used by some libraries for implementation of "plugins".
@@ -478,11 +459,6 @@ int main(int argc_, char ** argv_)
 #if !defined(USE_MUSL)
     checkHarmfulEnvironmentVariables(argv_);
 #endif
-
-    /// This is used for testing. For example,
-    /// clickhouse-local should be able to run a simple query without throw/catch.
-    if (getenv("CLICKHOUSE_TERMINATE_ON_ANY_EXCEPTION")) // NOLINT(concurrency-mt-unsafe)
-        DB::terminate_on_any_exception = true;
 
     /// Reset new handler to default (that throws std::bad_alloc)
     /// It is needed because LLVM library clobbers it.

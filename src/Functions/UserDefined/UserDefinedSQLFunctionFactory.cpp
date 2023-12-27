@@ -14,8 +14,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/quoteString.h>
 
-#include <boost/container/flat_set.hpp>
-
 
 namespace DB
 {

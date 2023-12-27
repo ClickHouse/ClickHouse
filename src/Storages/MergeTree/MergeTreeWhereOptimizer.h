@@ -4,7 +4,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/Statistics/Estimator.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -38,7 +37,6 @@ public:
     MergeTreeWhereOptimizer(
         std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageMetadataPtr & metadata_snapshot,
-        const ConditionEstimator & estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
         Poco::Logger * log_);
@@ -74,17 +72,9 @@ private:
         /// Does the condition presumably have good selectivity?
         bool good = false;
 
-        /// the lower the better
-        Float64 selectivity = 1.0;
-
-        /// Does the condition contain primary key column?
-        /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
-        /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
-        Int64 min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
-
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, -min_position_in_primary_key, selectivity, columns_size, table_columns.size());
+            return std::make_tuple(!viable, !good, columns_size, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -101,9 +91,7 @@ private:
         ContextPtr context;
         NameSet array_joined_names;
         bool move_all_conditions_to_prewhere = false;
-        bool move_primary_key_columns_to_end_of_prewhere = false;
         bool is_final = false;
-        bool use_statistic = false;
     };
 
     struct OptimizeResult
@@ -114,7 +102,7 @@ private:
 
     std::optional<OptimizeResult> optimizeImpl(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
-    void analyzeImpl(Conditions & res, const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context, std::set<Int64> & pk_positions) const;
+    void analyzeImpl(Conditions & res, const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
     /// Transform conjunctions chain in WHERE expression to Conditions list.
     Conditions analyze(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
@@ -149,13 +137,10 @@ private:
 
     static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
 
-    const ConditionEstimator estimator;
-
     const NameSet table_columns;
     const Names queried_columns;
     const std::optional<NameSet> supported_columns;
     const NameSet sorting_key_names;
-    const NameToIndexMap primary_key_names_positions;
     Poco::Logger * log;
     std::unordered_map<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;

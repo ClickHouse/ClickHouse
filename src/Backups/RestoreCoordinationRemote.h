@@ -2,7 +2,6 @@
 
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/BackupCoordinationStageSync.h>
-#include <Backups/WithRetries.h>
 
 
 namespace DB
@@ -12,12 +11,9 @@ namespace DB
 class RestoreCoordinationRemote : public IRestoreCoordination
 {
 public:
-    using RestoreKeeperSettings = WithRetries::KeeperSettings;
-
     RestoreCoordinationRemote(
         zkutil::GetZooKeeper get_zookeeper_,
         const String & root_zookeeper_path_,
-        const RestoreKeeperSettings & keeper_settings_,
         const String & restore_uuid_,
         const Strings & all_hosts_,
         const String & current_host_,
@@ -46,37 +42,28 @@ public:
     /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
     bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) override;
 
-    /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
-    /// The function returns false if data for this specific root path is already being restored by another table.
-    bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) override;
-
-    /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
-    /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).
-    void generateUUIDForTable(ASTCreateQuery & create_query) override;
-
     bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const override;
 
 private:
+    zkutil::ZooKeeperPtr getZooKeeper() const;
     void createRootNodes();
     void removeAllNodes();
 
     class ReplicatedDatabasesMetadataSync;
 
-    /// get_zookeeper will provide a zookeeper client without any fault injection
     const zkutil::GetZooKeeper get_zookeeper;
     const String root_zookeeper_path;
-    const RestoreKeeperSettings keeper_settings;
     const String restore_uuid;
     const String zookeeper_path;
     const Strings all_hosts;
     const String current_host;
     const size_t current_host_index;
     const bool is_internal;
-    Poco::Logger * const log;
 
-    mutable WithRetries with_retries;
     std::optional<BackupCoordinationStageSync> stage_sync;
+
     mutable std::mutex mutex;
+    mutable zkutil::ZooKeeperPtr zookeeper;
 };
 
 }

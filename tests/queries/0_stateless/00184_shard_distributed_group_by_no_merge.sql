@@ -8,6 +8,8 @@ SELECT count(), uniq(dummy) FROM remote('127.0.0.{2,3}', system.one) LIMIT 1 SET
 SELECT 'distributed_group_by_no_merge=2';
 SET max_distributed_connections=1;
 SET max_threads=1;
+-- breaks any(_shard_num)
+SET optimize_move_functions_out_of_any=0;
 
 SELECT 'LIMIT';
 SELECT * FROM (SELECT any(_shard_num) shard_num, count(), uniq(dummy) FROM remote('127.0.0.{2,3}', system.one)) ORDER BY shard_num LIMIT 1 SETTINGS distributed_group_by_no_merge=2;

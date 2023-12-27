@@ -51,7 +51,6 @@ namespace DB
     M(Greater) \
     M(LessOrEquals) \
     M(GreaterOrEquals) \
-    M(Spaceship)              /** <=>. Used in MySQL for NULL-safe equality comparison. */ \
     M(PipeMark) \
     M(Concatenation)          /** String concatenation operator: || */ \
     \
