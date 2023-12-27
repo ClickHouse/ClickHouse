@@ -62,6 +62,36 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLev
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
 }
 
+static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr context)
+{
+    auto * storage = create_query->storage;
+
+    /// Get replicated engine
+    /// Set uuid explicitly, because it is forbidden to use the 'uuid' macro without ON CLUSTER
+    const auto & config = context->getConfigRef();
+    String replica_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
+    replica_path = boost::algorithm::replace_all_copy(replica_path, "{uuid}", fmt::format("{}", create_query->uuid));
+    String replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
+
+    auto args = std::make_shared<ASTExpressionList>();
+    args->children.push_back(std::make_shared<ASTLiteral>(replica_path));
+    args->children.push_back(std::make_shared<ASTLiteral>(replica_name));
+
+    /// Add old engine's arguments
+    if (storage->engine->arguments)
+    {
+        for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
+            args->children.push_back(storage->engine->arguments->children[i]->clone());
+    }
+
+    auto engine = std::make_shared<ASTFunction>();
+    engine->name = "Replicated" + storage->engine->name;
+    engine->arguments = args;
+
+    /// Set new engine for the old query
+    create_query->storage->set(create_query->storage->engine, engine->clone());
+}
+
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
 {
     fs::path path(getMetadataPath());
@@ -84,32 +114,9 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion to replicated is supported only for Atomic databases. Convert your database engine to Atomic first.");
 
-    LOG_INFO(log, "Found convert_to_replicated flag for table {}. Will try to change it's engine in metadata to replicated table.", backQuote(qualified_name.getFullName()));
+    LOG_INFO(log, "Found convert_to_replicated flag for table {}. Will try to change it's engine in metadata to replicated.", backQuote(qualified_name.getFullName()));
 
-    /// Get storage definition
-    /// Set uuid explicitly, because it is forbidden to use the 'uuid' macro without ON CLUSTER
-    auto * storage = create_query->storage;
-
-    const auto & config = getContext()->getConfigRef();
-    String replica_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
-    replica_path = boost::algorithm::replace_all_copy(replica_path, "{uuid}", fmt::format("{}", create_query->uuid));
-    String replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
-    String replicated_args = fmt::format("('{}', '{}')", replica_path, replica_name);
-    String replicated_engine = "ENGINE = Replicated" + storage->engine->name + replicated_args;
-
-    ParserStorage parser_storage{ParserStorage::TABLE_ENGINE};
-    auto replicated_storage_ast = parseQuery(parser_storage, replicated_engine, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    auto * replicated_storage = replicated_storage_ast->as<ASTStorage>();
-
-    /// Add old engine's arguments
-    if (storage->engine->arguments)
-    {
-        for (size_t i = 0; i < storage->engine->arguments->children.size(); ++i)
-            replicated_storage->engine->arguments->children.push_back(storage->engine->arguments->children[i]->clone());
-    }
-
-    /// Set new engine for the old query
-    create_query->storage->set(create_query->storage->engine, replicated_storage->engine->clone());
+    setReplicatedEngine(create_query, getContext());
 
     /// Write changes to metadata
     String table_metadata_path = full_path;
