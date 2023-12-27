@@ -30,8 +30,8 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         false,
         settings.max_rows_to_group_by,
         settings.group_by_overflow_mode,
-        0,
-        0,
+        /*group_by_two_level_threshold*/0,
+        /*group_by_two_level_threshold_bytes*/0,
         settings.max_bytes_before_external_group_by,
         settings.empty_result_for_aggregation_by_empty_set,
         storage_.getContext()->getTempDataOnDisk(),
@@ -100,7 +100,17 @@ void TTLAggregationAlgorithm::execute(Block & block)
                 }
             }
 
-            if (!same_as_current)
+            /// We are observing the row with new aggregation key.
+            /// In this case we definitely need to finish the current aggregation for the previuos key
+            /// write results to `result_columns`.
+            const bool observing_new_key = !same_as_current;
+            /// We are observing the row with the same aggregation key, but TTL is not expired anymore.
+            /// In this case we need to finish aggregation here. The current row has to be written as is.
+            const bool no_new_rows_to_aggregate_within_the_same_key = same_as_current && !ttl_expired;
+            /// The aggregation for this aggregation key is done.
+            const bool need_to_flush_aggregation_state = observing_new_key || no_new_rows_to_aggregate_within_the_same_key;
+
+            if (need_to_flush_aggregation_state)
             {
                 if (rows_with_current_key)
                 {
