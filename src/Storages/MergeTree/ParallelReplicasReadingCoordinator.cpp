@@ -120,7 +120,7 @@ public:
         /// Marks stolen from other replicas
         size_t stolen_unassigned = 0;
 
-        /// Stolen marks that were assigned for stealing to the given replica by hash. Makes sense only for SingleShardCoordinator
+        /// Stolen marks that were assigned for stealing to the given replica by hash. Makes sense only for DefaultCoordinator
         size_t stolen_by_hash = 0;
 
         bool is_unavailable{false};
@@ -652,8 +652,11 @@ bool DefaultCoordinator::possiblyCanReadPart(size_t replica, const MergeTreePart
 void DefaultCoordinator::enqueueSegment(const MergeTreePartInfo & info, const MarkRange & segment, size_t owner)
 {
     if (possiblyCanReadPart(owner, info))
+    {
         /// TODO: optimize me (maybe we can store something lighter than RangesInDataPartDescription)
         distribution_by_hash_queue[owner].insert(RangesInDataPartDescription{.info = info, .ranges = {segment}});
+        LOG_TEST(log, "Segment {} is added to its owner's ({}) queue", segment, owner);
+    }
     else
         enqueueToStealerOrStealingQueue(info, segment);
 }
@@ -664,9 +667,15 @@ void DefaultCoordinator::enqueueToStealerOrStealingQueue(const MergeTreePartInfo
     const auto stealer_by_hash = computeConsistentHash(
         info.getPartNameV1(), roundDownToMultiple(segment.begin, mark_segment_size), ScanMode::TakeWhatsMineForStealing);
     if (possiblyCanReadPart(stealer_by_hash, info))
+    {
         distribution_by_hash_queue[stealer_by_hash].insert(std::move(range));
+        LOG_TEST(log, "Segment {} is added to its stealer's ({}) queue", segment, stealer_by_hash);
+    }
     else
+    {
         ranges_for_stealing_queue.push_back(std::move(range));
+        LOG_TEST(log, "Segment {} is added to stealing queue", segment);
+    }
 }
 
 size_t DefaultCoordinator::computeConsistentHash(const std::string & part_name, size_t segment_begin, ScanMode scan_mode) const
