@@ -62,14 +62,18 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLev
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
 }
 
-static void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, QualifiedTableName qualified_name, ContextPtr context, Poco::Logger * log, fs::path full_path)
+void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
 {
+    fs::path path(getMetadataPath());
+    fs::path file_path(file_name);
+    fs::path full_path = path / file_path;
+
     auto * create_query = ast->as<ASTCreateQuery>();
 
     if (!create_query->storage || !create_query->storage->engine->name.ends_with("MergeTree") || create_query->storage->engine->name.starts_with("Replicated"))
         return;
 
-    auto convert_to_replicated_flag_path = fs::path(context->getPath()) / "data" / qualified_name.database / qualified_name.table / "flags" / "convert_to_replicated";
+    auto convert_to_replicated_flag_path = fs::path(getContext()->getPath()) / "data" / qualified_name.database / qualified_name.table / "flags" / "convert_to_replicated";
 
     LOG_DEBUG(log, "Searching for convert_to_replicated flag at {}.", backQuote(convert_to_replicated_flag_path.string()));
 
@@ -82,7 +86,7 @@ static void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, QualifiedTableName 
     /// Set uuid explicitly, because it is forbidden to use the 'uuid' macro without ON CLUSTER
     auto * storage = create_query->storage;
 
-    const auto & config = context->getConfigRef();
+    const auto & config = getContext()->getConfigRef();
     String replica_path = StorageReplicatedMergeTree::getDefaultZooKeeperPath(config);
     replica_path = boost::algorithm::replace_all_copy(replica_path, "{uuid}", fmt::format("{}", create_query->uuid));
     String replica_name = StorageReplicatedMergeTree::getDefaultReplicaName(config);
@@ -111,7 +115,7 @@ static void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, QualifiedTableName 
         WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(statement, out);
         out.next();
-        if (context->getSettingsRef().fsync_metadata)
+        if (getContext()->getSettingsRef().fsync_metadata)
             out.sync();
         out.close();
     }
@@ -173,7 +177,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
 
                 QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
 
-                convertMergeTreeToReplicatedIfNeeded(ast, qualified_name, getContext(), log, full_path);
+                convertMergeTreeToReplicatedIfNeeded(ast, qualified_name, file_name);
 
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};

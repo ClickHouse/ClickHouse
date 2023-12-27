@@ -80,6 +80,9 @@ protected:
     std::atomic<size_t> total_tables_to_startup{0};
     std::atomic<size_t> tables_started{0};
     AtomicStopwatch startup_watch;
+
+private:
+    void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
 };
 
 }
