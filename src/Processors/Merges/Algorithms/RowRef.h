@@ -160,8 +160,8 @@ struct RowRef
 
     bool hasEqualSortColumnsWith(const RowRef & other) const
     {
-        /// If both chunks are from a same source stream, and stream doesn't contains row with same primary keys
-        /// (e.g. stream read from a non-L0 part), then we don't need to compare them.
+        /// If both chunks are from the same source stream, and the stream doesn't contain a row with the same primary key
+        /// (e.g., stream reads from a part with level > 0), then we don't need to compare them.
         if (source_stream_index >= 0 && source_stream_index == other.source_stream_index && !source_may_contain_rows_with_same_primary_keys)
             return false;
 
