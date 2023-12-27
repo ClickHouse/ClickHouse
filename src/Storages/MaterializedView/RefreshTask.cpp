@@ -324,7 +324,7 @@ void RefreshTask::refreshTask()
                 /// TODO: Do a few retries with exponential backoff.
                 advanceNextRefreshTime(now);
             }
-            else if(!refreshed)
+            else if (!refreshed)
             {
                 info.last_refresh_result = LastRefreshResult::Cancelled;
 
