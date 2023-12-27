@@ -1,6 +1,6 @@
 #include "config.h"
 
-#ifdef ENABLE_SQIDS
+#if USE_SQIDS
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>

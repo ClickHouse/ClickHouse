@@ -135,7 +135,7 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
         "--skip-jobs",
         action="store_true",
         default=False,
-        help="skip fetching data about job runs, used in --configure action (for debugging)",
+        help="skip fetching data about job runs, used in --configure action (for debugging and nigthly ci)",
     )
     parser.add_argument(
         "--rebuild-all-docker",
@@ -279,11 +279,11 @@ def _configure_docker_jobs(
     images_info = docker_images_helper.get_images_info()
 
     # a. check missing images
-    print("Start checking missing images in dockerhub")
-    # FIXME: we need login as docker manifest inspect goes directly to one of the *.docker.com hosts instead of "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
-    #         find if it's possible to use the setting of /etc/docker/daemon.json
-    docker_images_helper.docker_login()
     if not rebuild_all_dockers:
+        # FIXME: we need login as docker manifest inspect goes directly to one of the *.docker.com hosts instead of "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
+        #         find if it's possible to use the setting of /etc/docker/daemon.json
+        docker_images_helper.docker_login()
+        print("Start checking missing images in dockerhub")
         missing_multi_dict = check_missing_images_on_dockerhub(imagename_digest_dict)
         missing_multi = list(missing_multi_dict)
         missing_amd64 = []
@@ -305,6 +305,15 @@ def _configure_docker_jobs(
                     "aarch64",
                 )
             )
+        # FIXME: temporary hack, remove after transition to docker digest as tag
+        else:
+            if missing_multi:
+                print(
+                    f"WARNING: Missing images {list(missing_multi)} - fallback to latest tag"
+                )
+                for image in missing_multi:
+                    imagename_digest_dict[image] = "latest"
+        print("...checking missing images in dockerhub - done")
     else:
         # add all images to missing
         missing_multi = list(imagename_digest_dict)
@@ -315,16 +324,7 @@ def _configure_docker_jobs(
             for name in imagename_digest_dict
             if not images_info[name]["only_amd64"]
         ]
-    # FIXME: temporary hack, remove after transition to docker digest as tag
-    if docker_digest_or_latest:
-        if missing_multi:
-            print(
-                f"WARNING: Missing images {list(missing_multi)} - fallback to latest tag"
-            )
-            for image in missing_multi:
-                imagename_digest_dict[image] = "latest"
 
-    print("...checking missing images in dockerhub - done")
     return {
         "images": imagename_digest_dict,
         "missing_aarch64": missing_aarch64,
@@ -376,6 +376,9 @@ def _configure_jobs(
             if job_config.run_by_label in pr_labels:
                 for batch in range(num_batches):  # type: ignore
                     batches_to_do.append(batch)
+        elif job_config.run_always:
+            # always add to todo
+            batches_to_do.append(batch)
         else:
             # this job controlled by digest, add to todo if it's not successfully done before
             for batch in range(num_batches):  # type: ignore
@@ -394,16 +397,31 @@ def _configure_jobs(
         else:
             jobs_to_skip += (job,)
 
+    if pr_labels:
+        jobs_requested_by_label = []  # type: List[str]
+        ci_controlling_labels = []  # type: List[str]
+        for label in pr_labels:
+            label_config = CI_CONFIG.get_label_config(label)
+            if label_config:
+                jobs_requested_by_label += label_config.run_jobs
+                ci_controlling_labels += [label]
+        if ci_controlling_labels:
+            print(f"NOTE: CI controlling labels are set: [{ci_controlling_labels}]")
+            print(
+                f"    :   following jobs will be executed: [{jobs_requested_by_label}]"
+            )
+            jobs_to_do = jobs_requested_by_label
+
     if commit_tokens:
         requested_jobs = [
             token[len("#job_") :]
             for token in commit_tokens
             if token.startswith("#job_")
         ]
-        assert any(
-            len(x) > 1 for x in requested_jobs
-        ), f"Invalid job names requested [{requested_jobs}]"
         if requested_jobs:
+            assert any(
+                len(x) > 1 for x in requested_jobs
+            ), f"Invalid job names requested [{requested_jobs}]"
             jobs_to_do_requested = []
             for job in requested_jobs:
                 job_with_parents = CI_CONFIG.get_job_with_parents(job)
@@ -413,7 +431,7 @@ def _configure_jobs(
                     if parent in jobs_to_do and parent not in jobs_to_do_requested:
                         jobs_to_do_requested.append(parent)
             print(
-                f"NOTE: Only specific job(s) were requested: [{jobs_to_do_requested}]"
+                f"NOTE: Only specific job(s) were requested by commit message tokens: [{jobs_to_do_requested}]"
             )
             jobs_to_do = jobs_to_do_requested
 
@@ -511,7 +529,14 @@ def _update_gh_statuses(indata: Dict, s3: S3Helper) -> None:
 def _fetch_commit_tokens(message: str) -> List[str]:
     pattern = r"#[\w-]+"
     matches = re.findall(pattern, message)
-    return matches
+    res = [
+        match
+        for match in matches
+        if match == "#no-merge-commit"
+        or match.startswith("#job_")
+        or match.startswith("#job-")
+    ]
+    return res
 
 
 def main() -> int:
@@ -539,14 +564,14 @@ def main() -> int:
 
     if args.configure:
         GR = GitRunner()
-        pr_info = PRInfo(need_changed_files=True)
+        pr_info = PRInfo()
 
         docker_data = {}
         git_ref = GR.run(f"{GIT_PREFIX} rev-parse HEAD")
 
         # if '#no-merge-commit' is set in commit message - set git ref to PR branch head to avoid merge-commit
         tokens = []
-        if pr_info.number != 0:
+        if pr_info.number != 0 and not args.skip_jobs:
             message = GR.run(f"{GIT_PREFIX} log {pr_info.sha} --format=%B -n 1")
             tokens = _fetch_commit_tokens(message)
             print(f"Found commit message tokens: [{tokens}]")
@@ -598,8 +623,10 @@ def main() -> int:
         result["jobs_data"] = jobs_data
         result["docker_data"] = docker_data
         if pr_info.number != 0 and not args.docker_digest_or_latest:
+            # FIXME: it runs style check before docker build if possible (style-check images is not changed)
+            #    find a way to do style check always before docker build and others
             _check_and_update_for_early_style_check(result)
-        if pr_info.number != 0 and pr_info.has_changes_in_documentation_only():
+        if pr_info.has_changes_in_documentation_only():
             _update_config_for_docs_only(result)
 
     elif args.update_gh_statuses:
@@ -680,7 +707,8 @@ def main() -> int:
     elif args.mark_success:
         assert indata, "Run config must be provided via --infile"
         job = args.job_name
-        num_batches = CI_CONFIG.get_job_config(job).num_batches
+        job_config = CI_CONFIG.get_job_config(job)
+        num_batches = job_config.num_batches
         assert (
             num_batches <= 1 or 0 <= args.batch < num_batches
         ), f"--batch must be provided and in range [0, {num_batches}) for {job}"
@@ -697,7 +725,7 @@ def main() -> int:
             if not CommitStatusData.is_present():
                 # apparently exit after rerun-helper check
                 # do nothing, exit without failure
-                print("ERROR: no status file for job [{job}]")
+                print(f"ERROR: no status file for job [{job}]")
                 job_status = CommitStatusData(
                     status="dummy failure",
                     description="dummy status",
@@ -708,7 +736,9 @@ def main() -> int:
                 job_status = CommitStatusData.load_status()
 
         # Storing job data (report_url) to restore OK GH status on job results reuse
-        if job_status.is_ok():
+        if job_config.run_always:
+            print(f"Job [{job}] runs always in CI - do not mark as done")
+        elif job_status.is_ok():
             success_flag_name = get_file_flag_name(
                 job, indata["jobs_data"]["digests"][job], args.batch, num_batches
             )

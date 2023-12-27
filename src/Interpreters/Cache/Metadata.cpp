@@ -687,7 +687,7 @@ void CacheMetadata::startup()
         download_threads.emplace_back(std::make_shared<DownloadThread>());
         download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>([this, thread = download_threads.back()] { downloadThreadFunc(thread->stop_flag); });
     }
-    cleanup_thread = std::make_unique<ThreadFromGlobalPool>(std::function{ [this]{ cleanupThreadFunc(); }});
+    cleanup_thread = std::make_unique<ThreadFromGlobalPool>([this]{ cleanupThreadFunc(); });
 }
 
 void CacheMetadata::shutdown()
@@ -714,10 +714,10 @@ bool CacheMetadata::setBackgroundDownloadThreads(size_t threads_num)
     if (threads_num == download_threads_num)
         return false;
 
+    SCOPE_EXIT({ download_threads_num = download_threads.size(); });
+
     if (threads_num > download_threads_num)
     {
-        SCOPE_EXIT({ download_threads_num = download_threads.size(); });
-
         size_t add_threads = threads_num - download_threads_num;
         for (size_t i = 0; i < add_threads; ++i)
         {
@@ -745,7 +745,6 @@ bool CacheMetadata::setBackgroundDownloadThreads(size_t threads_num)
         }
 
         download_queue->cv.notify_all();
-        SCOPE_EXIT({ download_threads_num = download_threads.size(); });
 
         for (size_t i = 0; i < remove_threads; ++i)
         {

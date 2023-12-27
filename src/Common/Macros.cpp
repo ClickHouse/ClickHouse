@@ -120,7 +120,7 @@ String Macros::expand(const String & s,
             auto uuid = ServerUUID::get();
             if (UUIDHelpers::Nil == uuid)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Macro {server_uuid} expanded to zero, which means the UUID is not initialized (most likely it's not a server application)");
+                    "Macro {{server_uuid}} expanded to zero, which means the UUID is not initialized (most likely it's not a server application)");
             res += toString(uuid);
             info.expanded_other = true;
         }

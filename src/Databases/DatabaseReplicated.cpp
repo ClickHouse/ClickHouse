@@ -1204,7 +1204,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 }
 
 void DatabaseReplicated::dropReplica(
-    DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica)
+    DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica, bool throw_if_noop)
 {
     assert(!database || database_zookeeper_path == database->zookeeper_path);
 
@@ -1215,14 +1215,21 @@ void DatabaseReplicated::dropReplica(
 
     auto zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
 
-    String database_mark = zookeeper->get(database_zookeeper_path);
+    String database_mark;
+    bool db_path_exists = zookeeper->tryGet(database_zookeeper_path, database_mark);
+    if (!db_path_exists && !throw_if_noop)
+        return;
     if (database_mark != REPLICATED_DATABASE_MARK)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} does not look like a path of Replicated database", database_zookeeper_path);
 
     String database_replica_path = fs::path(database_zookeeper_path) / "replicas" / full_replica_name;
     if (!zookeeper->exists(database_replica_path))
+    {
+        if (!throw_if_noop)
+            return;
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica {} does not exist (database path: {})",
                         full_replica_name, database_zookeeper_path);
+    }
 
     if (zookeeper->exists(database_replica_path + "/active"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica {} is active, cannot drop it (database path: {})",

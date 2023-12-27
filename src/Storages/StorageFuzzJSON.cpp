@@ -481,7 +481,11 @@ protected:
     {
         Columns columns;
         columns.reserve(block_header.columns());
-        columns.emplace_back(createColumn());
+        for (const auto & col : block_header)
+        {
+            chassert(col.type->getTypeId() == TypeIndex::String);
+            columns.emplace_back(createColumn());
+        }
 
         return {std::move(columns), block_size};
     }
@@ -719,6 +723,11 @@ void registerStorageFuzzJSON(StorageFactory & factory)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage FuzzJSON must have arguments.");
 
             StorageFuzzJSON::Configuration configuration = StorageFuzzJSON::getConfiguration(engine_args, args.getLocalContext());
+
+            for (const auto& col : args.columns)
+                if (col.type->getTypeId() != TypeIndex::String)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "'StorageFuzzJSON' supports only columns of String type, got {}.", col.type->getName());
+
             return std::make_shared<StorageFuzzJSON>(args.table_id, args.columns, args.comment, configuration);
         });
 }
