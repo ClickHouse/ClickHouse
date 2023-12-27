@@ -278,6 +278,12 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
 
+            if (!priority_func_factory.has_value())
+                priority_func_factory = GetPriorityForLoadBalancing(LoadBalancing::ROUND_ROBIN, randomSeed());
+
+            remote_query_executor->setPriorityFunction(
+                priority_func_factory->getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, shard.shard_info.pool->getPoolSize()));
+
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
 

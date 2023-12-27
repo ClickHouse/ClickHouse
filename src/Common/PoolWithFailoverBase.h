@@ -124,7 +124,9 @@ public:
             size_t max_ignored_errors,
             bool fallback_to_stale_replicas,
             const TryGetEntryFunc & try_get_entry,
-            const GetPriorityFunc & get_priority = GetPriorityFunc());
+            const GetPriorityFunc & get_priority);
+
+    size_t getPoolSize() const { return nested_pools.size(); }
 
 protected:
 

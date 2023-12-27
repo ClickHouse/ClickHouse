@@ -8,48 +8,13 @@ namespace DB
 class GetPriorityForLoadBalancing
 {
 public:
-    explicit GetPriorityForLoadBalancing(LoadBalancing load_balancing_) : load_balancing(load_balancing_) {}
+    using Func = std::function<Priority(size_t index)>;
+
+    explicit GetPriorityForLoadBalancing(LoadBalancing load_balancing_, size_t last_used_ = 0)
+        : load_balancing(load_balancing_), last_used(last_used_)
+    {
+    }
     GetPriorityForLoadBalancing() = default;
-
-    GetPriorityForLoadBalancing(const GetPriorityForLoadBalancing & other)
-        : hostname_prefix_distance(other.hostname_prefix_distance)
-        , hostname_levenshtein_distance(other.hostname_levenshtein_distance)
-        , load_balancing(other.load_balancing)
-        , last_used(other.last_used.load())
-    {
-    }
-
-    GetPriorityForLoadBalancing & operator=(const GetPriorityForLoadBalancing & other)
-    {
-        if (this != &other)
-        {
-            hostname_prefix_distance = other.hostname_prefix_distance;
-            hostname_levenshtein_distance = other.hostname_levenshtein_distance;
-            load_balancing = other.load_balancing;
-            last_used = other.last_used.load();
-        }
-        return *this;
-    }
-
-    GetPriorityForLoadBalancing(GetPriorityForLoadBalancing && other) noexcept
-        : hostname_prefix_distance(std::move(other.hostname_prefix_distance))
-        , hostname_levenshtein_distance(std::move(other.hostname_levenshtein_distance))
-        , load_balancing(other.load_balancing)
-        , last_used(other.last_used.load())
-    {
-    }
-
-    GetPriorityForLoadBalancing & operator=(GetPriorityForLoadBalancing && other) noexcept
-    {
-        if (this != &other)
-        {
-            hostname_prefix_distance = std::move(other.hostname_prefix_distance);
-            hostname_levenshtein_distance = std::move(other.hostname_levenshtein_distance);
-            load_balancing = other.load_balancing;
-            last_used = other.last_used.load();
-        }
-        return *this;
-    }
 
     bool operator == (const GetPriorityForLoadBalancing & other) const
     {
@@ -63,7 +28,7 @@ public:
         return !(*this == other);
     }
 
-    std::function<Priority(size_t index)> getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const;
+    Func getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const;
 
     std::vector<size_t> hostname_prefix_distance; /// Prefix distances from name of this host to the names of hosts of pools.
     std::vector<size_t> hostname_levenshtein_distance; /// Levenshtein Distances from name of this host to the names of hosts of pools.
@@ -71,7 +36,7 @@ public:
     LoadBalancing load_balancing = LoadBalancing::RANDOM;
 
 private:
-    mutable std::atomic<size_t> last_used = 0; /// Last used for round_robin policy.
+    mutable size_t last_used = 0; /// Last used for round_robin policy.
 };
 
 }

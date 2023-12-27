@@ -189,6 +189,9 @@ public:
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
+    using LoadBalancingPriorityFunc = std::function<Priority(size_t index)>;
+    void setPriorityFunction(LoadBalancingPriorityFunc priority_func_) { priority_func = priority_func_; }
+
 private:
     RemoteQueryExecutor(
         const String & query_, const Block & header_, ContextPtr context_,
@@ -272,6 +275,8 @@ private:
     StorageID main_table = StorageID::createEmpty();
 
     Poco::Logger * log = nullptr;
+
+    LoadBalancingPriorityFunc priority_func;
 
     /// Send all scalars to remote servers
     void sendScalars();

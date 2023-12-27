@@ -29,7 +29,8 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     bool fallback_to_stale_replicas_,
     UInt64 max_parallel_replicas_,
     bool skip_unavailable_shards_,
-    std::shared_ptr<QualifiedTableName> table_to_check_)
+    std::shared_ptr<QualifiedTableName> table_to_check_,
+    GetPriorityForLoadBalancing::Func priority_func)
     : pool(pool_)
     , timeouts(timeouts_)
     , table_to_check(table_to_check_)
@@ -39,7 +40,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     , max_parallel_replicas(max_parallel_replicas_)
     , skip_unavailable_shards(skip_unavailable_shards_)
 {
-    shuffled_pools = pool->getShuffledPools(settings_);
+    shuffled_pools = pool->getShuffledPools(settings_, priority_func);
     for (auto shuffled_pool : shuffled_pools)
         replicas.emplace_back(std::make_unique<ConnectionEstablisherAsync>(shuffled_pool.pool, &timeouts, settings_, log, table_to_check.get()));
 }

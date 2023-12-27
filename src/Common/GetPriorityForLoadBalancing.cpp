@@ -9,7 +9,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-std::function<Priority(size_t index)> GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const
+GetPriorityForLoadBalancing::Func
+GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const
 {
     std::function<Priority(size_t index)> get_priority;
     switch (load_balance)
@@ -33,7 +34,7 @@ std::function<Priority(size_t index)> GetPriorityForLoadBalancing::getPriorityFu
             get_priority = [offset](size_t i) { return i != offset ? Priority{1} : Priority{0}; };
             break;
         case LoadBalancing::ROUND_ROBIN:
-            auto local_last_used = last_used.fetch_add(1) % pool_size;
+            auto local_last_used = ++last_used % pool_size;
 
             // Example: pool_size = 5
             // | local_last_used | i=0 | i=1 | i=2 | i=3 | i=4 |
