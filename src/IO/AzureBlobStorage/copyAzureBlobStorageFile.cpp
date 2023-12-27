@@ -22,6 +22,11 @@ namespace ProfileEvents
     extern const Event DiskAzureUploadPart;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 namespace DB
 {
@@ -44,7 +49,8 @@ namespace
             std::shared_ptr<AzureObjectStorageSettings> settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunner<void> schedule_,
-            bool for_disk_azure_blob_storage_)
+            bool for_disk_azure_blob_storage_,
+            const Poco::Logger * log_)
             : create_read_buffer(create_read_buffer_)
             , client(client_)
             , offset (offset_)
@@ -55,7 +61,7 @@ namespace
             , object_metadata(object_metadata_)
             , schedule(schedule_)
             , for_disk_azure_blob_storage(for_disk_azure_blob_storage_)
-            , log(&Poco::Logger::get("azureBlobStorageUploadHelper"))
+            , log(log_)
             , max_single_part_upload_size(settings_.get()->max_single_part_upload_size)
         {
         }
@@ -179,11 +185,11 @@ namespace
                 try
                 {
                     auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
-                    auto buffer = std::make_unique<StdStreamFromReadBuffer>(std::move(read_buffer), part_size);
                     task->data = new char[part_size];
                     task->size = part_size;
-                    buffer->read(task->data,part_size);
-                    task->block_id = getRandomASCIIString(64);
+                    size_t n = read_buffer->read(task->data,part_size);
+                    if (n != part_size)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size");
 
                     schedule([this, task, task_finish_notify]()
                     {
@@ -208,9 +214,10 @@ namespace
             {
                 UploadPartTask task;
                 auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
-                auto buffer = std::make_unique<StdStreamFromReadBuffer>(std::move(read_buffer), part_size);
                 task.data = new char[part_size];
-                buffer->read(task.data,part_size);
+                size_t n = read_buffer->read(task.data,part_size);
+                if (n != part_size)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size");
                 task.size = part_size;
                 processUploadTask(task);
                 block_ids.emplace_back(task.block_id);
@@ -274,7 +281,7 @@ void copyDataToAzureBlobStorageFile(
     ThreadPoolCallbackRunner<void> schedule,
     bool for_disk_azure_blob_storage)
 {
-    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_azure_blob_storage};
+    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyDataToAzureBlobStorageFile")};
     helper.performCopy();
 }
 
@@ -314,7 +321,7 @@ void copyAzureBlobStorageFile(
             settings->max_single_download_retries);
         };
 
-        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_azure_blob_storage};
+        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyAzureBlobStorageFile")};
         helper.performCopy();
     }
 }

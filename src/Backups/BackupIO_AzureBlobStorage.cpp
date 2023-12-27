@@ -35,7 +35,7 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
     : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderAzureBlobStorage"))
-    , data_source_description{DataSourceType::AzureBlobStorage, "AzureBlobStorage", false, false}
+    , data_source_description{DataSourceType::AzureBlobStorage, configuration_.container, false, false}
     , configuration(configuration_)
 {
     client = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
@@ -160,7 +160,7 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
     : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterAzureBlobStorage"))
-    , data_source_description{DataSourceType::AzureBlobStorage, "AzureBlobStorage", false, false}
+    , data_source_description{DataSourceType::AzureBlobStorage,configuration_.container, false, false}
     , configuration(configuration_)
 {
     client = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
@@ -209,7 +209,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(const String & path_in_backu
                 settings,
                 read_settings,
                 {},
-                threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterAzureBlobStorage"));
+                threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
             return; /// copied!
         }
     }
@@ -221,7 +221,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(const String & path_in_backu
 void BackupWriterAzureBlobStorage::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
     copyDataToAzureBlobStorageFile(create_read_buffer, start_pos, length, client, configuration.container, path_in_backup, settings, {},
-                     threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterAzureBlobStorage"));
+                     threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
 }
 
 BackupWriterAzureBlobStorage::~BackupWriterAzureBlobStorage() = default;
