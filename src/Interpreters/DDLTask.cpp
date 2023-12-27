@@ -231,7 +231,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, c
         if (!is_local_port)
             throw Exception(
                 ErrorCodes::DNS_ERROR,
-                "{} is not a local adress. Check parameter 'host_name' in the configuration",
+                "{} is not a local address. Check parameter 'host_name' in the configuration",
                 *config_host_name)
     }
 
