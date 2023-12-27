@@ -1161,7 +1161,11 @@ class TestCase:
                 universal_newlines=True,
             )
             if self.show_whitespaces_in_diff:
-                sed_proc = Popen(["sed", "-e", "s/[ \t]\\+$/&$/g"], stdin=diff_proc.stdout, stdout=PIPE)
+                sed_proc = Popen(
+                    ["sed", "-e", "s/[ \t]\\+$/&$/g"],
+                    stdin=diff_proc.stdout,
+                    stdout=PIPE,
+                )
                 diff_proc.stdout.close()  # Allow diff to receive a SIGPIPE if cat exits.
                 diff = sed_proc.communicate()[0].decode("utf-8", errors="ignore")
             else:
