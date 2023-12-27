@@ -100,8 +100,8 @@ void TTLAggregationAlgorithm::execute(Block & block)
                 }
             }
 
-            /// We are observing the row with new aggregation key.
-            /// In this case we definitely need to finish the current aggregation for the previuos key
+            /// We are observing the row with new the aggregation key.
+            /// In this case we definitely need to finish the current aggregation for the previuos key and
             /// write results to `result_columns`.
             const bool observing_new_key = !same_as_current;
             /// We are observing the row with the same aggregation key, but TTL is not expired anymore.
