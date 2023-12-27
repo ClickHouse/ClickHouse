@@ -73,7 +73,9 @@ template <typename Type>
 bool SerializationEnum<Type>::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     std::string field_name;
-    readQuotedStringWithSQLStyle(field_name, istr);
+    if (!tryReadQuotedStringWithSQLStyle(field_name, istr))
+        return false;
+
     FieldType x;
     if (!ref_enum_values.tryGetValue(x, StringRef(field_name)))
         return false;
