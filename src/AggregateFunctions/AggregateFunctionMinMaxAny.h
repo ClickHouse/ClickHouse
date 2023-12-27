@@ -1245,8 +1245,11 @@ public:
             || StringRef(Data::name()) == StringRef("max"))
         {
             if (!type->isComparable())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of aggregate function {} "
-                                "because the values of that data type are not comparable", type->getName(), getName());
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of aggregate function {} because the values of that data type are not comparable",
+                    type->getName(),
+                    Data::name());
         }
     }
 

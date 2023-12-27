@@ -38,6 +38,7 @@ public:
         ssize_t if_argument_pos) const override;
 };
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
 #define SPECIALIZE(TYPE) \
     template <> \
     void AggregateFunctionsSingleValueMin<typename DB::AggregateFunctionMinData<SingleValueDataFixed<TYPE>>>::addBatchSinglePlace( \
@@ -60,6 +61,7 @@ public:
         if (opt.has_value()) \
             this->data(place).changeIfLess(opt.value()); \
     }
+// NOLINTEND(bugprone-macro-parentheses)
 
 FOR_BASIC_NUMERIC_TYPES(SPECIALIZE)
 #undef SPECIALIZE
@@ -76,6 +78,7 @@ void AggregateFunctionsSingleValueMin<Data>::addBatchSinglePlace(
     return Parent::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
 }
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
 #define SPECIALIZE(TYPE) \
     template <> \
     void AggregateFunctionsSingleValueMin<typename DB::AggregateFunctionMinData<SingleValueDataFixed<TYPE>>>::addBatchSinglePlaceNotNull( \
@@ -102,6 +105,7 @@ void AggregateFunctionsSingleValueMin<Data>::addBatchSinglePlace(
         if (opt.has_value()) \
             this->data(place).changeIfLess(opt.value()); \
     }
+// NOLINTEND(bugprone-macro-parentheses)
 
 FOR_BASIC_NUMERIC_TYPES(SPECIALIZE)
 #undef SPECIALIZE

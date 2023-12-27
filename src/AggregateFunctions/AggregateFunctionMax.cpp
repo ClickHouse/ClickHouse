@@ -37,6 +37,7 @@ public:
         ssize_t if_argument_pos) const override;
 };
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
 #define SPECIALIZE(TYPE) \
 template <> \
 void AggregateFunctionsSingleValueMax<typename DB::AggregateFunctionMaxData<SingleValueDataFixed<TYPE>>>::addBatchSinglePlace( \
@@ -59,8 +60,9 @@ void AggregateFunctionsSingleValueMax<typename DB::AggregateFunctionMaxData<Sing
     if (opt.has_value()) \
         this->data(place).changeIfGreater(opt.value()); \
 }
+// NOLINTEND(bugprone-macro-parentheses)
 
-    FOR_BASIC_NUMERIC_TYPES(SPECIALIZE)
+FOR_BASIC_NUMERIC_TYPES(SPECIALIZE)
 #undef SPECIALIZE
 
 template <typename Data>
@@ -75,6 +77,7 @@ void AggregateFunctionsSingleValueMax<Data>::addBatchSinglePlace(
     return Parent::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
 }
 
+// NOLINTBEGIN(bugprone-macro-parentheses)
 #define SPECIALIZE(TYPE) \
 template <> \
 void AggregateFunctionsSingleValueMax<typename DB::AggregateFunctionMaxData<SingleValueDataFixed<TYPE>>>::addBatchSinglePlaceNotNull( \
@@ -101,8 +104,9 @@ void AggregateFunctionsSingleValueMax<typename DB::AggregateFunctionMaxData<Sing
     if (opt.has_value()) \
         this->data(place).changeIfGreater(opt.value()); \
 }
+// NOLINTEND(bugprone-macro-parentheses)
 
-    FOR_BASIC_NUMERIC_TYPES(SPECIALIZE)
+FOR_BASIC_NUMERIC_TYPES(SPECIALIZE)
 #undef SPECIALIZE
 
 template <typename Data>
