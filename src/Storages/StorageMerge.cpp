@@ -88,6 +88,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
+    const String & source_database_name_or_regexp_,
+    bool database_is_regexp_,
+    std::optional<OptimizedRegularExpression> source_database_regexp_,
+    std::optional<OptimizedRegularExpression> source_table_regexp_,
+    const DBToTableSetMap & source_databases_and_tables_)
+    : source_database_name_or_regexp(source_database_name_or_regexp_)
+    , database_is_regexp(database_is_regexp_)
+    , source_database_regexp(std::move(source_database_regexp_))
+    , source_table_regexp(std::move(source_table_regexp_))
+    , source_databases_and_tables(source_databases_and_tables_)
+{
+}
+
 StorageMerge::StorageMerge(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
@@ -98,10 +112,11 @@ StorageMerge::StorageMerge(
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , source_database_regexp(source_database_name_or_regexp_)
-    , source_databases_and_tables(source_databases_and_tables_)
-    , source_database_name_or_regexp(source_database_name_or_regexp_)
-    , database_is_regexp(database_is_regexp_)
+    , database_name_or_regexp(
+        source_database_name_or_regexp_,
+        database_is_regexp_,
+        source_database_name_or_regexp_, {},
+        source_databases_and_tables_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_.empty() ? getColumnsDescriptionFromSourceTables() : columns_);
@@ -119,15 +134,21 @@ StorageMerge::StorageMerge(
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , source_database_regexp(source_database_name_or_regexp_)
-    , source_table_regexp(source_table_regexp_)
-    , source_database_name_or_regexp(source_database_name_or_regexp_)
-    , database_is_regexp(database_is_regexp_)
+    , database_name_or_regexp(
+        source_database_name_or_regexp_,
+        database_is_regexp_,
+        source_database_name_or_regexp_,
+        source_table_regexp_, {})
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_.empty() ? getColumnsDescriptionFromSourceTables() : columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+}
+
+StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(ContextPtr context_) const
+{
+    return database_name_or_regexp.getDatabaseIterators(context_);
 }
 
 ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables() const
@@ -141,7 +162,7 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTables() const
 template <typename F>
 StoragePtr StorageMerge::getFirstTable(F && predicate) const
 {
-    auto database_table_iterators = getDatabaseIterators(getContext());
+    auto database_table_iterators = database_name_or_regexp.getDatabaseIterators(getContext());
 
     for (auto & iterator : database_table_iterators)
     {
@@ -236,27 +257,27 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
     return supported_columns;
 }
 
-bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
-{
-    /// It's beneficial if it is true for at least one table.
-    StorageListWithLocks selected_tables = getSelectedTables(query_context);
+// bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
+// {
+//     /// It's beneficial if it is true for at least one table.
+//     StorageListWithLocks selected_tables = getSelectedTables(query_context);
 
-    size_t i = 0;
-    for (const auto & table : selected_tables)
-    {
-        const auto & storage_ptr = std::get<1>(table);
-        auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-        if (storage_ptr->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot))
-            return true;
+//     size_t i = 0;
+//     for (const auto & table : selected_tables)
+//     {
+//         const auto & storage_ptr = std::get<1>(table);
+//         auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
+//         if (storage_ptr->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot))
+//             return true;
 
-        ++i;
-        /// For simplicity reasons, check only first ten tables.
-        if (i > 10)
-            break;
-    }
+//         ++i;
+//         /// For simplicity reasons, check only first ten tables.
+//         if (i > 10)
+//             break;
+//     }
 
-    return false;
-}
+//     return false;
+// }
 
 
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
@@ -277,7 +298,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
-    DatabaseTablesIterators database_table_iterators = getDatabaseIterators(local_context);
+    DatabaseTablesIterators database_table_iterators = database_name_or_regexp.getDatabaseIterators(local_context);
 
     size_t selected_table_size = 0;
 
@@ -320,43 +341,26 @@ void StorageMerge::read(
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("optimize_move_to_prewhere", false);
 
-    bool has_database_virtual_column = false;
-    bool has_table_virtual_column = false;
-    Names real_column_names;
-    real_column_names.reserve(column_names.size());
 
-    for (const auto & column_name : column_names)
-    {
-        if (column_name == "_database" && isVirtualColumn(column_name, storage_snapshot->metadata))
-            has_database_virtual_column = true;
-        else if (column_name == "_table" && isVirtualColumn(column_name, storage_snapshot->metadata))
-            has_table_virtual_column = true;
-        else
-            real_column_names.push_back(column_name);
-    }
+    // InputOrderInfoPtr input_sorting_info;
+    // if (query_info.order_optimizer)
+    // {
+    //     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
+    //     {
+    //         auto storage_ptr = std::get<1>(*it);
+    //         auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
+    //         auto current_info = query_info.order_optimizer->getInputOrder(storage_metadata_snapshot, modified_context);
+    //         if (it == selected_tables.begin())
+    //             input_sorting_info = current_info;
+    //         else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
+    //             input_sorting_info.reset();
 
-    StorageListWithLocks selected_tables
-        = getSelectedTables(modified_context, query_info.query, has_database_virtual_column, has_table_virtual_column);
+    //         if (!input_sorting_info)
+    //             break;
+    //     }
 
-    InputOrderInfoPtr input_sorting_info;
-    if (query_info.order_optimizer)
-    {
-        for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
-        {
-            auto storage_ptr = std::get<1>(*it);
-            auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-            auto current_info = query_info.order_optimizer->getInputOrder(storage_metadata_snapshot, modified_context);
-            if (it == selected_tables.begin())
-                input_sorting_info = current_info;
-            else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
-                input_sorting_info.reset();
-
-            if (!input_sorting_info)
-                break;
-        }
-
-        query_info.input_order_info = input_sorting_info;
-    }
+    //     query_info.input_order_info = input_sorting_info;
+    // }
 
     query_plan.addInterpreterContext(modified_context);
 
@@ -365,10 +369,11 @@ void StorageMerge::read(
 
     auto step = std::make_unique<ReadFromMerge>(
         common_header,
-        std::move(selected_tables),
-        real_column_names,
-        has_database_virtual_column,
-        has_table_virtual_column,
+        //std::move(selected_tables),
+        //real_column_names,
+        column_names,
+        // has_database_virtual_column,
+        // has_table_virtual_column,
         max_block_size,
         num_streams,
         shared_from_this(),
@@ -380,43 +385,12 @@ void StorageMerge::read(
     query_plan.addStep(std::move(step));
 }
 
-/// An object of this helper class is created
-///  when processing a Merge table data source (subordinary table)
-///  that has row policies
-///  to guarantee that these row policies are applied
-class ReadFromMerge::RowPolicyData
-{
-public:
-    RowPolicyData(RowPolicyFilterPtr, std::shared_ptr<DB::IStorage>, ContextPtr);
-
-    /// Add to data stream columns that are needed only for row policies
-    ///  SELECT x from T  if  T has row policy  y=42
-    ///  required y in data pipeline
-    void extendNames(Names &) const;
-
-    /// Use storage facilities to filter data
-    ///  optimization
-    ///  does not guarantee accuracy, but reduces number of rows
-    void addStorageFilter(SourceStepWithFilter *) const;
-
-    /// Create explicit filter transform to exclude
-    /// rows that are not conform to row level policy
-    void addFilterTransform(QueryPipelineBuilder &) const;
-
-private:
-    std::string filter_column_name; // complex filter, may contain logic operations
-    ActionsDAGPtr actions_dag;
-    ExpressionActionsPtr filter_actions;
-    StorageMetadataPtr storage_metadata_snapshot;
-};
-
-
 ReadFromMerge::ReadFromMerge(
     Block common_header_,
-    StorageListWithLocks selected_tables_,
-    Names column_names_,
-    bool has_database_virtual_column_,
-    bool has_table_virtual_column_,
+    //StorageListWithLocks selected_tables_,
+    Names all_column_names_,
+    // bool has_database_virtual_column_,
+    // bool has_table_virtual_column_,
     size_t max_block_size,
     size_t num_streams,
     StoragePtr storage,
@@ -428,21 +402,22 @@ ReadFromMerge::ReadFromMerge(
     , required_max_block_size(max_block_size)
     , requested_num_streams(num_streams)
     , common_header(std::move(common_header_))
-    , selected_tables(std::move(selected_tables_))
-    , column_names(std::move(column_names_))
-    , has_database_virtual_column(has_database_virtual_column_)
-    , has_table_virtual_column(has_table_virtual_column_)
+    //, selected_tables(std::move(selected_tables_))
+    , all_column_names(std::move(all_column_names_))
+    // , has_database_virtual_column(has_database_virtual_column_)
+    // , has_table_virtual_column(has_table_virtual_column_)
     , storage_merge(std::move(storage))
     , merge_storage_snapshot(std::move(storage_snapshot))
     , query_info(query_info_)
     , context(std::move(context_))
     , common_processed_stage(processed_stage)
 {
-    createChildPlans();
 }
 
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    filterTablesAndCreateChildPlans();
+
     if (selected_tables.empty())
     {
         pipeline.init(Pipe(std::make_shared<NullSource>(output_stream->header)));
@@ -452,13 +427,10 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     QueryPlanResourceHolder resources;
     std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
 
-    chassert(selected_tables.size() == child_plans.size());
-    chassert(selected_tables.size() == table_aliases.size());
-    chassert(selected_tables.size() == table_row_policy_data_opts.size());
     auto table_it = selected_tables.begin();
     for (size_t i = 0; i < selected_tables.size(); ++i, ++table_it)
     {
-        auto & plan = child_plans.at(i);
+        auto & child_plan = child_plans->at(i);
         const auto & table = *table_it;
 
         const auto storage = std::get<1>(table);
@@ -468,13 +440,13 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         auto modified_query_info = getModifiedQueryInfo(query_info, context, table, nested_storage_snaphsot);
 
         auto source_pipeline = createSources(
-            plan,
+            child_plan.plan,
             nested_storage_snaphsot,
             modified_query_info,
             common_processed_stage,
             common_header,
-            table_aliases.at(i),
-            table_row_policy_data_opts.at(i),
+            child_plan.table_aliases,
+            child_plan.row_policy_data_opt,
             table,
             context);
 
@@ -512,10 +484,37 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     pipeline.addResources(std::move(resources));
 }
 
-void ReadFromMerge::createChildPlans()
+void ReadFromMerge::filterTablesAndCreateChildPlans()
+{
+    if (child_plans)
+        return;
+
+    has_database_virtual_column = false;
+    has_table_virtual_column = false;
+    column_names.clear();
+    column_names.reserve(column_names.size());
+
+    for (const auto & column_name : all_column_names)
+    {
+        if (column_name == "_database" && storage_merge->isVirtualColumn(column_name, merge_storage_snapshot->metadata))
+            has_database_virtual_column = true;
+        else if (column_name == "_table" && storage_merge->isVirtualColumn(column_name, merge_storage_snapshot->metadata))
+            has_table_virtual_column = true;
+        else
+            column_names.push_back(column_name);
+    }
+
+    selected_tables = getSelectedTables(context, query_info.query, has_database_virtual_column, has_table_virtual_column);
+
+    child_plans = createChildPlans(query_info);
+}
+
+std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildPlans(SelectQueryInfo & query_info_) const
 {
     if (selected_tables.empty())
-        return;
+        return {};
+
+    std::vector<ChildPlan> res;
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
@@ -525,7 +524,7 @@ void ReadFromMerge::createChildPlans()
 
     if (order_info)
     {
-        query_info.input_order_info = order_info;
+        query_info_.input_order_info = order_info;
     }
     else if (query_info.order_optimizer)
     {
@@ -544,7 +543,7 @@ void ReadFromMerge::createChildPlans()
                 break;
         }
 
-        query_info.input_order_info = input_sorting_info;
+        query_info_.input_order_info = input_sorting_info;
     }
 
     for (const auto & table : selected_tables)
@@ -564,8 +563,10 @@ void ReadFromMerge::createChildPlans()
         if (sampling_requested && !storage->supportsSampling())
             throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED, "Illegal SAMPLE: table {} doesn't support sampling", storage->getStorageID().getNameForLogs());
 
-        auto & aliases = table_aliases.emplace_back();
-        auto & row_policy_data_opt = table_row_policy_data_opts.emplace_back();
+        res.emplace_back();
+
+        auto & aliases = res.back().table_aliases;
+        auto & row_policy_data_opt = res.back().row_policy_data_opt;
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto nested_storage_snaphsot = storage->getStorageSnapshot(storage_metadata_snapshot, context);
 
@@ -638,7 +639,7 @@ void ReadFromMerge::createChildPlans()
             }
         }
 
-        child_plans.emplace_back(createPlanForTable(
+        res.back().plan = createPlanForTable(
             nested_storage_snaphsot,
             modified_query_info,
             common_processed_stage,
@@ -647,8 +648,10 @@ void ReadFromMerge::createChildPlans()
             column_names_as_aliases.empty() ? std::move(real_column_names) : std::move(column_names_as_aliases),
             row_policy_data_opt,
             context,
-            current_streams));
+            current_streams);
     }
+
+    return res;
 }
 
 SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const SelectQueryInfo & query_info,
@@ -826,7 +829,7 @@ QueryPlan ReadFromMerge::createPlanForTable(
     Names && real_column_names,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextMutablePtr modified_context,
-    size_t streams_num)
+    size_t streams_num) const
 {
     const auto & [database_name, storage, _, table_name] = storage_with_lock;
 
@@ -989,7 +992,7 @@ void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPipelineBuilder & bui
     });
 }
 
-StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
+StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     ContextPtr query_context,
     const ASTPtr & query /* = nullptr */,
     bool filter_by_database_virtual_column /* = false */,
@@ -1002,8 +1005,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
     assert(!filter_by_database_virtual_column || !filter_by_table_virtual_column || query);
 
     const Settings & settings = query_context->getSettingsRef();
-    StorageListWithLocks selected_tables;
-    DatabaseTablesIterators database_table_iterators = getDatabaseIterators(getContext());
+    StorageListWithLocks res;
+    DatabaseTablesIterators database_table_iterators = assert_cast<StorageMerge &>(*storage_merge).getDatabaseIterators(query_context);
 
     MutableColumnPtr database_name_virtual_column;
     MutableColumnPtr table_name_virtual_column;
@@ -1030,10 +1033,10 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
             if (query && query->as<ASTSelectQuery>()->prewhere() && !storage->supportsPrewhere())
                 throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "Storage {} doesn't support PREWHERE.", storage->getName());
 
-            if (storage.get() != this)
+            if (storage.get() != storage_merge.get())
             {
                 auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings.lock_acquire_timeout);
-                selected_tables.emplace_back(iterator->databaseName(), storage, std::move(table_lock), iterator->name());
+                res.emplace_back(iterator->databaseName(), storage, std::move(table_lock), iterator->name());
                 if (filter_by_table_virtual_column)
                     table_name_virtual_column->insert(iterator->name());
             }
@@ -1051,7 +1054,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_database");
 
         /// Remove unused databases from the list
-        selected_tables.remove_if([&](const auto & elem) { return values.find(std::get<0>(elem)) == values.end(); });
+        res.remove_if([&](const auto & elem) { return values.find(std::get<0>(elem)) == values.end(); });
     }
 
     if (filter_by_table_virtual_column)
@@ -1062,13 +1065,13 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
         /// Remove unused tables from the list
-        selected_tables.remove_if([&](const auto & elem) { return values.find(std::get<3>(elem)) == values.end(); });
+        res.remove_if([&](const auto & elem) { return values.find(std::get<3>(elem)) == values.end(); });
     }
 
-    return selected_tables;
+    return res;
 }
 
-DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const String & database_name, ContextPtr local_context) const
+DatabaseTablesIteratorPtr StorageMerge::DatabaseNameOrRegexp::getDatabaseIterator(const String & database_name, ContextPtr local_context) const
 {
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
@@ -1088,7 +1091,7 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const String & datab
     return database->getTablesIterator(local_context, table_name_match);
 }
 
-StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(ContextPtr local_context) const
+StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDatabaseIterators(ContextPtr local_context) const
 {
     try
     {
@@ -1215,6 +1218,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
 {
+    filterTablesAndCreateChildPlans();
+
     /// Disable read-in-order optimization for reverse order with final.
     /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
     if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
@@ -1227,9 +1232,9 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
     };
 
     bool ok = true;
-    for (const auto & plan : child_plans)
-        if (plan.isInitialized())
-            ok &= recursivelyApplyToReadingSteps(plan.getRootNode(), request_read_in_order);
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            ok &= recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), request_read_in_order);
 
     if (!ok)
         return false;
@@ -1256,9 +1261,11 @@ void ReadFromMerge::applyFilters(const QueryPlan & plan) const
 
 void ReadFromMerge::applyFilters()
 {
-    for (const auto & plan : child_plans)
-        if (plan.isInitialized())
-            applyFilters(plan);
+    filterTablesAndCreateChildPlans();
+
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            applyFilters(child_plan.plan);
 }
 
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
