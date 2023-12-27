@@ -31,15 +31,12 @@ public:
     ReplacingSortedAlgorithm(
         const Block & header, size_t num_inputs,
         SortDescription description_,
-        const String & is_deleted_column,
         const String & version_column,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false,
-        bool cleanup = false,
-        size_t * cleanedup_rows_count = nullptr,
-        bool use_skipping_final = false);
+        bool use_skipping_final_ = false);
 
     const char * getName() const override { return "ReplacingSortedAlgorithm"; }
     Status merge() override;
@@ -47,17 +44,14 @@ public:
 private:
     MergedData merged_data;
 
-    ssize_t is_deleted_column_number = -1;
     ssize_t version_column_number = -1;
-    bool cleanup = false;
-    size_t * cleanedup_rows_count = nullptr;
 
     bool use_skipping_final = false; /// Either we use skipping final algorithm
     std::queue<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
 
     using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 2; /// last, current.
-    RowRef selected_row; /// Last row with maximum version for current primary key.
+    RowRef selected_row; /// Last row with maximum version for current primary key, may extend lifetime of chunk in input source
     size_t max_pos = 0; /// The position (into current_row_sources) of the row with the highest version.
 
     /// Sources of rows with the current primary key.
@@ -65,7 +59,13 @@ private:
 
     void insertRow();
 
+    /// Method for using in skipping FINAL logic
+    /// Skipping FINAL doesn't merge rows to new chunks but marks selected rows in input chunks and emit them
+
+    /// When removing a source from queue, if source 's chunk has selected rows then we keep it
     void saveChunkForSkippingFinalFromSource(size_t current_source_index);
+    /// When changing current `selected_row`, if selected_row is the last owner of an input chunk and that chunk
+    /// has selected rows, we also keep it
     void saveChunkForSkippingFinalFromSelectedRow();
 };
 

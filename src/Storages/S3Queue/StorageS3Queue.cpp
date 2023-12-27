@@ -150,7 +150,8 @@ StorageS3Queue::StorageS3Queue(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
     task = getContext()->getSchedulePool().createTask("S3QueueStreamingTask", [this] { threadFunc(); });
@@ -492,12 +493,6 @@ void registerStorageS3QueueImpl(const String & name, StorageFactory & factory)
         name,
         [](const StorageFactory::Arguments & args)
         {
-            if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_s3queue)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3Queue is experimental. "
-                                "You can enable it with the `allow_experimental_s3queue` setting.");
-            }
-
             auto & engine_args = args.engine_args;
             if (engine_args.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");

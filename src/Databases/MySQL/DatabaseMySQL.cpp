@@ -407,7 +407,6 @@ String DatabaseMySQL::getMetadataPath() const
 
 void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/)
 {
-
     std::lock_guard lock{mutex};
     fs::directory_iterator iter(getMetadataPath());
 

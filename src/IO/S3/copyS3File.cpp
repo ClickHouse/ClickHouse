@@ -512,7 +512,7 @@ namespace
             client_ptr->setKMSHeaders(request);
         }
 
-        void processPutRequest(const S3::PutObjectRequest & request)
+        void processPutRequest(S3::PutObjectRequest & request)
         {
             size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
             for (size_t retries = 1;; ++retries)
@@ -655,6 +655,7 @@ namespace
 
         void performCopy()
         {
+            LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
             if (!supports_multipart_copy || size <= upload_settings.max_single_operation_copy_size)
                 performSingleOperationCopy();
             else
@@ -709,7 +710,7 @@ namespace
             client_ptr->setKMSHeaders(request);
         }
 
-        void processCopyRequest(const S3::CopyObjectRequest & request)
+        void processCopyRequest(S3::CopyObjectRequest & request)
         {
             size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
             for (size_t retries = 1;; ++retries)

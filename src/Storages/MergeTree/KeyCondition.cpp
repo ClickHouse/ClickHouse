@@ -46,7 +46,6 @@ namespace ErrorCodes
     extern const int BAD_TYPE_OF_FIELD;
 }
 
-
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
 /// We call a pattern "perfect prefix" if:
 /// - (1) the pattern has a wildcard
@@ -799,9 +798,12 @@ KeyCondition::KeyCondition(
 
     if (!filter_node)
     {
+        has_filter = false;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
+
+    has_filter = true;
 
     /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
       * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
@@ -875,9 +877,12 @@ KeyCondition::KeyCondition(
 
     if (!filter_dag)
     {
+        has_filter = false;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
+
+    has_filter = true;
 
     auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
     assert(inverted_dag->getOutputs().size() == 1);
@@ -2537,6 +2542,173 @@ bool KeyCondition::matchesExactContinuousRange() const
         min_constraint = column_constraints[i];
     }
 
+    return true;
+}
+
+bool KeyCondition::extractPlainRanges(Ranges & ranges) const
+{
+    if (key_indices.empty() || key_indices.size() > 1)
+        return false;
+
+    if (hasMonotonicFunctionsChain())
+        return false;
+
+    /// All Ranges in rpn_stack is plain.
+    std::stack<PlainRanges> rpn_stack;
+
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_AND)
+        {
+            auto right_ranges = rpn_stack.top();
+            rpn_stack.pop();
+
+            auto left_ranges = rpn_stack.top();
+            rpn_stack.pop();
+
+            auto new_range = left_ranges.intersectWith(right_ranges);
+            rpn_stack.emplace(std::move(new_range));
+        }
+        else if (element.function == RPNElement::FUNCTION_OR)
+        {
+            auto right_ranges = rpn_stack.top();
+            rpn_stack.pop();
+
+            auto left_ranges = rpn_stack.top();
+            rpn_stack.pop();
+
+            auto new_range = left_ranges.unionWith(right_ranges);
+            rpn_stack.emplace(std::move(new_range));
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT)
+        {
+            auto to_invert_ranges = rpn_stack.top();
+            rpn_stack.pop();
+
+            std::vector<Ranges> reverted_ranges = PlainRanges::invert(to_invert_ranges.ranges);
+
+            if (reverted_ranges.size() == 1)
+                rpn_stack.emplace(std::move(reverted_ranges[0]));
+            else
+            {
+                /// intersect reverted ranges
+                PlainRanges intersected_ranges(reverted_ranges[0]);
+                for (size_t i = 1; i < reverted_ranges.size(); i++)
+                {
+                    intersected_ranges = intersected_ranges.intersectWith(PlainRanges(reverted_ranges[i]));
+                }
+                rpn_stack.emplace(std::move(intersected_ranges));
+            }
+        }
+        else /// atom relational expression or constants
+        {
+            if (element.function == RPNElement::FUNCTION_IN_RANGE)
+            {
+                rpn_stack.push(PlainRanges(element.range));
+            }
+            else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+            {
+                rpn_stack.push(PlainRanges(element.range.invertRange()));
+            }
+            else if (element.function == RPNElement::FUNCTION_IN_SET)
+            {
+                if (element.set_index->hasMonotonicFunctionsChain())
+                    return false;
+
+                if (element.set_index->size() == 0)
+                {
+                    rpn_stack.push(PlainRanges::makeBlank()); /// skip blank range
+                    continue;
+                }
+
+                const auto & values = element.set_index->getOrderedSet();
+                Ranges points_range;
+
+                /// values in set_index are ordered and no duplication
+                for (size_t i=0; i<element.set_index->size(); i++)
+                {
+                    FieldRef f;
+                    values[0]->get(i, f);
+                    if (f.isNull())
+                        return false;
+                    points_range.push_back({f});
+                }
+                rpn_stack.push(PlainRanges(points_range));
+            }
+            else if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
+            {
+                if (element.set_index->hasMonotonicFunctionsChain())
+                    return false;
+
+                if (element.set_index->size() == 0)
+                {
+                    rpn_stack.push(PlainRanges::makeUniverse());
+                    continue;
+                }
+
+                const auto & values = element.set_index->getOrderedSet();
+                Ranges points_range;
+
+                std::optional<FieldRef> pre;
+                for (size_t i=0; i<element.set_index->size(); i++)
+                {
+                    FieldRef cur;
+                    values[0]->get(i, cur);
+
+                    if (cur.isNull())
+                        return false;
+                    if (pre)
+                    {
+                        Range r(*pre, false, cur, false);
+                        /// skip blank range
+                        if (!(r.left > r.right || (r.left == r.right && !r.left_included && !r.right_included)))
+                            points_range.push_back(r);
+                    }
+                    else
+                    {
+                        points_range.push_back(Range::createRightBounded(cur, false));
+                    }
+                    pre = cur;
+                }
+
+                points_range.push_back(Range::createLeftBounded(*pre, false));
+                rpn_stack.push(PlainRanges(points_range));
+            }
+            else if (element.function == RPNElement::ALWAYS_FALSE)
+            {
+                /// skip blank range
+                rpn_stack.push(PlainRanges::makeBlank());
+            }
+            else if (element.function == RPNElement::ALWAYS_TRUE)
+            {
+                rpn_stack.push(PlainRanges::makeUniverse());
+            }
+            else if (element.function == RPNElement::FUNCTION_IS_NULL)
+            {
+                /// key values can not be null, so isNull will get blank range.
+                rpn_stack.push(PlainRanges::makeBlank());
+            }
+            else if (element.function == RPNElement::FUNCTION_IS_NOT_NULL)
+            {
+                rpn_stack.push(PlainRanges::makeUniverse());
+            }
+            else /// FUNCTION_UNKNOWN
+            {
+                if (!has_filter)
+                    rpn_stack.push(PlainRanges::makeUniverse());
+                else
+                    return false;
+            }
+        }
+    }
+
+    if (rpn_stack.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::extractPlainRanges");
+
+    for (auto & r : rpn_stack.top().ranges)
+    {
+        ranges.push_back(std::move(r));
+    }
     return true;
 }
 

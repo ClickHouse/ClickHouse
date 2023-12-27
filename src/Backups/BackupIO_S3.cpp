@@ -48,20 +48,22 @@ namespace
         }
 
         const auto & request_settings = settings.request_settings;
+        const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
+        const Settings & local_settings = context->getSettingsRef();
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             settings.auth_settings.region,
             context->getRemoteHostFilter(),
-            static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
-            static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_retry_attempts),
-            context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
+            static_cast<unsigned>(global_settings.s3_max_redirects),
+            static_cast<unsigned>(global_settings.s3_retry_attempts),
+            global_settings.enable_s3_requests_logging,
             /* for_disk_s3 = */ false,
             request_settings.get_request_throttler,
             request_settings.put_request_throttler,
             s3_uri.uri.getScheme());
 
         client_configuration.endpointOverride = s3_uri.endpoint;
-        client_configuration.maxConnections = static_cast<unsigned>(context->getSettingsRef().s3_max_connections);
+        client_configuration.maxConnections = static_cast<unsigned>(global_settings.s3_max_connections);
         /// Increase connect timeout
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
@@ -71,6 +73,7 @@ namespace
         return S3::ClientFactory::instance().create(
             client_configuration,
             s3_uri.is_virtual_hosted_style,
+            local_settings.s3_disable_checksum,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             settings.auth_settings.server_side_encryption_customer_key_base64,
@@ -143,7 +146,7 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
 {
     auto objects = listObjects(*client, s3_uri, file_name);
     if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist");
+        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
     return objects[0].GetSize();
 }
 
@@ -296,7 +299,7 @@ UInt64 BackupWriterS3::getFileSize(const String & file_name)
 {
     auto objects = listObjects(*client, s3_uri, file_name);
     if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist");
+        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
     return objects[0].GetSize();
 }
 

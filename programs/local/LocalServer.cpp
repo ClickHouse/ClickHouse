@@ -23,6 +23,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
+#include <Common/PoolId.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -42,7 +43,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -495,7 +496,7 @@ try
 
     processConfig();
     adjustSettings();
-    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
 
     applyCmdSettings(global_context);
 
@@ -742,21 +743,21 @@ void LocalServer::processConfig()
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
-        loadMetadataSystem(global_context);
+        auto startup_system_tasks = loadMetadataSystem(global_context);
         attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        startupSystemTables();
+        waitLoad(TablesLoaderForegroundPoolId, startup_system_tasks);
 
         if (!config().has("only-system-tables"))
         {
             DatabaseCatalog::instance().createBackgroundTasks();
-            loadMetadata(global_context);
+            waitLoad(loadMetadata(global_context));
             DatabaseCatalog::instance().startupBackgroundTasks();
         }
 
         /// For ClickHouse local if path is not set the loader will be disabled.
-        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
+        global_context->getUserDefinedSQLObjectsStorage().loadObjects();
 
         LOG_DEBUG(log, "Loaded metadata.");
     }
@@ -775,6 +776,7 @@ void LocalServer::processConfig()
 
     global_context->setQueryKindInitial();
     global_context->setQueryKind(query_kind);
+    global_context->setQueryParameters(query_parameters);
 }
 
 
@@ -821,6 +823,7 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
     std::cout << getHelpFooter() << "\n";
+    std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
 #endif
 }
 
@@ -897,7 +900,31 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
-        if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
+        /// Parameter arg after underline.
+        if (arg.starts_with("--param_"))
+        {
+            auto param_continuation = arg.substr(strlen("--param_"));
+            auto equal_pos = param_continuation.find_first_of('=');
+
+            if (equal_pos == std::string::npos)
+            {
+                /// param_name value
+                ++arg_num;
+                if (arg_num >= argc)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter requires value");
+                arg = argv[arg_num];
+                query_parameters.emplace(String(param_continuation), String(arg));
+            }
+            else
+            {
+                if (equal_pos == 0)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
+
+                /// param_name=value
+                query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
+            }
+        }
+        else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
         {
             /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
             ++arg_num;

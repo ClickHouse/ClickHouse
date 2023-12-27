@@ -111,6 +111,7 @@ public:
 
 private:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     PeekableReadBuffer buf;
     ParserExpression parser;

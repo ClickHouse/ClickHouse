@@ -56,6 +56,7 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/PasteJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 
 
@@ -580,7 +581,8 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
 
         AggregateFunctionProperties properties;
         aggregate.parameters = (node.parameters) ? getAggregateFunctionParametersArray(node.parameters, "", getContext()) : Array();
-        aggregate.function = AggregateFunctionFactory::instance().get(node.name, types, aggregate.parameters, properties);
+        aggregate.function
+            = AggregateFunctionFactory::instance().get(node.name, node.nulls_action, types, aggregate.parameters, properties);
 
         descriptions.push_back(aggregate);
     }
@@ -788,11 +790,12 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         }
 
         AggregateFunctionProperties properties;
-        window_function.aggregate_function
-            = AggregateFunctionFactory::instance().get(
-                window_function.function_node->name,
-                window_function.argument_types,
-                window_function.function_parameters, properties);
+        window_function.aggregate_function = AggregateFunctionFactory::instance().get(
+            window_function.function_node->name,
+            window_function.function_node->nulls_action,
+            window_function.argument_types,
+            window_function.function_parameters,
+            properties);
 
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it
@@ -856,11 +859,8 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
 
 bool ExpressionAnalyzer::isRemoteStorage() const
 {
-    const Settings & csettings = getContext()->getSettingsRef();
     // Consider any storage used in parallel replicas as remote, so the query is executed in multiple servers
-    const bool enable_parallel_processing_of_joins
-        = csettings.max_parallel_replicas > 1 && csettings.allow_experimental_parallel_reading_from_replicas > 0;
-    return syntax->is_remote_storage || enable_parallel_processing_of_joins;
+    return syntax->is_remote_storage || getContext()->canUseTaskBasedParallelReplicas();
 }
 
 const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
@@ -944,18 +944,19 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(
 std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block);
 
 
-static std::shared_ptr<IJoin> chooseJoinAlgorithm(
-    std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
+static std::shared_ptr<IJoin> tryCreateJoin(
+    JoinAlgorithm algorithm,
+    std::shared_ptr<TableJoin> analyzed_join,
+    const ColumnsWithTypeAndName & left_sample_columns,
+    const Block & right_sample_block,
+    std::unique_ptr<QueryPlan> & joined_plan,
+    ContextPtr context)
 {
-    const auto & settings = context->getSettings();
+    if (analyzed_join->kind() == JoinKind::Paste)
+        return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
 
-    Block right_sample_block = joined_plan->getCurrentDataStream().header;
-
-    std::vector<String> tried_algorithms;
-
-    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
+    if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {
-        tried_algorithms.push_back(toString(JoinAlgorithm::DIRECT));
         JoinPtr direct_join = tryKeyValueJoin(analyzed_join, right_sample_block);
         if (direct_join)
         {
@@ -965,54 +966,63 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
         }
     }
 
-    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARTIAL_MERGE) ||
-        analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE))
+    if (algorithm == JoinAlgorithm::PARTIAL_MERGE ||
+        algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE)
     {
-        tried_algorithms.push_back(toString(JoinAlgorithm::PARTIAL_MERGE));
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
     }
 
-    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::HASH) ||
+    if (algorithm == JoinAlgorithm::HASH ||
         /// partial_merge is preferred, but can't be used for specified kind of join, fallback to hash
-        analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE) ||
-        analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
+        algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE ||
+        algorithm == JoinAlgorithm::PARALLEL_HASH ||
+        algorithm == JoinAlgorithm::DEFAULT)
     {
-        tried_algorithms.push_back(toString(JoinAlgorithm::HASH));
+        const auto & settings = context->getSettings();
+
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, settings.max_threads, right_sample_block);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
-    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE))
+    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
     {
-        tried_algorithms.push_back(toString(JoinAlgorithm::FULL_SORTING_MERGE));
         if (FullSortingMergeJoin::isSupported(analyzed_join))
             return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
     }
 
-    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
+    if (algorithm == JoinAlgorithm::GRACE_HASH)
     {
-        tried_algorithms.push_back(toString(JoinAlgorithm::GRACE_HASH));
-
         // Grace hash join requires that columns exist in left_sample_block.
         Block left_sample_block(left_sample_columns);
         if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
             return std::make_shared<GraceHashJoin>(context, analyzed_join, left_sample_block, right_sample_block, context->getTempDataOnDisk());
     }
 
-    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
+    if (algorithm == JoinAlgorithm::AUTO)
     {
-        tried_algorithms.push_back(toString(JoinAlgorithm::AUTO));
-
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
+    return nullptr;
+}
+
+static std::shared_ptr<IJoin> chooseJoinAlgorithm(
+    std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
+{
+    Block right_sample_block = joined_plan->getCurrentDataStream().header;
+    const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
+    for (const auto alg : join_algorithms)
+    {
+        auto join = tryCreateJoin(alg, analyzed_join, left_sample_columns, right_sample_block, joined_plan, context);
+        if (join)
+            return join;
+    }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "Can't execute {} join algorithm for this strictness/kind and right storage type",
-        fmt::join(tried_algorithms, " or "));
+        "Can't execute any of specified join algorithms for this strictness/kind and right storage type");
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(
@@ -1070,9 +1080,6 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
 
 std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block)
 {
-    if (!analyzed_join->isEnabledAlgorithm(JoinAlgorithm::DIRECT))
-        return nullptr;
-
     auto storage = analyzed_join->getStorageKeyValue();
     if (!storage)
         return nullptr;

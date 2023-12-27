@@ -185,7 +185,7 @@ protected:
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();
 
-    void initTtyBuffer(ProgressOption progress);
+    void initTTYBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -321,6 +321,9 @@ protected:
     bool allow_merge_tree_settings = false;
 
     bool cancelled = false;
+
+    /// Does log_comment has specified by user?
+    bool has_log_comment = false;
 };
 
 }
