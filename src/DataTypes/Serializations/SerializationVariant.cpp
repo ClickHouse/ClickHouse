@@ -536,7 +536,7 @@ std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataType
 
     /// Bool type should have priority higher then all integers.
     if (isBool(type))
-        return {nested_depth, priority_map[TypeIndex::Int8] + 1 , simple_nested_depth};
+        return {nested_depth, priority_map[TypeIndex::Int8] + 1, simple_nested_depth};
 
     return {nested_depth, priority_map[type->getTypeId()], simple_nested_depth};
 }
