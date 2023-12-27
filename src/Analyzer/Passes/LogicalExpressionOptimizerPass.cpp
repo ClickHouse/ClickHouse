@@ -272,7 +272,7 @@ private:
 
         for (const auto & argument : function_node.getArguments())
         {
-            auto * argument_function = argument->as<FunctionNode>();            
+            auto * argument_function = argument->as<FunctionNode>();
             const auto valid_functions = std::unordered_set<std::string>{"equals", "notEquals"};
             if (!argument_function || !valid_functions.contains(argument_function->getFunctionName()))
             {
