@@ -3,6 +3,7 @@
 #include <string_view>
 #include <boost/program_options.hpp>
 
+#include <IO/copyData.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -13,6 +14,7 @@
 #include <Parsers/obfuscateQueries.h>
 #include <Parsers/parseQuery.h>
 #include <Common/ErrorCodes.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/TerminalSize.h>
 
 #include <Interpreters/Context.h>
@@ -29,9 +31,8 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
-
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <IO/copyData.h>
+
 
 namespace DB::ErrorCodes
 {
@@ -238,8 +239,10 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 if (auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 {
                     if ("Values" != insert_query->format)
-                        throw Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
-                            "Can't format INSERT query with data format '{}'", insert_query->format);
+                        throw Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Can't format INSERT query with data format '{}'", insert_query->format);
+
+                    /// Reset format to default to have `INSERT INTO table VALUES` instead of `INSERT INTO table VALUES FORMAT Values`
+                    insert_query->format = {};
 
                     /// We assume that data ends with a newline character (same as client does)
                     const char * this_query_end = find_first_symbols<'\n'>(insert_query->data, end);
@@ -266,6 +269,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         String res_string = str_buf.str();
                         const char * s_pos = res_string.data();
                         const char * s_end = s_pos + res_string.size();
+                        /// remove trailing spaces
+                        while (s_end > s_pos && isWhitespaceASCIIOneLine(*(s_end - 1)))
+                            --s_end;
                         WriteBufferFromOStream res_cout(std::cout, 4096);
                         /// For multiline queries we print ';' at new line,
                         /// but for single line queries we print ';' at the same line

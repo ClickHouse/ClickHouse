@@ -69,5 +69,5 @@ echo "select b, c, d, e, f from ( select b, c, d, e, f from table1 )" | ${CLICKH
 
 echo "======================================"
 
-echo "select 1" | ${CLICKHOUSE_FORMAT} --comments --max_line_length=260 2>&1 | grep -o 'BAD_ARGUMENTS' ||:
-echo "select 1" | ${CLICKHOUSE_FORMAT} --comments --max_line_length=120 --oneline 2>&1 | grep -o 'BAD_ARGUMENTS' ||:
+{ echo "select 1" | ${CLICKHOUSE_FORMAT} --comments --max_line_length=260 2>&1; echo $?; }
+{ echo "select 1" | ${CLICKHOUSE_FORMAT} --comments --max_line_length=120 --oneline 2>&1; echo $?; }

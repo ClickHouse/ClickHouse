@@ -1,10 +1,10 @@
-INSERT INTO table1 FORMAT Values (1, [1,3], 'fd'), (2, [2,4], 'sd'), (3, [3,5], 'td')
+INSERT INTO table1 VALUES (1, [1,3], 'fd'), (2, [2,4], 'sd'), (3, [3,5], 'td')
 ======================================
 SELECT a
 FROM table1
 ;
 
-INSERT INTO table1 FORMAT Values (1, [1,3], 'fd'), (2, [2,4], 'sd'), (3, [3,5], 'td');
+INSERT INTO table1 VALUES (1, [1,3], 'fd'), (2, [2,4], 'sd'), (3, [3,5], 'td');
 
 SELECT b
 FROM table1
@@ -17,7 +17,7 @@ FROM table1
 ;
 
 -- some insert query
-INSERT INTO table1 FORMAT Values (1, [1,3], 'fd'), (2, [2,4], 'sd'), (3, [3,5], 'td');
+INSERT INTO table1 VALUES (1, [1,3], 'fd'), (2, [2,4], 'sd'), (3, [3,5], 'td');
 
 -- more comments
 -- in a row
@@ -135,5 +135,7 @@ FROM
 )
 SELECT b, c, d, e, f FROM (SELECT b, c, d, e, f FROM table1)
 ======================================
-BAD_ARGUMENTS
-BAD_ARGUMENTS
+Option 'max_line_length' must be less than 256.
+2
+Options 'oneline' and 'max_line_length' are mutually exclusive.
+2
