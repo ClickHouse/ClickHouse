@@ -54,8 +54,6 @@ contents:
   dst: /usr/bin/clickhouse-copier
 - src: root/usr/bin/clickhouse-server
   dst: /usr/bin/clickhouse-server
-- src: root/usr/bin/clickhouse-report
-  dst: /usr/bin/clickhouse-report
 - src: root/usr/bin/clickhouse-su
   dst: /usr/bin/clickhouse-su
 # clickhouse-keeper part
