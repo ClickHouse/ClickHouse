@@ -154,7 +154,7 @@ public:
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
+        RetryStrategy(uint32_t maxRetries_ = 10, ContextPtr context = nullptr, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 1000);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -297,7 +297,8 @@ public:
         ServerSideEncryptionKMSConfig sse_kms_config,
         HTTPHeaderEntries headers,
         CredentialsConfiguration credentials_configuration,
-        const String & session_token = "");
+        const String & session_token = "",
+        ContextPtr context = nullptr);
 
     PocoHTTPClientConfiguration createClientConfiguration(
         const String & force_region,
