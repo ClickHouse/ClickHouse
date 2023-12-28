@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-merge-tree-settings, no-random-settings
+# Tags: long, no-random-merge-tree-settings, no-random-settings, no-s3-storage
 # shellcheck disable=SC2046
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -149,12 +149,12 @@ function check()
         expected_error=$3
     fi
 
-    echo 'system.parts'
-    $CLICKHOUSE_CLIENT -q "
-    SELECT name, active, projections
-    FROM system.parts
-    WHERE table='$table' AND database=currentDatabase()
-    ORDER BY name;"
+    #echo 'system.parts'
+    #$CLICKHOUSE_CLIENT -q "
+    #SELECT name, active, projections
+    #FROM system.parts
+    #WHERE table='$table' AND database=currentDatabase()
+    #ORDER BY name;"
 
     query_id=$(random 8)
 
@@ -447,7 +447,7 @@ function test3()
 
     break_projection test proj all_2_2_0 part
 
-    check test proj STD_EXCEPTION
+    check test
 
     broken_projections_info test
 

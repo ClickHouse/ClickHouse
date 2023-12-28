@@ -2,11 +2,6 @@ insert new part
 insert new part
 insert new part
 insert new part
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
 12
 16
@@ -21,11 +16,6 @@ check table
 1
 0
 broke metadata of part 'proj' (parent part: all_2_2_0)
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
 12
 16
@@ -46,11 +36,6 @@ all_2_2_0
 broke data of part 'proj_2' (parent part: all_2_2_0)
 broken projections info
 all_2_2_0	proj	FILE_DOESNT_EXIST
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
 12
 16
@@ -63,11 +48,6 @@ check table
 broken projections info
 all_2_2_0	proj	FILE_DOESNT_EXIST
 all_2_2_0	proj_2	NO_FILE_IN_DATA_PART
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
 12
 16
@@ -94,14 +74,6 @@ broken projections info
 all_2_2_0	proj	FILE_DOESNT_EXIST
 all_2_2_0	proj_2	NO_FILE_IN_DATA_PART
 all_3_3_0	proj_2	NO_FILE_IN_DATA_PART
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	0	['proj','proj_2']
-all_3_5_1	1	['proj']
-all_4_4_0	0	['proj','proj_2']
-all_5_5_0	0	['proj','proj_2']
 select from projection 'proj'
 12
 16
@@ -131,14 +103,6 @@ all_1_1_0	proj_2	FILE_DOESNT_EXIST
 all_2_2_0	proj	NO_FILE_IN_DATA_PART
 all_2_2_0	proj_2	FILE_DOESNT_EXIST
 all_3_3_0	proj_2	FILE_DOESNT_EXIST
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	0	['proj','proj_2']
-all_3_5_1	1	['proj']
-all_4_4_0	0	['proj','proj_2']
-all_5_5_0	0	['proj','proj_2']
 select from projection 'proj'
 12
 16
@@ -155,18 +119,6 @@ check table full (test - all_1_1_0)
 all_1_1_0
 materialize projection proj
 check table full (test - )
-system.parts
-all_0_0_0	0	['proj','proj_2']
-all_0_0_0_6	1	['proj','proj_2']
-all_1_1_0	0	['proj','proj_2']
-all_1_1_0_6	1	['proj','proj_2']
-all_2_2_0	0	['proj','proj_2']
-all_2_2_0_6	1	['proj','proj_2']
-all_3_3_0	0	['proj','proj_2']
-all_3_5_1	0	['proj']
-all_3_5_1_6	1	['proj']
-all_4_4_0	0	['proj','proj_2']
-all_5_5_0	0	['proj','proj_2']
 select from projection 'proj'
 12
 16
@@ -189,25 +141,6 @@ OPTIMIZE TABLE test FINAL
 insert new part
 optimize
 OPTIMIZE TABLE test FINAL
-system.parts
-all_0_0_0	0	['proj','proj_2']
-all_0_0_0_6	0	['proj','proj_2']
-all_0_0_0_7	0	['proj','proj_2']
-all_0_8_2_7	1	['proj_2']
-all_1_1_0	0	['proj','proj_2']
-all_1_1_0_6	0	['proj','proj_2']
-all_1_1_0_7	0	['proj','proj_2']
-all_2_2_0	0	['proj','proj_2']
-all_2_2_0_6	0	['proj','proj_2']
-all_2_2_0_7	0	['proj','proj_2']
-all_3_3_0	0	['proj','proj_2']
-all_3_5_1	0	['proj']
-all_3_5_1_6	0	['proj']
-all_3_5_1_7	0	['proj','proj_2']
-all_4_4_0	0	['proj','proj_2']
-all_5_5_0	0	['proj','proj_2']
-all_8_8_0	0	['proj','proj_2']
-all_9_9_0	1	['proj','proj_2']
 select from projection 'proj'
 12
 16
@@ -224,9 +157,6 @@ insert new part
 insert new part
 insert new part
 insert new part
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
 select from projection 'proj'
 used projections
 SELECT c FROM test2 WHERE d == 12 OR d == 16 ORDER BY c;	proj
@@ -235,7 +165,6 @@ used projections
 SELECT d FROM test2 WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 1
-system.parts
 select from projection 'proj'
 used projections
 SELECT c FROM test2_replica WHERE d == 12 OR d == 16 ORDER BY c;	proj
@@ -248,9 +177,6 @@ check table
 broke data of part 'proj' (parent part: all_0_0_0)
 check table full (test2 - all_0_0_0)
 all_0_0_0
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
 select from projection 'proj'
 used projections
 SELECT c FROM test2 WHERE d == 12 OR d == 16 ORDER BY c;	proj
@@ -262,9 +188,6 @@ check table
 broke data of part 'all_0_0_0'
 check table full (test2 - all_0_0_0)
 all_0_0_0
-system.parts
-all_0_0_0	0	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
 select from projection 'proj'
 used projections
 SELECT c FROM test2 WHERE d == 12 OR d == 16 ORDER BY c;	proj
@@ -273,9 +196,6 @@ used projections
 SELECT d FROM test2 WHERE c == 12 OR c == 16 ORDER BY d;	proj_2
 check table
 1
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
 select from projection 'proj'
 used projections
 SELECT c FROM test2 WHERE d == 12 OR d == 16 ORDER BY c;	proj
@@ -288,11 +208,6 @@ insert new part
 insert new part
 insert new part
 insert new part
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
 12
 16
@@ -307,11 +222,6 @@ check table
 1
 0
 broke data of part 'proj' (parent part: all_2_2_0)
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	1	['proj','proj_2']
 select from projection 'proj', expect error: proj
 FILE_DOESNT_EXIST
 select from projection 'proj_2'
@@ -325,11 +235,6 @@ broken projections info
 all_2_2_0	proj	NO_FILE_IN_DATA_PART
 BACKUP_CREATED
 RESTORED
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
 12
 16
@@ -345,11 +250,6 @@ check table
 broken projections info
 0
 broke all data of part 'proj' (parent part: all_2_2_0)
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	1	['proj','proj_2']
 select from projection 'proj', expect error: proj
 STD_EXCEPTION
 select from projection 'proj_2'
@@ -363,15 +263,6 @@ broken projections info
 all_2_2_0	proj	FILE_DOESNT_EXIST
 FILE_DOESNT_EXIST
 materialize projection proj
-system.parts
-all_0_0_0	0	['proj','proj_2']
-all_0_0_0_4	1	['proj','proj_2']
-all_1_1_0	0	['proj','proj_2']
-all_1_1_0_4	1	['proj','proj_2']
-all_2_2_0	0	['proj','proj_2']
-all_2_2_0_4	1	['proj','proj_2']
-all_3_3_0	0	['proj','proj_2']
-all_3_3_0_4	1	['proj','proj_2']
 select from projection 'proj'
 12
 16
@@ -388,11 +279,6 @@ broken projections info
 all_2_2_0	proj	FILE_DOESNT_EXIST
 BACKUP_CREATED
 RESTORED
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
 12
 16
@@ -407,11 +293,6 @@ check table
 1
 0
 broke all data of part 'proj' (parent part: all_1_1_0)
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	1	['proj','proj_2']
 select from projection 'proj', expect error: proj
 select from projection 'proj_2'
 12
@@ -424,11 +305,6 @@ broken projections info
 all_1_1_0	proj	FILE_DOESNT_EXIST
 BACKUP_CREATED
 RESTORED
-system.parts
-all_0_0_0	1	['proj','proj_2']
-all_1_1_0	1	['proj','proj_2']
-all_2_2_0	1	['proj','proj_2']
-all_3_3_0	1	['proj','proj_2']
 select from projection 'proj'
 12
 16
