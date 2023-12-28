@@ -253,7 +253,7 @@ public:
     if (which.is##TYPE()) \
     { \
         MutableColumnPtr res = ColumnVector<TYPE>::create(rows); \
-        MutableColumnPtr null_map = ColumnUInt8::create(rows); \
+        MutableColumnPtr null_map = result_type->isNullable() ? ColumnUInt8::create(rows) : nullptr; \
         executeInstructionsColumnar<TYPE, INDEX>(instructions, rows, res, null_map, result_type->isNullable()); \
         if (!result_type->isNullable()) \
             return std::move(res); \
@@ -378,14 +378,12 @@ private:
     }
 
     template <typename T, typename S>
-    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res, const MutableColumnPtr & null_map,
-        bool nullable)
+    static void executeInstructionsColumnar(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res, const MutableColumnPtr & null_map, bool nullable)
     {
         PaddedPODArray<S> inserts(rows, static_cast<S>(instructions.size()));
         calculateInserts(instructions, rows, inserts);
 
         PaddedPODArray<T> & res_data = assert_cast<ColumnVector<T> &>(*res).getData();
-        PaddedPODArray<UInt8> & null_map_data = assert_cast<ColumnUInt8 &>(*null_map).getData();
         if (!nullable)
         {
             for (size_t row_i = 0; row_i < rows; ++row_i)
@@ -397,6 +395,7 @@ private:
         }
         else
         {
+            PaddedPODArray<UInt8> & null_map_data = assert_cast<ColumnUInt8 &>(*null_map).getData();
             std::vector<const T*> data_cols(instructions.size());
             std::vector<const UInt8 *> null_map_cols(instructions.size());
             for (size_t i = 0; i < instructions.size(); ++i)
