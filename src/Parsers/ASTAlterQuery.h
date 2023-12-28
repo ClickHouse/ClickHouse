@@ -40,7 +40,6 @@ public:
         MODIFY_SETTING,
         RESET_SETTING,
         MODIFY_QUERY,
-        MODIFY_REFRESH,
         REMOVE_TTL,
         REMOVE_SAMPLE_BY,
 
@@ -166,9 +165,6 @@ public:
     /** In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
      */
     ASTPtr values;
-
-    /// For MODIFY REFRESH
-    ASTPtr refresh;
 
     bool detach = false;        /// true for DETACH PARTITION
 

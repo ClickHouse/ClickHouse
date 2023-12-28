@@ -449,7 +449,7 @@ SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
 ```
 
 
-## SYSTEM STOP LISTEN
+### SYSTEM STOP LISTEN
 
 Closes the socket and gracefully terminates the existing connections to the server on the specified port with the specified protocol.
 
@@ -464,7 +464,7 @@ SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QU
 - If `QUERIES DEFAULT [EXCEPT .. [,..]]` modifier is specified, all default protocols are stopped, unless specified with `EXCEPT` clause.
 - If `QUERIES CUSTOM [EXCEPT .. [,..]]` modifier is specified, all custom protocols are stopped, unless specified with `EXCEPT` clause.
 
-## SYSTEM START LISTEN
+### SYSTEM START LISTEN
 
 Allows new connections to be established on the specified protocols.
 
@@ -472,48 +472,4 @@ However, if the server on the specified port and protocol was not stopped using 
 
 ```sql
 SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
-```
-
-## Managing Refreshable Materialized Views {#refreshable-materialized-views}
-
-Commands to control background tasks performed by [Refreshable Materialized Views](../../sql-reference/statements/create/view.md#refreshable-materialized-view)
-
-Keep an eye on [`system.view_refreshes`](../../operations/system-tables/view_refreshes.md) while using them.
-
-### SYSTEM REFRESH VIEW
-
-Trigger an immediate out-of-schedule refresh of a given view.
-
-```sql
-SYSTEM REFRESH VIEW [db.]name
-```
-
-### SYSTEM STOP VIEW, SYSTEM STOP VIEWS
-
-Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too.
-
-```sql
-SYSTEM STOP VIEW [db.]name
-```
-```sql
-SYSTEM STOP VIEWS
-```
-
-### SYSTEM START VIEW, SYSTEM START VIEWS
-
-Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
-
-```sql
-SYSTEM START VIEW [db.]name
-```
-```sql
-SYSTEM START VIEWS
-```
-
-### SYSTEM CANCEL VIEW
-
-If there's a refresh in progress for the given view, interrupt and cancel it. Otherwise do nothing.
-
-```sql
-SYSTEM CANCEL VIEW [db.]name
 ```

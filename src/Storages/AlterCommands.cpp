@@ -402,14 +402,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.select = command_ast->select;
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::MODIFY_REFRESH)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.type = AlterCommand::MODIFY_REFRESH;
-        command.refresh = command_ast->refresh;
-        return command;
-    }
     else if (command_ast->type == ASTAlterCommand::RENAME_COLUMN)
     {
         AlterCommand command;
@@ -723,7 +715,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_QUERY)
     {
-        metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
+        metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, context);
         Block as_select_sample;
 
         if (context->getSettingsRef().allow_experimental_analyzer)
@@ -739,10 +731,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         metadata.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
-    }
-    else if (type == MODIFY_REFRESH)
-    {
-        metadata.refresh = refresh->clone();
     }
     else if (type == MODIFY_SETTING)
     {
