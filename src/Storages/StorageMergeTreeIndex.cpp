@@ -1,6 +1,4 @@
 
-#include "Common/escapeForFileName.h"
-#include "Storages/MergeTree/MergeTreeData.h"
 #include <Storages/StorageMergeTreeIndex.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -16,6 +14,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/escapeForFileName.h>
 
 namespace DB
 {
