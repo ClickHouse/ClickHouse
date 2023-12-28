@@ -297,6 +297,12 @@ void ColumnsDescription::flattenNested()
 {
     for (auto it = columns.begin(); it != columns.end();)
     {
+        if (!isNested(it->type))
+        {
+            ++it;
+            continue;
+        }
+
         const auto * type_arr = typeid_cast<const DataTypeArray *>(it->type.get());
         if (!type_arr)
         {
