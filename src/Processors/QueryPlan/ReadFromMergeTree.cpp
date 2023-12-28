@@ -1084,7 +1084,7 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection)
+    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection, const InputOrderInfoPtr & input_order_info)
 {
     const auto & settings = context->getSettingsRef();
     const auto & data_settings = data.getSettings();
@@ -1155,15 +1155,19 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             if (new_parts.empty())
                 continue;
 
+            auto read_type = ReadFromMergeTree::ReadType::InOrder;
+            if (input_order_info && input_order_info->direction == -1)
+                read_type = ReadType::InReverseOrder;
+
             if (num_streams > 1 && metadata_for_reading->hasPrimaryKey())
             {
                 // Let's split parts into non intersecting parts ranges and layers to ensure data parallelism of FINAL.
-                auto in_order_reading_step_getter = [this, &column_names, &info](auto parts)
+                auto in_order_reading_step_getter = [this, &column_names, &read_type, &info](auto parts)
                 {
                     return this->read(
                         std::move(parts),
                         column_names,
-                        ReadType::InOrder,
+                        read_type,
                         1 /* num_streams */,
                         0 /* min_marks_for_concurrent_read */,
                         info.use_uncompressed_cache);
@@ -1191,7 +1195,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             else
             {
                 pipes.emplace_back(read(
-                    std::move(new_parts), column_names, ReadType::InOrder, num_streams, 0, info.use_uncompressed_cache));
+                    std::move(new_parts), column_names, read_type, num_streams, 0, info.use_uncompressed_cache));
 
                 pipes.back().addSimpleTransform([sorting_expr](const Block & header)
                                                 { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
@@ -1216,7 +1220,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         Names partition_key_columns = metadata_for_reading->getPartitionKey().column_names;
 
         for (size_t i = 0; i < sort_columns_size; ++i)
-            sort_description.emplace_back(sort_columns[i], 1, 1);
+            input_order_info
+                ? sort_description.emplace_back(sort_columns[i], input_order_info->direction)
+                : sort_description.emplace_back(sort_columns[i], 1, 1);
 
         for (auto & pipe : pipes)
             addMergingFinal(
@@ -1661,11 +1667,6 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (!direction)
         direction = getSortDirection();
 
-    /// Disable read-in-order optimization for reverse order with final.
-    /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
-    if (direction != 1 && query_info.isFinal())
-        return false;
-
     auto order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, limit);
     if (query_info.projection)
         query_info.projection->input_order_info = order_info;
@@ -1858,7 +1859,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         if (!data.merging_params.version_column.empty() && !names.contains(data.merging_params.version_column))
             column_names_to_read.push_back(data.merging_params.version_column);
 
-        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, result.column_names_to_read, column_names_to_read, result_projection);
+        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, result.column_names_to_read, column_names_to_read, result_projection, input_order_info);
     }
     else if (input_order_info)
     {
