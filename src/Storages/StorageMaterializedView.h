@@ -71,6 +71,7 @@ public:
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
+    const StorageID & getTargetTableId() const { return target_table_id; }
 
     /// Get the virtual column of the target table;
     NamesAndTypesList getVirtuals() const override;

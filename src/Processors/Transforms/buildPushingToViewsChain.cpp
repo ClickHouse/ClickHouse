@@ -39,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
 }
 
 ThreadStatusesHolder::~ThreadStatusesHolder()
@@ -319,7 +320,17 @@ Chain buildPushingToViewsChain(
             StoragePtr inner_table = materialized_view->tryGetTargetTable();
             /// If target table was dropped, ignore this materialized view.
             if (!inner_table)
-                continue;
+            {
+                if (context->getSettingsRef().ignore_materialized_views_with_dropped_target_table)
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::UNKNOWN_TABLE,
+                    "Target table '{}' of view '{}' doesn't exists. To ignore this view use setting "
+                    "ignore_materialized_views_with_dropped_target_table",
+                    materialized_view->getTargetTableId().getFullTableName(),
+                    view_id.getFullTableName());
+            }
 
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
