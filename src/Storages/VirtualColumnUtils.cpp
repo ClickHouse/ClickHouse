@@ -504,7 +504,11 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 /// at least two arguments; also it can't be reduced to (256) because result type is different.
                 /// TODO: add CAST here
                 if (!res->result_type->equals(*node->result_type))
-                    return nullptr;
+                {
+                    ActionsDAG tmp_dag;
+                    res = &tmp_dag.addCast(*res, node->result_type, {});
+                    additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
+                }
 
                 return res;
             }
