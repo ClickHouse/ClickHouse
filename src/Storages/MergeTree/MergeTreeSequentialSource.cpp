@@ -7,6 +7,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
+#include <Processors/Chunk.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -206,7 +207,7 @@ try
                 ++it;
             }
 
-            return Chunk(std::move(res_columns), rows_read, nullptr, data_part->info.level);
+            return Chunk(std::move(res_columns), rows_read, std::make_shared<MergeTreePartLevelInfo>(data_part->info.level));
         }
     }
     else

@@ -8,6 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Processors/Chunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/BlockNumberColumn.h>
 #include <city.h>
@@ -171,10 +172,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 auto name = result_header.getByPosition(i).name;
                 ordered_columns.push_back(res.block.getByName(name).column);
             }
-            auto level = task->getInfo().data_part->info.level;
 
             return ChunkAndProgress{
-                .chunk = Chunk(ordered_columns, res.row_count, nullptr, level),
+                .chunk = Chunk(ordered_columns, res.row_count, std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level)),
                 .num_read_rows = res.num_read_rows,
                 .num_read_bytes = res.num_read_bytes,
                 .is_finished = false};

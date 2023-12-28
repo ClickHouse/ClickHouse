@@ -11,6 +11,9 @@ class ChunkInfo
 public:
     virtual ~ChunkInfo() = default;
     ChunkInfo() = default;
+
+    /// To be overriden by MergeTreePartLevelInfo
+    virtual UInt64 getMergeTreePartLevel() const { return 0; }
 };
 
 using ChunkInfoPtr = std::shared_ptr<const ChunkInfo>;
@@ -38,15 +41,14 @@ public:
         : columns(std::move(other.columns))
         , num_rows(other.num_rows)
         , chunk_info(std::move(other.chunk_info))
-        , origin_merge_tree_part_level(std::move(other.origin_merge_tree_part_level))
     {
         other.num_rows = 0;
     }
 
     Chunk(Columns columns_, UInt64 num_rows_);
-    Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, std::optional<UInt32> part_level_ = {});
+    Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
     Chunk(MutableColumns columns_, UInt64 num_rows_);
-    Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, std::optional<UInt32> part_level_ = {});
+    Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
 
     Chunk & operator=(const Chunk & other) = delete;
     Chunk & operator=(Chunk && other) noexcept
@@ -54,7 +56,6 @@ public:
         columns = std::move(other.columns);
         chunk_info = std::move(other.chunk_info);
         num_rows = other.num_rows;
-        origin_merge_tree_part_level = std::move(other.origin_merge_tree_part_level);
         other.num_rows = 0;
         return *this;
     }
@@ -66,7 +67,6 @@ public:
         columns.swap(other.columns);
         chunk_info.swap(other.chunk_info);
         std::swap(num_rows, other.num_rows);
-        std::swap(origin_merge_tree_part_level, other.origin_merge_tree_part_level);
     }
 
     void clear()
@@ -74,7 +74,6 @@ public:
         num_rows = 0;
         columns.clear();
         chunk_info.reset();
-        origin_merge_tree_part_level.reset();
     }
 
     const Columns & getColumns() const { return columns; }
@@ -109,20 +108,28 @@ public:
     void append(const Chunk & chunk, size_t from, size_t length); // append rows [from, from+length) of chunk
 
     /// Only use in FINAL
-    bool mayContainRowsWithSamePrimaryKeys() const;
+    bool doNotContainRowsWithSamePrimaryKeys() const;
 
 private:
     Columns columns;
     UInt64 num_rows = 0;
     ChunkInfoPtr chunk_info;
 
-    /// It can be non-nullopt when Chunk produced by a merge tree source
-    std::optional<UInt64> origin_merge_tree_part_level;
-
     void checkNumRowsIsConsistent();
 };
 
 using Chunks = std::vector<Chunk>;
+
+/// To carry part level if chunk is produced by a merge tree source
+class MergeTreePartLevelInfo : public ChunkInfo
+{
+public:
+    MergeTreePartLevelInfo() = default;
+    explicit MergeTreePartLevelInfo(UInt64 part_level) : origin_merge_tree_part_level(part_level) { }
+    UInt64 getMergeTreePartLevel() const override { return origin_merge_tree_part_level; }
+private:
+    UInt64 origin_merge_tree_part_level = 0;
+};
 
 /// AsyncInsert needs two kinds of information:
 /// - offsets of different sub-chunks
