@@ -34,7 +34,8 @@ GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t 
             get_priority = [offset](size_t i) { return i != offset ? Priority{1} : Priority{0}; };
             break;
         case LoadBalancing::ROUND_ROBIN:
-            auto local_last_used = ++last_used % pool_size;
+            auto local_last_used = last_used % pool_size;
+            ++last_used;
 
             // Example: pool_size = 5
             // | local_last_used | i=0 | i=1 | i=2 | i=3 | i=4 |
