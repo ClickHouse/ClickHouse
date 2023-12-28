@@ -50,7 +50,47 @@ public:
                 arguments[0].type->getName(), this->getName());
     }
 
-    std::pair<Field, Field> convertStringToUnixTimestamp(const Field & left, const Field & right) const override
+    IFunction::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    {
+        if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
+            return {.is_monotonic = true, .is_always_monotonic = true};
+
+        const IFunction::Monotonicity is_monotonic = {.is_monotonic = true};
+        const IFunction::Monotonicity is_not_monotonic;
+
+        /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
+        const DateLUTImpl & date_lut = DateLUT::instance();
+
+        if (left.isNull() || right.isNull())
+            return {};
+
+        /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
+
+        if (checkAndGetDataType<DataTypeDate>(&type))
+        {
+            return Transform::FactorTransform::execute(UInt16(left.safeGet<UInt64>()), date_lut)
+                    == Transform::FactorTransform::execute(UInt16(right.safeGet<UInt64>()), date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
+        }
+        else if (checkAndGetDataType<DataTypeString>(&type))
+        {
+            auto [new_left, new_right] = convertStringToUnixTimestamp(left, right);
+            return Transform::FactorTransform::execute(UInt32(new_left.template safeGet<UInt64>()), date_lut)
+                    == Transform::FactorTransform::execute(UInt32(new_right.template safeGet<UInt64>()), date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
+        }
+        else
+        {
+            return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), date_lut)
+                    == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
+        }
+    }
+
+    std::pair<Field, Field> convertStringToUnixTimestamp(const Field & left, const Field & right) const
     {
         ColumnsWithTypeAndName temp_block;
         auto src_type = std::make_shared<DataTypeString>();
