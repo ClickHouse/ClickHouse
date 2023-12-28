@@ -11,7 +11,7 @@ opts=(
 
 function run_test {
     printf "=====\n"
-    printf "running test for engine: $1\n"
+    printf "running test for engine: %s\n" "$1"
     sleep 0.5
 
     $CLICKHOUSE_CLIENT "${opts[@]}" -q "DROP TABLE IF EXISTS t_streaming_test"
