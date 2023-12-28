@@ -34,7 +34,8 @@ std::unique_ptr<S3ObjectStorageSettings> getSettings(const Poco::Util::AbstractC
         request_settings,
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".list_object_keys_size", 1000),
-        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000));
+        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
+        config.getBool(config_prefix + ".readonly", false));
 }
 
 std::unique_ptr<S3::Client> getClient(
@@ -91,10 +92,6 @@ std::unique_ptr<S3::Client> getClient(
 
     HTTPHeaderEntries headers = S3::getHTTPHeaders(config_prefix, config);
     S3::ServerSideEncryptionKMSConfig sse_kms_config = S3::getSSEKMSConfig(config_prefix, config);
-
-    client_configuration.retryStrategy
-        = std::make_shared<Aws::Client::DefaultRetryStrategy>(
-            config.getUInt64(config_prefix + ".retry_attempts", settings.request_settings.retry_attempts));
 
     return S3::ClientFactory::instance().create(
         client_configuration,
