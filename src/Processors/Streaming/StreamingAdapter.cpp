@@ -4,7 +4,7 @@
 #include <Common/logger_useful.h>
 
 #include <Processors/IProcessor.h>
-#include <Processors/StreamingAdapter.h>
+#include <Processors/Streaming/StreamingAdapter.h>
 
 namespace DB
 {

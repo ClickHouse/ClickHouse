@@ -13,7 +13,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/SubscribersNotifierProcessor.h>
+#include <Processors/Streaming/SubscribersNotifierProcessor.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/Estimator.h>
 #include <Backups/RestorerFromBackup.h>
