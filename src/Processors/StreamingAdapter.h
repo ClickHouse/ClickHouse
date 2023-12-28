@@ -1,10 +1,6 @@
 #pragma once
 
-#include <optional>
-#include <Core/SortDescription.h>
 #include <Processors/IProcessor.h>
-#include <Processors/RowsBeforeLimitCounter.h>
-#include <Storages/SubscriptionQueue.h>
 
 namespace DB
 {
@@ -12,47 +8,29 @@ namespace DB
 class StreamingAdapter final : public IProcessor
 {
 public:
-    StreamingAdapter(const Block & header_, size_t num_streams, Block sample, SubscriberPtr sub);
+    explicit StreamingAdapter(const Block & header_);
 
     String getName() const override { return "StreamingAdapter"; }
 
     Status prepare() override;
-    void work() override;
-    int schedule() override;
-
-    void onCancel() override;
 
 private:
-    enum class PortsDataState
+    enum class StreamingState
     {
         ReadingFromStorage,
         ReadingFromSubscription,
         Finished,
     };
 
-    struct PortsData
-    {
-        std::optional<Chunk> subscriber_chunk;
-        bool need_next_subscriber_chunk = false;
+    static std::string StateToString(StreamingState state);
 
-        InputPort * input_port = nullptr;
-        OutputPort * output_port = nullptr;
+    Status preparePair(InputPort * input, OutputPort * output);
 
-        PortsDataState state = PortsDataState::ReadingFromStorage;
-    };
+    StreamingState state = StreamingState::ReadingFromStorage;
 
-    Chunk FilterStorageChunk(Chunk chunk, const Block& header);
-
-    void updateState(PortsData & data);
-    Status prepareStoragePair(PortsData & data);
-    Status prepareSubscriptionPair(PortsData & data);
-
-    Block storage_sample;
-    SubscriberPtr subscriber;
-    std::list<Chunk> subscriber_chunks;
-
-    std::optional<int> fd;
-    std::vector<PortsData> ports_data;
+    InputPort * input_storage_port = nullptr;
+    InputPort * input_subscription_port = nullptr;
+    OutputPort * output_port = nullptr;
 };
 
 }

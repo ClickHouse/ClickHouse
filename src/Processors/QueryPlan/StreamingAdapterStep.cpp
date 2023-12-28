@@ -1,36 +1,61 @@
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <memory>
+
+#include <Interpreters/ActionsDAG.h>
 
 #include <Processors/QueryPlan/StreamingAdapterStep.h>
 #include <Processors/StreamingAdapter.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits()
+namespace ErrorCodes
 {
-    return ITransformingStep::Traits
-    {
-        {
-            .returns_single_stream = false,
-            .preserves_number_of_streams = true,
-            .preserves_sorting = true,
-        },
-        {
-            .preserves_number_of_rows = true,
-        }
+    extern const int LOGICAL_ERROR;
+}
+
+static Block checkHeaders(DataStream storage_stream, DataStream subscription_stream)
+{
+    Block res = storage_stream.header;
+    assertBlocksHaveEqualStructure(subscription_stream.header, res, "StreamingAdapterStep");
+
+    return res;
+}
+
+StreamingAdapterStep::StreamingAdapterStep(DataStream storage_stream, DataStream subscription_stream)
+    : storage_header(checkHeaders(storage_stream, subscription_stream))
+{
+    updateInputStreams({std::move(storage_stream), std::move(subscription_stream)});
+}
+
+QueryPipelineBuilderPtr StreamingAdapterStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+{
+    if (pipelines.size() != 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected storage and subscription pipelines in StreamingAdapterStep::updatePipeline");
+
+    /// resize pipelines to 1 output port as preparation for fifo order
+    for (auto & cur_pipeline : pipelines)
+        cur_pipeline->resize(1);
+
+    auto streaming_adapter = std::make_shared<StreamingAdapter>(storage_header);
+
+    return QueryPipelineBuilder::mergePipelines(
+        std::move(pipelines[0]), std::move(pipelines[1]), std::move(streaming_adapter), &processors);
+}
+
+void StreamingAdapterStep::updateOutputStream()
+{
+    output_stream = DataStream{
+        .header = storage_header,
+        .has_single_port = true,
     };
 }
-StreamingAdapterStep::StreamingAdapterStep(const DataStream & input_stream, Block sample, SubscriberPtr sub)
-    : ITransformingStep(input_stream, input_stream.header, getTraits()), storage_sample(std::move(sample)), subscriber(std::move(sub))
-{
-}
 
-void StreamingAdapterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void StreamingAdapterStep::describePipeline(FormatSettings & settings) const
 {
-    auto transform = std::make_shared<StreamingAdapter>(
-        pipeline.getHeader(), pipeline.getNumStreams(), std::move(storage_sample), std::move(subscriber));
-
-    pipeline.addTransform(std::move(transform));
+    IQueryPlanStep::describePipeline(processors, settings);
 }
 
 }

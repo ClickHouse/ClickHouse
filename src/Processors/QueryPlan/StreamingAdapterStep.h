@@ -1,28 +1,28 @@
 #pragma once
 
-#include <Processors/QueryPlan/ITransformingStep.h>
-#include <Storages/SubscriptionQueue.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 
 namespace DB
 {
 
-class StreamingAdapterStep : public ITransformingStep
+class StreamingAdapterStep final : public IQueryPlanStep
 {
 public:
-    explicit StreamingAdapterStep(const DataStream & input_stream, Block sample, SubscriberPtr sub);
+    explicit StreamingAdapterStep(DataStream storage_stream, DataStream subscription_stream);
+    ~StreamingAdapterStep() override = default;
 
     String getName() const override { return "StreamingAdapter"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
+
+    void describePipeline(FormatSettings & settings) const override;
+
+    bool canUpdateInputStream() const override { return true; }
 
 private:
-    void updateOutputStream() override
-    {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
-    }
+    void updateOutputStream() override;
 
-    Block storage_sample;
-    SubscriberPtr subscriber;
+    Block storage_header;
 };
 
 }
