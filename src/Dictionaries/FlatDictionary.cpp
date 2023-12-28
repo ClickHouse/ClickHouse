@@ -249,7 +249,7 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (attribute.is_nullable_set)
-        result = ColumnNullable::create(result, std::move(col_null_map_to));
+        result = ColumnNullable::create(result, col_null_map_to->filter(default_mask, found_count));
 
     return result;
 }

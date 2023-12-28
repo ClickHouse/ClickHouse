@@ -190,8 +190,8 @@ static void setLazyExecutionInfo(
                     lazy_execution_info.can_be_lazy_executed = false;
             }
 
-            /// Currently only used in dictGetOrDefault.
-            if (parent->children.size() == 4 && node == parent->children[2] &&
+            /// Currently only used in dictGetOrDefault. RANGE_HASHED dictionary has 5 arguments instead of 4.
+            if (parent->children.size() > 3 && node == parent->children[2] &&
                 !short_circuit_nodes.at(parent).enable_lazy_execution_for_third_argument)
             {
                 /// We shouldn't add 2 index in node info in this case.

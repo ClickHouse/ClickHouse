@@ -885,7 +885,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(result, std::move(col_null_map_to));
+        result = ColumnNullable::create(result, col_null_map_to->filter(default_mask, found_count));
 
     return result;
 }

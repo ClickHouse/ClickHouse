@@ -25,6 +25,8 @@ LAYOUT(FLAT());
 SELECT 'Flat dictionary';
 SELECT dictGetOrDefault('flat_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), intDiv(1, id)))
 FROM dictionary_source_table;
+SELECT dictGetOrDefault('flat_dictionary', 'v2', id+1, intDiv(NULL, id)) 
+FROM dictionary_source_table;
 DROP DICTIONARY flat_dictionary;
 
 
@@ -42,6 +44,8 @@ LAYOUT(HASHED());
 
 SELECT 'Hashed dictionary';
 SELECT dictGetOrDefault('hashed_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), intDiv(1, id)))
+FROM dictionary_source_table;
+SELECT dictGetOrDefault('hashed_dictionary', 'v2', id+1, intDiv(NULL, id)) 
 FROM dictionary_source_table;
 DROP DICTIONARY hashed_dictionary;
 
@@ -61,7 +65,42 @@ LAYOUT(HASHED_ARRAY());
 SELECT 'Hashed array dictionary';
 SELECT dictGetOrDefault('hashed_array_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), intDiv(1, id)))
 FROM dictionary_source_table;
+SELECT dictGetOrDefault('hashed_array_dictionary', 'v2', id+1, intDiv(NULL, id))
+FROM dictionary_source_table;
 DROP DICTIONARY hashed_array_dictionary;
+
+
+-- DROP TABLE IF EXISTS range_dictionary_source_table;
+-- CREATE TABLE range_dictionary_source_table
+-- (
+--     id UInt64,
+--     start Date,
+--     end Nullable(Date),
+--     val UInt64
+-- ) ENGINE=TinyLog;
+
+-- INSERT INTO range_dictionary_source_table VALUES (0, '2023-01-01', Null, 0), (1, '2023-12-26', '2023-12-27', 1);
+
+-- DROP DICTIONARY IF EXISTS range_hashed_dictionary;
+-- CREATE DICTIONARY range_hashed_dictionary
+-- (
+--     id UInt64,
+--     start Date,
+--     end Nullable(Date),
+--     val UInt64
+-- )
+-- PRIMARY KEY id
+-- SOURCE(CLICKHOUSE(TABLE 'range_dictionary_source_table'))
+-- LIFETIME(MIN 0 MAX 0)
+-- LAYOUT(RANGE_HASHED())
+-- RANGE(MIN start MAX end);
+
+-- SELECT 'Range hashed dictionary';
+-- SELECT dictGetOrDefault('range_hashed_dictionary', 'val', id, toDate('2023-01-02'), toDate('1933-01-22'))
+-- FROM range_dictionary_source_table;
+-- DROP DICTIONARY range_hashed_dictionary;
+
+-- DROP TABLE range_dictionary_source_table;
 
 
 DROP TABLE dictionary_source_table;

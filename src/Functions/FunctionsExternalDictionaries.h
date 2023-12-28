@@ -470,6 +470,7 @@ public:
 
             const auto & column_before_cast = arguments[current_arguments_index];
             const auto * column_function = checkAndGetShortCircuitArgument(column_before_cast.column);
+            /// If we have shortcircuit (column_function exists), default_cols is empty.
             if (!column_function)
             {
                 ColumnWithTypeAndName column_to_cast = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
