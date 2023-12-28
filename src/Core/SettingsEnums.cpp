@@ -69,6 +69,12 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"allow",  DistributedProductMode::ALLOW}})
 
 
+IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryCacheNondeterministicFunctionHandling::Throw},
+     {"save",   QueryCacheNondeterministicFunctionHandling::Save},
+     {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
+
+
 IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
      {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort},
@@ -91,8 +97,6 @@ IMPLEMENT_SETTING_AUTO_ENUM(LogQueriesType, ErrorCodes::BAD_ARGUMENTS)
 IMPLEMENT_SETTING_AUTO_ENUM(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_AUTO_ENUM(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS)
-
-IMPLEMENT_SETTING_AUTO_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
@@ -190,9 +194,12 @@ IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
      {"log_last", ExternalCommandStderrReaction::LOG_LAST},
      {"throw", ExternalCommandStderrReaction::THROW}})
 
-IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
-                       {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
-                        {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
-                        {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
+IMPLEMENT_SETTING_ENUM(SchemaInferenceMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"default", SchemaInferenceMode::DEFAULT},
+     {"union", SchemaInferenceMode::UNION}})
 
+IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
+     {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
+     {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
 }

@@ -39,6 +39,14 @@ struct BackupFileInfo
     /// Whether this file is encrypted by an encrypted disk.
     bool encrypted_by_disk = false;
 
+    /// Set if this file is just a reference to another file
+    String reference_target;
+
+    /// (While writing a backup) if this list is not empty then after writing
+    /// `data_file_name` it should be copied to this list of destinations too.
+    /// This is used for plain backups.
+    Strings data_file_copies;
+
     struct LessByFileName
     {
         bool operator()(const BackupFileInfo & lhs, const BackupFileInfo & rhs) const { return (lhs.file_name < rhs.file_name); }

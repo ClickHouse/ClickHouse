@@ -1,6 +1,6 @@
 QUERY id: 0
   PROJECTION COLUMNS
-    uniqCombined(tuple(\'\')) UInt64
+    uniqCombined((\'\')) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: uniqCombined, function_type: aggregate, result_type: UInt64

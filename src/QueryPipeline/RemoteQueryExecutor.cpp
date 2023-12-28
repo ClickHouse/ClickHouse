@@ -131,14 +131,20 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
         if (main_table)
         {
-            auto try_results = pool->getManyChecked(timeouts, &current_settings, pool_mode, main_table.getQualifiedName(), std::move(async_callback), skip_unavailable_endpoints);
+            auto try_results = pool->getManyChecked(
+                timeouts,
+                current_settings,
+                pool_mode,
+                main_table.getQualifiedName(),
+                std::move(async_callback),
+                skip_unavailable_endpoints);
             connection_entries.reserve(try_results.size());
             for (auto & try_result : try_results)
                 connection_entries.emplace_back(std::move(try_result.entry));
         }
         else
         {
-            connection_entries = pool->getMany(timeouts, &current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints);
+            connection_entries = pool->getMany(timeouts, current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints);
         }
 
         auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
@@ -771,10 +777,16 @@ bool RemoteQueryExecutor::hasThrownException() const
 
 void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)
 {
+    std::lock_guard guard(was_cancelled_mutex);
     progress_callback = std::move(callback);
 
     if (extension && extension->parallel_reading_coordinator)
         extension->parallel_reading_coordinator->setProgressCallback(progress_callback);
 }
 
+void RemoteQueryExecutor::setProfileInfoCallback(ProfileInfoCallback callback)
+{
+    std::lock_guard guard(was_cancelled_mutex);
+    profile_info_callback = std::move(callback);
+}
 }

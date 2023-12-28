@@ -354,3 +354,12 @@
 [submodule "contrib/aklomp-base64"]
 	path = contrib/aklomp-base64
 	url = https://github.com/aklomp/base64.git
+[submodule "contrib/pocketfft"]
+	path = contrib/pocketfft
+	url = https://github.com/mreineck/pocketfft.git
+[submodule "contrib/sqids-cpp"]
+	path = contrib/sqids-cpp
+	url = https://github.com/sqids/sqids-cpp.git
+[submodule "contrib/idna"]
+	path = contrib/idna
+	url = https://github.com/ada-url/idna.git

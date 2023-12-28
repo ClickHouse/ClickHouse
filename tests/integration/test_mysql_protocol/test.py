@@ -799,7 +799,7 @@ def test_java_client_text(started_cluster, java_container):
         demux=True,
     )
 
-    with open(os.path.join(SCRIPT_DIR, "java_client_text.reference")) as fp:
+    with open(os.path.join(SCRIPT_DIR, "java_client.reference")) as fp:
         reference = fp.read()
 
     assert stdout.decode() == reference
@@ -813,7 +813,7 @@ def test_java_client_binary(started_cluster, java_container):
         demux=True,
     )
 
-    with open(os.path.join(SCRIPT_DIR, "java_client_binary.reference")) as fp:
+    with open(os.path.join(SCRIPT_DIR, "java_client.reference")) as fp:
         reference = fp.read()
 
     assert stdout.decode() == reference

@@ -68,6 +68,8 @@ using DatabaseAndTableName = std::pair<String, String>;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
+class ConditionEstimator;
+
 struct ColumnSize
 {
     size_t marks = 0;
@@ -134,6 +136,8 @@ public:
 
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
+
+    virtual ConditionEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -511,7 +515,6 @@ public:
         bool /*final*/,
         bool /*deduplicate*/,
         const Names & /* deduplicate_by_columns */,
-        bool /*cleanup*/,
         ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
@@ -689,6 +692,15 @@ public:
     /// when considering in-memory blocks.
     virtual std::optional<UInt64> totalBytes(const Settings &) const { return {}; }
 
+    /// If it is possible to quickly determine exact number of uncompressed bytes for the table on storage:
+    /// - disk (uncompressed)
+    ///
+    /// Used for:
+    /// - For total_bytes_uncompressed column in system.tables
+    ///
+    /// Does not take underlying Storage (if any) into account
+    virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
+
     /// Number of rows INSERTed since server start.
     ///
     /// Does not take the underlying Storage (if any) into account.
@@ -716,6 +728,9 @@ public:
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }
+
+    /// Re initialize disks in case the underlying storage policy changed
+    virtual bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) { return true; }
 
     /// A helper to implement read()
     static void readFromPipe(

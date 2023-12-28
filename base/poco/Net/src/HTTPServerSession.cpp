@@ -26,7 +26,6 @@ HTTPServerSession::HTTPServerSession(const StreamSocket& socket, HTTPServerParam
 	_maxKeepAliveRequests(pParams->getMaxKeepAliveRequests())
 {
 	setTimeout(pParams->getTimeout());
-	this->socket().setReceiveTimeout(pParams->getTimeout());
 }
 
 

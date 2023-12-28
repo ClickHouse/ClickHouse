@@ -23,11 +23,6 @@ InterpreterUndropQuery::InterpreterUndropQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterUndropQuery::execute()
 {
-    if (!getContext()->getSettingsRef().allow_experimental_undrop_table_query)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Undrop table is experimental. "
-                        "Set `allow_experimental_undrop_table_query` setting to enable it");
-
     getContext()->checkAccess(AccessType::UNDROP_TABLE);
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
     if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))

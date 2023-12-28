@@ -27,6 +27,12 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
 /// Add unique suffix to names of duplicate columns in block
 void makeUniqueColumnNamesInBlock(Block & block);
 
+/// Returns true, if node has type QUERY or UNION
+bool isQueryOrUnionNode(const IQueryTreeNode * node);
+
+/// Returns true, if node has type QUERY or UNION
+bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
+
 /** Build cast function that cast expression into type.
   * If resolve = true, then result cast function is resolved during build, otherwise
   * result cast function is not resolved during build.
@@ -92,5 +98,8 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context);
 
 /// Just collect all identifiers from query tree
 NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
+
+/// Wrap node into `_CAST` function
+QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
 }

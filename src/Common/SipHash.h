@@ -13,8 +13,6 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
-#include "TransformEndianness.hpp"
-
 #include <bit>
 #include <string>
 #include <type_traits>
@@ -24,8 +22,10 @@
 #include <base/unaligned.h>
 #include <base/hex.h>
 #include <Common/Exception.h>
+#include <Common/transformEndianness.h>
 
 #include <city.h>
+
 
 namespace DB::ErrorCodes
 {

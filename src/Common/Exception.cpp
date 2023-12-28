@@ -1,27 +1,26 @@
 #include "Exception.h"
 
 #include <algorithm>
-#include <cstring>
-#include <cxxabi.h>
 #include <cstdlib>
-#include <Poco/String.h>
-#include <Common/logger_useful.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
+#include <cstring>
+#include <filesystem>
+#include <cxxabi.h>
 #include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <base/demangle.h>
-#include <base/errnoToString.h>
-#include <Common/formatReadable.h>
-#include <Common/filesystemHelpers.h>
+#include <Poco/String.h>
 #include <Common/ErrorCodes.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/LockMemoryExceptionInThread.h>
-#include <filesystem>
+#include <Common/filesystemHelpers.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 namespace fs = std::filesystem;
 
@@ -41,12 +40,6 @@ namespace ErrorCodes
 void abortOnFailedAssertion(const String & description)
 {
     LOG_FATAL(&Poco::Logger::root(), "Logical error: '{}'.", description);
-
-    /// This is to suppress -Wmissing-noreturn
-    volatile bool always_false = false;
-    if (always_false)
-        return;
-
     abort();
 }
 
@@ -217,17 +210,6 @@ Exception::FramePointers Exception::getStackFramePointers() const
 
 thread_local bool Exception::enable_job_stack_trace = false;
 thread_local std::vector<StackTrace::FramePointers> Exception::thread_frame_pointers = {};
-
-
-void throwFromErrno(const std::string & s, int code, int the_errno)
-{
-    throw ErrnoException(s + ", " + errnoToString(the_errno), code, the_errno);
-}
-
-void throwFromErrnoWithPath(const std::string & s, const std::string & path, int code, int the_errno)
-{
-    throw ErrnoException(s + ", " + errnoToString(the_errno), code, the_errno, path);
-}
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message)
 {

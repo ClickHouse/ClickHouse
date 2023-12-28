@@ -41,11 +41,11 @@
 #include <Common/setThreadName.h>
 #include <Formats/FormatFactory.h>
 
-#include "Storages/ColumnDefault.h"
-#include "config_version.h"
-
+#include <Storages/ColumnDefault.h>
+#include <Common/config_version.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+
 #if USE_KRB5
 #include <Access/KerberosInit.h>
 #endif // USE_KRB5
@@ -661,10 +661,19 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config,
 
     if (kafka_consumer_weak_ptr_ptr)
     {
+        /// NOTE: statistics should be consumed, otherwise it creates too much
+        /// entries in the queue, that leads to memory leak and slow shutdown.
+        ///
+        /// This is the case when you have kafka table but no SELECT from it or
+        /// materialized view attached.
+        ///
+        /// So for now it is disabled by default, until properly fixed.
+#if 0
         if (!config.has(config_prefix + "." + "statistics_interval_ms"))
         {
             kafka_config.set("statistics.interval.ms", "3000"); // every 3 seconds by default. set to 0 to disable.
         }
+#endif
 
         if (kafka_config.get("statistics.interval.ms") != "0")
         {

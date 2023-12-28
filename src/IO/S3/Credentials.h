@@ -1,11 +1,10 @@
 #pragma once
 
-#include <exception>
-#include <base/types.h>
-#include <variant>
 #include "config.h"
 
 #if USE_AWS_S3
+
+#    include <base/types.h>
 
 #    include <aws/core/client/ClientConfiguration.h>
 #    include <aws/core/internal/AWSHttpResourceClient.h>
@@ -20,12 +19,15 @@ namespace DB::S3
 {
 
 inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
+inline static constexpr uint64_t DEFAULT_CONNECT_TIMEOUT_MS = 1000;
+inline static constexpr uint64_t DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+inline static constexpr uint64_t DEFAULT_MAX_CONNECTIONS = 100;
 
 /// In GCP metadata service can be accessed via DNS regardless of IPv4 or IPv6.
-static constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";
+static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";
 
 /// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
-String getRunningAvailabilityZone();
+std::string getRunningAvailabilityZone();
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
@@ -59,7 +61,7 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
-    friend String getRunningAvailabilityZoneImpl();
+    friend String getRunningAvailabilityZone();
 
 private:
     std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
@@ -189,12 +191,14 @@ public:
 
 #else
 
+#    include <string>
+
 namespace DB
 {
 
 namespace S3
 {
-String getRunningAvailabilityZone();
+std::string getRunningAvailabilityZone();
 }
 
 }

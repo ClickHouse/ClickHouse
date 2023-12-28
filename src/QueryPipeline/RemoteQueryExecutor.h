@@ -168,7 +168,7 @@ public:
     void setProgressCallback(ProgressCallback callback);
 
     /// Set callback for profile info. It will be called on ProfileInfo packet.
-    void setProfileInfoCallback(ProfileInfoCallback callback) { profile_info_callback = std::move(callback); }
+    void setProfileInfoCallback(ProfileInfoCallback callback);
 
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.

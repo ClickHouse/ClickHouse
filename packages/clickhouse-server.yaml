@@ -52,8 +52,6 @@ contents:
   dst: /lib/systemd/system/clickhouse-server.service
 - src: root/usr/bin/clickhouse-copier
   dst: /usr/bin/clickhouse-copier
-- src: root/usr/bin/clickhouse-report
-  dst: /usr/bin/clickhouse-report
 - src: root/usr/bin/clickhouse-server
   dst: /usr/bin/clickhouse-server
 # clickhouse-keeper part

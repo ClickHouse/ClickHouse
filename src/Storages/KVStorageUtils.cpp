@@ -1,6 +1,7 @@
 #include <Storages/KVStorageUtils.h>
 
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -11,6 +12,9 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
+
+#include <Functions/IFunction.h>
+
 
 namespace DB
 {
@@ -68,7 +72,7 @@ bool traverseASTFilter(
                 return false;
             value = args.children.at(1);
 
-            PreparedSets::Hash set_key = value->getTreeHash();
+            PreparedSets::Hash set_key = value->getTreeHash(/*ignore_aliases=*/ true);
             FutureSetPtr future_set;
 
             if ((value->as<ASTSubquery>() || value->as<ASTIdentifier>()))

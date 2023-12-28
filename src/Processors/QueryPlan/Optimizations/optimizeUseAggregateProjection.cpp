@@ -411,7 +411,6 @@ struct MinMaxProjectionCandidate
 {
     AggregateProjectionCandidate candidate;
     Block block;
-    MergeTreeData::DataPartsVector normal_parts;
 };
 
 struct AggregateProjectionCandidates
@@ -477,7 +476,6 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         {
             // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(proj_dag)};
-            MergeTreeData::DataPartsVector minmax_projection_normal_parts;
 
             // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection sample block {}", sample_block.dumpStructure());
             auto block = reading.getMergeTreeData().getMinMaxCountProjectionBlock(
@@ -486,13 +484,12 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
                 dag.filter_node != nullptr,
                 query_info,
                 parts,
-                minmax_projection_normal_parts,
                 max_added_blocks.get(),
                 context);
 
             // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection sample block 2 {}", block.dumpStructure());
 
-            // minmax_count_projection cannot be used used when there is no data to process, because
+            // minmax_count_projection cannot be used when there is no data to process, because
             // it will produce incorrect result during constant aggregation.
             // See https://github.com/ClickHouse/ClickHouse/issues/36728
             if (block)
@@ -500,7 +497,6 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
                 MinMaxProjectionCandidate minmax;
                 minmax.candidate = std::move(candidate);
                 minmax.block = std::move(block);
-                minmax.normal_parts = std::move(minmax_projection_normal_parts);
                 minmax.candidate.projection = projection;
                 candidates.minmax_projection.emplace(std::move(minmax));
             }
@@ -509,6 +505,18 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     if (!candidates.minmax_projection)
     {
+        auto it = std::find_if(agg_projections.begin(), agg_projections.end(), [&](const auto * projection)
+        {
+            return projection->name == context->getSettings().preferred_optimize_projection_name.value;
+        });
+
+        if (it != agg_projections.end())
+        {
+            const ProjectionDescription * preferred_projection = *it;
+            agg_projections.clear();
+            agg_projections.push_back(preferred_projection);
+        }
+
         candidates.real.reserve(agg_projections.size());
         for (const auto * projection : agg_projections)
         {
@@ -570,56 +578,73 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
 
     auto candidates = getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections);
 
-    AggregateProjectionCandidate * best_candidate = nullptr;
-    if (candidates.minmax_projection)
-        best_candidate = &candidates.minmax_projection->candidate;
-    else if (candidates.real.empty())
-        return false;
-
     const auto & parts = reading->getParts();
+    const auto & alter_conversions = reading->getAlterConvertionsForParts();
     const auto & query_info = reading->getQueryInfo();
     const auto metadata = reading->getStorageMetadata();
     ContextPtr context = reading->getContext();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
-
-    auto ordinary_reading_select_result = reading->selectRangesToRead(parts, /* alter_conversions = */ {});
-    size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
-
-    const auto & proj_name_from_settings = context->getSettings().preferred_optimize_projection_name.value;
-    bool found_best_candidate = false;
-
-    /// Selecting best candidate.
-    for (auto & candidate : candidates.real)
+    AggregateProjectionCandidate * best_candidate = nullptr;
+    if (candidates.minmax_projection)
     {
-        auto required_column_names = candidate.dag->getRequiredColumnsNames();
-        ActionDAGNodes added_filter_nodes;
-        if (candidates.has_filter)
-            added_filter_nodes.nodes.push_back(candidate.dag->getOutputs().front());
+        best_candidate = &candidates.minmax_projection->candidate;
+    }
+    else if (!candidates.real.empty())
+    {
+        auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
+        size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
 
-        bool analyzed = analyzeProjectionCandidate(
-            candidate, *reading, reader, required_column_names, parts,
-            metadata, query_info, context, max_added_blocks, added_filter_nodes);
-
-        if (!analyzed)
-            continue;
-
-        if (candidate.sum_marks > ordinary_reading_marks)
-            continue;
-
-        if ((best_candidate == nullptr || best_candidate->sum_marks > candidate.sum_marks) && !found_best_candidate)
-            best_candidate = &candidate;
-        if (!proj_name_from_settings.empty() && candidate.projection->name == proj_name_from_settings)
+        /// Nothing to read. Ignore projections.
+        if (ordinary_reading_marks == 0)
         {
-            best_candidate = &candidate;
-            found_best_candidate = true;
+            reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
+            return false;
+        }
+
+        const auto & parts_with_ranges = ordinary_reading_select_result->partsWithRanges();
+
+        /// Selecting best candidate.
+        for (auto & candidate : candidates.real)
+        {
+            auto required_column_names = candidate.dag->getRequiredColumnsNames();
+            ActionDAGNodes added_filter_nodes;
+            if (candidates.has_filter)
+                added_filter_nodes.nodes.push_back(candidate.dag->getOutputs().front());
+
+            bool analyzed = analyzeProjectionCandidate(
+                candidate,
+                *reading,
+                reader,
+                required_column_names,
+                parts_with_ranges,
+                metadata,
+                query_info,
+                context,
+                max_added_blocks,
+                added_filter_nodes);
+
+            if (!analyzed)
+                continue;
+
+            if (candidate.sum_marks > ordinary_reading_marks)
+                continue;
+
+            if (best_candidate == nullptr || best_candidate->sum_marks > candidate.sum_marks)
+                best_candidate = &candidate;
+        }
+
+        if (!best_candidate)
+        {
+            reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
+            return false;
         }
     }
-
-    if (!best_candidate)
+    else
     {
-        reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
         return false;
     }
+
+    chassert(best_candidate != nullptr);
 
     QueryPlanStepPtr projection_reading;
     bool has_ordinary_parts;
@@ -641,9 +666,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
                       .storage_id = reading->getMergeTreeData().getStorageID(),
                       .projection_name = candidates.minmax_projection->candidate.projection->name,
                   });
-        has_ordinary_parts = !candidates.minmax_projection->normal_parts.empty();
-        if (has_ordinary_parts)
-            reading->resetParts(std::move(candidates.minmax_projection->normal_parts));
+        has_ordinary_parts = false;
     }
     else
     {

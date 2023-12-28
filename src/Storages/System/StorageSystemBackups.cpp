@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
@@ -19,6 +20,7 @@ NamesAndTypesList StorageSystemBackups::getNamesAndTypes()
     NamesAndTypesList names_and_types{
         {"id", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
+        {"base_backup_name", std::make_shared<DataTypeString>()},
         {"status", std::make_shared<DataTypeEnum8>(getBackupStatusEnumValues())},
         {"error", std::make_shared<DataTypeString>()},
         {"start_time", std::make_shared<DataTypeDateTime>()},
@@ -41,6 +43,7 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
     size_t column_index = 0;
     auto & column_id = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
+    auto & column_base_backup_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_status = assert_cast<ColumnInt8 &>(*res_columns[column_index++]);
     auto & column_error = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_start_time = assert_cast<ColumnUInt32 &>(*res_columns[column_index++]);
@@ -58,6 +61,7 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
     {
         column_id.insertData(info.id.data(), info.id.size());
         column_name.insertData(info.name.data(), info.name.size());
+        column_base_backup_name.insertData(info.base_backup_name.data(), info.base_backup_name.size());
         column_status.insertValue(static_cast<Int8>(info.status));
         column_error.insertData(info.error_message.data(), info.error_message.size());
         column_start_time.insertValue(static_cast<UInt32>(std::chrono::system_clock::to_time_t(info.start_time)));

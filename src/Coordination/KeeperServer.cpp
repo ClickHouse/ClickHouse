@@ -4,7 +4,6 @@
 #include "config.h"
 
 #include <chrono>
-#include <filesystem>
 #include <string>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
@@ -330,6 +329,20 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.return_method_ = nuraft::raft_params::async_handler;
 
     nuraft::asio_service::options asio_opts{};
+
+    /// If asio worker threads fail in any way, NuRaft will stop to make any progress
+    /// For that reason we need to suppress out of memory exceptions in such threads
+    /// TODO: use `get_active_workers` to detect when we have no active workers to abort
+    asio_opts.worker_start_ = [](uint32_t /*worker_id*/)
+    {
+        LockMemoryExceptionInThread::addUniqueLock(VariableContext::Global);
+    };
+
+    asio_opts.worker_stop_ = [](uint32_t /*worker_id*/)
+    {
+        LockMemoryExceptionInThread::removeUniqueLock();
+    };
+
     if (state_manager->isSecure())
     {
 #if USE_SSL
@@ -617,6 +630,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     {
         const auto preprocess_logs = [&]
         {
+            keeper_context->local_logs_preprocessed = true;
             auto log_store = state_manager->load_log_store();
             if (last_log_idx_on_disk > 0 && last_log_idx_on_disk > state_machine->last_commit_index())
             {
@@ -642,7 +656,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             {
                 LOG_INFO(log, "All local log entries preprocessed");
             }
-            keeper_context->local_logs_preprocessed = true;
         };
 
         switch (type)
@@ -845,6 +858,10 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 set_initialized();
             initial_batch_committed = true;
             return nuraft::cb_func::ReturnCode::Ok;
+        }
+        case nuraft::cb_func::PreAppendLogLeader:
+        {
+            return nuraft::cb_func::ReturnCode::ReturnNull;
         }
         case nuraft::cb_func::PreAppendLogFollower:
         {

@@ -1,10 +1,10 @@
 #pragma once
 
-#include "config.h"
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <IO/AsynchronousReader.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include "config.h"
 
 namespace Poco { class Logger; }
 
@@ -48,7 +48,9 @@ public:
 
     off_t getPosition() override { return file_offset_of_buffer_end - available(); }
 
-    bool seekIsCheap() override { return !current_buf; }
+    bool isSeekCheap() override;
+
+    bool isContentCached(size_t offset, size_t size) override;
 
 private:
     SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);

@@ -37,7 +37,7 @@ enum class MatchState
 MatchState match(CNFQuery::AtomicFormula a, CNFQuery::AtomicFormula b)
 {
     bool match_means_ok = (a.negative == b.negative);
-    if (a.ast->getTreeHash() == b.ast->getTreeHash())
+    if (a.ast->getTreeHash(/*ignore_aliases=*/ true) == b.ast->getTreeHash(/*ignore_aliases=*/ true))
         return match_means_ok ? MatchState::FULL_MATCH : MatchState::NOT_MATCH;
 
     return MatchState::NONE;

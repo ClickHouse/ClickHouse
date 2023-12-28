@@ -58,7 +58,7 @@ Optional parameters:
 - `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `5000`.
 - `nats_server_list` - Server list for connection. Can be specified to connect to NATS cluster.
 - `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* RabbitMQ messages that cannot be parsed (a message equals a row of data).
-- `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](../../../operations/settings/settings.md#setting-max_insert_block_size).
+- `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms).
 - `nats_username` - NATS username.
 - `nats_password` - NATS password.
@@ -163,14 +163,14 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 ## Virtual Columns {#virtual-columns}
 
-- `_subject` - NATS message subject.
+- `_subject` - NATS message subject. Data type: `String`.
 
 Additional virtual columns when `kafka_handle_error_mode='stream'`:
 
-- `_raw_message` - Raw message that couldn't be parsed successfully.
-- `_error` - Exception message happened during failed parsing.
+- `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
+- `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
 
-Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always empty when message was parsed successfully.
+Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
 
 
 ## Data formats support {#data-formats-support}

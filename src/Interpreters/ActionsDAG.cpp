@@ -3,9 +3,9 @@
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/materialize.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/CastOverloadResolver.h>
@@ -20,6 +20,7 @@
 #include <stack>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
+
 
 namespace DB
 {
@@ -248,7 +249,7 @@ const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const Da
 
     const auto * cast_type_constant_node = &addColumn(std::move(column));
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
-    FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
+    FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::nonAccurate, {});
 
     return addFunction(func_builder_cast, std::move(children), result_name);
 }
@@ -1381,9 +1382,9 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
             const auto * right_arg = &actions_dag->addColumn(std::move(column));
             const auto * left_arg = dst_node;
 
-            FunctionCastBase::Diagnostic diagnostic = {dst_node->result_name, res_elem.name};
+            CastDiagnostic diagnostic = {dst_node->result_name, res_elem.name};
             FunctionOverloadResolverPtr func_builder_cast
-                = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl(std::move(diagnostic));
+                = createInternalCastOverloadResolver(CastType::nonAccurate, std::move(diagnostic));
 
             NodeRawConstPtrs children = { left_arg, right_arg };
             dst_node = &actions_dag->addFunction(func_builder_cast, std::move(children), {});
@@ -2452,6 +2453,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     };
 
     auto result_dag = std::make_shared<ActionsDAG>();
+    std::unordered_map<std::string, const ActionsDAG::Node *> result_inputs;
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
 
     size_t filter_nodes_size = filter_nodes.size();
@@ -2503,7 +2505,10 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
         {
             case ActionsDAG::ActionType::INPUT:
             {
-                result_node = &result_dag->addInput({node->column, node->result_type, node->result_name});
+                auto & result_input = result_inputs[node->result_name];
+                if (!result_input)
+                    result_input = &result_dag->addInput({node->column, node->result_type, node->result_name});
+                result_node = result_input;
                 break;
             }
             case ActionsDAG::ActionType::COLUMN:

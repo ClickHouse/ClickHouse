@@ -41,12 +41,9 @@ static ZooKeeperRetriesInfo getRetriesInfo()
 {
     const auto & config_ref = Context::getGlobalContextInstance()->getConfigRef();
     return ZooKeeperRetriesInfo(
-        "DistributedDDL",
-        &Poco::Logger::get("DDLQueryStatusSource"),
         config_ref.getInt("distributed_ddl_keeper_max_retries", 5),
         config_ref.getInt("distributed_ddl_keeper_initial_backoff_ms", 100),
-        config_ref.getInt("distributed_ddl_keeper_max_backoff_ms", 5000)
-    );
+        config_ref.getInt("distributed_ddl_keeper_max_backoff_ms", 5000));
 }
 
 bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
@@ -110,6 +107,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     /// TODO: support per-cluster grant
     context->checkAccess(AccessType::CLUSTER);
 
+    /// NOTE: if `async_load_databases = true`, then it block until ddl_worker is started, which includes startup of all related tables.
     DDLWorker & ddl_worker = context->getDDLWorker();
 
     /// Enumerate hosts which will be used to send query.
@@ -437,8 +435,8 @@ Chunk DDLQueryStatusSource::generate()
         Strings tmp_active_hosts;
 
         {
-            auto retries_info = getRetriesInfo();
-            auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", retries_info, context->getProcessListElement());
+            auto retries_ctl = ZooKeeperRetriesControl(
+                "executeDDLQueryOnCluster", &Poco::Logger::get("DDLQueryStatusSource"), getRetriesInfo(), context->getProcessListElement());
             retries_ctl.retryLoop([&]()
             {
                 auto zookeeper = context->getZooKeeper();
@@ -477,8 +475,11 @@ Chunk DDLQueryStatusSource::generate()
                 String status_data;
                 bool finished_exists = false;
 
-                auto retries_info = getRetriesInfo();
-                auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", retries_info, context->getProcessListElement());
+                auto retries_ctl = ZooKeeperRetriesControl(
+                    "executeDDLQueryOnCluster",
+                    &Poco::Logger::get("DDLQueryStatusSource"),
+                    getRetriesInfo(),
+                    context->getProcessListElement());
                 retries_ctl.retryLoop([&]()
                 {
                     finished_exists = context->getZooKeeper()->tryGet(fs::path(node_path) / "finished" / host_id, status_data);
