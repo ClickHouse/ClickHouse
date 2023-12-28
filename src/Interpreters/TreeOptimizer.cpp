@@ -172,8 +172,9 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             /// copy shared pointer to args in order to ensure lifetime
             auto args_ast = function->arguments;
             /// Replace function call in 'group_exprs' with non-literal arguments.
+            const auto & erase_position = group_exprs.begin() + i;
+            group_exprs.erase(erase_position);
             const auto & insert_position = group_exprs.begin() + i;
-            group_exprs.erase(insert_position);
             std::remove_copy_if(
                     std::begin(args_ast->children), std::end(args_ast->children),
                     std::inserter(group_exprs, insert_position), is_literal
