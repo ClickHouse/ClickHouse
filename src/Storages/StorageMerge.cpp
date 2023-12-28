@@ -92,12 +92,12 @@ StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
     bool database_is_regexp_,
     std::optional<OptimizedRegularExpression> source_database_regexp_,
     std::optional<OptimizedRegularExpression> source_table_regexp_,
-    const DBToTableSetMap & source_databases_and_tables_)
+    std::optional<DBToTableSetMap> source_databases_and_tables_)
     : source_database_name_or_regexp(source_database_name_or_regexp_)
     , database_is_regexp(database_is_regexp_)
     , source_database_regexp(std::move(source_database_regexp_))
     , source_table_regexp(std::move(source_table_regexp_))
-    , source_databases_and_tables(source_databases_and_tables_)
+    , source_databases_and_tables(std::move(source_databases_and_tables_))
 {
 }
 

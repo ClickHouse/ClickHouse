@@ -103,7 +103,7 @@ private:
             bool database_is_regexp_,
             std::optional<OptimizedRegularExpression> source_database_regexp_,
             std::optional<OptimizedRegularExpression> source_table_regexp_,
-            const DBToTableSetMap & source_databases_and_tables_);
+            std::optional<DBToTableSetMap> source_databases_and_tables_);
 
         DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
 
