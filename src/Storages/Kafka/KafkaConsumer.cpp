@@ -176,6 +176,8 @@ KafkaConsumer::~KafkaConsumer()
         LOG_ERROR(log, "Error while destructing consumer: {}", e.what());
     }
 
+    /// Reset the consumer explicitly to avoid triggering statistics callback from the dtor
+    consumer.reset();
 }
 
 // Needed to drain rest of the messages / queued callback calls from the consumer
