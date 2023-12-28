@@ -7,6 +7,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
+#include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
@@ -958,6 +959,22 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(sort_columns[i], 1, 1);
 
+#ifndef NDEBUG
+    if (!sort_description.empty())
+    {
+        for (size_t i = 0; i < pipes.size(); ++i)
+        {
+            auto & pipe = pipes[i];
+            pipe.addSimpleTransform([&](const Block & header_)
+            {
+                auto transform = std::make_shared<CheckSortedTransform>(header_, sort_description);
+                transform->setDescription(global_ctx->future_part->parts[i]->name);
+                return transform;
+            });
+        }
+    }
+#endif
+
     /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
     /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
     ///  that is going in insertion order.
@@ -1023,6 +1040,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     auto res_pipe = Pipe::unitePipes(std::move(pipes));
     res_pipe.addTransform(std::move(merged_transform));
+
+#ifndef NDEBUG
+    if (!sort_description.empty())
+    {
+        res_pipe.addSimpleTransform([&](const Block & header_)
+        {
+            auto transform = std::make_shared<CheckSortedTransform>(header_, sort_description);
+            return transform;
+        });
+    }
+#endif
 
     if (global_ctx->deduplicate)
     {

@@ -955,6 +955,29 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     };
 }
 
+void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextPtr & planner_context, const FunctionOverloadResolverPtr & to_nullable_function)
+{
+    auto cast_actions_dag = std::make_shared<ActionsDAG>(plan_to_add_cast.getCurrentDataStream().header.getColumnsWithTypeAndName());
+
+    for (auto & output_node : cast_actions_dag->getOutputs())
+    {
+        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output_node->result_name))
+        {
+            DataTypePtr type_to_check = output_node->result_type;
+            if (const auto * type_to_check_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type_to_check.get()))
+                type_to_check = type_to_check_low_cardinality->getDictionaryType();
+
+            if (type_to_check->canBeInsideNullable())
+                output_node = &cast_actions_dag->addFunction(to_nullable_function, {output_node}, output_node->result_name);
+        }
+    }
+
+    cast_actions_dag->projectInput();
+    auto cast_join_columns_step = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
+    cast_join_columns_step->setStepDescription("Cast JOIN columns to Nullable");
+    plan_to_add_cast.addStep(std::move(cast_join_columns_step));
+}
+
 JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_expression,
     JoinTreeQueryPlan left_join_tree_query_plan,
     JoinTreeQueryPlan right_join_tree_query_plan,
@@ -1068,45 +1091,21 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    auto to_nullable_function = FunctionFactory::instance().get("toNullable", query_context);
-
-    auto join_cast_plan_columns_to_nullable = [&](QueryPlan & plan_to_add_cast)
-    {
-        auto cast_actions_dag = std::make_shared<ActionsDAG>(plan_to_add_cast.getCurrentDataStream().header.getColumnsWithTypeAndName());
-
-        for (auto & output_node : cast_actions_dag->getOutputs())
-        {
-            if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output_node->result_name))
-            {
-                DataTypePtr type_to_check = output_node->result_type;
-                if (const auto * type_to_check_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type_to_check.get()))
-                    type_to_check = type_to_check_low_cardinality->getDictionaryType();
-
-                if (type_to_check->canBeInsideNullable())
-                    output_node = &cast_actions_dag->addFunction(to_nullable_function, {output_node}, output_node->result_name);
-            }
-        }
-
-        cast_actions_dag->projectInput();
-        auto cast_join_columns_step = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
-        cast_join_columns_step->setStepDescription("Cast JOIN columns to Nullable");
-        plan_to_add_cast.addStep(std::move(cast_join_columns_step));
-    };
-
     if (settings.join_use_nulls)
     {
+        auto to_nullable_function = FunctionFactory::instance().get("toNullable", query_context);
         if (isFull(join_kind))
         {
-            join_cast_plan_columns_to_nullable(left_plan);
-            join_cast_plan_columns_to_nullable(right_plan);
+            joinCastPlanColumnsToNullable(left_plan, planner_context, to_nullable_function);
+            joinCastPlanColumnsToNullable(right_plan, planner_context, to_nullable_function);
         }
         else if (isLeft(join_kind))
         {
-            join_cast_plan_columns_to_nullable(right_plan);
+            joinCastPlanColumnsToNullable(right_plan, planner_context, to_nullable_function);
         }
         else if (isRight(join_kind))
         {
-            join_cast_plan_columns_to_nullable(left_plan);
+            joinCastPlanColumnsToNullable(left_plan, planner_context, to_nullable_function);
         }
     }
 
@@ -1312,7 +1311,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             return step_raw_ptr;
         };
 
-        if (join_algorithm->pipelineType() == JoinPipelineType::YShaped)
+        if (join_algorithm->pipelineType() == JoinPipelineType::YShaped && join_kind != JoinKind::Paste)
         {
             const auto & join_clause = table_join->getOnlyClause();
 

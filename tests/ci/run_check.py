@@ -32,7 +32,6 @@ TRUSTED_ORG_IDS = {
 
 OK_SKIP_LABELS = {"release", "pr-backport", "pr-cherrypick"}
 CAN_BE_TESTED_LABEL = "can be tested"
-DO_NOT_TEST_LABEL = "do not test"
 FEATURE_LABEL = "pr-feature"
 SUBMODULE_CHANGED_LABEL = "submodule changed"
 PR_CHECK = "PR Check"
@@ -67,10 +66,6 @@ def should_run_ci_for_pr(pr_info: PRInfo) -> Tuple[bool, str]:
     if FORCE_TESTS_LABEL in pr_info.labels:
         print(f"Label '{FORCE_TESTS_LABEL}' set, forcing remaining checks")
         return True, f"Labeled '{FORCE_TESTS_LABEL}'"
-
-    if DO_NOT_TEST_LABEL in pr_info.labels:
-        print(f"Label '{DO_NOT_TEST_LABEL}' set, skipping remaining checks")
-        return False, f"Labeled '{DO_NOT_TEST_LABEL}'"
 
     if OK_SKIP_LABELS.intersection(pr_info.labels):
         return True, "Don't try new checks for release/backports/cherry-picks"
