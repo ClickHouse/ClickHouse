@@ -51,6 +51,7 @@
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
+#include "Parsers/queryToString.h"
 
 namespace
 {
@@ -1189,6 +1190,12 @@ void ReadFromMerge::convertAndFilterSourceStream(
     {
         return std::make_shared<ExpressionTransform>(stream_header, actions);
     });
+}
+
+const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
+{
+    filterTablesAndCreateChildPlans();
+    return selected_tables;
 }
 
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)

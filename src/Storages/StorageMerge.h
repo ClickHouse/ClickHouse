@@ -156,7 +156,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    const StorageListWithLocks & getSelectedTables() const { return selected_tables; }
+    const StorageListWithLocks & getSelectedTables();
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_);
