@@ -502,6 +502,7 @@ Memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
+MemoryResidentMax
 MemorySanitizer
 MemoryShared
 MemoryTracking
@@ -700,6 +701,8 @@ PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
+TotalPrimaryKeyBytesInMemory
+TotalPrimaryKeyBytesInMemoryAllocated
 PrivateKeyPassphraseHandler
 ProfileEvents
 Profiler
@@ -711,7 +714,6 @@ Promtail
 Protobuf
 ProtobufSingle
 ProxySQL
-Punycode
 PyArrow
 PyCharm
 QEMU
@@ -2072,8 +2074,6 @@ pseudorandom
 pseudorandomize
 psql
 ptrs
-punycodeDecode
-punycodeEncode
 pushdown
 pwrite
 py

@@ -105,9 +105,6 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override;
     bool supportsFinal() const override { return true; }
-    bool supportsIndexForIn() const override { return true; }
-
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 

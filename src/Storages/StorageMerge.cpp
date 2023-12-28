@@ -256,29 +256,6 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
     return supported_columns;
 }
 
-// bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
-// {
-//     /// It's beneficial if it is true for at least one table.
-//     StorageListWithLocks selected_tables = getSelectedTables(query_context);
-
-//     size_t i = 0;
-//     for (const auto & table : selected_tables)
-//     {
-//         const auto & storage_ptr = std::get<1>(table);
-//         auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-//         if (storage_ptr->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot))
-//             return true;
-
-//         ++i;
-//         /// For simplicity reasons, check only first ten tables.
-//         if (i > 10)
-//             break;
-//     }
-
-//     return false;
-// }
-
-
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
