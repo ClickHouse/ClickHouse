@@ -37,8 +37,8 @@ function run_test {
     $CLICKHOUSE_CLIENT "${opts[@]}" -q "TRUNCATE t_streaming_test"
 
     # spawn 2 streams
-    $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a FROM t_streaming_test STREAM" &
-    $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a FROM t_streaming_test STREAM" &
+    $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a FROM t_streaming_test STREAM WHERE b % 2 == 0" &
+    $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a FROM t_streaming_test STREAM WHERE b % 2 == 1" &
     sleep 0.5
 
     # insert some data into stream
@@ -50,7 +50,7 @@ function run_test {
     sleep 0.5
 }
 
-for engine_type in "MergeTree() ORDER BY (a)" "TinyLog" "StripeLog" "Memory"
+for engine_type in 'MergeTree() ORDER BY (a)' 'TinyLog' 'StripeLog' 'Memory';
 do
    run_test "$engine_type"
 done
