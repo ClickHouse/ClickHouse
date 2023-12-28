@@ -1,10 +1,9 @@
-20
-SELECT sum(uint64 + 1 AS i)
-FROM test_table
---
-20
-SELECT sum(uint64) + (1 * count(uint64))
-FROM test_table
+35
+-35
+SELECT sum(number) - (1 * count(number))
+FROM numbers(10)
+SELECT (1 * count(number)) - sum(number)
+FROM numbers(10)
 --
 \N
 0
@@ -14,6 +13,31 @@ FROM numbers(0)
 WITH CAST(\'1\', \'Nullable(UInt64)\') AS my_literal
 SELECT sum(number) + (my_literal * count())
 FROM numbers(0)
+--
+20
+20
+20
+20
+20
+--
+SELECT sum(uint64) + (1 * count(uint64))
+FROM test_table
+WHERE ((uint64 + 1) AS i) > 0
+SELECT sum(uint64) + (1 * count(uint64))
+FROM test_table
+HAVING (sum(uint64) + (1 * count(uint64))) > 0
+SELECT sum(uint64) + (1 * count(uint64))
+FROM test_table
+WHERE ((uint64 + 1) AS i) > 0
+HAVING (sum(uint64) + (1 * count(uint64))) > 0
+SELECT sum(uint64) + ((1 AS n) * count(uint64))
+FROM test_table
+WHERE ((uint64 AS m) > 0) AND (n > 0)
+HAVING (sum(uint64) + (n * count(uint64))) > 0
+SELECT sum(uint64) + ((1 AS n) * count(uint64))
+FROM test_table
+WHERE ((uint64 AS m) > 0) AND (n > 0) AND (((m + n) AS i) > 0)
+HAVING (sum(uint64) + (n * count(uint64))) > 0
 --
 25.549999999999997
 25.549999999999997

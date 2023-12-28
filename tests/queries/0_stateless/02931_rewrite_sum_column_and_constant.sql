@@ -1,3 +1,15 @@
+Select sum(number - 1) from numbers(10);
+Select sum(1 - number) from numbers(10);
+EXPLAIN SYNTAX (Select sum(number - 1) from numbers(10));
+EXPLAIN SYNTAX (Select sum(1 - number) from numbers(10));
+SELECT '--';
+
+WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0);
+WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0);
+EXPLAIN SYNTAX (WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0));
+EXPLAIN SYNTAX (WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0));
+SELECT '--';
+
 DROP TABLE IF EXISTS test_table;
 
 CREATE TABLE test_table
@@ -13,18 +25,17 @@ INSERT INTO test_table VALUES (3, 3.3, 3.33);
 INSERT INTO test_table VALUES (4, 4.4, 4.44);
 INSERT INTO test_table VALUES (5, 5.5, 5.55);
 
-SELECT sum(uint64 + 1 AS i) from test_table;
-EXPLAIN SYNTAX (SELECT sum(uint64 + 1 AS i) from test_table);
+SELECT sum(uint64 + 1 AS i) from test_table where i > 0;
+SELECT sum(uint64 + 1) AS j from test_table having j > 0;
+SELECT sum(uint64 + 1 AS i) j from test_table where i > 0 having j > 0;
+SELECT sum((uint64 AS m) + (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0;
+SELECT sum(((uint64 AS m) + (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0;
 SELECT '--';
-
-SELECT sum(uint64 + 1) AS i from test_table;
-EXPLAIN SYNTAX (SELECT sum(uint64 + 1) AS i from test_table);
-SELECT '--';
-
-WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0);
-WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0);
-EXPLAIN SYNTAX (WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0));
-EXPLAIN SYNTAX (WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0));
+EXPLAIN SYNTAX (SELECT sum(uint64 + 1 AS i) from test_table where i > 0);
+EXPLAIN SYNTAX (SELECT sum(uint64 + 1) AS j from test_table having j > 0);
+EXPLAIN SYNTAX (SELECT sum(uint64 + 1 AS i) j from test_table where i > 0 having j > 0);
+EXPLAIN SYNTAX (SELECT sum((uint64 AS m) + (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0);
+EXPLAIN SYNTAX (SELECT sum(((uint64 AS m) + (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0);
 SELECT '--';
 
 SELECT sum(uint64 + 2.11) From test_table;

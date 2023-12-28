@@ -33,10 +33,6 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
     if (!nested_func || !nested_func_supported.contains(Poco::toLower(nested_func->name))|| nested_func->arguments->children.size() != 2)
         return;
 
-    String alias = nested_func->tryGetAlias();
-    if (!alias.empty())
-        return;
-
     size_t column_id = nested_func->arguments->children.size();
 
     for (size_t i = 0; i < nested_func->arguments->children.size(); i++)
@@ -88,20 +84,38 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
 
     const String & column_name = column_type_name->name;
 
-    const auto new_ast = makeASTFunction(nested_func->name,
-                                        makeASTFunction("sum",
-                                                        std::make_shared<ASTIdentifier>(column_name)
-                                                        ),
-                                        makeASTFunction("multiply",
-                                                        std::make_shared<ASTLiteral>(* literal),
-                                                        makeASTFunction("count", std::make_shared<ASTIdentifier>(column_name))
-                                                        )
-                                        );
-    if (!new_ast)
-        return;
-
-    ast = new_ast;
-
+    if (column_id == 0)
+    {
+        const auto new_ast = makeASTFunction(nested_func->name,
+                                                makeASTFunction("sum",
+                                                                std::make_shared<ASTIdentifier>(column_name)
+                                                                ),
+                                                makeASTFunction("multiply",
+                                                                std::make_shared<ASTLiteral>(* literal),
+                                                                makeASTFunction("count", std::make_shared<ASTIdentifier>(column_name))
+                                                                )
+                                                );
+        if (!new_ast)
+            return;
+        else
+            ast = new_ast;
+    }
+    else if (column_id == 1)
+    {
+        const auto new_ast = makeASTFunction(nested_func->name,
+                                                makeASTFunction("multiply",
+                                                                std::make_shared<ASTLiteral>(* literal),
+                                                                makeASTFunction("count", std::make_shared<ASTIdentifier>(column_name))
+                                                                ),
+                                                makeASTFunction("sum",
+                                                                std::make_shared<ASTIdentifier>(column_name)
+                                                                )
+                                                );
+        if (!new_ast)
+            return;
+        else
+            ast = new_ast;
+    }
 }
 
 }
