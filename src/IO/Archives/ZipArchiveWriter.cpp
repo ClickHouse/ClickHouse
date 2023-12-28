@@ -6,6 +6,8 @@
 #include <base/errnoToString.h>
 #include <zip.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <Common/logger_useful.h>
+#include <Poco/Logger.h>
 
 
 namespace DB
