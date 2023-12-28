@@ -269,7 +269,6 @@ private:
     std::vector<std::multiset<RangesInDataPartDescription, BiggerPartsFirst>> distribution_by_hash_queue;
 
     /// For some ranges their owner and stealer (by consistent hash) cannot read from the given part at all. So this range have to be stolen anyway.
-    /// Also if those replicas unavailable during the query - segments also will end up here.
     /// TODO: consider making it bounded in size
     RangesInDataPartsDescription ranges_for_stealing_queue;
 
@@ -291,15 +290,23 @@ private:
     };
 
     void selectPartsAndRanges(
-        size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response);
+        size_t replica_num,
+        ScanMode scan_mode,
+        size_t min_number_of_marks,
+        size_t & current_marks_amount,
+        RangesInDataPartsDescription & description);
 
     size_t computeConsistentHash(const std::string & part_name, size_t segment_begin, ScanMode scan_mode) const;
 
     void tryToTakeFromDistributionQueue(
-        size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response);
+        size_t replica_num, size_t min_number_of_marks, size_t & current_marks_amount, RangesInDataPartsDescription & description);
 
     void tryToStealFromQueues(
-        size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response);
+        size_t replica_num,
+        ScanMode scan_mode,
+        size_t min_number_of_marks,
+        size_t & current_marks_amount,
+        RangesInDataPartsDescription & description);
 
     void tryToStealFromQueue(
         auto & queue,
@@ -308,10 +315,14 @@ private:
         ScanMode scan_mode,
         size_t min_number_of_marks,
         size_t & current_marks_amount,
-        ParallelReadResponse & response);
+        RangesInDataPartsDescription & description);
 
     void processPartsFurther(
-        size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response);
+        size_t replica_num,
+        ScanMode scan_mode,
+        size_t min_number_of_marks,
+        size_t & current_marks_amount,
+        RangesInDataPartsDescription & description);
 
     bool possiblyCanReadPart(size_t replica, const MergeTreePartInfo & info) const;
     void enqueueSegment(const MergeTreePartInfo & info, const MarkRange & segment, size_t owner);
@@ -432,7 +443,7 @@ void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnno
 }
 
 void DefaultCoordinator::tryToTakeFromDistributionQueue(
-    size_t replica_num, ScanMode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response)
+    size_t replica_num, size_t min_number_of_marks, size_t & current_marks_amount, RangesInDataPartsDescription & description)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasCollectingOwnedSegmentsMicroseconds);
 
@@ -447,7 +458,7 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
         {
             if (!result.ranges.empty())
                 /// We're switching to a different part, so have to save currently accumulated ranges
-                response.description.push_back(result);
+                description.push_back(result);
             result = {.info = distribution_queue.begin()->info};
         }
 
@@ -476,11 +487,15 @@ void DefaultCoordinator::tryToTakeFromDistributionQueue(
     }
 
     if (!result.ranges.empty())
-        response.description.push_back(result);
+        description.push_back(result);
 }
 
 void DefaultCoordinator::tryToStealFromQueues(
-    size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response)
+    size_t replica_num,
+    ScanMode scan_mode,
+    size_t min_number_of_marks,
+    size_t & current_marks_amount,
+    RangesInDataPartsDescription & description)
 {
     auto steal_from_other_replicas = [&]()
     {
@@ -492,7 +507,13 @@ void DefaultCoordinator::tryToStealFromQueues(
 
         for (auto replica : order)
             tryToStealFromQueue(
-                distribution_by_hash_queue[replica], replica, replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
+                distribution_by_hash_queue[replica],
+                replica,
+                replica_num,
+                scan_mode,
+                min_number_of_marks,
+                current_marks_amount,
+                description);
     };
 
     if (scan_mode == ScanMode::TakeWhatsMineForStealing)
@@ -505,7 +526,7 @@ void DefaultCoordinator::tryToStealFromQueues(
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasStealingLeftoversMicroseconds);
         /// Check orphaned ranges
         tryToStealFromQueue(
-            ranges_for_stealing_queue, /*owner=*/-1, replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
+            ranges_for_stealing_queue, /*owner=*/-1, replica_num, scan_mode, min_number_of_marks, current_marks_amount, description);
         /// Last hope. In case we haven't yet figured out that some node is unavailable its segments are still in the distribution queue.
         steal_from_other_replicas();
     }
@@ -518,7 +539,7 @@ void DefaultCoordinator::tryToStealFromQueue(
     ScanMode scan_mode,
     size_t min_number_of_marks,
     size_t & current_marks_amount,
-    ParallelReadResponse & response)
+    RangesInDataPartsDescription & description)
 {
     auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartNameV1()].contains(replica); };
 
@@ -535,7 +556,7 @@ void DefaultCoordinator::tryToStealFromQueue(
         {
             if (!result.ranges.empty())
                 /// We're switching to a different part, so have to save currently accumulated ranges
-                response.description.push_back(result);
+                description.push_back(result);
             result = {.info = part_ranges.info};
         }
 
@@ -569,11 +590,15 @@ void DefaultCoordinator::tryToStealFromQueue(
     }
 
     if (!result.ranges.empty())
-        response.description.push_back(result);
+        description.push_back(result);
 }
 
 void DefaultCoordinator::processPartsFurther(
-    size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response)
+    size_t replica_num,
+    ScanMode scan_mode,
+    size_t min_number_of_marks,
+    size_t & current_marks_amount,
+    RangesInDataPartsDescription & description)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasProcessingPartsMicroseconds);
 
@@ -623,22 +648,26 @@ void DefaultCoordinator::processPartsFurther(
         }
 
         if (!result.ranges.empty())
-            response.description.push_back(std::move(result));
+            description.push_back(std::move(result));
     }
 }
 
 void DefaultCoordinator::selectPartsAndRanges(
-    size_t replica_num, ScanMode scan_mode, size_t min_number_of_marks, size_t & current_marks_amount, ParallelReadResponse & response)
+    size_t replica_num,
+    ScanMode scan_mode,
+    size_t min_number_of_marks,
+    size_t & current_marks_amount,
+    RangesInDataPartsDescription & description)
 {
     if (scan_mode == ScanMode::TakeWhatsMineByHash)
     {
-        tryToTakeFromDistributionQueue(replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
-        processPartsFurther(replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
+        tryToTakeFromDistributionQueue(replica_num, min_number_of_marks, current_marks_amount, description);
+        processPartsFurther(replica_num, scan_mode, min_number_of_marks, current_marks_amount, description);
         /// We might back-fill `distribution_by_hash_queue` for this replica in `enqueueToStealerOrStealingQueue`
-        tryToTakeFromDistributionQueue(replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
+        tryToTakeFromDistributionQueue(replica_num, min_number_of_marks, current_marks_amount, description);
     }
     else
-        tryToStealFromQueues(replica_num, scan_mode, min_number_of_marks, current_marks_amount, response);
+        tryToStealFromQueues(replica_num, scan_mode, min_number_of_marks, current_marks_amount, description);
 }
 
 bool DefaultCoordinator::possiblyCanReadPart(size_t replica, const MergeTreePartInfo & info) const
@@ -697,17 +726,19 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
     size_t current_mark_size = 0;
 
     /// 1. Try to select ranges meant for this replica by consistent hash
-    selectPartsAndRanges(request.replica_num, ScanMode::TakeWhatsMineByHash, request.min_number_of_marks, current_mark_size, response);
+    selectPartsAndRanges(
+        request.replica_num, ScanMode::TakeWhatsMineByHash, request.min_number_of_marks, current_mark_size, response.description);
     const size_t assigned_to_me = current_mark_size;
 
     /// 2. Try to steal but with caching again (with different key)
-    selectPartsAndRanges(request.replica_num, ScanMode::TakeWhatsMineForStealing, request.min_number_of_marks, current_mark_size, response);
+    selectPartsAndRanges(
+        request.replica_num, ScanMode::TakeWhatsMineForStealing, request.min_number_of_marks, current_mark_size, response.description);
     const size_t stolen_by_hash = current_mark_size - assigned_to_me;
 
     /// 3. Try to steal with no preference. We're trying to postpone it as much as possible.
     if (current_mark_size == 0 && request.replica_num == source_replica_for_parts_snapshot)
         selectPartsAndRanges(
-            request.replica_num, ScanMode::TakeEverythingAvailable, request.min_number_of_marks, current_mark_size, response);
+            request.replica_num, ScanMode::TakeEverythingAvailable, request.min_number_of_marks, current_mark_size, response.description);
     const size_t stolen_unassigned = current_mark_size - stolen_by_hash - assigned_to_me;
 
     stats[request.replica_num].number_of_requests += 1;
