@@ -77,7 +77,7 @@ IOUringReader::IOUringReader(uint32_t entries_)
 
     int ret = io_uring_queue_init_params(entries_, &ring, &params);
     if (ret < 0)
-        throwFromErrno("Failed initializing io_uring", ErrorCodes::IO_URING_INIT_FAILED, -ret);
+        ErrnoException::throwWithErrno(ErrorCodes::IO_URING_INIT_FAILED, -ret, "Failed initializing io_uring");
 
     cq_entries = params.cq_entries;
     ring_completion_monitor = std::make_unique<ThreadFromGlobalPool>([this] { monitorRing(); });

@@ -443,8 +443,6 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
-
     /// Snapshot for MergeTree contains the current set of data parts
     /// at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
@@ -795,7 +793,7 @@ public:
     /// We do not use mutex because it is not very important that the size could change during the operation.
     void checkPartitionCanBeDropped(const ASTPtr & partition, ContextPtr local_context);
 
-    void checkPartCanBeDropped(const String & part_name);
+    void checkPartCanBeDropped(const String & part_name, ContextPtr local_context);
 
     Pipe alterPartition(
         const StorageMetadataPtr & metadata_snapshot,

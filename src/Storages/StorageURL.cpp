@@ -32,12 +32,13 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Common/ProfileEvents.h>
+#include <Common/thread_local_rng.h>
+#include <Common/logger_useful.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <regex>
 #include <DataTypes/DataTypeString.h>
@@ -93,7 +94,7 @@ static bool urlWithGlobs(const String & uri)
 
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
 {
-    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0});
+    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings().keep_alive_timeout);
 }
 
 IStorageURLBase::IStorageURLBase(

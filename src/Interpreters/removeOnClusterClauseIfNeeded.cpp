@@ -3,7 +3,7 @@
 #include <Access/AccessControl.h>
 #include <Access/ReplicatedAccessStorage.h>
 #include <Common/logger_useful.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
@@ -47,7 +47,7 @@ ASTPtr removeOnClusterClauseIfNeeded(const ASTPtr & query, ContextPtr context, c
 
     if ((isUserDefinedFunctionQuery(query)
          && context->getSettings().ignore_on_cluster_for_replicated_udf_queries
-         && context->getUserDefinedSQLObjectsLoader().isReplicated())
+         && context->getUserDefinedSQLObjectsStorage().isReplicated())
         || (isAccessControlQuery(query)
             && context->getSettings().ignore_on_cluster_for_replicated_access_entities_queries
             && context->getAccessControl().containsStorage(ReplicatedAccessStorage::STORAGE_TYPE)))

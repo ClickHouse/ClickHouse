@@ -236,28 +236,6 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
     return supported_columns;
 }
 
-bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
-{
-    /// It's beneficial if it is true for at least one table.
-    StorageListWithLocks selected_tables = getSelectedTables(query_context);
-
-    size_t i = 0;
-    for (const auto & table : selected_tables)
-    {
-        const auto & storage_ptr = std::get<1>(table);
-        auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-        if (storage_ptr->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot))
-            return true;
-
-        ++i;
-        /// For simplicity reasons, check only first ten tables.
-        if (i > 10)
-            break;
-    }
-
-    return false;
-}
-
 
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     ContextPtr local_context,
@@ -1295,38 +1273,35 @@ std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(cons
 
 bool StorageMerge::supportsTrivialCountOptimization() const
 {
-    bool supported = true;
-    forEachTable([&](const auto & table)
-    {
-        supported &= table->supportsTrivialCountOptimization();
-    });
-    return supported;
+    return getFirstTable([&](const auto & table) { return !table->supportsTrivialCountOptimization(); }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(const Settings & settings) const
 {
-    UInt64 total_rows = 0;
-    forEachTable([&](const auto & table)
-    {
-        std::optional<UInt64> rows = table->totalRows(settings);
-        if (rows)
-            total_rows += *rows;
-    });
-    return {total_rows};
+    return totalRowsOrBytes([&](const auto & table) { return table->totalRows(settings); });
 }
 
 std::optional<UInt64> StorageMerge::totalBytes(const Settings & settings) const
 {
-    UInt64 total_bytes = 0;
-    forEachTable([&](const auto & table)
-    {
-        std::optional<UInt64> bytes = table->totalBytes(settings);
-        if (bytes)
-            total_bytes += *bytes;
-    });
-    return {total_bytes};
+    return totalRowsOrBytes([&](const auto & table) { return table->totalBytes(settings); });
 }
 
+template <typename F>
+std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
+{
+    UInt64 total_rows_or_bytes = 0;
+    auto first_table = getFirstTable([&](const auto & table)
+    {
+        if (auto rows_or_bytes = func(table))
+        {
+            total_rows_or_bytes += *rows_or_bytes;
+            return false;
+        }
+        return true;
+    });
+
+    return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
+}
 
 void registerStorageMerge(StorageFactory & factory)
 {

@@ -22,11 +22,13 @@ struct S3ObjectStorageSettings
         const S3Settings::RequestSettings & request_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
-        int32_t objects_chunk_size_to_delete_)
+        int32_t objects_chunk_size_to_delete_,
+        bool read_only_)
         : request_settings(request_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
+        , read_only(read_only_)
     {}
 
     S3Settings::RequestSettings request_settings;
@@ -34,6 +36,7 @@ struct S3ObjectStorageSettings
     uint64_t min_bytes_for_seek;
     int32_t list_object_keys_size;
     int32_t objects_chunk_size_to_delete;
+    bool read_only;
 };
 
 
@@ -165,6 +168,8 @@ public:
     bool supportParallelWrite() const override { return true; }
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+
+    bool isReadOnly() const override { return s3_settings.get()->read_only; }
 
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
