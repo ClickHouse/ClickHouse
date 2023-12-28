@@ -178,7 +178,6 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ContextPtr query_context) override;
 
     void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
@@ -746,7 +745,6 @@ private:
         const MergeTreeDataPartFormat & merged_part_format,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);
