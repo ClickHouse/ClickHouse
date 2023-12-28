@@ -14,6 +14,9 @@
         toString(number), toString(number) FROM numbers(1000000);</fill_query>
 
     <query>SELECT keys.key, value1 FROM keys ANY LEFT JOIN dict AS d ON (keys.key = d.key) FORMAT Null;</query>
+    <query>SELECT keys.key, value1, value2, value3  FROM keys ANY LEFT JOIN dict AS d ON (keys.key = d.key) FORMAT Null;</query>
+    <query>SELECT keys.key, value1, value2, value3, value4, value5 FROM keys ANY LEFT JOIN dict AS d ON (keys.key = d.key) FORMAT Null;</query>
+    <query>SELECT keys.key, value1, value2, value3, value4, value5, value6, value7, value8, value9, FROM keys ANY LEFT JOIN dict AS d ON (keys.key = d.key) FORMAT Null;</query>
     <query>SELECT keys.key, value1 FROM keys ANY LEFT JOIN dict AS d ON (keys.key = d.key) FORMAT Null SETTINGS
         allow_experimental_analyzer=1</query>
 </test>
