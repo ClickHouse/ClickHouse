@@ -19,7 +19,7 @@ public:
     explicit AggregateFunctionsSingleValueMax(const DataTypePtr & type) : Parent(type) { }
 
     /// Specializations for native numeric types
-    ALWAYS_INLINE inline void addBatchSinglePlace(
+    void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr __restrict place,
@@ -27,7 +27,7 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override;
 
-    ALWAYS_INLINE inline void addBatchSinglePlaceNotNull(
+    void addBatchSinglePlaceNotNull(
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr __restrict place,
@@ -74,7 +74,50 @@ void AggregateFunctionsSingleValueMax<Data>::addBatchSinglePlace(
     Arena * arena,
     ssize_t if_argument_pos) const
 {
-    return Parent::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+    constexpr int nan_direction_hint = 1;
+    auto const & column = *columns[0];
+    if (if_argument_pos >= 0)
+    {
+        size_t index = row_begin;
+        const auto & if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+        while (if_flags[index] == 0 && index < row_end)
+            index++;
+        if (index >= row_end)
+            return;
+
+        for (size_t i = index + 1; i < row_end; i++)
+        {
+            if ((if_flags[i] != 0) && (column.compareAt(i, index, column, nan_direction_hint) > 0))
+                index = i;
+        }
+        this->data(place).changeIfGreater(column, index, arena);
+    }
+    else
+    {
+        if (row_begin >= row_end)
+            return;
+
+        /// TODO: Introduce row_begin and row_end to getPermutation
+        if (row_begin != 0 || row_end != column.size())
+        {
+            size_t index = row_begin;
+            for (size_t i = index + 1; i < row_end; i++)
+            {
+                if (column.compareAt(i, index, column, nan_direction_hint) > 0)
+                    index = i;
+            }
+            this->data(place).changeIfGreater(column, index, arena);
+        }
+        else
+        {
+            constexpr IColumn::PermutationSortDirection direction = IColumn::PermutationSortDirection::Descending;
+            constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
+            IColumn::Permutation permutation;
+            constexpr UInt64 limit = 1;
+            column.getPermutation(direction, stability, limit, nan_direction_hint, permutation);
+            this->data(place).changeIfGreater(column, permutation[0], arena);
+        }
+    }
 }
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
@@ -119,7 +162,39 @@ void AggregateFunctionsSingleValueMax<Data>::addBatchSinglePlaceNotNull(
     Arena * arena,
     ssize_t if_argument_pos) const
 {
-    return Parent::addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+    constexpr int nan_direction_hint = 1;
+    auto const & column = *columns[0];
+    if (if_argument_pos >= 0)
+    {
+        size_t index = row_begin;
+        const auto & if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+        while ((if_flags[index] == 0 || null_map[index] != 0) && (index < row_end))
+            index++;
+        if (index >= row_end)
+            return;
+
+        for (size_t i = index + 1; i < row_end; i++)
+        {
+            if ((if_flags[i] != 0) && (null_map[i] == 0) && (column.compareAt(i, index, column, nan_direction_hint) > 0))
+                index = i;
+        }
+        this->data(place).changeIfGreater(column, index, arena);
+    }
+    else
+    {
+        size_t index = row_begin;
+        while ((null_map[index] != 0) && (index < row_end))
+            index++;
+        if (index >= row_end)
+            return;
+
+        for (size_t i = index + 1; i < row_end; i++)
+        {
+            if ((null_map[i] == 0) && (column.compareAt(i, index, column, nan_direction_hint) > 0))
+                index = i;
+        }
+        this->data(place).changeIfGreater(column, index, arena);
+    }
 }
 
 AggregateFunctionPtr createAggregateFunctionMax(
