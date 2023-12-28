@@ -278,13 +278,12 @@ bool StorageMaterializedView::optimize(
     bool final,
     bool deduplicate,
     const Names & deduplicate_by_columns,
-    bool cleanup,
     ContextPtr local_context)
 {
     checkStatementCanBeForwarded();
     auto storage_ptr = getTargetTable();
     auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
+    return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, local_context);
 }
 
 std::tuple<ContextMutablePtr, std::shared_ptr<ASTInsertQuery>> StorageMaterializedView::prepareRefresh() const

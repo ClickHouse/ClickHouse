@@ -349,9 +349,6 @@ public:
         /// For Collapsing and VersionedCollapsing mode.
         String sign_column;
 
-        /// For Replacing mode. Can be empty for Replacing.
-        String is_deleted_column;
-
         /// For Summing mode. If empty - columns_to_sum is determined automatically.
         Names columns_to_sum;
 

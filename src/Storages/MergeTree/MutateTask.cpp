@@ -1057,7 +1057,6 @@ public:
                 ctx->space_reservation,
                 false, // TODO Do we need deduplicate for projections
                 {},
-                false, // no cleanup
                 projection_merging_params,
                 NO_TRANSACTION_PTR,
                 /* need_prefix */ true,
