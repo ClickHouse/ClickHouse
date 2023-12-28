@@ -1161,13 +1161,18 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                         info.use_uncompressed_cache);
                 };
 
+                /// Parts of non-zero level still may contain duplicate PK values to merge on FINAL if there's is_deleted column,
+                /// so we have to process all ranges. It would be more optimal to remove this flag and add an extra filtering step.
+                bool force_process_all_ranges = !data.merging_params.is_deleted_column.empty();
+
                 SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
                     metadata_for_reading->getPrimaryKey(),
                     sorting_expr,
                     std::move(new_parts),
                     num_streams,
                     context,
-                    std::move(in_order_reading_step_getter));
+                    std::move(in_order_reading_step_getter),
+                    force_process_all_ranges);
 
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));
