@@ -29,16 +29,9 @@ public:
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
-    bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /* metadata_snapshot */) const override
-    {
-        auto target_table = getTargetTable();
-        auto metadata_snapshot = target_table->getInMemoryMetadataPtr();
-        return target_table->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
-    }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -54,6 +47,7 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ContextPtr context) override;
 
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;

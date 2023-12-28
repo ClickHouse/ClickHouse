@@ -41,6 +41,7 @@
 #include <IO/PeekableReadBuffer.h>
 #include <IO/VarInt.h>
 
+#include <pcg_random.hpp>
 #include <double-conversion/double-conversion.h>
 
 static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
