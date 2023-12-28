@@ -19,8 +19,11 @@ Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_) : columns(std::move(columns
     checkNumRowsIsConsistent();
 }
 
-Chunk::Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, int part_level_)
-    : columns(std::move(columns_)), num_rows(num_rows_), chunk_info(std::move(chunk_info_)), origin_merge_tree_part_level(part_level_)
+Chunk::Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, std::optional<UInt32> part_level_)
+    : columns(std::move(columns_))
+    , num_rows(num_rows_)
+    , chunk_info(std::move(chunk_info_))
+    , origin_merge_tree_part_level(std::move(part_level_))
 {
     checkNumRowsIsConsistent();
 }
@@ -41,8 +44,11 @@ Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_)
     checkNumRowsIsConsistent();
 }
 
-Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, int part_level_)
-    : columns(unmuteColumns(std::move(columns_))), num_rows(num_rows_), chunk_info(std::move(chunk_info_)), origin_merge_tree_part_level(part_level_)
+Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, std::optional<UInt32> part_level_)
+    : columns(unmuteColumns(std::move(columns_)))
+    , num_rows(num_rows_)
+    , chunk_info(std::move(chunk_info_))
+    , origin_merge_tree_part_level(std::move(part_level_))
 {
     checkNumRowsIsConsistent();
 }
@@ -236,7 +242,7 @@ Chunk cloneConstWithDefault(const Chunk & chunk, size_t num_rows)
 
 bool Chunk::mayContainRowsWithSamePrimaryKeys() const
 {
-    return origin_merge_tree_part_level < 1;
+    return unlikely(!origin_merge_tree_part_level) || !(*origin_merge_tree_part_level);
 }
 
 }

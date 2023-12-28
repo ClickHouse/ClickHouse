@@ -38,16 +38,15 @@ public:
         : columns(std::move(other.columns))
         , num_rows(other.num_rows)
         , chunk_info(std::move(other.chunk_info))
-        , origin_merge_tree_part_level(other.origin_merge_tree_part_level)
+        , origin_merge_tree_part_level(std::move(other.origin_merge_tree_part_level))
     {
         other.num_rows = 0;
-        other.origin_merge_tree_part_level = -1;
     }
 
     Chunk(Columns columns_, UInt64 num_rows_);
-    Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, int part_level_ = -1);
+    Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, std::optional<UInt32> part_level_ = {});
     Chunk(MutableColumns columns_, UInt64 num_rows_);
-    Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, int part_level_ = -1);
+    Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_, std::optional<UInt32> part_level_ = {});
 
     Chunk & operator=(const Chunk & other) = delete;
     Chunk & operator=(Chunk && other) noexcept
@@ -55,9 +54,8 @@ public:
         columns = std::move(other.columns);
         chunk_info = std::move(other.chunk_info);
         num_rows = other.num_rows;
-        origin_merge_tree_part_level = other.origin_merge_tree_part_level;
+        origin_merge_tree_part_level = std::move(other.origin_merge_tree_part_level);
         other.num_rows = 0;
-        other.origin_merge_tree_part_level = -1;
         return *this;
     }
 
@@ -76,7 +74,7 @@ public:
         num_rows = 0;
         columns.clear();
         chunk_info.reset();
-        origin_merge_tree_part_level = -1;
+        origin_merge_tree_part_level.reset();
     }
 
     const Columns & getColumns() const { return columns; }
@@ -118,8 +116,8 @@ private:
     UInt64 num_rows = 0;
     ChunkInfoPtr chunk_info;
 
-    /// It can be non-negative when Chunk produced by a merge tree source
-    Int32 origin_merge_tree_part_level = -1;
+    /// It can be non-nullopt when Chunk produced by a merge tree source
+    std::optional<UInt64> origin_merge_tree_part_level;
 
     void checkNumRowsIsConsistent();
 };
