@@ -331,6 +331,7 @@ void MergeTreeReaderCompact::readData(
 
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
+    bool columns_cache_was_used = false;
 
     if (name_and_type.isSubcolumn())
     {
@@ -341,6 +342,7 @@ void MergeTreeReaderCompact::readData(
         if (it != columns_cache_for_subcolumns.end())
         {
             temp_column = it->second;
+            columns_cache_was_used = true;
         }
         else
         {
@@ -388,8 +390,8 @@ void MergeTreeReaderCompact::readData(
         serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
     }
 
-    /// The buffer is left in inconsistent state after reading single offsets
-    if (name_level_for_offsets.has_value())
+    /// The buffer is left in inconsistent state after reading single offsets or using columns cache during subcolumns reading.
+    if (name_level_for_offsets.has_value() || columns_cache_was_used)
         last_read_granule.reset();
     else
         last_read_granule.emplace(from_mark, column_position);
