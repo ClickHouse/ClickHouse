@@ -59,8 +59,10 @@ public:
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
 
     DiskPtr getTemporaryRocksDBDisk() const;
-
     std::shared_ptr<rocksdb::Options> getRocksDBOptions() const { return rocksdb_options; }
+
+    UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }
+    void updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config);
 
     /// set to true when we have preprocessed or committed all the logs
     /// that were already present locally during startup
@@ -105,6 +107,8 @@ private:
 
     KeeperFeatureFlags feature_flags;
     KeeperDispatcher * dispatcher{nullptr};
+
+    std::atomic<UInt64> memory_soft_limit = 0;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

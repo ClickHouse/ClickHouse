@@ -1,5 +1,6 @@
 SET compile_aggregate_expressions = 1;
 SET min_count_to_compile_aggregate_expression = 0;
+SET max_bytes_before_external_group_by='200M'; -- might be randomized to 1 leading to timeout
 
 SELECT 'Aggregation using JIT compilation';
 

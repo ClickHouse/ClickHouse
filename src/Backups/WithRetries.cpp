@@ -20,22 +20,19 @@ WithRetries::KeeperSettings WithRetries::KeeperSettings::fromContext(ContextPtr 
     };
 }
 
-WithRetries::WithRetries(Poco::Logger * log_, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings_, RenewerCallback callback_)
+WithRetries::WithRetries(
+    Poco::Logger * log_, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings_, RenewerCallback callback_)
     : log(log_)
     , get_zookeeper(get_zookeeper_)
     , settings(settings_)
     , callback(callback_)
     , global_zookeeper_retries_info(
-        log->name(),
-        log,
-        settings.keeper_max_retries,
-        settings.keeper_retry_initial_backoff_ms,
-        settings.keeper_retry_max_backoff_ms)
+          settings.keeper_max_retries, settings.keeper_retry_initial_backoff_ms, settings.keeper_retry_max_backoff_ms)
 {}
 
 WithRetries::RetriesControlHolder::RetriesControlHolder(const WithRetries * parent, const String & name)
     : info(parent->global_zookeeper_retries_info)
-    , retries_ctl(name, info, nullptr)
+    , retries_ctl(name, parent->log, info, nullptr)
     , faulty_zookeeper(parent->getFaultyZooKeeper())
 {}
 
@@ -54,6 +51,10 @@ void WithRetries::renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const
         my_faulty_zookeeper->setKeeper(zookeeper);
 
         callback(my_faulty_zookeeper);
+    }
+    else
+    {
+        my_faulty_zookeeper->setKeeper(zookeeper);
     }
 }
 

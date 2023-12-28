@@ -291,8 +291,14 @@ private:
     struct ReplicasAsShardsTag {};
     Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
 
-    void addShard(const Settings & settings, Addresses && addresses, bool treat_local_as_remote, UInt32 current_shard_num,
-                  ShardInfoInsertPathForInternalReplication && insert_paths = {}, UInt32 weight = 1, bool internal_replication = false);
+    void addShard(
+        const Settings & settings,
+        Addresses addresses,
+        bool treat_local_as_remote,
+        UInt32 current_shard_num,
+        UInt32 weight = 1,
+        ShardInfoInsertPathForInternalReplication insert_paths = {},
+        bool internal_replication = false);
 
     /// Inter-server secret
     String secret;

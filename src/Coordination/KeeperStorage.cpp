@@ -941,7 +941,7 @@ void KeeperStorage<Container>::unregisterEphemeralPath(int64_t session_id, const
 {
     auto ephemerals_it = ephemerals.find(session_id);
     if (ephemerals_it == ephemerals.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session {} is missing ephemeral path", session_id);
 
     ephemerals_it->second.erase(path);
     if (ephemerals_it->second.empty())

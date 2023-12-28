@@ -7,6 +7,7 @@
 #include <base/scope_guard.h>
 
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 
 namespace DB
 {
@@ -80,10 +81,10 @@ void WriteBufferToFileSegment::nextImpl()
     file_segment->setDownloadedSize(bytes_to_write);
 }
 
-std::shared_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
+std::unique_ptr<ReadBuffer> WriteBufferToFileSegment::getReadBufferImpl()
 {
     finalize();
-    return std::make_shared<ReadBufferFromFile>(file_segment->getPathInLocalCache());
+    return std::make_unique<ReadBufferFromFile>(file_segment->getPathInLocalCache());
 }
 
 WriteBufferToFileSegment::~WriteBufferToFileSegment()

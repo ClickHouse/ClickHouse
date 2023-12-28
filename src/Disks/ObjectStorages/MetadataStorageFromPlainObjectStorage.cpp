@@ -106,7 +106,7 @@ StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std
 {
     size_t object_size = getFileSize(path);
     auto object_key = object_storage->generateObjectKeyForPath(path);
-    return {StoredObject(object_key.serialize(), object_size, path)};
+    return {StoredObject(object_key.serialize(), path, object_size)};
 }
 
 const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const

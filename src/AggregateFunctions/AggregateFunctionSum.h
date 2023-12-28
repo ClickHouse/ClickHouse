@@ -142,6 +142,7 @@ struct AggregateFunctionSumData
     ), addManyConditionalInternalImpl, MULTITARGET_FUNCTION_BODY((const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end) /// NOLINT
     {
         ptr += start;
+        condition_map += start;
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
 
@@ -503,7 +504,7 @@ public:
             const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
             auto final_flags = std::make_unique<UInt8[]>(row_end);
             for (size_t i = row_begin; i < row_end; ++i)
-                final_flags[i] = (!null_map[i]) & if_flags[i];
+                final_flags[i] = (!null_map[i]) & !!if_flags[i];
 
             this->data(place).addManyConditional(column.getData().data(), final_flags.get(), row_begin, row_end);
         }

@@ -39,7 +39,6 @@ struct KeeperRocksNode
         *this = other;
     }
 private:
-    /// TODO(hanfei): Maybe we can store data and meta seperately.
     String data;
 };
 
@@ -475,15 +474,12 @@ public:
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
     void enableSnapshotMode(size_t up_to_version)
     {
-        /// TODO: remove garbage log.
-        LOG_DEBUG(&Poco::Logger::get("KeeperStorage"), "enable snapshot mode {}", up_to_version);
         container.enableSnapshotMode(up_to_version);
     }
 
     /// Turn off snapshot mode.
     void disableSnapshotMode()
     {
-        LOG_DEBUG(&Poco::Logger::get("KeeperStorage"), "disable snapshot mode");
         container.disableSnapshotMode();
     }
 

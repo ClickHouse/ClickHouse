@@ -7,10 +7,10 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
+#include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
 #include <base/map.h>
 
-#include "formatString.h"
 
 namespace DB
 {
@@ -145,13 +145,13 @@ private:
                 }
                 write_helper.finalize();
 
-                /// Same as the normal `ColumnString` branch
-                has_column_string = true;
-                data[i] = &converted_col_str->getChars();
-                offsets[i] = &converted_col_str->getOffsets();
-
                 /// Keep the pointer alive
                 converted_col_ptrs[i] = std::move(converted_col_str);
+
+                /// Same as the normal `ColumnString` branch
+                has_column_string = true;
+                data[i] = &converted_col_ptrs[i]->getChars();
+                offsets[i] = &converted_col_ptrs[i]->getOffsets();
             }
         }
 
@@ -207,6 +207,8 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
+        if (arguments.size() == 1)
+            return FunctionFactory::instance().getImpl("toString", context)->build(arguments);
         if (std::ranges::all_of(arguments, [](const auto & elem) { return isArray(elem.type); }))
             return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
         if (std::ranges::all_of(arguments, [](const auto & elem) { return isMap(elem.type); }))
@@ -221,10 +223,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() < 2)
+        if (arguments.empty())
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be at least 2.",
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
                 getName(),
                 arguments.size());
 

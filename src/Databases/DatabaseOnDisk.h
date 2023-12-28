@@ -32,6 +32,8 @@ class DatabaseOnDisk : public DatabaseWithOwnTablesBase
 public:
     DatabaseOnDisk(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context);
 
+    void shutdown() override;
+
     void createTable(
         ContextPtr context,
         const String & table_name,
