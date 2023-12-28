@@ -1,4 +1,5 @@
-#include "Common/ZooKeeper/ZooKeeperConstants.h"
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/thread_local_rng.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 
 #include <IO/Operators.h>

@@ -211,21 +211,6 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, query, context);
 }
 
-bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const
-{
-    const String column_name = node->getColumnName();
-
-    for (const auto & cname : index.column_names)
-        if (column_name == cname)
-            return true;
-
-    if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
-        if (func->arguments->children.size() == 1)
-            return mayBenefitFromIndexForIn(func->arguments->children.front());
-
-    return false;
-}
-
 MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
 {
     if (data_part_storage.exists(relative_path_prefix + ".idx2"))

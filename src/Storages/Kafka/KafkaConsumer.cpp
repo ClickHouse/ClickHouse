@@ -13,7 +13,6 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <base/defines.h>
 
 namespace CurrentMetrics
 {
@@ -47,13 +46,15 @@ const auto DRAIN_TIMEOUT_MS = 5000ms;
 
 
 KafkaConsumer::KafkaConsumer(
+    ConsumerPtr consumer_,
     Poco::Logger * log_,
     size_t max_batch_size,
     size_t poll_timeout_,
     bool intermediate_commit_,
     const std::atomic<bool> & stopped_,
     const Names & _topics)
-    : log(log_)
+    : consumer(consumer_)
+    , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
     , intermediate_commit(intermediate_commit_)
@@ -62,25 +63,6 @@ KafkaConsumer::KafkaConsumer(
     , topics(_topics)
     , exceptions_buffer(EXCEPTIONS_DEPTH)
 {
-}
-
-void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
-{
-    chassert(!consumer.get());
-
-    /// Using this should be safe, since cppkafka::Consumer can poll messages
-    /// (including statistics, which will trigger the callback below) only via
-    /// KafkaConsumer.
-    if (consumer_config.get("statistics.interval.ms") != "0")
-    {
-        consumer_config.set_stats_callback([this](cppkafka::KafkaHandleBase &, const std::string & stat_json)
-        {
-            setRDKafkaStat(stat_json);
-        });
-    }
-    consumer = std::make_shared<cppkafka::Consumer>(consumer_config);
-    consumer->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
-
     // called (synchronously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
@@ -153,9 +135,6 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
 
 KafkaConsumer::~KafkaConsumer()
 {
-    if (!consumer)
-        return;
-
     try
     {
         if (!consumer->get_subscription().empty())
@@ -589,9 +568,6 @@ void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktr
  */
 std::string KafkaConsumer::getMemberId() const
 {
-    if (!consumer)
-        return "";
-
     char * memberid_ptr = rd_kafka_memberid(consumer->get_handle());
     std::string memberid_string = memberid_ptr;
     rd_kafka_mem_free(nullptr, memberid_ptr);
@@ -602,14 +578,8 @@ std::string KafkaConsumer::getMemberId() const
 KafkaConsumer::Stat KafkaConsumer::getStat() const
 {
     KafkaConsumer::Stat::Assignments assignments;
-    cppkafka::TopicPartitionList cpp_assignments;
-    cppkafka::TopicPartitionList cpp_offsets;
-
-    if (consumer)
-    {
-        cpp_assignments = consumer->get_assignment();
-        cpp_offsets = consumer->get_offsets_position(cpp_assignments);
-    }
+    auto cpp_assignments = consumer->get_assignment();
+    auto cpp_offsets = consumer->get_offsets_position(cpp_assignments);
 
     for (size_t num = 0; num < cpp_assignments.size(); ++num)
     {
@@ -621,7 +591,7 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
     }
 
     return {
-        .consumer_id = getMemberId(),
+        .consumer_id = getMemberId() /* consumer->get_member_id() */ ,
         .assignments = std::move(assignments),
         .last_poll_time = last_poll_timestamp_usec.load(),
         .num_messages_read = num_messages_read.load(),
@@ -631,18 +601,11 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
         .num_commits = num_commits.load(),
         .num_rebalance_assignments = num_rebalance_assignments.load(),
         .num_rebalance_revocations = num_rebalance_revocations.load(),
-        .exceptions_buffer = [&]()
-        {
-            std::lock_guard<std::mutex> lock(exception_mutex);
-            return exceptions_buffer;
-        }(),
+        .exceptions_buffer = [&](){std::lock_guard<std::mutex> lock(exception_mutex);
+            return exceptions_buffer;}(),
         .in_use = in_use.load(),
-        .last_used_usec = last_used_usec.load(),
-        .rdkafka_stat = [&]()
-        {
-            std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
-            return rdkafka_stat;
-        }(),
+        .rdkafka_stat = [&](){std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
+            return rdkafka_stat;}(),
     };
 }
 
