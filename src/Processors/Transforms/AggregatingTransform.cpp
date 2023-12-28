@@ -6,6 +6,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 
 #include <Processors/Transforms/SquashingChunksTransform.h>
 

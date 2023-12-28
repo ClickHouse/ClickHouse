@@ -151,8 +151,6 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query, ContextPtr context) const override;
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
-
     size_t max_rows = 0;
 };
 

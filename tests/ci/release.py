@@ -195,13 +195,13 @@ class Release:
             self.check_branch()
 
         if self.release_type in self.BIG:
-            if self._version.minor >= 12 and self.release_type != "major":
+            if self._version.minor > 12 and self.release_type != "major":
                 raise ValueError(
-                    "The release type must be 'major' for minor versions>=12"
+                    "The release type must be 'major' for minor versions > 12"
                 )
             if self._version.minor < 12 and self.release_type == "major":
                 raise ValueError(
-                    "The release type must be 'minor' for minor versions<12"
+                    "The release type must be 'minor' for minor versions < 12"
                 )
 
             with self._checkout(self.release_commit, True):

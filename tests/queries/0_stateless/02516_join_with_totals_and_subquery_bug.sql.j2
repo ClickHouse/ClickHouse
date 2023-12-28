@@ -70,6 +70,12 @@ ALL LEFT JOIN
 ) AS js2 USING (a)
 ORDER BY b ASC NULLS FIRST;
 
+
+
+{% for join_algorithm in ['default', 'partial_merge'] -%}
+
+SET join_algorithm = '{{ join_algorithm }}';
+
 SELECT '---';
 SELECT
     *
@@ -112,3 +118,5 @@ FULL JOIN (
 ON l.item_id = r.item_id
 ORDER BY 1,2,3
 ;
+
+{% endfor %}

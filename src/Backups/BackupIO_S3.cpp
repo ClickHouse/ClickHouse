@@ -68,7 +68,6 @@ namespace
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
         client_configuration.requestTimeoutMs = 60 * 60 * 1000;
-        client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(request_settings.retry_attempts);
 
         return S3::ClientFactory::instance().create(
             client_configuration,
@@ -146,7 +145,7 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
 {
     auto objects = listObjects(*client, s3_uri, file_name);
     if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist");
+        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
     return objects[0].GetSize();
 }
 
@@ -299,7 +298,7 @@ UInt64 BackupWriterS3::getFileSize(const String & file_name)
 {
     auto objects = listObjects(*client, s3_uri, file_name);
     if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist");
+        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
     return objects[0].GetSize();
 }
 
