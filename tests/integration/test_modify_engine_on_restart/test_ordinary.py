@@ -29,11 +29,13 @@ def started_cluster():
 def q(node, query):
     return node.query(database=database_name, sql=query)
 
+
 def create_tables():
     q(
         ch1,
         "CREATE TABLE mt ( A Int64, D Date, S String ) ENGINE MergeTree() PARTITION BY toYYYYMM(D) ORDER BY A;",
     )
+
 
 def check_tables():
     # Check tables exists
@@ -71,6 +73,7 @@ def set_convert_flags():
         ]
     )
 
+
 def remove_convert_flags():
     ch1.exec_in_container(
         [
@@ -79,6 +82,7 @@ def remove_convert_flags():
             f"rm -rf /var/lib/clickhouse/data/{database_name}/mt/flags",
         ]
     )
+
 
 def test_modify_engine_on_restart_ordinary_database(started_cluster):
     ch1.query(

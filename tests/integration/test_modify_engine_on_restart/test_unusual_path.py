@@ -5,7 +5,7 @@ cluster = ClickHouseCluster(__file__)
 ch1 = cluster.add_instance(
     "ch1",
     main_configs=[
-        "configs/config.d/clusters.xml",
+        "configs/config.d/clusters_unusual.xml",
         "configs/config.d/distributed_ddl.xml",
     ],
     with_zookeeper=True,
@@ -13,7 +13,7 @@ ch1 = cluster.add_instance(
     stay_alive=True,
 )
 
-database_name = "modify_engine_args"
+database_name = "modify_engine_unusual_path"
 
 
 @pytest.fixture(scope="module")
@@ -62,7 +62,7 @@ def check_tables():
         )
         .strip()
         .startswith(
-            "ReplicatedReplacingMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\', D)"
+            "ReplicatedReplacingMergeTree(\\'/lol/kek/\\\\\\'/{uuid}\\', \\'{replica}\\', D)"
         )
     )
     assert (
@@ -72,13 +72,12 @@ def check_tables():
         )
         .strip()
         .startswith(
-            "ReplicatedVersionedCollapsingMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\', Sign, Version)"
+            "ReplicatedVersionedCollapsingMergeTree(\\'/lol/kek/\\\\\\'/{uuid}\\', \\'{replica}\\', Sign, Version)"
         )
     )
 
 
 def set_convert_flags():
-    # Set convert flag on actually convertable tables
     for table in ["replacing_ver", "collapsing_ver"]:
         ch1.exec_in_container(
             [
@@ -96,7 +95,7 @@ def set_convert_flags():
         )
 
 
-def test_modify_engine_on_restart_with_arguments(started_cluster):
+def test_modify_engine_on_restart_with_unusual_path(started_cluster):
     ch1.query("CREATE DATABASE " + database_name)
 
     create_tables()
