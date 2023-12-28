@@ -15,6 +15,7 @@ clickhouse obfuscator [args]
 clickhouse git-import [args] 
 clickhouse keeper [args] 
 clickhouse keeper-converter [args] 
+clickhouse keeper-client [args] 
 clickhouse install [args] 
 clickhouse start [args] 
 clickhouse stop [args] 
@@ -41,6 +42,7 @@ clickhouse obfuscator [args]
 clickhouse git-import [args] 
 clickhouse keeper [args] 
 clickhouse keeper-converter [args] 
+clickhouse keeper-client [args] 
 clickhouse install [args] 
 clickhouse start [args] 
 clickhouse stop [args] 
@@ -88,6 +90,7 @@ clickhouse-local can be used to query data from stopped clickhouse-server instal
 
 Example reading file from S3, converting format and writing to a file:
 clickhouse-local --query "SELECT c1 as version, c2 as date FROM url('https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv') INTO OUTFILE '/tmp/versions.json'"
+In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.
 
 clickhouse compressor
 
@@ -100,27 +103,22 @@ ClickHouse disk management tool
 usage clickhouse disks [OPTION]
 clickhouse-disks
 
-read	read File `from_path` to `to_path` or to stdout
-Path should be in format './' or './path' or 'path'
+read	Read a file from `FROM_PATH` to `TO_PATH`
 
-write	Write File `from_path` or stdin to `to_path`
+write	Write a file from `FROM_PATH` to `TO_PATH`
 
 link	Create hardlink from `from_path` to `to_path`
-Path should be in format './' or './path' or 'path'
 
-mkdir	Create directory or directories recursively
+mkdir	Create a directory
 
 remove	Remove file or directory with all children. Throws exception if file doesn't exists.
 Path should be in format './' or './path' or 'path'
 
 move	Move file or directory from `from_path` to `to_path`
-Path should be in format './' or './path' or 'path'
 
-copy	Recursively copy data containing at `from_path` to `to_path`
-Path should be in format './' or './path' or 'path'
+copy	Recursively copy data from `FROM_PATH` to `TO_PATH`
 
-list	List files (the default disk is used by default)
-Path should be in format './' or './path' or 'path'
+list	List files at path[s]
 
 list-disks	List disks names
 
@@ -491,6 +489,7 @@ clickhouse-local can be used to query data from stopped clickhouse-server instal
 
 Example reading file from S3, converting format and writing to a file:
 clickhouse-local --query "SELECT c1 as version, c2 as date FROM url('https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv') INTO OUTFILE '/tmp/versions.json'"
+In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.
 
 clickhouse-client
 
@@ -748,27 +747,22 @@ ClickHouse disk management tool
 usage clickhouse disks [OPTION]
 clickhouse-disks
 
-read	read File `from_path` to `to_path` or to stdout
-Path should be in format './' or './path' or 'path'
+read	Read a file from `FROM_PATH` to `TO_PATH`
 
-write	Write File `from_path` or stdin to `to_path`
+write	Write a file from `FROM_PATH` to `TO_PATH`
 
 link	Create hardlink from `from_path` to `to_path`
-Path should be in format './' or './path' or 'path'
 
-mkdir	Create directory or directories recursively
+mkdir	Create a directory
 
 remove	Remove file or directory with all children. Throws exception if file doesn't exists.
 Path should be in format './' or './path' or 'path'
 
 move	Move file or directory from `from_path` to `to_path`
-Path should be in format './' or './path' or 'path'
 
-copy	Recursively copy data containing at `from_path` to `to_path`
-Path should be in format './' or './path' or 'path'
+copy	Recursively copy data from `FROM_PATH` to `TO_PATH`
 
-list	List files (the default disk is used by default)
-Path should be in format './' or './path' or 'path'
+list	List files at path[s]
 
 list-disks	List disks names
 

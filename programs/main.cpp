@@ -192,6 +192,7 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
     {"chc", "client"},
 #endif
 };
+#endif
 
 void printHelp()
 {

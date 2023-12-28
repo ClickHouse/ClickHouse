@@ -15,6 +15,7 @@ clickhouse obfuscator [args]
 clickhouse git-import [args] 
 clickhouse keeper [args] 
 clickhouse keeper-converter [args] 
+clickhouse keeper-client [args] 
 clickhouse install [args] 
 clickhouse start [args] 
 clickhouse stop [args] 
@@ -41,6 +42,7 @@ clickhouse obfuscator [args]
 clickhouse git-import [args] 
 clickhouse keeper [args] 
 clickhouse keeper-converter [args] 
+clickhouse keeper-client [args] 
 clickhouse install [args] 
 clickhouse start [args] 
 clickhouse stop [args] 
@@ -148,7 +150,10 @@ Copies tables from one cluster to another
                                                                                        even
                                                                                        node
                                                                                        already
-                                                                                       exists
+                                                                                       exists.
+                                                                                       Default
+                                                                                       is
+                                                                                       false.
 --safe-mode                                                                            
                                                                                        disables
                                                                                        ALTER
@@ -265,6 +270,7 @@ clickhouse keeper
 
 usage: 
 clickhouse keeper [OPTION] [-- [ARG]...]
+clickhouse keeper client [OPTION]
 positional arguments can be used to rewrite config.xml properties, for 
 example, --http_port=8010
 
@@ -379,7 +385,10 @@ Copies tables from one cluster to another
                                                                                        even
                                                                                        node
                                                                                        already
-                                                                                       exists
+                                                                                       exists.
+                                                                                       Default
+                                                                                       is
+                                                                                       false.
 --safe-mode                                                                            
                                                                                        disables
                                                                                        ALTER
@@ -496,6 +505,7 @@ clickhouse-keeper
 
 usage: 
 clickhouse-keeper [OPTION] [-- [ARG]...]
+clickhouse-keeper client [OPTION]
 positional arguments can be used to rewrite config.xml properties, for 
 example, --http_port=8010
 
