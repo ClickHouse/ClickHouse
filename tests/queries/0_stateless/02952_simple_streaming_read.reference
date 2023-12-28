@@ -1,3 +1,50 @@
+=====
+running test for engine: MergeTree() ORDER BY (a)
+0
+a	a-a	10000
+0	0-0	0
+1	1-1	1
+2	2-2	4
+3	3-3	9
+4	4-4	16
+5	5-5	25
+6	6-6	36
+same-x-2
+same-x-2
+same-x-2
+same-x-2
+=====
+running test for engine: TinyLog
+0
+a	a-a	10000
+0	0-0	0
+1	1-1	1
+2	2-2	4
+3	3-3	9
+4	4-4	16
+5	5-5	25
+6	6-6	36
+same-x-2
+same-x-2
+same-x-2
+same-x-2
+=====
+running test for engine: StripeLog
+0
+a	a-a	10000
+0	0-0	0
+1	1-1	1
+2	2-2	4
+3	3-3	9
+4	4-4	16
+5	5-5	25
+6	6-6	36
+same-x-2
+same-x-2
+same-x-2
+same-x-2
+=====
+running test for engine: Memory
 0
 a	a-a	10000
 0	0-0	0
