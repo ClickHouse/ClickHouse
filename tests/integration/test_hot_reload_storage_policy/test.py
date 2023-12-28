@@ -67,9 +67,7 @@ new_disk_config = """
 
 
 def set_config(node, config):
-    node.replace_config(
-        "/etc/clickhouse-server/config.d/config.xml", config
-    )
+    node.replace_config("/etc/clickhouse-server/config.d/config.xml", config)
     node.query("SYSTEM RELOAD CONFIG")
 
 
@@ -103,26 +101,22 @@ def test_hot_reload_policy(started_cluster):
 
     # Same test for distributed table, it should reinitialize the storage policy and data volume
     # We check it by trying an insert and the distribution queue must be on new disk
-    node1.query(
-        "SYSTEM STOP DISTRIBUTED SENDS t_d"
-    )
+    node1.query("SYSTEM STOP DISTRIBUTED SENDS t_d")
     node1.query(
         "INSERT INTO TABLE t_d SETTINGS prefer_localhost_replica = 0 VALUES (2, 'bar') (12, 'bar')"
     )
 
-    queue_path = node1.query(
-        "SELECT data_path FROM system.distribution_queue"
+    queue_path = node1.query("SELECT data_path FROM system.distribution_queue")
+
+    assert (
+        "disk1" in queue_path
+    ), "Distributed table should be using new disk (disk1), but it's still creating queue in {}".format(
+        queue_path
     )
 
-    assert ("disk1" in queue_path), "Distributed table should be using new disk (disk1), but it's still creating queue in {}".format(queue_path)
+    node1.query("SYSTEM START DISTRIBUTED SENDS t_d")
 
-    node1.query(
-        "SYSTEM START DISTRIBUTED SENDS t_d"
-    )
-
-    node1.query(
-        "SYSTEM FLUSH DISTRIBUTED t_d"
-    )
+    node1.query("SYSTEM FLUSH DISTRIBUTED t_d")
 
     result = int(node1.query("SELECT count() FROM t"))
 
