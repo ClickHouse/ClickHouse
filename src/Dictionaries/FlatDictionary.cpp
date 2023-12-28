@@ -154,7 +154,7 @@ ColumnPtr FlatDictionary::getColumn(
 
 ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
         const std::string & attribute_name,
-        const DataTypePtr & atribute_type,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types [[maybe_unused]],
         IColumn::Filter & default_mask) const
@@ -166,7 +166,7 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
 
     auto size = ids.size();
 
-    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, atribute_type);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, attribute_type);
 
     size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     const auto & attribute = attributes[attribute_index];
