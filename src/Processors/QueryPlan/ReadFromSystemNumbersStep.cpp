@@ -9,6 +9,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/System/StorageSystemNumbers.h>
+#include <Common/TargetSpecific.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -21,6 +22,27 @@ extern const int TOO_MANY_ROWS;
 
 namespace
 {
+
+MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(void),
+    iotaImpl, MULTITARGET_FUNCTION_BODY((UInt64 * begin, UInt64 count, UInt64 first_value)
+    {
+        for (UInt64 i = 0; i < count; i++)
+            *(begin + i) = first_value + i;
+    })
+)
+
+static void iota(UInt64 * begin, UInt64 count, UInt64 first_value)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX2))
+        return iotaImplAVX2(begin, count, first_value);
+
+    if (isArchSupported(TargetArch::SSE42))
+        return iotaImplSSE42(begin, count, first_value);
+#endif
+    return iotaImpl(begin, count, first_value);
+}
 
 class NumbersSource : public ISource
 {
@@ -43,8 +65,7 @@ protected:
         size_t curr = next; /// The local variable for some reason works faster (>20%) than member of class.
         UInt64 * pos = vec.data(); /// This also accelerates the code.
         UInt64 * end = &vec[block_size];
-        while (pos < end)
-            *pos++ = curr++;
+        iota(pos, end - pos, curr);
 
         next += step;
 
@@ -211,17 +232,18 @@ protected:
                 {
                     auto start_value_64 = static_cast<UInt64>(start_value);
                     auto end_value_64 = static_cast<UInt64>(end_value);
-                    while (start_value_64 < end_value_64)
-                        *(pos++) = start_value_64++;
+                    auto size = end_value_64 - start_value_64;
+                    iota(pos, size, start_value_64);
+                    pos += size;
                 }
             };
 
             if (can_provide > need)
             {
                 UInt64 start_value = first_value(range) + cursor.offset_in_range;
-                UInt64 end_value = start_value + need; /// end_value will never overflow
-                while (start_value < end_value)
-                    *(pos++) = start_value++;
+                /// end_value will never overflow
+                iota(pos, need, start_value);
+                pos += need;
 
                 provided += need;
                 cursor.offset_in_range += need;
