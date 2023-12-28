@@ -14,6 +14,7 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory);
+void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory);
 #if USE_HIVE
 void registerFileSegmentationEngineHiveText(FormatFactory & factory);
 #endif
@@ -156,6 +157,7 @@ void registerFormats()
     registerFileSegmentationEngineJSONEachRow(factory);
     registerFileSegmentationEngineJSONAsString(factory);
     registerFileSegmentationEngineJSONAsObject(factory);
+    registerFileSegmentationEngineJSONCompactEachRow(factory);
 #if USE_HIVE
     registerFileSegmentationEngineHiveText(factory);
 #endif
