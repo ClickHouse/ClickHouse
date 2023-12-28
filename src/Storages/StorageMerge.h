@@ -144,8 +144,6 @@ public:
     ReadFromMerge(
         Block common_header_,
         Names all_column_names_,
-        // bool has_database_virtual_column_,
-        // bool has_table_virtual_column_,
         size_t max_block_size,
         size_t num_streams,
         StoragePtr storage,
@@ -222,10 +220,6 @@ private:
     };
 
     using RowPolicyDataOpt = std::optional<RowPolicyData>;
-
-    // std::vector<Aliases> table_aliases;
-
-    // std::vector<RowPolicyDataOpt> table_row_policy_data_opts;
 
     struct ChildPlan
     {

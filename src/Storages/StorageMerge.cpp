@@ -317,28 +317,6 @@ void StorageMerge::read(
       */
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("optimize_move_to_prewhere", false);
-
-
-    // InputOrderInfoPtr input_sorting_info;
-    // if (query_info.order_optimizer)
-    // {
-    //     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
-    //     {
-    //         auto storage_ptr = std::get<1>(*it);
-    //         auto storage_metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
-    //         auto current_info = query_info.order_optimizer->getInputOrder(storage_metadata_snapshot, modified_context);
-    //         if (it == selected_tables.begin())
-    //             input_sorting_info = current_info;
-    //         else if (!current_info || (input_sorting_info && *current_info != *input_sorting_info))
-    //             input_sorting_info.reset();
-
-    //         if (!input_sorting_info)
-    //             break;
-    //     }
-
-    //     query_info.input_order_info = input_sorting_info;
-    // }
-
     query_plan.addInterpreterContext(modified_context);
 
     /// What will be result structure depending on query processed stage in source tables?
@@ -346,11 +324,7 @@ void StorageMerge::read(
 
     auto step = std::make_unique<ReadFromMerge>(
         common_header,
-        //std::move(selected_tables),
-        //real_column_names,
         column_names,
-        // has_database_virtual_column,
-        // has_table_virtual_column,
         max_block_size,
         num_streams,
         shared_from_this(),
@@ -364,10 +338,7 @@ void StorageMerge::read(
 
 ReadFromMerge::ReadFromMerge(
     Block common_header_,
-    //StorageListWithLocks selected_tables_,
     Names all_column_names_,
-    // bool has_database_virtual_column_,
-    // bool has_table_virtual_column_,
     size_t max_block_size,
     size_t num_streams,
     StoragePtr storage,
@@ -379,10 +350,7 @@ ReadFromMerge::ReadFromMerge(
     , required_max_block_size(max_block_size)
     , requested_num_streams(num_streams)
     , common_header(std::move(common_header_))
-    //, selected_tables(std::move(selected_tables_))
     , all_column_names(std::move(all_column_names_))
-    // , has_database_virtual_column(has_database_virtual_column_)
-    // , has_table_virtual_column(has_table_virtual_column_)
     , storage_merge(std::move(storage))
     , merge_storage_snapshot(std::move(storage_snapshot))
     , query_info(query_info_)

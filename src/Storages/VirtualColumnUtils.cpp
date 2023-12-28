@@ -502,7 +502,6 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 const ActionsDAG::Node * res = node_copy.children.front();
                 /// Expression like (not_allowed AND 256) can't be resuced to (and(256)) because AND requires
                 /// at least two arguments; also it can't be reduced to (256) because result type is different.
-                /// TODO: add CAST here
                 if (!res->result_type->equals(*node->result_type))
                 {
                     ActionsDAG tmp_dag;
