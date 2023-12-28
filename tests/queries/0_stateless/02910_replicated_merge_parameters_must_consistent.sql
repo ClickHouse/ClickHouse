@@ -17,26 +17,6 @@ CREATE TABLE t_r
 ENGINE = ReplicatedReplacingMergeTree('/tables/{database}/t/', 'r2')
 ORDER BY id; -- { serverError METADATA_MISMATCH }
 
-CREATE TABLE t2
-(
-    `id` UInt64,
-    `val` String,
-    `legacy_ver` UInt64,
-    `deleted` UInt8
-)
-ENGINE = ReplicatedReplacingMergeTree('/tables/{database}/t2/', 'r1', legacy_ver)
-ORDER BY id;
-
-CREATE TABLE t2_r
-(
-    `id` UInt64,
-    `val` String,
-    `legacy_ver` UInt64,
-    `deleted` UInt8
-)
-ENGINE = ReplicatedReplacingMergeTree('/tables/{database}/t2/', 'r2', legacy_ver, deleted)
-ORDER BY id; -- { serverError METADATA_MISMATCH }
-
 CREATE TABLE t3
 (
     `key` UInt64,

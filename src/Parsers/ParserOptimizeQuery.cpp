@@ -39,7 +39,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ASTPtr partition;
     bool final = false;
     bool deduplicate = false;
-    bool cleanup = false;
     String cluster_str;
 
     if (!s_optimize_table.ignore(pos, expected))
@@ -70,9 +69,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (s_deduplicate.ignore(pos, expected))
         deduplicate = true;
 
-    if (s_cleanup.ignore(pos, expected))
-        cleanup = true;
-
     ASTPtr deduplicate_by_columns;
     if (deduplicate && s_by.ignore(pos, expected))
     {
@@ -80,6 +76,9 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
                 .parse(pos, deduplicate_by_columns, expected))
             return false;
     }
+
+    /// Obsolete feature, ignored for backward compatibility.
+    s_cleanup.ignore(pos, expected);
 
     auto query = std::make_shared<ASTOptimizeQuery>();
     node = query;
@@ -90,7 +89,6 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     query->final = final;
     query->deduplicate = deduplicate;
     query->deduplicate_by_columns = deduplicate_by_columns;
-    query->cleanup = cleanup;
     query->database = database;
     query->table = table;
 
