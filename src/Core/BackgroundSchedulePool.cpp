@@ -31,15 +31,13 @@ bool BackgroundSchedulePoolTaskInfo::schedule()
     return true;
 }
 
-bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t milliseconds, bool overwrite, bool only_if_scheduled)
+bool BackgroundSchedulePoolTaskInfo::scheduleAfter(size_t milliseconds, bool overwrite)
 {
     std::lock_guard lock(schedule_mutex);
 
     if (deactivated || scheduled)
         return false;
     if (delayed && !overwrite)
-        return false;
-    if (!delayed && only_if_scheduled)
         return false;
 
     pool.scheduleDelayedTask(shared_from_this(), milliseconds, lock);

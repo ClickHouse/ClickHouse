@@ -87,7 +87,6 @@
 #include <Storages/System/StorageSystemScheduler.h>
 #include <Storages/System/StorageSystemS3Queue.h>
 #include <Storages/System/StorageSystemDashboards.h>
-#include <Storages/System/StorageSystemViewRefreshes.h>
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 #include <Storages/System/StorageSystemSymbols.h>
@@ -210,7 +209,6 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins");
     attach<StorageSystemS3Queue>(context, system_database, "s3queue");
     attach<StorageSystemDashboards>(context, system_database, "dashboards");
-    attach<StorageSystemViewRefreshes>(context, system_database, "view_refreshes");
 
     if (has_zookeeper)
     {
