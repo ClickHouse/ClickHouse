@@ -321,6 +321,7 @@ bool StorageEmbeddedRocksDB::optimize(
     bool final,
     bool deduplicate,
     const Names & /* deduplicate_by_columns */,
+    bool cleanup,
     ContextPtr /*context*/)
 {
     if (partition)
@@ -331,6 +332,9 @@ bool StorageEmbeddedRocksDB::optimize(
 
     if (deduplicate)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DEDUPLICATE cannot be specified when optimizing table of type EmbeddedRocksDB");
+
+    if (cleanup)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type EmbeddedRocksDB");
 
     std::shared_lock lock(rocksdb_ptr_mx);
     rocksdb::CompactRangeOptions compact_options;
