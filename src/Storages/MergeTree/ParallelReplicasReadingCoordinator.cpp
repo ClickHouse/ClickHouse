@@ -154,15 +154,7 @@ public:
         , replicas_count(replicas_count_)
     {}
 
-    virtual ~ImplInterface()
-    {
-        for (size_t replica = 0; replica < replicas_count; ++replica)
-        {
-            ProfileEvents::increment(ProfileEvents::ParallelReplicasReadAssignedMarks, stats[replica].assigned_to_me);
-            ProfileEvents::increment(ProfileEvents::ParallelReplicasReadUnassignedMarks, stats[replica].stolen_unassigned);
-            ProfileEvents::increment(ProfileEvents::ParallelReplicasReadAssignedForStealingMarks, stats[replica].stolen_by_hash);
-        }
-    }
+    virtual ~ImplInterface() = default;
 
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
@@ -747,6 +739,10 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
     stats[request.replica_num].assigned_to_me += assigned_to_me;
     stats[request.replica_num].stolen_by_hash += stolen_by_hash;
     stats[request.replica_num].stolen_unassigned += stolen_unassigned;
+
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasReadAssignedMarks, assigned_to_me);
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasReadUnassignedMarks, stolen_unassigned);
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasReadAssignedForStealingMarks, stolen_by_hash);
 
     if (response.description.empty())
     {
