@@ -332,7 +332,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     if (throw_on_broken_projection && !broken_projections_message.empty())
     {
-        throw Exception(ErrorCodes::BROKEN_PROJECTION, broken_projections_message.data());
+        throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
     }
 
     if (require_checksums && !projections_on_disk.empty())
