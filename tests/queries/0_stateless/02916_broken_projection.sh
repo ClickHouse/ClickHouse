@@ -447,7 +447,7 @@ function test3()
 
     break_projection test proj all_2_2_0 part
 
-    check test
+    check test proj ErrnoException
 
     broken_projections_info test
 
