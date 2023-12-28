@@ -61,7 +61,7 @@
 * Reduce memory usage on strings deserialization. [#57787](https://github.com/ClickHouse/ClickHouse/pull/57787) ([Maksim Kita](https://github.com/kitaisreal)).
 * More efficient constructor for Enum - it makes sense when Enum has a boatload of values. [#57887](https://github.com/ClickHouse/ClickHouse/pull/57887) ([Duc Canh Le](https://github.com/canhld94)).
 * An improvement for reading from the filesystem cache: always use `pread` method. [#57970](https://github.com/ClickHouse/ClickHouse/pull/57970) ([Nikita Taranov](https://github.com/nickitat)).
-* Add optimization for AND notEquals chain in logical expression optimizer [#58214](https://github.com/ClickHouse/ClickHouse/pull/58214) ([Kevin Mingtarja](https://github.com/kevinmingtarja)).
+* Add optimization for AND notEquals chain in logical expression optimizer. This optimization is only available with the experimental Analyzer enabled. [#58214](https://github.com/ClickHouse/ClickHouse/pull/58214) ([Kevin Mingtarja](https://github.com/kevinmingtarja)).
 
 #### Improvement
 * Support for soft memory limit in Keeper. It will refuse requests if the memory usage is close to the maximum. [#57271](https://github.com/ClickHouse/ClickHouse/pull/57271) ([Han Fei](https://github.com/hanfei1991)). [#57699](https://github.com/ClickHouse/ClickHouse/pull/57699) ([Han Fei](https://github.com/hanfei1991)).
