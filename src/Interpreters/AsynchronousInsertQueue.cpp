@@ -60,6 +60,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 static const NameSet settings_to_skip
@@ -181,6 +182,12 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
     if (!pool_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "pool_size cannot be zero");
 
+    const auto & settings = getContext()->getSettingsRef();
+
+    for (size_t i = 0; i < pool_size; ++i)
+        queue_shards[i].busy_timeout_ms
+            = std::min(Milliseconds(settings.async_insert_busy_timeout_min_ms), Milliseconds(settings.async_insert_busy_timeout_max_ms));
+
     for (size_t i = 0; i < pool_size; ++i)
         dump_by_first_update_threads.emplace_back([this, i] { processBatchDeadlines(i); });
 }
@@ -222,9 +229,7 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key,
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
     pool.scheduleOrThrowOnError([key, global_context, my_data = std::make_shared<InsertDataPtr>(std::move(data))]() mutable
-    {
-        processData(key, std::move(*my_data), std::move(global_context));
-    });
+                                { processData(key, std::move(*my_data), std::move(global_context)); });
 }
 
 void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context)
@@ -300,6 +305,7 @@ AsynchronousInsertQueue::PushResult
 AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context)
 {
     const auto & settings = query_context->getSettingsRef();
+    validateSettings(settings, log);
     auto & insert_query = query->as<ASTInsertQuery &>();
 
     auto data_kind = chunk.getDataKind();
@@ -319,17 +325,14 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
 
     auto shard_num = key.hash % pool_size;
     auto & shard = queue_shards[shard_num];
-
     {
         std::lock_guard lock(shard.mutex);
 
         auto [it, inserted] = shard.iterators.try_emplace(key.hash);
+        auto now = std::chrono::steady_clock::now();
+        auto timeout_ms = getBusyWaitTimeoutMs(settings, shard, shard_num, now);
         if (inserted)
-        {
-            auto now = std::chrono::steady_clock::now();
-            auto timeout = now + Milliseconds{key.settings.async_insert_busy_timeout_ms};
-            it->second = shard.queue.emplace(timeout, Container{key, std::make_unique<InsertData>()}).first;
-        }
+            it->second = shard.queue.emplace(now + timeout_ms, Container{key, std::make_unique<InsertData>()}).first;
 
         auto queue_it = it->second;
         auto & data = queue_it->second.data;
@@ -346,15 +349,28 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
         bool has_enough_bytes = data->size_in_bytes >= key.settings.async_insert_max_data_size;
         bool has_enough_queries = data->entries.size() >= key.settings.async_insert_max_query_number && key.settings.async_insert_deduplicate;
 
-        /// Here we check whether we hit the limit on maximum data size in the buffer.
-        /// And use setting from query context.
-        /// It works, because queries with the same set of settings are already grouped together.
-        if (!flush_stopped && (has_enough_bytes || has_enough_queries))
+        auto max_busy_timeout_exceeded = [&shard, &settings, &now]() -> bool
+        {
+            if (!settings.async_insert_use_adaptive_busy_timeout || !shard.last_insert_time)
+                return false;
+
+            auto max_ms = Milliseconds(settings.async_insert_busy_timeout_max_ms);
+            return *shard.last_insert_time + max_ms < now;
+        };
+
+        /// Here we check whether we have hit the limit on the maximum data size in the buffer or
+        /// if the elapsed time since the last insert exceeds the maximum busy wait timeout.
+        /// We also use the limit settings from the query context.
+        /// This works because queries with the same set of settings are already grouped together.
+        if (!flush_stopped && (has_enough_bytes || has_enough_queries || max_busy_timeout_exceeded()))
         {
             data_to_process = std::move(data);
             shard.iterators.erase(it);
             shard.queue.erase(queue_it);
         }
+
+        shard.last_insert_time = now;
+        shard.busy_timeout_ms = timeout_ms;
 
         CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
@@ -372,6 +388,95 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
         .future = std::move(insert_future),
         .insert_data_buffer = nullptr,
     };
+}
+
+AsynchronousInsertQueue::Milliseconds AsynchronousInsertQueue::getBusyWaitTimeoutMs(
+    const Settings & settings,
+    const AsynchronousInsertQueue::QueueShard & shard,
+    size_t shard_num,
+    std::chrono::steady_clock::time_point now) const
+{
+    if (!settings.async_insert_use_adaptive_busy_timeout)
+        return settings.async_insert_busy_timeout_max_ms;
+
+    const auto max_ms = Milliseconds(settings.async_insert_busy_timeout_max_ms);
+    const auto min_ms = std::min(std::max(Milliseconds(settings.async_insert_busy_timeout_min_ms), Milliseconds(1)), max_ms);
+
+    auto normalize = [&min_ms, &max_ms](const auto & t_ms) { return std::min(std::max(t_ms, min_ms), max_ms); };
+
+    if (!shard.last_insert_time)
+        return normalize(shard.busy_timeout_ms);
+
+    const auto & last_insert_time = *shard.last_insert_time;
+    const double increase_rate = settings.async_insert_busy_timeout_increase_rate;
+    const double decrease_rate = settings.async_insert_busy_timeout_decrease_rate;
+
+    const auto decreased_timeout_ms = std::min(
+        std::chrono::duration_cast<Milliseconds>(shard.busy_timeout_ms / (1.0 + decrease_rate)), shard.busy_timeout_ms - Milliseconds(1));
+
+    /// Increase the timeout for frequent inserts.
+    if (last_insert_time + min_ms > now)
+    {
+        auto timeout_ms = std::max(
+            std::chrono::duration_cast<Milliseconds>(shard.busy_timeout_ms * (1.0 + increase_rate)),
+            shard.busy_timeout_ms + Milliseconds(1));
+        if (timeout_ms != shard.busy_timeout_ms)
+            LOG_TRACE(
+                log,
+                "Async timeout increased from {} to {} for queue shard {}.",
+                shard.busy_timeout_ms.count(),
+                timeout_ms.count(),
+                shard_num);
+
+        return normalize(timeout_ms);
+    }
+    /// Decrease the timeout if inserts are not frequent,
+    /// that is, if the time since the last insert long enough (exceeding the adjusted timeout).
+    /// This ensures the timeout value converges to the minimum over time for non-frequent inserts.
+    else if (last_insert_time + decreased_timeout_ms < now)
+    {
+        auto timeout_ms = decreased_timeout_ms;
+        if (timeout_ms != shard.busy_timeout_ms)
+            LOG_TRACE(
+                log,
+                "Async timeout decreased from {} to {} for queue shard {}.",
+                shard.busy_timeout_ms.count(),
+                timeout_ms.count(),
+                shard_num);
+
+        return normalize(timeout_ms);
+    }
+
+    return normalize(shard.busy_timeout_ms);
+}
+
+void AsynchronousInsertQueue::validateSettings(const Settings & settings, LoggerPtr log)
+{
+    const auto max_ms = std::chrono::milliseconds(settings.async_insert_busy_timeout_max_ms);
+
+    if (max_ms == std::chrono::milliseconds::zero())
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_max_ms' can't be zero");
+
+    if (!settings.async_insert_use_adaptive_busy_timeout)
+        return;
+
+    /// Adaptive timeout settings.
+    const auto min_ms = std::chrono::milliseconds(settings.async_insert_busy_timeout_min_ms);
+
+    if (min_ms > max_ms)
+        if (log)
+            LOG_WARNING(
+                log,
+                "Setting 'async_insert_busy_timeout_min_ms'={} is greater than 'async_insert_busy_timeout_max_ms'={}. Ignoring "
+                "'async_insert_busy_timeout_min_ms'",
+                min_ms.count(),
+                max_ms.count());
+
+    if (settings.async_insert_busy_timeout_increase_rate <= 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_increase_rate' must be greater than zero");
+
+    if (settings.async_insert_busy_timeout_decrease_rate <= 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_decrease_rate' must be greater than zero");
 }
 
 void AsynchronousInsertQueue::flushAll()
@@ -395,8 +500,9 @@ void AsynchronousInsertQueue::flushAll()
     size_t total_bytes = 0;
     size_t total_entries = 0;
 
-    for (auto & queue : queues_to_flush)
+    for (size_t i = 0; i < pool_size; ++i)
     {
+        auto & queue = queues_to_flush[i];
         total_queries += queue.size();
         for (auto & [_, entry] : queue)
         {
@@ -429,17 +535,21 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
         {
             std::unique_lock lock(shard.mutex);
 
-            shard.are_tasks_available.wait_for(lock,
-                Milliseconds(getContext()->getSettingsRef().async_insert_poll_timeout_ms), [&shard, this]
-            {
-                if (shutdown)
-                    return true;
+            const auto rel_time
+                = std::min(shard.busy_timeout_ms, Milliseconds(getContext()->getSettingsRef().async_insert_poll_timeout_ms));
+            shard.are_tasks_available.wait_for(
+                lock,
+                rel_time,
+                [&shard, this]
+                {
+                    if (shutdown)
+                        return true;
 
-                if (!shard.queue.empty() && shard.queue.begin()->first < std::chrono::steady_clock::now())
-                    return true;
+                    if (!shard.queue.empty() && shard.queue.begin()->first < std::chrono::steady_clock::now())
+                        return true;
 
-                return false;
-            });
+                    return false;
+                });
 
             if (shutdown)
                 return;

@@ -53,6 +53,8 @@ public:
         Preprocessed = 1,
     };
 
+    static void validateSettings(const Settings & settings, LoggerPtr log);
+
     /// Force flush the whole queue.
     void flushAll();
 
@@ -187,6 +189,11 @@ private:
 
         Queue queue;
         QueueIteratorByKey iterators;
+
+        using OptionalTimePoint = std::optional<std::chrono::steady_clock::time_point>;
+        OptionalTimePoint last_insert_time;
+
+        std::chrono::milliseconds busy_timeout_ms;
     };
 
     const size_t pool_size;
@@ -217,6 +224,13 @@ private:
     LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
     PushResult pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context);
+
+    Milliseconds getBusyWaitTimeoutMs(
+        const Settings & settings,
+        const AsynchronousInsertQueue::QueueShard & shard,
+        size_t shard_num,
+        std::chrono::steady_clock::time_point now) const;
+
     void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
 
     void processBatchDeadlines(size_t shard_num);
