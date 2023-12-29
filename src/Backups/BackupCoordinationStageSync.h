@@ -29,7 +29,7 @@ private:
     void createRootNodes();
 
     struct State;
-    State readCurrentState(const Strings & zk_nodes, const Strings & all_hosts, const String & stage_to_wait) const;
+    State readCurrentState(WithRetries::RetriesControlHolder & retries_control_holder, const Strings & zk_nodes, const Strings & all_hosts, const String & stage_to_wait) const;
 
     Strings waitImpl(const Strings & all_hosts, const String & stage_to_wait, std::optional<std::chrono::milliseconds> timeout) const;
 

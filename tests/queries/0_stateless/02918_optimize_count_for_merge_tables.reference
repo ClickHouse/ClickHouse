@@ -1,0 +1,9 @@
+2
+Expression ((Projection + Before ORDER BY))
+  MergingAggregated
+    ReadFromPreparedSource (Optimized trivial count)
+3
+Expression ((Projection + Before ORDER BY))
+  Aggregating
+    Expression (Before GROUP BY)
+      ReadFromMerge

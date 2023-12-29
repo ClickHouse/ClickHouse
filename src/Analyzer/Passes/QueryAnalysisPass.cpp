@@ -119,6 +119,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int SYNTAX_ERROR;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h first.
@@ -1209,6 +1210,8 @@ private:
 
     static void expandGroupByAll(QueryNode & query_tree_node_typed);
 
+    static void expandOrderByAll(QueryNode & query_tree_node_typed);
+
     static std::string
     rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, NullsAction action, const ContextPtr & context);
 
@@ -2153,32 +2156,19 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
             node_to_replace = &sort_node->getExpression();
 
         auto * constant_node = (*node_to_replace)->as<ConstantNode>();
-
-        if (!constant_node
-            || (constant_node->getValue().getType() != Field::Types::UInt64 && constant_node->getValue().getType() != Field::Types::Int64))
+        if (!constant_node || constant_node->getValue().getType() != Field::Types::UInt64)
             continue;
 
-        UInt64 pos;
-        if (constant_node->getValue().getType() == Field::Types::UInt64)
-        {
-            pos = constant_node->getValue().get<UInt64>();
-        }
-        else // Int64
-        {
-            auto value = constant_node->getValue().get<Int64>();
-            pos = value > 0 ? value : projection_nodes.size() + value + 1;
-        }
-
-
-        if (!pos || pos > projection_nodes.size())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
+        UInt64 positional_argument_number = constant_node->getValue().get<UInt64>();
+        if (positional_argument_number == 0 || positional_argument_number > projection_nodes.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Positional argument number {} is out of bounds. Expected in range [1, {}]. In scope {}",
-                pos,
+                positional_argument_number,
                 projection_nodes.size(),
                 scope.scope_node->formatASTForErrorMessage());
 
-        *node_to_replace = projection_nodes[--pos];
+        --positional_argument_number;
+        *node_to_replace = projection_nodes[positional_argument_number];
     }
 }
 
@@ -2323,6 +2313,35 @@ void QueryAnalyzer::expandGroupByAll(QueryNode & query_tree_node_typed)
 
     for (auto & node : projection_list.getNodes())
         recursivelyCollectMaxOrdinaryExpressions(node, group_by_nodes);
+}
+
+void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
+{
+    auto * all_node = query_tree_node_typed.getOrderBy().getNodes()[0]->as<SortNode>();
+    if (!all_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not sort node.");
+
+    auto & projection_nodes = query_tree_node_typed.getProjection().getNodes();
+    auto list_node = std::make_shared<ListNode>();
+    list_node->getNodes().reserve(projection_nodes.size());
+
+    for (auto & node : projection_nodes)
+    {
+        if (auto * identifier_node = node->as<IdentifierNode>(); identifier_node != nullptr)
+            if (Poco::toUpper(identifier_node->getIdentifier().getFullName()) == "ALL" || Poco::toUpper(identifier_node->getAlias()) == "ALL")
+                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                    "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+
+        if (auto * function_node = node->as<FunctionNode>(); function_node != nullptr)
+            if (Poco::toUpper(function_node->getAlias()) == "ALL")
+                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+
+        auto sort_node = std::make_shared<SortNode>(node, all_node->getSortDirection(), all_node->getNullsSortDirection());
+        list_node->getNodes().push_back(sort_node);
+    }
+
+    query_tree_node_typed.getOrderByNode() = list_node;
 }
 
 std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
@@ -6987,6 +7006,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasHaving() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING");
+
+    if (settings.enable_order_by_all && query_node_typed.isOrderByAll())
+        expandOrderByAll(query_node_typed);
 
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope);

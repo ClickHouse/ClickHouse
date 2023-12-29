@@ -53,8 +53,11 @@ private:
         std::string unit_name;
         ColumnPtr filename_table; // from .debug_line
         size_t filename_table_size = 0;
-        uint64_t addr_base = UINT64_MAX;
+        /// Starting offset of this unit's data in .debug_addr and .debug_rnglists sections.
+        uint64_t debug_addr_base = UINT64_MAX;
         uint64_t rnglists_base = UINT64_MAX;
+        /// "Base address" for parsing range lists. Not to be confused with "addr base".
+        uint64_t base_address = UINT64_MAX;
 
         uint64_t offset = 0;
         std::vector<StackEntry> stack;
@@ -102,11 +105,18 @@ private:
     void parseFilenameTable(UnitState & unit, uint64_t offset);
     Chunk parseEntries(UnitState & unit);
 
+    llvm::DWARFFormValue parseAttribute(
+        const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
+        const UnitState & unit) const;
+    void skipAttribute(
+        const llvm::DWARFAbbreviationDeclaration::AttributeSpec & attr, uint64_t * offset,
+        const UnitState & unit) const;
+    uint64_t parseAddress(llvm::dwarf::Attribute attr, const llvm::DWARFFormValue & val, const UnitState & unit);
     /// Parse .debug_addr entry.
     uint64_t fetchFromDebugAddr(uint64_t addr_base, uint64_t idx) const;
     /// Parse .debug_ranges (DWARF4) or .debug_rnglists (DWARF5) entry.
     void parseRanges(
-        uint64_t offset, bool form_rnglistx, std::optional<uint64_t> low_pc, const UnitState & unit,
+        uint64_t offset, bool form_rnglistx, const UnitState & unit,
         const ColumnVector<UInt64>::MutablePtr & col_ranges_start,
         const ColumnVector<UInt64>::MutablePtr & col_ranges_end) const;
 };

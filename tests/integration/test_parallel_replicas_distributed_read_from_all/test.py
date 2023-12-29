@@ -119,7 +119,6 @@ def test_read_equally_from_each_replica(start_cluster, prefer_localhost_replica)
                 "allow_experimental_parallel_reading_from_replicas": 2,
                 "prefer_localhost_replica": prefer_localhost_replica,
                 "max_parallel_replicas": 3,
-                "use_hedged_requests": 0,
             },
         )
         == expected_result

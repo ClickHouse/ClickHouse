@@ -1289,7 +1289,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
         case avro::Type::AVRO_MAP:
             return std::make_shared<DataTypeMap>(avroNodeToDataType(node->leafAt(0)), avroNodeToDataType(node->leafAt(1)));
         default:
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.");
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.", nodeName(node));
     }
 }
 

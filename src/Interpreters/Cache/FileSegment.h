@@ -157,7 +157,7 @@ public:
     /// exception.
     void detach(const FileSegmentGuard::Lock &, const LockedKey &);
 
-    static FileSegmentInfo getInfo(const FileSegmentPtr & file_segment, FileCache & cache);
+    static FileSegmentInfo getInfo(const FileSegmentPtr & file_segment);
 
     bool isDetached() const;
 
@@ -242,6 +242,8 @@ private:
 
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
     FileSegmentGuard::Lock lockFileSegment() const;
+
+    String tryGetPathInLocalCache() const;
 
     Key file_key;
     Range segment_range;
