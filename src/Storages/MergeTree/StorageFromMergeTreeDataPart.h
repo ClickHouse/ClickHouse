@@ -86,17 +86,9 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    bool supportsIndexForIn() const override { return true; }
-
     bool supportsDynamicSubcolumns() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
-
-    bool mayBenefitFromIndexForIn(
-        const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
-    {
-        return storage.mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
-    }
 
     NamesAndTypesList getVirtuals() const override
     {

@@ -160,9 +160,6 @@ struct IMergeTreeIndex
         return {0 /*unknown*/, ""};
     }
 
-    /// Checks whether the column is in data skipping index.
-    virtual bool mayBenefitFromIndexForIn(const ASTPtr & node) const = 0;
-
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;

@@ -108,13 +108,13 @@ public:
                 }
                 write_helper.finalize();
 
-                /// Same as the normal `ColumnString` branch
-                has_column_string = true;
-                data[i - 1] = &converted_col_str->getChars();
-                offsets[i - 1] = &converted_col_str->getOffsets();
-
                 /// Keep the pointer alive
                 converted_col_ptrs[i - 1] = std::move(converted_col_str);
+
+                /// Same as the normal `ColumnString` branch
+                has_column_string = true;
+                data[i - 1] = &converted_col_ptrs[i - 1]->getChars();
+                offsets[i - 1] = &converted_col_ptrs[i - 1]->getOffsets();
             }
         }
 
