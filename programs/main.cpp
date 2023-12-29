@@ -158,7 +158,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 {
 #if ENABLE_CLICKHOUSE_LOCAL
-    {"ch", "local"},
     {"chl", "local"},
 #endif
 #if ENABLE_CLICKHOUSE_CLIENT
