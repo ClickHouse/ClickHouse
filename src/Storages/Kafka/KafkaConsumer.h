@@ -145,6 +145,10 @@ private:
         ERRORS_RETURNED
     };
 
+    // order is important, need to be destructed *after* consumer
+    mutable std::mutex rdkafka_stat_mutex;
+    std::string rdkafka_stat;
+
     ConsumerPtr consumer;
     Poco::Logger * log;
     const size_t batch_size = 1;
@@ -158,11 +162,11 @@ private:
 
     const std::atomic<bool> & stopped;
 
-    // order is important, need to be destructed before consumer
+    // order is important, need to be destructed *before* consumer
     Messages messages;
     Messages::const_iterator current;
 
-    // order is important, need to be destructed before consumer
+    // order is important, need to be destructed *before* consumer
     std::optional<cppkafka::TopicPartitionList> assignment;
     const Names topics;
 
@@ -183,9 +187,6 @@ private:
     std::atomic<bool> in_use = 0;
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;
-
-    mutable std::mutex rdkafka_stat_mutex;
-    std::string rdkafka_stat;
 
     void drain();
     void cleanUnprocessed();
