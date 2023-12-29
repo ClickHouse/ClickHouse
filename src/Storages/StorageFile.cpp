@@ -960,8 +960,8 @@ StorageFileSource::FilesIterator::FilesIterator(
     : files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_), context(context_)
 {
     ActionsDAGPtr filter_dag;
-    if (!distributed_processing && !archive_info && !files.empty() && !files[0].empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, files[0]);
+    if (!distributed_processing && !archive_info && !files.empty())
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
     if (filter_dag)
         VirtualColumnUtils::filterByPathOrFile(files, files, filter_dag, virtual_columns, context_);

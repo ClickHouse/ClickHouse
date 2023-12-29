@@ -417,7 +417,7 @@ public:
         uris = getPathsList(path_from_uri, uri_without_path, context);
         ActionsDAGPtr filter_dag;
         if (!uris.empty())
-             filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, uris[0].path);
+             filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
         if (filter_dag)
         {
@@ -492,7 +492,7 @@ public:
     {
         ActionsDAGPtr filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, getPathFromUriAndUriWithoutPath(uris[0]).first);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
         if (filter_dag)
         {
@@ -893,9 +893,6 @@ public:
         ReadFromFormatInfo info_,
         bool need_only_count_,
         std::shared_ptr<StorageHDFS> storage_,
-        // StorageSnapshotPtr storage_snapshot_,
-        // const StorageEmbeddedRocksDB & storage_,
-        // SelectQueryInfo query_info_,
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
@@ -907,9 +904,6 @@ public:
         , info(std::move(info_))
         , need_only_count(need_only_count_)
         , storage(std::move(storage_))
-        // , storage_snapshot(std::move(storage_snapshot_))
-        // , storage(storage_)
-        // , query_info(std::move(query_info_))
         , context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
@@ -925,18 +919,11 @@ private:
     const bool need_only_count;
     std::shared_ptr<StorageHDFS> storage;
 
-    // StorageSnapshotPtr storage_snapshot;
-    // const StorageEmbeddedRocksDB & storage;
-    // SelectQueryInfo query_info;
     ContextPtr context;
-
     size_t max_block_size;
     size_t num_streams;
 
     std::shared_ptr<HDFSSource::IteratorWrapper> iterator_wrapper;
-
-    // FieldVectorPtr keys;
-    // bool all_scan = false;
 
     void createIterator(const ActionsDAG::Node * predicate);
 };

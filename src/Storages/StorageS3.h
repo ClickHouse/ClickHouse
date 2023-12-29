@@ -85,6 +85,16 @@ public:
             const S3Settings::RequestSettings & request_settings_ = {},
             std::function<void(FileProgress)> progress_callback_ = {});
 
+        DisclosedGlobIterator(
+            const S3::Client & client_,
+            const S3::URI & globbed_uri_,
+            const ActionsDAG::Node * predicate,
+            const NamesAndTypesList & virtual_columns,
+            ContextPtr context,
+            KeysWithInfo * read_keys_ = nullptr,
+            const S3Settings::RequestSettings & request_settings_ = {},
+            std::function<void(FileProgress)> progress_callback_ = {});
+
         KeyWithInfoPtr next() override;
         size_t estimatedKeysCount() override;
 
@@ -145,8 +155,7 @@ public:
         const String & url_host_and_port,
         std::shared_ptr<IIterator> file_iterator_,
         size_t max_parsing_threads,
-        bool need_only_count_,
-        std::optional<SelectQueryInfo> query_info);
+        bool need_only_count_);
 
     ~StorageS3Source() override;
 
@@ -180,7 +189,6 @@ private:
     std::shared_ptr<const S3::Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
-    std::optional<SelectQueryInfo> query_info;
 
     struct ReaderHolder
     {

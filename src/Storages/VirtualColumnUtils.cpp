@@ -390,7 +390,7 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const String & path_example)
+ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns)
 {
     if (!predicate || virtual_columns.empty())
         return {};
@@ -401,10 +401,8 @@ ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, con
         if (column.name == "_file" || column.name == "_path")
             block.insert({column.type->createColumn(), column.type, column.name});
     }
-    /// Create a block with one row to construct filter
-    /// Append "idx" column as the filter result
+
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-    addPathAndFileToVirtualColumns(block, path_example, 0);
     return splitFilterDagForAllowedInputs(predicate, block);
 }
 
