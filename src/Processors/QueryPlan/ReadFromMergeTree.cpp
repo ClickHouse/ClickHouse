@@ -1150,7 +1150,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         {
             RangesInDataParts new_parts;
 
-            for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)            
+            for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
             {
                 if (input_order_info)
                 {
