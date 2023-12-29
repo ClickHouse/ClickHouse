@@ -161,13 +161,13 @@ def wait_for_fail_restore(node, restore_id):
     elif status == "RESTORING":
         assert_eq_with_retry(
             node,
-            f"SELECT status FROM system.backups WHERE id = '{backup_id}'",
+            f"SELECT status FROM system.backups WHERE id = '{restore_id}'",
             "RESTORE_FAILED",
             sleep_time=2,
             retry_count=50,
         )
         error = node.query(
-            f"SELECT error FROM system.backups WHERE id == '{backup_id}'"
+            f"SELECT error FROM system.backups WHERE id == '{restore_id}'"
         ).rstrip("\n")
         assert re.search(
             "Cannot restore the table default.tbl because it already contains some data",

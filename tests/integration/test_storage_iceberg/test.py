@@ -1,5 +1,5 @@
 import helpers.client
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.test_tools import TSV
 
 import pyspark

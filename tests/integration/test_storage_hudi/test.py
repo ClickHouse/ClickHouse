@@ -4,7 +4,7 @@ import os
 import json
 
 import helpers.client
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.test_tools import TSV
 from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
 
