@@ -45,14 +45,14 @@ public:
     {
         CreatorFn creator_fn;
     };
-    using Databases = std::unordered_map<std::string, Creator>;
+    using DatabaseEngines = std::unordered_map<std::string, Creator>;
 
     void registerDatabase(const std::string & name, CreatorFn creator_fn);
 
-    const Databases & getAllDatabases() const { return databases; }
+    const DatabaseEngines & getAllDatabases() const { return database_engines; }
 
 private:
-    Databases databases;
+    DatabaseEngines database_engines;
 };
 
 }
