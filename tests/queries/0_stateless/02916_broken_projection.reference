@@ -251,7 +251,7 @@ broken projections info
 0
 broke all data of part 'proj' (parent part: all_2_2_0)
 select from projection 'proj', expect error: proj
-STD_EXCEPTION
+Errno
 select from projection 'proj_2'
 12
 16
