@@ -1089,6 +1089,13 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             "{} UUID specified, but engine of database {} is not Atomic", kind, create.getDatabase());
         }
 
+        if (create.refresh_strategy && database->getEngineName() != "Atomic")
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Refreshable materialized view requires Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+                /// TODO: Support Replicated databases, only with Shared/ReplicatedMergeTree.
+                ///       Figure out how to make the refreshed data appear all at once on other
+                ///       replicas; maybe a replicated SYSTEM SYNC REPLICA query before the rename?
+
         /// The database doesn't support UUID so we'll ignore it. The UUID could be set here because of either
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
         /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
@@ -1208,6 +1215,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         ApplyWithSubqueryVisitor().visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
+    }
+
+    if (create.refresh_strategy)
+    {
+        if (!getContext()->getSettingsRef().allow_experimental_refreshable_materialized_view)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Refreshable materialized views are experimental. Enable allow_experimental_refreshable_materialized_view to use.");
+
+        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        visitor.visit(*create.refresh_strategy);
     }
 
     if (create.columns_list)
