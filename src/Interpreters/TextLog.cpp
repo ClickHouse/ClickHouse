@@ -16,7 +16,7 @@
 namespace DB
 {
 
-NamesAndTypesList TextLogElement::getNamesAndTypes()
+ColumnsDescription TextLogElement::getColumnsDescription()
 {
     auto priority_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -32,7 +32,7 @@ NamesAndTypesList TextLogElement::getNamesAndTypes()
                 {"Test",           static_cast<Int8>(Message::PRIO_TEST)},
         });
 
-    return
+    return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},

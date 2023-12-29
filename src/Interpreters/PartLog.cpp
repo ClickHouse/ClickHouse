@@ -57,7 +57,7 @@ PartLogElement::PartMergeAlgorithm PartLogElement::getMergeAlgorithm(MergeAlgori
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown MergeAlgorithm {}", static_cast<UInt64>(merge_algorithm_));
 }
 
-NamesAndTypesList PartLogElement::getNamesAndTypes()
+ColumnsDescription PartLogElement::getColumnsDescription()
 {
     auto event_type_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -92,7 +92,8 @@ NamesAndTypesList PartLogElement::getNamesAndTypes()
 
     ColumnsWithTypeAndName columns_with_type_and_name;
 
-    return {
+    return ColumnsDescription
+    {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"query_id", std::make_shared<DataTypeString>()},
         {"event_type", std::move(event_type_datatype)},

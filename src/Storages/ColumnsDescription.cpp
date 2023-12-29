@@ -58,6 +58,11 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, String com
 {
 }
 
+ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_)
+    : name(std::move(name_)), type(std::move(type_)), codec(codec_)
+{
+}
+
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
     auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
@@ -180,6 +185,11 @@ ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, NamesAndAlias
     for (auto & elem : ordinary)
         add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
 
+    setAliases(std::move(aliases));
+}
+
+void ColumnsDescription::setAliases(NamesAndAliases aliases)
+{
     for (auto & alias : aliases)
     {
         ColumnDescription description(std::move(alias.name), std::move(alias.type));

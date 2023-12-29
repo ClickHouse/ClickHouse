@@ -12,7 +12,7 @@
 namespace DB
 {
 
-NamesAndTypesList MetricLogElement::getNamesAndTypes()
+ColumnsDescription MetricLogElement::getColumnsDescription()
 {
     NamesAndTypesList columns_with_type_and_name;
 
@@ -37,7 +37,7 @@ NamesAndTypesList MetricLogElement::getNamesAndTypes()
         columns_with_type_and_name.emplace_back(std::move(name), std::make_shared<DataTypeInt64>());
     }
 
-    return columns_with_type_and_name;
+    return ColumnsDescription(columns_with_type_and_name);
 }
 
 
