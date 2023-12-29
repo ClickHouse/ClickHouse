@@ -74,7 +74,7 @@ public:
 
     void createConsumer(cppkafka::Configuration consumer_config);
     bool hasConsumer() const { return consumer.get() != nullptr; }
-    ConsumerPtr && moveConsumer() { return std::move(consumer); }
+    ConsumerPtr && moveConsumer();
 
     void commit(); // Commit all processed messages.
     void subscribe(); // Subscribe internal consumer to topics.

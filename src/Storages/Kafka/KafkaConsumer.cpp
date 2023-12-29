@@ -151,6 +151,23 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     });
 }
 
+ConsumerPtr && KafkaConsumer::moveConsumer()
+{
+    if (!consumer->get_subscription().empty())
+    {
+        try
+        {
+            consumer->unsubscribe();
+        }
+        catch (const cppkafka::HandleException & e)
+        {
+            LOG_ERROR(log, "Error during unsubscribe: {}", e.what());
+        }
+        drain();
+    }
+    return std::move(consumer);
+}
+
 KafkaConsumer::~KafkaConsumer()
 {
     if (!consumer)
