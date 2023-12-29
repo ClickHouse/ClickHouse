@@ -143,6 +143,7 @@ void testServerSideEncryption(
     DB::S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
         .disable_checksum = disable_checksum,
+        .gcs_issue_compose_request = false,
     };
 
     std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(

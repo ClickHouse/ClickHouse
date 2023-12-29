@@ -97,6 +97,7 @@ std::unique_ptr<S3::Client> getClient(
     S3::ClientSettings client_settings{
         .use_virtual_addressing = uri.is_virtual_hosted_style,
         .disable_checksum = local_settings.s3_disable_checksum,
+        .gcs_issue_compose_request = config.getBool("s3.gcs_issue_compose_request", false),
     };
 
     return S3::ClientFactory::instance().create(

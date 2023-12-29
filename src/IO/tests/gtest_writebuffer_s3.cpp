@@ -213,6 +213,7 @@ struct Client : DB::S3::Client
                DB::S3::ClientSettings{
                    .use_virtual_addressing = true,
                    .disable_checksum= false,
+                   .gcs_issue_compose_request = false,
                })
         , store(mock_s3_store)
     {}

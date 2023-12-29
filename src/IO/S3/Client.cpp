@@ -413,7 +413,7 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
     }
 
-    if (outcome.IsSuccess() && provider_type == ProviderType::GCS)
+    if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
     {
         /// For GCS we will try to compose object at the end, otherwise we cannot do a native copy
         /// for the object (e.g. for backups)

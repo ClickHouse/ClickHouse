@@ -97,6 +97,16 @@ struct ClientSettings
     bool use_virtual_addressing;
     /// Disable checksum to avoid extra read of the input stream
     bool disable_checksum;
+    /// Should client send ComposeObject request after upload to GCS.
+    ///
+    /// Previously ComposeObject request was required to make Copy possible,
+    /// but not anymore (see [1]).
+    ///
+    ///   [1]: https://cloud.google.com/storage/docs/release-notes#June_23_2023
+    ///
+    /// Ability to enable it preserved since likely it is required for old
+    /// files.
+    bool gcs_issue_compose_request;
 };
 
 /// Client that improves the client from the AWS SDK
