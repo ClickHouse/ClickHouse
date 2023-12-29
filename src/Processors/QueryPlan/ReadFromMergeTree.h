@@ -282,6 +282,9 @@ private:
 
     Pipe spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names);
 
+    /// Split ranges to avoid reading a lot of data.
+    MarkRanges splitRanges(const MarkRanges & ranges, int direction);
+
     Pipe spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts_with_ranges,
         size_t num_streams,

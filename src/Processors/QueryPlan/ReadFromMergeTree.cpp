@@ -762,6 +762,54 @@ static ActionsDAGPtr createProjection(const Block & header)
     return projection;
 }
 
+MarkRanges ReadFromMergeTree::splitRanges(const MarkRanges & ranges, int direction)
+{
+    const auto data_settings = data.getSettings();
+    const auto rows_granularity = data_settings->index_granularity;
+    const auto my_max_block_size = block_size.max_block_size_rows;
+
+    MarkRanges new_ranges;
+    const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
+    size_t marks_in_range = 1;
+
+    if (direction == 1)
+    {
+        /// Split first few ranges to avoid reading much data.
+        bool split = false;
+        for (auto range : ranges)
+        {
+            while (!split && range.begin + marks_in_range < range.end)
+            {
+                new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
+                range.begin += marks_in_range;
+                marks_in_range *= 2;
+
+                if (marks_in_range > max_marks_in_range)
+                    split = true;
+            }
+            new_ranges.emplace_back(range.begin, range.end);
+        }
+    }
+    else
+    {
+        /// Split all ranges to avoid reading much data, because we have to
+        ///  store whole range in memory to reverse it.
+        for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
+        {
+            auto range = *it;
+            while (range.begin + marks_in_range < range.end)
+            {
+                new_ranges.emplace_front(range.end - marks_in_range, range.end);
+                range.end -= marks_in_range;
+                marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
+            }
+            new_ranges.emplace_front(range.begin, range.end);
+        }
+    }
+
+    return new_ranges;
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts_with_ranges,
     size_t num_streams,
@@ -799,53 +847,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             }
         }
     }
-
-    /// Let's split ranges to avoid reading much data.
-    auto split_ranges
-        = [rows_granularity = data_settings->index_granularity, my_max_block_size = block_size.max_block_size_rows]
-        (const auto & ranges, int direction)
-    {
-        MarkRanges new_ranges;
-        const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
-        size_t marks_in_range = 1;
-
-        if (direction == 1)
-        {
-            /// Split first few ranges to avoid reading much data.
-            bool split = false;
-            for (auto range : ranges)
-            {
-                while (!split && range.begin + marks_in_range < range.end)
-                {
-                    new_ranges.emplace_back(range.begin, range.begin + marks_in_range);
-                    range.begin += marks_in_range;
-                    marks_in_range *= 2;
-
-                    if (marks_in_range > max_marks_in_range)
-                        split = true;
-                }
-                new_ranges.emplace_back(range.begin, range.end);
-            }
-        }
-        else
-        {
-            /// Split all ranges to avoid reading much data, because we have to
-            ///  store whole range in memory to reverse it.
-            for (auto it = ranges.rbegin(); it != ranges.rend(); ++it)
-            {
-                auto range = *it;
-                while (range.begin + marks_in_range < range.end)
-                {
-                    new_ranges.emplace_front(range.end - marks_in_range, range.end);
-                    range.end -= marks_in_range;
-                    marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
-                }
-                new_ranges.emplace_front(range.begin, range.end);
-            }
-        }
-
-        return new_ranges;
-    };
 
     const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
     bool need_preliminary_merge = (parts_with_ranges.size() > settings.read_in_order_two_level_merge_threshold);
@@ -929,7 +930,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     parts_with_ranges.emplace_back(part);
                 }
 
-                ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
+                ranges_to_get_from_part = splitRanges(ranges_to_get_from_part, input_order_info->direction);
                 new_parts.emplace_back(part.data_part, part.alter_conversions, part.part_index_in_query, std::move(ranges_to_get_from_part));
             }
 
@@ -1149,17 +1150,27 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         {
             RangesInDataParts new_parts;
 
-            for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
-                new_parts.emplace_back(part_it->data_part, part_it->alter_conversions, part_it->part_index_in_query, part_it->ranges);
+            for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)            
+            {
+                if (input_order_info)
+                {
+                    auto ranges_to_get_from_part = splitRanges(part_it->ranges, input_order_info->direction);
+                    new_parts.emplace_back(part_it->data_part, part_it->alter_conversions, part_it->part_index_in_query, std::move(ranges_to_get_from_part));
+                }
+                else
+                {
+                    new_parts.emplace_back(part_it->data_part, part_it->alter_conversions, part_it->part_index_in_query, part_it->ranges);
+                }
+            }
 
             if (new_parts.empty())
                 continue;
 
-            auto read_type = ReadFromMergeTree::ReadType::InOrder;
+            auto read_type = ReadType::InOrder;
             if (input_order_info && input_order_info->direction == -1)
                 read_type = ReadType::InReverseOrder;
 
-            if (num_streams > 1 && metadata_for_reading->hasPrimaryKey())
+            if (num_streams > 1 && metadata_for_reading->hasPrimaryKey() && read_type == ReadType::InOrder)
             {
                 // Let's split parts into non intersecting parts ranges and layers to ensure data parallelism of FINAL.
                 auto in_order_reading_step_getter = [this, &column_names, &read_type, &info](auto parts)
