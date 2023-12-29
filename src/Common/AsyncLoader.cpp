@@ -715,7 +715,7 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
                 // but actual number of NOT suspended workers may exceed `max_threads` ONLY in intermittent state.
                 Pool & pool = pools[worker_pool];
                 pool.suspended_workers.fetch_add(1);
-                //suspended_lock = [&pool] { chassert(pool.suspended_workers.load()); pool.suspended_workers.fetch_sub(1); };
+                suspended_lock = [&pool] { chassert(pool.suspended_workers.load()); pool.suspended_workers.fetch_sub(1); };
                 if (canSpawnWorker(pool, lock))
                     spawn(pool, lock);
             }
