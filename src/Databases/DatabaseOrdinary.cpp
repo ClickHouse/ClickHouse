@@ -20,7 +20,6 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-#include "Common/AsyncLoader.h"
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/PoolId.h>
