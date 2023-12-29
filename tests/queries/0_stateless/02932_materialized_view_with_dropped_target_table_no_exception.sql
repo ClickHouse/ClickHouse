@@ -1,3 +1,4 @@
+set ignore_materialized_views_with_dropped_target_table = 1;
 drop table if exists from_table;
 drop table if exists to_table;
 drop table if exists mv;
