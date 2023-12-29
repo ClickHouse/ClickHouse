@@ -1,7 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/HelpersMinMaxAny.h>
-#include <AggregateFunctions/findNumeric.h>
+#include <Common/findExtreme.h>
 
 
 namespace DB
@@ -54,10 +54,10 @@ public:
         if (if_argument_pos >= 0) \
         { \
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData(); \
-            opt = findNumericMinIf(column.getData().data(), flags.data(), row_begin, row_end); \
+            opt = findExtremeMinIf(column.getData().data(), flags.data(), row_begin, row_end); \
         } \
         else \
-            opt = findNumericMin(column.getData().data(), row_begin, row_end); \
+            opt = findExtremeMin(column.getData().data(), row_begin, row_end); \
         if (opt.has_value()) \
             this->data(place).changeIfLess(opt.value()); \
     }
@@ -141,10 +141,10 @@ void AggregateFunctionsSingleValueMin<Data>::addBatchSinglePlace(
             auto final_flags = std::make_unique<UInt8[]>(row_end); \
             for (size_t i = row_begin; i < row_end; ++i) \
                 final_flags[i] = (!null_map[i]) & !!if_flags[i]; \
-            opt = findNumericMinIf(column.getData().data(), final_flags.get(), row_begin, row_end); \
+            opt = findExtremeMinIf(column.getData().data(), final_flags.get(), row_begin, row_end); \
         } \
         else \
-            opt = findNumericMinNotNull(column.getData().data(), null_map, row_begin, row_end); \
+            opt = findExtremeMinNotNull(column.getData().data(), null_map, row_begin, row_end); \
         if (opt.has_value()) \
             this->data(place).changeIfLess(opt.value()); \
     }

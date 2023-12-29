@@ -1,18 +1,9 @@
-#pragma once
-
 #include <DataTypes/IDataType.h>
-#include <base/defines.h>
-#include <base/types.h>
-#include <Common/Concepts.h>
 #include <Common/TargetSpecific.h>
-
-#include <algorithm>
-#include <optional>
+#include <Common/findExtreme.h>
 
 namespace DB
 {
-template <typename T>
-concept is_any_native_number = (is_any_of<T, Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64>);
 
 template <is_any_native_number T>
 struct MinComparator
@@ -28,7 +19,7 @@ struct MaxComparator
 
 MULTITARGET_FUNCTION_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(template <is_any_native_number T, typename ComparatorClass, bool add_all_elements, bool add_if_cond_zero> static std::optional<T> NO_INLINE),
-    findNumericExtremeImpl,
+    findExtremeImpl,
     MULTITARGET_FUNCTION_BODY((const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end)
     {
         size_t count = row_end - row_begin;
@@ -86,69 +77,67 @@ MULTITARGET_FUNCTION_AVX2_SSE42(
     }
 ))
 
-
 /// Given a vector of T finds the extreme (MIN or MAX) value
 template <is_any_native_number T, class ComparatorClass, bool add_all_elements, bool add_if_cond_zero>
 static std::optional<T>
-findNumericExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
+findExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
 {
 #if USE_MULTITARGET_CODE
     /// We see no benefit from using AVX512BW or AVX512F (over AVX2), so we only declare SSE and AVX2
     if (isArchSupported(TargetArch::AVX2))
-        return findNumericExtremeImplAVX2<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
+        return findExtremeImplAVX2<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
 
     if (isArchSupported(TargetArch::SSE42))
-        return findNumericExtremeImplSSE42<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
+        return findExtremeImplSSE42<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
 #endif
-    return findNumericExtremeImpl<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
+    return findExtremeImpl<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
 }
 
 template <is_any_native_number T>
-std::optional<T> findNumericMin(const T * __restrict ptr, size_t start, size_t end)
+std::optional<T> findExtremeMin(const T * __restrict ptr, size_t start, size_t end)
 {
-    return findNumericExtreme<T, MinComparator<T>, true, false>(ptr, nullptr, start, end);
+    return findExtreme<T, MinComparator<T>, true, false>(ptr, nullptr, start, end);
 }
 
 template <is_any_native_number T>
-std::optional<T> findNumericMinNotNull(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
+std::optional<T> findExtremeMinNotNull(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
 {
-    return findNumericExtreme<T, MinComparator<T>, false, true>(ptr, condition_map, start, end);
+    return findExtreme<T, MinComparator<T>, false, true>(ptr, condition_map, start, end);
 }
 
 template <is_any_native_number T>
-std::optional<T> findNumericMinIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
+std::optional<T> findExtremeMinIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
 {
-    return findNumericExtreme<T, MinComparator<T>, false, false>(ptr, condition_map, start, end);
+    return findExtreme<T, MinComparator<T>, false, false>(ptr, condition_map, start, end);
 }
 
 template <is_any_native_number T>
-std::optional<T> findNumericMax(const T * __restrict ptr, size_t start, size_t end)
+std::optional<T> findExtremeMax(const T * __restrict ptr, size_t start, size_t end)
 {
-    return findNumericExtreme<T, MaxComparator<T>, true, false>(ptr, nullptr, start, end);
+    return findExtreme<T, MaxComparator<T>, true, false>(ptr, nullptr, start, end);
 }
 
 template <is_any_native_number T>
-std::optional<T> findNumericMaxNotNull(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
+std::optional<T> findExtremeMaxNotNull(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
 {
-    return findNumericExtreme<T, MaxComparator<T>, false, true>(ptr, condition_map, start, end);
+    return findExtreme<T, MaxComparator<T>, false, true>(ptr, condition_map, start, end);
 }
 
 template <is_any_native_number T>
-std::optional<T> findNumericMaxIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
+std::optional<T> findExtremeMaxIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end)
 {
-    return findNumericExtreme<T, MaxComparator<T>, false, false>(ptr, condition_map, start, end);
+    return findExtreme<T, MaxComparator<T>, false, false>(ptr, condition_map, start, end);
 }
 
 
-#define EXTERN_INSTANTIATION(T) \
-    extern template std::optional<T> findNumericMin(const T * __restrict ptr, size_t start, size_t end); \
-    extern template std::optional<T> findNumericMinNotNull(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
-    extern template std::optional<T> findNumericMinIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
-    extern template std::optional<T> findNumericMax(const T * __restrict ptr, size_t start, size_t end); \
-    extern template std::optional<T> findNumericMaxNotNull(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
-    extern template std::optional<T> findNumericMaxIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end);
+#define INSTANTIATION(T) \
+    template std::optional<T> findExtremeMin(const T * __restrict ptr, size_t start, size_t end); \
+    template std::optional<T> findExtremeMinNotNull(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
+    template std::optional<T> findExtremeMinIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
+    template std::optional<T> findExtremeMax(const T * __restrict ptr, size_t start, size_t end); \
+    template std::optional<T> findExtremeMaxNotNull(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
+    template std::optional<T> findExtremeMaxIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end);
 
-    FOR_BASIC_NUMERIC_TYPES(EXTERN_INSTANTIATION)
-#undef EXTERN_INSTANTIATION
-
+FOR_BASIC_NUMERIC_TYPES(INSTANTIATION)
+#undef INSTANTIATION
 }
