@@ -109,7 +109,7 @@
 namespace DB
 {
 
-void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
 {
     attach<StorageSystemOne>(context, system_database, "one");
     attach<StorageSystemNumbers>(context, system_database, "numbers", false);
@@ -170,11 +170,6 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
 #endif
-}
-
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
-{
-    attachSystemTablesLocal(context, system_database);
 
     attach<StorageSystemParts>(context, system_database, "parts");
     attach<StorageSystemProjectionParts>(context, system_database, "projection_parts");
