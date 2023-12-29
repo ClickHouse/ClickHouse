@@ -39,8 +39,8 @@ public:
         bool canOptimize(const ASTFunction & ast_function) const
         {
             /// if GROUP BY contains the same function ORDER BY shouldn't be optimized
-            auto hash = ast_function.getTreeHash();
-            String key = toString(hash.first) + '_' + toString(hash.second);
+            const auto hash = ast_function.getTreeHash(/*ignore_aliases=*/ true);
+            const auto key = toString(hash);
             if (group_by_function_hashes.count(key))
                 return false;
 

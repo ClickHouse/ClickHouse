@@ -157,6 +157,9 @@ public:
     /// Same, but return nullptr if node not found.
     const Node * tryFindInOutputs(const std::string & name) const;
 
+    /// Same, but for the list of names.
+    NodeRawConstPtrs findInOutpus(const Names & names) const;
+
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
     void addOrReplaceInOutputs(const Node & node);
@@ -181,6 +184,9 @@ public:
 
     /// Remove actions that are not needed to compute output nodes
     void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
+
+    /// Remove actions that are not needed to compute output nodes. Keep inputs from used_inputs.
+    void removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true);
 
     /// Remove actions that are not needed to compute output nodes with required names
     void removeUnusedActions(const Names & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
@@ -221,9 +227,11 @@ public:
         const String & predicate_column_name = {},
         bool add_missing_keys = true);
 
-    /// Get an ActionsDAG where:
-    /// * Subtrees from new_inputs are converted to inputs with specified names.
-    /// * Outputs are taken from required_outputs.
+    /// Get an ActionsDAG in a following way:
+    /// * Traverse a tree starting from required_outputs
+    /// * If there is a node from new_inputs keys, replace it to INPUT
+    /// * INPUT name should be taken from new_inputs mapped node name
+    /// * Mapped nodes may be the same nodes, and in this case there would be a single INPUT
     /// Here want to substitute some expressions to columns from projection.
     /// This function expects that all required_outputs can be calculated from nodes in new_inputs.
     /// If not, exception will happen.
@@ -240,14 +248,8 @@ public:
     ///            \      /
     ///            c * d - e
     static ActionsDAGPtr foldActionsByProjection(
-        const std::unordered_map<const Node *, std::string> & new_inputs,
+        const std::unordered_map<const Node *, const Node *> & new_inputs,
         const NodeRawConstPtrs & required_outputs);
-
-    /// Reorder the output nodes using given position mapping.
-    void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
-
-    /// Add aggregate columns to output nodes from projection
-    void addAggregatesViaProjection(const Block & aggregates);
 
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
@@ -261,6 +263,8 @@ public:
 
     ActionsDAGPtr clone() const;
 
+    static ActionsDAGPtr cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
+
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.
     /// Actions are not changed, no expressions are compiled.
@@ -268,6 +272,12 @@ public:
     /// In addition, check that result constants are constants according to DAG.
     /// In case if function return constant, but arguments are not constant, materialize it.
     Block updateHeader(Block header) const;
+
+    using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
+    static ColumnsWithTypeAndName evaluatePartialResult(
+        IntermediateExecutionResult & node_to_column,
+        const NodeRawConstPtrs & outputs,
+        bool throw_on_error);
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
@@ -382,6 +392,16 @@ public:
         const ContextPtr & context,
         bool single_output_condition_node = true);
 
+    /// Check if `predicate` is a combination of AND functions.
+    /// Returns a list of nodes representing atomic predicates.
+    static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
+
+    /// Get a list of nodes. For every node, check if it can be compused using allowed subset of inputs.
+    /// Returns only those nodes from the list which can be computed.
+    static NodeRawConstPtrs filterNodesByAllowedInputs(
+        NodeRawConstPtrs nodes,
+        const std::unordered_set<const Node *> & allowed_inputs);
+
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
 
@@ -400,6 +420,32 @@ private:
 #endif
 
     static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
+};
+
+class FindOriginalNodeForOutputName
+{
+    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+
+public:
+    explicit FindOriginalNodeForOutputName(const ActionsDAGPtr & actions);
+    const ActionsDAG::Node * find(const String & output_name);
+
+private:
+    ActionsDAGPtr actions;
+    NameToNodeIndex index;
+};
+
+class FindAliasForInputName
+{
+    using NameToNodeIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+
+public:
+    explicit FindAliasForInputName(const ActionsDAGPtr & actions);
+    const ActionsDAG::Node * find(const String & name);
+
+private:
+    ActionsDAGPtr actions;
+    NameToNodeIndex index;
 };
 
 /// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.

@@ -14,6 +14,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/JoinUtils.h>
 
 #include <Compression/CompressedWriteBuffer.h>
@@ -89,10 +90,10 @@ RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const
     return lock->getLock(type, query_id, acquire_timeout, false);
 }
 
-SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     std::lock_guard mutate_lock(mutate_mutex);
-    return StorageSetOrJoinBase::write(query, metadata_snapshot, context);
+    return StorageSetOrJoinBase::write(query, metadata_snapshot, context, /*async_insert=*/false);
 }
 
 void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
@@ -138,14 +139,15 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     // New scope controls lifetime of pipeline.
     {
         auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
+        MutationsInterpreter::Settings settings(true);
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
         Block block;
         while (executor.pull(block))
         {
-            new_data->addJoinedBlock(block, true);
+            new_data->addBlockToJoin(block, true);
             if (persistent)
                 backup_stream.write(block);
         }
@@ -176,7 +178,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     }
 }
 
-HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context) const
+HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
@@ -220,12 +222,13 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     Names left_key_names_resorted;
     for (const auto & key_name : key_names)
     {
-        const auto & renamed_key = analyzed_join->renamedRightColumnName(key_name);
+        const auto & renamed_key = analyzed_join->renamedRightColumnNameWithAlias(key_name);
         /// find position of renamed_key in key_names_right
         auto it = std::find(key_names_right.begin(), key_names_right.end(), renamed_key);
         if (it == key_names_right.end())
             throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
-                "Key '{}' not found in JOIN ON section. All Join engine keys '{}' have to be used", key_name, fmt::join(key_names, ", "));
+                "Key '{}' not found in JOIN ON section. Join engine key{} '{}' have to be used",
+                key_name, key_names.size() > 1 ? "s" : "", fmt::join(key_names, ", "));
         const size_t key_position = std::distance(key_names_right.begin(), it);
         left_key_names_resorted.push_back(key_names_left[key_position]);
     }
@@ -235,8 +238,10 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     /// Qualifies will be added by join implementation (TableJoin contains a rename mapping).
     analyzed_join->setRightKeys(key_names);
     analyzed_join->setLeftKeys(left_key_names_resorted);
-
-    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, getRightSampleBlock());
+    Block right_sample_block;
+    for (const auto & name : required_columns_names)
+        right_sample_block.insert(getRightSampleBlock().getByName(name));
+    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, right_sample_block);
 
     RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     join_clone->setLock(holder);
@@ -255,7 +260,7 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     if (!holder)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 
-    join->addJoinedBlock(block_to_insert, true);
+    join->addBlockToJoin(block_to_insert, true);
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const
@@ -530,8 +535,7 @@ private:
 #undef M
 
             default:
-                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys in StorageJoin. Type: {}",
-                                static_cast<UInt32>(join->data->type));
+                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys of type {} in StorageJoin", join->data->type);
         }
 
         if (!rows_added)

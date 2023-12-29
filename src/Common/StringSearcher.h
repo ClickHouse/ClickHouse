@@ -21,12 +21,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-
 /** Variants for searching a substring in a string.
   * In most cases, performance is less than Volnitsky (see Volnitsky.h).
   */
@@ -799,89 +793,12 @@ public:
     }
 };
 
-
-// Searches for needle surrounded by token-separators.
-// Separators are anything inside ASCII (0-128) and not alphanum.
-// Any value outside of basic ASCII (>=128) is considered a non-separator symbol, hence UTF-8 strings
-// should work just fine. But any Unicode whitespace is not considered a token separtor.
-template <typename StringSearcher>
-class TokenSearcher : public StringSearcherBase
-{
-    StringSearcher searcher;
-    size_t needle_size;
-
-public:
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    TokenSearcher(const CharT * needle_, size_t needle_size_)
-        : searcher(needle_, needle_size_)
-        , needle_size(needle_size_)
-    {
-        if (std::any_of(needle_, needle_ + needle_size_, isTokenSeparator))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
-
-    }
-
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    ALWAYS_INLINE bool compare(const CharT * haystack, const CharT * haystack_end, const CharT * pos) const
-    {
-        // use searcher only if pos is in the beginning of token and pos + searcher.needle_size is end of token.
-        if (isToken(haystack, haystack_end, pos))
-            return searcher.compare(haystack, haystack_end, pos);
-
-        return false;
-    }
-
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
-    {
-        // use searcher.search(), then verify that returned value is a token
-        // if it is not, skip it and re-run
-
-        const auto * pos = haystack;
-        while (pos < haystack_end)
-        {
-            pos = searcher.search(pos, haystack_end);
-            if (pos == haystack_end || isToken(haystack, haystack_end, pos))
-                return pos;
-
-            // assuming that heendle does not contain any token separators.
-            pos += needle_size;
-        }
-        return haystack_end;
-    }
-
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    const CharT * search(const CharT * haystack, size_t haystack_size) const
-    {
-        return search(haystack, haystack + haystack_size);
-    }
-
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    ALWAYS_INLINE bool isToken(const CharT * haystack, const CharT * const haystack_end, const CharT* p) const
-    {
-        return (p == haystack || isTokenSeparator(*(p - 1)))
-             && (p + needle_size >= haystack_end || isTokenSeparator(*(p + needle_size)));
-    }
-
-    ALWAYS_INLINE static bool isTokenSeparator(const uint8_t c)
-    {
-        return !(isAlphaNumericASCII(c) || !isASCII(c));
-    }
-};
-
 }
 
 using ASCIICaseSensitiveStringSearcher =   impl::StringSearcher<true, true>;
 using ASCIICaseInsensitiveStringSearcher = impl::StringSearcher<false, true>;
 using UTF8CaseSensitiveStringSearcher =    impl::StringSearcher<true, false>;
 using UTF8CaseInsensitiveStringSearcher =  impl::StringSearcher<false, false>;
-using ASCIICaseSensitiveTokenSearcher =    impl::TokenSearcher<ASCIICaseSensitiveStringSearcher>;
-using ASCIICaseInsensitiveTokenSearcher =  impl::TokenSearcher<ASCIICaseInsensitiveStringSearcher>;
 
 /// Use only with short haystacks where cheap initialization is required.
 template <bool CaseInsensitive>
@@ -904,11 +821,11 @@ struct StdLibASCIIStringSearcher
         if constexpr (CaseInsensitive)
             return std::search(
                 haystack_start, haystack_end, needle_start, needle_end,
-                [](char c1, char c2) {return std::toupper(c1) == std::toupper(c2);});
+                [](char c1, char c2) { return std::toupper(c1) == std::toupper(c2); });
         else
             return std::search(
                 haystack_start, haystack_end, needle_start, needle_end,
-                [](char c1, char c2) {return c1 == c2;});
+                [](char c1, char c2) { return c1 == c2; });
     }
 
     template <typename CharT>

@@ -90,7 +90,9 @@ def producer_serializer(x):
     return x.encode() if isinstance(x, str) else x
 
 
-def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
+def kafka_produce(
+    kafka_cluster, topic, messages, timestamp=None, retries=15, partition=None
+):
     logging.debug(
         "kafka_produce server:{}:{} topic:{}".format(
             "localhost", kafka_cluster.kafka_port, topic
@@ -100,7 +102,9 @@ def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
         kafka_cluster.kafka_port, producer_serializer, retries
     )
     for message in messages:
-        producer.send(topic=topic, value=message, timestamp_ms=timestamp)
+        producer.send(
+            topic=topic, value=message, timestamp_ms=timestamp, partition=partition
+        )
         producer.flush()
 
 
@@ -115,7 +119,7 @@ def kafka_cluster():
         cluster.shutdown()
 
 
-def test_bad_messages_parsing(kafka_cluster):
+def test_bad_messages_parsing_stream(kafka_cluster):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
@@ -244,7 +248,7 @@ struct Message
         f"""
             DROP TABLE IF EXISTS view;
             DROP TABLE IF EXISTS kafka;
-    
+
             CREATE TABLE kafka (key UInt64, value UInt64)
                 ENGINE = Kafka
                 SETTINGS kafka_broker_list = 'kafka1:19092',
@@ -253,9 +257,9 @@ struct Message
                          kafka_format = 'CapnProto',
                          kafka_handle_error_mode='stream',
                          kafka_schema='schema_test_errors:Message';
-    
+
             CREATE MATERIALIZED VIEW view Engine=Log AS
-                SELECT _error FROM kafka WHERE length(_error) != 0 ;                
+                SELECT _error FROM kafka WHERE length(_error) != 0;
         """
     )
 
@@ -277,6 +281,112 @@ struct Message
     assert rows == len(messages)
 
     kafka_delete_topic(admin_client, "CapnProto_err")
+
+
+def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    for format_name in [
+        "Avro",
+        "JSONEachRow",
+    ]:
+        print(format_name)
+
+        kafka_create_topic(admin_client, f"{format_name}_err")
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS view_{format_name};
+            DROP TABLE IF EXISTS kafka_{format_name};
+            DROP TABLE IF EXISTS kafka;
+
+            CREATE TABLE kafka_{format_name} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{format_name}_err',
+                         kafka_group_name = '{format_name}',
+                         kafka_format = '{format_name}',
+                         kafka_num_consumers = 1;
+
+            CREATE MATERIALIZED VIEW view_{format_name} Engine=Log AS
+                SELECT * FROM kafka_{format_name};
+        """
+        )
+
+        kafka_produce(
+            kafka_cluster, f"{format_name}_err", ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
+        )
+
+    expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_err, partition: 0, offset: 0)\\'|1|1|1|default|kafka_Avro
+Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': while parsing Kafka message (topic: JSONEachRow_err, partition: 0, offset: 0|1|1|1|default|kafka_JSONEachRow
+"""
+    # filter out stacktrace in exceptions.text[1] because it is hardly stable enough
+    result_system_kafka_consumers = instance.query_with_retry(
+        """
+        SELECT substr(exceptions.text[1], 1, 131), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers WHERE table in('kafka_Avro', 'kafka_JSONEachRow') ORDER BY table, assignments.partition_id[1]
+        """,
+        retry_count=max_retries,
+        sleep_time=1,
+        check_callback=lambda res: res.replace("\t", "|") == expected_result,
+    )
+
+    assert result_system_kafka_consumers.replace("\t", "|") == expected_result
+
+    for format_name in [
+        "Avro",
+        "JSONEachRow",
+    ]:
+        kafka_delete_topic(admin_client, f"{format_name}_err")
+
+
+def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    kafka_create_topic(admin_client, "tomv")
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS kafka_materialized;
+        DROP TABLE IF EXISTS kafka_consumer;
+        DROP TABLE IF EXISTS kafka1;
+
+        CREATE TABLE kafka1 (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'tomv',
+                     kafka_group_name = 'tomv',
+                     kafka_format = 'JSONEachRow',
+                     kafka_num_consumers = 1;
+
+        CREATE TABLE kafka_materialized(`key` UInt64, `value` UInt64) ENGINE = Log;
+
+        CREATE MATERIALIZED VIEW kafka_consumer TO kafka_materialized
+        (`key` UInt64, `value` UInt64) AS
+        SELECT key, CAST(value, 'UInt64') AS value
+        FROM kafka1;
+    """
+    )
+
+    kafka_produce(kafka_cluster, "tomv", ['{"key":10, "value":"aaa"}'])
+
+    expected_result = """Code: 6. DB::Exception: Cannot parse string \\'aaa\\' as UInt64: syntax error at begin of string. Note: there are toUInt64OrZero and to|1|1|1|default|kafka1
+"""
+    result_system_kafka_consumers = instance.query_with_retry(
+        """
+        SELECT substr(exceptions.text[1], 1, 131), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers  WHERE table='kafka1' ORDER BY table, assignments.partition_id[1]
+        """,
+        retry_count=max_retries,
+        sleep_time=1,
+        check_callback=lambda res: res.replace("\t", "|") == expected_result,
+    )
+
+    assert result_system_kafka_consumers.replace("\t", "|") == expected_result
+
+    kafka_delete_topic(admin_client, "tomv")
 
 
 if __name__ == "__main__":

@@ -16,7 +16,6 @@ def process_result(result_folder):
         "TLPGroupBy",
         "TLPHaving",
         "TLPWhere",
-        "TLPWhereGroupBy",
         "NoREC",
     ]
     failed_tests = []

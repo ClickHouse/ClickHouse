@@ -2,6 +2,7 @@
 
 #include <fmt/core.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -44,6 +45,54 @@ QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_change
 QueryNode::QueryNode(ContextMutablePtr context_)
     : QueryNode(std::move(context_), {} /*settings_changes*/)
 {}
+
+void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
+{
+    if (projection_columns_value.size() != getProjection().getNodes().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected projection columns size to match projection nodes size");
+
+    projection_columns = std::move(projection_columns_value);
+}
+
+void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns)
+{
+    auto & projection_nodes = getProjection().getNodes();
+    size_t projection_columns_size = projection_columns.size();
+    size_t write_index = 0;
+
+    for (size_t i = 0; i < projection_columns_size; ++i)
+    {
+        if (!used_projection_columns.contains(projection_columns[i].name))
+            continue;
+
+        projection_nodes[write_index] = projection_nodes[i];
+        projection_columns[write_index] = projection_columns[i];
+        ++write_index;
+    }
+
+    projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
+    projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
+}
+
+void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
+{
+    auto & projection_nodes = getProjection().getNodes();
+    size_t projection_columns_size = projection_columns.size();
+    size_t write_index = 0;
+
+    for (size_t i = 0; i < projection_columns_size; ++i)
+    {
+        if (!used_projection_columns_indexes.contains(i))
+            continue;
+
+        projection_nodes[write_index] = projection_nodes[i];
+        projection_columns[write_index] = projection_columns[i];
+        ++write_index;
+    }
+
+    projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
+    projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
+}
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
@@ -201,15 +250,16 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
 
     return is_subquery == rhs_typed.is_subquery &&
         is_cte == rhs_typed.is_cte &&
-        cte_name == rhs_typed.cte_name &&
-        projection_columns == rhs_typed.projection_columns &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
         is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
         is_group_by_with_rollup == rhs_typed.is_group_by_with_rollup &&
         is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
-        is_group_by_all == rhs_typed.is_group_by_all;
+        is_group_by_all == rhs_typed.is_group_by_all &&
+        cte_name == rhs_typed.cte_name &&
+        projection_columns == rhs_typed.projection_columns &&
+        settings_changes == rhs_typed.settings_changes;
 }
 
 void QueryNode::updateTreeHashImpl(HashState & state) const
@@ -238,6 +288,18 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
+
+    state.update(settings_changes.size());
+
+    for (const auto & setting_change : settings_changes)
+    {
+        state.update(setting_change.name.size());
+        state.update(setting_change.name);
+
+        auto setting_change_value_dump = setting_change.value.dump();
+        state.update(setting_change_value_dump.size());
+        state.update(setting_change_value_dump);
+    }
 }
 
 QueryTreeNodePtr QueryNode::cloneImpl() const
@@ -255,6 +317,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
+    result_query_node->settings_changes = settings_changes;
 
     return result_query_node;
 }

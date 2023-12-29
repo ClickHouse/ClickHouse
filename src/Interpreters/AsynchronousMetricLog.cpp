@@ -1,3 +1,4 @@
+#include <base/getFQDNOrHostName.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -15,6 +16,7 @@ NamesAndTypesList AsynchronousMetricLogElement::getNamesAndTypes()
 {
     return
     {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"metric", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
@@ -26,6 +28,7 @@ void AsynchronousMetricLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_idx = 0;
 
+    columns[column_idx++]->insert(getFQDNOrHostName());
     columns[column_idx++]->insert(event_date);
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(metric_name);

@@ -7,12 +7,11 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/AlignedBuffer.h>
+#include <Common/Arena.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {

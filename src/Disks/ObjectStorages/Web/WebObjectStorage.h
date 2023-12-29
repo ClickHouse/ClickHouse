@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <shared_mutex>
 
 namespace Poco
 {
@@ -51,7 +52,6 @@ public:
         const StoredObject & object,
         WriteMode mode,
         std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
@@ -68,6 +68,8 @@ public:
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void shutdown() override;
@@ -87,18 +89,18 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    bool supportsAppend() const override { return false; }
-
-    std::string generateBlobNameForPath(const std::string & path) override { return path; }
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
+    {
+        return ObjectStorageKey::createAsRelative(path);
+    }
 
     bool isRemote() const override { return true; }
 
     bool isReadOnly() const override { return true; }
 
 protected:
-    void initialize(const String & uri_path) const;
-
     [[noreturn]] static void throwNotAllowed();
+    bool exists(const std::string & path) const;
 
     enum class FileType
     {
@@ -114,12 +116,16 @@ protected:
 
     using Files = std::map<String, FileData>; /// file path -> file data
     mutable Files files;
+    mutable std::shared_mutex metadata_mutex;
 
-    String url;
+    std::optional<FileData> tryGetFileInfo(const String & path) const;
+    FileData getFileInfo(const String & path) const;
 
 private:
-    Poco::Logger * log;
+    void initialize(const String & path, const std::unique_lock<std::shared_mutex> &) const;
 
+    const String url;
+    Poco::Logger * log;
     size_t min_bytes_for_seek;
 };
 

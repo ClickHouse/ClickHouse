@@ -21,6 +21,7 @@ NamesAndTypesList SystemMergeTreeSettings<replicated>::getNamesAndTypes()
         {"max",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"readonly",    std::make_shared<DataTypeUInt8>()},
         {"type",        std::make_shared<DataTypeString>()},
+        {"is_obsolete", std::make_shared<DataTypeUInt8>()},
     };
 }
 
@@ -52,6 +53,7 @@ void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns,
         res_columns[5]->insert(max);
         res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
         res_columns[7]->insert(setting.getTypeName());
+        res_columns[8]->insert(setting.isObsolete());
     }
 }
 

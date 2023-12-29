@@ -4,14 +4,14 @@ sidebar_label: Aggregate Functions
 sidebar_position: 33
 ---
 
-# Aggregate Functions 
+# Aggregate Functions
 
 Aggregate functions work in the [normal](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) way as expected by database experts.
 
 ClickHouse also supports:
 
--   [Parametric aggregate functions](../../sql-reference/aggregate-functions/parametric-functions.md#aggregate_functions_parametric), which accept other parameters in addition to columns.
--   [Combinators](../../sql-reference/aggregate-functions/combinators.md#aggregate_functions_combinators), which change the behavior of aggregate functions.
+- [Parametric aggregate functions](../../sql-reference/aggregate-functions/parametric-functions.md#aggregate_functions_parametric), which accept other parameters in addition to columns.
+- [Combinators](../../sql-reference/aggregate-functions/combinators.md#aggregate_functions_combinators), which change the behavior of aggregate functions.
 
 
 ## NULL Processing
@@ -71,4 +71,17 @@ FROM t_null_big
 ┌─────────────avg(y)─┬─avg(coalesce(y, 0))─┐
 │ 2.3333333333333335 │                 1.4 │
 └────────────────────┴─────────────────────┘
+```
+
+Also you can use [Tuple](/docs/en/sql-reference/data-types/tuple.md) to work around NULL skipping behavior. The a `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value.
+
+```sql
+SELECT
+    groupArray(y),
+    groupArray(tuple(y)).1
+FROM t_null_big;
+
+┌─groupArray(y)─┬─tupleElement(groupArray(tuple(y)), 1)─┐
+│ [2,2,3]       │ [2,NULL,2,3,NULL]                     │
+└───────────────┴───────────────────────────────────────┘
 ```

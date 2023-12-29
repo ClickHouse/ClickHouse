@@ -238,12 +238,15 @@ void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, c
     ColumnUInt8 * col = checkAndGetDeserializeColumnType(column);
     bool value = false;
 
-    if (*istr.position() == 't' || *istr.position() == 'f')
+    char first_char = *istr.position();
+    if (first_char == 't' || first_char == 'f')
         readBoolTextWord(value, istr);
-    else if (*istr.position() == '1' || *istr.position() == '0')
+    else if (first_char == '1' || first_char == '0')
         readBoolText(value, istr);
     else
-        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Invalid boolean value, should be true/false, 1/0.");
+        throw Exception(ErrorCodes::CANNOT_PARSE_BOOL,
+            "Invalid boolean value, should be true/false, 1/0, but it starts with the '{}' character.", first_char);
+
     col->insert(value);
 }
 

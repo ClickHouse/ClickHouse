@@ -59,6 +59,8 @@ public:
 
     bool hasUpdateField() const override;
 
+    bool isLocal() const { return configuration.is_local; }
+
     DictionarySourcePtr clone() const override { return std::make_shared<ClickHouseDictionarySource>(*this); }
 
     std::string toString() const override;
@@ -78,11 +80,11 @@ private:
     const DictionaryStructure dict_struct;
     const Configuration configuration;
     mutable std::string invalidate_query_response;
-    ExternalQueryBuilder query_builder;
+    ExternalQueryBuilderPtr query_builder;
     Block sample_block;
     ContextMutablePtr context;
     ConnectionPoolWithFailoverPtr pool;
-    const std::string load_all_query;
+    std::string load_all_query;
     Poco::Logger * log = &Poco::Logger::get("ClickHouseDictionarySource");
 
     /// RegExpTreeDictionary is the only dictionary whose structure of attributions differ from the input block.

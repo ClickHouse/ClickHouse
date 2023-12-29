@@ -21,6 +21,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <IO/ReadBufferFromString.h>
+#include <Disks/IO/getThreadPoolReader.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -45,6 +46,7 @@ namespace CurrentMetrics
 {
     extern const Metric StorageHiveThreads;
     extern const Metric StorageHiveThreadsActive;
+    extern const Metric StorageHiveThreadsScheduled;
 }
 
 namespace DB
@@ -121,6 +123,7 @@ public:
         String compression_method_,
         Block sample_block_,
         ContextPtr context_,
+        const SelectQueryInfo & query_info_,
         UInt64 max_block_size_,
         const StorageHive & storage_,
         const Names & text_input_field_names_ = {})
@@ -137,6 +140,7 @@ public:
         , text_input_field_names(text_input_field_names_)
         , format_settings(getFormatSettings(getContext()))
         , read_settings(getContext()->getReadSettings())
+        , query_info(query_info_)
     {
         to_read_block = sample_block;
 
@@ -232,7 +236,7 @@ public:
                         if (thread_pool_read)
                         {
                             return std::make_unique<AsynchronousReadBufferFromHDFS>(
-                                IObjectStorage::getThreadPoolReader(), read_settings, std::move(buf));
+                                getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER), read_settings, std::move(buf));
                         }
                         else
                         {
@@ -275,8 +279,8 @@ public:
                 else
                     read_buf = std::move(remote_read_buf);
 
-                auto input_format = FormatFactory::instance().getInputFormat(
-                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file));
+                auto input_format = FormatFactory::instance().getInput(
+                    format, *read_buf, to_read_block, getContext(), max_block_size, updateFormatSettings(current_file), /* max_parsing_threads */ 1);
 
                 Pipe pipe(input_format);
                 if (columns_description.hasDefaults())
@@ -391,6 +395,7 @@ private:
     const Names & text_input_field_names;
     FormatSettings format_settings;
     ReadSettings read_settings;
+    SelectQueryInfo query_info;
 
     HiveFilePtr current_file;
     String current_path;
@@ -607,8 +612,14 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
     writeString("\n", wb);
 
     ReadBufferFromString buffer(wb.str());
-    auto format = FormatFactory::instance().getInputFormat(
-        "CSV", buffer, partition_key_expr->getSampleBlock(), getContext(), getContext()->getSettingsRef().max_block_size);
+    auto format = FormatFactory::instance().getInput(
+        "CSV",
+        buffer,
+        partition_key_expr->getSampleBlock(),
+        getContext(),
+        getContext()->getSettingsRef().max_block_size,
+        std::nullopt,
+        /* max_parsing_threads */ 1);
     auto pipeline = QueryPipeline(std::move(format));
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
     Block block;
@@ -824,6 +835,7 @@ Pipe StorageHive::read(
             compression_method,
             sample_block,
             context_,
+            query_info,
             max_block_size,
             *this,
             text_input_field_names));
@@ -850,7 +862,7 @@ HiveFiles StorageHive::collectHiveFiles(
     Int64 hive_max_query_partitions = context_->getSettings().max_partitions_to_read;
     /// Mutext to protect hive_files, which maybe appended in multiple threads
     std::mutex hive_files_mutex;
-    ThreadPool pool{CurrentMetrics::StorageHiveThreads, CurrentMetrics::StorageHiveThreadsActive, max_threads};
+    ThreadPool pool{CurrentMetrics::StorageHiveThreads, CurrentMetrics::StorageHiveThreadsActive, CurrentMetrics::StorageHiveThreadsScheduled, max_threads};
     if (!partitions.empty())
     {
         for (const auto & partition : partitions)
@@ -898,7 +910,7 @@ HiveFiles StorageHive::collectHiveFiles(
     return hive_files;
 }
 
-SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /* metadata_snapshot*/, ContextPtr /*context*/)
+SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetadataPtr & /* metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for StorageHive");
 }

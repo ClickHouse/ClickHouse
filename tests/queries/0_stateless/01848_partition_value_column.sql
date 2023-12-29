@@ -5,6 +5,8 @@ create table tbl(dt DateTime, i int, j String, v Float64) engine MergeTree parti
 
 insert into tbl values ('2021-04-01 00:01:02', 1, '123', 4), ('2021-04-01 01:01:02', 1, '12', 4), ('2021-04-01 02:11:02', 2, '345', 4), ('2021-04-01 04:31:02', 2, '2', 4), ('2021-04-02 00:01:02', 1, '1234', 4), ('2021-04-02 00:01:02', 2, '123', 4), ('2021-04-02 00:01:02', 3, '12', 4), ('2021-04-02 00:01:02', 4, '1', 4);
 
+set optimize_use_implicit_projections = 1;
+
 select count() from tbl where _partition_value = ('2021-04-01', 1, 2) settings max_rows_to_read = 1;
 select count() from tbl where _partition_value.1 = '2021-04-01' settings max_rows_to_read = 4;
 select count() from tbl where _partition_value.2 = 0 settings max_rows_to_read = 4;

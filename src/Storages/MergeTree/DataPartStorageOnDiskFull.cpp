@@ -80,6 +80,11 @@ DataPartStorageIteratorPtr DataPartStorageOnDiskFull::iterate() const
         volume->getDisk()->iterateDirectory(fs::path(root_path) / part_dir));
 }
 
+Poco::Timestamp DataPartStorageOnDiskFull::getFileLastModified(const String & file_name) const
+{
+    return volume->getDisk()->getLastModified(fs::path(root_path) / part_dir / file_name);
+}
+
 size_t DataPartStorageOnDiskFull::getFileSize(const String & file_name) const
 {
     return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
@@ -88,6 +93,15 @@ size_t DataPartStorageOnDiskFull::getFileSize(const String & file_name) const
 UInt32 DataPartStorageOnDiskFull::getRefCount(const String & file_name) const
 {
     return volume->getDisk()->getRefCount(fs::path(root_path) / part_dir / file_name);
+}
+
+std::string DataPartStorageOnDiskFull::getRemotePath(const std::string & file_name) const
+{
+    auto objects = volume->getDisk()->getStorageObjects(fs::path(root_path) / part_dir / file_name);
+    if (objects.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "One file must be mapped to one object on blob storage in MergeTree tables");
+
+    return objects[0].remote_path;
 }
 
 String DataPartStorageOnDiskFull::getUniqueId() const
@@ -168,6 +182,23 @@ void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & sour
             fs::path(source_on_disk->getRelativePath()) / from,
             fs::path(root_path) / part_dir / to);
     });
+}
+
+void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to)
+{
+    const auto * source_on_disk = typeid_cast<const DataPartStorageOnDiskFull *>(&source);
+    if (!source_on_disk)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot create copy file from different storage. Expected DataPartStorageOnDiskFull, got {}",
+            typeid(source).name());
+
+    /// Copying files between different disks is
+    /// not supported in disk transactions.
+    source_on_disk->getDisk()->copyFile(
+        fs::path(source_on_disk->getRelativePath()) / from,
+        *volume->getDisk(),
+        fs::path(root_path) / part_dir / to);
 }
 
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)

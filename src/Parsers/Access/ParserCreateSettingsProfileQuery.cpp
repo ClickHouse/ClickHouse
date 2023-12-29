@@ -1,3 +1,4 @@
+#include <Access/IAccessStorage.h>
 #include <Parsers/Access/ParserCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
@@ -111,6 +112,7 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     String new_name;
     std::shared_ptr<ASTSettingsProfileElements> settings;
     String cluster;
+    String storage_name;
 
     while (true)
     {
@@ -128,6 +130,9 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
         }
 
         if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+            continue;
+
+        if (storage_name.empty() && ParserKeyword{"IN"}.ignore(pos, expected) && parseAccessStorageName(pos, expected, storage_name))
             continue;
 
         break;
@@ -152,6 +157,7 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     query->new_name = std::move(new_name);
     query->settings = std::move(settings);
     query->to_roles = std::move(to_roles);
+    query->storage_name = std::move(storage_name);
 
     return true;
 }

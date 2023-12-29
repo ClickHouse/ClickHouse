@@ -44,7 +44,7 @@ private:
     krb5_ccache defcache = nullptr;
     krb5_get_init_creds_opt * options = nullptr;
     // Credentials structure including ticket, session key, and lifetime info.
-    krb5_creds my_creds;
+    krb5_creds my_creds {};
     krb5_keytab keytab = nullptr;
     krb5_principal defcache_princ = nullptr;
     String fmtError(krb5_error_code code) const;

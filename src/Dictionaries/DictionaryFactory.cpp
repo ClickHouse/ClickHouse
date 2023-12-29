@@ -17,13 +17,13 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-void DictionaryFactory::registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex)
+void DictionaryFactory::registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex, bool has_layout_complex)
 {
     auto it = registered_layouts.find(layout_type);
     if (it != registered_layouts.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionaryFactory: the layout name '{}' is not unique", layout_type);
 
-    RegisteredLayout layout { .layout_create_function = create_layout, .is_layout_complex = is_layout_complex };
+    RegisteredLayout layout { .layout_create_function = create_layout, .is_layout_complex = is_layout_complex, .has_layout_complex = has_layout_complex };
     registered_layouts.emplace(layout_type, std::move(layout));
 }
 
@@ -69,12 +69,6 @@ DictionaryPtr DictionaryFactory::create(
         layout_type);
 }
 
-DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, ContextPtr global_context) const
-{
-    auto configuration = getDictionaryConfigurationFromAST(ast, global_context);
-    return DictionaryFactory::create(name, *configuration, "dictionary", global_context, true);
-}
-
 bool DictionaryFactory::isComplex(const std::string & layout_type) const
 {
     auto it = registered_layouts.find(layout_type);
@@ -87,6 +81,25 @@ bool DictionaryFactory::isComplex(const std::string & layout_type) const
     }
 
     return it->second.is_layout_complex;
+}
+
+bool DictionaryFactory::convertToComplex(std::string & layout_type) const
+{
+    auto it = registered_layouts.find(layout_type);
+
+    if (it == registered_layouts.end())
+    {
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                        "Unknown dictionary layout type: {}",
+                        layout_type);
+    }
+
+    if (!it->second.is_layout_complex && it->second.has_layout_complex)
+    {
+        layout_type = "complex_key_" + layout_type;
+        return true;
+    }
+    return false;
 }
 
 

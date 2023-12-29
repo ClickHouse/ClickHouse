@@ -34,6 +34,19 @@ protected:
 };
 
 
+/** An identifier for tables written as string literal, for example, 'mytable.avro'
+  */
+class ParserTableAsStringLiteralIdentifier : public IParserBase
+{
+public:
+    explicit ParserTableAsStringLiteralIdentifier() {}
+
+protected:
+    const char * getName() const override { return "string literal table identifier"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
  *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   */
@@ -181,6 +194,14 @@ class ParserCodec : public IParserBase
 {
 protected:
     const char * getName() const override { return "codec"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/// STATISTIC(tdigest(200))
+class ParserStatisticType : public IParserBase
+{
+protected:
+    const char * getName() const override { return "statistic"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

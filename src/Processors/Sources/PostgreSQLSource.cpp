@@ -59,7 +59,6 @@ PostgreSQLSource<T>::PostgreSQLSource(
     init(sample_block);
 }
 
-
 template<typename T>
 void PostgreSQLSource<T>::init(const Block & sample_block)
 {
@@ -82,7 +81,8 @@ void PostgreSQLSource<T>::onStart()
     {
         try
         {
-            tx = std::make_shared<T>(connection_holder->get());
+            auto & conn = connection_holder->get();
+            tx = std::make_shared<T>(conn);
         }
         catch (const pqxx::broken_connection &)
         {
@@ -176,11 +176,31 @@ template<typename T>
 void PostgreSQLSource<T>::onFinish()
 {
     if (stream)
-    {
-        stream->complete();
+        stream->close();
 
-        if (auto_commit)
-            tx->commit();
+    if (tx && auto_commit)
+        tx->commit();
+
+    is_completed = true;
+}
+
+template<typename T>
+PostgreSQLSource<T>::~PostgreSQLSource()
+{
+    if (!is_completed)
+    {
+        try
+        {
+            stream.reset();
+            tx.reset();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
+        if (connection_holder)
+            connection_holder->setBroken();
     }
 }
 

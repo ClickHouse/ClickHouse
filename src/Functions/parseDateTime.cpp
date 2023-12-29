@@ -7,14 +7,15 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/numLiteralChars.h>
 
+#include <Interpreters/Context.h>
+
 #include <IO/WriteHelpers.h>
-#include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
+
 
 namespace DB
 {
@@ -48,7 +49,7 @@ namespace
     const std::unordered_map<String, std::pair<String, Int32>> monthMap{
         {"jan", {"uary", 1}},
         {"feb", {"ruary", 2}},
-        {"mar", {"rch", 3}},
+        {"mar", {"ch", 3}},
         {"apr", {"il", 4}},
         {"may", {"", 5}},
         {"jun", {"e", 6}},
@@ -101,16 +102,16 @@ namespace
         bool is_year_of_era = false; /// If true, year is calculated from era and year of era, the latter cannot be zero or negative.
         bool has_year = false; /// Whether year was explicitly specified.
 
-        /// If is_clock_hour = true, is_hour_of_half_day = true, hour's range is [1, 12]
-        /// If is_clock_hour = true, is_hour_of_half_day = false, hour's range is [1, 24]
-        /// If is_clock_hour = false, is_hour_of_half_day = true, hour's range is [0, 11]
-        /// If is_clock_hour = false, is_hour_of_half_day = false, hour's range is [0, 23]
+        /// If hour_starts_at_1 = true, is_hour_of_half_day = true, hour's range is [1, 12]
+        /// If hour_starts_at_1 = true, is_hour_of_half_day = false, hour's range is [1, 24]
+        /// If hour_starts_at_1 = false, is_hour_of_half_day = true, hour's range is [0, 11]
+        /// If hour_starts_at_1 = false, is_hour_of_half_day = false, hour's range is [0, 23]
         Int32 hour = 0;
         Int32 minute = 0; /// range [0, 59]
         Int32 second = 0; /// range [0, 59]
 
         bool is_am = true; /// If is_hour_of_half_day = true and is_am = false (i.e. pm) then add 12 hours to the result DateTime
-        bool is_clock_hour = false; /// Whether the hour is clockhour
+        bool hour_starts_at_1 = false; /// Whether the hour is clockhour
         bool is_hour_of_half_day = false; /// Whether the hour is of half day
 
         bool has_time_zone_offset = false; /// If true, time zone offset is explicitly specified.
@@ -137,7 +138,7 @@ namespace
             second = 0;
 
             is_am = true;
-            is_clock_hour = false;
+            hour_starts_at_1 = false;
             is_hour_of_half_day = false;
 
             has_time_zone_offset = false;
@@ -150,7 +151,7 @@ namespace
             if (text == "bc")
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime");
             else if (text != "ad")
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {}", text);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {} (expected 'ad' or 'bc')", text);
         }
 
         void setCentury(Int32 century)
@@ -275,23 +276,23 @@ namespace
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown half day of day: {}", text);
         }
 
-        void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool is_clock_hour_ = false)
+        void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool hour_starts_at_1_ = false)
         {
             Int32 max_hour;
             Int32 min_hour;
             Int32 new_hour = hour_;
-            if (!is_hour_of_half_day_ && !is_clock_hour_)
+            if (!is_hour_of_half_day_ && !hour_starts_at_1_)
             {
                 max_hour = 23;
                 min_hour = 0;
             }
-            else if (!is_hour_of_half_day_ && is_clock_hour_)
+            else if (!is_hour_of_half_day_ && hour_starts_at_1_)
             {
                 max_hour = 24;
                 min_hour = 1;
                 new_hour = hour_ % 24;
             }
-            else if (is_hour_of_half_day_ && !is_clock_hour_)
+            else if (is_hour_of_half_day_ && !hour_starts_at_1_)
             {
                 max_hour = 11;
                 min_hour = 0;
@@ -306,16 +307,16 @@ namespace
             if (hour_ < min_hour || hour_ > max_hour)
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_DATETIME,
-                    "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and is_clock_hour={}",
+                    "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and hour_starts_at_1={}",
                     hour,
                     max_hour,
                     min_hour,
                     is_hour_of_half_day_,
-                    is_clock_hour_);
+                    hour_starts_at_1_);
 
             hour = new_hour;
             is_hour_of_half_day = is_hour_of_half_day_;
-            is_clock_hour = is_clock_hour_;
+            hour_starts_at_1 = hour_starts_at_1_;
         }
 
         void setMinute(Int32 minute_)
@@ -398,7 +399,7 @@ namespace
         static Int32 daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
         {
             if (!isDayOfYearValid(year_, day_of_year_))
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid day of year, year:{} day of year:{}", year_, day_of_year_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid day of year, out of range (year: {} day of year: {})", year_, day_of_year_);
 
             Int32 res = daysSinceEpochFromDate(year_, 1, 1);
             res += day_of_year_ - 1;
@@ -408,7 +409,7 @@ namespace
         static Int32 daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
         {
             if (!isDateValid(year_, month_, day_))
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid date, year:{} month:{} day:{}", year_, month_, day_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid date, out of range (year: {} month: {} day_of_month: {})", year_, month_, day_);
 
             Int32 res = cumulativeYearDays[year_ - 1970];
             res += isLeapYear(year_) ? cumulativeLeapDays[month_ - 1] : cumulativeDays[month_ - 1];
@@ -464,8 +465,17 @@ namespace
     class FunctionParseDateTimeImpl : public IFunction
     {
     public:
+        const bool mysql_M_is_month_name;
+        const bool mysql_parse_ckl_without_leading_zeros;
+
         static constexpr auto name = Name::name;
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionParseDateTimeImpl>(); }
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
+
+        explicit FunctionParseDateTimeImpl(ContextPtr context)
+            : mysql_M_is_month_name(context->getSettings().formatdatetime_parsedatetime_m_is_month_name)
+            , mysql_parse_ckl_without_leading_zeros(context->getSettings().parsedatetime_parse_without_leading_zeros)
+        {
+        }
 
         String getName() const override { return name; }
 
@@ -478,15 +488,16 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            FunctionArgumentDescriptors args{
+            FunctionArgumentDescriptors mandatory_args{
                 {"time", &isString<IDataType>, nullptr, "String"},
-                {"format", &isString<IDataType>, nullptr, "String"},
+                {"format", &isString<IDataType>, nullptr, "String"}
             };
 
-            if (arguments.size() == 3)
-                args.emplace_back(FunctionArgumentDescriptor{"timezone", &isString<IDataType>, nullptr, "String"});
+            FunctionArgumentDescriptors optional_args{
+                {"timezone", &isString<IDataType>, &isColumnConst, "const String"}
+            };
 
-            validateFunctionArgumentTypes(*this, arguments, args);
+            validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
             DataTypePtr date_type = std::make_shared<DataTypeDateTime>(time_zone_name);
@@ -716,13 +727,31 @@ namespace
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
                     checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
 
-                if (*cur != expected)
+                if (*cur != expected) [[unlikely]]
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because char {} is expected but {} provided",
                         fragment,
                         std::string_view(cur, end - cur),
                         String(expected, 1),
+                        String(*cur, 1));
+
+                ++cur;
+                return cur;
+            }
+
+            template <NeedCheckSpace need_check_space>
+            static Pos assertNumber(Pos cur, Pos end, const String & fragment)
+            {
+                if constexpr (need_check_space == NeedCheckSpace::Yes)
+                    checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
+
+                if (*cur < '0' || *cur > '9') [[unlikely]]
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because {} is not a number",
+                        fragment,
+                        std::string_view(cur, end - cur),
                         String(*cur, 1));
 
                 ++cur;
@@ -768,10 +797,50 @@ namespace
                 return cur;
             }
 
+            static Pos mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
+            {
+                checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment);
+                String text1(cur, 3);
+                boost::to_lower(text1);
+                auto it = monthMap.find(text1);
+                if (it == monthMap.end())
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse first part of fragment {} from {} because of unknown month of year text: {}",
+                        fragment,
+                        std::string_view(cur, end - cur),
+                        text1);
+                cur += 3;
+
+                size_t expected_remaining_size = it->second.first.size();
+                checkSpace(cur, end, expected_remaining_size, "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
+                String text2(cur, expected_remaining_size);
+                boost::to_lower(text2);
+                if (text2 != it->second.first)
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse second part of fragment {} from {} because of unknown month of year text: {}",
+                        fragment,
+                        std::string_view(cur, end - cur),
+                        text1 + text2);
+                cur += expected_remaining_size;
+
+                date.setMonth(it->second.second);
+                return cur;
+            }
+
             static Pos mysqlMonth(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 month;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, month);
+                date.setMonth(month);
+                return cur;
+            }
+
+            static Pos mysqlMonthWithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime & date)
+            {
+                Int32 month;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, month);
                 date.setMonth(month);
                 return cur;
             }
@@ -900,7 +969,7 @@ namespace
 
             static Pos mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 6, "jodaDayOfWeekText requires size >= 6", fragment);
+                checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment);
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
@@ -914,7 +983,7 @@ namespace
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                checkSpace(cur, end, expected_remaining_size, "jodaDayOfWeekText requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
+                checkSpace(cur, end, expected_remaining_size, "mysqlDayOfWeekTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
@@ -1035,6 +1104,16 @@ namespace
                 return cur;
             }
 
+            static Pos mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime & /*date*/)
+            {
+                checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment);
+
+                for (size_t i = 0; i < 6; ++i)
+                    cur = assertNumber<NeedCheckSpace::No>(cur, end, fragment);
+
+                return cur;
+            }
+
             static Pos mysqlISO8601Time(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", fragment);
@@ -1062,10 +1141,26 @@ namespace
                 return cur;
             }
 
+            static Pos mysqlHour12WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime & date)
+            {
+                Int32 hour;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour);
+                date.setHour(hour, true, true);
+                return cur;
+            }
+
             static Pos mysqlHour24(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour);
+                date.setHour(hour, false, false);
+                return cur;
+            }
+
+            static Pos mysqlHour24WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime & date)
+            {
+                Int32 hour;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour);
                 date.setHour(hour, false, false);
                 return cur;
             }
@@ -1421,9 +1516,14 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthOfYearTextShort));
                             break;
 
-                        // Month as a decimal number (01-12)
+                        // Month as a decimal number:
+                        // - if parsedatetime_parse_without_leading_zeros = true: possibly without leading zero, i.e. 1-12
+                        // - else: with leading zero required, i.e. 01-12
                         case 'c':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonth));
+                            if (mysql_parse_ckl_without_leading_zeros)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthWithoutLeadingZero));
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonth));
                             break;
 
                         // Year, divided by 100, zero-padded
@@ -1446,6 +1546,10 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
                             break;
 
+                        // Fractional seconds
+                        case 'f':
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMicrosecond));
+                            break;
 
                         // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
                         case 'F':
@@ -1512,9 +1616,14 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlTimezoneOffset));
                             break;
 
-                        // Minute (00-59)
+                        // Depending on a setting
+                        // - Full month [January...December]
+                        // - Minute (00-59) OR
                         case 'M':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
+                            if (mysql_M_is_month_name)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthOfYearTextLong));
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
                             break;
 
                         // AM or PM
@@ -1567,14 +1676,24 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12));
                             break;
 
-                        // Hour in 24h format (00-23)
+                        // Hour in 24h format:
+                        // - if parsedatetime_parse_without_leading_zeros = true, possibly without leading zero: i.e. 0-23
+                        // - else with leading zero required: i.e. 00-23
                         case 'k':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour24));
+                            if (mysql_parse_ckl_without_leading_zeros)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour24WithoutLeadingZero));
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour24));
                             break;
 
-                        // Hour in 12h format (01-12)
+                        // Hour in 12h format:
+                        // - if parsedatetime_parse_without_leading_zeros = true: possibly without leading zero, i.e. 0-12
+                        // - else with leading zero required: i.e. 00-12
                         case 'l':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12));
+                            if (mysql_parse_ckl_without_leading_zeros)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12WithoutLeadingZero));
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12));
                             break;
 
                         case 't':
@@ -1593,8 +1712,6 @@ namespace
                         /// Unimplemented
 
                         /// Fractional seconds
-                        case 'f':
-                            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for fractional seconds");
                         case 'U':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Sun-Sat)");
                         case 'v':

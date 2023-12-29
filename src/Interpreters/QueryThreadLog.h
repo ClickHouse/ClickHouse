@@ -2,14 +2,9 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
+#include <Common/ProfileEvents.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-
-
-namespace ProfileEvents
-{
-    class Counters;
-}
 
 
 namespace DB

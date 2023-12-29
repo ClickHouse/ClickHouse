@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
+#include <Common/logger_useful.h>
 #include <Core/Names.h>
 #include <base/types.h>
 #include <Poco/Net/IPAddress.h>
@@ -103,7 +104,7 @@ DNSResolver::IPAddresses hostByName(const std::string & host)
     }
     catch (const Poco::Net::DNSException & e)
     {
-        LOG_ERROR(&Poco::Logger::get("DNSResolver"), "Cannot resolve host ({}), error {}: {}.", host, e.code(), e.name());
+        LOG_WARNING(&Poco::Logger::get("DNSResolver"), "Cannot resolve host ({}), error {}: {}.", host, e.code(), e.name());
         addresses.clear();
     }
 
@@ -269,8 +270,8 @@ std::unordered_set<String> DNSResolver::reverseResolve(const Poco::Net::IPAddres
 
 void DNSResolver::dropCache()
 {
-    impl->cache_host.reset();
-    impl->cache_address.reset();
+    impl->cache_host.clear();
+    impl->cache_address.clear();
 
     std::scoped_lock lock(impl->update_mutex, impl->drop_mutex);
 
@@ -309,11 +310,11 @@ static String cacheElemToString(const Poco::Net::IPAddress & addr) { return addr
 
 template <typename UpdateF, typename ElemsT>
 bool DNSResolver::updateCacheImpl(
-    UpdateF && update_func,
-    ElemsT && elems,
+    UpdateF && update_func, // NOLINT(cppcoreguidelines-missing-std-forward)
+    ElemsT && elems, // NOLINT(cppcoreguidelines-missing-std-forward)
     UInt32 max_consecutive_failures,
-    const String & notfound_log_msg,
-    const String & dropped_log_msg)
+    FormatStringHelper<String> notfound_log_msg,
+    FormatStringHelper<String> dropped_log_msg)
 {
     bool updated = false;
     String lost_elems;
@@ -350,7 +351,7 @@ bool DNSResolver::updateCacheImpl(
     }
 
     if (!lost_elems.empty())
-        LOG_INFO(log, fmt::runtime(notfound_log_msg), lost_elems);
+        LOG_INFO(log, notfound_log_msg.format(std::move(lost_elems)));
     if (elements_to_drop.size())
     {
         updated = true;
@@ -362,7 +363,7 @@ bool DNSResolver::updateCacheImpl(
             deleted_elements += cacheElemToString(it->first);
             elems.erase(it);
         }
-        LOG_INFO(log, fmt::runtime(dropped_log_msg), deleted_elements);
+        LOG_INFO(log, dropped_log_msg.format(std::move(deleted_elements)));
     }
 
     return updated;

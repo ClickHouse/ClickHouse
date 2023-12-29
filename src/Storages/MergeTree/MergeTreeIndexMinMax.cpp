@@ -122,7 +122,7 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
+                "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -200,7 +200,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 }
 
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorMinMax>(index.name, index.sample_block);
 }
@@ -209,21 +209,6 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     const SelectQueryInfo & query, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, query, context);
-}
-
-bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const
-{
-    const String column_name = node->getColumnName();
-
-    for (const auto & cname : index.column_names)
-        if (column_name == cname)
-            return true;
-
-    if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
-        if (func->arguments->children.size() == 1)
-            return mayBenefitFromIndexForIn(func->arguments->children.front());
-
-    return false;
 }
 
 MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const

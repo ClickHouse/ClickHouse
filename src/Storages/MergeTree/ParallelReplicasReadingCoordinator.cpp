@@ -9,17 +9,49 @@
 
 #include <consistent_hashing.h>
 
+#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 #include <base/types.h>
 #include "IO/WriteBufferFromString.h"
+#include <IO/Progress.h>
 #include "Storages/MergeTree/RangesInDataPart.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/IntersectionsIndexes.h>
+#include <fmt/core.h>
 #include <fmt/format.h>
 
+namespace ProfileEvents
+{
+    extern const Event ParallelReplicasUsedCount;
+}
+
+namespace DB
+{
+struct Part
+{
+    mutable RangesInDataPartDescription description;
+    // FIXME: This is needed to put this struct in set
+    // and modify through iterator
+    mutable std::set<size_t> replicas;
+
+    bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
+};
+}
+
+template <>
+struct fmt::formatter<DB::Part>
+{
+    static constexpr auto parse(format_parse_context & ctx) { return ctx.begin(); }
+
+    template <typename FormatContext>
+    auto format(const DB::Part & part, FormatContext & ctx)
+    {
+        return fmt::format_to(ctx.out(), "{} in replicas [{}]", part.description.describe(), fmt::join(part.replicas, ", "));
+    }
+};
 
 namespace DB
 {
@@ -36,19 +68,23 @@ public:
     {
         size_t number_of_requests{0};
         size_t sum_marks{0};
+        bool is_unavailable{false};
     };
     using Stats = std::vector<Stat>;
     static String toString(Stats stats)
     {
         String result = "Statistics: ";
+        std::vector<String> stats_by_replica;
         for (size_t i = 0; i < stats.size(); ++i)
-            result += fmt::format("-- replica {}, requests: {} marks: {} ", i, stats[i].number_of_requests, stats[i].sum_marks);
+            stats_by_replica.push_back(fmt::format("replica {}{} - {{requests: {} marks: {}}}", i, stats[i].is_unavailable ? " is unavailable" : "", stats[i].number_of_requests, stats[i].sum_marks));
+        result += fmt::format("{}", fmt::join(stats_by_replica, "; "));
         return result;
     }
 
     Stats stats;
-    std::mutex mutex;
-    size_t replicas_count;
+    size_t replicas_count{0};
+    size_t unavailable_replicas_count{0};
+    ProgressCallback progress_callback;
 
     explicit ImplInterface(size_t replicas_count_)
         : stats{replicas_count_}
@@ -58,17 +94,9 @@ public:
     virtual ~ImplInterface() = default;
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
-};
+    virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
 
-
-struct Part
-{
-    mutable RangesInDataPartDescription description;
-    // FIXME: This is needed to put this struct in set
-    // and modify through iterator
-    mutable std::set<size_t> replicas;
-
-    bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
+    void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
 };
 
 using Parts = std::set<Part>;
@@ -83,7 +111,6 @@ public:
 
     explicit DefaultCoordinator(size_t replicas_count_)
         : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_)
-        , announcements(replicas_count_)
         , reading_state(replicas_count_)
     {
     }
@@ -100,7 +127,6 @@ public:
     PartitionToBlockRanges partitions;
 
     size_t sent_initial_requests{0};
-    std::vector<InitialAllRangesAnnouncement> announcements;
 
     Parts all_parts_to_read;
     /// Contains only parts which we haven't started to read from
@@ -115,8 +141,9 @@ public:
 
     ParallelReadResponse handleRequest(ParallelReadRequest request) override;
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
+    void markReplicaAsUnavailable(size_t replica_number) override;
 
-    void updateReadingState(const InitialAllRangesAnnouncement & announcement);
+    void updateReadingState(InitialAllRangesAnnouncement announcement);
     void finalizeReadingState();
 
     size_t computeConsistentHash(const MergeTreePartInfo & info) const
@@ -131,39 +158,52 @@ public:
 
 DefaultCoordinator::~DefaultCoordinator()
 {
-    LOG_INFO(log, "Coordination done: {}", toString(stats));
+    LOG_DEBUG(log, "Coordination done: {}", toString(stats));
 }
 
-void DefaultCoordinator::updateReadingState(const InitialAllRangesAnnouncement & announcement)
+void DefaultCoordinator::updateReadingState(InitialAllRangesAnnouncement announcement)
 {
     PartRefs parts_diff;
 
     /// To get rid of duplicates
-    for (const auto & part: announcement.description)
+    for (auto && part_ranges: announcement.description)
     {
-        auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
-            [&part] (const Part & other) { return other.description.info.getPartNameV1() == part.info.getPartNameV1(); });
+        Part part{.description = std::move(part_ranges), .replicas = {announcement.replica_num}};
+        const MergeTreePartInfo & announced_part = part.description.info;
 
-        /// We have the same part - add the info about presence on current replica to it
-        if (the_same_it != all_parts_to_read.end())
+        auto it = std::lower_bound(cbegin(all_parts_to_read), cend(all_parts_to_read), part);
+        if (it != all_parts_to_read.cend())
         {
-            the_same_it->replicas.insert(announcement.replica_num);
-            continue;
+            const MergeTreePartInfo & found_part = it->description.info;
+            if (found_part == announced_part)
+            {
+                /// We have the same part - add the info about presence on current replica
+                it->replicas.insert(announcement.replica_num);
+                continue;
+            }
+            else
+            {
+                /// check if it is covering or covered part
+                /// need to compare with 2 nearest parts in set, - lesser and greater than the part from the announcement
+                bool is_disjoint = found_part.isDisjoint(announced_part);
+                if (it != all_parts_to_read.cbegin() && is_disjoint)
+                {
+                    const MergeTreePartInfo & lesser_part = (--it)->description.info;
+                    is_disjoint &= lesser_part.isDisjoint(announced_part);
+                }
+                if (!is_disjoint)
+                    continue;
+            }
+        }
+        else if (!all_parts_to_read.empty())
+        {
+            /// the announced part is greatest - check if it's disjoint with lesser part
+            const MergeTreePartInfo & lesser_part = all_parts_to_read.crbegin()->description.info;
+            if (!lesser_part.isDisjoint(announced_part))
+                continue;
         }
 
-        auto covering_or_the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
-            [&part] (const Part & other) { return !other.description.info.isDisjoint(part.info); });
-
-        /// It is covering part or we have covering - skip it
-        if (covering_or_the_same_it != all_parts_to_read.end())
-            continue;
-
-        auto new_part = Part{
-            .description = part,
-            .replicas = {announcement.replica_num}
-        };
-
-        auto [insert_it, _] = all_parts_to_read.insert(new_part);
+        auto [insert_it, _] = all_parts_to_read.emplace(std::move(part));
         parts_diff.push_back(insert_it);
     }
 
@@ -183,6 +223,20 @@ void DefaultCoordinator::updateReadingState(const InitialAllRangesAnnouncement &
 
         /// Add to delayed parts
         delayed_parts.emplace_back(current_part_it);
+    }
+}
+
+void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
+{
+    if (stats[replica_number].is_unavailable == false)
+    {
+        LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
+
+        stats[replica_number].is_unavailable = true;
+        ++unavailable_replicas_count;
+
+        if (sent_initial_requests == replicas_count - unavailable_replicas_count)
+            finalizeReadingState();
     }
 }
 
@@ -207,26 +261,37 @@ void DefaultCoordinator::finalizeReadingState()
         delayed_parts.pop_front();
     }
 
-    String description;
-    for (const auto & part : all_parts_to_read)
+    // update progress with total rows
+    if (progress_callback)
     {
-        description += part.description.describe();
-        description += fmt::format("Replicas: ({}) --- ", fmt::join(part.replicas, ","));
+        size_t total_rows_to_read = 0;
+        for (const auto & part : all_parts_to_read)
+            total_rows_to_read += part.description.rows;
+
+        Progress progress;
+        progress.total_rows_to_read = total_rows_to_read;
+        progress_callback(progress);
+
+        LOG_DEBUG(log, "Total rows to read: {}", total_rows_to_read);
     }
 
-    LOG_INFO(log, "Reading state is fully initialized: {}", description);
+    LOG_DEBUG(log, "Reading state is fully initialized: {}", fmt::join(all_parts_to_read, "; "));
 }
 
 
 void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    std::lock_guard lock(mutex);
+    const auto replica_num = announcement.replica_num;
 
-    updateReadingState(announcement);
-    stats[announcement.replica_num].number_of_requests +=1;
+    updateReadingState(std::move(announcement));
+
+    if (replica_num >= stats.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
+
+    ++stats[replica_num].number_of_requests;
 
     ++sent_initial_requests;
-    LOG_INFO(log, "{} {}", sent_initial_requests, replicas_count);
+    LOG_DEBUG(log, "Sent initial requests: {} Replicas count: {}", sent_initial_requests, replicas_count);
     if (sent_initial_requests == replicas_count)
         finalizeReadingState();
 }
@@ -261,20 +326,20 @@ void DefaultCoordinator::selectPartsAndRanges(const PartRefs & container, size_t
         while (!part->description.ranges.empty() && current_mark_size < min_number_of_marks)
         {
             auto & range = part->description.ranges.front();
+            const size_t needed = min_number_of_marks - current_mark_size;
 
-            if (range.getNumberOfMarks() > min_number_of_marks)
+            if (range.getNumberOfMarks() > needed)
             {
-                auto new_range = range;
-                range.begin += min_number_of_marks;
-                new_range.end = new_range.begin + min_number_of_marks;
+                auto range_we_take = MarkRange{range.begin, range.begin + needed};
+                response.description.back().ranges.emplace_back(range_we_take);
+                current_mark_size += range_we_take.getNumberOfMarks();
 
-                response.description.back().ranges.emplace_back(new_range);
-                current_mark_size += new_range.getNumberOfMarks();
-                continue;
+                range.begin += needed;
+                break;
             }
 
-            current_mark_size += part->description.ranges.front().getNumberOfMarks();
-            response.description.back().ranges.emplace_back(part->description.ranges.front());
+            response.description.back().ranges.emplace_back(range);
+            current_mark_size += range.getNumberOfMarks();
             part->description.ranges.pop_front();
         }
     }
@@ -282,8 +347,6 @@ void DefaultCoordinator::selectPartsAndRanges(const PartRefs & container, size_t
 
 ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest request)
 {
-    std::lock_guard lock(mutex);
-
     LOG_TRACE(log, "Handling request from replica {}, minimal marks size is {}", request.replica_num, request.min_number_of_marks);
 
     size_t current_mark_size = 0;
@@ -334,26 +397,40 @@ public:
     {}
     ~InOrderCoordinator() override
     {
-        LOG_INFO(log, "Coordination done: {}", toString(stats));
+        LOG_DEBUG(log, "Coordination done: {}", toString(stats));
     }
 
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
     void handleInitialAllRangesAnnouncement([[ maybe_unused ]]  InitialAllRangesAnnouncement announcement) override;
+    void markReplicaAsUnavailable(size_t replica_number) override;
 
     Parts all_parts_to_read;
+    size_t total_rows_to_read = 0;
 
     Poco::Logger * log = &Poco::Logger::get(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
 
+template <CoordinationMode mode>
+void InOrderCoordinator<mode>::markReplicaAsUnavailable(size_t replica_number)
+{
+    if (stats[replica_number].is_unavailable == false)
+    {
+        LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
+
+        stats[replica_number].is_unavailable = true;
+        ++unavailable_replicas_count;
+    }
+}
 
 template <CoordinationMode mode>
 void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    std::lock_guard lock(mutex);
-    LOG_TRACE(log, "Received an announecement {}", announcement.describe());
+    LOG_TRACE(log, "Received an announcement {}", announcement.describe());
+
+    size_t new_rows_to_read = 0;
 
     /// To get rid of duplicates
-    for (const auto & part: announcement.description)
+    for (auto && part: announcement.description)
     {
         auto the_same_it = std::find_if(all_parts_to_read.begin(), all_parts_to_read.end(),
             [&part] (const Part & other) { return other.description.info == part.info; });
@@ -372,23 +449,28 @@ void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRang
         if (covering_or_the_same_it != all_parts_to_read.end())
             continue;
 
-        auto new_part = Part{
-            .description = part,
-            .replicas = {announcement.replica_num}
-        };
+        new_rows_to_read += part.rows;
 
-        auto insert_it = all_parts_to_read.insert(new_part);
-        auto & ranges = insert_it.first->description.ranges;
+        auto [inserted_it, _] = all_parts_to_read.emplace(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+        auto & ranges = inserted_it->description.ranges;
         std::sort(ranges.begin(), ranges.end());
     }
-}
 
+    if (new_rows_to_read > 0)
+    {
+        Progress progress;
+        progress.total_rows_to_read = new_rows_to_read;
+        progress_callback(progress);
+
+        total_rows_to_read += new_rows_to_read;
+
+        LOG_DEBUG(log, "Updated total rows to read: added {} rows, total {} rows", new_rows_to_read, total_rows_to_read);
+    }
+}
 
 template <CoordinationMode mode>
 ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest request)
 {
-    std::lock_guard lock(mutex);
-
     if (request.mode != mode)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Replica {} decided to read in {} mode, not in {}. This is a bug",
@@ -418,23 +500,21 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
         {
             while (!global_part_it->description.ranges.empty() && current_mark_size < request.min_number_of_marks)
             {
-                auto range = global_part_it->description.ranges.back();
+                auto & range = global_part_it->description.ranges.back();
+                const size_t needed = request.min_number_of_marks - current_mark_size;
 
-                if (range.getNumberOfMarks() > request.min_number_of_marks)
+                if (range.getNumberOfMarks() > needed)
                 {
-                    auto new_range = range;
-                    range.end -= request.min_number_of_marks;
-                    new_range.begin = new_range.end - request.min_number_of_marks;
+                    auto range_we_take = MarkRange{range.end - needed, range.end};
+                    part.ranges.emplace_front(range_we_take);
+                    current_mark_size += range_we_take.getNumberOfMarks();
 
-                    global_part_it->description.ranges.back() = range;
-
-                    part.ranges.emplace_front(new_range);
-                    current_mark_size += new_range.getNumberOfMarks();
-                    continue;
+                    range.end -= needed;
+                    break;
                 }
 
-                current_mark_size += global_part_it->description.ranges.back().getNumberOfMarks();
-                part.ranges.emplace_front(global_part_it->description.ranges.back());
+                part.ranges.emplace_front(range);
+                current_mark_size += range.getNumberOfMarks();
                 global_part_it->description.ranges.pop_back();
             }
         }
@@ -442,23 +522,21 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
         {
             while (!global_part_it->description.ranges.empty() && current_mark_size < request.min_number_of_marks)
             {
-                auto range = global_part_it->description.ranges.front();
+                auto & range = global_part_it->description.ranges.front();
+                const size_t needed = request.min_number_of_marks - current_mark_size;
 
-                if (range.getNumberOfMarks() > request.min_number_of_marks)
+                if (range.getNumberOfMarks() > needed)
                 {
-                    auto new_range = range;
-                    range.begin += request.min_number_of_marks;
-                    new_range.end = new_range.begin + request.min_number_of_marks;
+                    auto range_we_take = MarkRange{range.begin, range.begin + needed};
+                    part.ranges.emplace_back(range_we_take);
+                    current_mark_size += range_we_take.getNumberOfMarks();
 
-                    global_part_it->description.ranges.front() = range;
-
-                    part.ranges.emplace_back(new_range);
-                    current_mark_size += new_range.getNumberOfMarks();
-                    continue;
+                    range.begin += needed;
+                    break;
                 }
 
-                current_mark_size += global_part_it->description.ranges.front().getNumberOfMarks();
-                part.ranges.emplace_back(global_part_it->description.ranges.front());
+                part.ranges.emplace_back(range);
+                current_mark_size += range.getNumberOfMarks();
                 global_part_it->description.ranges.pop_front();
             }
         }
@@ -479,23 +557,46 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
 
 void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    if (!pimpl)
-        initialize();
+    std::lock_guard lock(mutex);
 
-    return pimpl->handleInitialAllRangesAnnouncement(announcement);
+    if (!pimpl)
+    {
+        mode = announcement.mode;
+        initialize();
+    }
+
+    return pimpl->handleInitialAllRangesAnnouncement(std::move(announcement));
 }
 
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
 {
-    if (!pimpl)
-        initialize();
+    std::lock_guard lock(mutex);
 
-    return pimpl->handleRequest(std::move(request));
+    if (!pimpl)
+    {
+        mode = request.mode;
+        initialize();
+    }
+
+    const auto replica_num = request.replica_num;
+    auto response = pimpl->handleRequest(std::move(request));
+    if (!response.finish)
+    {
+        if (replicas_used.insert(replica_num).second)
+            ProfileEvents::increment(ProfileEvents::ParallelReplicasUsedCount);
+    }
+
+    return response;
 }
 
-void ParallelReplicasReadingCoordinator::setMode(CoordinationMode mode_)
+void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica_number)
 {
-    mode = mode_;
+    std::lock_guard lock(mutex);
+
+    if (!pimpl)
+        unavailable_nodes_registered_before_initialization.push_back(replica_number);
+    else
+        pimpl->markReplicaAsUnavailable(replica_number);
 }
 
 void ParallelReplicasReadingCoordinator::initialize()
@@ -504,18 +605,32 @@ void ParallelReplicasReadingCoordinator::initialize()
     {
         case CoordinationMode::Default:
             pimpl = std::make_unique<DefaultCoordinator>(replicas_count);
-            return;
+            break;
         case CoordinationMode::WithOrder:
             pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::WithOrder>>(replicas_count);
-            return;
+            break;
         case CoordinationMode::ReverseOrder:
             pimpl = std::make_unique<InOrderCoordinator<CoordinationMode::ReverseOrder>>(replicas_count);
-            return;
+            break;
     }
+
+    if (progress_callback)
+        pimpl->setProgressCallback(std::move(progress_callback));
+
+    for (const auto replica : unavailable_nodes_registered_before_initialization)
+        pimpl->markReplicaAsUnavailable(replica);
 }
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_) : replicas_count(replicas_count_) {}
 
 ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator() = default;
+
+void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback callback)
+{
+    // store callback since pimpl can be not instantiated yet
+    progress_callback = std::move(callback);
+    if (pimpl)
+        pimpl->setProgressCallback(std::move(progress_callback));
+}
 
 }

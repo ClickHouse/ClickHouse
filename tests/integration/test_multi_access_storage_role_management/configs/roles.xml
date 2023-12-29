@@ -1,0 +1,9 @@
+<clickhouse>
+    <roles>
+        <default_role>
+            <grants>
+                <query>GRANT ALL ON *.* WITH GRANT OPTION</query>
+            </grants>
+        </default_role>
+    </roles>
+</clickhouse>

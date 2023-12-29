@@ -39,7 +39,13 @@ public:
     static ThreadStatus & get();
 
     /// Group to which belongs current thread
-    static ThreadGroupStatusPtr getGroup();
+    static ThreadGroupPtr getGroup();
+
+    /// MemoryTracker for user that owns current thread if any
+    static MemoryTracker * getUserMemoryTracker();
+
+    /// Adjust counters in MemoryTracker hierarchy if untracked_memory is not 0.
+    static void flushUntrackedMemory();
 
     /// A logs queue used by TCPHandler to pass logs to a client
     static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
@@ -69,9 +75,9 @@ public:
 
     /// You must call one of these methods when create a query child thread:
     /// Add current thread to a group associated with the thread group
-    static void attachToGroup(const ThreadGroupStatusPtr & thread_group);
+    static void attachToGroup(const ThreadGroupPtr & thread_group);
     /// Is useful for a ThreadPool tasks
-    static void attachToGroupIfDetached(const ThreadGroupStatusPtr & thread_group);
+    static void attachToGroupIfDetached(const ThreadGroupPtr & thread_group);
 
     /// Non-master threads call this method in destructor automatically
     static void detachFromGroupIfNotDetached();
@@ -80,6 +86,10 @@ public:
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
+
+    /// Returns attached query context
+    static ContextPtr getQueryContext();
+
     static std::string_view getQueryId();
 
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor

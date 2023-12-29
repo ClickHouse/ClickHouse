@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/circular_buffer.hpp>
+
 #include <Core/Names.h>
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
@@ -20,10 +22,44 @@ namespace Poco
 namespace DB
 {
 
+class StorageSystemKafkaConsumers;
+
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 class KafkaConsumer
 {
+public:
+    struct ExceptionInfo
+    {
+        String text;
+        UInt64 timestamp_usec;
+    };
+    using ExceptionsBuffer = boost::circular_buffer<ExceptionInfo>;
+
+    struct Stat // system.kafka_consumers data
+    {
+        struct Assignment
+        {
+            String topic_str;
+            Int32 partition_id;
+            Int64 current_offset;
+        };
+        using Assignments = std::vector<Assignment>;
+
+        String consumer_id;
+        Assignments assignments;
+        UInt64 last_poll_time;
+        UInt64 num_messages_read;
+        UInt64 last_commit_timestamp_usec;
+        UInt64 last_rebalance_timestamp_usec;
+        UInt64 num_commits;
+        UInt64 num_rebalance_assignments;
+        UInt64 num_rebalance_revocations;
+        KafkaConsumer::ExceptionsBuffer exceptions_buffer;
+        bool in_use;
+        std::string rdkafka_stat;
+    };
+
 public:
     KafkaConsumer(
         ConsumerPtr consumer_,
@@ -68,7 +104,19 @@ public:
     auto currentPartition() const { return current[-1].get_partition(); }
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
-    String currentPayload() const { return current[-1].get_payload(); }
+    const cppkafka::Buffer & currentPayload() const { return current[-1].get_payload(); }
+    void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace = true);
+    void setExceptionInfo(const std::string & text, bool with_stacktrace = true);
+    void setRDKafkaStat(const std::string & stat_json_string)
+    {
+        std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
+        rdkafka_stat = stat_json_string;
+    }
+    void inUse() { in_use = true; }
+    void notInUse() { in_use = false; }
+
+    // For system.kafka_consumers
+    Stat getStat() const;
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -105,12 +153,33 @@ private:
     std::optional<cppkafka::TopicPartitionList> assignment;
     const Names topics;
 
+    /// system.kafka_consumers data is retrieved asynchronously
+    ///  so we have to protect exceptions_buffer
+    mutable std::mutex exception_mutex;
+    const size_t EXCEPTIONS_DEPTH = 10;
+    ExceptionsBuffer exceptions_buffer;
+
+    std::atomic<UInt64> last_exception_timestamp_usec = 0;
+    std::atomic<UInt64> last_poll_timestamp_usec = 0;
+    std::atomic<UInt64> num_messages_read = 0;
+    std::atomic<UInt64> last_commit_timestamp_usec = 0;
+    std::atomic<UInt64> num_commits = 0;
+    std::atomic<UInt64> last_rebalance_timestamp_usec = 0;
+    std::atomic<UInt64> num_rebalance_assignments = 0;
+    std::atomic<UInt64> num_rebalance_revocations = 0;
+    std::atomic<bool> in_use = 0;
+
+    mutable std::mutex rdkafka_stat_mutex;
+    std::string rdkafka_stat;
+
     void drain();
     void cleanUnprocessed();
     void resetIfStopped();
     /// Return number of messages with an error.
     size_t filterMessageErrors();
     ReadBufferPtr getNextMessage();
+
+    std::string getMemberId() const;
 };
 
 }

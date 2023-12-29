@@ -3,6 +3,7 @@
 #include <IO/WriteBuffer.h>
 
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 
 namespace DB
 {
@@ -11,7 +12,8 @@ MergingSortedTransform::MergingSortedTransform(
     const Block & header,
     size_t num_inputs,
     const SortDescription & description_,
-    size_t max_block_size,
+    size_t max_block_size_rows,
+    size_t max_block_size_bytes,
     SortingQueueStrategy sorting_queue_strategy,
     UInt64 limit_,
     bool always_read_till_end_,
@@ -29,7 +31,8 @@ MergingSortedTransform::MergingSortedTransform(
         header,
         num_inputs,
         description_,
-        max_block_size,
+        max_block_size_rows,
+        max_block_size_bytes,
         sorting_queue_strategy,
         limit_,
         out_row_sources_buf_,

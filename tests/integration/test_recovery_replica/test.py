@@ -4,7 +4,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
-SETTINGS = "SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5, cleanup_delay_period=0, cleanup_delay_period_random_add=0"
+SETTINGS = "SETTINGS min_replicated_logs_to_keep=3, max_replicated_logs_to_keep=5, cleanup_delay_period=0, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0"
 
 
 def fill_nodes(nodes):

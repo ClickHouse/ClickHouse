@@ -1,5 +1,7 @@
 ---
 slug: /en/sql-reference/functions/uniqtheta-functions
+sidebar_position: 210
+sidebar_label: uniqTheta
 ---
 
 # uniqTheta Functions
@@ -21,7 +23,7 @@ uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 
 **Arguments**
 
--   `uniqThetaSketch` – uniqThetaSketch object.
+- `uniqThetaSketch` – uniqThetaSketch object.
 
 **Example**
 
@@ -47,7 +49,7 @@ uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 
 **Arguments**
 
--   `uniqThetaSketch` – uniqThetaSketch object.
+- `uniqThetaSketch` – uniqThetaSketch object.
 
 **Example**
 
@@ -73,7 +75,7 @@ uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 
 **Arguments**
 
--   `uniqThetaSketch` – uniqThetaSketch object.
+- `uniqThetaSketch` – uniqThetaSketch object.
 
 **Example**
 
@@ -91,4 +93,4 @@ from
 
 **See Also**
 
--   [uniqThetaSketch](../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)
+- [uniqThetaSketch](../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)

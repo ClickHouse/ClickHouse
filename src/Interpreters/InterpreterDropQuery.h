@@ -25,7 +25,7 @@ public:
     BlockIO execute() override;
 
     static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context,
-                                 const StorageID & target_table_id, bool sync, bool ignore_sync_setting = false);
+                                 const StorageID & target_table_id, bool sync, bool ignore_sync_setting = false, bool need_ddl_guard = false);
 
     bool supportsTransactions() const override;
 

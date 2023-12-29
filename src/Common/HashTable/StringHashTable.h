@@ -71,6 +71,28 @@ struct StringHashTableHash
         res = _mm_crc32_u64(res, key.c);
         return res;
     }
+#elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    size_t ALWAYS_INLINE operator()(StringKey8 key) const
+    {
+        size_t res = -1ULL;
+        res = s390x_crc32c(res, key);
+        return res;
+    }
+    size_t ALWAYS_INLINE operator()(StringKey16 key) const
+    {
+        size_t res = -1ULL;
+        res = s390x_crc32c(res, key.items[UInt128::_impl::little(0)]);
+        res = s390x_crc32c(res, key.items[UInt128::_impl::little(1)]);
+        return res;
+    }
+    size_t ALWAYS_INLINE operator()(StringKey24 key) const
+    {
+        size_t res = -1ULL;
+        res = s390x_crc32c(res, key.a);
+        res = s390x_crc32c(res, key.b);
+        res = s390x_crc32c(res, key.c);
+        return res;
+    }
 #else
     size_t ALWAYS_INLINE operator()(StringKey8 key) const
     {

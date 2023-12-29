@@ -44,21 +44,24 @@ public:
     using Entry = IConnectionPool::Entry;
 
     /** Allocates connection to work. */
+    Entry get(const ConnectionTimeouts & timeouts) override;
     Entry get(const ConnectionTimeouts & timeouts,
-              const Settings * settings,
+              const Settings & settings,
               bool force_connected) override; /// From IConnectionPool
 
-    Int64 getPriority() const override; /// From IConnectionPool
+    Priority getPriority() const override; /// From IConnectionPool
 
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
       */
     std::vector<Entry> getMany(const ConnectionTimeouts & timeouts,
-                               const Settings * settings, PoolMode pool_mode);
+                               const Settings & settings, PoolMode pool_mode,
+                               AsyncCallback async_callback = {},
+                               std::optional<bool> skip_unavailable_endpoints = std::nullopt);
 
     /// The same as getMany(), but return std::vector<TryResult>.
     std::vector<TryResult> getManyForTableFunction(const ConnectionTimeouts & timeouts,
-                                                   const Settings * settings, PoolMode pool_mode);
+                                                   const Settings & settings, PoolMode pool_mode);
 
     using Base = PoolWithFailoverBase<IConnectionPool>;
     using TryResult = Base::TryResult;
@@ -67,9 +70,11 @@ public:
     /// Delay threshold is taken from settings.
     std::vector<TryResult> getManyChecked(
             const ConnectionTimeouts & timeouts,
-            const Settings * settings,
+            const Settings & settings,
             PoolMode pool_mode,
-            const QualifiedTableName & table_to_check);
+            const QualifiedTableName & table_to_check,
+            AsyncCallback async_callback = {},
+            std::optional<bool> skip_unavailable_endpoints = std::nullopt);
 
     struct NestedPoolStatus
     {
@@ -82,7 +87,7 @@ public:
     using Status = std::vector<NestedPoolStatus>;
     Status getStatus() const;
 
-    std::vector<Base::ShuffledPool> getShuffledPools(const Settings * settings);
+    std::vector<Base::ShuffledPool> getShuffledPools(const Settings & settings);
 
     size_t getMaxErrorCup() const { return Base::max_error_cap; }
 
@@ -94,9 +99,10 @@ public:
 private:
     /// Get the values of relevant settings and call Base::getMany()
     std::vector<TryResult> getManyImpl(
-            const Settings * settings,
+            const Settings & settings,
             PoolMode pool_mode,
-            const TryGetEntryFunc & try_get_entry);
+            const TryGetEntryFunc & try_get_entry,
+            std::optional<bool> skip_unavailable_endpoints = std::nullopt);
 
     /// Try to get a connection from the pool and check that it is good.
     /// If table_to_check is not null and the check is enabled in settings, check that replication delay
@@ -105,10 +111,11 @@ private:
             IConnectionPool & pool,
             const ConnectionTimeouts & timeouts,
             std::string & fail_message,
-            const Settings * settings,
-            const QualifiedTableName * table_to_check = nullptr);
+            const Settings & settings,
+            const QualifiedTableName * table_to_check = nullptr,
+            AsyncCallback async_callback = {});
 
-    GetPriorityFunc makeGetPriorityFunc(const Settings * settings);
+    GetPriorityFunc makeGetPriorityFunc(const Settings & settings);
 
     GetPriorityForLoadBalancing get_priority_load_balancing;
 };

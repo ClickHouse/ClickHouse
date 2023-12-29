@@ -122,7 +122,7 @@ public:
             size_t size;
             readVarUInt(size, in);
 
-            static constexpr size_t max_size = 1_GiB;
+            static constexpr size_t max_size = 100_GiB;
 
             if (size == 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect size (0) in groupBitmap.");
@@ -151,10 +151,12 @@ public:
         }
         else if (BitmapKind::Bitmap == kind)
         {
-            auto size = roaring_bitmap->getSizeInBytes();
+            std::unique_ptr<RoaringBitmap> bitmap = std::make_unique<RoaringBitmap>(*roaring_bitmap);
+            bitmap->runOptimize();
+            auto size = bitmap->getSizeInBytes();
             writeVarUInt(size, out);
             std::unique_ptr<char[]> buf(new char[size]);
-            roaring_bitmap->write(buf.get());
+            bitmap->write(buf.get());
             out.write(buf.get(), size);
         }
     }

@@ -33,13 +33,14 @@ namespace ErrorCodes
 }
 
 /// In BSON all names should be valid UTF8 sequences
-static String toValidUTF8String(const String & name)
+static String toValidUTF8String(const String & name, const FormatSettings & settings)
 {
     WriteBufferFromOwnString buf;
     WriteBufferValidUTF8 validating_buf(buf);
-    writeString(name, validating_buf);
+    writeJSONString(name, validating_buf, settings);
     validating_buf.finalize();
-    return buf.str();
+    /// Return value without quotes
+    return buf.str().substr(1, buf.str().size() - 2);
 }
 
 BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
@@ -49,7 +50,7 @@ BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
     const auto & sample = getPort(PortKind::Main).getHeader();
     fields.reserve(sample.columns());
     for (const auto & field : sample.getNamesAndTypes())
-        fields.emplace_back(toValidUTF8String(field.name), field.type);
+        fields.emplace_back(toValidUTF8String(field.name, settings), field.type);
 }
 
 static void writeBSONSize(size_t size, WriteBuffer & buf)
@@ -57,7 +58,7 @@ static void writeBSONSize(size_t size, WriteBuffer & buf)
     if (size > MAX_BSON_SIZE)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Too large document/value size: {}. Maximum allowed size: {}.", size, MAX_BSON_SIZE);
 
-    writePODBinary<BSONSizeT>(BSONSizeT(size), buf);
+    writeBinaryLittleEndian(BSONSizeT(size), buf);
 }
 
 template <typename Type>
@@ -78,7 +79,7 @@ template <typename ColumnType, typename ValueType>
 static void writeBSONNumber(BSONType type, const IColumn & column, size_t row_num, const String & name, WriteBuffer & buf)
 {
     writeBSONTypeAndKeyName(type, name, buf);
-    writePODBinary<ValueType>(assert_cast<const ColumnType &>(column).getElement(row_num), buf);
+    writeBinaryLittleEndian(ValueType(assert_cast<const ColumnType &>(column).getElement(row_num)), buf);
 }
 
 template <typename StringColumnType>
@@ -108,11 +109,10 @@ static void writeBSONBigInteger(const IColumn & column, size_t row_num, const St
     writeBSONTypeAndKeyName(BSONType::BINARY, name, buf);
     writeBSONSize(sizeof(typename ColumnType::ValueType), buf);
     writeBSONType(BSONBinarySubtype::BINARY, buf);
-    auto data = assert_cast<const ColumnType &>(column).getDataAt(row_num);
-    buf.write(data.data, data.size);
+    writeBinaryLittleEndian(assert_cast<const ColumnType &>(column).getElement(row_num), buf);
 }
 
-size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name)
+size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name, const String & path, std::unordered_map<String, size_t> & nested_document_sizes)
 {
     size_t size = 1; // Field type
     size += name.size() + 1; // Field name and \0
@@ -125,6 +125,8 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Decimal32: [[fallthrough]];
         case TypeIndex::IPv4: [[fallthrough]];
+        case TypeIndex::Enum8: [[fallthrough]];
+        case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int32:
         {
             return size + sizeof(Int32);
@@ -183,7 +185,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
             auto dict_type = assert_cast<const DataTypeLowCardinality *>(data_type.get())->getDictionaryType();
             auto dict_column = lc_column.getDictionary().getNestedColumn();
             size_t index = lc_column.getIndexAt(row_num);
-            return countBSONFieldSize(*dict_column, dict_type, index, name);
+            return countBSONFieldSize(*dict_column, dict_type, index, name, path, nested_document_sizes);
         }
         case TypeIndex::Nullable:
         {
@@ -191,11 +193,11 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
             const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
             if (column_nullable.isNullAt(row_num))
                 return size; /// Null has no value, just type
-            return countBSONFieldSize(column_nullable.getNestedColumn(), nested_type, row_num, name);
+            return countBSONFieldSize(column_nullable.getNestedColumn(), nested_type, row_num, name, path, nested_document_sizes);
         }
         case TypeIndex::Array:
         {
-            size += sizeof(BSONSizeT); // Size of a document
+            size_t document_size = sizeof(BSONSizeT); // Size of a document
 
             const auto & nested_type = assert_cast<const DataTypeArray *>(data_type.get())->getNestedType();
             const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
@@ -204,39 +206,41 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
             size_t offset = offsets[row_num - 1];
             size_t array_size = offsets[row_num] - offset;
 
+            String current_path = path + "." + name;
             for (size_t i = 0; i < array_size; ++i)
-                size += countBSONFieldSize(nested_column, nested_type, offset + i, std::to_string(i)); // Add size of each value from array
+                document_size += countBSONFieldSize(nested_column, nested_type, offset + i, std::to_string(i), current_path, nested_document_sizes); // Add size of each value from array
 
-            return size + sizeof(BSON_DOCUMENT_END); // Add final \0
+            document_size += sizeof(BSON_DOCUMENT_END); // Add final \0
+            nested_document_sizes[current_path] = document_size;
+            return size + document_size;
         }
         case TypeIndex::Tuple:
         {
-            size += sizeof(BSONSizeT); // Size of a document
+            size_t document_size = sizeof(BSONSizeT); // Size of a document
 
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(data_type.get());
             const auto & nested_types = tuple_type->getElements();
-            bool have_explicit_names = tuple_type->haveExplicitNames();
             const auto & nested_names = tuple_type->getElementNames();
             const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
             const auto & nested_columns = tuple_column.getColumns();
 
+            String current_path = path + "." + name;
             for (size_t i = 0; i < nested_columns.size(); ++i)
             {
-                String key_name = have_explicit_names ? toValidUTF8String(nested_names[i]) : std::to_string(i);
-                size += countBSONFieldSize(*nested_columns[i], nested_types[i], row_num, key_name); // Add size of each value from tuple
+                String key_name = toValidUTF8String(nested_names[i], settings);
+                document_size += countBSONFieldSize(*nested_columns[i], nested_types[i], row_num, key_name, current_path, nested_document_sizes); // Add size of each value from tuple
             }
 
-            return size + sizeof(BSON_DOCUMENT_END); // Add final \0
+            document_size += sizeof(BSON_DOCUMENT_END); // Add final \0
+            nested_document_sizes[current_path] = document_size;
+            return size + document_size;
         }
         case TypeIndex::Map:
         {
-            size += sizeof(BSONSizeT); // Size of a document
+            size_t document_size = sizeof(BSONSizeT); // Size of a document
 
             const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
-            if (!isStringOrFixedString(map_type.getKeyType()))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                                "Only maps with String key type are supported in BSON, got key type: {}",
-                                map_type.getKeyType()->getName());
+            const auto & key_type = map_type.getKeyType();
             const auto & value_type = map_type.getValueType();
 
             const auto & map_column = assert_cast<const ColumnMap &>(column);
@@ -248,20 +252,26 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
             size_t offset = offsets[row_num - 1];
             size_t map_size = offsets[row_num] - offset;
 
+            WriteBufferFromOwnString buf;
+            String current_path = path + "." + name;
             for (size_t i = 0; i < map_size; ++i)
             {
-                String key = toValidUTF8String(key_column->getDataAt(offset + i).toString());
-                size += countBSONFieldSize(*value_column, value_type, offset + i, key);
+                key_type->getDefaultSerialization()->serializeText(*key_column, offset + i, buf, settings);
+                auto s = countBSONFieldSize(*value_column, value_type, offset + i, toValidUTF8String(buf.str(), settings), current_path, nested_document_sizes);
+                document_size += s;
+                buf.restart();
             }
 
-            return size + sizeof(BSON_DOCUMENT_END); // Add final \0
+            document_size += sizeof(BSON_DOCUMENT_END); // Add final \0
+            nested_document_sizes[current_path] = document_size;
+            return size + document_size;
         }
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported in BSON output format", data_type->getName());
     }
 }
 
-void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name)
+void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name, const String & path, std::unordered_map<String, size_t> & nested_document_sizes)
 {
     switch (data_type->getTypeId())
     {
@@ -275,6 +285,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             writeBSONNumber<ColumnFloat64, double>(BSONType::DOUBLE, column, row_num, name, out);
             break;
         }
+        case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             writeBSONNumber<ColumnInt8, Int32>(BSONType::INT32, column, row_num, name, out);
@@ -288,6 +299,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
                 writeBSONNumber<ColumnUInt8, Int32>(BSONType::INT32, column, row_num, name, out);
             break;
         }
+        case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
             writeBSONNumber<ColumnInt16, Int32>(BSONType::INT32, column, row_num, name, out);
@@ -394,7 +406,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             writeBSONTypeAndKeyName(BSONType::BINARY, name, out);
             writeBSONSize(sizeof(UUID), out);
             writeBSONType(BSONBinarySubtype::UUID, out);
-            writeBinary(assert_cast<const ColumnUUID &>(column).getElement(row_num), out);
+            writeBinaryLittleEndian(assert_cast<const ColumnUUID &>(column).getElement(row_num), out);
             break;
         }
         case TypeIndex::LowCardinality:
@@ -403,7 +415,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             auto dict_type = assert_cast<const DataTypeLowCardinality *>(data_type.get())->getDictionaryType();
             auto dict_column = lc_column.getDictionary().getNestedColumn();
             size_t index = lc_column.getIndexAt(row_num);
-            serializeField(*dict_column, dict_type, index, name);
+            serializeField(*dict_column, dict_type, index, name, path, nested_document_sizes);
             break;
         }
         case TypeIndex::Nullable:
@@ -411,7 +423,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             auto nested_type = removeNullable(data_type);
             const ColumnNullable & column_nullable = assert_cast<const ColumnNullable &>(column);
             if (!column_nullable.isNullAt(row_num))
-                serializeField(column_nullable.getNestedColumn(), nested_type, row_num, name);
+                serializeField(column_nullable.getNestedColumn(), nested_type, row_num, name, path, nested_document_sizes);
             else
                 writeBSONTypeAndKeyName(BSONType::NULL_VALUE, name, out);
             break;
@@ -427,15 +439,12 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
 
             writeBSONTypeAndKeyName(BSONType::ARRAY, name, out);
 
-            size_t document_size = sizeof(BSONSizeT);
-            for (size_t i = 0; i < array_size; ++i)
-                document_size += countBSONFieldSize(nested_column, nested_type, offset + i, std::to_string(i)); // Add size of each value from array
-            document_size += sizeof(BSON_DOCUMENT_END); // Add final \0
-
+            String current_path = path + "." + name;
+            size_t document_size = nested_document_sizes[current_path];
             writeBSONSize(document_size, out);
 
             for (size_t i = 0; i < array_size; ++i)
-                serializeField(nested_column, nested_type, offset + i, std::to_string(i));
+                serializeField(nested_column, nested_type, offset + i, std::to_string(i), current_path, nested_document_sizes);
 
             writeChar(BSON_DOCUMENT_END, out);
             break;
@@ -444,26 +453,19 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
         {
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(data_type.get());
             const auto & nested_types = tuple_type->getElements();
-            bool have_explicit_names = tuple_type->haveExplicitNames();
             const auto & nested_names = tuple_type->getElementNames();
             const auto & tuple_column = assert_cast<const ColumnTuple &>(column);
             const auto & nested_columns = tuple_column.getColumns();
 
-            BSONType bson_type = have_explicit_names ? BSONType::DOCUMENT : BSONType::ARRAY;
+            BSONType bson_type =  tuple_type->haveExplicitNames() ? BSONType::DOCUMENT : BSONType::ARRAY;
             writeBSONTypeAndKeyName(bson_type, name, out);
 
-            size_t document_size = sizeof(BSONSizeT);
-            for (size_t i = 0; i < nested_columns.size(); ++i)
-            {
-                String key_name = have_explicit_names ? toValidUTF8String(nested_names[i]) : std::to_string(i);
-                document_size += countBSONFieldSize(*nested_columns[i], nested_types[i], row_num, key_name); // Add size of each value from tuple
-            }
-            document_size += sizeof(BSON_DOCUMENT_END); // Add final \0
-
+            String current_path = path + "." + name;
+            size_t document_size = nested_document_sizes[current_path];
             writeBSONSize(document_size, out);
 
             for (size_t i = 0; i < nested_columns.size(); ++i)
-                serializeField(*nested_columns[i], nested_types[i], row_num, have_explicit_names ? toValidUTF8String(nested_names[i]) : std::to_string(i));
+                serializeField(*nested_columns[i], nested_types[i], row_num, toValidUTF8String(nested_names[i], settings), current_path, nested_document_sizes);
 
             writeChar(BSON_DOCUMENT_END, out);
             break;
@@ -471,10 +473,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
         case TypeIndex::Map:
         {
             const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
-            if (!isStringOrFixedString(map_type.getKeyType()))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                                "Only maps with String key type are supported in BSON, got key type: {}",
-                                map_type.getKeyType()->getName());
+            const auto & key_type = map_type.getKeyType();
             const auto & value_type = map_type.getValueType();
 
             const auto & map_column = assert_cast<const ColumnMap &>(column);
@@ -488,20 +487,16 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
 
             writeBSONTypeAndKeyName(BSONType::DOCUMENT, name, out);
 
-            size_t document_size = sizeof(BSONSizeT);
-            for (size_t i = 0; i < map_size; ++i)
-            {
-                String key = toValidUTF8String(key_column->getDataAt(offset + i).toString());
-                document_size += countBSONFieldSize(*value_column, value_type, offset + i, key);
-            }
-            document_size += sizeof(BSON_DOCUMENT_END);
-
+            String current_path = path + "." + name;
+            size_t document_size = nested_document_sizes[current_path];
             writeBSONSize(document_size, out);
 
+            WriteBufferFromOwnString buf;
             for (size_t i = 0; i < map_size; ++i)
             {
-                String key = toValidUTF8String(key_column->getDataAt(offset + i).toString());
-                serializeField(*value_column, value_type, offset + i, key);
+                key_type->getDefaultSerialization()->serializeText(*key_column, offset + i, buf, settings);
+                serializeField(*value_column, value_type, offset + i, toValidUTF8String(buf.str(), settings), current_path, nested_document_sizes);
+                buf.restart();
             }
 
             writeChar(BSON_DOCUMENT_END, out);
@@ -516,15 +511,18 @@ void BSONEachRowRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
     /// We should calculate and write document size before its content
     size_t document_size = sizeof(BSONSizeT);
+    /// Remember calculated sizes for nested documents (map document path -> size), so we won't need
+    /// to recalculate it while serializing.
+    std::unordered_map<String, size_t> nested_document_sizes;
     for (size_t i = 0; i != columns.size(); ++i)
-        document_size += countBSONFieldSize(*columns[i], fields[i].type, row_num, fields[i].name);
+        document_size += countBSONFieldSize(*columns[i], fields[i].type, row_num, fields[i].name, "$", nested_document_sizes);
     document_size += sizeof(BSON_DOCUMENT_END);
 
     size_t document_start = out.count();
     writeBSONSize(document_size, out);
 
     for (size_t i = 0; i != columns.size(); ++i)
-        serializeField(*columns[i], fields[i].type, row_num, fields[i].name);
+        serializeField(*columns[i], fields[i].type, row_num, fields[i].name, "$", nested_document_sizes);
 
     writeChar(BSON_DOCUMENT_END, out);
 

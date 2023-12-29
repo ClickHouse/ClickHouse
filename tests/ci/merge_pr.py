@@ -129,7 +129,7 @@ class Reviews:
         logging.info("The PR is changed at %s", last_changed.isoformat())
 
         approved_at = max(review.submitted_at for review in approved.values())
-        if approved_at == datetime.fromtimestamp(0):
+        if approved_at.timestamp() == 0:
             logging.info(
                 "Unable to get `datetime.fromtimestamp(0)`, "
                 "here's debug info about reviews: %s",
@@ -138,7 +138,7 @@ class Reviews:
         else:
             logging.info("The PR is approved at %s", approved_at.isoformat())
 
-        if approved_at < last_changed:
+        if approved_at.timestamp() < last_changed.timestamp():
             logging.info(
                 "There are changes done at %s after approval at %s",
                 last_changed.isoformat(),
@@ -154,7 +154,7 @@ def get_workflows_for_head(repo: Repository, head_sha: str) -> List[WorkflowRun]
     return list(
         PaginatedList(
             WorkflowRun,
-            repo._requester,  # type:ignore # pylint:disable=protected-access
+            repo._requester,  # pylint:disable=protected-access
             f"{repo.url}/actions/runs",
             {"head_sha": head_sha},
             list_item="workflow_runs",
@@ -230,8 +230,8 @@ def main():
     # An ugly and not nice fix to patch the wrong organization URL,
     # see https://github.com/PyGithub/PyGithub/issues/2395#issuecomment-1378629710
     # pylint: disable=protected-access
-    repo.organization._url.value = repo.organization.url.replace(  # type: ignore
-        "/users/", "/orgs/", 1
+    repo.organization._url = repo._makeStringAttribute(
+        repo.organization.url.replace("/users/", "/orgs/", 1)
     )
     # pylint: enable=protected-access
     pr = repo.get_pull(args.pr)
@@ -246,6 +246,12 @@ def main():
 
     if args.check_running_workflows:
         workflows = get_workflows_for_head(repo, pr.head.sha)
+        logging.info(
+            "The PR #%s has following workflows:\n%s",
+            pr.number,
+            "\n".join(f"{wf.html_url}: status is {wf.status}" for wf in workflows),
+        )
+
         workflows_in_progress = [wf for wf in workflows if wf.status != "completed"]
         # At most one workflow in progress is fine. We check that there no
         # cases like, e.g. PullRequestCI and DocksCheck in progress at once

@@ -14,12 +14,12 @@ EXPLAIN SYNTAX SELECT tupleElement(t1, 2) FROM t_tuple_element;
 SELECT tupleElement(t1, 'a') FROM t_tuple_element;
 EXPLAIN SYNTAX SELECT tupleElement(t1, 'a') FROM t_tuple_element;
 
-SELECT tupleElement(number, 1) FROM numbers(1); -- { serverError 43 }
-SELECT tupleElement(t1) FROM t_tuple_element; -- { serverError 42 }
-SELECT tupleElement(t1, 'b') FROM t_tuple_element; -- { serverError 10, 47 }
-SELECT tupleElement(t1, 0) FROM t_tuple_element; -- { serverError 127 }
-SELECT tupleElement(t1, 3) FROM t_tuple_element; -- { serverError 127 }
-SELECT tupleElement(t1, materialize('a')) FROM t_tuple_element; -- { serverError 43 }
+SELECT tupleElement(number, 1) FROM numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tupleElement(t1) FROM t_tuple_element; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tupleElement(t1, 'b') FROM t_tuple_element; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK, UNKNOWN_IDENTIFIER }
+SELECT tupleElement(t1, 0) FROM t_tuple_element; -- { serverError ILLEGAL_INDEX, NOT_FOUND_COLUMN_IN_BLOCK }
+SELECT tupleElement(t1, 3) FROM t_tuple_element; -- { serverError ILLEGAL_INDEX, NOT_FOUND_COLUMN_IN_BLOCK }
+SELECT tupleElement(t1, materialize('a')) FROM t_tuple_element; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT t2.1 FROM t_tuple_element;
 EXPLAIN SYNTAX SELECT t2.1 FROM t_tuple_element;
@@ -27,11 +27,11 @@ EXPLAIN SYNTAX SELECT t2.1 FROM t_tuple_element;
 SELECT tupleElement(t2, 1) FROM t_tuple_element;
 EXPLAIN SYNTAX SELECT tupleElement(t2, 1) FROM t_tuple_element;
 
-SELECT tupleElement(t2) FROM t_tuple_element; -- { serverError 42 }
-SELECT tupleElement(t2, 'a') FROM t_tuple_element; -- { serverError 10, 47 }
-SELECT tupleElement(t2, 0) FROM t_tuple_element; -- { serverError 127 }
-SELECT tupleElement(t2, 3) FROM t_tuple_element; -- { serverError 127 }
-SELECT tupleElement(t2, materialize(1)) FROM t_tuple_element; -- { serverError 43 }
+SELECT tupleElement(t2) FROM t_tuple_element; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tupleElement(t2, 'a') FROM t_tuple_element; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK, UNKNOWN_IDENTIFIER }
+SELECT tupleElement(t2, 0) FROM t_tuple_element; -- { serverError ILLEGAL_INDEX, NOT_FOUND_COLUMN_IN_BLOCK }
+SELECT tupleElement(t2, 3) FROM t_tuple_element; -- { serverError ILLEGAL_INDEX, NOT_FOUND_COLUMN_IN_BLOCK }
+SELECT tupleElement(t2, materialize(1)) FROM t_tuple_element; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE t_tuple_element;
 

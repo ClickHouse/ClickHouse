@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
+#include <Storages/System/StorageSystemAsyncLoader.h>
 #include <Storages/System/StorageSystemBackups.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
 #include <Storages/System/StorageSystemCollations.h>
@@ -36,6 +37,7 @@
 #include <Storages/System/StorageSystemPartsColumns.h>
 #include <Storages/System/StorageSystemProjectionPartsColumns.h>
 #include <Storages/System/StorageSystemProcesses.h>
+#include <Storages/System/StorageSystemUserProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
@@ -80,6 +82,20 @@
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/System/StorageSystemDroppedTables.h>
+#include <Storages/System/StorageSystemZooKeeperConnection.h>
+#include <Storages/System/StorageSystemJemalloc.h>
+#include <Storages/System/StorageSystemScheduler.h>
+#include <Storages/System/StorageSystemS3Queue.h>
+#include <Storages/System/StorageSystemDashboards.h>
+#include <Storages/System/StorageSystemViewRefreshes.h>
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+#include <Storages/System/StorageSystemSymbols.h>
+#endif
+
+#if USE_RDKAFKA
+#include <Storages/System/StorageSystemKafkaConsumers.h>
+#endif
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -87,7 +103,6 @@
 
 #if USE_ROCKSDB
 #include <Storages/RocksDB/StorageSystemRocksDB.h>
-#include <Storages/System/StorageSystemMergeTreeMetadataCache.h>
 #endif
 
 
@@ -142,12 +157,18 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemBackups>(context, system_database, "backups", "Contains a list of all BACKUP or RESTORE operations with their current states and other propertis. Note, that table is not persistent and it shows only operations executed after the last server restart.");
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache", "Contains information about all cached file schemas.");
     attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables", "Contains a list of tables which were dropped from Atomic databases but not completely removed yet.");
+    attach<StorageSystemScheduler>(context, system_database, "scheduler", "Contains information and status for scheduling nodes residing on the local server.");
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    attach<StorageSystemSymbols>(context, system_database, "symbols", "Contains information for introspection of ClickHouse binary. This table is only useful for C++ experts and ClickHouse engineers.");
+#endif
+#if USE_RDKAFKA
+    attach<StorageSystemKafkaConsumers>(context, system_database, "kafka_consumers", "Contains information about Kafka consumers. Applicable for Kafka table engine (native ClickHouse integration).");
+#endif
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(context, system_database, "stack_trace", "Allows to obtain an unsymbolized stacktrace from all the threads of the server process.");
 #endif
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb", "Contains a list of metrics exposed from embedded RocksDB.");
-    attach<StorageSystemMergeTreeMetadataCache>(context, system_database, "merge_tree_metadata_cache", "Allows to look inside metadata cache stored in RocksDB to check its consistency.");
 #endif
 }
 
@@ -184,9 +205,18 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths", "Contains a mapping from a filename on local filesystem to a blob name inside object storage.");
     attach<StorageSystemCertificates>(context, system_database, "certificates", "Contains information about available certificates and their sources.");
     attach<StorageSystemNamedCollections>(context, system_database, "named_collections", "Contains a list of all named collections which were created via SQL query or parsed from configuration file.");
+    attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", "Contains information and status for recent asynchronous jobs (e.g. for tables loading). The table contains a row for every job.");
+    attach<StorageSystemUserProcesses>(context, system_database, "user_processes", "This system table can be used to get overview of memory usage and ProfileEvents of users.");
+    attach<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins", "Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas. These statistics might not be absolutely accurate because of thread local caching in jemalloc.");
+    attach<StorageSystemS3Queue>(context, system_database, "s3queue", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
+    attach<StorageSystemDashboards>(context, system_database, "dashboards", "Contains queries used by /dashboard page accessible though HTTP interface. This table can be useful for monitoring and troubleshooting. The table contains a row for every chart in a dashboard.");
+    attach<StorageSystemViewRefreshes>(context, system_database, "view_refreshes", "Lists all Refreshable Materialized Views of current server.");
 
     if (has_zookeeper)
+    {
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper", "Exposes data from the [Zoo]Keeper cluster defined in the config. Allow to get the list of children for a particular node or read the value written inside it.");
+        attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection", "Shows the information about current connections to [Zoo]Keeper (including auxiliary [ZooKeepers)");
+    }
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");

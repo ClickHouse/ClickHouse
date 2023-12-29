@@ -47,7 +47,7 @@ def make_auth(instance):
     instance_ip = cluster.get_instance_ip(instance.name)
 
     client.exec_in_container(
-        (["bash", "-c", f"echo '{instance_ip} {instance.hostname}' >> /etc/hosts"])
+        ["bash", "-c", f"echo '{instance_ip} {instance.hostname}' >> /etc/hosts"]
     )
 
     client.exec_in_container(

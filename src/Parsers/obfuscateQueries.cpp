@@ -42,6 +42,7 @@ const std::unordered_set<std::string_view> keywords
     "<>",
     "=",
     "==",
+    "<=>",
     ">",
     ">=",
     "?",
@@ -1094,7 +1095,11 @@ void obfuscateIdentifier(std::string_view src, WriteBuffer & result, WordMap & o
 }
 
 
-void obfuscateLiteral(std::string_view src, WriteBuffer & result, SipHash hash_func)
+void obfuscateLiteral(
+    std::string_view src,
+    WriteBuffer & result,
+    SipHash hash_func,
+    KnownIdentifierFunc known_identifier_func)
 {
     const char * src_pos = src.data();
     const char * src_end = src_pos + src.size();
@@ -1207,15 +1212,15 @@ void obfuscateLiteral(std::string_view src, WriteBuffer & result, SipHash hash_f
         }
         else if (isAlphaASCII(src_pos[0]))
         {
-            /// Alphabetial characters
+            /// Alphabetical characters
 
             const char * alpha_end = src_pos + 1;
             while (alpha_end < src_end && isAlphaASCII(*alpha_end))
                 ++alpha_end;
 
-            String wordcopy(src_pos, alpha_end);
-            Poco::toUpperInPlace(wordcopy);
-            if (keep_words.contains(wordcopy))
+            String word(src_pos, alpha_end);
+            String wordcopy = Poco::toUpper(word);
+            if (keep_words.contains(wordcopy) || known_identifier_func(word))
             {
                 result.write(src_pos, alpha_end - src_pos);
                 src_pos = alpha_end;
@@ -1336,14 +1341,14 @@ void obfuscateQueries(
         }
         else if (token.type == TokenType::Number)
         {
-            obfuscateLiteral(whole_token, result, hash_func);
+            obfuscateLiteral(whole_token, result, hash_func, known_identifier_func);
         }
         else if (token.type == TokenType::StringLiteral)
         {
             assert(token.size() >= 2);
 
             result.write(*token.begin);
-            obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func);
+            obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func, known_identifier_func);
             result.write(token.end[-1]);
         }
         else if (token.type == TokenType::Comment)
@@ -1359,4 +1364,3 @@ void obfuscateQueries(
 }
 
 }
-

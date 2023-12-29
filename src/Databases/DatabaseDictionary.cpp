@@ -105,7 +105,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
 
         auto names_and_types = StorageDictionary::getNamesAndTypes(ExternalDictionariesLoader::getDictionaryStructure(*load_result.config));
         buffer << "CREATE TABLE " << backQuoteIfNeed(getDatabaseName()) << '.' << backQuoteIfNeed(table_name) << " (";
-        buffer << StorageDictionary::generateNamesAndTypesDescription(names_and_types);
+        buffer << names_and_types.toNamesAndTypesDescription();
         buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";
     }
 

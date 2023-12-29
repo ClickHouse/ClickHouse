@@ -14,7 +14,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <base/scope_guard.h>
 
 
@@ -86,7 +86,7 @@ private:
     std::condition_variable delayed_tasks_cond_var;
     std::mutex delayed_tasks_mutex;
     /// Thread waiting for next delayed task.
-    ThreadFromGlobalPoolNoTracingContextPropagation delayed_thread;
+    std::unique_ptr<ThreadFromGlobalPoolNoTracingContextPropagation> delayed_thread;
     /// Tasks ordered by scheduled time.
     DelayedTasks delayed_tasks;
 
@@ -106,8 +106,10 @@ public:
     bool schedule();
 
     /// Schedule for execution after specified delay.
-    /// If overwrite is set then the task will be re-scheduled (if it was already scheduled, i.e. delayed == true).
-    bool scheduleAfter(size_t milliseconds, bool overwrite = true);
+    /// If overwrite is set, and the task is already scheduled with a delay (delayed == true),
+    /// the task will be re-scheduled with the new delay.
+    /// If only_if_scheduled is set, don't do anything unless the task is already scheduled with a delay.
+    bool scheduleAfter(size_t milliseconds, bool overwrite = true, bool only_if_scheduled = false);
 
     /// Further attempts to schedule become no-op. Will wait till the end of the current execution of the task.
     void deactivate();

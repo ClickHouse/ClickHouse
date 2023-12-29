@@ -25,7 +25,7 @@ std::pair<String, DiskPtr> prepareForLocalMetadata(
     /// where the metadata files are stored locally
     auto metadata_path = getDiskMetadataPath(name, config, config_prefix, context);
     fs::create_directories(metadata_path);
-    auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, 0);
+    auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, 0, config, config_prefix);
     return std::make_pair(metadata_path, metadata_disk);
 }
 

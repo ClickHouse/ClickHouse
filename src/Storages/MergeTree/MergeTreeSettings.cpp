@@ -141,6 +141,18 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             background_pool_tasks);
     }
 
+    if (number_of_free_entries_in_pool_to_execute_optimize_entire_partition > background_pool_tasks)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' setting"
+            " ({}) (default values are defined in <merge_tree> section of config.xml"
+            " or the value can be specified per table in SETTINGS section of CREATE TABLE query)"
+            " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
+            " ({}) (the value is defined in users.xml for default profile)."
+            " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
+            number_of_free_entries_in_pool_to_execute_optimize_entire_partition,
+            background_pool_tasks);
+    }
+
     // Zero index_granularity is nonsensical.
     if (index_granularity < 1)
     {
@@ -175,5 +187,39 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             min_bytes_to_rebalance_partition_over_jbod,
             max_bytes_to_merge_at_max_space_in_pool / 1024);
     }
+
+    if (max_cleanup_delay_period < cleanup_delay_period)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of max_cleanup_delay_period setting ({}) must be greater than the value of cleanup_delay_period setting ({})",
+            max_cleanup_delay_period, cleanup_delay_period);
+    }
+
+    if (max_merge_selecting_sleep_ms < merge_selecting_sleep_ms)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of max_merge_selecting_sleep_ms setting ({}) must be greater than the value of merge_selecting_sleep_ms setting ({})",
+            max_merge_selecting_sleep_ms, merge_selecting_sleep_ms);
+    }
+
+    if (merge_selecting_sleep_slowdown_factor < 1.f)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
+            merge_selecting_sleep_slowdown_factor);
+    }
 }
+
+
+std::vector<String> MergeTreeSettings::getAllRegisteredNames() const
+{
+    std::vector<String> all_settings;
+    for (const auto & setting_field : all())
+        all_settings.push_back(setting_field.getName());
+    return all_settings;
+}
+
 }

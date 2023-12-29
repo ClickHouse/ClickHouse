@@ -13,6 +13,7 @@
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/SystemLog.h>
 #include <base/types.h>
+#include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {

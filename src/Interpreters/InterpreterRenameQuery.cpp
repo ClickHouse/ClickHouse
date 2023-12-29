@@ -136,15 +136,24 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 std::tie(ref_dependencies, loading_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps);
             }
 
-            database->renameTable(
-                getContext(),
-                elem.from_table_name,
-                *database_catalog.getDatabase(elem.to_database_name),
-                elem.to_table_name,
-                exchange_tables,
-                rename.dictionary);
+            try
+            {
+                database->renameTable(
+                    getContext(),
+                    elem.from_table_name,
+                    *database_catalog.getDatabase(elem.to_database_name),
+                    elem.to_table_name,
+                    exchange_tables,
+                    rename.dictionary);
 
-            DatabaseCatalog::instance().addDependencies(to_table_id, ref_dependencies, loading_dependencies);
+                DatabaseCatalog::instance().addDependencies(to_table_id, ref_dependencies, loading_dependencies);
+            }
+            catch (...)
+            {
+                /// Restore dependencies if RENAME fails
+                DatabaseCatalog::instance().addDependencies(from_table_id, ref_dependencies, loading_dependencies);
+                throw;
+            }
         }
     }
 
@@ -184,7 +193,7 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
             required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.getDatabase(), elem.to.getTable());
             if (rename.exchange)
             {
-                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT , elem.from.getDatabase(), elem.from.getTable());
+                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.from.getDatabase(), elem.from.getTable());
                 required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.getDatabase(), elem.to.getTable());
             }
         }

@@ -1,6 +1,8 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <boost/algorithm/string.hpp>
@@ -54,13 +56,30 @@ void checkFinalInferredType(
 
     if (settings.schema_inference_make_columns_nullable)
         type = makeNullableRecursively(type);
+    /// In case when data for some column could contain nulls and regular values,
+    /// resulting inferred type is Nullable.
+    /// If input_format_null_as_default is enabled, we should remove Nullable type.
+    else if (settings.null_as_default)
+        type = removeNullable(type);
+}
+
+void ISchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
+{
+    DataTypes types = {type, new_type};
+    auto least_supertype = tryGetLeastSupertype(types);
+    if (least_supertype)
+        type = new_type = least_supertype;
 }
 
 IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_)
-    : ISchemaReader(in_), default_type(default_type_), hints_str(format_settings_.schema_inference_hints), format_settings(format_settings_)
+    : ISchemaReader(in_)
+    , max_rows_to_read(format_settings_.max_rows_to_read_for_schema_inference)
+    , max_bytes_to_read(format_settings_.max_bytes_to_read_for_schema_inference)
+    , default_type(default_type_)
+    , hints_str(format_settings_.schema_inference_hints)
+    , format_settings(format_settings_)
 {
 }
-
 
 void IIRowSchemaReader::setContext(ContextPtr & context)
 {
@@ -74,11 +93,6 @@ void IIRowSchemaReader::setContext(ContextPtr & context)
     {
         LOG_WARNING(&Poco::Logger::get("IIRowSchemaReader"), "Couldn't parse schema inference hints: {}. This setting will be ignored", hints_parsing_error);
     }
-}
-
-void IIRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -99,27 +113,30 @@ IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & form
 
 NamesAndTypesList IRowSchemaReader::readSchema()
 {
-    if (max_rows_to_read == 0)
+    if (max_rows_to_read == 0 || max_bytes_to_read == 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot read rows to determine the schema, the maximum number of rows to read is set to 0. "
-            "Most likely setting input_format_max_rows_to_read_for_schema_inference is set to 0");
+            "Cannot read rows to determine the schema, the maximum number of rows (or bytes) to read is set to 0. "
+            "Most likely setting input_format_max_rows_to_read_for_schema_inference or input_format_max_bytes_to_read_for_schema_inference is set to 0");
 
-    DataTypes data_types = readRowAndGetDataTypes();
+    auto data_types_maybe = readRowAndGetDataTypes();
 
     /// Check that we read at list one column.
-    if (data_types.empty())
+    if (!data_types_maybe)
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
 
+    DataTypes data_types = std::move(*data_types_maybe);
+
     /// If column names weren't set, use default names 'c1', 'c2', ...
-    if (column_names.empty())
+    bool use_default_column_names = column_names.empty();
+    if (use_default_column_names)
     {
         column_names.reserve(data_types.size());
         for (size_t i = 0; i != data_types.size(); ++i)
             column_names.push_back("c" + std::to_string(i + 1));
     }
     /// If column names were set, check that the number of names match the number of types.
-    else if (column_names.size() != data_types.size())
+    else if (column_names.size() != data_types.size() && !allowVariableNumberOfColumns())
     {
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -127,6 +144,9 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     }
     else
     {
+        if (column_names.size() != data_types.size())
+            data_types.resize(column_names.size());
+
         std::unordered_set<std::string_view> names_set;
         for (const auto & name : column_names)
         {
@@ -143,15 +163,41 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             data_types[i] = hint_it->second;
     }
 
-    for (rows_read = 1; rows_read < max_rows_to_read; ++rows_read)
+    for (rows_read = 1; rows_read < max_rows_to_read && in.count() < max_bytes_to_read; ++rows_read)
     {
-        DataTypes new_data_types = readRowAndGetDataTypes();
-        if (new_data_types.empty())
+        auto new_data_types_maybe = readRowAndGetDataTypes();
+        if (!new_data_types_maybe)
             /// We reached eof.
             break;
 
+        DataTypes new_data_types = std::move(*new_data_types_maybe);
+
         if (new_data_types.size() != data_types.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Rows have different amount of values");
+        {
+            if (!allowVariableNumberOfColumns())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Rows have different amount of values");
+
+            if (use_default_column_names)
+            {
+                /// Current row contains new columns, add new default names.
+                if (new_data_types.size() > data_types.size())
+                {
+                    for (size_t i = data_types.size(); i < new_data_types.size(); ++i)
+                        column_names.push_back("c" + std::to_string(i + 1));
+                    data_types.resize(new_data_types.size());
+                }
+                /// Current row contain less columns than previous rows.
+                else
+                {
+                    new_data_types.resize(data_types.size());
+                }
+            }
+            /// If names were explicitly set, ignore all extra columns.
+            else
+            {
+                new_data_types.resize(column_names.size());
+            }
+        }
 
         for (field_index = 0; field_index != data_types.size(); ++field_index)
         {
@@ -220,11 +266,11 @@ IRowWithNamesSchemaReader::IRowWithNamesSchemaReader(ReadBuffer & in_, const For
 
 NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
 {
-    if (max_rows_to_read == 0)
+    if (max_rows_to_read == 0 || max_bytes_to_read == 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot read rows to determine the schema, the maximum number of rows to read is set to 0. "
-            "Most likely setting input_format_max_rows_to_read_for_schema_inference is set to 0");
+            "Cannot read rows to determine the schema, the maximum number of rows (or bytes) to read is set to 0. "
+            "Most likely setting input_format_max_rows_to_read_for_schema_inference or input_format_max_bytes_to_read_for_schema_inference is set to 0");
 
     bool eof = false;
     auto names_and_types = readRowAndGetNamesAndDataTypes(eof);
@@ -245,7 +291,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         names_order.push_back(name);
     }
 
-    for (rows_read = 1; rows_read < max_rows_to_read; ++rows_read)
+    for (rows_read = 1; rows_read < max_rows_to_read && in.count() < max_bytes_to_read; ++rows_read)
     {
         auto new_names_and_types = readRowAndGetNamesAndDataTypes(eof);
         if (eof)

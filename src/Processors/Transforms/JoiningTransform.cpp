@@ -189,7 +189,6 @@ void JoiningTransform::transform(Chunk & chunk)
     }
     else
         block = readExecute(chunk);
-
     auto num_rows = block.rows();
     chunk.setColumns(block.getColumns(), num_rows);
 }
@@ -305,14 +304,17 @@ void FillingRightJoinSideTransform::work()
     if (for_totals)
         join->setTotals(block);
     else
-        stop_reading = !join->addJoinedBlock(block);
+        stop_reading = !join->addBlockToJoin(block);
 
     set_totals = for_totals;
 }
 
 
-DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(Block output_header)
-    : IProcessor(InputPorts{Block()}, OutputPorts{output_header})
+DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
+    Block output_header_,
+    NonJoinedStreamBuilder non_joined_stream_builder_)
+    : IProcessor(InputPorts{Block()}, OutputPorts{output_header_})
+    , non_joined_stream_builder(std::move(non_joined_stream_builder_))
 {
 }
 
@@ -365,6 +367,7 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
 
         if (!data.chunk.hasChunkInfo())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have chunk info");
+
         task = std::dynamic_pointer_cast<const DelayedBlocksTask>(data.chunk.getChunkInfo());
     }
     else
@@ -372,7 +375,8 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
         input.setNotNeeded();
     }
 
-    if (task->finished)
+    // When delayed_blocks is nullptr, it means that all buckets have been joined.
+    if (!task->delayed_blocks)
     {
         input.close();
         output.finish();
@@ -387,17 +391,51 @@ void DelayedJoinedBlocksWorkerTransform::work()
     if (!task)
         return;
 
-    Block block = task->delayed_blocks->next();
-
+    Block block;
+    /// All joined and non-joined rows from left stream are emitted, only right non-joined rows are left
+    if (!task->delayed_blocks->isFinished())
+    {
+        block = task->delayed_blocks->next();
+        if (!block)
+            block = nextNonJoinedBlock();
+    }
+    else
+    {
+        block = nextNonJoinedBlock();
+    }
     if (!block)
     {
-        task.reset();
+        resetTask();
         return;
     }
 
     // Add block to the output
     auto rows = block.rows();
     output_chunk.setColumns(block.getColumns(), rows);
+}
+
+void DelayedJoinedBlocksWorkerTransform::resetTask()
+{
+    task.reset();
+    non_joined_delayed_stream = nullptr;
+}
+
+Block DelayedJoinedBlocksWorkerTransform::nextNonJoinedBlock()
+{
+    // Before read from non-joined stream, all blocks in left file reader must have been joined.
+    // For example, in HashJoin, it may return invalid mismatch rows from non-joined stream before
+    // the all blocks in left file reader have been finished, since the used flags are incomplete.
+    // To make only one processor could read from non-joined stream seems be a easy way.
+    if (!non_joined_delayed_stream && task && task->left_delayed_stream_finish_counter->isLast())
+    {
+        non_joined_delayed_stream = non_joined_stream_builder();
+    }
+
+    if (non_joined_delayed_stream)
+    {
+        return non_joined_delayed_stream->next();
+    }
+    return {};
 }
 
 DelayedJoinedBlocksTransform::DelayedJoinedBlocksTransform(size_t num_streams, JoinPtr join_)
@@ -433,6 +471,9 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 
     if (finished)
     {
+        // Since have memory limit, cannot handle all buckets parallelly by different
+        // DelayedJoinedBlocksWorkerTransform. So send the same task to all outputs.
+        // Wait for all DelayedJoinedBlocksWorkerTransform be idle before getting next bucket.
         for (auto & output : outputs)
         {
             if (output.isFinished())
@@ -448,10 +489,14 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 
     if (delayed_blocks)
     {
+        // This counter is used to ensure that only the last DelayedJoinedBlocksWorkerTransform
+        // could read right non-joined blocks from the join.
+        auto left_delayed_stream_finished_counter = std::make_shared<JoiningTransform::FinishCounter>(outputs.size());
         for (auto & output : outputs)
         {
             Chunk chunk;
-            chunk.setChunkInfo(std::make_shared<DelayedBlocksTask>(delayed_blocks));
+            auto task = std::make_shared<DelayedBlocksTask>(delayed_blocks, left_delayed_stream_finished_counter);
+            chunk.setChunkInfo(task);
             output.push(std::move(chunk));
         }
         delayed_blocks = nullptr;

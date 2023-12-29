@@ -22,7 +22,7 @@ The steps below will easily work on a local install of ClickHouse too. The only 
 
 ## Step-by-step instructions
 
-1. Let's see what the data looks like. The `s3cluster` table function returns a table, so we can `DESCRIBE` the reult:
+1. Let's see what the data looks like. The `s3cluster` table function returns a table, so we can `DESCRIBE` the result:
 
 ```sql
 DESCRIBE s3Cluster(
@@ -122,17 +122,10 @@ SELECT
     super_titles,
     ifNull(uploader_badges, '') AS uploader_badges,
     ifNull(video_badges, '') AS video_badges
-FROM s3Cluster(
-    'default',
+FROM s3(
     'https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst',
     'JSONLines'
 )
-SETTINGS
-   max_download_threads = 24,
-   max_insert_threads = 64,
-   max_insert_block_size = 100000000,
-   min_insert_block_size_rows = 100000000,
-   min_insert_block_size_bytes = 500000000;
 ```
 
 Some comments about our `INSERT` command:
@@ -140,7 +133,6 @@ Some comments about our `INSERT` command:
 - The `parseDateTimeBestEffortUSOrZero` function is handy when the incoming date fields may not be in the proper format. If `fetch_date` does not get parsed properly, it will be set to `0`
 - The `upload_date` column contains valid dates, but it also contains strings like "4 hours ago" - which is certainly not a valid date. We decided to store the original value in `upload_date_str` and attempt to parse it with `toDate(parseDateTimeBestEffortUSOrZero(upload_date::String))`. If the parsing fails we just get `0`
 - We used `ifNull` to avoid getting `NULL` values in our table. If an incoming value is `NULL`, the `ifNull` function is setting the value to an empty string
-- It takes a long time to download the data, so we added a `SETTINGS` clause to spread out the work over more threads while making sure the block sizes stayed fairly large
 
 4. Open a new tab in the SQL Console of ClickHouse Cloud (or a new `clickhouse-client` window) and watch the count increase. It will take a while to insert 4.56B rows, depending on your server resources. (Without any tweaking of settings, it takes about 4.5 hours.)
 
@@ -330,7 +322,7 @@ ORDER BY month ASC;
 A spike of uploaders [around covid is noticeable](https://www.theverge.com/2020/3/27/21197642/youtube-with-me-style-videos-views-coronavirus-cook-workout-study-home-beauty).
 
 
-### More subtitiles over time and when
+### More subtitles over time and when
 
 With advances in speech recognition, it’s easier than ever to create subtitles for video with youtube adding auto-captioning in late 2009 - was the jump then?
 

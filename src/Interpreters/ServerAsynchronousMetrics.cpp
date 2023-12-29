@@ -6,6 +6,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 
 #include <Databases/IDatabase.h>
@@ -14,7 +15,6 @@
 #include <IO/MMappedFileCache.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MarkCache.h>
@@ -23,6 +23,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
+}
 
 namespace
 {
@@ -49,22 +54,32 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     int update_period_seconds,
     int heavy_metrics_update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
-    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
-    , WithContext(global_context_)
+    : WithContext(global_context_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
-{}
+{
+    /// sanity check
+    if (update_period_seconds == 0 || heavy_metrics_update_period_seconds == 0)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting asynchronous_metrics_update_period_s and asynchronous_heavy_metrics_update_period_s must not be zero");
+}
+
+ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
+{
+    /// NOTE: stop() from base class is not enough, since this leads to leak on vptr
+    stop();
+}
 
 void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time)
 {
     if (auto mark_cache = getContext()->getMarkCache())
     {
-        new_values["MarkCacheBytes"] = { mark_cache->weight(), "Total size of mark cache in bytes" };
+        new_values["MarkCacheBytes"] = { mark_cache->sizeInBytes(), "Total size of mark cache in bytes" };
         new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
     }
 
     if (auto uncompressed_cache = getContext()->getUncompressedCache())
     {
-        new_values["UncompressedCacheBytes"] = { uncompressed_cache->weight(),
+        new_values["UncompressedCacheBytes"] = { uncompressed_cache->sizeInBytes(),
             "Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided." };
         new_values["UncompressedCacheCells"] = { uncompressed_cache->count(),
             "Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided." };
@@ -72,13 +87,13 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
 
     if (auto index_mark_cache = getContext()->getIndexMarkCache())
     {
-        new_values["IndexMarkCacheBytes"] = { index_mark_cache->weight(), "Total size of mark cache for secondary indices in bytes." };
+        new_values["IndexMarkCacheBytes"] = { index_mark_cache->sizeInBytes(), "Total size of mark cache for secondary indices in bytes." };
         new_values["IndexMarkCacheFiles"] = { index_mark_cache->count(), "Total number of mark files cached in the mark cache for secondary indices." };
     }
 
     if (auto index_uncompressed_cache = getContext()->getIndexUncompressedCache())
     {
-        new_values["IndexUncompressedCacheBytes"] = { index_uncompressed_cache->weight(),
+        new_values["IndexUncompressedCacheBytes"] = { index_uncompressed_cache->sizeInBytes(),
             "Total size of uncompressed cache in bytes for secondary indices. Uncompressed cache does not usually improve the performance and should be mostly avoided." };
         new_values["IndexUncompressedCacheCells"] = { index_uncompressed_cache->count(),
             "Total number of entries in the uncompressed cache for secondary indices. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided." };
@@ -90,6 +105,12 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             "The number of files opened with `mmap` (mapped in memory)."
             " This is used for queries with the setting `local_filesystem_read_method` set to  `mmap`."
             " The files opened with `mmap` are kept in the cache to avoid costly TLB flushes."};
+    }
+
+    if (auto query_cache = getContext()->getQueryCache())
+    {
+        new_values["QueryCacheBytes"] = { query_cache->sizeInBytes(), "Total size of the query cache in bytes." };
+        new_values["QueryCacheEntries"] = { query_cache->count(), "Total number of entries in the query cache." };
     }
 
     {
@@ -109,18 +130,10 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
     }
 
-#if USE_ROCKSDB
-    if (auto metadata_cache = getContext()->tryGetMergeTreeMetadataCache())
-    {
-        new_values["MergeTreeMetadataCacheSize"] = { metadata_cache->getEstimateNumKeys(),
-            "The size of the metadata cache for tables. This cache is experimental and not used in production." };
-    }
-#endif
-
 #if USE_EMBEDDED_COMPILER
     if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
     {
-        new_values["CompiledExpressionCacheBytes"] = { compiled_expression_cache->weight(),
+        new_values["CompiledExpressionCacheBytes"] = { compiled_expression_cache->sizeInBytes(),
             "Total bytes used for the cache of JIT-compiled code." };
         new_values["CompiledExpressionCacheCount"] = { compiled_expression_cache->count(),
             "Total entries in the cache of JIT-compiled code." };
@@ -191,14 +204,21 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
             auto available = disk->getAvailableSpace();
             auto unreserved = disk->getUnreservedSpace();
 
-            new_values[fmt::format("DiskTotal_{}", name)] = { total,
-                "The total size in bytes of the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB." };
-            new_values[fmt::format("DiskUsed_{}", name)] = { total - available,
-                "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
-            new_values[fmt::format("DiskAvailable_{}", name)] = { available,
-                "Available bytes on the disk (virtual filesystem). Remote filesystems can show a large value like 16 EiB." };
-            new_values[fmt::format("DiskUnreserved_{}", name)] = { unreserved,
-                "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems can show a large value like 16 EiB." };
+            new_values[fmt::format("DiskTotal_{}", name)] = { *total,
+                "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
+
+            if (available)
+            {
+                new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
+                    "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+
+                new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
+                    "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+            }
+
+            if (unreserved)
+                new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
+                    "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
         }
     }
 
@@ -229,15 +249,29 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
         size_t total_number_of_rows = 0;
         size_t total_number_of_parts = 0;
 
+        size_t total_number_of_tables_system = 0;
+
+        size_t total_number_of_bytes_system = 0;
+        size_t total_number_of_rows_system = 0;
+        size_t total_number_of_parts_system = 0;
+
+        size_t total_primary_key_bytes_memory = 0;
+        size_t total_primary_key_bytes_memory_allocated = 0;
+
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
             if (!db.second->canContainMergeTreeTables())
                 continue;
 
+            bool is_system = db.first == DatabaseCatalog::SYSTEM_DATABASE;
+
             for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
+                if (is_system)
+                    ++total_number_of_tables_system;
+
                 const auto & table = iterator->table();
                 if (!table)
                     continue;
@@ -247,9 +281,30 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
                     const auto & settings = getContext()->getSettingsRef();
 
                     calculateMax(max_part_count_for_partition, table_merge_tree->getMaxPartsCountAndSizeForPartition().first);
-                    total_number_of_bytes += table_merge_tree->totalBytes(settings).value();
-                    total_number_of_rows += table_merge_tree->totalRows(settings).value();
-                    total_number_of_parts += table_merge_tree->getActivePartsCount();
+
+                    size_t bytes = table_merge_tree->totalBytes(settings).value();
+                    size_t rows = table_merge_tree->totalRows(settings).value();
+                    size_t parts = table_merge_tree->getActivePartsCount();
+
+                    total_number_of_bytes += bytes;
+                    total_number_of_rows += rows;
+                    total_number_of_parts += parts;
+
+                    if (is_system)
+                    {
+                        total_number_of_bytes_system += bytes;
+                        total_number_of_rows_system += rows;
+                        total_number_of_parts_system += parts;
+                    }
+
+                    // only fetch the parts which are in active state
+                    auto all_parts = table_merge_tree->getDataPartsVectorForInternalUsage();
+
+                    for (const auto & part : all_parts)
+                    {
+                        total_primary_key_bytes_memory += part->getIndexSizeInBytes();
+                        total_primary_key_bytes_memory_allocated += part->getIndexSizeInAllocatedBytes();
+                    }
                 }
 
                 if (StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get()))
@@ -303,6 +358,15 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
         new_values["TotalRowsOfMergeTreeTables"] = { total_number_of_rows, "Total amount of rows (records) stored in all tables of MergeTree family." };
         new_values["TotalPartsOfMergeTreeTables"] = { total_number_of_parts, "Total amount of data parts in all tables of MergeTree family."
             " Numbers larger than 10 000 will negatively affect the server startup time and it may indicate unreasonable choice of the partition key." };
+
+        new_values["NumberOfTablesSystem"] = { total_number_of_tables_system, "Total number of tables in the system database on the server stored in tables of MergeTree family." };
+
+        new_values["TotalBytesOfMergeTreeTablesSystem"] = { total_number_of_bytes_system, "Total amount of bytes (compressed, including data and indices) stored in tables of MergeTree family in the system database." };
+        new_values["TotalRowsOfMergeTreeTablesSystem"] = { total_number_of_rows_system, "Total amount of rows (records) stored in tables of MergeTree family in the system database." };
+        new_values["TotalPartsOfMergeTreeTablesSystem"] = { total_number_of_parts_system, "Total amount of data parts in tables of MergeTree family in the system database." };
+
+        new_values["TotalPrimaryKeyBytesInMemory"] = { total_primary_key_bytes_memory, "The total amount of memory (in bytes) used by primary key values (only takes active parts into account)." };
+        new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account)." };
     }
 
 #if USE_NURAFT

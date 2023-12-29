@@ -59,6 +59,7 @@ class ColumnGathererStream final : public IMergingAlgorithm
 public:
     ColumnGathererStream(size_t num_inputs, ReadBuffer & row_sources_buf_, size_t block_preferred_size_ = DEFAULT_BLOCK_SIZE);
 
+    const char * getName() const override { return "ColumnGathererStream"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;

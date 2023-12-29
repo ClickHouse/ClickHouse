@@ -108,7 +108,7 @@ bool MergeTreeIndexhypothesisMergedCondition::alwaysUnknownOrTrue() const
             func->name = "greaterOrEquals";
     }
 
-    const auto weak_graph = std::make_unique<ComparisonGraph>(active_atomic_formulas);
+    const auto weak_graph = std::make_unique<ComparisonGraph<ASTPtr>>(active_atomic_formulas);
 
     bool useless = true;
     expression_cnf->iterateGroups(
@@ -146,7 +146,7 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
         values.push_back(granule->met);
     }
 
-    const ComparisonGraph * graph = nullptr;
+    const ComparisonGraph<ASTPtr> * graph = nullptr;
 
     {
         std::lock_guard lock(cache_mutex);
@@ -170,7 +170,7 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
                 const auto * func = atom.ast->as<ASTFunction>();
                 if (func && func->arguments->children.size() == 2)
                 {
-                    const auto expected = ComparisonGraph::atomToCompareResult(atom);
+                    const auto expected = ComparisonGraph<ASTPtr>::atomToCompareResult(atom);
                     if (graph->isPossibleCompare(expected, func->arguments->children[0], func->arguments->children[1]))
                     {
                         /// If graph failed use matching.
@@ -188,7 +188,7 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
     return !always_false;
 }
 
-std::unique_ptr<ComparisonGraph> MergeTreeIndexhypothesisMergedCondition::buildGraph(const std::vector<bool> & values) const
+std::unique_ptr<ComparisonGraph<ASTPtr>> MergeTreeIndexhypothesisMergedCondition::buildGraph(const std::vector<bool> & values) const
 {
     ASTs active_atomic_formulas(atomic_constraints);
     for (size_t i = 0; i < values.size(); ++i)
@@ -199,10 +199,10 @@ std::unique_ptr<ComparisonGraph> MergeTreeIndexhypothesisMergedCondition::buildG
                 std::begin(index_to_compare_atomic_hypotheses[i]),
                 std::end(index_to_compare_atomic_hypotheses[i]));
     }
-    return std::make_unique<ComparisonGraph>(active_atomic_formulas);
+    return std::make_unique<ComparisonGraph<ASTPtr>>(active_atomic_formulas);
 }
 
-const ComparisonGraph * MergeTreeIndexhypothesisMergedCondition::getGraph(const std::vector<bool> & values) const
+const ComparisonGraph<ASTPtr> * MergeTreeIndexhypothesisMergedCondition::getGraph(const std::vector<bool> & values) const
 {
     auto [it, inserted] = graph_cache.try_emplace(values);
     if (inserted)

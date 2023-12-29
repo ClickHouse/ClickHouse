@@ -13,7 +13,7 @@ If the number of broken parts in a single partition exceeds the `max_suspicious_
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 100.
 
@@ -54,13 +54,13 @@ If the number of active parts in a single partition exceeds the `parts_to_throw_
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
-Default value: 300.
+Default value: 3000.
 
 To achieve maximum performance of `SELECT` queries, it is necessary to minimize the number of parts processed, see [Merge Tree](../../development/architecture.md#merge-tree).
 
-You can set a larger value to 600 (1200), this will reduce the probability of the `Too many parts` error, but at the same time `SELECT` performance might degrade. Also in case of a merge issue (for example, due to insufficient disk space) you will notice it later than it could be with the original 300.
+Prior to 23.6 this setting was set to 300. You can set a higher different value, it will reduce the probability of the `Too many parts` error, but at the same time `SELECT` performance might degrade. Also in case of a merge issue (for example, due to insufficient disk space) you will notice it later than it could be with the original 300.
 
 
 ## parts_to_delay_insert {#parts-to-delay-insert}
@@ -69,9 +69,9 @@ If the number of active parts in a single partition exceeds the `parts_to_delay_
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
-Default value: 150.
+Default value: 1000.
 
 ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
 
@@ -81,7 +81,7 @@ If the number of inactive parts in a single partition more than the `inactive_pa
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 0 (unlimited).
 
@@ -91,7 +91,7 @@ If the number of inactive parts in a single partition in the table at least that
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 0 (unlimited).
 
@@ -101,7 +101,7 @@ The value in seconds, which is used to calculate the `INSERT` delay, if the numb
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 1.
 
@@ -127,7 +127,7 @@ If the total number of active parts in all partitions of a table exceeds the `ma
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 100000.
 
@@ -146,10 +146,10 @@ The number of most recently inserted blocks for which ClickHouse Keeper stores h
 
 Possible values:
 
--   Any positive integer.
--   0 (disable deduplication)
+- Any positive integer.
+- 0 (disable deduplication)
 
-Default value: 100.
+Default value: 1000.
 
 The `Insert` command creates one or more blocks (parts). For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md), when writing into replicated tables, ClickHouse writes the hash sums of the created parts into ClickHouse Keeper. Hash sums are stored only for the most recent `replicated_deduplication_window` blocks. The oldest hash sums are removed from ClickHouse Keeper.
 A large number of `replicated_deduplication_window` slows down `Inserts` because it needs to compare more entries.
@@ -161,8 +161,8 @@ The number of the most recently inserted blocks in the non-replicated [MergeTree
 
 Possible values:
 
--   Any positive integer.
--   0 (disable deduplication).
+- Any positive integer.
+- 0 (disable deduplication).
 
 Default value: 0.
 
@@ -174,7 +174,7 @@ The number of seconds after which the hash sums of the inserted blocks are remov
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 604800 (1 week).
 
@@ -188,8 +188,8 @@ The number of most recently async inserted blocks for which ClickHouse Keeper st
 
 Possible values:
 
--   Any positive integer.
--   0 (disable deduplication for async_inserts)
+- Any positive integer.
+- 0 (disable deduplication for async_inserts)
 
 Default value: 10000.
 
@@ -203,7 +203,7 @@ The number of seconds after which the hash sums of the async inserts are removed
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 604800 (1 week).
 
@@ -229,7 +229,7 @@ The minimum interval (in milliseconds) to update the `use_async_block_ids_cache`
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 100.
 
@@ -241,7 +241,7 @@ How many records may be in the ClickHouse Keeper log if there is inactive replic
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 1000
 
@@ -251,7 +251,7 @@ Keep about this number of last records in ZooKeeper log, even if they are obsole
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 10
 
@@ -261,7 +261,7 @@ If the time passed since a replication log (ClickHouse Keeper or ZooKeeper) entr
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 3600
 
@@ -271,7 +271,7 @@ If the sum of the size of parts exceeds this threshold and the time since a repl
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 10,737,418,240
 
@@ -281,7 +281,7 @@ When this setting has a value greater than zero, only a single replica starts th
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 0 (seconds)
 
@@ -295,7 +295,7 @@ Zero-copy replication is disabled by default in ClickHouse version 22.8 and high
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 10800
 
@@ -305,7 +305,7 @@ Recompression works slow in most cases, so we don't start merge with recompressi
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 7200
 
@@ -315,7 +315,7 @@ If true, this replica never merges parts and always downloads merged parts from 
 
 Possible values:
 
--   true, false
+- true, false
 
 Default value: false
 
@@ -325,7 +325,7 @@ Max broken parts, if more - deny automatic deletion.
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 100
 
@@ -336,7 +336,7 @@ Max size of all broken parts, if more - deny automatic deletion.
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 1,073,741,824
 
@@ -346,7 +346,7 @@ Do not apply ALTER if number of files for modification(deletion, addition) is gr
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 75
 
@@ -356,7 +356,7 @@ Do not apply ALTER, if the number of files for deletion is greater than this set
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 50
 
@@ -366,7 +366,7 @@ If the ratio of wrong parts to total number of parts is less than this - allow t
 
 Possible values:
 
--   Float, 0.0 - 1.0
+- Float, 0.0 - 1.0
 
 Default value: 0.5
 
@@ -376,7 +376,7 @@ Limit parallel fetches from endpoint (actually pool size).
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 15
 
@@ -386,7 +386,7 @@ HTTP connection timeout for part fetch requests. Inherited from default profile 
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: Inherited from default profile `http_connection_timeout` if not set explicitly.
 
@@ -396,7 +396,7 @@ If true, replicated tables replicas on this node will try to acquire leadership.
 
 Possible values:
 
--   true, false
+- true, false
 
 Default value: true
 
@@ -406,7 +406,7 @@ ZooKeeper session expiration check period, in seconds.
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 60
 
@@ -416,7 +416,7 @@ Do not remove old local parts when repairing lost replica.
 
 Possible values:
 
--   true, false
+- true, false
 
 Default value: true
 
@@ -426,8 +426,8 @@ HTTP connection timeout (in seconds) for part fetch requests. Inherited from def
 
 Possible values:
 
--   Any positive integer.
--   0 - Use value of `http_connection_timeout`.
+- Any positive integer.
+- 0 - Use value of `http_connection_timeout`.
 
 Default value: 0.
 
@@ -437,8 +437,8 @@ HTTP send timeout (in seconds) for part fetch requests. Inherited from default p
 
 Possible values:
 
--   Any positive integer.
--   0 - Use value of `http_send_timeout`.
+- Any positive integer.
+- 0 - Use value of `http_send_timeout`.
 
 Default value: 0.
 
@@ -448,8 +448,8 @@ HTTP receive timeout (in seconds) for fetch part requests. Inherited from defaul
 
 Possible values:
 
--   Any positive integer.
--   0 - Use value of `http_receive_timeout`.
+- Any positive integer.
+- 0 - Use value of `http_receive_timeout`.
 
 Default value: 0.
 
@@ -463,8 +463,8 @@ The setting isn't followed perfectly accurately.
 
 Possible values:
 
--   Positive integer.
--   0 — Unlimited.
+- Positive integer.
+- 0 — Unlimited.
 
 Default value: `0`.
 
@@ -482,8 +482,8 @@ The setting isn't followed perfectly accurately.
 
 Possible values:
 
--   Positive integer.
--   0 — Unlimited.
+- Positive integer.
+- 0 — Unlimited.
 
 Default value: `0`.
 
@@ -497,12 +497,12 @@ The time (in seconds) of storing inactive parts to protect against data loss dur
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 480.
 
 After merging several parts into a new part, ClickHouse marks the original parts as inactive and deletes them only after `old_parts_lifetime` seconds.
-Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is zero.
+Inactive parts are removed if they are not used by current queries, i.e. if the `refcount` of the part is 1.
 
 `fsync` is not called for new parts, so for some time new parts exist only in the server's RAM (OS cache). If the server is rebooted spontaneously, new parts can be lost or damaged.
 To protect data inactive parts are not deleted immediately.
@@ -520,7 +520,7 @@ The maximum total parts size (in bytes) to be merged into one part, if there are
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 161061273600 (150 GB).
 
@@ -534,7 +534,7 @@ The maximum total part size (in bytes) to be merged into one part, with the mini
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 1048576 (1 MB)
 
@@ -547,7 +547,7 @@ The number of rows that are read from the merged parts into memory.
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 8192
 
@@ -555,29 +555,29 @@ Merge reads rows from parts in blocks of `merge_max_block_size` rows, then merge
 
 ## number_of_free_entries_in_pool_to_lower_max_size_of_merge {#number-of-free-entries-in-pool-to-lower-max-size-of-merge}
 
-When there is less than specified number of free entries in pool (or replicated queue), start to lower maximum size of merge to process (or to put in queue). 
+When there is less than specified number of free entries in pool (or replicated queue), start to lower maximum size of merge to process (or to put in queue).
 This is to allow small merges to process - not filling the pool with long running merges.
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 8
 
 ## number_of_free_entries_in_pool_to_execute_mutation {#number-of-free-entries-in-pool-to-execute-mutation}
 
-When there is less than specified number of free entries in pool, do not execute part mutations. 
+When there is less than specified number of free entries in pool, do not execute part mutations.
 This is to leave free threads for regular merges and avoid "Too many parts".
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: 20
 
 **Usage**
 
-The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting should be less than the value of the [background_pool_size](/docs/en/operations/server-configuration-parameters/settings#background_pool_size) * [background_pool_size](/docs/en/operations/server-configuration-parameters/settings#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
+The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting should be less than the value of the [background_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/en/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
 
 ## max_part_loading_threads {#max-part-loading-threads}
 
@@ -585,7 +585,7 @@ The maximum number of threads that read parts when ClickHouse starts.
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: auto (number of CPU cores).
 
@@ -599,7 +599,7 @@ The setting value specified when the table is created can be overridden via quer
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: -1 (unlimited).
 
@@ -609,7 +609,7 @@ Merge parts if every part in the range is older than the value of `min_age_to_fo
 
 Possible values:
 
--   Positive integer.
+- Positive integer.
 
 Default value: 0 — Disabled.
 
@@ -619,9 +619,22 @@ Whether `min_age_to_force_merge_seconds` should be applied only on the entire pa
 
 Possible values:
 
--   true, false
+- true, false
 
 Default value: false
+
+## number_of_free_entries_in_pool_to_execute_optimize_entire_partition {#number_of_free_entries_in_pool_to_execute_optimize_entire_partition}
+
+When there is less than specified number of free entries in pool, do not execute optimizing entire partition in the background (this task generated when set `min_age_to_force_merge_seconds` and enable `min_age_to_force_merge_on_partition_only`). This is to leave free threads for regular merges and avoid "Too many parts".
+
+Possible values:
+
+- Positive integer.
+
+Default value: 25
+
+The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition` setting should be less than the value of the [background_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/en/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
+
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key}
 
@@ -629,8 +642,8 @@ Enables to allow floating-point number as a partition key.
 
 Possible values:
 
--   0 — Floating-point partition key not allowed.
--   1 — Floating-point partition key allowed.
+- 0 — Floating-point partition key not allowed.
+- 1 — Floating-point partition key allowed.
 
 Default value: `0`.
 
@@ -640,8 +653,8 @@ Enables the check at table creation, that the data type of a column for sampling
 
 Possible values:
 
--   true  — The check is enabled.
--   false — The check is disabled at table creation.
+- true  — The check is enabled.
+- false — The check is disabled at table creation.
 
 Default value: `true`.
 
@@ -653,8 +666,8 @@ Sets minimal amount of bytes to enable balancing when distributing new big parts
 
 Possible values:
 
--   Positive integer.
--   0 — Balancing is disabled.
+- Positive integer.
+- 0 — Balancing is disabled.
 
 Default value: `0`.
 
@@ -670,8 +683,8 @@ The setting is applicable to `MergeTree` tables with enabled [data replication](
 
 Possible values:
 
--   0 — Parts are removed.
--   1 — Parts are detached.
+- 0 — Parts are removed.
+- 1 — Parts are detached.
 
 Default value: `0`.
 
@@ -681,7 +694,7 @@ Sets the interval in seconds for ClickHouse to execute the cleanup of old tempor
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: `60` seconds.
 
@@ -691,7 +704,7 @@ Sets the interval in seconds for ClickHouse to execute the cleanup of old parts,
 
 Possible values:
 
--   Any positive integer.
+- Any positive integer.
 
 Default value: `1` second.
 
@@ -701,8 +714,8 @@ Max number of concurrently executed queries related to the MergeTree table. Quer
 
 Possible values:
 
--   Positive integer.
--   0 — No limit.
+- Positive integer.
+- 0 — No limit.
 
 Default value: `0` (no limit).
 
@@ -718,8 +731,8 @@ The minimal number of marks read by the query for applying the [max_concurrent_q
 
 Possible values:
 
--   Positive integer.
--   0 — Disabled (`max_concurrent_queries` limit applied to no queries).
+- Positive integer.
+- 0 — Disabled (`max_concurrent_queries` limit applied to no queries).
 
 Default value: `0` (limit never applied).
 
@@ -733,14 +746,14 @@ Default value: `0` (limit never applied).
 
 Minimal ratio of the number of _default_ values to the number of _all_ values in a column. Setting this value causes the column to be stored using sparse serializations.
 
-If a column is sparse (contains mostly zeros), ClickHouse can encode it in a sparse format and automatically optimize calculations - the data does not require full decompression during queries. To enable this sparse serialization, define the `ratio_of_defaults_for_sparse_serialization` setting to be less than 1.0. If the value is greater than or equal to 1.0 (the default), then the columns will be always written using the normal full serialization.
+If a column is sparse (contains mostly zeros), ClickHouse can encode it in a sparse format and automatically optimize calculations - the data does not require full decompression during queries. To enable this sparse serialization, define the `ratio_of_defaults_for_sparse_serialization` setting to be less than 1.0. If the value is greater than or equal to 1.0, then the columns will be always written using the normal full serialization.
 
 Possible values:
 
 - Float between 0 and 1 to enable sparse serialization
 - 1.0 (or greater) if you do not want to use sparse serialization
 
-Default value: `1.0` (sparse serialization is disabled)
+Default value: `0.9375`
 
 **Example**
 
@@ -831,3 +844,16 @@ You can see which parts of `s` were stored using the sparse serialization:
 │ s      │ Sparse             │
 └────────┴────────────────────┘
 ```
+
+## replace_long_file_name_to_hash {#replace_long_file_name_to_hash}
+If the file name for column is too long (more than `max_file_name_length` bytes) replace it to SipHash128. Default value: `false`.
+
+## max_file_name_length {#max_file_name_length}
+
+The maximal length of the file name to keep it as is without hashing. Takes effect only if setting `replace_long_file_name_to_hash` is enabled. The value of this setting does not include the length of file extension. So, it is recommended to set it below the maximum filename length (usually 255 bytes) with some gap to avoid filesystem errors. Default value: 127.
+
+## allow_experimental_block_number_column
+
+Persists virtual column `_block_number` on merges.
+
+Default value: false.

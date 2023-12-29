@@ -40,7 +40,7 @@ If the user tries to violate the constraints an exception is thrown and the sett
 There are supported few types of constraints: `min`, `max`, `readonly` (with alias `const`) and `changeable_in_readonly`. The `min` and `max` constraints specify upper and lower boundaries for a numeric setting and can be used in combination. The `readonly` or `const` constraint specifies that the user cannot change the corresponding setting at all. The `changeable_in_readonly` constraint type allows user to change the setting within `min`/`max` range even if `readonly` setting is set to 1, otherwise settings are not allow to be changed in `readonly=1` mode. Note that `changeable_in_readonly` is supported only if `settings_constraints_replace_previous` is enabled:
 ``` xml
 <access_control_improvements>
-  <settings_constraints_replace_previous>true<settings_constraints_replace_previous>
+  <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
 </access_control_improvements>
 ```
 

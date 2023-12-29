@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
@@ -20,15 +21,10 @@ namespace
     constexpr auto DATA_FILE_EXTENSION = ".bin";
 }
 
-namespace ErrorCodes
-{
-    extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
 MergeTreeReaderWide::MergeTreeReaderWide(
     MergeTreeDataPartInfoForReaderPtr data_part_info_,
     NamesAndTypesList columns_,
-    const StorageMetadataPtr & metadata_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     MarkRanges mark_ranges_,
@@ -39,7 +35,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     : IMergeTreeReader(
         data_part_info_,
         columns_,
-        metadata_snapshot_,
+        storage_snapshot_,
         uncompressed_cache_,
         mark_cache_,
         mark_ranges_,
@@ -53,12 +49,13 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     }
     catch (...)
     {
-        data_part_info_for_read->reportBroken();
+        if (!isRetryableException(std::current_exception()))
+            data_part_info_for_read->reportBroken();
         throw;
     }
 }
 
-void MergeTreeReaderWide::prefetchBeginOfRange(int64_t priority)
+void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
     prefetched_streams.clear();
 
@@ -76,21 +73,16 @@ void MergeTreeReaderWide::prefetchBeginOfRange(int64_t priority)
         /// of range only once so there is no such problem.
         /// 4. continue_reading == false, as we haven't read anything yet.
     }
-    catch (Exception & e)
-    {
-        if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-            data_part_info_for_read->reportBroken();
-        throw;
-    }
     catch (...)
     {
-        data_part_info_for_read->reportBroken();
+        if (!isRetryableException(std::current_exception()))
+            data_part_info_for_read->reportBroken();
         throw;
     }
 }
 
 void MergeTreeReaderWide::prefetchForAllColumns(
-    int64_t priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading)
+    Priority priority, size_t num_columns, size_t from_mark, size_t current_task_last_mark, bool continue_reading)
 {
     bool do_prefetch = data_part_info_for_read->getDataPartStorage()->isStoredOnRemoteDisk()
         ? settings.read_settings.remote_fs_prefetch
@@ -137,7 +129,7 @@ size_t MergeTreeReaderWide::readRows(
         if (num_columns == 0)
             return max_rows_to_read;
 
-        prefetchForAllColumns(/* priority */0, num_columns, from_mark, current_task_last_mark, continue_reading);
+        prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading);
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -182,22 +174,20 @@ size_t MergeTreeReaderWide::readRows(
         /// In particular, even if for some streams there are no rows to be read,
         /// you must ensure that no seeks are skipped and at this point they all point to to_mark.
     }
-    catch (Exception & e)
+    catch (...)
     {
-        if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+        if (!isRetryableException(std::current_exception()))
             data_part_info_for_read->reportBroken();
 
         /// Better diagnostics.
-        e.addMessage(
-            fmt::format(
-                "(while reading from part {} from mark {} with max_rows_to_read = {})",
-                data_part_info_for_read->getDataPartStorage()->getFullPath(),
-                toString(from_mark), toString(max_rows_to_read)));
-        throw;
-    }
-    catch (...)
-    {
-        data_part_info_for_read->reportBroken();
+        try
+        {
+            rethrow_exception(std::current_exception());
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
+        }
 
         throw;
     }
@@ -216,22 +206,20 @@ void MergeTreeReaderWide::addStreams(
 
     ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
-
-        if (streams.contains(stream_name))
-        {
-            has_any_stream = true;
-            return;
-        }
-
-        bool data_file_exists = data_part_info_for_read->getChecksums().files.contains(stream_name + DATA_FILE_EXTENSION);
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
 
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
           */
-        if (!data_file_exists)
+        if (!stream_name)
         {
             has_all_streams = false;
+            return;
+        }
+
+        if (streams.contains(*stream_name))
+        {
+            has_any_stream = true;
             return;
         }
 
@@ -241,10 +229,10 @@ void MergeTreeReaderWide::addStreams(
         auto context = data_part_info_for_read->getContext();
         auto * load_marks_threadpool = settings.read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
 
-        streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
+        streams.emplace(*stream_name, std::make_unique<MergeTreeReaderStream>(
+            data_part_info_for_read, *stream_name, DATA_FILE_EXTENSION,
             data_part_info_for_read->getMarksCount(), all_mark_ranges, settings, mark_cache,
-            uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
+            uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(*stream_name + DATA_FILE_EXTENSION),
             &data_part_info_for_read->getIndexGranularityInfo(),
             profile_callback, clock_type, is_lc_dict, load_marks_threadpool));
     };
@@ -255,13 +243,14 @@ void MergeTreeReaderWide::addStreams(
         partially_read_columns.insert(name_and_type.name);
 }
 
-
 static ReadBuffer * getStream(
     bool seek_to_start,
     const ISerialization::SubstreamPath & substream_path,
+    const MergeTreeDataPartChecksums & checksums,
     MergeTreeReaderWide::FileStreams & streams,
     const NameAndTypePair & name_and_type,
-    size_t from_mark, bool seek_to_mark,
+    size_t from_mark,
+    bool seek_to_mark,
     size_t current_task_last_mark,
     ISerialization::SubstreamsCache & cache)
 {
@@ -269,9 +258,11 @@ static ReadBuffer * getStream(
     if (cache.contains(ISerialization::getSubcolumnNameForStream(substream_path)))
         return nullptr;
 
-    String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
+    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, checksums);
+    if (!stream_name)
+        return nullptr;
 
-    auto it = streams.find(stream_name);
+    auto it = streams.find(*stream_name);
     if (it == streams.end())
         return nullptr;
 
@@ -298,14 +289,14 @@ void MergeTreeReaderWide::deserializePrefix(
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            return getStream(/* seek_to_start = */true, substream_path, streams, name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, cache);
+            return getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), streams, name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, cache);
         };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
     }
 }
 
 void MergeTreeReaderWide::prefetchForColumn(
-    int64_t priority,
+    Priority priority,
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization,
     size_t from_mark,
@@ -317,15 +308,15 @@ void MergeTreeReaderWide::prefetchForColumn(
 
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
-        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
 
-        if (!prefetched_streams.contains(stream_name))
+        if (stream_name && !prefetched_streams.contains(*stream_name))
         {
             bool seek_to_mark = !continue_reading;
-            if (ReadBuffer * buf = getStream(false, substream_path, streams, name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache))
+            if (ReadBuffer * buf = getStream(false, substream_path, data_part_info_for_read->getChecksums(), streams, name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache))
             {
                 buf->prefetch(priority);
-                prefetched_streams.insert(stream_name);
+                prefetched_streams.insert(*stream_name);
             }
         }
     });
@@ -348,8 +339,9 @@ void MergeTreeReaderWide::readData(
         bool seek_to_mark = !was_prefetched && !continue_reading;
 
         return getStream(
-            /* seek_to_start = */false, substream_path, streams, name_and_type, from_mark,
-            seek_to_mark, current_task_last_mark, cache);
+            /* seek_to_start = */false, substream_path,
+            data_part_info_for_read->getChecksums(), streams,
+            name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache);
     };
 
     deserialize_settings.continuous_reading = continue_reading;

@@ -77,7 +77,7 @@ def test_write_is_cached(cluster, min_rows_for_wide_part, read_requests):
     # stat = get_query_stat(node, select_query)
     # assert stat["S3ReadRequestsCount"] == read_requests  # Only .bin files should be accessed from S3.
 
-    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")
 
 
 @pytest.mark.parametrize(
@@ -126,4 +126,4 @@ def test_read_after_cache_is_wiped(
     # stat = get_query_stat(node, select_query)
     # assert stat["S3ReadRequestsCount"] == bin_files
 
-    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    node.query("DROP TABLE IF EXISTS s3_test SYNC")

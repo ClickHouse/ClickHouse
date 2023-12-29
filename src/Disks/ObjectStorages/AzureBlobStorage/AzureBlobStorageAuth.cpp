@@ -4,9 +4,17 @@
 
 #include <Common/Exception.h>
 #include <optional>
-#include <re2/re2.h>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 using namespace Azure::Storage::Blobs;
 
@@ -57,14 +65,22 @@ void validateContainerName(const String & container_name)
 
 AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    String storage_account_url = config.getString(config_prefix + ".storage_account_url");
-    validateStorageAccountUrl(storage_account_url);
+    std::string storage_url;
+    if (config.has(config_prefix + ".storage_account_url"))
+    {
+        storage_url = config.getString(config_prefix + ".storage_account_url");
+        validateStorageAccountUrl(storage_url);
+    }
+    else
+    {
+        storage_url = config.getString(config_prefix + ".connection_string");
+    }
     String container_name = config.getString(config_prefix + ".container_name", "default-container");
     validateContainerName(container_name);
     std::optional<bool> container_already_exists {};
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
-    return {storage_account_url, container_name, container_already_exists};
+    return {storage_url, container_name, container_already_exists};
 }
 
 
@@ -136,10 +152,7 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
         /// If container_already_exists is not set (in config), ignore already exists error.
         /// (Conflict - The specified container already exists)
         if (!endpoint.container_already_exists.has_value() && e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
-        {
-            tryLogCurrentException("Container already exists, returning the existing container");
             return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
-        }
         throw;
     }
 }

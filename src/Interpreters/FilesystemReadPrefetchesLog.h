@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
 #include <Common/Stopwatch.h>
+#include <Common/Priority.h>
 
 namespace DB
 {
@@ -23,9 +24,9 @@ struct FilesystemReadPrefetchesLogElement
     String path;
     UInt64 offset;
     Int64 size; /// -1 means unknown
-    Decimal64 prefetch_submit_time{};
+    std::chrono::system_clock::time_point prefetch_submit_time;
     std::optional<Stopwatch> execution_watch;
-    size_t priority;
+    Priority priority;
     FilesystemPrefetchState state;
     UInt64 thread_id;
     String reader_id;
@@ -44,5 +45,7 @@ class FilesystemReadPrefetchesLog : public SystemLog<FilesystemReadPrefetchesLog
 public:
     using SystemLog<FilesystemReadPrefetchesLogElement>::SystemLog;
 };
+
+using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesLog>;
 
 }

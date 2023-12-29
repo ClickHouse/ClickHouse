@@ -11,6 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Coordination/KeeperFeatureFlags.h>
 
 
 namespace Coordination
@@ -38,6 +39,10 @@ public:
     ~TestKeeper() override;
 
     bool isExpired() const override { return expired; }
+    bool hasReachedDeadline() const override { return false; }
+    Int8 getConnectedNodeIdx() const override { return 0; }
+    String getConnectedHostPort() const override { return "TestKeeper:0000"; }
+    int32_t getConnectionXid() const override { return 0; }
     int64_t getSessionID() const override { return 0; }
 
 
@@ -57,12 +62,12 @@ public:
     void exists(
             const String & path,
             ExistsCallback callback,
-            WatchCallback watch) override;
+            WatchCallbackPtr watch) override;
 
     void get(
             const String & path,
             GetCallback callback,
-            WatchCallback watch) override;
+            WatchCallbackPtr watch) override;
 
     void set(
             const String & path,
@@ -74,7 +79,7 @@ public:
             const String & path,
             ListRequestType list_request_type,
             ListCallback callback,
-            WatchCallback watch) override;
+            WatchCallbackPtr watch) override;
 
     void check(
             const String & path,
@@ -85,15 +90,22 @@ public:
             const String & path,
             SyncCallback callback) override;
 
+    void reconfig(
+        std::string_view joining,
+        std::string_view leaving,
+        std::string_view new_members,
+        int32_t version,
+        ReconfigCallback callback) final;
+
     void multi(
             const Requests & requests,
             MultiCallback callback) override;
 
     void finalize(const String & reason) override;
 
-    DB::KeeperApiVersion getApiVersion() override
+    bool isFeatureEnabled(DB::KeeperFeatureFlag) const override
     {
-        return KeeperApiVersion::ZOOKEEPER_COMPATIBLE;
+        return false;
     }
 
     struct Node
@@ -108,7 +120,7 @@ public:
 
     using Container = std::map<std::string, Node>;
 
-    using WatchCallbacks = std::vector<WatchCallback>;
+    using WatchCallbacks = std::unordered_set<WatchCallbackPtr>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
 private:
@@ -118,7 +130,7 @@ private:
     {
         TestKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallback watch;
+        WatchCallbackPtr watch;
         clock::time_point time;
     };
 
@@ -146,4 +158,3 @@ private:
 };
 
 }
-

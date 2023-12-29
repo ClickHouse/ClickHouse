@@ -21,7 +21,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `lag/lead(value, offset)`                                                          | Not supported. Workarounds:                                                                                                                                                                 |
 |                                                                                    | 1) replace with `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead`                                                                  |
 |                                                                                    | 2) use `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following` |
-| ntile(buckets) | Supported. Specify window like, (partition by x order by y rows between unbounded preceding and unounded following). |
+| ntile(buckets) | Supported. Specify window like, (partition by x order by y rows between unbounded preceding and unrounded following). |
 
 ## ClickHouse-specific Window Functions
 
@@ -39,7 +39,7 @@ The computed value is the following for each row:
 
 The roadmap for the initial support of window functions is [in this issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
 
-All GitHub issues related to window funtions have the [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) tag.
+All GitHub issues related to window functions have the [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) tag.
 
 ### Tests
 
@@ -80,20 +80,20 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 - `PARTITION BY` - defines how to break a resultset into groups.
 - `ORDER BY` - defines how to order rows inside the group during calculation aggregate_function.
 - `ROWS or RANGE` - defines bounds of a frame, aggregate_function is calculated within a frame.
-- `WINDOW` - allows to reuse a window definition with multiple exressions.
+- `WINDOW` - allows to reuse a window definition with multiple expressions.
 
 ### Functions
 
 These functions can be used only as a window function.
 
-`row_number()` -	Number the current row within its partition starting from 1.
-`first_value(x)` -	Return the first non-NULL value evaluated within its ordered frame.
-`last_value(x)` -	Return the last non-NULL value evaluated within its ordered frame.
-`nth_value(x, offset)` - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
-`rank()` -	Rank the current row within its partition with gaps.
-`dense_rank()`	- Rank the current row within its partition without gaps.
-`lagInFrame(x)` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
-`leadInFrame(x)` - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
+- `row_number()` - Number the current row within its partition starting from 1.
+- `first_value(x)` - Return the first non-NULL value evaluated within its ordered frame.
+- `last_value(x)` -	Return the last non-NULL value evaluated within its ordered frame.
+- `nth_value(x, offset)` - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
+- `rank()` - Rank the current row within its partition with gaps.
+- `dense_rank()` - Rank the current row within its partition without gaps.
+- `lagInFrame(x)` - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
+- `leadInFrame(x)` - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
 ```text
       PARTITION
@@ -140,8 +140,8 @@ ORDER BY
 │        1 │     1 │     1 │ [1,2,3]      │   <┐   
 │        1 │     2 │     2 │ [1,2,3]      │    │  1-st group
 │        1 │     3 │     3 │ [1,2,3]      │   <┘ 
-│        2 │     0 │     0 │ [0]          │   <-  2-nd group
-│        3 │     0 │     0 │ [0]          │   <-  3-d group
+│        2 │     0 │     0 │ [0]          │   <- 2-nd group
+│        3 │     0 │     0 │ [0]          │   <- 3-d group
 └──────────┴───────┴───────┴──────────────┘
 ```
 

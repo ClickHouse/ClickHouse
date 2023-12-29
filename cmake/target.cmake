@@ -12,11 +12,26 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
 elseif (CMAKE_SYSTEM_NAME MATCHES "Darwin")
     set (OS_DARWIN 1)
     add_definitions(-D OS_DARWIN)
+    # For MAP_ANON/MAP_ANONYMOUS
+    add_definitions(-D _DARWIN_C_SOURCE)
 elseif (CMAKE_SYSTEM_NAME MATCHES "SunOS")
     set (OS_SUNOS 1)
     add_definitions(-D OS_SUNOS)
 else ()
     message (FATAL_ERROR "Platform ${CMAKE_SYSTEM_NAME} is not supported")
+endif ()
+
+# Since we always use toolchain files to generate hermetic builds, cmake will
+# always think it's a cross-compilation, See
+# https://cmake.org/cmake/help/latest/variable/CMAKE_CROSSCOMPILING.html
+#
+# This will slow down cmake configuration and compilation. For instance, LLVM
+# will try to configure NATIVE LLVM targets with all tests enabled (You'll see
+# Building native llvm-tblgen...).
+#
+# Here, we set it manually by checking the system name and processor.
+if (${CMAKE_SYSTEM_NAME} STREQUAL ${CMAKE_HOST_SYSTEM_NAME} AND ${CMAKE_SYSTEM_PROCESSOR} STREQUAL ${CMAKE_HOST_SYSTEM_PROCESSOR})
+    set (CMAKE_CROSSCOMPILING 0)
 endif ()
 
 if (CMAKE_CROSSCOMPILING)
@@ -29,13 +44,23 @@ if (CMAKE_CROSSCOMPILING)
         if (ARCH_AARCH64)
             # FIXME: broken dependencies
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
-            set (ENABLE_SENTRY OFF CACHE INTERNAL "")
         elseif (ARCH_PPC64LE)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
-            set (ENABLE_SENTRY OFF CACHE INTERNAL "")
+        elseif (ARCH_RISCV64)
+            # RISC-V support is preliminary
+            set (GLIBC_COMPATIBILITY OFF CACHE INTERNAL "")
+            set (ENABLE_LDAP OFF CACHE INTERNAL "")
+            set (OPENSSL_NO_ASM ON CACHE INTERNAL "")
+            set (ENABLE_JEMALLOC ON CACHE INTERNAL "")
+            set (ENABLE_PARQUET OFF CACHE INTERNAL "")
+            set (ENABLE_GRPC OFF CACHE INTERNAL "")
+            set (ENABLE_HDFS OFF CACHE INTERNAL "")
+            set (ENABLE_MYSQL OFF CACHE INTERNAL "")
+            # It might be ok, but we need to update 'sysroot'
+            set (ENABLE_RUST OFF CACHE INTERNAL "")
         elseif (ARCH_S390X)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
-            set (ENABLE_SENTRY OFF CACHE INTERNAL "")
+            set (ENABLE_RUST OFF CACHE INTERNAL "")
         endif ()
     elseif (OS_FREEBSD)
         # FIXME: broken dependencies
@@ -43,23 +68,10 @@ if (CMAKE_CROSSCOMPILING)
         set (ENABLE_ORC OFF CACHE INTERNAL "")
         set (ENABLE_GRPC OFF CACHE INTERNAL "")
         set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
+        set (ENABLE_DWARF_PARSER OFF CACHE INTERNAL "")
     else ()
         message (FATAL_ERROR "Trying to cross-compile to unsupported system: ${CMAKE_SYSTEM_NAME}!")
     endif ()
-
-    if (USE_MUSL)
-        # use of undeclared identifier 'PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP'
-        set (ENABLE_SENTRY OFF CACHE INTERNAL "")
-        set (ENABLE_ODBC OFF CACHE INTERNAL "")
-        set (ENABLE_GRPC OFF CACHE INTERNAL "")
-        set (ENABLE_HDFS OFF CACHE INTERNAL "")
-        set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
-        # use of drand48_data
-        set (ENABLE_AZURE_BLOB_STORAGE OFF CACHE INTERNAL "")
-    endif ()
-
-    # Don't know why but CXX_STANDARD doesn't work for cross-compilation
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20")
 
     message (STATUS "Cross-compiling for target: ${CMAKE_CXX_COMPILE_TARGET}")
 endif ()

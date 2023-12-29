@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <Core/Defines.h>
 #if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
 #   include <sanitizer/asan_interface.h>
@@ -107,10 +108,7 @@ public:
     }
 
     /// Size of the allocated pool in bytes
-    size_t size() const
-    {
-        return pool.size();
-    }
+    size_t allocatedBytes() const { return pool.allocatedBytes(); }
 };
 
 class SynchronizedArenaWithFreeLists : private ArenaWithFreeLists
@@ -135,10 +133,10 @@ public:
     }
 
     /// Size of the allocated pool in bytes
-    size_t size() const
+    size_t allocatedBytes() const
     {
         std::lock_guard lock{mutex};
-        return ArenaWithFreeLists::size();
+        return ArenaWithFreeLists::allocatedBytes();
     }
 private:
     mutable std::mutex mutex;

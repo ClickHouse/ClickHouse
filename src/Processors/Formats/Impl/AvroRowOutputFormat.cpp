@@ -32,8 +32,16 @@
 #include <Node.hh>
 #include <Schema.hh>
 
-#include <re2/re2.h>
 #include <boost/algorithm/string.hpp>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -329,9 +337,8 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 const auto & uuid = assert_cast<const DataTypeUUID::ColumnType &>(column).getElement(row_num);
-                std::array<UInt8, 36> s;
-                formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), s.data());
-                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data()), s.size());
+                const auto serialized_uuid = formatUUID(uuid);
+                encoder.encodeBytes(reinterpret_cast<const uint8_t *>(serialized_uuid.data()), serialized_uuid.size());
             }};
         }
         case TypeIndex::Array:

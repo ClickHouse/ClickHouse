@@ -4,6 +4,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 
+#include <Common/ErrorHandlers.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -14,16 +15,12 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <base/errnoToString.h>
 #include <base/range.h>
+#include <base/scope_guard.h>
 
 #include <sys/time.h>
 #include <sys/resource.h>
 
 #include "config.h"
-
-#if USE_ODBC
-#    include <Poco/Data/ODBC/Connector.h>
-#endif
-
 
 namespace DB
 {
@@ -96,7 +93,7 @@ void IBridge::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("max-server-connections", "", "max connections to server, default 1024").argument("max-server-connections").binding("max-server-connections"));
 
     options.addOption(
-        Poco::Util::Option("keep-alive-timeout", "", "keepalive timeout, default 10").argument("keep-alive-timeout").binding("keep-alive-timeout"));
+        Poco::Util::Option("keep-alive-timeout", "", "keepalive timeout, default 30").argument("keep-alive-timeout").binding("keep-alive-timeout"));
 
     options.addOption(
         Poco::Util::Option("http-max-field-value-size", "", "max http field value size, default 1048576").argument("http-max-field-value-size").binding("http-max-field-value-size"));
@@ -144,7 +141,7 @@ void IBridge::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
 
         /// Disable buffering for stdout.
-        setbuf(stdout, nullptr);
+        setbuf(stdout, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
     }
     const auto stderr_path = config().getString("logger.stderr", "");
     if (!stderr_path.empty())
@@ -153,7 +150,7 @@ void IBridge::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr.
-        setbuf(stderr, nullptr);
+        setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
     }
 
     buildLoggers(config(), logger(), self.commandName());
@@ -168,8 +165,8 @@ void IBridge::initialize(Application & self)
 
     http_timeout = config().getUInt64("http-timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);
     max_server_connections = config().getUInt("max-server-connections", 1024);
-    keep_alive_timeout = config().getUInt64("keep-alive-timeout", 10);
-    http_max_field_value_size = config().getUInt64("http-max-field-value-size", 1048576);
+    keep_alive_timeout = config().getUInt64("keep-alive-timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
+    http_max_field_value_size = config().getUInt64("http-max-field-value-size", 128 * 1024);
 
     struct rlimit limit;
     const UInt64 gb = 1024 * 1024 * 1024;
@@ -213,19 +210,22 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
     if (is_help)
         return Application::EXIT_OK;
 
+    static ServerErrorHandler error_handler;
+    Poco::ErrorHandler::set(&error_handler);
+
     registerFormats();
     LOG_INFO(log, "Starting up {} on host: {}, port: {}", bridgeName(), hostname, port);
 
     Poco::Net::ServerSocket socket;
     auto address = socketBindListen(socket, hostname, port, log);
-    socket.setReceiveTimeout(http_timeout);
-    socket.setSendTimeout(http_timeout);
+    socket.setReceiveTimeout(Poco::Timespan(http_timeout, 0));
+    socket.setSendTimeout(Poco::Timespan(http_timeout, 0));
 
     Poco::ThreadPool server_pool(3, max_server_connections);
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-    http_params->setTimeout(http_timeout);
-    http_params->setKeepAliveTimeout(keep_alive_timeout);
+    http_params->setTimeout(Poco::Timespan(http_timeout, 0));
+    http_params->setKeepAliveTimeout(Poco::Timespan(keep_alive_timeout, 0));
 
     auto shared_context = Context::createShared();
     auto context = Context::createGlobal(shared_context.get());

@@ -365,17 +365,14 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
         hash.update(seed);
         hash.update(i);
 
+        const auto checksum = getSipHash128AsArray(hash);
         if (size >= 16)
         {
-            char * hash_dst = reinterpret_cast<char *>(std::min(pos, end - 16));
-            hash.get128(hash_dst);
+            auto * hash_dst = std::min(pos, end - 16);
+            memcpy(hash_dst, checksum.data(), checksum.size());
         }
         else
-        {
-            char value[16];
-            hash.get128(value);
-            memcpy(dst, value, end - dst);
-        }
+            memcpy(dst, checksum.data(), end - dst);
 
         pos += 16;
         ++i;
@@ -393,7 +390,10 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
 
 static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
 {
-    const UInt128 & src = src_uuid.toUnderType();
+    auto src_copy = src_uuid;
+    transformEndianness<std::endian::little, std::endian::native>(src_copy);
+
+    const UInt128 & src = src_copy.toUnderType();
     UInt128 & dst = dst_uuid.toUnderType();
 
     SipHash hash;
@@ -401,10 +401,11 @@ static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
     hash.update(reinterpret_cast<const char *>(&src), sizeof(UUID));
 
     /// Saving version and variant from an old UUID
-    hash.get128(reinterpret_cast<char *>(&dst));
+    dst = hash.get128();
 
-    dst.items[1] = (dst.items[1] & 0x1fffffffffffffffull) | (src.items[1] & 0xe000000000000000ull);
-    dst.items[0] = (dst.items[0] & 0xffffffffffff0fffull) | (src.items[0] & 0x000000000000f000ull);
+    const UInt64 trace[2] = {0x000000000000f000ull, 0xe000000000000000ull};
+    UUIDHelpers::getLowBytes(dst_uuid) = (UUIDHelpers::getLowBytes(dst_uuid) & (0xffffffffffffffffull - trace[1])) | (UUIDHelpers::getLowBytes(src_uuid) & trace[1]);
+    UUIDHelpers::getHighBytes(dst_uuid) = (UUIDHelpers::getHighBytes(dst_uuid) & (0xffffffffffffffffull - trace[0])) | (UUIDHelpers::getHighBytes(src_uuid) & trace[0]);
 }
 
 class FixedStringModel : public IModel
@@ -491,7 +492,7 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
+    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::serverTimezoneInstance()) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -1105,7 +1106,7 @@ public:
     {
         if (isInteger(data_type))
         {
-            if (isUnsignedInteger(data_type))
+            if (isUInt(data_type))
                 return std::make_unique<UnsignedIntegerModel>(seed);
             else
                 return std::make_unique<SignedIntegerModel>(seed);
@@ -1301,18 +1302,14 @@ try
 
     if (structure.empty())
     {
-        ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
-        {
-            auto file = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
+        auto file = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
 
-            /// stdin must be seekable
-            auto res = lseek(file->getFD(), 0, SEEK_SET);
-            if (-1 == res)
-                throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        /// stdin must be seekable
+        auto res = lseek(file->getFD(), 0, SEEK_SET);
+        if (-1 == res)
+            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Input must be seekable file (it will be read twice)");
 
-            return file;
-        };
-
+        SingleReadBufferIterator read_buffer_iterator(std::move(file));
         schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, false, context_const);
     }
     else
@@ -1339,7 +1336,7 @@ try
         /// stdin must be seekable
         auto res = lseek(file_in.getFD(), 0, SEEK_SET);
         if (-1 == res)
-            throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Input must be seekable file (it will be read twice)");
     }
 
     Obfuscator obfuscator(header, seed, markov_model_params);

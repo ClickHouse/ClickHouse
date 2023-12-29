@@ -14,11 +14,23 @@ namespace ErrorCodes
 
 mysqlxx::PoolWithFailover createMySQLPoolWithFailover(const StorageMySQL::Configuration & configuration, const MySQLSettings & mysql_settings)
 {
+    return createMySQLPoolWithFailover(
+        configuration.database, configuration.addresses,
+        configuration.username, configuration.password, mysql_settings);
+}
+
+mysqlxx::PoolWithFailover createMySQLPoolWithFailover(
+    const std::string & database,
+    const StorageMySQL::Configuration::Addresses & addresses,
+    const std::string & username,
+    const std::string & password,
+    const MySQLSettings & mysql_settings)
+{
     if (!mysql_settings.connection_pool_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Connection pool cannot have zero size");
 
     return mysqlxx::PoolWithFailover(
-        configuration.database, configuration.addresses, configuration.username, configuration.password,
+        database, addresses, username, password,
         MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
         static_cast<unsigned>(mysql_settings.connection_pool_size),
         mysql_settings.connection_max_tries,

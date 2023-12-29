@@ -1,0 +1,20 @@
+SELECT count()
+FROM t_02848_mt1
+PREWHERE notEmpty(v) AND (k = 3)
+1
+SELECT count()
+FROM t_02848_mt2
+PREWHERE (d LIKE \'%es%\') AND (c < 20) AND (b = \'3\') AND (a = 3)
+1
+SELECT count()
+FROM t_02848_mt2
+PREWHERE (d LIKE \'%es%\') AND (c < 20) AND (c > 0) AND (a = 3)
+1
+SELECT count()
+FROM t_02848_mt2
+PREWHERE (d LIKE \'%es%\') AND (b = \'3\') AND (c < 20)
+1
+SELECT count()
+FROM t_02848_mt2
+PREWHERE (d LIKE \'%es%\') AND (b = \'3\') AND (a = 3)
+1

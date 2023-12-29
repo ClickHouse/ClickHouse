@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Cache/FileCache.h>
-#include <Common/logger_useful.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadSettings.h>
@@ -21,8 +20,7 @@ namespace DB
 class CachedOnDiskReadBufferFromFile : public ReadBufferFromFileBase
 {
 public:
-    using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
-    using ImplementationBufferCreator = std::function<ImplementationBufferPtr()>;
+    using ImplementationBufferCreator = std::function<std::unique_ptr<ReadBufferFromFileBase>()>;
 
     CachedOnDiskReadBufferFromFile(
         const String & source_file_path_,
@@ -34,7 +32,8 @@ public:
         size_t file_size_,
         bool allow_seeks_after_first_read_,
         bool use_external_buffer_,
-        std::optional<size_t> read_until_position_ = std::nullopt);
+        std::optional<size_t> read_until_position_,
+        std::shared_ptr<FilesystemCacheLog> cache_log_);
 
     ~CachedOnDiskReadBufferFromFile() override;
 
@@ -61,36 +60,46 @@ public:
         REMOTE_FS_READ_AND_PUT_IN_CACHE,
     };
 
+    bool isSeekCheap() override;
+
+    bool isContentCached(size_t offset, size_t size) override;
+
 private:
-    void initialize(size_t offset, size_t size);
+    using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
 
-    ImplementationBufferPtr getImplementationBuffer(FileSegmentPtr & file_segment);
+    void initialize();
 
-    ImplementationBufferPtr getReadBufferForFileSegment(FileSegmentPtr & file_segment);
+    /**
+     * Return a list of file segments ordered in ascending order. This list represents
+     * a full contiguous interval (without holes).
+     */
+    FileSegmentsHolderPtr getFileSegments(size_t offset, size_t size) const;
 
-    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment) const;
+    ImplementationBufferPtr getImplementationBuffer(FileSegment & file_segment);
 
-    std::optional<size_t> getLastNonDownloadedOffset() const;
+    ImplementationBufferPtr getReadBufferForFileSegment(FileSegment & file_segment);
+
+    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment);
+
+    ImplementationBufferPtr getRemoteReadBuffer(FileSegment & file_segment, ReadType read_type_);
 
     bool updateImplementationBufferIfNeeded();
 
-    void predownload(FileSegmentPtr & file_segment);
+    void predownload(FileSegment & file_segment);
 
     bool nextImplStep();
 
-    void assertCorrectness() const;
-
-    std::shared_ptr<ReadBufferFromFileBase> getRemoteFSReadBuffer(FileSegment & file_segment, ReadType read_type_);
-
-    size_t getTotalSizeToRead();
+    size_t getRemainingSizeToRead();
 
     bool completeFileSegmentAndGetNext();
 
-    void appendFilesystemCacheLog(const FileSegment::Range & file_segment_range, ReadType read_type);
+    void appendFilesystemCacheLog(const FileSegment & file_segment, ReadType read_type);
 
     bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
 
     static bool canStartFromCache(size_t current_offset, const FileSegment & file_segment);
+
+    bool nextFileSegmentsBatch();
 
     Poco::Logger * log;
     FileCache::Key cache_key;
@@ -106,10 +115,10 @@ private:
     ImplementationBufferCreator implementation_buffer_creator;
 
     /// Remote read buffer, which can only be owned by current buffer.
-    FileSegment::RemoteFileReaderPtr remote_file_reader;
+    ImplementationBufferPtr remote_file_reader;
+    ImplementationBufferPtr cache_file_reader;
 
-    std::optional<FileSegmentsHolder> file_segments_holder;
-    FileSegments::iterator current_file_segment_it;
+    FileSegmentsHolderPtr file_segments;
 
     ImplementationBufferPtr implementation_buffer;
     bool initialized = false;
@@ -135,7 +144,6 @@ private:
     String last_caller_id;
 
     String query_id;
-    bool enable_logging = false;
     String current_buffer_id;
 
     bool allow_seeks_after_first_read;
@@ -143,9 +151,9 @@ private:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheReadBuffers};
     ProfileEvents::Counters current_file_segment_counters;
 
-    FileCache::QueryContextHolder query_context_holder;
+    FileCache::QueryContextHolderPtr query_context_holder;
 
-    bool is_persistent;
+    std::shared_ptr<FilesystemCacheLog> cache_log;
 };
 
 }

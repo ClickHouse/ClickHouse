@@ -88,7 +88,6 @@ SELECT * FROM s3_engine_table LIMIT 3;
             <port>3306</port>
             <database>test</database>
             <connection_pool_size>8</connection_pool_size>
-            <on_duplicate_clause>1</on_duplicate_clause>
             <replace_query>1</replace_query>
         </mymysql>
     </named_collections>

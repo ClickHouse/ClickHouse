@@ -25,6 +25,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
 template <typename Point>
 class FunctionPolygonConvexHull : public IFunction
 {
@@ -94,10 +97,10 @@ public:
     }
 };
 
-
 template <>
 const char * FunctionPolygonConvexHull<CartesianPoint>::name = "polygonConvexHullCartesian";
 
+}
 
 REGISTER_FUNCTION(PolygonConvexHull)
 {

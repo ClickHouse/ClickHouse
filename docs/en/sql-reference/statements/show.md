@@ -6,13 +6,22 @@ sidebar_label: SHOW
 
 # SHOW Statements
 
-## SHOW CREATE TABLE
+N.B. `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless
+[`display_secrets_in_show_and_select` server setting](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select)
+is turned on,
+[`format_display_secrets_in_show_and_select` format setting](../../operations/settings/formats#format_display_secrets_in_show_and_select)
+is turned on and user has
+[`displaySecretsInShowAndSelect`](grant.md#grant-display-secrets) privilege.
+
+## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
 
 ``` sql
-SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
+SHOW [CREATE] [TEMPORARY] TABLE|DICTIONARY|VIEW|DATABASE [db.]table|view [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.
+Returns a single column of type String containing the CREATE query used for creating the specified object.
+
+`SHOW TABLE t` and `SHOW DATABASE db` have the same meaning as `SHOW CREATE TABLE|DATABASE t|db`, but `SHOW t` and `SHOW db` are not supported.
 
 Note that if you use this statement to get `CREATE` query of system tables, you will get a *fake* query, which only declares table structure, but cannot be used to create table.
 
@@ -94,23 +103,7 @@ Result:
 
 **See also**
 
--   [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
-
-## SHOW PROCESSLIST
-
-``` sql
-SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
-```
-
-Outputs the content of the [system.processes](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
-
-The `SELECT * FROM system.processes` query returns data about all the current queries.
-
-Tip (execute in the console):
-
-``` bash
-$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
-```
+- [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW TABLES
 
@@ -193,10 +186,10 @@ Result:
 
 **See also**
 
--   [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
+- [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
+- [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
 
-## SHOW COLUMNS
+## SHOW COLUMNS {#show_columns}
 
 Displays a list of columns
 
@@ -212,16 +205,16 @@ The optional keyword `EXTENDED` currently has no effect, it only exists for MySQ
 
 The optional keyword `FULL` causes the output to include the collation, comment and privilege columns.
 
-`SHOW COLUMNS` produces a result table with the following structure:
-- field - The name of the column (String)
-- type - The column data type (String)
-- null - If the column data type is Nullable (UInt8)
-- key - `PRI` if the column is part of the primary key, `SOR` if the column is part of the sorting key, empty otherwise (String)
-- default - Default expression of the column if it is of type `ALIAS`, `DEFAULT`, or `MATERIALIZED`, otherwise `NULL`. (Nullable(String))
-- extra - Additional information, currently unused (String)
-- collation - (only if `FULL` keyword was specified) Collation of the column, always `NULL` because ClickHouse has no per-column collations (Nullable(String))
-- comment - (only if `FULL` keyword was specified) Comment on the column (String)
-- privilege - (only if `FULL` keyword was specified) The privilege you have on this column, currently not available (String)
+The statement produces a result table with the following structure:
+- `field` - The name of the column (String)
+- `type` - The column data type. If the query was made through the MySQL wire protocol, then the equivalent type name in MySQL is shown. (String)
+- `null` - `YES` if the column data type is Nullable, `NO` otherwise (String)
+- `key` - `PRI` if the column is part of the primary key, `SOR` if the column is part of the sorting key, empty otherwise (String)
+- `default` - Default expression of the column if it is of type `ALIAS`, `DEFAULT`, or `MATERIALIZED`, otherwise `NULL`. (Nullable(String))
+- `extra` - Additional information, currently unused (String)
+- `collation` - (only if `FULL` keyword was specified) Collation of the column, always `NULL` because ClickHouse has no per-column collations (Nullable(String))
+- `comment` - (only if `FULL` keyword was specified) Comment on the column (String)
+- `privilege` - (only if `FULL` keyword was specified) The privilege you have on this column, currently not available (String)
 
 **Examples**
 
@@ -242,7 +235,7 @@ Result:
 
 **See also**
 
--    [system.columns](https://clickhouse.com/docs/en/operations/system-tables/columns)
+- [system.columns](https://clickhouse.com/docs/en/operations/system-tables/columns)
 
 ## SHOW DICTIONARIES
 
@@ -275,6 +268,82 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 └──────────────┘
 ```
 
+## SHOW INDEX
+
+Displays a list of primary and data skipping indexes of a table.
+
+This statement mostly exists for compatibility with MySQL. System tables [system.tables](../../operations/system-tables/tables.md) (for
+primary keys) and [system.data_skipping_indices](../../operations/system-tables/data_skipping_indices.md) (for data skipping indices)
+provide equivalent information but in a fashion more native to ClickHouse.
+
+```sql
+SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
+```
+
+The database and table name can be specified in abbreviated form as `<db>.<table>`, i.e. `FROM tab FROM db` and `FROM db.tab` are
+equivalent. If no database is specified, the query assumes the current database as database.
+
+The optional keyword `EXTENDED` currently has no effect, it only exists for MySQL compatibility.
+
+The statement produces a result table with the following structure:
+- `table` - The name of the table. (String)
+- `non_unique` - Always `1` as ClickHouse does not support uniqueness constraints. (UInt8)
+- `key_name` - The name of the index, `PRIMARY` if the index is a primary key index. (String)
+- `seq_in_index` - For a primary key index, the position of the column starting from `1`. For a data skipping index: always `1`. (UInt8)
+- `column_name` - For a primary key index, the name of the column. For a data skipping index: `''` (empty string), see field "expression". (String)
+- `collation` - The sorting of the column in the index: `A` if ascending, `D` if descending, `NULL` if unsorted. (Nullable(String))
+- `cardinality` - An estimation of the index cardinality (number of unique values in the index). Currently always 0. (UInt64)
+- `sub_part` - Always `NULL` because ClickHouse does not support index prefixes like MySQL. (Nullable(String))
+- `packed` - Always `NULL` because ClickHouse does not support packed indexes (like MySQL). (Nullable(String))
+- `null` - Currently unused
+- `index_type` - The index type, e.g. `PRIMARY`, `MINMAX`, `BLOOM_FILTER` etc. (String)
+- `comment` - Additional information about the index, currently always `''` (empty string). (String)
+- `index_comment` - `''` (empty string) because indexes in ClickHouse cannot have a `COMMENT` field (like in MySQL). (String)
+- `visible` - If the index is visible to the optimizer, always `YES`. (String)
+- `expression` - For a data skipping index, the index expression. For a primary key index: `''` (empty string). (String)
+
+**Examples**
+
+Getting information about all indexes in table 'tbl'
+
+```sql
+SHOW INDEX FROM 'tbl'
+```
+
+Result:
+
+``` text
+┌─table─┬─non_unique─┬─key_name─┬─seq_in_index─┬─column_name─┬─collation─┬─cardinality─┬─sub_part─┬─packed─┬─null─┬─index_type───┬─comment─┬─index_comment─┬─visible─┬─expression─┐
+│ tbl   │          1 │ blf_idx  │ 1            │ 1           │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ BLOOM_FILTER │         │               │ YES     │ d, b       │
+│ tbl   │          1 │ mm1_idx  │ 1            │ 1           │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ a, c, d    │
+│ tbl   │          1 │ mm2_idx  │ 1            │ 1           │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ MINMAX       │         │               │ YES     │ c, d, e    │
+│ tbl   │          1 │ PRIMARY  │ 1            │ c           │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │            │
+│ tbl   │          1 │ PRIMARY  │ 2            │ a           │ A         │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ PRIMARY      │         │               │ YES     │            │
+│ tbl   │          1 │ set_idx  │ 1            │ 1           │ ᴺᵁᴸᴸ      │ 0           │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ   │ ᴺᵁᴸᴸ │ SET          │         │               │ YES     │ e          │
+└───────┴────────────┴──────────┴──────────────┴─────────────┴───────────┴─────────────┴──────────┴────────┴──────┴──────────────┴─────────┴───────────────┴─────────┴────────────┘
+```
+
+**See also**
+
+- [system.tables](../../operations/system-tables/tables.md)
+- [system.data_skipping_indices](../../operations/system-tables/data_skipping_indices.md)
+
+## SHOW PROCESSLIST
+
+``` sql
+SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
+```
+
+Outputs the content of the [system.processes](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
+
+The `SELECT * FROM system.processes` query returns data about all the current queries.
+
+Tip (execute in the console):
+
+``` bash
+$ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
+```
+
 ## SHOW GRANTS
 
 Shows privileges for a user.
@@ -290,8 +359,6 @@ If user is not specified, the query returns privileges for the current user.
 ## SHOW CREATE USER
 
 Shows parameters that were used at a [user creation](../../sql-reference/statements/create/user.md).
-
-`SHOW CREATE USER` does not output user passwords.
 
 **Syntax**
 
@@ -406,7 +473,7 @@ Shows all [users](../../guides/sre/user-management/index.md#user-account-managem
 ``` sql
 SHOW ACCESS
 ```
-## SHOW CLUSTER(s)
+## SHOW CLUSTER(S)
 
 Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
 
@@ -542,6 +609,18 @@ Result:
 └──────────────────┴────────┴─────────────┘
 ```
 
+## SHOW SETTING
+
+``` sql
+SHOW SETTING <name>
+```
+
+Outputs setting value for specified setting name.
+
+**See Also**
+- [system.settings](../../operations/system-tables/settings.md) table
+
+
 ## SHOW FILESYSTEM CACHES
 
 ```sql
@@ -558,7 +637,7 @@ Result:
 
 **See Also**
 
--   [system.settings](../../operations/system-tables/settings.md) table
+- [system.settings](../../operations/system-tables/settings.md) table
 
 ## SHOW ENGINES
 
@@ -570,4 +649,68 @@ Outputs the content of the [system.table_engines](../../operations/system-tables
 
 **See Also**
 
--   [system.table_engines](../../operations/system-tables/table_engines.md) table
+- [system.table_engines](../../operations/system-tables/table_engines.md) table
+
+## SHOW FUNCTIONS
+
+``` sql
+SHOW FUNCTIONS [LIKE | ILIKE '<pattern>']
+```
+
+Outputs the content of the [system.functions](../../operations/system-tables/functions.md) table.
+
+If either `LIKE` or `ILIKE` clause is specified, the query returns a list of system functions whose names match the provided `<pattern>`.
+
+**See Also**
+- [system.functions](../../operations/system-tables/functions.md) table
+
+## SHOW MERGES
+
+Returns a list of merges. All merges are listed in the [system.merges](../../operations/system-tables/merges.md) table.
+
+- `table` -- Table name.
+- `database` -- The name of the database the table is in.
+- `estimate_complete` -- The estimated time to complete (in seconds).
+- `elapsed` -- The time elapsed (in seconds) since the merge started.
+- `progress` -- The percentage of completed work (0-100 percent).
+- `is_mutation` -- 1 if this process is a part mutation.
+- `size_compressed` -- The total size of the compressed data of the merged parts.
+- `memory_usage` -- Memory consumption of the merge process.
+
+
+**Syntax**
+
+``` sql
+SHOW MERGES [[NOT] LIKE|ILIKE '<table_name_pattern>'] [LIMIT <N>]
+```
+
+**Examples**
+
+Query:
+
+``` sql
+SHOW MERGES;
+```
+
+Result:
+
+```text
+┌─table──────┬─database─┬─estimate_complete─┬─elapsed─┬─progress─┬─is_mutation─┬─size_compressed─┬─memory_usage─┐
+│ your_table │ default  │              0.14 │    0.36 │    73.01 │           0 │        5.40 MiB │    10.25 MiB │
+└────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
+```
+
+Query:
+
+``` sql
+SHOW MERGES LIKE 'your_t%' LIMIT 1;
+```
+
+Result:
+
+```text
+┌─table──────┬─database─┬─estimate_complete─┬─elapsed─┬─progress─┬─is_mutation─┬─size_compressed─┬─memory_usage─┐
+│ your_table │ default  │              0.14 │    0.36 │    73.01 │           0 │        5.40 MiB │    10.25 MiB │
+└────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
+```
+

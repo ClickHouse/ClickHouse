@@ -1,10 +1,11 @@
 #pragma once
 
+#include <exception>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB
@@ -25,6 +26,68 @@ public:
             asSingleLevel().insert(std::forward<Arg>(arg));
         else
             asTwoLevel().insert(std::forward<Arg>(arg));
+    }
+
+    /// In merge, if one of the lhs and rhs is twolevelset and the other is singlelevelset, then the singlelevelset will need to convertToTwoLevel().
+    /// It's not in parallel and will cost extra large time if the thread_num is large.
+    /// This method will convert all the SingleLevelSet to TwoLevelSet in parallel if the hashsets are not all singlelevel or not all twolevel.
+    static void parallelizeMergePrepare(const std::vector<UniqExactSet *> & data_vec, ThreadPool & thread_pool)
+    {
+        unsigned long single_level_set_num = 0;
+        unsigned long all_single_hash_size = 0;
+
+        for (auto ele : data_vec)
+        {
+            if (ele->isSingleLevel())
+                single_level_set_num ++;
+        }
+
+        if (single_level_set_num == data_vec.size())
+        {
+            for (auto ele : data_vec)
+                all_single_hash_size += ele->size();
+        }
+
+        /// If all the hashtables are mixed by singleLevel and twoLevel, or all singleLevel (larger than 6000 for average value), they could be converted into
+        /// twoLevel hashtables in parallel and then merge together. please refer to the following PR for more details.
+        /// https://github.com/ClickHouse/ClickHouse/pull/50748
+        /// https://github.com/ClickHouse/ClickHouse/pull/52973
+        if ((single_level_set_num > 0 && single_level_set_num < data_vec.size()) || ((all_single_hash_size/data_vec.size()) > 6000))
+        {
+            try
+            {
+                auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
+                auto thread_func = [data_vec, data_vec_atomic_index, thread_group = CurrentThread::getGroup()]()
+                {
+                    SCOPE_EXIT_SAFE(
+                        if (thread_group)
+                            CurrentThread::detachFromGroupIfNotDetached();
+                    );
+                    if (thread_group)
+                        CurrentThread::attachToGroupIfDetached(thread_group);
+
+                    setThreadName("UniqExaConvert");
+
+                    while (true)
+                    {
+                        const auto i = data_vec_atomic_index->fetch_add(1);
+                        if (i >= data_vec.size())
+                            return;
+                        if (data_vec[i]->isSingleLevel())
+                            data_vec[i]->convertToTwoLevel();
+                    }
+                };
+                for (size_t i = 0; i < std::min<size_t>(thread_pool.getMaxThreads(), single_level_set_num); ++i)
+                    thread_pool.scheduleOrThrowOnError(thread_func);
+
+                thread_pool.wait();
+            }
+            catch (...)
+            {
+                thread_pool.wait();
+                throw;
+            }
+        }
     }
 
     auto merge(const UniqExactSet & other, ThreadPool * thread_pool = nullptr)
@@ -48,30 +111,38 @@ public:
             }
             else
             {
-                auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
-
-                auto thread_func = [&lhs, &rhs, next_bucket_to_merge, thread_group = CurrentThread::getGroup()]()
+                try
                 {
-                    SCOPE_EXIT_SAFE(
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    );
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
-                    setThreadName("UniqExactMerger");
+                    auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
 
-                    while (true)
+                    auto thread_func = [&lhs, &rhs, next_bucket_to_merge, thread_group = CurrentThread::getGroup()]()
                     {
-                        const auto bucket = next_bucket_to_merge->fetch_add(1);
-                        if (bucket >= rhs.NUM_BUCKETS)
-                            return;
-                        lhs.impls[bucket].merge(rhs.impls[bucket]);
-                    }
-                };
+                        SCOPE_EXIT_SAFE(
+                            if (thread_group)
+                                CurrentThread::detachFromGroupIfNotDetached();
+                        );
+                        if (thread_group)
+                            CurrentThread::attachToGroupIfDetached(thread_group);
+                        setThreadName("UniqExactMerger");
 
-                for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
-                    thread_pool->scheduleOrThrowOnError(thread_func);
-                thread_pool->wait();
+                        while (true)
+                        {
+                            const auto bucket = next_bucket_to_merge->fetch_add(1);
+                            if (bucket >= rhs.NUM_BUCKETS)
+                                return;
+                            lhs.impls[bucket].merge(rhs.impls[bucket]);
+                        }
+                    };
+
+                    for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
+                        thread_pool->scheduleOrThrowOnError(thread_func);
+                    thread_pool->wait();
+                }
+                catch (...)
+                {
+                    thread_pool->wait();
+                    throw;
+                }
             }
         }
     }

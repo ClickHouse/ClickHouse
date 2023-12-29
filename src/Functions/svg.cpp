@@ -16,6 +16,9 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
+
 class FunctionSvg : public IFunction
 {
 public:
@@ -93,6 +96,8 @@ public:
         return true;
     }
 };
+
+}
 
 REGISTER_FUNCTION(Svg)
 {

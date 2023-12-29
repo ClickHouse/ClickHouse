@@ -71,6 +71,9 @@ public:
         consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
     }
 
+    virtual bool supportsWritingException() const { return false; }
+    virtual void setException(const String & /*exception_message*/) {}
+
     size_t getResultRows() const { return result_rows; }
     size_t getResultBytes() const { return result_bytes; }
 
@@ -161,6 +164,11 @@ protected:
     /// Return true if format saves totals and extremes in consumeTotals/consumeExtremes and
     /// outputs them in finalize() method.
     virtual bool areTotalsAndExtremesUsedInFinalize() const { return false; }
+
+    /// Derived classes can use some wrappers around out WriteBuffer
+    /// and can override this method to return wrapper
+    /// that should be used in its derived classes.
+    virtual WriteBuffer * getWriteBufferPtr() { return &out; }
 
     WriteBuffer & out;
 

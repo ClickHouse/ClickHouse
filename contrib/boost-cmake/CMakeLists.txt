@@ -19,18 +19,22 @@ add_library (_boost_filesystem ${SRCS_FILESYSTEM})
 add_library (boost::filesystem ALIAS _boost_filesystem)
 target_include_directories (_boost_filesystem SYSTEM BEFORE PUBLIC ${LIBRARY_DIR})
 
-# headers-only
+if (OS_LINUX)
+    target_compile_definitions (_boost_filesystem PRIVATE
+        BOOST_FILESYSTEM_HAS_POSIX_AT_APIS=1
+    )
+endif ()
 
+
+# headers-only
 add_library (_boost_headers_only INTERFACE)
 add_library (boost::headers_only ALIAS _boost_headers_only)
 target_include_directories (_boost_headers_only SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
 
-# asio
-
 target_compile_definitions (_boost_headers_only INTERFACE
   BOOST_ASIO_STANDALONE=1
-  # Avoid using of deprecated in c++ > 17 std::result_of
-  BOOST_ASIO_HAS_STD_INVOKE_RESULT=1
+  BOOST_ASIO_HAS_STD_INVOKE_RESULT=1 # Avoid using of deprecated in c++ > 17 std::result_of
+  BOOST_TIMER_ENABLE_DEPRECATED=1 # wordnet-blast (enabled via USE_NLP) uses Boost legacy timer classes
 )
 
 # iostreams
@@ -92,6 +96,8 @@ add_library (boost::system ALIAS _boost_system)
 target_include_directories (_boost_system PRIVATE ${LIBRARY_DIR})
 
 # context
+option (BOOST_USE_UCONTEXT "Use ucontext_t for context switching of boost::fiber within boost::context" OFF)
+
 enable_language(ASM)
 SET(ASM_OPTIONS "-x assembler-with-cpp")
 
@@ -100,26 +106,20 @@ set (SRCS_CONTEXT
     "${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp"
 )
 
-if (SANITIZE AND (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "thread"))
-    add_compile_definitions(BOOST_USE_UCONTEXT)
-
-    if (SANITIZE STREQUAL "address")
-        add_compile_definitions(BOOST_USE_ASAN)
-    elseif (SANITIZE STREQUAL "thread")
-        add_compile_definitions(BOOST_USE_TSAN)
-    endif()
-
-    set (SRCS_CONTEXT ${SRCS_CONTEXT}
-            "${LIBRARY_DIR}/libs/context/src/fiber.cpp"
-            "${LIBRARY_DIR}/libs/context/src/continuation.cpp"
-    )
-endif()
 if (ARCH_AARCH64)
-    set (SRCS_CONTEXT ${SRCS_CONTEXT}
-        "${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S"
-        "${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_elf_gas.S"
-        "${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S"
-    )
+    if (OS_DARWIN)
+        set (SRCS_CONTEXT ${SRCS_CONTEXT}
+            "${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_macho_gas.S"
+            "${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_macho_gas.S"
+            "${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_macho_gas.S"
+        )
+    else()
+        set (SRCS_CONTEXT ${SRCS_CONTEXT}
+            "${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S"
+            "${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_elf_gas.S"
+            "${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S"
+        )
+    endif()
 elseif (ARCH_PPC64LE)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_ppc64_sysv_elf_gas.S"
@@ -152,16 +152,33 @@ else()
     )
 endif()
 
+if (SANITIZE OR BOOST_USE_UCONTEXT)
+    list (APPEND SRCS_CONTEXT
+        "${LIBRARY_DIR}/libs/context/src/fiber.cpp"
+        "${LIBRARY_DIR}/libs/context/src/continuation.cpp"
+    )
+endif()
+
 add_library (_boost_context ${SRCS_CONTEXT})
 add_library (boost::context ALIAS _boost_context)
 target_include_directories (_boost_context PRIVATE ${LIBRARY_DIR})
 
+if (SANITIZE OR BOOST_USE_UCONTEXT)
+    target_compile_definitions(_boost_context PUBLIC BOOST_USE_UCONTEXT)
+endif()
+
+if (SANITIZE STREQUAL "address")
+    target_compile_definitions(_boost_context PUBLIC BOOST_USE_ASAN)
+elseif (SANITIZE STREQUAL "thread")
+    target_compile_definitions(_boost_context PUBLIC BOOST_USE_TSAN)
+endif()
+
 # coroutine
 
 set (SRCS_COROUTINE
-  "${LIBRARY_DIR}/libs/coroutine/detail/coroutine_context.cpp"
-  "${LIBRARY_DIR}/libs/coroutine/exceptions.cpp"
-  "${LIBRARY_DIR}/libs/coroutine/posix/stack_traits.cpp"
+  "${LIBRARY_DIR}/libs/coroutine/src/detail/coroutine_context.cpp"
+  "${LIBRARY_DIR}/libs/coroutine/src/exceptions.cpp"
+  "${LIBRARY_DIR}/libs/coroutine/src/posix/stack_traits.cpp"
 )
 add_library (_boost_coroutine ${SRCS_COROUTINE})
 add_library (boost::coroutine ALIAS _boost_coroutine)

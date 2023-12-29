@@ -1,25 +1,28 @@
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/Cluster.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
+#include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <DataTypes/ObjectUtils.h>
-
 #include <Client/IConnections.h>
-#include <Common/logger_useful.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
 
 namespace ProfileEvents
 {
@@ -33,6 +36,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ALL_REPLICAS_ARE_STALE;
+}
+
+namespace FailPoints
+{
+    extern const char use_delayed_remote_source[];
 }
 
 namespace ClusterProxy
@@ -108,22 +116,25 @@ void SelectStreamFactory::createForShard(
     ContextPtr context,
     std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
-    UInt32 shard_count)
+    UInt32 shard_count,
+    bool parallel_replicas_enabled)
 {
     auto it = objects_by_shard.find(shard_info.shard_num);
     if (it != objects_by_shard.end())
         replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
 
+
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, /*replica_num=*/0, /*replica_count=*/0, /*coordinator=*/nullptr));
+            query_ast, header, context, processed_stage, shard_info.shard_num, shard_count));
     };
 
     auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
     {
         remote_shards.emplace_back(Shard{
             .query = query_ast,
+            .main_table = main_table,
             .header = header,
             .shard_info = shard_info,
             .lazy = lazy,
@@ -133,7 +144,16 @@ void SelectStreamFactory::createForShard(
 
     const auto & settings = context->getSettingsRef();
 
-    if (settings.prefer_localhost_replica && shard_info.isLocal())
+    fiu_do_on(FailPoints::use_delayed_remote_source,
+    {
+        emplace_remote_stream(/*lazy=*/true, /*local_delay=*/999999);
+        return;
+    });
+
+    // prefer_localhost_replica is not effective in case of parallel replicas
+    // (1) prefer_localhost_replica is about choosing one replica on a shard
+    // (2) parallel replica coordinator has own logic to choose replicas to read from
+    if (settings.prefer_localhost_replica && shard_info.isLocal() && !parallel_replicas_enabled)
     {
         StoragePtr main_table_storage;
 
@@ -174,7 +194,7 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
+        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
 
         if (!max_allowed_delay)
         {

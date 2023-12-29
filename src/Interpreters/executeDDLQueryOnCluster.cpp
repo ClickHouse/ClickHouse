@@ -41,15 +41,12 @@ static ZooKeeperRetriesInfo getRetriesInfo()
 {
     const auto & config_ref = Context::getGlobalContextInstance()->getConfigRef();
     return ZooKeeperRetriesInfo(
-        "DistributedDDL",
-        &Poco::Logger::get("DDLQueryStatusSource"),
         config_ref.getInt("distributed_ddl_keeper_max_retries", 5),
         config_ref.getInt("distributed_ddl_keeper_initial_backoff_ms", 100),
-        config_ref.getInt("distributed_ddl_keeper_max_backoff_ms", 5000)
-    );
+        config_ref.getInt("distributed_ddl_keeper_max_backoff_ms", 5000));
 }
 
-bool isSupportedAlterType(int type)
+bool isSupportedAlterTypeForOnClusterDDLQuery(int type)
 {
     assert(type != ASTAlterCommand::NO_TYPE);
     static const std::unordered_set<int> unsupported_alter_types{
@@ -90,7 +87,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     {
         for (const auto & command : query_alter->command_list->children)
         {
-            if (!isSupportedAlterType(command->as<ASTAlterCommand&>().type))
+            if (!isSupportedAlterTypeForOnClusterDDLQuery(command->as<ASTAlterCommand&>().type))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type of ALTER query");
         }
     }
@@ -110,6 +107,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     /// TODO: support per-cluster grant
     context->checkAccess(AccessType::CLUSTER);
 
+    /// NOTE: if `async_load_databases = true`, then it block until ddl_worker is started, which includes startup of all related tables.
     DDLWorker & ddl_worker = context->getDDLWorker();
 
     /// Enumerate hosts which will be used to send query.
@@ -184,6 +182,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);
     entry.tracing_context = OpenTelemetry::CurrentContext();
+    entry.initial_query_id = context->getClientInfo().initial_query_id;
     String node_path = ddl_worker.enqueueQuery(entry);
 
     return getDistributedDDLStatus(node_path, entry, context, /* hosts_to_wait */ nullptr);
@@ -436,8 +435,8 @@ Chunk DDLQueryStatusSource::generate()
         Strings tmp_active_hosts;
 
         {
-            auto retries_info = getRetriesInfo();
-            auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", retries_info);
+            auto retries_ctl = ZooKeeperRetriesControl(
+                "executeDDLQueryOnCluster", &Poco::Logger::get("DDLQueryStatusSource"), getRetriesInfo(), context->getProcessListElement());
             retries_ctl.retryLoop([&]()
             {
                 auto zookeeper = context->getZooKeeper();
@@ -476,8 +475,11 @@ Chunk DDLQueryStatusSource::generate()
                 String status_data;
                 bool finished_exists = false;
 
-                auto retries_info = getRetriesInfo();
-                auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", retries_info);
+                auto retries_ctl = ZooKeeperRetriesControl(
+                    "executeDDLQueryOnCluster",
+                    &Poco::Logger::get("DDLQueryStatusSource"),
+                    getRetriesInfo(),
+                    context->getProcessListElement());
                 retries_ctl.retryLoop([&]()
                 {
                     finished_exists = context->getZooKeeper()->tryGet(fs::path(node_path) / "finished" / host_id, status_data);
@@ -558,7 +560,7 @@ Strings DDLQueryStatusSource::getChildrenAllowNoNode(const std::shared_ptr<zkuti
     Strings res;
     Coordination::Error code = zookeeper->tryGetChildren(node_path, res);
     if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-        throw Coordination::Exception(code, node_path);
+        throw Coordination::Exception::fromPath(code, node_path);
     return res;
 }
 
