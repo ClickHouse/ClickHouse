@@ -415,7 +415,7 @@ private:
                 }
                 else
                 {
-                    null_map_cols[i] = ColumnUInt8::create(rows)->getData().data();
+                    null_map_cols[i] = (i == 0 ? ColumnUInt8::create(rows, 0)->getData().data() : null_map_cols[0]);
                     data_cols[i] = assert_cast<const ColumnVector<T> &>(*instructions[i].source).getData().data();
                 }
             }
