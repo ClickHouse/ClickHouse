@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT -q "system sync replica rmt1"
 path=$($CLICKHOUSE_CLIENT -q "select path from system.parts where database='$CLICKHOUSE_DATABASE' and table='rmt2' and name='all_0_0_0'")
 # ensure that path is absolute before removing
 $CLICKHOUSE_CLIENT -q "select throwIf(substring('$path', 1, 1) != '/', 'Path is relative: $path')" || exit
-rm -f $path/n.bin
+rm -f $path/count.txt
 
 $CLICKHOUSE_CLIENT -q "detach table rmt2 sync"
 $CLICKHOUSE_CLIENT --send_logs_level='fatal' -q "attach table rmt2"
