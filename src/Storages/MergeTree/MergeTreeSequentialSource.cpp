@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
+#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
 
 namespace DB
 {
@@ -168,6 +169,8 @@ Chunk MergeTreeSequentialSource::generate()
 try
 {
     const auto & header = getPort().getHeader();
+    /// Part level is useful for next step for merging non-merge tree table
+    bool add_part_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
     if (!isCancelled() && current_row < data_part->rows_count)
     {
@@ -207,7 +210,7 @@ try
                 ++it;
             }
 
-            return Chunk(std::move(res_columns), rows_read, std::make_shared<MergeTreePartLevelInfo>(data_part->info.level));
+            return Chunk(std::move(res_columns), rows_read, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(data_part->info.level) : nullptr);
         }
     }
     else

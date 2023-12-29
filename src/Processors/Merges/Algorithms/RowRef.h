@@ -130,18 +130,16 @@ struct RowRef
     UInt64 row_num = 0;
 
     UInt64 source_stream_index = 0;
-    bool source_do_not_contain_rows_with_same_primary_keys = true;
 
     bool empty() const { return sort_columns == nullptr; }
     void reset() { sort_columns = nullptr; }
 
-    void set(SortCursor & cursor, bool source_do_not_contain_rows_with_same_primary_keys_ = false)
+    void set(SortCursor & cursor)
     {
         sort_columns = cursor.impl->sort_columns.data();
         num_columns = cursor.impl->sort_columns.size();
         row_num = cursor.impl->getRow();
         source_stream_index = cursor.impl->order;
-        source_do_not_contain_rows_with_same_primary_keys = source_do_not_contain_rows_with_same_primary_keys_;
     }
 
     static bool checkEquals(size_t size, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
@@ -160,11 +158,6 @@ struct RowRef
 
     bool hasEqualSortColumnsWith(const RowRef & other) const
     {
-        /// If both chunks are from the same source stream, and the stream doesn't contain a row with the same primary key
-        /// (e.g., stream reads from a part with level > 0), then we don't need to compare them.
-        if (source_stream_index == other.source_stream_index && source_do_not_contain_rows_with_same_primary_keys)
-            return false;
-
         return checkEquals(num_columns, sort_columns, row_num, other.sort_columns, other.row_num);
     }
 };
@@ -214,11 +207,6 @@ struct RowRefWithOwnedChunk
 
     bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
     {
-        /// If both chunks are from the same source stream, and the stream doesn't contain a row with the same primary key
-        /// (e.g., stream reads from a part with level > 0), then we don't need to compare them.
-        if (source_stream_index == other.source_stream_index && owned_chunk->doNotContainRowsWithSamePrimaryKeys())
-            return false;
-
         return RowRef::checkEquals(sort_columns->size(), sort_columns->data(), row_num,
                                    other.sort_columns->data(), other.row_num);
     }

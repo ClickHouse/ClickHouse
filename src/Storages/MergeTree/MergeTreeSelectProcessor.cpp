@@ -6,6 +6,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Chunk.h>
@@ -174,7 +175,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             }
 
             return ChunkAndProgress{
-                .chunk = Chunk(ordered_columns, res.row_count, std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level)),
+                .chunk = Chunk(ordered_columns, res.row_count, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(task->getInfo().data_part->info.level) : nullptr),
                 .num_read_rows = res.num_read_rows,
                 .num_read_bytes = res.num_read_bytes,
                 .is_finished = false};

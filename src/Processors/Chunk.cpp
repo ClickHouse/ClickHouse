@@ -238,9 +238,4 @@ Chunk cloneConstWithDefault(const Chunk & chunk, size_t num_rows)
     return Chunk(std::move(columns), num_rows);
 }
 
-bool Chunk::doNotContainRowsWithSamePrimaryKeys() const
-{
-    return likely(chunk_info) && chunk_info->getMergeTreePartLevel() > 0;
-}
-
 }

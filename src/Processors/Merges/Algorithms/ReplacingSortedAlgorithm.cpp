@@ -56,7 +56,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         RowRef current_row;
         setRowRef(current_row, current);
 
-        bool key_differs = selected_row.empty() || !current_row.hasEqualSortColumnsWith(selected_row);
+        bool key_differs = selected_row.empty() || rowsHaveDifferentSortColumns(selected_row, current_row);
         if (key_differs)
         {
             /// if there are enough rows and the last one is calculated completely

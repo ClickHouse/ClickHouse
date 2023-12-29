@@ -568,6 +568,8 @@ Pipe ReadFromMergeTree::readInOrder(
             pool, std::move(algorithm), data, prewhere_info,
             actions_settings, block_size, reader_settings, virt_column_names);
 
+        processor->addPartLevelToChunk(isQueryWithFinal());
+
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
         if (set_rows_approx)
             source->addTotalRowsApprox(total_rows);

@@ -11,9 +11,6 @@ class ChunkInfo
 public:
     virtual ~ChunkInfo() = default;
     ChunkInfo() = default;
-
-    /// To be overriden by MergeTreePartLevelInfo
-    virtual UInt64 getMergeTreePartLevel() const { return 0; }
 };
 
 using ChunkInfoPtr = std::shared_ptr<const ChunkInfo>;
@@ -107,9 +104,6 @@ public:
     void append(const Chunk & chunk);
     void append(const Chunk & chunk, size_t from, size_t length); // append rows [from, from+length) of chunk
 
-    /// Only use in FINAL
-    bool doNotContainRowsWithSamePrimaryKeys() const;
-
 private:
     Columns columns;
     UInt64 num_rows = 0;
@@ -119,17 +113,6 @@ private:
 };
 
 using Chunks = std::vector<Chunk>;
-
-/// To carry part level if chunk is produced by a merge tree source
-class MergeTreePartLevelInfo : public ChunkInfo
-{
-public:
-    MergeTreePartLevelInfo() = default;
-    explicit MergeTreePartLevelInfo(UInt64 part_level) : origin_merge_tree_part_level(part_level) { }
-    UInt64 getMergeTreePartLevel() const override { return origin_merge_tree_part_level; }
-private:
-    UInt64 origin_merge_tree_part_level = 0;
-};
 
 /// AsyncInsert needs two kinds of information:
 /// - offsets of different sub-chunks
