@@ -16,11 +16,15 @@ namespace DB
 class LocalObjectStorage : public IObjectStorage
 {
 public:
-    LocalObjectStorage(String key_prefix_);
+    explicit LocalObjectStorage(String key_prefix_);
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
     std::string getName() const override { return "LocalObjectStorage"; }
+
+    std::string getBasePath() const override { return key_prefix; }
+
+    std::string getTypeName() const override { return "local_blob_storage"; }
 
     bool exists(const StoredObject & object) const override;
 

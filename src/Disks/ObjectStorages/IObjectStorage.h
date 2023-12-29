@@ -84,6 +84,10 @@ public:
 
     virtual std::string getName() const = 0;
 
+    virtual std::string getBasePath() const = 0;
+
+    virtual std::string getTypeName() const = 0;
+
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
 

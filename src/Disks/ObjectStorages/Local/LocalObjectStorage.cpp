@@ -1,6 +1,5 @@
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>

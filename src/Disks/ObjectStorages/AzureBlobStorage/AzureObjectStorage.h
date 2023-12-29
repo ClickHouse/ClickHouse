@@ -3,7 +3,6 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
@@ -63,6 +62,10 @@ public:
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
     std::string getName() const override { return "AzureObjectStorage"; }
+
+    std::string getBasePath() const override { return ""; } /// No namespaces in azure.
+
+    std::string getTypeName() const override { return "azure_blob_storage"; }
 
     bool exists(const StoredObject & object) const override;
 

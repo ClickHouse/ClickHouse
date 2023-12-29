@@ -85,6 +85,10 @@ public:
 
     std::string getName() const override { return "S3ObjectStorage"; }
 
+    std::string getBasePath() const override { return object_key_prefix; }
+
+    std::string getTypeName() const override { return "s3"; }
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -205,6 +209,8 @@ public:
     }
 
     std::string getName() const override { return "S3PlainObjectStorage"; }
+
+    std::string getTypeName() const override { return "s3_plain"; }
 
     template <class ...Args>
     explicit S3PlainObjectStorage(Args && ...args)

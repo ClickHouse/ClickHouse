@@ -33,6 +33,10 @@ public:
 
     std::string getName() const override { return "WebObjectStorage"; }
 
+    std::string getBasePath() const override { return ""; }
+
+    std::string getTypeName() const override { return "web"; }
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT

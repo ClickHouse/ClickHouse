@@ -24,7 +24,11 @@ public:
 
     std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
 
+    std::string getBasePath() const override { return object_storage->getBasePath(); }
+
     bool exists(const StoredObject & object) const override;
+
+    std::string getTypeName() const override { return object_storage->getTypeName(); }
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
