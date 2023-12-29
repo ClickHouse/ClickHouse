@@ -10,8 +10,11 @@
 #include <Parsers/ASTSetQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/Chain.h>
+#include <Processors/QueryPlan/ReadFromSubscriptionStep.h>
+#include <Processors/QueryPlan/StreamingAdapterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Streaming/SubscribersNotifierProcessor.h>
 #include <Storages/AlterCommands.h>
@@ -123,11 +126,6 @@ Pipe IStorage::watch(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method watch is not supported by storage {}", getName());
 }
 
-StreamSubscriptionPtr IStorage::subscribeForChanges()
-{
-    return subscription_manager.subscribe();
-}
-
 Pipe IStorage::read(
     const Names & /*column_names*/,
     const StorageSnapshotPtr & /*storage_snapshot*/,
@@ -180,6 +178,50 @@ void IStorage::readFromPipe(
         auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, query_info, context);
         query_plan.addStep(std::move(read_step));
     }
+}
+
+void IStorage::streamingRead(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    /// prepare read from storage plan
+    QueryPlanPtr storage_query_plan = std::make_unique<QueryPlan>();
+    read(*storage_query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+
+    if (!storage_query_plan->isInitialized())
+    {
+        auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
+        Pipe pipe(std::make_shared<NullSource>(source_header));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource");
+        storage_query_plan->addStep(std::move(read_from_pipe));
+    }
+
+    /// prepare read from subscription plan
+    QueryPlanPtr subscription_query_plan = std::make_unique<QueryPlan>();
+    auto subscription_source = std::make_unique<ReadFromSubscriptionStep>(
+        getInMemoryMetadata().getSampleBlock(),
+        storage_snapshot->getSampleBlockForColumns(column_names),
+        subscription_manager.subscribe());
+    subscription_query_plan->addStep(std::move(subscription_source));
+
+    /// unite plans with streaming adapter
+    auto streaming_adapter_step = std::make_unique<StreamingAdapterStep>(
+        storage_query_plan->getCurrentDataStream(), subscription_query_plan->getCurrentDataStream());
+
+    std::vector<QueryPlanPtr> plans;
+    plans.reserve(2);
+
+    plans.push_back(std::move(storage_query_plan));
+    plans.push_back(std::move(subscription_query_plan));
+
+    query_plan.unitePlans(std::move(streaming_adapter_step), std::move(plans));
 }
 
 Chain IStorage::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert)

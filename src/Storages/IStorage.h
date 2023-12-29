@@ -358,8 +358,6 @@ public:
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
-    virtual StreamSubscriptionPtr subscribeForChanges();
-
 private:
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
@@ -390,17 +388,6 @@ private:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
-    /** Writes the data to a table.
-      * Receives a description of the query, which can contain information about the data write method.
-      * Returns an object by which you can write data sequentially.
-      *
-      * metadata_snapshot is consistent snapshot of table metadata, it should be
-      * passed in all parts of the returned streams. Storage metadata can be
-      * changed during lifetime of the returned streams, but the snapshot is
-      * guaranteed to be immutable.
-      *
-      * async_insert - set to true if the write is part of async insert flushing
-      */
     virtual Chain writeImpl(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
@@ -433,6 +420,29 @@ public:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    /// Version of read for streaming queries
+    /// Default implementation calls default read and constructs reading from subscription pipeline
+    virtual void streamingRead(
+        QueryPlan & query_plan,
+        const Names & /*column_names*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
+        SelectQueryInfo & /*query_info*/,
+        ContextPtr /*context*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
+        size_t /*max_block_size*/,
+        size_t /*num_streams*/);
+
+    /** Writes the data to a table.
+      * Receives a description of the query, which can contain information about the data write method.
+      * Returns an object by which you can write data sequentially.
+      *
+      * metadata_snapshot is consistent snapshot of table metadata, it should be
+      * passed in all parts of the returned streams. Storage metadata can be
+      * changed during lifetime of the returned streams, but the snapshot is
+      * guaranteed to be immutable.
+      *
+      * async_insert - set to true if the write is part of async insert flushing
+      */
     virtual Chain write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,

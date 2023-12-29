@@ -1,4 +1,3 @@
-#include <vector>
 #include <Planner/PlannerJoinTree.h>
 
 #include <Common/scope_guard_safe.h>
@@ -46,8 +45,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/StreamingAdapterStep.h>
-#include <Processors/QueryPlan/ReadFromSubscriptionStep.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Storages/StorageDummy.h>
@@ -570,55 +567,6 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
     return 0;
 }
 
-void addReadFromNullSourceStep(QueryPlan& query_plan, const StorageSnapshotPtr& storage_snapshot, const TableExpressionData table_expression_data)
-{
-    auto source_header = storage_snapshot->getSampleBlockForColumns(table_expression_data.getColumnNames());
-    Pipe pipe(std::make_shared<NullSource>(source_header));
-    auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-    read_from_pipe->setStepDescription("Read from NullSource");
-    query_plan.addStep(std::move(read_from_pipe));
-}
-
-void StreamingRead(
-    QueryPlan & query_plan,
-    const StoragePtr & storage,
-    const TableExpressionData table_expression_data,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    size_t num_streams)
-{
-    /// prepare read from storage plan
-    QueryPlanPtr storage_query_plan = std::make_unique<QueryPlan>();
-    storage->read(*storage_query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-
-    if (!storage_query_plan->isInitialized())
-        addReadFromNullSourceStep(*storage_query_plan, storage_snapshot, table_expression_data);
-
-    /// prepare read from subscription plan
-    QueryPlanPtr subscription_query_plan = std::make_unique<QueryPlan>();
-    auto subscription_source = std::make_unique<ReadFromSubscriptionStep>(
-        storage->getInMemoryMetadata().getSampleBlock(),
-        storage_snapshot->getSampleBlockForColumns(table_expression_data.getColumnNames()),
-        storage->subscribeForChanges());
-    subscription_query_plan->addStep(std::move(subscription_source));
-
-    /// unite plans with streaming adapter
-    auto streaming_adapter_step = std::make_unique<StreamingAdapterStep>(
-        storage_query_plan->getCurrentDataStream(), subscription_query_plan->getCurrentDataStream());
-
-    std::vector<QueryPlanPtr> plans;
-    plans.reserve(2);
-
-    plans.push_back(std::move(storage_query_plan));
-    plans.push_back(std::move(subscription_query_plan));
-
-    query_plan.unitePlans(std::move(streaming_adapter_step), std::move(plans));
-}
-
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
@@ -874,13 +822,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
 
                 if (table_expression_query_info.isStream() && query_context->getSettingsRef().allow_experimental_streaming)
-                {
-                    StreamingRead(query_plan, storage, table_expression_data, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
-                }
+                    storage->streamingRead(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
                 else
-                {
                     storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
-                }
 
                 for (const auto & filter_info_and_description : where_filters)
                 {
@@ -927,7 +871,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             else
             {
                 /// Create step which reads from empty source if storage has no data.
-                addReadFromNullSourceStep(query_plan, storage_snapshot, table_expression_data);
+                auto source_header = storage_snapshot->getSampleBlockForColumns(table_expression_data.getColumnNames());
+                Pipe pipe(std::make_shared<NullSource>(source_header));
+                auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+                read_from_pipe->setStepDescription("Read from NullSource");
+                query_plan.addStep(std::move(read_from_pipe));
             }
         }
     }
