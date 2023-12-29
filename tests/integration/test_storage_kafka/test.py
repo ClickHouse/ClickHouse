@@ -4898,7 +4898,8 @@ def test_formats_errors(kafka_cluster):
                          kafka_max_rows_per_message = 5,
                          format_template_row='template_row.format',
                          format_regexp='id: (.+?)',
-                         input_format_with_names_use_header=0;
+                         input_format_with_names_use_header=0,
+                         format_schema='key_value_message:Message';
 
             CREATE MATERIALIZED VIEW test.view Engine=Log AS
                 SELECT key, value FROM test.{table_name};
