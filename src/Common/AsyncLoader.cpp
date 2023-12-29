@@ -1,6 +1,5 @@
 #include <Common/AsyncLoader.h>
 
-#include <exception>
 #include <limits>
 #include <optional>
 #include <base/defines.h>
