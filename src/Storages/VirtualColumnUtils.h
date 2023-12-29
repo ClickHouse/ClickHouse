@@ -77,6 +77,25 @@ void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & pa
     sources = std::move(filtered_sources);
 }
 
+ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const String & path_example);
+
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+
+template <typename T>
+void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+{
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, dag, virtual_columns, context);
+    const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
+    if (indexes.size() == sources.size())
+        return;
+
+    std::vector<T> filtered_sources;
+    filtered_sources.reserve(indexes.size());
+    for (auto index : indexes)
+        filtered_sources.emplace_back(std::move(sources[index]));
+    sources = std::move(filtered_sources);
+}
+
 void addRequestedPathFileAndSizeVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename = nullptr);
 }

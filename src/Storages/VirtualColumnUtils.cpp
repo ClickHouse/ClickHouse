@@ -390,6 +390,42 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
+ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const String & path_example)
+{
+    if (!predicate || virtual_columns.empty())
+        return {};
+
+    Block block;
+    for (const auto & column : virtual_columns)
+    {
+        if (column.name == "_file" || column.name == "_path")
+            block.insert({column.type->createColumn(), column.type, column.name});
+    }
+    /// Create a block with one row to construct filter
+    /// Append "idx" column as the filter result
+    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+    addPathAndFileToVirtualColumns(block, path_example, 0);
+    return splitFilterDagForAllowedInputs(predicate, block);
+}
+
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+{
+    Block block;
+    for (const auto & column : virtual_columns)
+    {
+        if (column.name == "_file" || column.name == "_path")
+            block.insert({column.type->createColumn(), column.type, column.name});
+    }
+    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
+
+    for (size_t i = 0; i != paths.size(); ++i)
+        addPathAndFileToVirtualColumns(block, paths[i], i);
+
+    filterBlockWithDAG(dag, block, context);
+
+    return block.getByName("_idx").column;
+}
+
 ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const String & path_example, const ContextPtr & context)
 {
     if (!query || virtual_columns.empty())

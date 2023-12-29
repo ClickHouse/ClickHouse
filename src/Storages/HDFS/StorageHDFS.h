@@ -51,7 +51,8 @@ public:
 
     String getName() const override { return "HDFS"; }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -115,6 +116,7 @@ public:
     {
         public:
             DisclosedGlobIterator(const String & uri_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+            DisclosedGlobIterator(const String & uri_, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
             StorageHDFS::PathWithInfo next();
         private:
             class Impl;
@@ -125,7 +127,7 @@ public:
     class URISIterator
     {
         public:
-            URISIterator(const std::vector<String> & uris_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+            URISIterator(const std::vector<String> & uris_, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
             StorageHDFS::PathWithInfo next();
         private:
             class Impl;
@@ -142,8 +144,8 @@ public:
         ContextPtr context_,
         UInt64 max_block_size_,
         std::shared_ptr<IteratorWrapper> file_iterator_,
-        bool need_only_count_,
-        const SelectQueryInfo & query_info_);
+        bool need_only_count_);
+        //const SelectQueryInfo & query_info_);
 
     String getName() const override;
 
@@ -162,7 +164,7 @@ private:
     ColumnsDescription columns_description;
     bool need_only_count;
     size_t total_rows_in_file = 0;
-    SelectQueryInfo query_info;
+    //SelectQueryInfo query_info;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;
