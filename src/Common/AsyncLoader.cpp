@@ -569,23 +569,30 @@ void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, std::excepti
     // Update dependent jobs
     for (const auto & dpt : dependent)
     {
-        chassert(scheduled_jobs.contains(dpt)); // All dependent jobs must be scheduled
-        Info & dpt_info = scheduled_jobs[dpt];
-        dpt_info.dependencies_left--;
-        if (!dpt_info.isBlocked())
-            enqueue(dpt_info, dpt, lock);
-
-        if (status != LoadStatus::OK)
+        if (auto dpt_info = scheduled_jobs.find(dpt); dpt_info != scheduled_jobs.end())
         {
-            std::exception_ptr cancel;
-            NOEXCEPT_SCOPE({
-                ALLOW_ALLOCATIONS_IN_SCOPE;
-                if (dpt->dependency_failure)
-                    dpt->dependency_failure(dpt, job, cancel);
-            });
-            // Recurse into dependent job if it should be canceled
-            if (cancel)
-                finish(dpt, LoadStatus::CANCELED, cancel, lock);
+            dpt_info->second.dependencies_left--;
+            if (!dpt_info->second.isBlocked())
+                enqueue(dpt_info->second, dpt, lock);
+
+            if (status != LoadStatus::OK)
+            {
+                std::exception_ptr cancel;
+                NOEXCEPT_SCOPE({
+                    ALLOW_ALLOCATIONS_IN_SCOPE;
+                    if (dpt->dependency_failure)
+                        dpt->dependency_failure(dpt, job, cancel);
+                });
+                // Recurse into dependent job if it should be canceled
+                if (cancel)
+                    finish(dpt, LoadStatus::CANCELED, cancel, lock);
+            }
+        }
+        else
+        {
+            // Job has already been canceled. Do not enter twice into the same job during finish recursion.
+            // This happens in {A<-B; A<-C; B<-D; C<-D} graph for D if A is failed or canceled.
+            chassert(status == LoadStatus::CANCELED);
         }
     }
 
