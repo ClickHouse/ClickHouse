@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -354,15 +355,6 @@ const StoragePtr & DatabaseLazyIterator::table() const
     if (!current_storage)
         current_storage = database.tryGetTable(*iterator);
     return current_storage;
-}
-
-template <typename ValueType>
-static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
-{
-    if (!ast || !ast->as<ASTLiteral>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
-
-    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
 
 void registerDatabaseLazy(DatabaseFactory & factory)

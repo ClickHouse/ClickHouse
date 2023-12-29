@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 DatabaseMaterializedMySQL::DatabaseMaterializedMySQL(
@@ -186,16 +187,6 @@ void DatabaseMaterializedMySQL::stopReplication()
     waitDatabaseStarted(/* no_throw = */ true);
     materialize_thread.stopSynchronization();
     started_up = false;
-}
-
-
-template <typename ValueType>
-static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
-{
-    if (!ast || !ast->as<ASTLiteral>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
-
-    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
 
 void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)

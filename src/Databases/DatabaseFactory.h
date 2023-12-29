@@ -2,20 +2,27 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Databases/IDatabase.h>
-
-#if USE_MYSQL
-#    include <Parsers/ASTCreateQuery.h>
-#    include <Core/MySQL/MySQLClient.h>
-#    include <Core/MySQL/MySQLClient.h>
-#    include <Databases/MySQL/MaterializedMySQLSettings.h>
-#    include <Storages/MySQL/MySQLSettings.h>
-#    include <mysqlxx/PoolWithFailover.h>
-#endif
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 class ASTCreateQuery;
+
+template <typename ValueType>
+static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
+{
+    if (!ast || !ast->as<ASTLiteral>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
+
+    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
+}
 
 class DatabaseFactory : private boost::noncopyable
 {

@@ -1,12 +1,6 @@
 #include <Databases/DatabaseFactory.h>
 
 #include <filesystem>
-#include <Databases/DatabaseAtomic.h>
-#include <Databases/DatabaseDictionary.h>
-#include <Databases/DatabaseFilesystem.h>
-#include <Databases/DatabaseLazy.h>
-#include <Databases/DatabaseMemory.h>
-#include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -67,7 +61,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int CANNOT_CREATE_DATABASE;
-    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
@@ -131,15 +125,6 @@ DatabaseFactory & DatabaseFactory::instance()
     return db_fact;
 }
 
-template <typename ValueType>
-static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
-{
-    if (!ast || !ast->as<ASTLiteral>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
-
-    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
-}
-
 DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
     auto * storage = create.storage;
@@ -152,7 +137,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     if (engine_def.arguments)
         has_engine_args = true;
 
-    if(!database_engines.contains(engine_name))
+    if (!database_engines.contains(engine_name))
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", engine_name);
 
     ASTs empty_engine_args;

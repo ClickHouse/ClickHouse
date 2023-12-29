@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int CANNOT_CREATE_DATABASE;
+    extern const int BAD_ARGUMENTS;
 }
 
 constexpr static const auto suffix = ".remove_flag";
@@ -508,15 +509,6 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
                         "of type attach table database_name.table_name");
 
     attachTable(local_context, table_name, storage, {});
-}
-
-template <typename ValueType>
-static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
-{
-    if (!ast || !ast->as<ASTLiteral>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
-
-    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
 
 void registerDatabaseMySQL(DatabaseFactory & factory)

@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int SQLITE_ENGINE_ERROR;
     extern const int UNKNOWN_TABLE;
+    extern const int BAD_ARGUMENTS;
 }
 
 DatabaseSQLite::DatabaseSQLite(
@@ -200,15 +201,6 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
                                                             throw_on_error);
 
     return create_table_query;
-}
-
-template <typename ValueType>
-static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
-{
-    if (!ast || !ast->as<ASTLiteral>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
-
-    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
 
 void registerDatabaseSQLite(DatabaseFactory & factory)
