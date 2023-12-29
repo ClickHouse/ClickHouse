@@ -9,7 +9,6 @@
 #include <vector>
 #include <unordered_set>
 #include <unordered_map>
-#include <__concepts/invocable.h>
 #include <boost/noncopyable.hpp>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
