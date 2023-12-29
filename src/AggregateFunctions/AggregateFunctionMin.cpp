@@ -75,6 +75,13 @@ void AggregateFunctionsSingleValueMin<Data>::addBatchSinglePlace(
     Arena * arena,
     ssize_t if_argument_pos) const
 {
+    if constexpr (!std::is_same_v<Data, SingleValueDataString> || !std::is_same_v<Data, SingleValueDataGeneric>)
+    {
+        /// Leave other numeric types (large integers, decimals, etc) to keep doing the comparison as it's
+        /// faster than doing a permutation
+        return Parent::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+    }
+
     constexpr int nan_direction_hint = 1;
     auto const & column = *columns[0];
     if (if_argument_pos >= 0)
@@ -163,6 +170,13 @@ void AggregateFunctionsSingleValueMin<Data>::addBatchSinglePlaceNotNull(
     Arena * arena,
     ssize_t if_argument_pos) const
 {
+    if constexpr (!std::is_same_v<Data, SingleValueDataString> || !std::is_same_v<Data, SingleValueDataGeneric>)
+    {
+        /// Leave other numeric types (large integers, decimals, etc) to keep doing the comparison as it's
+        /// faster than doing a permutation
+        return Parent::addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+    }
+
     constexpr int nan_direction_hint = 1;
     auto const & column = *columns[0];
     if (if_argument_pos >= 0)
