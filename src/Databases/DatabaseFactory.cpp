@@ -119,6 +119,18 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     return impl;
 }
 
+void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creator_fn)
+{
+    if (!databases.emplace(name, Creator{std::move(creator_fn)}).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DatabaseFactory: the database name '{}' is not unique", name);
+}
+
+DatabaseFactory & DatabaseFactory::instance()
+{
+    static DatabaseFactory db_fact;
+    return db_fact;
+}
+
 template <typename ValueType>
 static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
 {

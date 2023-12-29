@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabasesCommon.h>
@@ -354,4 +355,16 @@ const StoragePtr & DatabaseLazyIterator::table() const
     return current_storage;
 }
 
+void registerDatabaseLazy(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        return make_shared<DatabaseLazy>(
+            args.database_name,
+            args.metadata_path,
+            args.cache_expiration_time_seconds,
+            args.context);
+    };
+    factory.registerDatabase("Lazy", create_fn);
+}
 }

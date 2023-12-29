@@ -1,6 +1,7 @@
 #include <filesystem>
 
 #include <Core/Settings.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
@@ -321,4 +322,15 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     }
 }
 
+void registerDatabaseOrdinary(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        return make_shared<DatabaseOrdinary>(
+            args.database_name,
+            args.metadata_path,
+            args.context);
+    };
+    factory.registerDatabase("Ordinary", create_fn);
+}
 }

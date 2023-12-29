@@ -1,3 +1,4 @@
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
 #include <IO/Operators.h>
@@ -237,4 +238,15 @@ DatabaseTablesIteratorPtr DatabaseFilesystem::getTablesIterator(ContextPtr, cons
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
+void registerDatabaseFilesystem(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        return make_shared<DatabaseFilesystem>(
+            args.database_name,
+            args.metadata_path,
+            args.context);
+    };
+    factory.registerDatabase("FileSystem", create_fn);
+}
 }
