@@ -96,10 +96,10 @@ public:
 private:
     friend class AsyncLoader;
 
-    [[nodiscard]] size_t ok();
-    [[nodiscard]] size_t failed(const std::exception_ptr & ptr);
-    [[nodiscard]] size_t canceled(const std::exception_ptr & ptr);
-    [[nodiscard]] size_t finish();
+    void ok();
+    void failed(const std::exception_ptr & ptr);
+    void canceled(const std::exception_ptr & ptr);
+    void finish();
 
     void scheduled(UInt64 job_id_);
     void enqueued();
@@ -112,8 +112,7 @@ private:
 
     mutable std::mutex mutex;
     mutable std::condition_variable finished;
-    mutable size_t waiters = 0; // All waiters, including suspended
-    mutable size_t suspended_waiters = 0;
+    mutable size_t waiters = 0;
     LoadStatus load_status{LoadStatus::PENDING};
     std::exception_ptr load_exception;
 
@@ -253,6 +252,20 @@ inline LoadTaskPtr makeLoadTask(AsyncLoader & loader, LoadJobSet && jobs, LoadJo
 // 8)  The job is destructed.
 class AsyncLoader : private boost::noncopyable
 {
+public:
+    using Metric = CurrentMetrics::Metric;
+
+    // Helper struct for AsyncLoader construction
+    struct PoolInitializer
+    {
+        String name;
+        Metric metric_threads;
+        Metric metric_active_threads;
+        Metric metric_scheduled_threads;
+        size_t max_threads; // Zero means use all CPU cores
+        Priority priority;
+    };
+
 private:
     // Thread pool for job execution.
     // Pools control the following aspects of job execution:
@@ -267,8 +280,10 @@ private:
         std::map<UInt64, LoadJobPtr> ready_queue; // FIFO queue of jobs to be executed in this pool. Map is used for faster erasing. Key is `ready_seqno`
         size_t max_threads; // Max number of workers to be spawn
         size_t workers = 0; // Number of currently executing workers
-        size_t suspended_workers = 0; // Number of workers that are blocked by `wait()` call on a job executing in the same pool (for deadlock resolution)
+        std::atomic<size_t> suspended_workers{0}; // Number of workers that are blocked by `wait()` call on a job executing in the same pool (for deadlock resolution)
 
+        explicit Pool(const PoolInitializer & init);
+        Pool(Pool&& o) noexcept;
         bool isActive() const { return workers > 0 || !ready_queue.empty(); }
     };
 
@@ -286,19 +301,6 @@ private:
     };
 
 public:
-    using Metric = CurrentMetrics::Metric;
-
-    // Helper struct for AsyncLoader construction
-    struct PoolInitializer
-    {
-        String name;
-        Metric metric_threads;
-        Metric metric_active_threads;
-        Metric metric_scheduled_threads;
-        size_t max_threads; // Zero means use all CPU cores
-        Priority priority;
-    };
-
     AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool log_failures_, bool log_progress_);
 
     // Stops AsyncLoader before destruction
@@ -378,7 +380,6 @@ private:
     void prioritize(const LoadJobPtr & job, size_t new_pool_id, std::unique_lock<std::mutex> & lock);
     void enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<std::mutex> & lock);
     void wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job);
-    void workerIsSuspendedByWait(size_t pool_id, const LoadJobPtr & job);
     bool canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> & lock);
     bool canWorkerLive(Pool & pool, std::unique_lock<std::mutex> & lock);
     void updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> & lock);

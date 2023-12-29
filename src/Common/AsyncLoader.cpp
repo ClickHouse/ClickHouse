@@ -43,6 +43,29 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
     }
 }
 
+AsyncLoader::Pool::Pool(const AsyncLoader::PoolInitializer & init)
+    : name(init.name)
+    , priority(init.priority)
+    , thread_pool(std::make_unique<ThreadPool>(
+        init.metric_threads,
+        init.metric_active_threads,
+        init.metric_scheduled_threads,
+        /* max_threads = */ std::numeric_limits<size_t>::max(), // Unlimited number of threads, we do worker management ourselves
+        /* max_free_threads = */ 0, // We do not require free threads
+        /* queue_size = */0)) // Unlimited queue to avoid blocking during worker spawning
+    , max_threads(init.max_threads > 0 ? init.max_threads : getNumberOfPhysicalCPUCores())
+{}
+
+AsyncLoader::Pool::Pool(Pool&& o) noexcept
+    : name(o.name)
+    , priority(o.priority)
+    , thread_pool(std::move(o.thread_pool))
+    , ready_queue(std::move(o.ready_queue))
+    , max_threads(o.max_threads)
+    , workers(o.workers)
+    , suspended_workers(o.suspended_workers.load()) // All these constructors are needed because std::atomic is neither copy-constructible, nor move-constructible. We never move pools after init, so it is safe.
+{}
+
 LoadStatus LoadJob::status() const
 {
     std::unique_lock lock{mutex};
@@ -71,36 +94,35 @@ size_t LoadJob::waitersCount() const
     return waiters;
 }
 
-size_t LoadJob::ok()
+void LoadJob::ok()
 {
     std::unique_lock lock{mutex};
     load_status = LoadStatus::OK;
-    return finish();
+    finish();
 }
 
-size_t LoadJob::failed(const std::exception_ptr & ptr)
+void LoadJob::failed(const std::exception_ptr & ptr)
 {
     std::unique_lock lock{mutex};
     load_status = LoadStatus::FAILED;
     load_exception = ptr;
-    return finish();
+    finish();
 }
 
-size_t LoadJob::canceled(const std::exception_ptr & ptr)
+void LoadJob::canceled(const std::exception_ptr & ptr)
 {
     std::unique_lock lock{mutex};
     load_status = LoadStatus::CANCELED;
     load_exception = ptr;
-    return finish();
+    finish();
 }
 
-size_t LoadJob::finish()
+void LoadJob::finish()
 {
     func = {}; // To ensure job function is destructed before `AsyncLoader::wait()` return
     finish_time = std::chrono::system_clock::now();
     if (waiters > 0)
         finished.notify_all();
-    return std::exchange(suspended_waiters, 0);
 }
 
 void LoadJob::scheduled(UInt64 job_id_)
@@ -118,7 +140,7 @@ void LoadJob::enqueued()
 
 void LoadJob::execute(AsyncLoader & loader, size_t pool, const LoadJobPtr & self)
 {
-    execution_pool_id = pool;
+    execution_pool_id.store(pool);
     start_time = std::chrono::system_clock::now();
     func(loader, self);
 }
@@ -171,19 +193,7 @@ AsyncLoader::AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool lo
 {
     pools.reserve(pool_initializers.size());
     for (auto && init : pool_initializers)
-        pools.push_back({
-            .name = init.name,
-            .priority = init.priority,
-            .thread_pool = std::make_unique<ThreadPool>(
-                init.metric_threads,
-                init.metric_active_threads,
-                init.metric_scheduled_threads,
-                /* max_threads = */ std::numeric_limits<size_t>::max(), // Unlimited number of threads, we do worker management ourselves
-                /* max_free_threads = */ 0, // We do not require free threads
-                /* queue_size = */0), // Unlimited queue to avoid blocking during worker spawning
-            .ready_queue = {},
-            .max_threads = init.max_threads > 0 ? init.max_threads : getNumberOfPhysicalCPUCores()
-        });
+        pools.push_back(Pool(init));
 }
 
 AsyncLoader::~AsyncLoader()
@@ -482,8 +492,7 @@ std::vector<AsyncLoader::JobState> AsyncLoader::getJobStates() const
 
 size_t AsyncLoader::suspendedWorkersCount(size_t pool_id)
 {
-    std::unique_lock lock{mutex};
-    return pools[pool_id].suspended_workers;
+    return pools[pool_id].suspended_workers.load();
 }
 
 void AsyncLoader::checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock)
@@ -524,11 +533,10 @@ String AsyncLoader::checkCycle(const LoadJobPtr & job, LoadJobSet & left, LoadJo
 void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, std::exception_ptr exception_from_job, std::unique_lock<std::mutex> & lock)
 {
     chassert(scheduled_jobs.contains(job)); // Job was pending
-    size_t resumed_workers = 0; // Number of workers resumed in the execution pool of the job
     if (status == LoadStatus::OK)
     {
         // Notify waiters
-        resumed_workers += job->ok();
+        job->ok();
 
         // Update dependent jobs and enqueue if ready
         for (const auto & dep : scheduled_jobs[job].dependent_jobs)
@@ -544,9 +552,9 @@ void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, std::excepti
     {
         // Notify waiters
         if (status == LoadStatus::FAILED)
-            resumed_workers += job->failed(exception_from_job);
+            job->failed(exception_from_job);
         else if (status == LoadStatus::CANCELED)
-            resumed_workers += job->canceled(exception_from_job);
+            job->canceled(exception_from_job);
 
         Info & info = scheduled_jobs[job];
         if (info.isReady())
@@ -588,13 +596,6 @@ void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, std::excepti
         if (log_progress)
             logAboutProgress(log, finished_jobs.size() - old_jobs, finished_jobs.size() + scheduled_jobs.size() - old_jobs, stopwatch);
     });
-
-    if (resumed_workers)
-    {
-        Pool & pool = pools[job->executionPool()];
-        chassert(pool.suspended_workers >= resumed_workers);
-        pool.suspended_workers -= resumed_workers;
-    }
 }
 
 void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool_id, std::unique_lock<std::mutex> & lock)
@@ -676,6 +677,8 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
     if (job->job_id == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Load job '{}' waits for not scheduled load job '{}'", current_load_job->name, job->name);
 
+    scope_guard suspended_lock;
+
     // Deadlock detection and resolution
     if (current_load_job && job->load_status == LoadStatus::PENDING)
     {
@@ -698,10 +701,29 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
         if (worker_pool == job->pool_id)
         {
             job_lock.unlock(); // Avoid reverse locking order
-            workerIsSuspendedByWait(worker_pool, job);
+            std::unique_lock lock{mutex};
             job_lock.lock();
+
+            // Rechecks are required because we have reacquired mutexes
+            if (job->load_status != LoadStatus::PENDING)
+                return; // Job is already done, no wait required
+
+            if (worker_pool == job->pool_id)
+            {
+                // To resolve "blocked pool" deadlocks we spawn a new worker for every suspended worker, if required
+                // This can lead to a visible excess of `max_threads` specified for a pool,
+                // but actual number of NOT suspended workers may exceed `max_threads` ONLY in intermittent state.
+                Pool & pool = pools[worker_pool];
+                pool.suspended_workers.fetch_add(1);
+                //suspended_lock = [&pool] { chassert(pool.suspended_workers.load()); pool.suspended_workers.fetch_sub(1); };
+                if (canSpawnWorker(pool, lock))
+                    spawn(pool, lock);
+            }
         }
     }
+
+    if (job->load_status != LoadStatus::PENDING) // Shortcut just to avoid incrementing ProfileEvents
+        return;
 
     Stopwatch watch;
     job->waiters++;
@@ -710,34 +732,12 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
     ProfileEvents::increment(ProfileEvents::AsyncLoaderWaitMicroseconds, watch.elapsedMicroseconds());
 }
 
-void AsyncLoader::workerIsSuspendedByWait(size_t pool_id, const LoadJobPtr & job)
-{
-    std::unique_lock lock{mutex};
-    std::unique_lock job_lock{job->mutex};
-
-    if (job->load_status != LoadStatus::PENDING)
-        return; // Job is already done, worker can continue execution
-
-    // To resolve "blocked pool" deadlocks we spawn a new worker for every suspended worker, if required
-    // This can lead to a visible excess of `max_threads` specified for a pool,
-    // but actual number of NOT suspended workers may exceed `max_threads` ONLY in intermittent state.
-    Pool & pool = pools[pool_id];
-    pool.suspended_workers++;
-    job->suspended_waiters++;
-    if (canSpawnWorker(pool, lock))
-        spawn(pool, lock);
-
-    // TODO(serxa): it is a good idea to propagate `job` and all its dependencies in `pool.ready_queue` by introducing
-    // key {suspended_waiters, ready_seqno} instead of plain `ready_seqno`, to force newly spawn workers to work on jobs
-    // that are being waited. But it doesn't affect correctness. So let's not complicate it for time being.
-}
-
 bool AsyncLoader::canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> &)
 {
     // TODO(serxa): optimization: we should not spawn new worker on the first enqueue during `finish()` because current worker will take this job.
     return is_running
         && !pool.ready_queue.empty()
-        && pool.workers < pool.max_threads + pool.suspended_workers
+        && pool.workers < pool.max_threads + pool.suspended_workers.load()
         && (!current_priority || *current_priority >= pool.priority);
 }
 
@@ -745,7 +745,7 @@ bool AsyncLoader::canWorkerLive(Pool & pool, std::unique_lock<std::mutex> &)
 {
     return is_running
         && !pool.ready_queue.empty()
-        && pool.workers <= pool.max_threads + pool.suspended_workers
+        && pool.workers <= pool.max_threads + pool.suspended_workers.load()
         && (!current_priority || *current_priority >= pool.priority);
 }
 
