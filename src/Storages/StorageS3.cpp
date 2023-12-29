@@ -1479,7 +1479,7 @@ void StorageS3::Configuration::connect(ContextPtr context)
             auth_settings.no_sign_request.value_or(context->getConfigRef().getBool("s3.no_sign_request", false)),
         },
         "",
-        context);
+        context->getSettingsRef().max_execution_time.totalMilliseconds());
 }
 
 void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)

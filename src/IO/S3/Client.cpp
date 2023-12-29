@@ -1,3 +1,4 @@
+#include <cmath>
 #include <IO/S3/Client.h>
 
 #if USE_AWS_S3
@@ -56,36 +57,30 @@ Int64 calculateDelayOnRetries(const Int64 retries, const Int64 scaleFactor)
     return (1ul << std::min(retries, 31l)) * scaleFactor;
 }
 
-Client::RetryStrategy::RetryStrategy(uint32_t maxRetries_, ContextPtr context, uint32_t scaleFactor_, uint32_t maxDelayMs_)
+Client::RetryStrategy::RetryStrategy(uint32_t maxRetries_, Int64 max_execution_time, uint32_t scaleFactor_, uint32_t maxDelayMs_)
     : maxRetries(maxRetries_)
     , scaleFactor(scaleFactor_)
     , maxDelayMs(maxDelayMs_)
 {
     /// Calculating number of retries based on the `max_execution_time` and delays between retries
-    if (context != nullptr)
+    if (max_execution_time > 0)
     {
-        Int64 execution_time = context->getSettingsRef().max_execution_time.totalMilliseconds() / 2; /// Here we put total time/2 knowing that we will do retries
-                                                                                                    /// two times in the doRequest: first time in `getRegionForBucket()`
-                                                                                                    /// and the second time in `request_fn()` so that we can follow
-                                                                                                    /// `max_execution_time` correctly.
-        if (execution_time > 0)
-        {
-            Int64 retries = 0;
-            while (true)
-            {
-                retries++;
-                uint64_t calculated_delay = calculateDelayOnRetries(retries, scaleFactor);
-                if (calculated_delay > maxDelayMs)
-                {
-                    retries += execution_time / maxDelayMs;
-                    break;
-                }
-                execution_time -= calculated_delay;
-                if (execution_time < 0)
-                    break;
-            }
-            maxRetries = maxRetries < retries ? maxRetries : uint32_t(retries);
-        }
+        Int64 execution_time = max_execution_time / 2; /// Here we put total time/2 knowing that we will do retries
+                                                       /// two times in the doRequest: first time in `getRegionForBucket()`
+                                                       /// and the second time in `request_fn()` so that we can follow
+                                                       /// `max_execution_time` correctly.
+        
+        auto delta = calculateDelayOnRetries(2, scaleFactor) / calculateDelayOnRetries(1, scaleFactor);
+        auto min_delay_ms = scaleFactor * delta;
+        auto tries_until_max_delay = UInt32(log10(maxDelayMs/min_delay_ms) / log10(delta) + 1 );
+        auto time_left = execution_time - UInt32(min_delay_ms * (pow(delta, tries_until_max_delay) - 1) / (delta - 1)); // execution time - time until max delay
+
+        UInt32 tries;
+        if (time_left > 0) // Case if we reached the max delay
+            tries = tries_until_max_delay + UInt32(time_left / maxDelayMs);
+        else
+            tries = UInt32(log10(execution_time / min_delay_ms) / log10(delta));
+        maxRetries = maxRetries > tries ? tries : maxRetries;
     }
 
     chassert(maxDelayMs <= uint64_t(scaleFactor) * (1ul << 31l));
@@ -893,7 +888,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     HTTPHeaderEntries headers,
     CredentialsConfiguration credentials_configuration,
     const String & session_token,
-    ContextPtr context)
+    Int64 max_execution_time)
 {
     PocoHTTPClientConfiguration client_configuration = cfg_;
     client_configuration.updateSchemeAndRegion();
@@ -923,7 +918,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             std::move(credentials),
             credentials_configuration);
 
-    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts, context);
+    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts, max_execution_time);
 
     return Client::create(
         client_configuration.s3_max_redirects,
