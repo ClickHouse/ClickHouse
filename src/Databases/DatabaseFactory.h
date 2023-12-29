@@ -3,6 +3,15 @@
 #include <Interpreters/Context_fwd.h>
 #include <Databases/IDatabase.h>
 
+#if USE_MYSQL
+#    include <Parsers/ASTCreateQuery.h>
+#    include <Core/MySQL/MySQLClient.h>
+#    include <Core/MySQL/MySQLClient.h>
+#    include <Databases/MySQL/MaterializedMySQLSettings.h>
+#    include <Storages/MySQL/MySQLSettings.h>
+#    include <mysqlxx/PoolWithFailover.h>
+#endif
+
 namespace DB
 {
 
@@ -16,11 +25,14 @@ public:
 
     struct Arguments
     {
+        const String & engine_name;
+        ASTs & engine_args;
+        ASTStorage * storage_def;
+        const ASTCreateQuery & create_query;
         const String & database_name;
         const String & metadata_path;
         const UUID & uuid;
-        const ContextPtr & context;
-        const UInt64 & cache_expiration_time_seconds;
+        ContextPtr & context;
     };
 
     DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context);

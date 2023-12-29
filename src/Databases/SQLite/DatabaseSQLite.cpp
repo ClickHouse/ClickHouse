@@ -5,6 +5,7 @@
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -201,6 +202,33 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     return create_table_query;
 }
 
+template <typename ValueType>
+static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
+{
+    if (!ast || !ast->as<ASTLiteral>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
+
+    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
+}
+
+void registerDatabaseSQLite(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        auto * engine_define = args.create_query.storage;
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQLite database requires 1 argument: database path");
+
+        const auto & arguments = engine->arguments->children;
+
+        String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
+
+        return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
+    };
+    factory.registerDatabase("SQLite", create_fn);
+}
 }
 
 #endif

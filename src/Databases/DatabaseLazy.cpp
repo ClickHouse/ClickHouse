@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 
@@ -355,14 +356,33 @@ const StoragePtr & DatabaseLazyIterator::table() const
     return current_storage;
 }
 
+template <typename ValueType>
+static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
+{
+    if (!ast || !ast->as<ASTLiteral>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
+
+    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
+}
+
 void registerDatabaseLazy(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
+        auto * engine_define = args.create_query.storage;
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lazy database require cache_expiration_time_seconds argument");
+
+        const auto & arguments = engine->arguments->children;
+
+        const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
+
         return make_shared<DatabaseLazy>(
             args.database_name,
             args.metadata_path,
-            args.cache_expiration_time_seconds,
+            cache_expiration_time_seconds,
             args.context);
     };
     factory.registerDatabase("Lazy", create_fn);
