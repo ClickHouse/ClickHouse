@@ -11,9 +11,12 @@
 #include <Coordination/KeeperFeatureFlags.h>
 #include <boost/algorithm/string.hpp>
 
+#include "config.h"
+#if USE_ROCKSDB
 #include <rocksdb/table.h>
 #include <rocksdb/convenience.h>
 #include <rocksdb/utilities/db_ttl.h>
+#endif
 
 namespace DB
 {
@@ -40,6 +43,7 @@ KeeperContext::KeeperContext(bool standalone_keeper_)
     system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
 }
 
+#if USE_ROCKSDB
 using RocksDBOptions = std::unordered_map<std::string, std::string>;
 
 static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & path)
@@ -104,6 +108,7 @@ static rocksdb::Options getRocksDBOptionsFromConfig(const Poco::Util::AbstractCo
     merged.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
     return merged;
 }
+#endif
 
 KeeperContext::Storage KeeperContext::getRocksDBPathFromConfig(const Poco::Util::AbstractConfiguration & config) const
 {
@@ -161,8 +166,10 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     initializeFeatureFlags(config);
     initializeDisks(config);
 
+    #if USE_ROCKSDB
     if (config.getBool("keeper_server.coordination_settings.use_rocksdb", false))
         rocksdb_options = std::make_shared<rocksdb::Options>(getRocksDBOptionsFromConfig(config));
+    #endif
 }
 
 namespace
