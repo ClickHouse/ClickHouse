@@ -7,8 +7,8 @@
 namespace DB
 {
 
-SubscriptionSource::SubscriptionSource(Block storage_sample_, SubscriberPtr subscriber_)
-    : ISource(std::move(storage_sample_)), subscriber(std::move(subscriber_)), fd(subscriber->fd())
+SubscriptionSource::SubscriptionSource(Block storage_sample_, StreamSubscriptionPtr subscription_)
+    : ISource(std::move(storage_sample_)), subscription(std::move(subscription_)), fd(subscription->fd())
 {
 }
 
@@ -34,7 +34,7 @@ std::optional<Chunk> SubscriptionSource::tryGenerate()
     if (subscriber_chunks.empty())
     {
         LOG_DEBUG(&Poco::Logger::get("SubscriptionSource"), "extracting new chunk batch");
-        auto new_chunks = subscriber->extractAll();
+        auto new_chunks = subscription->extractAll();
         subscriber_chunks.splice(subscriber_chunks.end(), new_chunks);
     }
 
@@ -60,7 +60,7 @@ int SubscriptionSource::schedule()
 void SubscriptionSource::onCancel()
 {
     LOG_DEBUG(&Poco::Logger::get("SubscriptionSource"), "cancelling subscription");
-    subscriber->cancel();
+    subscription->cancel();
 }
 
 }

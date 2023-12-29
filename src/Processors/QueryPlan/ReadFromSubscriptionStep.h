@@ -2,7 +2,7 @@
 
 #include <Processors/QueryPlan/ISourceStep.h>
 
-#include <Storages/SubscriptionQueue.h>
+#include <Storages/Streaming/Subscription.h>
 
 namespace DB
 {
@@ -10,7 +10,7 @@ namespace DB
 class ReadFromSubscriptionStep final : public ISourceStep
 {
 public:
-    ReadFromSubscriptionStep(Block storage_sample_, Block desired_header_, SubscriberPtr subscriber_);
+    ReadFromSubscriptionStep(Block storage_sample_, Block desired_header_, StreamSubscriptionPtr subscription_);
 
     String getName() const override { return "ReadFromSubscription"; }
 
@@ -20,7 +20,7 @@ private:
     Block storage_sample;
     Block desired_header;
 
-    SubscriberPtr subscriber;
+    StreamSubscriptionPtr subscription;
 };
 
 }

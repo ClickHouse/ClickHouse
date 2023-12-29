@@ -1,17 +1,18 @@
 #include <base/defines.h>
 
 #include <Common/logger_useful.h>
+#include <Storages/Streaming/SubscriptionManager.h>
 
 #include <Processors/Streaming/SubscribersNotifierProcessor.h>
 
 namespace DB
 {
 
-SubscribersNotifierProcessor::SubscribersNotifierProcessor(const Block & header_, size_t num_streams, SubscriptionQueue & queue)
-    : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
+SubscribersNotifierProcessor::SubscribersNotifierProcessor(const Block & header_, StreamSubscriptionManager & subscription_manager_)
+    : IProcessor(InputPorts(1, header_), OutputPorts(1, header_))
     , input(inputs.front())
     , output(outputs.front())
-    , subscription_queue{queue}
+    , subscription_manager{subscription_manager_}
 {
 }
 
@@ -55,7 +56,7 @@ IProcessor::Status SubscribersNotifierProcessor::prepare()
 void SubscribersNotifierProcessor::work()
 {
     chassert(subscriber_chunk.has_value());
-    subscription_queue.pushChunk(subscriber_chunk->clone());
+    subscription_manager.pushChunk(subscriber_chunk->clone());
 }
 
 }

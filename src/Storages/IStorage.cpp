@@ -123,6 +123,11 @@ Pipe IStorage::watch(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method watch is not supported by storage {}", getName());
 }
 
+StreamSubscriptionPtr IStorage::subscribeForChanges()
+{
+    return subscription_manager.subscribe();
+}
+
 Pipe IStorage::read(
     const Names & /*column_names*/,
     const StorageSnapshotPtr & /*storage_snapshot*/,
@@ -184,7 +189,7 @@ Chain IStorage::write(const ASTPtr & query, const StorageMetadataPtr & metadata_
     if (!chain.empty() && context && context->getSettingsRef().allow_experimental_streaming)
     {
         auto subscribers_notifier
-            = std::make_shared<SubscribersNotifierProcessor>(chain.getOutputHeader(), /*num_streams=*/1, subscription_queue);
+            = std::make_shared<SubscribersNotifierProcessor>(chain.getOutputHeader(), subscription_manager);
 
         chain.addSink(std::move(subscribers_notifier));
     }

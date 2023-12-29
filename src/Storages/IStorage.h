@@ -13,7 +13,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
-#include <Storages/SubscriptionQueue.h>
+#include <Storages/Streaming/SubscriptionManager.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -277,7 +277,7 @@ private:
     MultiVersionStorageMetadataPtr metadata;
 
     /// Structure for managing subscriptions
-    SubscriptionQueue subscription_queue;
+    StreamSubscriptionManager subscription_manager;
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
@@ -358,10 +358,7 @@ public:
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
-    virtual SubscriberPtr subscribeForChanges()
-    {
-        return subscription_queue.subscribe();
-    }
+    virtual StreamSubscriptionPtr subscribeForChanges();
 
 private:
     /** Read a set of columns from the table.

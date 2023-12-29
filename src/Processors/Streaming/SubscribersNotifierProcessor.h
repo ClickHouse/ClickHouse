@@ -3,7 +3,7 @@
 #include <optional>
 
 #include <Processors/IProcessor.h>
-#include <Storages/SubscriptionQueue.h>
+#include <Storages/Streaming/SubscriptionManager.h>
 
 namespace DB
 {
@@ -11,7 +11,7 @@ namespace DB
 class SubscribersNotifierProcessor final : public IProcessor
 {
 public:
-    SubscribersNotifierProcessor(const Block & header_, size_t num_streams, SubscriptionQueue & queue);
+    SubscribersNotifierProcessor(const Block & header_, StreamSubscriptionManager & subscription_manager_);
 
     String getName() const override { return "SubscribersNotifierProcessor"; }
 
@@ -22,7 +22,7 @@ private:
     InputPort & input;
     OutputPort & output;
 
-    SubscriptionQueue & subscription_queue;
+    StreamSubscriptionManager & subscription_manager;
     std::optional<Chunk> subscriber_chunk;
 };
 

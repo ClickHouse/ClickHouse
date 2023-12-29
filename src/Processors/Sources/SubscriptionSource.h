@@ -5,7 +5,7 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 
-#include <Storages/SubscriptionQueue.h>
+#include <Storages/Streaming/Subscription.h>
 
 namespace DB
 {
@@ -14,7 +14,7 @@ namespace DB
 class SubscriptionSource final : public ISource
 {
 public:
-    SubscriptionSource(Block storage_sample_, SubscriberPtr subscriber_);
+    SubscriptionSource(Block storage_sample_, StreamSubscriptionPtr subscription_);
     ~SubscriptionSource() override = default;
 
     String getName() const override { return "Subscription"; }
@@ -28,7 +28,7 @@ protected:
     void onCancel() override;
 
 private:
-    SubscriberPtr subscriber;
+    StreamSubscriptionPtr subscription;
     std::optional<int> fd;
 
     std::list<Chunk> subscriber_chunks;

@@ -10,17 +10,17 @@
 namespace DB
 {
 
-ReadFromSubscriptionStep::ReadFromSubscriptionStep(Block storage_sample_, Block desired_header_, SubscriberPtr subscriber_)
+ReadFromSubscriptionStep::ReadFromSubscriptionStep(Block storage_sample_, Block desired_header_, StreamSubscriptionPtr subscription_)
     : ISourceStep(DataStream{.header = desired_header_})
     , storage_sample(std::move(storage_sample_))
     , desired_header(std::move(desired_header_))
-    , subscriber(std::move(subscriber_))
+    , subscription(std::move(subscription_))
 {
 }
 
 void ReadFromSubscriptionStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    Pipe pipe(std::make_shared<SubscriptionSource>(storage_sample, std::move(subscriber)));
+    Pipe pipe(std::make_shared<SubscriptionSource>(storage_sample, std::move(subscription)));
 
     if (!isCompatibleHeader(storage_sample, desired_header))
     {
