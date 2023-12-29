@@ -60,12 +60,15 @@ void JSONCompactEachRowFormatReader::skipFieldDelimiter()
 
 void JSONCompactEachRowFormatReader::skipRowEndDelimiter()
 {
+    skipWhitespaceIfAny(*in);
     JSONUtils::skipArrayEnd(*in);
+}
 
+void JSONCompactEachRowFormatReader::skipRowBetweenDelimiter()
+{
     skipWhitespaceIfAny(*in);
     if (!in->eof() && (*in->position() == ',' || *in->position() == ';'))
         ++in->position();
-
     skipWhitespaceIfAny(*in);
 }
 
@@ -90,6 +93,10 @@ void JSONCompactEachRowFormatReader::skipHeaderRow()
 
 bool JSONCompactEachRowFormatReader::checkForSuffix()
 {
+    skipWhitespaceIfAny(*in);
+    /// Allow ',' and ';' after the last row.
+    if (!in->eof() && (*in->position() == ',' || *in->position() == ';'))
+        ++in->position();
     skipWhitespaceIfAny(*in);
     return in->eof();
 }
@@ -282,6 +289,25 @@ void registerJSONCompactEachRowSchemaReader(FormatFactory & factory)
         };
         registerWithNamesAndTypes(json_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);
     }
+}
+
+void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory)
+{
+    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+    {
+        /// In case when we have names and/or types in the first two/one rows,
+        /// we need to read at least one more row of actual data. So, set
+        /// the minimum of rows for segmentation engine according to
+        /// parameters with_names and with_types.
+        size_t min_rows = 1 + int(with_names) + int(with_types);
+        factory.registerFileSegmentationEngine(format_name, [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        {
+            return JSONUtils::fileSegmentationEngineJSONCompactEachRow(in, memory, min_bytes, min_rows, max_rows);
+        });
+    };
+
+    registerWithNamesAndTypes("JSONCompactEachRow", register_func);
+    registerWithNamesAndTypes("JSONCompactStringsEachRow", register_func);
 }
 
 }

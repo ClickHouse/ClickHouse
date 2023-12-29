@@ -212,11 +212,6 @@ StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
         setInMemoryMetadata(storage_metadata);
 }
 
-bool StorageSystemZooKeeper::mayBenefitFromIndexForIn(const ASTPtr & node, ContextPtr, const StorageMetadataPtr &) const
-{
-    return node->as<ASTIdentifier>() && node->getColumnName() == "path";
-}
-
 void StorageSystemZooKeeper::read(
     QueryPlan & query_plan,
     const Names & /*column_names*/,

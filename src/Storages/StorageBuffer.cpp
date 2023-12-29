@@ -665,15 +665,6 @@ Chain StorageBuffer::writeImpl(const ASTPtr & /*query*/, const StorageMetadataPt
 }
 
 
-bool StorageBuffer::mayBenefitFromIndexForIn(
-    const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
-{
-    if (auto destination = getDestinationTable())
-        return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
-    return false;
-}
-
-
 void StorageBuffer::startup()
 {
     if (getContext()->getSettingsRef().readonly)

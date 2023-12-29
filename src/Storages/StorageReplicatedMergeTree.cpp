@@ -1835,9 +1835,13 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         return {};
     }
 
+    size_t retries_count = 0;
+    constexpr size_t MAX_RETRIES_ON_SHUTDOWN = 3;
     while (true)
     {
-        if (shutdown_called || partial_shutdown_called)
+        /// It still makes sense to make a few attempts on shutdown because we already did some job to create a part
+        /// and also we want to reduce the probability of issues with unexpected parts on restart
+        if (++retries_count > MAX_RETRIES_ON_SHUTDOWN && (shutdown_called || partial_shutdown_called))
             throw Exception(ErrorCodes::ABORTED, "Cannot commit part because shutdown called");
 
         Coordination::Requests ops;

@@ -53,8 +53,6 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsIndexForIn() const override { return true; }
-
     bool supportsTransactions() const override { return true; }
 
     void read(

@@ -8,6 +8,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/thread_local_rng.h>
 
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
