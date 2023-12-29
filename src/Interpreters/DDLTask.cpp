@@ -221,7 +221,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, c
     std::exception_ptr first_exception = nullptr;
 
     const auto maybe_secure_port = global_context->getTCPPortSecure();
-    const auto port = global_context->getTCPPort()
+    const auto port = global_context->getTCPPort();
 
     if (config_host_name)
     {
