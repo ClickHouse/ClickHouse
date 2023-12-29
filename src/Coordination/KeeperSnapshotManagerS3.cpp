@@ -13,6 +13,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3/Client.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Common/Macros.h>
@@ -98,10 +99,14 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         client_configuration.endpointOverride = new_uri.endpoint;
 
+        S3::ClientSettings client_settings{
+            .use_virtual_addressing = new_uri.is_virtual_hosted_style,
+            .disable_checksum = false,
+        };
+
         auto client = S3::ClientFactory::instance().create(
             client_configuration,
-            new_uri.is_virtual_hosted_style,
-            /* disable_checksum= */ false,
+            client_settings,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             auth_settings.server_side_encryption_customer_key_base64,

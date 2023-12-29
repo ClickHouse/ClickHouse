@@ -92,6 +92,13 @@ private:
     std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches;
 };
 
+struct ClientSettings
+{
+    bool use_virtual_addressing;
+    /// Disable checksum to avoid extra read of the input stream
+    bool disable_checksum;
+};
+
 /// Client that improves the client from the AWS SDK
 /// - inject region and URI into requests so they are rerouted to the correct destination if needed
 /// - automatically detect endpoint and regions for each bucket and cache them
@@ -116,8 +123,7 @@ public:
             const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
             const PocoHTTPClientConfiguration & client_configuration,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-            bool use_virtual_addressing,
-            bool disable_checksum);
+            const ClientSettings & client_settings);
 
     std::unique_ptr<Client> clone() const;
 
@@ -211,8 +217,7 @@ private:
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
            const PocoHTTPClientConfiguration & client_configuration,
            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-           bool use_virtual_addressing,
-           bool disable_checksum_);
+           const ClientSettings & client_settings_);
 
     Client(
         const Client & other, const PocoHTTPClientConfiguration & client_configuration);
@@ -259,8 +264,7 @@ private:
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     PocoHTTPClientConfiguration client_configuration;
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads;
-    bool use_virtual_addressing;
-    bool disable_checksum;
+    ClientSettings client_settings;
 
     std::string explicit_region;
     mutable bool detect_region = true;
@@ -290,8 +294,7 @@ public:
 
     std::unique_ptr<S3::Client> create(
         const PocoHTTPClientConfiguration & cfg,
-        bool is_virtual_hosted_style,
-        bool disable_checksum,
+        ClientSettings client_settings,
         const String & access_key_id,
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,

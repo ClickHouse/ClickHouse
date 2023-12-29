@@ -125,12 +125,11 @@ std::unique_ptr<Client> Client::create(
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
     const PocoHTTPClientConfiguration & client_configuration,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-    bool use_virtual_addressing,
-    bool disable_checksum)
+    const ClientSettings & client_settings)
 {
     verifyClientConfiguration(client_configuration);
     return std::unique_ptr<Client>(
-        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, use_virtual_addressing, disable_checksum));
+        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings));
 }
 
 std::unique_ptr<Client> Client::clone() const
@@ -160,14 +159,12 @@ Client::Client(
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
     const PocoHTTPClientConfiguration & client_configuration_,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads_,
-    bool use_virtual_addressing_,
-    bool disable_checksum_)
-    : Aws::S3::S3Client(credentials_provider_, client_configuration_, sign_payloads_, use_virtual_addressing_)
+    const ClientSettings & client_settings_)
+    : Aws::S3::S3Client(credentials_provider_, client_configuration_, sign_payloads_, client_settings_.use_virtual_addressing)
     , credentials_provider(credentials_provider_)
     , client_configuration(client_configuration_)
     , sign_payloads(sign_payloads_)
-    , use_virtual_addressing(use_virtual_addressing_)
-    , disable_checksum(disable_checksum_)
+    , client_settings(client_settings_)
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
     , log(&Poco::Logger::get("S3Client"))
@@ -207,13 +204,12 @@ Client::Client(
 Client::Client(
     const Client & other, const PocoHTTPClientConfiguration & client_configuration_)
     : Aws::S3::S3Client(other.credentials_provider, client_configuration_, other.sign_payloads,
-                        other.use_virtual_addressing)
+                        other.client_settings.use_virtual_addressing)
     , initial_endpoint(other.initial_endpoint)
     , credentials_provider(other.credentials_provider)
     , client_configuration(client_configuration_)
     , sign_payloads(other.sign_payloads)
-    , use_virtual_addressing(other.use_virtual_addressing)
-    , disable_checksum(other.disable_checksum)
+    , client_settings(other.client_settings)
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , provider_type(other.provider_type)
@@ -515,7 +511,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
-    if (disable_checksum)
+    if (client_settings.disable_checksum)
         request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
@@ -852,8 +848,7 @@ ClientFactory & ClientFactory::instance()
 
 std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const PocoHTTPClientConfiguration & cfg_,
-    bool is_virtual_hosted_style,
-    bool disable_checksum,
+    ClientSettings client_settings,
     const String & access_key_id,
     const String & secret_access_key,
     const String & server_side_encryption_customer_key_base64,
@@ -892,14 +887,17 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
 
     client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts);
 
+    /// Use virtual addressing if endpoint is not specified.
+    if (client_configuration.endpointOverride.empty())
+        client_settings.use_virtual_addressing = true;
+
     return Client::create(
         client_configuration.s3_max_redirects,
         std::move(sse_kms_config),
         credentials_provider,
         client_configuration, // Client configuration.
         Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-        is_virtual_hosted_style || client_configuration.endpointOverride.empty(), /// Use virtual addressing if endpoint is not specified.
-        disable_checksum
+        client_settings
     );
 }
 

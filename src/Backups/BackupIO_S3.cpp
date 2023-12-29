@@ -69,10 +69,14 @@ namespace
         /// Requests in backups can be extremely long, set to one hour
         client_configuration.requestTimeoutMs = 60 * 60 * 1000;
 
+        S3::ClientSettings client_settings{
+            .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
+            .disable_checksum = local_settings.s3_disable_checksum,
+        };
+
         return S3::ClientFactory::instance().create(
             client_configuration,
-            s3_uri.is_virtual_hosted_style,
-            local_settings.s3_disable_checksum,
+            client_settings,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             settings.auth_settings.server_side_encryption_customer_key_base64,
