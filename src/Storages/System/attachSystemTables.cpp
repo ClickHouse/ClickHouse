@@ -96,16 +96,16 @@ namespace DB
 
 void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
 {
-    attach<StorageSystemOne>(context, system_database, "one", "Used when the table is not specified explicitly, for example in queries like `SELECT 1`. Analog of the DUAL table in Oracle and MySQL.");
+    attach<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
     attach<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false);
     attach<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", true);
     attach<StorageSystemZeros>(context, system_database, "zeros", "Produces unlimited number of non-materialized zeros.", false);
     attach<StorageSystemZeros>(context, system_database, "zeros_mt", "Multithreaded version of system.zeros.", true);
-    attach<StorageSystemDatabases>(context, system_database, "databases", "Contains all the information about all the databases within the current server.");
-    attach<StorageSystemTables>(context, system_database, "tables", "Contains all the information about all the tables within the current server.");
-    attach<StorageSystemColumns>(context, system_database, "columns", "Contains all the information about all the columns from all the tables within the current server.");
+    attach<StorageSystemDatabases>(context, system_database, "databases", "Lists all databases of the current server.");
+    attach<StorageSystemTables>(context, system_database, "tables", "Lists all tables of the current server.");
+    attach<StorageSystemColumns>(context, system_database, "columns", "Lists all columns from all tables of the current server.");
     attach<StorageSystemFunctions>(context, system_database, "functions", "Contains a list of all available ordinary and aggregate functions with their descriptions.");
-    attach<StorageSystemEvents>(context, system_database, "events", "Contains a list of useful for profiling events with their descriptions and values at a moment of execution.");
+    attach<StorageSystemEvents>(context, system_database, "events", "Contains profiling events and their current value.");
     attach<StorageSystemSettings>(context, system_database, "settings", "Contains a list of all user-level settings (which can be modified in a scope of query or session), their current and default values along with descriptions.");
     attach<StorageSystemServerSettings>(context, system_database, "server_settings", "Contains a list of all server-wide settings (which are effective only on server startup and usually cannot be modified at runtime), their current and default values along with descriptions.");
     attach<StorageSystemSettingsChanges>(context, system_database, "settings_changes", "Contains the information about the settings changes through different ClickHouse versions. You may make ClickHouse behave like a particular previous version by changing the `compatibility` user-level settings.");
