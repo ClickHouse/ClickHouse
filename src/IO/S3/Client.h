@@ -195,7 +195,6 @@ public:
     Model::DeleteObjectsOutcome DeleteObjects(DeleteObjectsRequest & request) const;
 
     using ComposeObjectOutcome = Aws::Utils::Outcome<Aws::NoResult, Aws::S3::S3Error>;
-    ComposeObjectOutcome ComposeObject(ComposeObjectRequest & request) const;
 
     using Aws::S3::S3Client::EnableRequestProcessing;
     using Aws::S3::S3Client::DisableRequestProcessing;
@@ -235,6 +234,8 @@ private:
     using Aws::S3::S3Client::PutObject;
     using Aws::S3::S3Client::DeleteObject;
     using Aws::S3::S3Client::DeleteObjects;
+
+    ComposeObjectOutcome ComposeObject(ComposeObjectRequest & request) const;
 
     template <typename RequestType, typename RequestFn>
     std::invoke_result_t<RequestFn, RequestType>
