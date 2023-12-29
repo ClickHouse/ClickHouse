@@ -153,6 +153,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
 
 ConsumerPtr && KafkaConsumer::moveConsumer()
 {
+    cleanUnprocessed();
     if (!consumer->get_subscription().empty())
     {
         try
@@ -173,6 +174,7 @@ KafkaConsumer::~KafkaConsumer()
     if (!consumer)
         return;
 
+    cleanUnprocessed();
     try
     {
         if (!consumer->get_subscription().empty())
