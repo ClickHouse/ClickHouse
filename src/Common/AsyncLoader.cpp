@@ -480,6 +480,12 @@ std::vector<AsyncLoader::JobState> AsyncLoader::getJobStates() const
     return result;
 }
 
+size_t AsyncLoader::suspendedWorkersCount(size_t pool_id)
+{
+    std::unique_lock lock{mutex};
+    return pools[pool_id].suspended_workers;
+}
+
 void AsyncLoader::checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock)
 {
     LoadJobSet left = jobs;
@@ -586,6 +592,7 @@ void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, std::excepti
     if (resumed_workers)
     {
         Pool & pool = pools[job->executionPool()];
+        chassert(pool.suspended_workers >= resumed_workers);
         pool.suspended_workers -= resumed_workers;
     }
 }

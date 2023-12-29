@@ -331,12 +331,16 @@ public:
     void schedule(const LoadTaskPtrs & tasks);
 
     // Increase priority of a job and all its dependencies recursively.
-    // Jobs from higher (than `new_pool`) priority pools are not changed.
+    // Jobs from pools with priority higher than `new_pool` are not changed.
     void prioritize(const LoadJobPtr & job, size_t new_pool);
 
     // Sync wait for a pending job to be finished: OK, FAILED or CANCELED status.
     // Throws if job is FAILED or CANCELED unless `no_throw` is set. Returns or throws immediately if called on non-pending job.
-    // If job was not scheduled, it will be implicitly scheduled before the wait (deadlock auto-resolution).
+    // Waiting for a not scheduled job is considered to be LOGICAL_ERROR, use waitLoad() helper instead to make sure the job is scheduled.
+    // There are more rules if `wait()` is called from another job:
+    //  1) waiting on a dependent job is considered to be LOGICAL_ERROR;
+    //  2) waiting on a job in the same pool might lead to more workers spawned in that pool to resolve "blocked pool" deadlock;
+    //  3) waiting on a job with lower priority lead to priority inheritance to avoid priority inversion.
     void wait(const LoadJobPtr & job, bool no_throw = false);
 
     // Remove finished jobs, cancel scheduled jobs, wait for executing jobs to finish and remove them.
@@ -364,9 +368,7 @@ public:
 
     // For introspection and debug only, see `system.asynchronous_loader` table.
     std::vector<JobState> getJobStates() const;
-
-    // For deadlock resolution. Should not be used directly.
-    void workerIsSuspendedByWait(size_t pool_id, const LoadJobPtr & job);
+    size_t suspendedWorkersCount(size_t pool_id);
 
 private:
     void checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
@@ -376,6 +378,7 @@ private:
     void prioritize(const LoadJobPtr & job, size_t new_pool_id, std::unique_lock<std::mutex> & lock);
     void enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<std::mutex> & lock);
     void wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job);
+    void workerIsSuspendedByWait(size_t pool_id, const LoadJobPtr & job);
     bool canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> & lock);
     bool canWorkerLive(Pool & pool, std::unique_lock<std::mutex> & lock);
     void updateCurrentPriorityAndSpawn(std::unique_lock<std::mutex> & lock);
