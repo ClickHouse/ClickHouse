@@ -278,19 +278,17 @@ Pipe StorageSystemPartsBase::read(
 }
 
 
-StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_)
+StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, ColumnsDescription && columns)
     : IStorage(table_id_)
 {
-    ColumnsDescription tmp_columns(std::move(columns_));
-
     auto add_alias = [&](const String & alias_name, const String & column_name)
     {
-        if (!tmp_columns.has(column_name))
+        if (!columns.has(column_name))
             return;
-        ColumnDescription column(alias_name, tmp_columns.get(column_name).type);
+        ColumnDescription column(alias_name, columns.get(column_name).type);
         column.default_desc.kind = ColumnDefaultKind::Alias;
         column.default_desc.expression = std::make_shared<ASTIdentifier>(column_name);
-        tmp_columns.add(column);
+        columns.add(column);
     };
 
     /// Add aliases for old column names for backwards compatibility.
@@ -299,7 +297,7 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Name
     add_alias("part_name", "name");
 
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(tmp_columns);
+    storage_metadata.setColumns(columns);
     setInMemoryMetadata(storage_metadata);
 }
 

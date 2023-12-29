@@ -90,6 +90,7 @@ struct ColumnDescription
     ColumnDescription(ColumnDescription &&) = default;
     ColumnDescription(const ColumnDescription &) = default;
     ColumnDescription(String name_, DataTypePtr type_);
+    ColumnDescription(String name_, DataTypePtr type_, String comment_);
 
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
@@ -105,11 +106,11 @@ class ColumnsDescription : public IHints<>
 public:
     ColumnsDescription() = default;
 
-    ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary);
-
-    explicit ColumnsDescription(NamesAndTypes ordinary);
+    static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
 
     explicit ColumnsDescription(NamesAndTypesList ordinary);
+
+    explicit ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
 
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
 

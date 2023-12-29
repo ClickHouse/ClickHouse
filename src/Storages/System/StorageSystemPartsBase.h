@@ -75,7 +75,7 @@ private:
 protected:
     const FormatSettings format_settings = {};
 
-    StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_);
+    StorageSystemPartsBase(const StorageID & table_id_, ColumnsDescription && columns);
 
     virtual void
     processNextStorage(ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) = 0;
