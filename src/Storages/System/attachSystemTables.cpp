@@ -143,7 +143,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemSettingsProfiles>(context, system_database, "settings_profiles", "Contains properties of configured setting profiles.");
     attach<StorageSystemSettingsProfileElements>(context, system_database, "settings_profile_elements", "Describes the content of each settings profile configured on the server. Including settings constraints, roles and users for which the settings are applied, and parent settings profiles.");
     attach<StorageSystemRowPolicies>(context, system_database, "row_policies", "Contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.");
-    attach<StorageSystemQuotas>(context, system_database, "quotas", "Contains information about quotas - a way how to limit resource usage over a period of time or track the use of resources.");
+    attach<StorageSystemQuotas>(context, system_database, "quotas", "Contains information about quotas.");
     attach<StorageSystemQuotaLimits>(context, system_database, "quota_limits", "Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to specific quota.");
     attach<StorageSystemQuotaUsage>(context, system_database, "quota_usage", "Contains quota usage by the current user: how much is used and how much is left.");
     attach<StorageSystemQuotasUsage>(context, system_database, "quotas_usage", "Contains quota usage by all users.");
