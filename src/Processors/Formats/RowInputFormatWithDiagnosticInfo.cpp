@@ -71,7 +71,7 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
     {
         in->position() = in->buffer().begin() + offset_of_prev_row;
 
-        out_diag << "\nRow " << getRowNum() << ":\n";
+        out_diag << "\nRow " << getRowNum() - 1 << ":\n";
         if (!parseRowAndPrintDiagnosticInfo(columns, out_diag))
             return std::make_pair(out_diag.str(), out_data.str());
     }
@@ -94,7 +94,7 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
         ++data;
     }
 
-    out_diag << "\nRow " << getRowNum() + 1 << ":\n";
+    out_diag << "\nRow " << getRowNum() << ":\n";
     parseRowAndPrintDiagnosticInfo(columns, out_diag);
     out_diag << "\n";
 
