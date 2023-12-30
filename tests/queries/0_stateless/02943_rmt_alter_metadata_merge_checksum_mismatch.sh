@@ -34,7 +34,7 @@ function restore_failpoints()
 }
 trap restore_failpoints EXIT
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -nm --insert_keeper_fault_injection_probability=0 -q "
     drop table if exists data_r1;
     drop table if exists data_r2;
 
@@ -80,7 +80,7 @@ fi
 # This will create MERGE_PARTS, on failed replica it will be fetched from source replica (since it does not have all parts to execute merge)
 $CLICKHOUSE_CLIENT -q "optimize table $success_replica final settings optimize_throw_if_noop=1, alter_sync=1" # part all_0_0_1_1
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -nm --insert_keeper_fault_injection_probability=0 -q "
     insert into $success_replica (key) values (2); -- part all_2_2_0
     optimize table $success_replica final settings optimize_throw_if_noop=1, alter_sync=1; -- part all_0_2_2_1
     system sync replica $failed_replica pull;
