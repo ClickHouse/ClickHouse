@@ -61,19 +61,7 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     char * existing_memory = nullptr,
     size_t alignment = 0);
 
-
-/*
-template<typename WriteBufferT>
-std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
-    WriteBufferT && nested,
-    CompressionMethod method,
-    int level,
-    size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-    char * existing_memory = nullptr,
-    size_t alignment = 0);
-*/
-
-std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
+zstd::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     std::unique_ptr<WriteBuffer> nested,
     CompressionMethod method,
     int level,
