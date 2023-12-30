@@ -72,7 +72,7 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
     else if (request.getURI().starts_with("/binary"))
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        *response.send() << std::string_view(reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize);
+        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize);
     }
     else if (request.getURI() == "/js/uplot.js")
     {
