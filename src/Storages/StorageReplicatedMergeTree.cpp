@@ -9062,8 +9062,23 @@ std::optional<String> StorageReplicatedMergeTree::tryGetTableSharedIDFromCreateQ
     return id;
 }
 
+String getZeroCopyPartId(const String & part_unique_key)
+{
+    auto last_separator_pos = part_unique_key.find_last_of('/');
+    chassert(last_separator_pos != std::string::npos && last_separator_pos > 0 && last_separator_pos != part_unique_key.size());
 
-zkutil::EphemeralNodeHolderPtr StorageReplicatedMergeTree::lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const
+    auto prev_separator = part_unique_key.find_last_of('/', last_separator_pos - 1);
+    chassert(prev_separator != std::string::npos && prev_separator < last_separator_pos);
+
+    /// Here 2 last paths parts are taken as ZoroCopyPartId, not the full part_unique_key
+    String part_id = part_unique_key.substr(prev_separator + 1, part_unique_key.size());
+    chassert(part_id[last_separator_pos - prev_separator - 1] == '/');
+    part_id[last_separator_pos - prev_separator - 1] = '_';
+
+    return part_id;
+}
+
+zkutil::EphemeralNodeHolderPtr StorageReplicatedMergeTree::lockSharedDataTemporary(const String & part_name, const String & part_unique_key, const DiskPtr & disk) const
 {
     auto settings = getSettings();
 
@@ -9074,13 +9089,12 @@ zkutil::EphemeralNodeHolderPtr StorageReplicatedMergeTree::lockSharedDataTempora
     if (!zookeeper)
         return {};
 
-    String id = part_id;
-    boost::replace_all(id, "/", "_");
+    String part_id = getZeroCopyPartId(part_unique_key);
 
     String zc_zookeeper_path = getZeroCopyPartPath(*getSettings(), toString(disk->getDataSourceDescription().type), getTableSharedID(),
         part_name, zookeeper_path)[0];
 
-    String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
+    String zookeeper_node = fs::path(zc_zookeeper_path) / part_id / replica_name;
 
     LOG_TRACE(log, "Set zookeeper temporary ephemeral lock {}", zookeeper_node);
     createZeroCopyLockNode(
@@ -9119,8 +9133,7 @@ void StorageReplicatedMergeTree::getLockSharedDataOps(
     if (zookeeper->isNull())
         return;
 
-    String id = part.getUniqueId();
-    boost::replace_all(id, "/", "_");
+    String part_id = getZeroCopyPartId(part.getUniqueId());
 
     Strings zc_zookeeper_paths = getZeroCopyPartPath(
         *getSettings(), part.getDataPartStorage().getDiskType(), getTableSharedID(),
@@ -9140,7 +9153,7 @@ void StorageReplicatedMergeTree::getLockSharedDataOps(
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
-        String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
+        String zookeeper_node = fs::path(zc_zookeeper_path) / part_id / replica_name;
 
         if (!path_to_set_hardlinked_files.empty() && !hardlinks.empty())
         {
@@ -9174,8 +9187,7 @@ void StorageReplicatedMergeTree::lockSharedData(
     if (zookeeper->isNull())
         return;
 
-    String id = part.getUniqueId();
-    boost::replace_all(id, "/", "_");
+    String part_id = getZeroCopyPartId(part.getUniqueId());
 
     Strings zc_zookeeper_paths = getZeroCopyPartPath(
         *getSettings(), part.getDataPartStorage().getDiskType(), getTableSharedID(),
@@ -9195,7 +9207,7 @@ void StorageReplicatedMergeTree::lockSharedData(
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
-        String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
+        String zookeeper_node = fs::path(zc_zookeeper_path) / part_id / replica_name;
 
         LOG_TRACE(log, "Trying to create zookeeper persistent lock {} with hardlinks [{}]", zookeeper_node, fmt::join(hardlinks, ", "));
 
@@ -9434,11 +9446,11 @@ std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionP
 }
 
 std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
-        String part_id, const String & table_uuid, const MergeTreePartInfo & part_info,
+        String part_unique_id, const String & table_uuid, const MergeTreePartInfo & part_info,
         const String & replica_name_, const std::string & disk_type, const ZooKeeperWithFaultInjectionPtr & zookeeper_ptr, const MergeTreeSettings & settings,
         Poco::Logger * logger, const String & zookeeper_path_old, MergeTreeDataFormatVersion data_format_version)
 {
-    boost::replace_all(part_id, "/", "_");
+    String part_id = getZeroCopyPartId(part_unique_id);
 
     auto part_name = part_info.getPartNameV1();
 

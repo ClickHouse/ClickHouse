@@ -142,6 +142,7 @@ fi
 
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
     ln -sf $SRC_PATH/config.d/s3_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/storage_metadata.xml $DEST_SERVER_PATH/config.d/
 fi
 
 ARM="aarch64"

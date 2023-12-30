@@ -288,7 +288,7 @@ public:
         std::optional<HardlinkedFiles> hardlinked_files,
         Coordination::Requests & requests) const;
 
-    zkutil::EphemeralNodeHolderPtr lockSharedDataTemporary(const String & part_name, const String & part_id, const DiskPtr & disk) const;
+    zkutil::EphemeralNodeHolderPtr lockSharedDataTemporary(const String & part_name, const String & part_unique_key, const DiskPtr & disk) const;
 
     /// Unlock shared data part in zookeeper
     /// Return true if data unlocked
@@ -301,7 +301,7 @@ public:
     /// Return true if data unlocked
     /// Return false if data is still used by another node
     static std::pair<bool, NameSet> unlockSharedDataByID(
-        String part_id,
+        String part_unique_id,
         const String & table_uuid,
         const MergeTreePartInfo & part_info,
         const String & replica_name_,

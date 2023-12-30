@@ -142,6 +142,10 @@ EOL
 </clickhouse>
 EOL
 
+    if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
+        # We randomize setting storage_metadata_write_full_object_key, it is supposed to have no effect on the tests
+        randomize_config_boolean_value storage_metadata_write_full_object_key storage_metadata
+    fi
 }
 
 function stop()

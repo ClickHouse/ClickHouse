@@ -248,6 +248,9 @@ def test_hardlinks_preserved_when_projection_dropped(
             .strip()
             .split()
         )
+        assert len(hardlinks) == 1
+        hardlinks = hardlinks[0].replace("\\n", "\n").split()
+
         assert len(hardlinks) > 0, ",".join(hardlinks)
         assert any(["proj/" in x for x in hardlinks]), ",".join(hardlinks)
 
