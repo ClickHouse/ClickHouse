@@ -321,7 +321,7 @@ public:
         {
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
             const Names & primary_key_column_names = primary_key.column_names;
-            KeyCondition key_condition(filter, context, primary_key_column_names, primary_key.expression, NameSet{});
+            KeyCondition key_condition(filter, context, primary_key_column_names, primary_key.expression);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())
