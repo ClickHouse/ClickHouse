@@ -29,6 +29,7 @@ struct ReplicatedMergeTreeTableMetadata
     int merge_params_version = REPLICATED_MERGE_TREE_METADATA_WITH_ALL_MERGE_PARAMETERS;
     String sign_column;
     String version_column;
+    String is_deleted_column;
     String columns_to_sum;
     String graphite_params_hash;
     String primary_key;
