@@ -1155,12 +1155,16 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
 
     /// And what if it is possible that the current replica at this time has ceased to be active
     /// and the quorum is marked as failed and deleted?
-    Coordination::Stat stat;
-    String value;
-    if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, &stat) || stat.version != is_active_node_version)
+    /// Note: checking is_active is not enough since it's ephemeral, and the version can be the same after recreation,
+    /// so need to check host node as well
+    auto get_results = zookeeper->tryGet(Strings{storage.replica_path + "/is_active", storage.replica_path + "/host"});
+    const auto & is_active = get_results.at(0);
+    const auto & host = get_results.at(1);
+    if ((is_active.error == Coordination::Error::ZNONODE || is_active.stat.version != is_active_node_version)
+        || (host.error == Coordination::Error::ZNONODE || host.stat.version != host_node_version))
         throw Exception(
             ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
-            "Unknown quorum status. The data was inserted in the local replica but we could not verify quorum. Reason: "
+            "Unknown quorum status. The data was inserted in the local replica, but we could not verify the quorum. Reason: "
             "Replica became inactive while waiting for quorum");
 
     LOG_TRACE(log, "Quorum '{}' for part {} satisfied", quorum_path, part_name);
