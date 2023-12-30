@@ -183,11 +183,6 @@ public:
         const zkutil::EventPtr & watch = nullptr,
         Coordination::Error * code = nullptr);
 
-    zkutil::ZooKeeper::MultiTryGetResponse tryGet(const std::vector<std::string> & paths)
-    {
-        return access("tryGet", !paths.empty() ? paths.front() : "", [&]() { return keeper->tryGet(paths); });
-    }
-
     bool tryGetWatch(
         const std::string & path,
         std::string & res,
