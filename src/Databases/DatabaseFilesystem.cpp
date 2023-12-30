@@ -242,11 +242,24 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
-        return make_shared<DatabaseFilesystem>(
-            args.database_name,
-            args.metadata_path,
-            args.context);
+        auto * engine_define = args.create_query.storage;
+        const ASTFunction * engine = engine_define->engine;
+        const String & engine_name = engine_define->engine->name;
+
+        /// If init_path is empty, then the current path will be used
+        std::string init_path;
+
+        if (engine->arguments && !engine->arguments->children.empty())
+        {
+            if (engine->arguments->children.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem database requires at most 1 argument: filesystem_path");
+
+            const auto & arguments = engine->arguments->children;
+            init_path = safeGetLiteralValue<String>(arguments[0], engine_name);
+        }
+
+        return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context);
     };
-    factory.registerDatabase("FileSystem", create_fn);
+    factory.registerDatabase("Filesystem", create_fn);
 }
 }

@@ -182,8 +182,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         .uuid = create.uuid,
         .context = context};
 
-    assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
-
     // creator_fn creates and returns a DatabasePtr with the supplied arguments
     auto creator_fn = database_engines.at(engine_name);
 

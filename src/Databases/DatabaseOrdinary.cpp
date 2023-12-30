@@ -38,6 +38,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_DATABASE_ENGINE;
 }
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
@@ -326,6 +327,10 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
+        if (!args.create_query.attach && !args.context->getSettingsRef().allow_deprecated_database_ordinary)
+            throw Exception(
+                ErrorCodes::UNKNOWN_DATABASE_ENGINE,
+                "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
         return make_shared<DatabaseOrdinary>(
             args.database_name,
             args.metadata_path,

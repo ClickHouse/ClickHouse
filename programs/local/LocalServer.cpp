@@ -17,10 +17,12 @@
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/scope_guard_safe.h>
+#include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
@@ -31,9 +33,11 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
+#include <Loggers/Loggers.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
