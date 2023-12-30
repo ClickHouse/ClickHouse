@@ -50,7 +50,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"name",                                        std::make_shared<DataTypeString>(),    "Name of the data part."},
         {"uuid",                                        std::make_shared<DataTypeUUID>(),      "The UUID of data part."},
         {"part_type",                                   std::make_shared<DataTypeString>(),    "The data part storing format. Possible Values: Wide (a file per column) and Compact (a single file for all columns)."},
-        {"active",                                      std::make_shared<DataTypeUInt8>(),     "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging."},
+        {"active",                                      std::make_shared<DataTypeUInt8>(),     "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations."},
         {"marks",                                       std::make_shared<DataTypeUInt64>(),    "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                        std::make_shared<DataTypeUInt64>(),    "The number of rows."},
         {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>(),    "Total size of all the data part files in bytes."},
