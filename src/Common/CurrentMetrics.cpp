@@ -254,6 +254,8 @@
     M(CreatedTimersInQueryProfiler, "Number of Created thread local timers in QueryProfiler") \
     M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
     M(FDBClientBusyness, "A value where 0 indicates that the client is idle and 100 (or larger) indicates that the client is saturated") \
+    M(RefreshableViews, "Number materialized views with periodic refreshing (REFRESH)") \
+    M(RefreshingViews, "Number of materialized views currently executing a refresh") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

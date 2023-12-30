@@ -196,7 +196,7 @@ bool ReadBufferFromS3::nextImpl()
             next_result = impl->next();
             break;
         }
-        catch (Exception & e)
+        catch (Poco::Exception & e)
         {
             if (!processException(e, getPosition(), attempt) || last_attempt)
                 throw;

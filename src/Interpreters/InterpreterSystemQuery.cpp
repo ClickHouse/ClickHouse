@@ -54,6 +54,7 @@
 #include <Storages/StorageS3.h>
 #include <Storages/StorageURL.h>
 #include <Storages/StorageAzureBlob.h>
+#include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/HDFS/StorageHDFS.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -108,6 +109,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsMove;
     extern const StorageActionBlockType PullReplicationLog;
     extern const StorageActionBlockType Cleanup;
+    extern const StorageActionBlockType ViewRefresh;
 }
 
 
@@ -165,6 +167,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         return AccessType::SYSTEM_PULLING_REPLICATION_LOG;
     else if (action_type == ActionLocks::Cleanup)
         return AccessType::SYSTEM_CLEANUP;
+    else if (action_type == ActionLocks::ViewRefresh)
+        return AccessType::SYSTEM_VIEWS;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
@@ -605,6 +609,23 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_CLEANUP:
             startStopAction(ActionLocks::Cleanup, true);
             break;
+        case Type::START_VIEW:
+        case Type::START_VIEWS:
+            startStopAction(ActionLocks::ViewRefresh, true);
+            break;
+        case Type::STOP_VIEW:
+        case Type::STOP_VIEWS:
+            startStopAction(ActionLocks::ViewRefresh, false);
+            break;
+        case Type::REFRESH_VIEW:
+            getRefreshTask()->run();
+            break;
+        case Type::CANCEL_VIEW:
+            getRefreshTask()->cancel();
+            break;
+        case Type::TEST_VIEW:
+            getRefreshTask()->setFakeTime(query.fake_time_for_view);
+            break;
         case Type::DROP_REPLICA:
             dropReplica(query);
             break;
@@ -964,7 +985,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         if (auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get()))
         {
             check_not_local_replica(replicated, query);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica);
+            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated, cannot drop replica", query.getDatabase());
@@ -989,7 +1010,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             }
 
             check_not_local_replica(replicated, query);
-            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica);
+            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
@@ -1002,7 +1023,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
                 check_not_local_replica(replicated, query);
 
-        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica);
+        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
         LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
     }
     else
@@ -1090,6 +1111,17 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_DISK);
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYSTEM RESTART DISK is not supported");
+}
+
+RefreshTaskHolder InterpreterSystemQuery::getRefreshTask()
+{
+    auto ctx = getContext();
+    ctx->checkAccess(AccessType::SYSTEM_VIEWS);
+    auto task = ctx->getRefreshSet().getTask(table_id);
+    if (!task)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Refreshable view {} doesn't exist", table_id.getNameForLogs());
+    return task;
 }
 
 
@@ -1239,6 +1271,20 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES);
             else
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::REFRESH_VIEW:
+        case Type::START_VIEW:
+        case Type::START_VIEWS:
+        case Type::STOP_VIEW:
+        case Type::STOP_VIEWS:
+        case Type::CANCEL_VIEW:
+        case Type::TEST_VIEW:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_VIEWS);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_VIEWS, query.getDatabase(), query.getTable());
             break;
         }
         case Type::DROP_REPLICA:

@@ -1,3 +1,4 @@
+#include <Common/formatReadable.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
@@ -8,6 +9,8 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <base/errnoToString.h>
+#include <base/getPageSize.h>
+#include <sys/resource.h>
 #include <chrono>
 
 #include "config.h"
@@ -653,6 +656,19 @@ void AsynchronousMetrics::update(TimePoint update_time)
                     ReadableSize(difference));
 
             total_memory_tracker.setRSS(rss, free_memory_in_allocator_arenas);
+        }
+    }
+
+    {
+        struct rusage rusage{};
+        if (!getrusage(RUSAGE_SELF, &rusage))
+        {
+            new_values["MemoryResidentMax"] = { rusage.ru_maxrss * 1024 /* KiB -> bytes */,
+                "Maximum amount of physical memory used by the server process, in bytes." };
+        }
+        else
+        {
+            LOG_ERROR(log, "Cannot obtain resource usage: {}", errnoToString(errno));
         }
     }
 #endif

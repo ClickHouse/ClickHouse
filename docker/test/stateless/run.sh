@@ -62,6 +62,7 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
 
     # it contains some new settings, but we can safely remove it
     rm /etc/clickhouse-server/users.d/s3_cache_new.xml
+    rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 fi
 
 # For flaky check we also enable thread fuzzer
@@ -220,11 +221,11 @@ export -f run_tests
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
-    timeout "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
+    timeout_with_logging "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
       | sed 's/All tests have finished//' | sed 's/No tests were run//' ||:
 fi
 
-timeout "$MAX_RUN_TIME" bash -c run_tests ||:
+timeout_with_logging "$MAX_RUN_TIME" bash -c run_tests ||:
 
 echo "Files in current directory"
 ls -la ./

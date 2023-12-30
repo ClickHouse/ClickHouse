@@ -60,12 +60,15 @@ void JSONCompactEachRowFormatReader::skipFieldDelimiter()
 
 void JSONCompactEachRowFormatReader::skipRowEndDelimiter()
 {
+    skipWhitespaceIfAny(*in);
     JSONUtils::skipArrayEnd(*in);
+}
 
+void JSONCompactEachRowFormatReader::skipRowBetweenDelimiter()
+{
     skipWhitespaceIfAny(*in);
     if (!in->eof() && (*in->position() == ',' || *in->position() == ';'))
         ++in->position();
-
     skipWhitespaceIfAny(*in);
 }
 
@@ -90,6 +93,10 @@ void JSONCompactEachRowFormatReader::skipHeaderRow()
 
 bool JSONCompactEachRowFormatReader::checkForSuffix()
 {
+    skipWhitespaceIfAny(*in);
+    /// Allow ',' and ';' after the last row.
+    if (!in->eof() && (*in->position() == ',' || *in->position() == ';'))
+        ++in->position();
     skipWhitespaceIfAny(*in);
     return in->eof();
 }

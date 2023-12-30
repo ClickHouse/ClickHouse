@@ -96,6 +96,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/MaterializedView/RefreshSet.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
@@ -290,6 +291,7 @@ struct ContextSharedPart : boost::noncopyable
     MergeList merge_list;                                       /// The list of executable merge (for (Replicated)?MergeTree)
     MovesList moves_list;                                       /// The list of executing moves (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
+    RefreshSet refresh_set;                                 /// The list of active refreshes (for MaterializedView)
     ConfigurationPtr users_config TSA_GUARDED_BY(mutex);                              /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;                /// Handler for interserver communication.
 
@@ -828,6 +830,8 @@ MovesList & Context::getMovesList() { return shared->moves_list; }
 const MovesList & Context::getMovesList() const { return shared->moves_list; }
 ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
 const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
+RefreshSet & Context::getRefreshSet() { return shared->refresh_set; }
+const RefreshSet & Context::getRefreshSet() const { return shared->refresh_set; }
 
 String Context::resolveDatabase(const String & database_name) const
 {
@@ -4542,7 +4546,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (!storage_id)
     {
         if (exception)
-            exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty");
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty"));
         return storage_id;
     }
 
@@ -4603,7 +4607,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         if (current_database.empty())
         {
             if (exception)
-                exception->emplace(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
+                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected"));
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;

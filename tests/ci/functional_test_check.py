@@ -254,7 +254,7 @@ def main():
     )
 
     commit = get_commit(gh, pr_info.sha)
-    atexit.register(update_mergeable_check, gh, pr_info, check_name)
+    atexit.register(update_mergeable_check, commit, pr_info, check_name)
 
     if validate_bugfix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":

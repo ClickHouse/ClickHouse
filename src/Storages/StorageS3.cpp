@@ -104,6 +104,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "structure",
     "access_key_id",
     "secret_access_key",
+    "session_token",
     "filename",
     "use_environment_credentials",
     "max_single_read_retries",
@@ -1460,11 +1461,16 @@ void StorageS3::Configuration::connect(ContextPtr context)
 
     client_configuration.requestTimeoutMs = request_settings.request_timeout_ms;
 
-    auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
+    S3::ClientSettings client_settings{
+        .use_virtual_addressing = url.is_virtual_hosted_style,
+        .disable_checksum = local_settings.s3_disable_checksum,
+        .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
+    };
+
+    auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key, auth_settings.session_token);
     client = S3::ClientFactory::instance().create(
         client_configuration,
-        url.is_virtual_hosted_style,
-        local_settings.s3_disable_checksum,
+        client_settings,
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
         auth_settings.server_side_encryption_customer_key_base64,
@@ -1521,11 +1527,14 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         /// S3('url', NOSIGN, 'format')
         /// S3('url', NOSIGN, 'format', 'compression')
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key')
+        /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'session_token')
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
+        /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'session_token', 'format')
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
+        /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'session_token', 'format', 'compression')
         /// with optional headers() function
 
-        if (engine_args.empty() || engine_args.size() > 5)
+        if (engine_args.empty() || engine_args.size() > 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage S3 requires 1 to 5 arguments: "
                             "url, [NOSIGN | access_key_id, secret_access_key], name of used format and [compression_method]");
@@ -1541,7 +1550,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         static std::unordered_map<size_t, std::unordered_map<std::string_view, size_t>> size_to_engine_args
         {
             {1, {{}}},
-            {5, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"compression_method", 4}}}
+            {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}}}
         };
 
         std::unordered_map<std::string_view, size_t> engine_args_to_idx;
@@ -1577,7 +1586,8 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
             else
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
         }
-        /// For 4 arguments we support 2 possible variants:
+        /// For 4 arguments we support 3 possible variants:
+        /// - s3(source, access_key_id, secret_access_key, session_token)
         /// - s3(source, access_key_id, secret_access_key, format)
         /// - s3(source, NOSIGN, format, compression_method)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN or not.
@@ -1590,7 +1600,32 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
                 engine_args_to_idx = {{"format", 2}, {"compression_method", 3}};
             }
             else
-                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
+            {
+                auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
+                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+                {
+                    engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
+                }
+                else
+                {
+                    engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}};
+                }
+            }
+        }
+        /// For 5 arguments we support 2 possible variants:
+        /// - s3(source, access_key_id, secret_access_key, session_token, format)
+        /// - s3(source, access_key_id, secret_access_key, format, compression)
+        else if (engine_args.size() == 5)
+        {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
+            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+            {
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"compression", 4}};
+            }
+            else
+            {
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}};
+            }
         }
         else
         {
@@ -1611,6 +1646,10 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
 
         if (engine_args_to_idx.contains("secret_access_key"))
             configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["secret_access_key"]], "secret_access_key");
+
+        if (engine_args_to_idx.contains("session_token"))
+            configuration.auth_settings.session_token = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["session_token"]], "session_token");
+
 
         configuration.auth_settings.no_sign_request = no_sign_request;
     }
