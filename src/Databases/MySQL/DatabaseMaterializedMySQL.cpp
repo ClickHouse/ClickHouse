@@ -6,7 +6,6 @@
 #    include <Common/parseRemoteDescription.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 
-#    include <Interpreters/Context.h>
 #    include <Interpreters/evaluateConstantExpression.h>
 #    include <Databases/DatabaseFactory.h>
 #    include <Databases/MySQL/DatabaseMaterializedTablesIterator.h>
@@ -16,7 +15,6 @@
 #    include <Parsers/queryToString.h>
 #    include <Storages/StorageMySQL.h>
 #    include <Storages/StorageMaterializedMySQL.h>
-#    include <Storages/MySQL/MySQLHelpers.h>
 #    include <Storages/NamedCollectionsHelpers.h>
 #    include <Common/setThreadName.h>
 #    include <Common/PoolId.h>
@@ -265,7 +263,8 @@ void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)
             std::move(client),
             std::move(materialize_mode_settings));
     };
-    factory.registerDatabase("MySQL", create_fn);
+    factory.registerDatabase("MaterializeMySQL", create_fn);
+    factory.registerDatabase("MaterializedMySQL", create_fn);
 }
 
 }

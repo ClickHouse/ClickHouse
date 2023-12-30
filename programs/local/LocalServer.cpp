@@ -10,18 +10,17 @@
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
 #include <Poco/SimpleFileChannel.h>
+#include <Databases/registerDatabases.h>
 #include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesOverlay.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/scope_guard_safe.h>
-#include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
@@ -32,11 +31,9 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
-#include <Loggers/Loggers.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
@@ -489,6 +486,7 @@ try
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
+    registerDatabases();
     registerStorages();
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);

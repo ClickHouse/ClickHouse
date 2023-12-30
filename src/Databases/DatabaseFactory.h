@@ -34,7 +34,7 @@ public:
     {
         const String & engine_name;
         ASTs & engine_args;
-        ASTStorage * storage_def;
+        ASTStorage * storage;
         const ASTCreateQuery & create_query;
         const String & database_name;
         const String & metadata_path;
@@ -48,15 +48,9 @@ public:
 
     using CreatorFn = std::function<DatabasePtr(const Arguments & arguments)>;
 
-    struct Creator
-    {
-        CreatorFn creator_fn;
-    };
-    using DatabaseEngines = std::unordered_map<std::string, Creator>;
+    using DatabaseEngines = std::unordered_map<std::string, CreatorFn>;
 
     void registerDatabase(const std::string & name, CreatorFn creator_fn);
-
-    const DatabaseEngines & getAllDatabases() const { return database_engines; }
 
 private:
     DatabaseEngines database_engines;

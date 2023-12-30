@@ -22,14 +22,11 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/File.h>
 
 namespace DB
 {
