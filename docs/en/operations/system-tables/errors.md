@@ -16,8 +16,7 @@ Columns:
 - `remote` ([UInt8](../../sql-reference/data-types/int-uint.md)) — remote exception (i.e. received during one of the distributed queries).
 
 :::note
-Counters for some errors may increase during successful query execution.
-It's not recommended to use this table for server monitoring purposes unless you are sure that corresponding error can not be a false positive.
+Counters for some errors may increase during successful query execution. It's not recommended to use this table for server monitoring purposes unless you are sure that corresponding error can not be a false positive.
 :::
 
 **Example**
