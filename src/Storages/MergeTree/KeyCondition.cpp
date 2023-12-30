@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -1640,6 +1641,15 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
+    const auto * node_dag = node.getDAGNode();
+    if (node_dag && node_dag->result_type->equals(DataTypeNullable(std::make_shared<DataTypeNothing>())))
+    {
+        /// If the inferred result type is Nullable(Nothing) at the query analysis stage,
+        /// we don't analyze this node further as its condition will always be false.
+        out.function = RPNElement::ALWAYS_FALSE;
+        return true;
+    }
+
     /** Functions < > = != <= >= in `notIn` isNull isNotNull, where one argument is a constant, and the other is one of columns of key,
       *  or itself, wrapped in a chain of possibly-monotonic functions,
       *  (for example, if the table has ORDER BY time, we will check the conditions like
