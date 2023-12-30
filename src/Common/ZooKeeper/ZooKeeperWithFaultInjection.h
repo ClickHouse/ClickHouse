@@ -188,35 +188,6 @@ public:
         return access("tryGet", !paths.empty() ? paths.front() : "", [&]() { return keeper->tryGet(paths); });
     }
 
-    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses)
-    {
-        constexpr auto method = "tryMulti";
-        auto error = access(
-            method,
-            !requests.empty() ? requests.front()->getPath() : "",
-            [&]() { return keeper->tryMulti(requests, responses); },
-            [&](const Coordination::Error & original_error)
-            {
-                if (original_error == Coordination::Error::ZOK)
-                    faultInjectionPostAction(method, requests, responses);
-            },
-            [&]()
-            {
-                responses.clear();
-                for (size_t i = 0; i < requests.size(); ++i)
-                    responses.emplace_back(std::make_shared<Coordination::ZooKeeperErrorResponse>());
-            });
-
-
-        /// collect ephemeral nodes when no fault was injected (to clean up on demand)
-        if (unlikely(fault_policy) && Coordination::Error::ZOK == error)
-        {
-            doForEachCreatedEphemeralNode(
-                method, requests, responses, [&](const String & path_created) { ephemeral_nodes.push_back(path_created); });
-        }
-        return error;
-    }
-
     bool tryGetWatch(
         const std::string & path,
         std::string & res,
