@@ -61,7 +61,7 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     char * existing_memory = nullptr,
     size_t alignment = 0);
 
-zstd::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
+std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     std::unique_ptr<WriteBuffer> nested,
     CompressionMethod method,
     int level,
