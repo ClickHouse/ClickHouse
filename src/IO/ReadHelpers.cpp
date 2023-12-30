@@ -784,7 +784,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             return;
         }
 
-        /// Unquoted case. Look for delimiter or \r or \n.
+        /// Unquoted case. Look for delimiter or \r (followed by '\n') or \n.
         while (!buf.eof())
         {
             char * next_pos = buf.position();
@@ -832,6 +832,18 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             if (!buf.hasPendingData())
                 continue;
+
+            /// Check for single '\r' not followed by '\n'
+            /// We should not stop in this case.
+            if (*buf.position() == '\r' && !settings.allow_cr_end_of_line)
+            {
+                ++buf.position();
+                if (!buf.eof() && *buf.position() != '\n')
+                {
+                    s.push_back('\r');
+                    continue;
+                }
+            }
 
             if constexpr (WithResize<Vector>)
             {
@@ -1139,7 +1151,7 @@ template void readDateTextFallback<void>(LocalDate &, ReadBuffer &);
 template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &);
 
 
-template <typename ReturnType>
+template <typename ReturnType, bool dt64_mode>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -1155,10 +1167,29 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     char * s_pos = s;
 
     /** Read characters, that could represent unix timestamp.
-      * Only unix timestamp of at least 5 characters is supported.
+      * Only unix timestamp of at least 5 characters is supported by default, exception is thrown for a shorter one
+      * (unless parsing a string like '1.23' or '-12': there is no ambiguity, it is a DT64 timestamp).
       * Then look at 5th character. If it is a number - treat whole as unix timestamp.
       * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
       */
+
+    int negative_multiplier = 1;
+
+    if (!buf.eof() && *buf.position() == '-')
+    {
+        if constexpr (dt64_mode)
+        {
+            negative_multiplier = -1;
+            ++buf.position();
+        }
+        else
+        {
+            if constexpr (throw_exception)
+                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+            else
+                return false;
+        }
+    }
 
     /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
     while (s_pos < s + date_time_broken_down_length && !buf.eof() && isNumericASCII(*buf.position()))
@@ -1169,7 +1200,8 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     }
 
     /// 2015-01-01 01:02:03 or 2015-01-01
-    if (s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
+    /// if negative, it is a timestamp with no ambiguity
+    if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
         const auto already_read_length = s_pos - s;
         const size_t remaining_date_size = date_broken_down_length - already_read_length;
@@ -1220,27 +1252,34 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     }
     else
     {
-        if (s_pos - s >= 5)
+        datetime = 0;
+        bool too_short = s_pos - s <= 4;
+
+        if (!too_short || dt64_mode)
         {
             /// Not very efficient.
-            datetime = 0;
             for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
                 datetime = datetime * 10 + *digit_pos - '0';
         }
-        else
+        datetime *= negative_multiplier;
+
+        if (too_short && negative_multiplier != -1)
         {
             if constexpr (throw_exception)
-                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse datetime");
+                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
             else
                 return false;
         }
+
     }
 
     return ReturnType(true);
 }
 
-template void readDateTimeTextFallback<void>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template bool readDateTimeTextFallback<bool>(time_t &, ReadBuffer &, const DateLUTImpl &);
+template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &);
+template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &);
+template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &);
+template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &);
 
 
 void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
@@ -1552,7 +1591,7 @@ void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delim
         if (skip_spaces)
             skipWhitespaceIfAny(buf);
 
-        if (checkString(row_between_delimiter, buf))
+        if (buf.eof() || checkString(row_between_delimiter, buf))
             break;
     }
 }

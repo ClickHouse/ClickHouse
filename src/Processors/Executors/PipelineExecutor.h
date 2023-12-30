@@ -33,7 +33,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, UInt64 partial_result_duration_ms_ = 0);
+    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -89,9 +89,6 @@ private:
     QueryStatusPtr process_list_element;
 
     ReadProgressCallbackPtr read_progress_callback;
-
-    /// Duration between sending partial result through the pipeline
-    const UInt64 partial_result_duration_ms;
 
     using Queue = std::queue<ExecutingGraph::Node *>;
 

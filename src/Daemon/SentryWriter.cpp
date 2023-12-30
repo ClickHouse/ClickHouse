@@ -14,7 +14,7 @@
 #include <Core/ServerUUID.h>
 
 #include "config.h"
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if USE_SENTRY && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 

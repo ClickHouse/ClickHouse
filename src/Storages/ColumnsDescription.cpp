@@ -60,7 +60,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
-        && comment == other.comment
+        && stat == other.stat
         && ast_to_str(codec) == ast_to_str(other.codec)
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
@@ -92,6 +92,12 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
     {
         writeChar('\t', buf);
         writeEscapedString(queryToString(codec), buf);
+    }
+
+    if (stat)
+    {
+        writeChar('\t', buf);
+        writeEscapedString(queryToString(stat->ast), buf);
     }
 
     if (ttl)
@@ -144,6 +150,17 @@ void ColumnDescription::readText(ReadBuffer & buf)
     }
 }
 
+ColumnsDescription::ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary)
+{
+    for (const auto & elem : ordinary)
+        add(ColumnDescription(elem.name, elem.type));
+}
+
+ColumnsDescription::ColumnsDescription(NamesAndTypes ordinary)
+{
+    for (auto & elem : ordinary)
+        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
+}
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
 {
@@ -297,6 +314,12 @@ void ColumnsDescription::flattenNested()
 {
     for (auto it = columns.begin(); it != columns.end();)
     {
+        if (!isNested(it->type))
+        {
+            ++it;
+            continue;
+        }
+
         const auto * type_arr = typeid_cast<const DataTypeArray *>(it->type.get());
         if (!type_arr)
         {
@@ -649,6 +672,12 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
     auto it = columns.get<1>().find(column_name);
     return it != columns.get<1>().end() &&
         it->default_desc.kind != ColumnDefaultKind::Alias && it->default_desc.kind != ColumnDefaultKind::Ephemeral;
+}
+
+bool ColumnsDescription::hasNotAlias(const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
 }
 
 bool ColumnsDescription::hasAlias(const String & column_name) const

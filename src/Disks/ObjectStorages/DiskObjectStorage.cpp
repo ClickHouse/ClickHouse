@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/formatReadable.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -46,16 +47,27 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
         send_metadata ? metadata_helper.get() : nullptr);
 }
 
+DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk)
+{
+    return std::make_shared<MultipleDisksObjectStorageTransaction>(
+        *object_storage,
+        *metadata_storage,
+        *to_disk.getObjectStorage(),
+        *to_disk.getMetadataStorage(),
+        send_metadata ? metadata_helper.get() : nullptr);
+}
+
+
 DiskObjectStorage::DiskObjectStorage(
     const String & name_,
-    const String & object_storage_root_path_,
+    const String & object_key_prefix_,
     const String & log_name,
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
     : IDisk(name_, config, config_prefix)
-    , object_storage_root_path(object_storage_root_path_)
+    , object_key_prefix(object_key_prefix_)
     , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
     , metadata_storage(std::move(metadata_storage_))
     , object_storage(std::move(object_storage_))
@@ -80,7 +92,7 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
     {
         try
         {
-            paths_map.emplace_back(local_path, metadata_storage->getObjectStorageRootPath(), getStorageObjects(local_path));
+            paths_map.emplace_back(local_path, getStorageObjects(local_path));
         }
         catch (const Exception & e)
         {
@@ -175,19 +187,22 @@ void DiskObjectStorage::copyFile( /// NOLINT
     IDisk & to_disk,
     const String & to_file_path,
     const ReadSettings & read_settings,
-    const WriteSettings & write_settings)
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook
+    )
 {
-    if (this == &to_disk)
+    if (getDataSourceDescription() == to_disk.getDataSourceDescription())
     {
-        /// It may use s3-server-side copy
-        auto transaction = createObjectStorageTransaction();
-        transaction->copyFile(from_file_path, to_file_path);
-        transaction->commit();
+            /// It may use s3-server-side copy
+            auto & to_disk_object_storage = dynamic_cast<DiskObjectStorage &>(to_disk);
+            auto transaction = createObjectStorageTransactionToAnotherDisk(to_disk_object_storage);
+            transaction->copyFile(from_file_path, to_file_path);
+            transaction->commit();
     }
     else
     {
         /// Copy through buffers
-        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings);
+        IDisk::copyFile(from_file_path, to_disk, to_file_path, read_settings, write_settings, cancellation_hook);
     }
 }
 
@@ -243,9 +258,9 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
-    if (!id.starts_with(object_storage_root_path))
+    if (!id.starts_with(object_key_prefix))
     {
-        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_storage_root_path, StackTrace().toString());
+        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_key_prefix, StackTrace().toString());
         return false;
     }
 
@@ -470,7 +485,7 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
     const auto config_prefix = "storage_configuration.disks." + name;
     return std::make_shared<DiskObjectStorage>(
         getName(),
-        object_storage_root_path,
+        object_key_prefix,
         getName(),
         metadata_storage,
         object_storage,
@@ -519,7 +534,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 
     return object_storage->readObjects(
         storage_objects,
-        object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getReadResourceName()), path),
+        updateResourceLink(settings, getReadResourceName()),
         read_hint,
         file_size);
 }
@@ -532,12 +547,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
 {
     LOG_TEST(log, "Write file: {}", path);
 
+    WriteSettings write_settings = updateResourceLink(settings, getWriteResourceName());
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFile(
-        path,
-        buf_size,
-        mode,
-        object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getWriteResourceName()), path));
+    return transaction->writeFile(path, buf_size, mode, write_settings);
 }
 
 Strings DiskObjectStorage::getBlobPath(const String & path) const
@@ -586,7 +598,7 @@ void DiskObjectStorage::restoreMetadataIfNeeded(
     {
         metadata_helper->restore(config, config_prefix, context);
 
-        auto current_schema_version = metadata_helper->readSchemaVersion(object_storage.get(), object_storage_root_path);
+        auto current_schema_version = metadata_helper->readSchemaVersion(object_storage.get(), object_key_prefix);
         if (current_schema_version < DiskObjectStorageRemoteMetadataRestoreHelper::RESTORABLE_SCHEMA_VERSION)
             metadata_helper->migrateToRestorableSchema();
 

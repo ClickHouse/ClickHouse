@@ -17,7 +17,7 @@ namespace ProtocolBinary
 class ResultSetRow : public IMySQLWritePacket
 {
 protected:
-    int row_num;
+    size_t row_num;
     const Columns & columns;
     const DataTypes & data_types;
     const Serializations & serializations;
@@ -35,7 +35,7 @@ protected:
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
 public:
-    ResultSetRow(const Serializations & serializations_, const DataTypes & data_types_, const Columns & columns_, int row_num_);
+    ResultSetRow(const Serializations & serializations_, const DataTypes & data_types_, const Columns & columns_, size_t row_num_);
 };
 }
 }

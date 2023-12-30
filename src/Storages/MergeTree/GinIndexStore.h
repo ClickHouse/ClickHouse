@@ -61,6 +61,9 @@ public:
 private:
     constexpr static int MIN_SIZE_FOR_ROARING_ENCODING = 16;
 
+    static constexpr auto GIN_COMPRESSION_CODEC = "ZSTD";
+    static constexpr auto GIN_COMPRESSION_LEVEL = 1;
+
     /// When the list length is no greater than MIN_SIZE_FOR_ROARING_ENCODING, array 'rowid_lst' is used
     /// As a special case, rowid_lst[0] == CONTAINS_ALL encodes that all rowids are set.
     std::array<UInt32, MIN_SIZE_FOR_ROARING_ENCODING> rowid_lst;
@@ -211,7 +214,7 @@ private:
         v1 = 1, /// Initial version
     };
 
-    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v0;
+    static constexpr auto CURRENT_GIN_FILE_FORMAT_VERSION = Format::v1;
 };
 
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;

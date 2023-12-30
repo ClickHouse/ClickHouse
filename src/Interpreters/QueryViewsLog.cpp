@@ -1,5 +1,6 @@
 #include "QueryViewsLog.h"
 
+#include<base/getFQDNOrHostName.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeArray.h>
@@ -7,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -32,6 +34,7 @@ NamesAndTypesList QueryViewsLogElement::getNamesAndTypes()
         {"Window", static_cast<Int8>(ViewType::WINDOW)}});
 
     return {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
@@ -68,6 +71,7 @@ void QueryViewsLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType()); // event_date
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);

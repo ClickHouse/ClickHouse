@@ -76,7 +76,6 @@ public:
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
         , client_info_interface(context->getClientInfo().interface)
-        , use_mysql_types(context->getSettingsRef().use_mysql_types_in_show_columns)
         , total_tables(tables->size()), access(context->getAccess())
         , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
     {
@@ -149,7 +148,7 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.name);
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(use_mysql_types ? (column.type->getSQLCompatibleName()) : (column.type->getName()));
+                    res_columns[res_index++]->insert(column.type->getName());
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(position);
 
@@ -285,7 +284,6 @@ private:
     ColumnPtr tables;
     Storages storages;
     ClientInfo::Interface client_info_interface;
-    bool use_mysql_types;
     size_t db_table_num = 0;
     size_t total_tables;
     std::shared_ptr<const ContextAccess> access;

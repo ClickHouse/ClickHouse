@@ -23,7 +23,6 @@ public:
         return "LowCardinality(" + dictionary_type->getName() + ")";
     }
     const char * getFamilyName() const override { return "LowCardinality"; }
-    String getSQLCompatibleName() const override { return dictionary_type->getSQLCompatibleName(); }
 
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 

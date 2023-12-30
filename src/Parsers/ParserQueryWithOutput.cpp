@@ -20,6 +20,7 @@
 #include <Parsers/ParserShowEngineQuery.h>
 #include <Parsers/ParserShowFunctionsQuery.h>
 #include <Parsers/ParserShowIndexesQuery.h>
+#include <Parsers/ParserShowSettingQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
@@ -43,6 +44,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserShowEnginesQuery show_engine_p;
     ParserShowFunctionsQuery show_functions_p;
     ParserShowIndexesQuery show_indexes_p;
+    ParserShowSettingQuery show_setting_p;
     ParserSelectWithUnionQuery select_p;
     ParserTablePropertiesQuery table_p;
     ParserDescribeTableQuery describe_table_p;
@@ -75,6 +77,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || show_engine_p.parse(pos, query, expected)
         || show_functions_p.parse(pos, query, expected)
         || show_indexes_p.parse(pos, query, expected)
+        || show_setting_p.parse(pos, query, expected)
         || table_p.parse(pos, query, expected)
         || describe_cache_p.parse(pos, query, expected)
         || describe_table_p.parse(pos, query, expected)

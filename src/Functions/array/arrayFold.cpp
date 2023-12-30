@@ -1,6 +1,11 @@
-#include "FunctionArrayMapped.h"
-#include <Functions/FunctionFactory.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnFunction.h>
 #include <Common/Exception.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {
@@ -15,13 +20,13 @@ namespace ErrorCodes
 }
 
 /**
- * arrayFold(x1,...,xn,accum -> expression, array1,...,arrayn, accum_initial) - apply the expression to each element of the array (or set of arrays).
+ * arrayFold( acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial)
  */
-class ArrayFold : public IFunction
+class FunctionArrayFold : public IFunction
 {
 public:
     static constexpr auto name = "arrayFold";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<ArrayFold>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayFold>(); }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -30,37 +35,37 @@ public:
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
         if (arguments.size() < 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires as arguments a lambda function, at least one array and an accumulator argument", getName());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
 
-        DataTypes nested_types(arguments.size() - 1);
-        for (size_t i = 0; i < nested_types.size() - 1; ++i)
+        DataTypes accumulator_and_array_types(arguments.size() - 1);
+        accumulator_and_array_types[0] = arguments.back();
+        for (size_t i = 1; i < accumulator_and_array_types.size(); ++i)
         {
-            const auto * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[i + 1]);
+            const auto * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[i]);
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} of function {} must be array, found {} instead", i + 2, getName(), arguments[i + 1]->getName());
-            nested_types[i] = recursiveRemoveLowCardinality(array_type->getNestedType());
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} of function {} must be of type Array, found {} instead", i + 1, getName(), arguments[i]->getName());
+            accumulator_and_array_types[i] = recursiveRemoveLowCardinality(array_type->getNestedType());
         }
-        nested_types[nested_types.size() - 1] = arguments[arguments.size() - 1];
 
-        const auto * function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
-        if (!function_type || function_type->getArgumentTypes().size() != nested_types.size())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for this overload of {} must be a function with {} arguments, found {} instead.",
-                            getName(), nested_types.size(), arguments[0]->getName());
+        const auto * lambda_function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
+        if (!lambda_function_type || lambda_function_type->getArgumentTypes().size() != accumulator_and_array_types.size())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must be a lambda function with {} arguments, found {} instead.",
+                            getName(), accumulator_and_array_types.size(), arguments[0]->getName());
 
-        arguments[0] = std::make_shared<DataTypeFunction>(nested_types);
+        arguments[0] = std::make_shared<DataTypeFunction>(accumulator_and_array_types);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least 2 arguments, passed: {}.", getName(), arguments.size());
+        if (arguments.size() < 3)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
 
-        const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
-        if (!data_type_function)
+        const auto * lambda_function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
+        if (!lambda_function_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function", getName());
 
         auto accumulator_type = arguments.back().type;
-        auto lambda_type = data_type_function->getReturnType();
+        auto lambda_type = lambda_function_type->getReturnType();
         if (!accumulator_type->equals(*lambda_type))
             throw Exception(ErrorCodes::TYPE_MISMATCH,
                     "Return type of lambda function must be the same as the accumulator type, inferred return type of lambda: {}, inferred type of accumulator: {}",
@@ -71,152 +76,201 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto & lambda_with_type_and_name = arguments[0];
+        const auto & lambda_function_with_type_and_name = arguments[0];
 
-        if (!lambda_with_type_and_name.column)
+        if (!lambda_function_with_type_and_name.column)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function", getName());
 
-        const auto * lambda_function = typeid_cast<const ColumnFunction *>(lambda_with_type_and_name.column.get());
+        const auto * lambda_function = typeid_cast<const ColumnFunction *>(lambda_function_with_type_and_name.column.get());
         if (!lambda_function)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function", getName());
 
-        ColumnPtr offsets_column;
-        ColumnPtr column_first_array_ptr;
-        const ColumnArray * column_first_array = nullptr;
-        ColumnsWithTypeAndName arrays;
-        arrays.reserve(arguments.size() - 1);
-        /// Validate input types and get input array columns in convenient form
+        ColumnPtr first_array_col;
+        const ColumnArray * first_array_col_concrete = nullptr;
+        ColumnPtr first_array_col_offsets;
+
+        ColumnsWithTypeAndName arrays_data_with_type_and_name; /// for all arrays, the pointers to the internal data column, type and name
+        arrays_data_with_type_and_name.reserve(arguments.size() - 1);
+
+        /// Validate array arguments and set pointers so we can access them more conveniently
         for (size_t i = 1; i < arguments.size() - 1; ++i)
         {
             const auto & array_with_type_and_name = arguments[i];
-            ColumnPtr column_array_ptr = array_with_type_and_name.column;
-            const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
-            if (!column_array)
+            ColumnPtr array_col = array_with_type_and_name.column;
+            const auto * array_col_concrete = checkAndGetColumn<ColumnArray>(array_col.get());
+            if (!array_col_concrete)
             {
-                const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
-                if (!column_const_array)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected array column, found {}", column_array_ptr->getName());
-                column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
-                column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
+                const ColumnConst * aray_col_concrete_const = checkAndGetColumnConst<ColumnArray>(array_col.get());
+                if (!aray_col_concrete_const)
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected array column, found {}", array_col->getName());
+                array_col = recursiveRemoveLowCardinality(aray_col_concrete_const->convertToFullColumn());
+                array_col_concrete = checkAndGetColumn<ColumnArray>(array_col.get());
             }
 
-            const DataTypePtr & array_type_ptr = array_with_type_and_name.type;
-            const auto * array_type = checkAndGetDataType<DataTypeArray>(array_type_ptr.get());
-            if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected array type, found {}", array_type_ptr->getName());
+            const DataTypePtr & array_type = array_with_type_and_name.type;
+            const auto * array_type_concrete = checkAndGetDataType<DataTypeArray>(array_type.get());
+            if (!array_type_concrete)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected array type, found {}", array_type->getName());
 
-            if (!offsets_column)
-                offsets_column = column_array->getOffsetsPtr();
+            /// Check that the cardinality of the arrays across a row is the same for all array arguments.
+            /// This simplifies later calculations which can work only with the offsets of the first column.
+            if (!first_array_col_offsets)
+                first_array_col_offsets = array_col_concrete->getOffsetsPtr();
             else
             {
-                /// The first condition is optimization: do not compare data if the pointers are equal.
-                if (column_array->getOffsetsPtr() != offsets_column
-                    && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
-                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Arrays passed to {} must have equal size", getName());
+                /// It suffices to check that the internal offset columns are equal.
+                /// The first condition is optimization: skip comparison if the offset pointers are equal.
+                if (array_col_concrete->getOffsetsPtr() != first_array_col_offsets
+                    && array_col_concrete->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets &>(*first_array_col_offsets).getData())
+                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "arrays_data_with_type_and_name passed to {} must have equal size", getName());
             }
+
             if (i == 1)
             {
-                column_first_array_ptr = column_array_ptr;
-                column_first_array = column_array;
+                first_array_col = array_col;
+                first_array_col_concrete = array_col_concrete;
             }
-            arrays.emplace_back(ColumnWithTypeAndName(column_array->getDataPtr(),
-                                                      recursiveRemoveLowCardinality(array_type->getNestedType()),
-                                                      array_with_type_and_name.name));
+
+            ColumnWithTypeAndName data_type_name(array_col_concrete->getDataPtr(), recursiveRemoveLowCardinality(array_type_concrete->getNestedType()), array_with_type_and_name.name);
+            arrays_data_with_type_and_name.push_back(data_type_name);
         }
 
-        ssize_t rows_count = input_rows_count;
-        ssize_t data_row_count = arrays[0].column->size();
-        size_t array_count = arrays.size();
+        const ssize_t num_rows = input_rows_count; /// how many rows are processed
+        const size_t num_array_cols = arrays_data_with_type_and_name.size(); /// number of given array arguments
+        const ssize_t num_elements_in_array_col = arrays_data_with_type_and_name[0].column->size(); /// total number of array elements in the 1st array argument (the value is the same for other array arguments)
 
-        if (rows_count == 0)
+        if (num_rows == 0)
             return arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
 
-        ColumnPtr current_column;
-        current_column = arguments.back().column->convertToFullColumnIfConst();
-        MutableColumnPtr result_data = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
+        const auto & offsets = first_array_col_concrete->getOffsets(); /// the internal offsets column of the first array argument (other array arguments have the same offsets)
 
-        size_t max_array_size = 0;
-        const auto & offsets = column_first_array->getOffsets();
+        /// Find the first row which contains a non-empty array
+        ssize_t first_row_with_non_empty_array = 0;
+        if (num_elements_in_array_col)
+            while (offsets[first_row_with_non_empty_array] == 0)
+                ++first_row_with_non_empty_array;
 
-        IColumn::Selector selector(data_row_count);
-        size_t cur_ind = 0;
-        ssize_t cur_arr = 0;
-
-        /// skip to the first non empty array
-        if (data_row_count)
-            while (offsets[cur_arr] == 0)
-                ++cur_arr;
-
-        /// selector[i] is an index that i_th data element has in an array it corresponds to
-        for (ssize_t i = 0; i < data_row_count; ++i)
+        /// Build a selector which stores for every array element in the first array argument if the array element is the 0th, 1st, ... (horizontal) array element in the current row
+        /// Better explained by an example:
+        ///             0        1      <-- horizontal position
+        ///   row0: ['elem1']
+        ///   row1: ['elem2', 'elem3']
+        ///   row2: ['elem4']
+        ///   --> Selector will contain [0, 0, 1, 0].
+        IColumn::Selector selector(num_elements_in_array_col);
+        size_t max_array_size = 0; /// cardinality of the array with the most elements in the first array argument
+        size_t cur_element_in_cur_array = 0;
+        for (ssize_t i = 0; i < num_elements_in_array_col; ++i)
         {
-            selector[i] = cur_ind;
-            cur_ind++;
-            if (cur_ind > max_array_size)
-                max_array_size = cur_ind;
-            while (cur_arr < rows_count && cur_ind >= offsets[cur_arr] - offsets[cur_arr - 1])
+            selector[i] = cur_element_in_cur_array;
+            ++cur_element_in_cur_array;
+            if (cur_element_in_cur_array > max_array_size)
+                max_array_size = cur_element_in_cur_array;
+            while (first_row_with_non_empty_array < num_rows && cur_element_in_cur_array >= offsets[first_row_with_non_empty_array] - offsets[first_row_with_non_empty_array - 1])
             {
-                ++cur_arr;
-                cur_ind = 0;
+                ++first_row_with_non_empty_array;
+                cur_element_in_cur_array = 0;
             }
         }
 
-        std::vector<MutableColumns> data_arrays;
-        data_arrays.resize(array_count);
-
-        /// Split each data column to columns containing elements of only Nth index in array
+        /// Based on the selector, scatter elements of the arrays on all rows into vertical slices
+        /// Example:
+        ///   row0: ['elem1']
+        ///   row1: ['elem2', 'elem3']
+        ///   row2: ['elem4']
+        ///   --> create two slices based on selector [0, 0, 1, 0]
+        ///       - slice0: 'elem1', 'elem2', 'elem4''
+        ///       - slice1: 'elem3'
+        std::vector<MutableColumns> vertical_slices; /// contains for every array argument, a vertical slice for the 0th array element, a vertical slice for the 1st array element, ...
+        vertical_slices.resize(num_array_cols);
         if (max_array_size > 0)
-            for (size_t i = 0; i < array_count; ++i)
-                data_arrays[i] = arrays[i].column->scatter(max_array_size, selector);
+            for (size_t i = 0; i < num_array_cols; ++i)
+                vertical_slices[i] = arrays_data_with_type_and_name[i].column->scatter(max_array_size, selector);
 
-        size_t prev_size = rows_count;
+        ColumnPtr accumulator_col = arguments.back().column->convertToFullColumnIfConst();
+        MutableColumnPtr result_col = accumulator_col->cloneEmpty();
+        ColumnPtr lambda_col = lambda_function->cloneResized(num_rows);
 
-        IColumn::Permutation inverse_permutation(rows_count);
-        size_t inverse_permutation_count = 0;
+        IColumn::Permutation inverse_permutation(num_rows);
+        size_t num_inverse_permutations = 0;
 
-        /// current_column after each iteration contains value of accumulator after applying values under indexes of arrays.
-        /// At each iteration only rows of current_column with arrays that still has unapplied elements are kept.
-        /// Discarded rows which contain finished calculations are added to result_data column and as we insert them we save their original row_number in inverse_permutation vector
-        for (size_t ind = 0; ind < max_array_size; ++ind)
+        /// Iterate the slices. The accumulator value of a row is updated iff the array in the row has at least slice_i-many elements. Since
+        /// slices become incrementally smaller, fewer and fewer accumulator values are updated in each iteration. Once the calculation for
+        /// a row is finished (i.e. there are no more slices to process), it is added to the result. Since that happens in random order,
+        /// we also maintain a mapping to reconstruct the right result order at the end.
+        size_t unfinished_rows = num_rows; /// number of rows to consider in the current iteration
+        for (size_t slice = 0; slice < max_array_size; ++slice)
         {
-            IColumn::Selector prev_selector(prev_size);
-            size_t prev_ind = 0;
-            for (ssize_t irow = 0; irow < rows_count; ++irow)
+            IColumn::Selector prev_selector(unfinished_rows); /// 1 for rows which have slice_i-many elements, otherwise 0
+            size_t prev_index = 0;
+            for (ssize_t row = 0; row < num_rows; ++row)
             {
-                if (offsets[irow] - offsets[irow - 1] > ind)
-                    prev_selector[prev_ind++] = 1;
-                else if (offsets[irow] - offsets[irow - 1] == ind)
+                size_t num_elements = offsets[row] - offsets[row - 1]; /// cardinality of array on the row
+                if (num_elements > slice)
                 {
-                    inverse_permutation[inverse_permutation_count++] = irow;
-                    prev_selector[prev_ind++] = 0;
+                    prev_selector[prev_index] = 1;
+                    ++prev_index;
+                }
+                else if (num_elements == slice)
+                {
+                    prev_selector[prev_index] = 0;
+                    ++prev_index;
+                    inverse_permutation[num_inverse_permutations] = row;
+                    ++num_inverse_permutations;
                 }
             }
-            auto prev = current_column->scatter(2, prev_selector);
 
-            result_data->insertRangeFrom(*(prev[0]), 0, prev[0]->size());
+            /// Scatter the accumulator into two columns
+            /// - one column with accumulator values for rows less than slice-many elements, no further calculation is performed on them
+            /// - one column with accumulator values for rows with slice-many or more elements, these are updated in this or following iteration
+            std::vector<IColumn::MutablePtr> finished_unfinished_accumulator_values = accumulator_col->scatter(2, prev_selector);
+            IColumn::MutablePtr & finished_accumulator_values = finished_unfinished_accumulator_values[0];
+            IColumn::MutablePtr & unfinished_accumulator_values = finished_unfinished_accumulator_values[1];
 
-            auto res_lambda = lambda_function->cloneResized(prev[1]->size());
-            auto * res_lambda_ptr = typeid_cast<ColumnFunction *>(res_lambda.get());
+            /// Copy finished accumulator values into the result
+            result_col->insertRangeFrom(*finished_accumulator_values, 0, finished_accumulator_values->size());
 
-            for (size_t i = 0; i < array_count; i++)
-                res_lambda_ptr->appendArguments(std::vector({ColumnWithTypeAndName(std::move(data_arrays[i][ind]), arrays[i].type, arrays[i].name)}));
-            res_lambda_ptr->appendArguments(std::vector({ColumnWithTypeAndName(std::move(prev[1]), arguments.back().type, arguments.back().name)}));
+            /// The lambda function can contain statically bound arguments, in particular their row values. We need to filter for the rows
+            /// we care about.
+            IColumn::Filter filter(unfinished_rows);
+            for (size_t i = 0; i < prev_selector.size(); ++i)
+                filter[i] = prev_selector[i];
+            ColumnPtr lambda_col_filtered = lambda_col->filter(filter, lambda_col->size());
+            IColumn::MutablePtr lambda_col_filtered_cloned = lambda_col_filtered->cloneResized(lambda_col_filtered->size()); /// clone so we can bind more arguments
+            auto * lambda = typeid_cast<ColumnFunction *>(lambda_col_filtered_cloned.get());
 
-            current_column = IColumn::mutate(res_lambda_ptr->reduce().column);
-            prev_size = current_column->size();
+            /// Bind arguments to lambda function (accumulator + array arguments)
+            lambda->appendArguments(std::vector({ColumnWithTypeAndName(std::move(unfinished_accumulator_values), arguments.back().type, arguments.back().name)}));
+            for (size_t array_col = 0; array_col < num_array_cols; ++array_col)
+                lambda->appendArguments(std::vector({ColumnWithTypeAndName(std::move(vertical_slices[array_col][slice]), arrays_data_with_type_and_name[array_col].type, arrays_data_with_type_and_name[array_col].name)}));
+
+            /// Perform the actual calculation and copy the result into the accumulator
+            ColumnWithTypeAndName res_with_type_and_name = lambda->reduce();
+            accumulator_col = res_with_type_and_name.column->convertToFullColumnIfConst();
+
+            unfinished_rows = accumulator_col->size();
+            lambda_col = lambda_col_filtered;
         }
 
-        result_data->insertRangeFrom(*current_column, 0, current_column->size());
-        for (ssize_t irow = 0; irow < rows_count; ++irow)
-            if (offsets[irow] - offsets[irow - 1] == max_array_size)
-                inverse_permutation[inverse_permutation_count++] = irow;
+        /// Copy accumulator values of last iteration into result.
+        result_col->insertRangeFrom(*accumulator_col, 0, accumulator_col->size());
 
-        /// We have result_data containing result for every row and inverse_permutation which contains indexes of rows in input it corresponds to.
-        /// Now we need to invert inverse_permuation and apply it to result_data to get rows in right order.
-        IColumn::Permutation perm(rows_count);
-        for (ssize_t i = 0; i < rows_count; i++)
-            perm[inverse_permutation[i]] = i;
-        return result_data->permute(perm, 0);
+        for (ssize_t row = 0; row < num_rows; ++row)
+        {
+            size_t num_elements = offsets[row] - offsets[row - 1]; /// cardinality of array on the row
+            if (num_elements == max_array_size)
+            {
+                inverse_permutation[num_inverse_permutations] = row;
+                ++num_inverse_permutations;
+            }
+        }
+
+        /// We have result_col containing result for every row and inverse_permutation which contains indexes of rows in input it corresponds to.
+        /// Now we need to invert inverse_permuation and apply it to result_col to get rows in right order.
+        IColumn::Permutation perm(num_rows);
+        for (ssize_t row = 0; row < num_rows; ++row)
+            perm[inverse_permutation[row]] = row;
+        return result_col->permute(perm, 0);
     }
 
 private:
@@ -228,9 +282,9 @@ private:
 
 REGISTER_FUNCTION(ArrayFold)
 {
-    factory.registerFunction<ArrayFold>(FunctionDocumentation{.description=R"(
-        Function arrayFold(x1,...,xn,accum -> expression, array1,...,arrayn, accum_initial) applies lambda function to a number of equally-sized arrays
-        and collects the result in an accumulator.
-        )", .examples{{"sum", "SELECT arrayFold(x,acc -> acc+x, [1,2,3,4], toInt64(1));", "11"}}, .categories{"Array"}});
+    factory.registerFunction<FunctionArrayFold>(FunctionDocumentation{.description=R"(
+        Function arrayFold(acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial) applies a lambda function to each element
+        in each (equally-sized) array and collects the result in an accumulator.
+        )", .examples{{"sum", "SELECT arrayFold(acc,x->acc+x, [1,2,3,4], toInt64(1));", "11"}}, .categories{"Array"}});
 }
 }

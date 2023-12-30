@@ -1,5 +1,5 @@
 -- Tags: no-parallel, no-fasttest
--- Tag no-fasttest: Depends on AWS
+-- Tag no-fasttest: Depends on S3
 
 -- { echo }
 drop table if exists test_02302;
@@ -32,4 +32,14 @@ insert into test_02302 select 1 settings s3_create_new_file_on_insert = true;
 insert into test_02302 select 2 settings s3_create_new_file_on_insert = true;
 
 select * from test_02302 where _file like '%1';
+
+select _file, * from test_02302 where _file like '%1';
+
+set max_rows_to_read = 2;
+select * from test_02302 where (_file like '%.1' OR _file like '%.2') AND a > 1;
+
+set max_rows_to_read = 999;
+
+select 'a1' as _file, * from test_02302 where _file like '%1' ORDER BY a;
+
 drop table test_02302;

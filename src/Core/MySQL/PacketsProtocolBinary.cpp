@@ -4,20 +4,15 @@
 #include <Core/MySQL/PacketsProtocolBinary.h>
 #include "Common/LocalDate.h"
 #include "Common/LocalDateTime.h"
-#include "Columns/ColumnLowCardinality.h"
 #include "Columns/ColumnNullable.h"
 #include "Columns/ColumnVector.h"
-#include "Columns/ColumnsDateTime.h"
 #include "Core/DecimalFunctions.h"
 #include "DataTypes/DataTypeDateTime64.h"
 #include "DataTypes/DataTypeLowCardinality.h"
-#include "DataTypes/DataTypeNullable.h"
-#include "DataTypes/DataTypesNumber.h"
 #include "Formats/FormatSettings.h"
 #include "IO/WriteBufferFromString.h"
 #include "MySQLUtils.h"
 #include "base/DayNum.h"
-#include "base/Decimal.h"
 #include "base/types.h"
 
 namespace DB
@@ -26,21 +21,25 @@ namespace MySQLProtocol
 {
 namespace ProtocolBinary
 {
-ResultSetRow::ResultSetRow(const Serializations & serializations_, const DataTypes & data_types_, const Columns & columns_, int row_num_)
+ResultSetRow::ResultSetRow(const Serializations & serializations_, const DataTypes & data_types_, const Columns & columns_, size_t row_num_)
     : row_num(row_num_), columns(columns_), data_types(data_types_), serializations(serializations_)
 {
     payload_size = 1 + null_bitmap_size;
     FormatSettings format_settings;
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        ColumnPtr col = MySQLUtils::getBaseColumn(columns, i);
-        if (col->isNullAt(row_num))
+        ColumnPtr col = columns[i]->convertToFullIfNeeded();
+        if (col->isNullable())
         {
-            // See https://dev.mysql.com/doc/dev/mysql-server/8.1.0/page_protocol_binary_resultset.html#sect_protocol_binary_resultset_row
-            size_t byte = (i + 2) / 8;
-            int bit = 1 << ((i + 2) % 8);
-            null_bitmap[byte] |= bit;
-            continue; // NULLs are stored in the null bitmap only
+            if (columns[i]->isNullAt(row_num))
+            {
+                // See https://dev.mysql.com/doc/dev/mysql-server/8.1.0/page_protocol_binary_resultset.html#sect_protocol_binary_resultset_row
+                size_t byte = (i + 2) / 8;
+                int bit = 1 << ((i + 2) % 8);
+                null_bitmap[byte] |= bit;
+                continue; // NULLs are stored in the null bitmap only
+            }
+            col = assert_cast<const ColumnNullable &>(*col).getNestedColumnPtr();
         }
 
         DataTypePtr data_type = removeLowCardinalityAndNullable(data_types[i]);
@@ -145,9 +144,13 @@ void ResultSetRow::writePayloadImpl(WriteBuffer & buffer) const
     buffer.write(null_bitmap.data(), null_bitmap_size);
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        ColumnPtr col = MySQLUtils::getBaseColumn(columns, i);
-        if (col->isNullAt(row_num))
-            continue;
+        ColumnPtr col = columns[i]->convertToFullIfNeeded();
+        if (col->isNullable())
+        {
+            if (columns[i]->isNullAt(row_num))
+                continue;
+            col = assert_cast<const ColumnNullable &>(*col).getNestedColumnPtr();
+        }
 
         DataTypePtr data_type = removeLowCardinalityAndNullable(data_types[i]);
         TypeIndex type_index = data_type->getTypeId();

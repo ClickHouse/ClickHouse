@@ -2,13 +2,15 @@
 
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
 
 /// Create source from prepared pipe.
-class ReadFromPreparedSource : public ISourceStep
+class ReadFromPreparedSource : public SourceStepWithFilter
 {
 public:
     explicit ReadFromPreparedSource(
@@ -27,19 +29,21 @@ protected:
 class ReadFromStorageStep : public ReadFromPreparedSource
 {
 public:
-    ReadFromStorageStep(Pipe pipe_, String storage_name, std::shared_ptr<const StorageLimitsList> storage_limits_)
-        : ReadFromPreparedSource(std::move(pipe_)), storage_limits(std::move(storage_limits_))
+    ReadFromStorageStep(Pipe pipe_, String storage_name, const SelectQueryInfo & query_info_, ContextPtr context_)
+        : ReadFromPreparedSource(std::move(pipe_), std::move(context_)), query_info(query_info_)
     {
         setStepDescription(storage_name);
 
         for (const auto & processor : pipe.getProcessors())
-            processor->setStorageLimits(storage_limits);
+            processor->setStorageLimits(query_info.storage_limits);
     }
 
     String getName() const override { return "ReadFromStorage"; }
 
+    void applyFilters() override;
+
 private:
-    std::shared_ptr<const StorageLimitsList> storage_limits;
+    SelectQueryInfo query_info;
 };
 
 }

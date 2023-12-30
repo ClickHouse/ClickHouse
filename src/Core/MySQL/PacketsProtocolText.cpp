@@ -1,12 +1,13 @@
 #include <Core/MySQL/PacketsProtocolText.h>
+#include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include "Common/assert_cast.h"
 #include "Core/MySQL/IMySQLWritePacket.h"
 #include "DataTypes/DataTypeLowCardinality.h"
-#include "DataTypes/DataTypeNullable.h"
 #include "DataTypes/DataTypesDecimal.h"
+
 #include "MySQLUtils.h"
 
 namespace DB
@@ -18,7 +19,7 @@ namespace MySQLProtocol
 namespace ProtocolText
 {
 
-ResultSetRow::ResultSetRow(const Serializations & serializations, const DataTypes & data_types, const Columns & columns_, int row_num_)
+ResultSetRow::ResultSetRow(const Serializations & serializations, const DataTypes & data_types, const Columns & columns_, size_t row_num_)
     : columns(columns_), row_num(row_num_)
 {
     static FormatSettings format_settings = {.bool_true_representation = "1", .bool_false_representation = "0"};
@@ -36,7 +37,9 @@ ResultSetRow::ResultSetRow(const Serializations & serializations, const DataType
         else if (type_index == TypeIndex::DateTime64)
         {
             WriteBufferFromOwnString ostr;
-            ColumnPtr col = MySQLUtils::getBaseColumn(columns, i);
+            ColumnPtr col = columns[i]->convertToFullIfNeeded();
+            if (col->isNullable())
+                col = assert_cast<const ColumnNullable &>(*col).getNestedColumnPtr();
             auto components = MySQLUtils::getNormalizedDateTime64Components(data_type, col, row_num);
             writeDateTimeText<'-', ':', ' '>(LocalDateTime(components.whole, DateLUT::instance(getDateTimeTimezone(*data_type))), ostr);
             ostr.write('.');

@@ -206,12 +206,16 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         if (auto * table_node = table_expression_node->as<TableNode>())
         {
             bool storage_is_remote = table_node->getStorage()->isRemote();
+            bool storage_is_merge_tree = table_node->getStorage()->isMergeTree();
             table_expression_data.setIsRemote(storage_is_remote);
+            table_expression_data.setIsMergeTree(storage_is_merge_tree);
         }
         else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>())
         {
             bool storage_is_remote = table_function_node->getStorage()->isRemote();
+            bool storage_is_merge_tree = table_function_node->getStorage()->isMergeTree();
             table_expression_data.setIsRemote(storage_is_remote);
+            table_expression_data.setIsMergeTree(storage_is_merge_tree);
         }
     }
 

@@ -21,6 +21,7 @@
 #include <Formats/NativeWriter.h>
 
 #include "IServer.h"
+#include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include "base/types.h"
@@ -73,6 +74,8 @@ struct QueryState
 
     /// Query text.
     String query;
+    /// Parsed query
+    ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
 
@@ -197,6 +200,7 @@ private:
     bool is_ssh_based_auth = false;
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
+    bool is_interserver_authenticated = false;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
@@ -247,7 +251,9 @@ private:
     [[noreturn]] void receiveUnexpectedTablesStatusRequest();
 
     /// Process INSERT query
+    void startInsertQuery();
     void processInsertQuery();
+    AsynchronousInsertQueue::PushResult processAsyncInsertQuery(AsynchronousInsertQueue & insert_queue);
 
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();

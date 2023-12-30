@@ -67,7 +67,7 @@ class ResultSetRow : public IMySQLWritePacket
 {
 protected:
     const Columns & columns;
-    int row_num;
+    size_t row_num;
     size_t payload_size = 0;
     std::vector<String> serialized;
 
@@ -76,7 +76,7 @@ protected:
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
 public:
-    ResultSetRow(const Serializations & serializations, const DataTypes & data_types, const Columns & columns_, int row_num_);
+    ResultSetRow(const Serializations & serializations, const DataTypes & data_types, const Columns & columns_, size_t row_num_);
 };
 
 class ComFieldList : public LimitedReadPacket

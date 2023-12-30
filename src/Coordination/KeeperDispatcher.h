@@ -39,8 +39,6 @@ private:
     /// More than 1k updates is definitely misconfiguration.
     ClusterUpdateQueue cluster_update_queue{1000};
 
-    std::atomic<bool> shutdown_called{false};
-
     mutable std::mutex session_to_response_callback_mutex;
     /// These two maps looks similar, but serves different purposes.
     /// The first map is subscription map for normal responses like
@@ -237,6 +235,12 @@ public:
     bool requestLeader()
     {
         return server->requestLeader();
+    }
+
+    /// Yield leadership and become follower.
+    void yieldLeadership()
+    {
+        return server->yieldLeadership();
     }
 
     void recalculateStorageStats()

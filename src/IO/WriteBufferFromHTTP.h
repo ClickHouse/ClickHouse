@@ -26,7 +26,7 @@ public:
                                  const HTTPHeaderEntries & additional_headers = {},
                                  const ConnectionTimeouts & timeouts = {},
                                  size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-                                 Poco::Net::HTTPClientSession::ProxyConfig proxy_configuration = {});
+                                 ProxyConfiguration proxy_configuration = {});
 
 private:
     /// Receives response from the server after sending all data.

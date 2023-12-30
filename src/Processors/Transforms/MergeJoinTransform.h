@@ -249,7 +249,7 @@ private:
     /// For `USING` join key columns should have values from right side instead of defaults
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
-    std::vector<FullMergeJoinCursorPtr> cursors;
+    std::array<FullMergeJoinCursorPtr, 2> cursors;
 
     /// Keep some state to make connection between data in different blocks
     AnyJoinState any_join_state;

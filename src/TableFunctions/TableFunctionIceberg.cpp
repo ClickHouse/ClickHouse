@@ -2,7 +2,7 @@
 
 #if USE_AWS_S3 && USE_AVRO
 
-#include <Storages/DataLakes/StorageIceberg.h>
+#include <Storages/DataLakes/Iceberg/StorageIceberg.h>
 #include <TableFunctions/ITableFunctionDataLake.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
@@ -17,7 +17,7 @@ struct TableFunctionIcebergName
     static constexpr auto name = "iceberg";
 };
 
-using TableFunctionIceberg = ITableFunctionDataLake<TableFunctionIcebergName, StorageIcebergS3, TableFunctionS3>;
+using TableFunctionIceberg = ITableFunctionDataLake<TableFunctionIcebergName, StorageIceberg, TableFunctionS3>;
 
 void registerTableFunctionIceberg(TableFunctionFactory & factory)
 {

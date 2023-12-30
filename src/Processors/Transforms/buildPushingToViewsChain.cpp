@@ -319,7 +319,20 @@ Chain buildPushingToViewsChain(
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
-            query = view_metadata_snapshot->getSelectQuery().inner_query;
+
+            const auto & select_query = view_metadata_snapshot->getSelectQuery();
+            if (select_query.select_table_id != table_id)
+            {
+                /// It may happen if materialize view query was changed and it doesn't depend on this source table anymore.
+                /// See setting `allow_experimental_alter_materialized_view_structure`
+                LOG_DEBUG(
+                    &Poco::Logger::get("PushingToViews"), "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
+                        select_query.select_table_id.getFullTableName(), view_id.getFullTableName(), table_id);
+                continue;
+            }
+
+            query = select_query.inner_query;
+
             target_name = inner_table_id.getFullTableName();
 
             Block header;
@@ -328,7 +341,7 @@ Chain buildPushingToViewsChain(
             if (select_context->getSettingsRef().allow_experimental_analyzer)
                 header = InterpreterSelectQueryAnalyzer::getSampleBlock(query, select_context);
             else
-                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze()).getSampleBlock();
+                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions()).getSampleBlock();
 
             /// Insert only columns returned by select.
             Names insert_columns;
@@ -336,7 +349,7 @@ Chain buildPushingToViewsChain(
             for (const auto & column : header)
             {
                 /// But skip columns which storage doesn't have.
-                if (inner_table_columns.hasPhysical(column.name))
+                if (inner_table_columns.hasNotAlias(column.name))
                     insert_columns.emplace_back(column.name);
             }
 
@@ -493,7 +506,8 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         pipeline = interpreter.buildQueryPipeline();
     }
     else
-    {   InterpreterSelectQuery interpreter(view.query, local_context, SelectQueryOptions());
+    {
+        InterpreterSelectQuery interpreter(view.query, local_context, SelectQueryOptions());
         pipeline = interpreter.buildQueryPipeline();
     }
 

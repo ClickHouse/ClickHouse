@@ -78,16 +78,19 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
     subquery_settings.extremes = false;
     subquery_context->setSettings(subquery_settings);
 
-    /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
-    /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
-    subquery_context->getQueryContext()->setSetting("use_structure_from_insertion_table_in_table_functions", false);
-    if (!data.only_analyze && subquery_context->hasQueryContext())
+    if (subquery_context->hasQueryContext())
     {
-        /// Save current cached scalars in the context before analyzing the query
-        /// This is specially helpful when analyzing CTE scalars
-        auto context = subquery_context->getQueryContext();
-        for (const auto & it : data.scalars)
-            context->addScalar(it.first, it.second);
+        /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
+        /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
+        subquery_context->getQueryContext()->setSetting("use_structure_from_insertion_table_in_table_functions", false);
+        if (!data.only_analyze)
+        {
+            /// Save current cached scalars in the context before analyzing the query
+            /// This is specially helpful when analyzing CTE scalars
+            auto context = subquery_context->getQueryContext();
+            for (const auto & it : data.scalars)
+                context->addScalar(it.first, it.second);
+        }
     }
 
     ASTPtr subquery_select = subquery.children.at(0);
@@ -106,7 +109,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     String subquery_alias = subquery.alias;
     bool prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
 
-    auto hash = subquery.getTreeHash();
+    auto hash = subquery.getTreeHash(/*ignore_aliases=*/ true);
     const auto scalar_query_hash_str = toString(hash);
 
     std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter = nullptr;

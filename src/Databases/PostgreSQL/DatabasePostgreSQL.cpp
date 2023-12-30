@@ -36,6 +36,7 @@ namespace ErrorCodes
 
 static const auto suffix = ".removed";
 static const auto cleaner_reschedule_ms = 60000;
+static const auto reschedule_error_multiplier = 10;
 
 DatabasePostgreSQL::DatabasePostgreSQL(
         ContextPtr context_,
@@ -322,8 +323,26 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, Load
 void DatabasePostgreSQL::removeOutdatedTables()
 {
     std::lock_guard lock{mutex};
-    auto connection_holder = pool->get();
-    auto actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+
+    std::set<std::string> actual_tables;
+    try
+    {
+        auto connection_holder = pool->get();
+        actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        /** Avoid repeated interrupting other normal routines (they acquire locks!)
+          * for the case of unavailable connection, since it is possible to be
+          * unsuccessful again, and the unsuccessful conn is very time-consuming:
+          * connection period is exclusive and timeout is at least 2 seconds for
+          * PostgreSQL.
+          */
+        cleaner_task->scheduleAfter(reschedule_error_multiplier * cleaner_reschedule_ms);
+        return;
+    }
 
     if (cache_tables)
     {

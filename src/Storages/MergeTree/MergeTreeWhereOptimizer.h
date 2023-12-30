@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistics/Estimator.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -37,6 +38,7 @@ public:
     MergeTreeWhereOptimizer(
         std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageMetadataPtr & metadata_snapshot,
+        const ConditionEstimator & estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
         Poco::Logger * log_);
@@ -72,6 +74,9 @@ private:
         /// Does the condition presumably have good selectivity?
         bool good = false;
 
+        /// the lower the better
+        Float64 selectivity = 1.0;
+
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
@@ -79,7 +84,7 @@ private:
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, -min_position_in_primary_key, columns_size, table_columns.size());
+            return std::make_tuple(!viable, !good, -min_position_in_primary_key, selectivity, columns_size, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -98,6 +103,7 @@ private:
         bool move_all_conditions_to_prewhere = false;
         bool move_primary_key_columns_to_end_of_prewhere = false;
         bool is_final = false;
+        bool use_statistic = false;
     };
 
     struct OptimizeResult
@@ -142,6 +148,8 @@ private:
     bool cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const;
 
     static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
+
+    const ConditionEstimator estimator;
 
     const NameSet table_columns;
     const Names queried_columns;

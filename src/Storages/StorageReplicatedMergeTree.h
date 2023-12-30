@@ -139,7 +139,7 @@ public:
     /// In shutdown we completely terminate table -- remove
     /// is_active node and interserver handler. Also optionally
     /// wait until other replicas will download some parts from our replica.
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     ~StorageReplicatedMergeTree() override;
 
@@ -165,6 +165,7 @@ public:
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -177,7 +178,6 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ContextPtr query_context) override;
 
     void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
@@ -198,8 +198,6 @@ public:
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
-
-    bool supportsIndexForIn() const override { return true; }
 
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
@@ -230,7 +228,8 @@ public:
     /// Add a part to the queue of parts whose data you want to check in the background thread.
     void enqueuePartForCheck(const String & part_name, time_t delay_to_check_seconds = 0);
 
-    CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;
@@ -347,7 +346,7 @@ public:
     // Return table id, common for different replicas
     String getTableSharedID() const override;
 
-    size_t getNumberOfUnfinishedMutations() const override;
+    std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
     /// Returns the same as getTableSharedID(), but extracts it from a create query.
     static std::optional<String> tryGetTableSharedIDFromCreateQuery(const IAST & create_query, const ContextPtr & global_context);
@@ -427,10 +426,7 @@ private:
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
     std::optional<bool> has_metadata_in_zookeeper;
 
-    /// during server restart or attach table process, set since_metadata_err_incr_readonly_metric = true and increase readonly metric if has_metadata_in_zookeeper = false.
-    /// during detach or drop table process, decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
-    /// during restore replica process, set since_metadata_err_incr_readonly_metric = false and decrease readonly metric if since_metadata_err_incr_readonly_metric = true.
-    bool since_metadata_err_incr_readonly_metric = false;
+    bool is_readonly_metric_set = false;
 
     static const String default_zookeeper_name;
     const String zookeeper_name;
@@ -584,9 +580,7 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr local_context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        size_t num_streams);
+        QueryProcessingStage::Enum processed_stage);
 
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
@@ -620,6 +614,7 @@ private:
       *  But if there are too many, throw an exception just in case - it's probably a configuration error.
       */
     void checkParts(bool skip_sanity_checks);
+    bool checkPartsImpl(bool skip_sanity_checks);
 
     /// Synchronize the list of part uuids which are currently pinned. These should be sent to root query executor
     /// to be used for deduplication.
@@ -639,6 +634,10 @@ private:
         NameSet & absent_replicas_paths);
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
+
+    bool getOpsToCheckPartChecksumsAndCommit(const ZooKeeperWithFaultInjectionPtr & zookeeper, const MutableDataPartPtr & part,
+                                             std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,
+                                             Coordination::Requests & ops, size_t & num_check_ops);
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {}, bool replace_zero_copy_lock=false);
@@ -692,7 +691,7 @@ private:
     /// If fetch was not successful, clears entry.actual_new_part_name.
     bool executeFetch(LogEntry & entry, bool need_to_check_missing_part=true);
 
-    bool executeReplaceRange(const LogEntry & entry);
+    bool executeReplaceRange(LogEntry & entry);
     void executeClonePartFromShard(const LogEntry & entry);
 
     /** Updates the queue.
@@ -746,7 +745,6 @@ private:
         const MergeTreeDataPartFormat & merged_part_format,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);
@@ -757,10 +755,6 @@ private:
         Int64 mutation_version,
         int32_t alter_version,
         int32_t log_version);
-
-    /// Exchange parts.
-
-    ConnectionTimeouts getFetchPartHTTPTimeouts(ContextPtr context);
 
     /** Returns an empty string if no one has a part.
       */
@@ -777,7 +771,8 @@ private:
       * If not found, returns empty string.
       */
     String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
-    String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
+    bool findReplicaHavingCoveringPart(const String & part_name, bool active);
+    String findReplicaHavingCoveringPartImplLowLevel(LogEntry * entry, const String & part_name, String & found_part_name, bool active);
     static std::set<MergeTreePartInfo> findReplicaUniqueParts(const String & replica_name_, const String & zookeeper_path_, MergeTreeDataFormatVersion format_version_, zkutil::ZooKeeper::Ptr zookeeper_, Poco::Logger * log_);
 
     /** Download the specified part from the specified replica.
@@ -995,6 +990,34 @@ private:
     bool waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait) override;
 
     void startupImpl(bool from_attach_thread);
+
+    struct DataValidationTasks : public IStorage::DataValidationTasksBase
+    {
+        explicit DataValidationTasks(DataPartsVector && parts_, std::unique_lock<std::mutex> && parts_check_lock_)
+            : parts_check_lock(std::move(parts_check_lock_)), parts(std::move(parts_)), it(parts.begin())
+        {}
+
+        DataPartPtr next()
+        {
+            std::lock_guard lock(mutex);
+            if (it == parts.end())
+                return nullptr;
+            return *(it++);
+        }
+
+        size_t size() const override
+        {
+            std::lock_guard lock(mutex);
+            return std::distance(it, parts.end());
+        }
+
+        std::unique_lock<std::mutex> parts_check_lock;
+
+        mutable std::mutex mutex;
+        DataPartsVector parts;
+        DataPartsVector::const_iterator it;
+    };
+
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

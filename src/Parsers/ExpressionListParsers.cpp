@@ -29,6 +29,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 using namespace std::literals;
 
 
@@ -466,7 +468,8 @@ enum class OperatorType
     StartIf,
     FinishIf,
     Cast,
-    Lambda
+    Lambda,
+    Not
 };
 
 /** Operator struct stores parameters of the operator:
@@ -1129,16 +1132,10 @@ public:
                     return false;
             }
 
-            NullsAction nulls_action = NullsAction::EMPTY;
             if (respect_nulls.ignore(pos, expected))
-            {
-                nulls_action = NullsAction::RESPECT_NULLS;
-            }
-            if (ignore_nulls.ignore(pos, expected))
-            {
-                nulls_action = NullsAction::IGNORE_NULLS;
-            }
-            function_node->name = transformFunctionNameForRepectNulls(function_node->name, nulls_action);
+                function_node->nulls_action = NullsAction::RESPECT_NULLS;
+            else if (ignore_nulls.ignore(pos, expected))
+                function_node->nulls_action = NullsAction::IGNORE_NULLS;
 
             if (over.ignore(pos, expected))
             {
@@ -1172,30 +1169,6 @@ private:
 
     bool allow_function_parameters;
     bool is_compound_name;
-
-    enum NullsAction
-    {
-        EMPTY = 0,
-        RESPECT_NULLS = 1,
-        IGNORE_NULLS = 2,
-    };
-    static String transformFunctionNameForRepectNulls(const String & original_function_name, NullsAction nulls_action)
-    {
-        static std::unordered_map<String, std::vector<String>> renamed_functions_with_nulls = {
-            {"first_value", {"first_value", "first_value_respect_nulls", "first_value"}},
-            {"last_value", {"last_value", "last_value_respect_nulls", "last_value"}},
-        };
-        auto it = renamed_functions_with_nulls.find(original_function_name);
-        if (it == renamed_functions_with_nulls.end())
-        {
-            if (nulls_action == NullsAction::EMPTY)
-                return original_function_name;
-            else
-                throw Exception(
-                    ErrorCodes::SYNTAX_ERROR, "Function {} does not support RESPECT NULLS or IGNORE NULLS", original_function_name);
-        }
-        return it->second[nulls_action];
-    }
 };
 
 /// Layer for priority brackets and tuple function
@@ -2435,6 +2408,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
+    {"−",             Operator("minus",           11, 2)},
     {"*",             Operator("multiply",        12, 2)},
     {"/",             Operator("divide",          12, 2)},
     {"%",             Operator("modulo",          12, 2)},
@@ -2447,8 +2421,9 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
 
 const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::unary_operators_table
 {
-    {"NOT",           Operator("not",             5,  1)},
-    {"-",             Operator("negate",          13, 1)}
+    {"NOT",           Operator("not",             5,  1, OperatorType::Not)},
+    {"-",             Operator("negate",          13, 1)},
+    {"−",             Operator("negate",          13, 1)}
 };
 
 const Operator ParserExpressionImpl::finish_between_operator("", 8, 0, OperatorType::FinishBetween);
@@ -2602,6 +2577,12 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         }
     }
 
+    /// ignore all leading plus
+    while (pos->type == TokenType::Plus)
+    {
+        ++pos;
+    }
+
     /// Try to find any unary operators
     auto cur_op = unary_operators_table.begin();
     for (; cur_op != unary_operators_table.end(); ++cur_op)
@@ -2612,7 +2593,16 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (cur_op != unary_operators_table.end())
     {
-        layers.back()->pushOperator(cur_op->second);
+        if (cur_op->second.type == OperatorType::Not && pos->type == TokenType::OpeningRoundBracket)
+        {
+            ++pos;
+            auto identifier = std::make_shared<ASTIdentifier>(cur_op->second.function_name);
+            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function));
+        }
+        else
+        {
+            layers.back()->pushOperator(cur_op->second);
+        }
         return Action::OPERAND;
     }
 

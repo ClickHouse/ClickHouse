@@ -37,7 +37,7 @@ friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 public:
     DiskObjectStorage(
         const String & name_,
-        const String & object_storage_root_path_,
+        const String & object_key_prefix_,
         const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
@@ -163,7 +163,9 @@ public:
         IDisk & to_disk,
         const String & to_file_path,
         const ReadSettings & read_settings = {},
-        const WriteSettings & write_settings = {}) override;
+        const WriteSettings & write_settings = {},
+        const std::function<void()> & cancellation_hook = {}
+        ) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
@@ -220,11 +222,12 @@ private:
     /// Create actual disk object storage transaction for operations
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
+    DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
 
     String getReadResourceName() const;
     String getWriteResourceName() const;
 
-    const String object_storage_root_path;
+    const String object_key_prefix;
     Poco::Logger * log;
 
     MetadataStoragePtr metadata_storage;

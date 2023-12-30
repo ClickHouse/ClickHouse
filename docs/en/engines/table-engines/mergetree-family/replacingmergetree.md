@@ -25,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [ORDER BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[SETTINGS name=value, clean_deleted_rows=value, ...]
+[SETTINGS name=value, ...]
 ```
 
 For a description of request parameters, see [statement description](../../../sql-reference/statements/create/table.md).
@@ -86,55 +86,6 @@ SELECT * FROM mySecondReplacingMT FINAL;
 ┌─key─┬─someCol─┬───────────eventTime─┐
 │   1 │ first   │ 2020-01-01 01:01:01 │
 └─────┴─────────┴─────────────────────┘
-```
-
-### is_deleted
-
-`is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a “deleted“ row, `0` is a “state“ row.
-
-  Column data type — `UInt8`.
-
-:::note
-`is_deleted` can only be enabled when `ver` is used.
-
-The row is deleted when `OPTIMIZE ... FINAL CLEANUP` or `OPTIMIZE ... FINAL` is used, or if the engine setting `clean_deleted_rows` has been set to `Always`.
-
-No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
-
-Always execute `OPTIMIZE ... FINAL CLEANUP` and `OPTIMIZE ... FINAL` to delete rows with `is_deleted=1` defined, especially when you wish to insert a new row with an older version. Otherwise, the new row with an older version will be replaced and not be persisted.
-
-:::
-
-Example:
-```sql
--- with ver and is_deleted
-CREATE OR REPLACE TABLE myThirdReplacingMT
-(
-    `key` Int64,
-    `someCol` String,
-    `eventTime` DateTime,
-    `is_deleted` UInt8
-)
-ENGINE = ReplacingMergeTree(eventTime, is_deleted)
-ORDER BY key;
-
-INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 0);
-INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 1); 
-
-select * from myThirdReplacingMT final;
-
-0 rows in set. Elapsed: 0.003 sec.
-
--- delete rows with is_deleted
-OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP; 
-
-INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
-
-select * from myThirdReplacingMT final; 
-
-┌─key─┬─someCol─┬───────────eventTime─┬─is_deleted─┐
-│   1 │ first   │ 2020-01-01 00:00:00 │          0 │
-└─────┴─────────┴─────────────────────┴────────────┘
 ```
 
 ## Query clauses

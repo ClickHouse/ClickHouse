@@ -11,7 +11,6 @@
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
-#include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <Interpreters/FunctionMaskingArgumentCheckVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
@@ -409,7 +408,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
             {
                 for (auto & elem : set->children)
                 {
-                    const auto hash = elem->getTreeHash();
+                    const auto hash = elem->getTreeHash(/*ignore_aliases=*/ true);
                     const auto key = toString(hash);
                     group_by_hashes.insert(key);
                 }
@@ -419,7 +418,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         {
             for (auto & elem : group_by->children)
             {
-                const auto hash = elem->getTreeHash();
+                const auto hash = elem->getTreeHash(/*ignore_aliases=*/ true);
                 const auto key = toString(hash);
                 group_by_hashes.insert(key);
             }
@@ -606,12 +605,6 @@ void optimizeAggregationFunctions(ASTPtr & query)
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
-void optimizeAnyFunctions(ASTPtr & query)
-{
-    RewriteAnyFunctionVisitor::Data data = {};
-    RewriteAnyFunctionVisitor(data).visit(query);
-}
-
 void optimizeSumIfFunctions(ASTPtr & query)
 {
     RewriteSumIfFunctionVisitor::Data data = {};
@@ -763,10 +756,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// GROUP BY functions of other keys elimination.
     if (settings.optimize_group_by_function_keys)
         optimizeGroupByFunctionKeys(select_query);
-
-    /// Move all operations out of any function
-    if (settings.optimize_move_functions_out_of_any)
-        optimizeAnyFunctions(query);
 
     if (settings.optimize_normalize_count_variants)
         optimizeCountConstantAndSumOne(query, context);
