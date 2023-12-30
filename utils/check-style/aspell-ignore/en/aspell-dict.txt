@@ -2198,8 +2198,6 @@ retentions
 rethrow
 retransmit
 retriable
-retuned
-reverseDNSQuery
 reverseUTF
 rightPad
 rightPadUTF
