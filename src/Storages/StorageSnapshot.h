@@ -1,5 +1,7 @@
 #pragma once
+
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/Streaming/Subscription.h>
 
 namespace DB
 {
@@ -28,21 +30,12 @@ struct StorageSnapshot
     /// Projection that is used in query.
     mutable const ProjectionDescription * projection = nullptr;
 
-    StorageSnapshot(
-        const IStorage & storage_,
-        StorageMetadataPtr metadata_)
-        : storage(storage_), metadata(std::move(metadata_))
-    {
-        init();
-    }
+    /// Subscription for a streaming query
+    /// if the storage supports atomic subscription with snapshot acquisition
+    StreamSubscriptionPtr stream_subscription = nullptr;
 
-    StorageSnapshot(
-        const IStorage & storage_,
-        StorageMetadataPtr metadata_,
-        ColumnsDescription object_columns_)
-        : storage(storage_)
-        , metadata(std::move(metadata_))
-        , object_columns(std::move(object_columns_))
+    StorageSnapshot(const IStorage & storage_, StorageMetadataPtr metadata_, StreamSubscriptionPtr stream_subscription_ = nullptr)
+        : storage(storage_), metadata(std::move(metadata_)), stream_subscription(std::move(stream_subscription_))
     {
         init();
     }
@@ -51,11 +44,26 @@ struct StorageSnapshot
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
         ColumnsDescription object_columns_,
-        DataPtr data_)
+        StreamSubscriptionPtr stream_subscription_ = nullptr)
+        : storage(storage_)
+        , metadata(std::move(metadata_))
+        , object_columns(std::move(object_columns_))
+        , stream_subscription(std::move(stream_subscription_))
+    {
+        init();
+    }
+
+    StorageSnapshot(
+        const IStorage & storage_,
+        StorageMetadataPtr metadata_,
+        ColumnsDescription object_columns_,
+        DataPtr data_,
+        StreamSubscriptionPtr stream_subscription_ = nullptr)
         : storage(storage_)
         , metadata(std::move(metadata_))
         , object_columns(std::move(object_columns_))
         , data(std::move(data_))
+        , stream_subscription(std::move(stream_subscription_))
     {
         init();
     }
@@ -76,6 +84,8 @@ struct StorageSnapshot
     Block getSampleBlockForColumns(const Names & column_names) const;
 
     ColumnsDescription getDescriptionForColumns(const Names & column_names) const;
+
+    StreamSubscriptionPtr getStreamSubscription() const;
 
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.

@@ -277,7 +277,7 @@ private:
     MultiVersionStorageMetadataPtr metadata;
 
     /// Structure for managing subscriptions
-    StreamSubscriptionManager subscription_manager;
+    mutable StreamSubscriptionManager subscription_manager;
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
@@ -353,6 +353,10 @@ public:
         QueryProcessingStage::Enum & /*processed_stage*/,
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
+
+    /// Creates subscription for capturing storage changes
+    /// By default calls subscribe on subscription manager
+    virtual StreamSubscriptionPtr subscribeForChanges() const;
 
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
     /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL

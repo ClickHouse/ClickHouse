@@ -115,6 +115,11 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     return result;
 }
 
+StreamSubscriptionPtr IStorage::subscribeForChanges() const
+{
+    return subscription_manager.subscribe();
+}
+
 Pipe IStorage::watch(
     const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
@@ -208,7 +213,7 @@ void IStorage::streamingRead(
     auto subscription_source = std::make_unique<ReadFromSubscriptionStep>(
         getInMemoryMetadata().getSampleBlock(),
         storage_snapshot->getSampleBlockForColumns(column_names),
-        subscription_manager.subscribe());
+        storage_snapshot->getStreamSubscription());
     subscription_query_plan->addStep(std::move(subscription_source));
 
     /// unite plans with streaming adapter
