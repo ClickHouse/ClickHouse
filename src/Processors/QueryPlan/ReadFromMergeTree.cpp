@@ -1335,8 +1335,7 @@ static void buildIndexes(
             filter_actions_dag,
             context,
             primary_key_column_names,
-            primary_key.expression,
-            array_join_name_set}, {}, {}, {}, {}, false, {}});
+            primary_key.expression}, {}, {}, {}, {}, false, {}});
     }
     else
     {
@@ -1353,7 +1352,7 @@ static void buildIndexes(
         auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
 
-        indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions, NameSet());
+        indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions);
         indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);
     }
 
