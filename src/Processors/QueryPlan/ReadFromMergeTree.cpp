@@ -1130,6 +1130,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     auto sorting_expr = std::make_shared<ExpressionActions>(metadata_for_reading->getSortingKey().expression->getActionsDAG().clone());
 
+    auto read_type = ReadType::InOrder;
+    if (input_order_info && input_order_info->direction == -1)
+        read_type = ReadType::InReverseOrder;
+
     for (size_t range_index = 0; range_index < parts_to_merge_ranges.size() - 1; ++range_index)
     {
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
@@ -1152,9 +1156,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
             for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
             {
-                if (input_order_info)
+                if (read_type == ReadType::InReverseOrder)
                 {
-                    auto ranges_to_get_from_part = splitRanges(part_it->ranges, input_order_info->direction);
+                    auto ranges_to_get_from_part = splitRanges(part_it->ranges, -1);
                     new_parts.emplace_back(part_it->data_part, part_it->alter_conversions, part_it->part_index_in_query, std::move(ranges_to_get_from_part));
                 }
                 else
@@ -1166,19 +1170,15 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             if (new_parts.empty())
                 continue;
 
-            auto read_type = ReadType::InOrder;
-            if (input_order_info && input_order_info->direction == -1)
-                read_type = ReadType::InReverseOrder;
-
             if (num_streams > 1 && metadata_for_reading->hasPrimaryKey() && read_type == ReadType::InOrder)
             {
                 // Let's split parts into non intersecting parts ranges and layers to ensure data parallelism of FINAL.
-                auto in_order_reading_step_getter = [this, &column_names, &read_type, &info](auto parts)
+                auto in_order_reading_step_getter = [this, &column_names, &info](auto parts)
                 {
                     return this->read(
                         std::move(parts),
                         column_names,
-                        read_type,
+                        ReadType::InOrder,
                         1 /* num_streams */,
                         0 /* min_marks_for_concurrent_read */,
                         info.use_uncompressed_cache);
@@ -1231,8 +1231,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         Names partition_key_columns = metadata_for_reading->getPartitionKey().column_names;
 
         for (size_t i = 0; i < sort_columns_size; ++i)
-            input_order_info
-                ? sort_description.emplace_back(sort_columns[i], input_order_info->direction)
+            read_type == ReadType::InReverseOrder
+                ? sort_description.emplace_back(sort_columns[i], -1)
                 : sort_description.emplace_back(sort_columns[i], 1, 1);
 
         for (auto & pipe : pipes)
