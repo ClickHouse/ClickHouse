@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2646
+personal_ws-1.1 en 2657 
 AArch
 ACLs
 ALTERs
@@ -754,6 +754,7 @@ Redash
 Reddit
 Refactorings
 ReferenceKeyed
+Refreshable
 RegexpTree
 RemoteRead
 ReplacingMergeTree
@@ -2155,6 +2156,7 @@ reddit
 redis
 redisstreams
 refcounter
+refreshable
 regexpExtract
 regexpQuoteMeta
 regionHierarchy
@@ -2199,8 +2201,6 @@ retentions
 rethrow
 retransmit
 retriable
-retuned
-reverseDNSQuery
 reverseUTF
 rightPad
 rightPadUTF

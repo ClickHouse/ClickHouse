@@ -10,6 +10,7 @@
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
 #include <Poco/SimpleFileChannel.h>
+#include <Databases/registerDatabases.h>
 #include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesOverlay.h>
@@ -489,6 +490,7 @@ try
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
+    registerDatabases();
     registerStorages();
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
@@ -744,7 +746,7 @@ void LocalServer::processConfig()
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         auto startup_system_tasks = loadMetadataSystem(global_context);
-        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         waitLoad(TablesLoaderForegroundPoolId, startup_system_tasks);
@@ -763,7 +765,7 @@ void LocalServer::processConfig()
     }
     else if (!config().has("no-system-tables"))
     {
-        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
