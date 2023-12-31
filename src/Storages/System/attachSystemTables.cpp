@@ -45,6 +45,7 @@
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
+#include <Storages/System/StorageSystemDatabaseEngines.h>
 #include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
@@ -132,6 +133,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators");
     attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families");
     attach<StorageSystemCollations>(context, system_database, "collations");
+    attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines");
     attach<StorageSystemContributors>(context, system_database, "contributors");
     attach<StorageSystemUsers>(context, system_database, "users");
