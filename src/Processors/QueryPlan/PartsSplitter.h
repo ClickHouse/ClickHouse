@@ -33,5 +33,6 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     RangesInDataParts parts,
     size_t max_layers,
     ContextPtr context,
-    ReadingInOrderStepGetter && in_order_reading_step_getter);
+    ReadingInOrderStepGetter && in_order_reading_step_getter,
+    bool force_process_all_ranges);
 }
