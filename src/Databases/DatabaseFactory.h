@@ -52,6 +52,8 @@ public:
 
     void registerDatabase(const std::string & name, CreatorFn creator_fn);
 
+    const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
+
 private:
     DatabaseEngines database_engines;
 };
