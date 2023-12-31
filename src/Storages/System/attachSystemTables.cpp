@@ -88,6 +88,7 @@
 #include <Storages/System/StorageSystemScheduler.h>
 #include <Storages/System/StorageSystemS3Queue.h>
 #include <Storages/System/StorageSystemDashboards.h>
+#include <Storages/System/StorageSystemViewRefreshes.h>
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 #include <Storages/System/StorageSystemSymbols.h>
@@ -109,7 +110,7 @@
 namespace DB
 {
 
-void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
 {
     attach<StorageSystemOne>(context, system_database, "one");
     attach<StorageSystemNumbers>(context, system_database, "numbers", false);
@@ -171,11 +172,6 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
 #endif
-}
-
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
-{
-    attachSystemTablesLocal(context, system_database);
 
     attach<StorageSystemParts>(context, system_database, "parts");
     attach<StorageSystemProjectionParts>(context, system_database, "projection_parts");
@@ -211,6 +207,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins");
     attach<StorageSystemS3Queue>(context, system_database, "s3queue");
     attach<StorageSystemDashboards>(context, system_database, "dashboards");
+    attach<StorageSystemViewRefreshes>(context, system_database, "view_refreshes");
 
     if (has_zookeeper)
     {

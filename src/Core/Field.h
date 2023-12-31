@@ -122,7 +122,7 @@ struct CustomType
     bool isSecret() const { return impl->isSecret(); }
     const char * getTypeName() const { return impl->getTypeName(); }
     String toString(bool show_secrets = true) const { return impl->toString(show_secrets); }
-    const CustomTypeImpl & getImpl() { return *impl; }
+    const CustomTypeImpl & getImpl() const { return *impl; }
 
     bool operator < (const CustomType & rhs) const { return *impl < *rhs.impl; }
     bool operator <= (const CustomType & rhs) const { return *impl <= *rhs.impl; }
@@ -292,7 +292,7 @@ concept not_field_or_bool_or_stringlike
 /** 32 is enough. Round number is used for alignment and for better arithmetic inside std::vector.
   * NOTE: Actually, sizeof(std::string) is 32 when using libc++, so Field is 40 bytes.
   */
-#define DBMS_MIN_FIELD_SIZE 32
+static constexpr auto DBMS_MIN_FIELD_SIZE = 32;
 
 
 /** Discriminated union of several types.
