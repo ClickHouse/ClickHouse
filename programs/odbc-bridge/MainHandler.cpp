@@ -46,7 +46,7 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
 {
     response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
     if (!response.sent())
-        response.send()->writeln(message);
+        *response.send() << message << '\n';
     LOG_WARNING(log, fmt::runtime(message));
 }
 

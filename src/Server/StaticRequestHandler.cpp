@@ -68,7 +68,7 @@ static inline void trySendExceptionToClient(
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
         if (!response.sent())
-            response.send()->writeln(s);
+            *response.send() << s << '\n';
         else
         {
             if (out.count() != out.offset())

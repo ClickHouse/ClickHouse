@@ -82,7 +82,7 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
     else
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        response.send()->writeln("Not found.");
+        *response.send() << "Not found.\n";
     }
 }
 

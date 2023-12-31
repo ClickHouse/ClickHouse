@@ -45,7 +45,7 @@ namespace
         response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
         if (!response.sent())
-            response.send()->writeln(message);
+            *response.send() << message << '\n';
 
         LOG_WARNING(&Poco::Logger::get("LibraryBridge"), fmt::runtime(message));
     }
