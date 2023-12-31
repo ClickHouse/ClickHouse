@@ -1096,6 +1096,18 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     if (num_streams > settings.max_final_threads)
         num_streams = settings.max_final_threads;
 
+    auto split_ranges_in_parts = [this](const auto & parts)
+    {
+        RangesInDataParts parts_with_split_ranges;
+        for (auto part: parts)
+        {
+            auto ranges_to_get_from_part = this->splitRanges(part.ranges, -1);
+            parts_with_split_ranges.emplace_back(part.data_part, part.alter_conversions, part.part_index_in_query, std::move(ranges_to_get_from_part));
+        }
+
+        return parts_with_split_ranges;
+    };
+
     /// If setting do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
     /// We have all parts in parts vector, where parts with same partition are nearby.
     /// So we will store iterators pointed to the beginning of each partition range (and parts.end()),
@@ -1155,30 +1167,23 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             RangesInDataParts new_parts;
 
             for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
-            {
-                if (read_type == ReadType::InReverseOrder)
-                {
-                    auto ranges_to_get_from_part = splitRanges(part_it->ranges, -1);
-                    new_parts.emplace_back(part_it->data_part, part_it->alter_conversions, part_it->part_index_in_query, std::move(ranges_to_get_from_part));
-                }
-                else
-                {
-                    new_parts.emplace_back(part_it->data_part, part_it->alter_conversions, part_it->part_index_in_query, part_it->ranges);
-                }
-            }
+                new_parts.emplace_back(part_it->data_part, part_it->alter_conversions, part_it->part_index_in_query, part_it->ranges);
 
             if (new_parts.empty())
                 continue;
 
-            if (num_streams > 1 && metadata_for_reading->hasPrimaryKey() && read_type == ReadType::InOrder)
+            if (num_streams > 1 && metadata_for_reading->hasPrimaryKey())
             {
                 // Let's split parts into non intersecting parts ranges and layers to ensure data parallelism of FINAL.
-                auto in_order_reading_step_getter = [this, &column_names, &info](auto parts)
+                auto in_order_reading_step_getter = [this, &split_ranges_in_parts, &column_names, &read_type, &info](auto parts)
                 {
+                    if (read_type == ReadType::InReverseOrder)
+                        parts = split_ranges_in_parts(parts);
+
                     return this->read(
                         std::move(parts),
                         column_names,
-                        ReadType::InOrder,
+                        read_type,
                         1 /* num_streams */,
                         0 /* min_marks_for_concurrent_read */,
                         info.use_uncompressed_cache);
@@ -1205,6 +1210,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             }
             else
             {
+                if (read_type == ReadType::InReverseOrder)
+                    new_parts = split_ranges_in_parts(new_parts);
+
                 pipes.emplace_back(read(
                     std::move(new_parts), column_names, read_type, num_streams, 0, info.use_uncompressed_cache));
 
