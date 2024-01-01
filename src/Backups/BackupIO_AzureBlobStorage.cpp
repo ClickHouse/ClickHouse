@@ -218,10 +218,39 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(const String & path_in_backu
     BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
 }
 
+void BackupWriterAzureBlobStorage::copyFile(const String & destination, const String & source, size_t size)
+{
+    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> src_client;
+    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> dest_client;
+    StorageAzureBlob::Configuration src_configuration = configuration;
+    src_configuration.container = source;
+    src_client = StorageAzureBlob::createClient(src_configuration, /* is_read_only */ false);
+
+    StorageAzureBlob::Configuration dest_configuration = configuration;
+    dest_configuration.container = destination;
+    dest_client = StorageAzureBlob::createClient(dest_configuration, /* is_read_only */ false);
+
+    LOG_TRACE(log, "Copying file inside backup from {} to {} ", source, destination);
+    copyAzureBlobStorageFile(
+       src_client,
+       dest_client,
+       configuration.container,
+       fs::path(configuration.blob_path),
+       0,
+       size,
+       /* dest_bucket= */ destination,
+       /* dest_key= */ configuration.blob_path,
+       settings,
+       read_settings,
+       {},
+       threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupRDAzure"),
+       /* for_disk_azure_blob_storage= */ true);
+}
+
 void BackupWriterAzureBlobStorage::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
     copyDataToAzureBlobStorageFile(create_read_buffer, start_pos, length, client, configuration.container, path_in_backup, settings, {},
-                     threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWriterS3"));
+                     threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
 }
 
 BackupWriterAzureBlobStorage::~BackupWriterAzureBlobStorage() = default;
@@ -257,7 +286,7 @@ UInt64 BackupWriterAzureBlobStorage::getFileSize(const String & file_name)
     RelativePathsWithMetadata children;
     object_storage->listObjects(key,children,/*max_keys*/0);
     if (children.empty())
-        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Object {} must exist");
+        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Object must exist");
     return children[0].metadata.size_bytes;
 }
 
