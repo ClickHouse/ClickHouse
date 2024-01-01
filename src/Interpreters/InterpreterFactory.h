@@ -11,9 +11,10 @@ namespace DB
 
 class Context;
 
-class InterpreterFactory
+class InterpreterFactory : private boost::noncopyable
 {
 public:
+    static InterpreterFactory & instance();
     static std::unique_ptr<IInterpreter> get(
         ASTPtr & query,
         ContextMutablePtr context,

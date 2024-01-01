@@ -133,6 +133,11 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE_OF_QUERY;
 }
 
+InterpreterFactory & InterpreterFactory::instance()
+{
+    static InterpreterFactory interpreter_fact;
+    return interpreter_fact;
+}
 
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
