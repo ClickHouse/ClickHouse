@@ -158,7 +158,6 @@ DatabaseFactory & DatabaseFactory::instance()
     return db_fact;
 }
 
-
 DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
     auto * storage = create.storage;

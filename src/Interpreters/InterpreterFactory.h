@@ -15,10 +15,28 @@ class InterpreterFactory : private boost::noncopyable
 {
 public:
     static InterpreterFactory & instance();
+
+    struct Arguments
+    {
+        ASTPtr & query;
+        ContextMutablePtr context;
+        const SelectQueryOptions & options;
+    };
+
     static std::unique_ptr<IInterpreter> get(
         ASTPtr & query,
         ContextMutablePtr context,
         const SelectQueryOptions & options = {});
+
+    using InterpreterPtr = std::unique_ptr<IInterpreter>;
+    using CreatorFn = std::function<InterpreterPtr(const Arguments & arguments)>;
+
+    using Interpreters = std::unordered_map<String, CreatorFn>;
+
+    void registerInterpreter(const std::string & name, CreatorFn creator_fn);
+
+private:
+    Interpreters interpreters;
 };
 
 }

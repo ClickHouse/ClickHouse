@@ -139,6 +139,12 @@ InterpreterFactory & InterpreterFactory::instance()
     return interpreter_fact;
 }
 
+void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn creator_fn)
+{
+    if(!interpreters.emplace(name, std::move(creator_fn)).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "InterpreterFactory: the interpreter name '{}' is not unique", name);
+}
+
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
     ProfileEvents::increment(ProfileEvents::Query);
