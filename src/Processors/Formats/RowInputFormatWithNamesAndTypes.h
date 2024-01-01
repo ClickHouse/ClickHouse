@@ -56,6 +56,8 @@ protected:
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
+    size_t countRows(size_t max_block_size) override;
+
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
@@ -64,11 +66,11 @@ private:
     bool is_binary;
     bool with_names;
     bool with_types;
-    std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
     bool try_detect_header;
     bool is_header_detected = false;
 
 protected:
+    std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
     Block::NameMap column_indexes_by_names;
 };
 
@@ -109,6 +111,16 @@ public:
     /// Skip the whole row with types.
     virtual void skipTypes() = 0;
 
+    virtual size_t countRows(size_t /*max_block_size*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for format reader");
+    }
+
+    virtual void skipRow()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipRow is not implemented for format reader");
+    }
+
     /// Skip delimiters, if any.
     virtual void skipPrefixBeforeHeader() {}
     virtual void skipRowStartDelimiter() {}
@@ -118,6 +130,11 @@ public:
 
     /// Check suffix.
     virtual bool checkForSuffix() { return in->eof(); }
+
+    /// Check if we are at the end of row, not between fields.
+    virtual bool checkForEndOfRow() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method checkForEndOfRow is not implemented"); }
+
+    virtual bool allowVariableNumberOfColumns() const { return false; }
 
     const FormatSettings & getFormatSettings() const { return format_settings; }
 
@@ -155,16 +172,18 @@ public:
 
     NamesAndTypesList readSchema() override;
 
-protected:
-    virtual DataTypes readRowAndGetDataTypes() override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
-    virtual DataTypes readRowAndGetDataTypesImpl()
+protected:
+    virtual std::optional<DataTypes> readRowAndGetDataTypes() override;
+
+    virtual std::optional<DataTypes> readRowAndGetDataTypesImpl()
     {
         throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetDataTypesImpl is not implemented"};
     }
 
-    /// Return column fields with inferred types. In case of no more rows, return empty vectors.
-    virtual std::pair<std::vector<String>, DataTypes> readRowAndGetFieldsAndDataTypes()
+    /// Return column fields with inferred types. In case of no more rows, return nullopt.
+    virtual std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes()
     {
         throw Exception{ErrorCodes::NOT_IMPLEMENTED, "Method readRowAndGetFieldsAndDataTypes is not implemented"};
     }

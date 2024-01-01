@@ -25,7 +25,7 @@ int getMaxFileDescriptorCount()
             readIntText(result, command->out);
             command->wait();
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
     }

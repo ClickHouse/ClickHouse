@@ -10,16 +10,11 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
     ObjectStoragePtr object_storage_,
-    const std::string & object_storage_root_path_)
+    String storage_path_prefix_)
     : object_storage(object_storage_)
-    , object_storage_root_path(object_storage_root_path_)
+    , storage_path_prefix(std::move(storage_path_prefix_))
 {
 }
 
@@ -30,20 +25,15 @@ MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction(
 
 const std::string & MetadataStorageFromPlainObjectStorage::getPath() const
 {
-    return object_storage_root_path;
-}
-std::filesystem::path MetadataStorageFromPlainObjectStorage::getAbsolutePath(const std::string & path) const
-{
-    return fs::path(object_storage_root_path) / path;
+    return storage_path_prefix;
 }
 
 bool MetadataStorageFromPlainObjectStorage::exists(const std::string & path) const
 {
-    RelativePathsWithSize children;
     /// NOTE: exists() cannot be used here since it works only for existing
     /// key, and does not work for some intermediate path.
-    object_storage->findAllFiles(getAbsolutePath(path), children, 1);
-    return !children.empty();
+    auto object_key = object_storage->generateObjectKeyForPath(path);
+    return object_storage->existsOrHasAnyChild(object_key.serialize());
 }
 
 bool MetadataStorageFromPlainObjectStorage::isFile(const std::string & path) const
@@ -54,46 +44,54 @@ bool MetadataStorageFromPlainObjectStorage::isFile(const std::string & path) con
 
 bool MetadataStorageFromPlainObjectStorage::isDirectory(const std::string & path) const
 {
-    std::string directory = getAbsolutePath(path);
-    trimRight(directory);
-    directory += "/";
+    auto object_key = object_storage->generateObjectKeyForPath(path);
+    std::string directory = object_key.serialize();
+    if (!directory.ends_with('/'))
+        directory += '/';
 
-    /// NOTE: This check is far from ideal, since it work only if the directory
-    /// really has files, and has excessive API calls
-    RelativePathsWithSize files;
-    std::vector<std::string> directories;
-    object_storage->getDirectoryContents(directory, files, directories);
-    return !files.empty() || !directories.empty();
+    RelativePathsWithMetadata files;
+    object_storage->listObjects(directory, files, 1);
+    return !files.empty();
 }
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {
-    RelativePathsWithSize children;
-    object_storage->findAllFiles(getAbsolutePath(path), children, 1);
-    if (children.empty())
-        return 0;
-    if (children.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "findAllFiles() return multiple paths ({}) for {}", children.size(), path);
-    return children.front().bytes_size;
+    auto object_key = object_storage->generateObjectKeyForPath(path);
+    auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize());
+    if (metadata)
+        return metadata->size_bytes;
+    return 0;
 }
 
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
 {
-    RelativePathsWithSize files;
-    std::vector<std::string> directories;
-    object_storage->getDirectoryContents(getAbsolutePath(path), files, directories);
+    auto object_key = object_storage->generateObjectKeyForPath(path);
+
+    RelativePathsWithMetadata files;
+    std::string abs_key = object_key.serialize();
+    if (!abs_key.ends_with('/'))
+        abs_key += '/';
+
+    object_storage->listObjects(abs_key, files, 0);
 
     std::vector<std::string> result;
     for (const auto & path_size : files)
+    {
         result.push_back(path_size.relative_path);
-    for (const auto & directory : directories)
-        result.push_back(directory);
+    }
+
+    std::unordered_set<std::string> duplicates_filter;
     for (auto & row : result)
     {
-        chassert(row.starts_with(object_storage_root_path));
-        row.erase(0, object_storage_root_path.size());
+        chassert(row.starts_with(abs_key));
+        row.erase(0, abs_key.size());
+        auto slash_pos = row.find_first_of('/');
+        if (slash_pos != std::string::npos)
+            row.erase(slash_pos, row.size() - slash_pos);
+        duplicates_filter.insert(row);
     }
-    return result;
+
+    return std::vector<std::string>(duplicates_filter.begin(), duplicates_filter.end());
 }
 
 DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(const std::string & path) const
@@ -106,10 +104,9 @@ DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(con
 
 StoredObjects MetadataStorageFromPlainObjectStorage::getStorageObjects(const std::string & path) const
 {
-    std::string blob_name = object_storage->generateBlobNameForPath(path);
-    size_t object_size = getFileSize(blob_name);
-    auto object = StoredObject::create(*object_storage, getAbsolutePath(blob_name), object_size, path, /* exists */true);
-    return {std::move(object)};
+    size_t object_size = getFileSize(path);
+    auto object_key = object_storage->generateObjectKeyForPath(path);
+    return {StoredObject(object_key.serialize(), path, object_size)};
 }
 
 const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const
@@ -119,7 +116,8 @@ const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getSt
 
 void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path)
 {
-    auto object = StoredObject::create(*metadata_storage.object_storage, metadata_storage.getAbsolutePath(path));
+    auto object_key = metadata_storage.object_storage->generateObjectKeyForPath(path);
+    auto object = StoredObject(object_key.serialize());
     metadata_storage.object_storage->removeObject(object);
 }
 
@@ -132,13 +130,15 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectoryRecursive(
     /// Noop. It is an Object Storage not a filesystem.
 }
 void MetadataStorageFromPlainObjectStorageTransaction::addBlobToMetadata(
-    const std::string &, const std::string & /* blob_name */, uint64_t /* size_in_bytes */)
+    const std::string &, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */)
 {
     /// Noop, local metadata files is only one file, it is the metadata file itself.
 }
-void MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string &)
+
+UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string &)
 {
-    /// Noop, no separate metadata.
+    /// No hardlinks, so will always remove file.
+    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
 }
 
 }

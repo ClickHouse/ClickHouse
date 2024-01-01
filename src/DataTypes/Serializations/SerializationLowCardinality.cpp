@@ -132,13 +132,13 @@ struct IndexesSerializationType
             val |= NeedGlobalDictionaryBit;
         if (need_update_dictionary)
             val |= NeedUpdateDictionary;
-        writeIntBinary(val, buffer);
+        writeBinaryLittleEndian(val, buffer);
     }
 
     void deserialize(ReadBuffer & buffer, const ISerialization::DeserializeBinaryBulkSettings & settings)
     {
         SerializationType val;
-        readIntBinary(val, buffer);
+        readBinaryLittleEndian(val, buffer);
 
         checkType(val);
         has_additional_keys = (val & HasAdditionalKeysBit) != 0;
@@ -184,7 +184,7 @@ struct IndexesSerializationType
             return std::make_shared<DataTypeUInt16>();
         if (type == TUInt32)
             return std::make_shared<DataTypeUInt32>();
-        if (type == TUInt64) //-V547
+        if (type == TUInt64)
             return std::make_shared<DataTypeUInt64>();
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't create DataType from IndexesSerializationType.");
@@ -235,7 +235,7 @@ void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
     /// Write version and create SerializeBinaryBulkState.
     UInt64 key_version = KeysSerializationVersion::SharedDictionariesWithAdditionalKeys;
 
-    writeIntBinary(key_version, *stream);
+    writeBinaryLittleEndian(key_version, *stream);
 
     state = std::make_shared<SerializeStateLowCardinality>(key_version);
 }
@@ -259,7 +259,7 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream in SerializationLowCardinality::serializeBinaryBulkStateSuffix");
 
         UInt64 num_keys = nested_column->size();
-        writeIntBinary(num_keys, *stream);
+        writeBinaryLittleEndian(num_keys, *stream);
         dict_inner_serialization->serializeBinaryBulk(*nested_column, *stream, 0, num_keys);
         low_cardinality_state->shared_dictionary = nullptr;
     }
@@ -277,7 +277,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
         return;
 
     UInt64 keys_version;
-    readIntBinary(keys_version, *stream);
+    readBinaryLittleEndian(keys_version, *stream);
 
     state = std::make_shared<DeserializeStateLowCardinality>(keys_version);
 }
@@ -299,49 +299,6 @@ namespace
         MutableColumnPtr dictionary_map;
         MutableColumnPtr additional_keys_map;
     };
-
-    template <typename T>
-    IndexMapsWithAdditionalKeys mapIndexWithAdditionalKeysRef(PaddedPODArray<T> & index, size_t dict_size)
-    {
-        PaddedPODArray<T> copy(index.cbegin(), index.cend());
-
-        HashMap<T, T> dict_map;
-        HashMap<T, T> add_keys_map;
-
-        for (auto val : index)
-        {
-            if (val < dict_size)
-                dict_map.insert({val, dict_map.size()});
-            else
-                add_keys_map.insert({val, add_keys_map.size()});
-        }
-
-        auto dictionary_map = ColumnVector<T>::create(dict_map.size());
-        auto additional_keys_map = ColumnVector<T>::create(add_keys_map.size());
-        auto & dict_data = dictionary_map->getData();
-        auto & add_keys_data = additional_keys_map->getData();
-
-        for (auto val : dict_map)
-            dict_data[val.second] = val.first;
-
-        for (auto val : add_keys_map)
-            add_keys_data[val.second] = val.first - dict_size;
-
-        for (auto & val : index)
-            val = val < dict_size ? dict_map[val]
-                                  : add_keys_map[val] + dict_map.size();
-
-        for (size_t i = 0; i < index.size(); ++i)
-        {
-            T expected = index[i] < dict_data.size() ? dict_data[index[i]]
-                                                     : add_keys_data[index[i] - dict_data.size()] + dict_size;
-            if (expected != copy[i])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {}, but got {}", toString(expected), toString(copy[i]));
-
-        }
-
-        return {std::move(dictionary_map), std::move(additional_keys_map)};
-    }
 
     template <typename T>
     IndexMapsWithAdditionalKeys mapIndexWithAdditionalKeys(PaddedPODArray<T> & index, size_t dict_size)
@@ -535,7 +492,7 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
     {
         const auto & nested_column = global_dictionary->getNestedNotNullableColumn();
         UInt64 num_keys = nested_column->size();
-        writeIntBinary(num_keys, *keys_stream);
+        writeBinaryLittleEndian(num_keys, *keys_stream);
         dict_inner_serialization->serializeBinaryBulk(*nested_column, *keys_stream, 0, num_keys);
         low_cardinality_state->shared_dictionary = nullptr;
     }
@@ -543,12 +500,12 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
     if (need_additional_keys)
     {
         UInt64 num_keys = keys->size();
-        writeIntBinary(num_keys, *indexes_stream);
+        writeBinaryLittleEndian(num_keys, *indexes_stream);
         dict_inner_serialization->serializeBinaryBulk(*keys, *indexes_stream, 0, num_keys);
     }
 
     UInt64 num_rows = positions->size();
-    writeIntBinary(num_rows, *indexes_stream);
+    writeBinaryLittleEndian(num_rows, *indexes_stream);
     auto index_serialization = index_version.getDataType()->getDefaultSerialization();
     index_serialization->serializeBinaryBulk(*positions, *indexes_stream, 0, num_rows);
 }
@@ -584,7 +541,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     auto read_dictionary = [this, low_cardinality_state, keys_stream]()
     {
         UInt64 num_keys;
-        readIntBinary(num_keys, *keys_stream);
+        readBinaryLittleEndian(num_keys, *keys_stream);
 
         auto keys_type = removeNullable(dictionary_type);
         auto global_dict_keys = keys_type->createColumn();
@@ -597,7 +554,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     auto read_additional_keys = [this, low_cardinality_state, indexes_stream]()
     {
         UInt64 num_keys;
-        readIntBinary(num_keys, *indexes_stream);
+        readBinaryLittleEndian(num_keys, *indexes_stream);
 
         auto keys_type = removeNullable(dictionary_type);
         auto additional_keys = keys_type->createColumn();
@@ -703,7 +660,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             else
                 low_cardinality_state->additional_keys = nullptr;
 
-            readIntBinary(low_cardinality_state->num_pending_rows, *indexes_stream);
+            readBinaryLittleEndian(low_cardinality_state->num_pending_rows, *indexes_stream);
         }
 
         size_t num_rows_to_read = std::min<UInt64>(limit, low_cardinality_state->num_pending_rows);

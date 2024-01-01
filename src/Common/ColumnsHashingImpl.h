@@ -6,7 +6,6 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/AggregationCommon.h>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -32,6 +31,17 @@ public:
 
 using HashMethodContextPtr = std::shared_ptr<HashMethodContext>;
 
+struct LastElementCacheStats
+{
+    UInt64 hits = 0;
+    UInt64 misses = 0;
+
+    void update(size_t num_tries, size_t num_misses)
+    {
+        hits += num_tries - num_misses;
+        misses += num_misses;
+    }
+};
 
 namespace columns_hashing_impl
 {
@@ -40,14 +50,19 @@ template <typename Value, bool consecutive_keys_optimization_>
 struct LastElementCache
 {
     static constexpr bool consecutive_keys_optimization = consecutive_keys_optimization_;
+
     Value value;
     bool empty = true;
     bool found = false;
+    UInt64 misses = 0;
 
-    bool check(const Value & value_) { return !empty && value == value_; }
+    bool check(const Value & value_) const { return value == value_; }
 
     template <typename Key>
-    bool check(const Key & key) { return !empty && value.first == key; }
+    bool check(const Key & key) const { return value.first == key; }
+
+    bool hasOnlyOneValue() const { return found && misses == 1; }
+    UInt64 getMisses() const { return misses; }
 };
 
 template <typename Data>
@@ -140,7 +155,7 @@ public:
     FindResultImpl(bool found_, size_t off) : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off) {}
 };
 
-template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false>
+template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false, bool nullable = false>
 class HashMethodBase
 {
 public:
@@ -154,6 +169,20 @@ public:
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
     {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                bool has_null_key = data.hasNullKeyData();
+                data.hasNullKeyData() = true;
+
+                if constexpr (has_mapped)
+                    return EmplaceResult(data.getNullKeyData(), data.getNullKeyData(), !has_null_key);
+                else
+                    return EmplaceResult(!has_null_key);
+            }
+        }
+
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return emplaceImpl(key_holder, data);
     }
@@ -161,6 +190,17 @@ public:
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
     {
+        if constexpr (nullable)
+        {
+            if (isNullAt(row))
+            {
+                if constexpr (has_mapped)
+                    return FindResult(&data.getNullKeyData(), data.hasNullKeyData(), 0);
+                else
+                    return FindResult(data.hasNullKeyData(), 0);
+            }
+        }
+
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
         return findKeyImpl(keyHolderGetKey(key_holder), data);
     }
@@ -172,10 +212,49 @@ public:
         return data.hash(keyHolderGetKey(key_holder));
     }
 
+    ALWAYS_INLINE void resetCache()
+    {
+        if constexpr (consecutive_keys_optimization)
+        {
+            cache.empty = true;
+            cache.found = false;
+            cache.misses = 0;
+        }
+    }
+
+    ALWAYS_INLINE bool hasOnlyOneValueSinceLastReset() const
+    {
+        if constexpr (consecutive_keys_optimization)
+            return cache.hasOnlyOneValue();
+        return false;
+    }
+
+    ALWAYS_INLINE UInt64 getCacheMissesSinceLastReset() const
+    {
+        if constexpr (consecutive_keys_optimization)
+            return cache.getMisses();
+        return 0;
+    }
+
+    ALWAYS_INLINE bool isNullAt(size_t row) const
+    {
+        if constexpr (nullable)
+        {
+            return null_map->getBool(row);
+        }
+        else
+        {
+            return false;
+        }
+    }
+
 protected:
     Cache cache;
+    const IColumn * null_map = nullptr;
+    bool has_null_data = false;
 
-    HashMethodBase()
+    /// column argument only for nullable column
+    explicit HashMethodBase(const IColumn * column = nullptr)
     {
         if constexpr (consecutive_keys_optimization)
         {
@@ -188,12 +267,15 @@ protected:
             else
                 cache.value = Value();
         }
+
+        if constexpr (nullable)
+            null_map = &checkAndGetColumn<ColumnNullable>(column)->getNullMapColumn();
     }
 
     template <typename Data, typename KeyHolder>
     ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data)
     {
-        if constexpr (Cache::consecutive_keys_optimization)
+        if constexpr (consecutive_keys_optimization)
         {
             if (cache.found && cache.check(keyHolderGetKey(key_holder)))
             {
@@ -224,6 +306,7 @@ protected:
         {
             cache.found = true;
             cache.empty = false;
+            ++cache.misses;
 
             if constexpr (has_mapped)
             {
@@ -246,12 +329,12 @@ protected:
     template <typename Data, typename Key>
     ALWAYS_INLINE FindResult findKeyImpl(Key key, Data & data)
     {
-        if constexpr (Cache::consecutive_keys_optimization)
+        if constexpr (consecutive_keys_optimization)
         {
             /// It's possible to support such combination, but code will became more complex.
             /// Now there's not place where we need this options enabled together
             static_assert(!FindResult::has_offset, "`consecutive_keys_optimization` and `has_offset` are conflicting options");
-            if (cache.check(key))
+            if (likely(!cache.empty) && cache.check(key))
             {
                 if constexpr (has_mapped)
                     return FindResult(&cache.value.second, cache.found, 0);
@@ -266,6 +349,7 @@ protected:
         {
             cache.found = it != nullptr;
             cache.empty = false;
+            ++cache.misses;
 
             if constexpr (has_mapped)
             {
@@ -283,16 +367,14 @@ protected:
 
         size_t offset = 0;
         if constexpr (FindResult::has_offset)
-        {
             offset = it ? data.offsetInternal(it) : 0;
-        }
+
         if constexpr (has_mapped)
             return FindResult(it ? &it->getMapped() : nullptr, it != nullptr, offset);
         else
             return FindResult(it != nullptr, offset);
     }
 };
-
 
 template <typename T>
 struct MappedCache : public PaddedPODArray<T> {};

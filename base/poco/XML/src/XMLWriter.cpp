@@ -151,11 +151,7 @@ void XMLWriter::setNewLine(const std::string& newLineCharacters)
 {
 	if (newLineCharacters.empty())
 	{
-#if defined(_WIN32)
-		_newLine = NEWLINE_CRLF;
-#else
 		_newLine = NEWLINE_LF;
-#endif
 	}
 	else _newLine = newLineCharacters;
 }

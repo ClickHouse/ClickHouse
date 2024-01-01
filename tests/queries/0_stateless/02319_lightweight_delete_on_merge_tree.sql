@@ -5,7 +5,6 @@ CREATE TABLE merge_table_standard_delete(id Int32, name String) ENGINE = MergeTr
 INSERT INTO merge_table_standard_delete select number, toString(number) from numbers(100);
 
 SET mutations_sync = 0;
-SET allow_experimental_lightweight_delete = 1;
 
 DELETE FROM merge_table_standard_delete WHERE id = 10;
 
@@ -75,7 +74,7 @@ select table, partition, name, rows from system.parts where database = currentDa
 drop table t_light;
 
 SELECT '-----Test lightweight delete in multi blocks-----';
-CREATE TABLE t_large(a UInt32, b int) ENGINE=MergeTree order BY a settings min_bytes_for_wide_part=0;
+CREATE TABLE t_large(a UInt32, b int) ENGINE=MergeTree order BY a settings min_bytes_for_wide_part=0, index_granularity=8192, index_granularity_bytes='10Mi';
 INSERT INTO t_large SELECT number + 1, number + 1  FROM numbers(100000);
 
 DELETE FROM t_large WHERE a = 50000;
@@ -108,3 +107,10 @@ DELETE FROM t_proj WHERE a < 100; -- { serverError BAD_ARGUMENTS }
 SELECT avg(a), avg(b), count() FROM t_proj;
 
 DROP TABLE t_proj;
+
+CREATE TABLE merge_table_standard_delete(id Int32, name String) ENGINE = MergeTree order by id settings min_bytes_for_wide_part=0;
+SET allow_experimental_lightweight_delete = false;
+DELETE FROM merge_table_standard_delete WHERE id = 10; -- { serverError SUPPORT_IS_DISABLED }
+SET enable_lightweight_delete = false;
+DELETE FROM merge_table_standard_delete WHERE id = 10; -- { serverError SUPPORT_IS_DISABLED }
+DROP TABLE merge_table_standard_delete;

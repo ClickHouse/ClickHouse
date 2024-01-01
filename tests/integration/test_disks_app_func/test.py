@@ -7,7 +7,6 @@ import pytest
 def started_cluster():
     global cluster
     try:
-
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "disks_app_test", main_configs=["config.xml"], with_minio=True
@@ -115,9 +114,9 @@ def test_disks_app_func_cp(started_cluster):
             "/usr/bin/clickhouse",
             "disks",
             "copy",
-            "--diskFrom",
+            "--disk-from",
             "test1",
-            "--diskTo",
+            "--disk-to",
             "test2",
             ".",
             ".",

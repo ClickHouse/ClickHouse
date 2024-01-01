@@ -2,10 +2,18 @@
 
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
-#include <re2/re2.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -18,6 +26,7 @@ namespace ErrorCodes
 ASTPtr ASTColumnsRegexpMatcher::clone() const
 {
     auto clone = std::make_shared<ASTColumnsRegexpMatcher>(*this);
+    clone->children.clear();
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
@@ -37,11 +46,11 @@ void ASTColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(original_pattern.size());
     hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -91,6 +100,7 @@ bool ASTColumnsRegexpMatcher::isColumnMatching(const String & column_name) const
 ASTPtr ASTColumnsListMatcher::clone() const
 {
     auto clone = std::make_shared<ASTColumnsListMatcher>(*this);
+    clone->children.clear();
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
@@ -150,6 +160,7 @@ void ASTColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatSt
 ASTPtr ASTQualifiedColumnsRegexpMatcher::clone() const
 {
     auto clone = std::make_shared<ASTQualifiedColumnsRegexpMatcher>(*this);
+    clone->children.clear();
 
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 
@@ -190,11 +201,11 @@ const std::shared_ptr<re2::RE2> & ASTQualifiedColumnsRegexpMatcher::getMatcher()
     return column_matcher;
 }
 
-void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
+void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(original_pattern.size());
     hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -216,6 +227,7 @@ void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & setting
 ASTPtr ASTQualifiedColumnsListMatcher::clone() const
 {
     auto clone = std::make_shared<ASTQualifiedColumnsListMatcher>(*this);
+    clone->children.clear();
 
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 

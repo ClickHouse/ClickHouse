@@ -54,7 +54,6 @@ std::string Token::asString() const
 }
 
 
-#if defined(POCO_HAVE_INT64)
 Int64 Token::asInteger64() const
 {
 	return NumberParser::parse64(_value);
@@ -65,7 +64,6 @@ UInt64 Token::asUnsignedInteger64() const
 {
 	return NumberParser::parseUnsigned64(_value);
 }
-#endif
 
 
 int Token::asInteger() const

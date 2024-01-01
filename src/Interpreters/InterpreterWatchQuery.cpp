@@ -41,7 +41,7 @@ BlockIO InterpreterWatchQuery::execute()
         const Settings & settings = getContext()->getSettingsRef();
 
         StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
+        limits.mode = LimitsMode::LIMITS_CURRENT;
         limits.size_limits.max_rows = settings.max_result_rows;
         limits.size_limits.max_bytes = settings.max_result_bytes;
         limits.size_limits.overflow_mode = settings.result_overflow_mode;
@@ -61,7 +61,7 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
 
     if (!storage)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist.", table_id.getNameForLogs());
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist.", table_id.getNameForLogs());
 
     auto storage_name = storage->getName();
     if (storage_name == "LiveView"

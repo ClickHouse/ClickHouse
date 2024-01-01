@@ -307,7 +307,7 @@ DECLARE_AVX512VBMI2_SPECIFIC_CODE(
   * class TestClass
   * {
   * public:
-  *     MULTITARGET_FUNCTION_AVX2_SSE42(
+  *     MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
   *     MULTITARGET_FUNCTION_HEADER(int), testFunctionImpl, MULTITARGET_FUNCTION_BODY((int value)
   *     {
   *          return value;
@@ -315,7 +315,15 @@ DECLARE_AVX512VBMI2_SPECIFIC_CODE(
   *     )
   *
   *     void testFunction(int value) {
-  *         if (isArchSupported(TargetArch::AVX2))
+  *         if (isArchSupported(TargetArch::AVX512BW))
+  *         {
+  *             testFunctionImplAVX512BW(value);
+  *         }
+  *         else if (isArchSupported(TargetArch::AVX512F))
+  *         {
+  *             testFunctionImplAVX512F(value);
+  *         }
+  *         else if (isArchSupported(TargetArch::AVX2))
   *         {
   *             testFunctionImplAVX2(value);
   *         }
@@ -357,12 +365,51 @@ DECLARE_AVX512VBMI2_SPECIFIC_CODE(
     FUNCTION_HEADER \
     \
     name \
+    FUNCTION_BODY                                                             \
+
+/// NOLINTNEXTLINE
+#define MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##AVX512BW \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##AVX512F \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    AVX2_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##AVX2 \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    SSE42_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##SSE42 \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
     FUNCTION_BODY \
 
 #else
 
-/// NOLINTNEXTLINE
+    /// NOLINTNEXTLINE
 #define MULTITARGET_FUNCTION_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+
+/// NOLINTNEXTLINE
+#define MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     name \

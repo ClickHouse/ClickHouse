@@ -18,18 +18,21 @@
 #define DOM_DOMAutoPtr_INCLUDED
 
 
-#include "Poco/XML/XML.h"
 #include "Poco/AutoPtr.h"
+#include "Poco/XML/XML.h"
 
 
-namespace Poco {
-namespace XML {
+namespace Poco
+{
+namespace XML
+{
 
 
-using Poco::AutoPtr;
+    using Poco::AutoPtr;
 
 
-} } // namespace Poco::XML
+}
+} // namespace Poco::XML
 
 
 #endif // DOM_DOMAutoPtr_INCLUDED

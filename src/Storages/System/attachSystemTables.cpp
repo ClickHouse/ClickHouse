@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
+#include <Storages/System/StorageSystemAsyncLoader.h>
 #include <Storages/System/StorageSystemBackups.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
 #include <Storages/System/StorageSystemCollations.h>
@@ -36,12 +37,15 @@
 #include <Storages/System/StorageSystemPartsColumns.h>
 #include <Storages/System/StorageSystemProjectionPartsColumns.h>
 #include <Storages/System/StorageSystemProcesses.h>
+#include <Storages/System/StorageSystemUserProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
+#include <Storages/System/StorageSystemServerSettings.h>
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
+#include <Storages/System/StorageSystemDatabaseEngines.h>
 #include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
@@ -78,6 +82,21 @@
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
+#include <Storages/System/StorageSystemDroppedTables.h>
+#include <Storages/System/StorageSystemZooKeeperConnection.h>
+#include <Storages/System/StorageSystemJemalloc.h>
+#include <Storages/System/StorageSystemScheduler.h>
+#include <Storages/System/StorageSystemS3Queue.h>
+#include <Storages/System/StorageSystemDashboards.h>
+#include <Storages/System/StorageSystemViewRefreshes.h>
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+#include <Storages/System/StorageSystemSymbols.h>
+#endif
+
+#if USE_RDKAFKA
+#include <Storages/System/StorageSystemKafkaConsumers.h>
+#endif
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -85,14 +104,13 @@
 
 #if USE_ROCKSDB
 #include <Storages/RocksDB/StorageSystemRocksDB.h>
-#include <Storages/System/StorageSystemMergeTreeMetadataCache.h>
 #endif
 
 
 namespace DB
 {
 
-void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
 {
     attach<StorageSystemOne>(context, system_database, "one");
     attach<StorageSystemNumbers>(context, system_database, "numbers", false);
@@ -105,6 +123,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemFunctions>(context, system_database, "functions");
     attach<StorageSystemEvents>(context, system_database, "events");
     attach<StorageSystemSettings>(context, system_database, "settings");
+    attach<StorageSystemServerSettings>(context, system_database, "server_settings");
     attach<StorageSystemSettingsChanges>(context, system_database, "settings_changes");
     attach<SystemMergeTreeSettings<false>>(context, system_database, "merge_tree_settings");
     attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings");
@@ -114,6 +133,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators");
     attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families");
     attach<StorageSystemCollations>(context, system_database, "collations");
+    attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines");
     attach<StorageSystemContributors>(context, system_database, "contributors");
     attach<StorageSystemUsers>(context, system_database, "users");
@@ -138,18 +158,20 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemTimeZones>(context, system_database, "time_zones");
     attach<StorageSystemBackups>(context, system_database, "backups");
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
+    attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables");
+    attach<StorageSystemScheduler>(context, system_database, "scheduler");
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    attach<StorageSystemSymbols>(context, system_database, "symbols");
+#endif
+#if USE_RDKAFKA
+    attach<StorageSystemKafkaConsumers>(context, system_database, "kafka_consumers");
+#endif
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
 #endif
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
-    attach<StorageSystemMergeTreeMetadataCache>(context, system_database, "merge_tree_metadata_cache");
 #endif
-}
-
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
-{
-    attachSystemTablesLocal(context, system_database);
 
     attach<StorageSystemParts>(context, system_database, "parts");
     attach<StorageSystemProjectionParts>(context, system_database, "projection_parts");
@@ -180,9 +202,18 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths");
     attach<StorageSystemCertificates>(context, system_database, "certificates");
     attach<StorageSystemNamedCollections>(context, system_database, "named_collections");
+    attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader");
+    attach<StorageSystemUserProcesses>(context, system_database, "user_processes");
+    attach<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins");
+    attach<StorageSystemS3Queue>(context, system_database, "s3queue");
+    attach<StorageSystemDashboards>(context, system_database, "dashboards");
+    attach<StorageSystemViewRefreshes>(context, system_database, "view_refreshes");
 
     if (has_zookeeper)
+    {
         attach<StorageSystemZooKeeper>(context, system_database, "zookeeper");
+        attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection");
+    }
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
         attach<StorageSystemTransactions>(context, system_database, "transactions");

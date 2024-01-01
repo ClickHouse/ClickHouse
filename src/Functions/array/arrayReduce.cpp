@@ -6,7 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
@@ -19,7 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -100,8 +100,10 @@ DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName 
         getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
                                                    aggregate_function_name, params_row, "function " + getName(), getContext());
 
+        auto action = NullsAction::EMPTY;
         AggregateFunctionProperties properties;
-        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
+        aggregate_function
+            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, params_row, properties);
     }
 
     return aggregate_function->getResultType();
@@ -144,7 +146,7 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
         if (i == 0)
             offsets = offsets_i;
         else if (*offsets_i != *offsets)
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH, "Lengths of all arrays passed to {} must be equal.",
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Lengths of all arrays passed to {} must be equal.",
                 getName());
     }
     const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();
@@ -182,10 +184,19 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
         that->addBatchArray(0, input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
     }
 
-    for (size_t i = 0; i < input_rows_count; ++i)
-        /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
-        /// correctly if result contains AggregateFunction's states
-        agg_func.insertMergeResultInto(places[i], res_col, arena.get());
+    if (agg_func.isState())
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
+            /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
+            /// correctly if result contains AggregateFunction's states
+            agg_func.insertMergeResultInto(places[i], res_col, arena.get());
+    }
+    else
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
+            agg_func.insertResultInto(places[i], res_col, arena.get());
+    }
+
     return result_holder;
 }
 

@@ -6,6 +6,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/HashTable/HashMap.h>
+#include <numeric>
+
 
 namespace DB
 {

@@ -12,6 +12,7 @@
 #include <IO/TimeoutSetter.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <Client/ClientBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include <Common/ClickHouseRevision.h>
@@ -22,7 +23,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
-#include "Core/Block.h"
+#include <Common/logger_useful.h>
+#include <Core/Block.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Compression/CompressionFactory.h>
@@ -33,7 +35,7 @@
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 #include "config.h"
 
 #if USE_SSL
@@ -65,6 +67,7 @@ Connection::~Connection() = default;
 Connection::Connection(const String & host_, UInt16 port_,
     const String & default_database_,
     const String & user_, const String & password_,
+    const ssh::SSHKey & ssh_private_key_,
     const String & quota_key_,
     const String & cluster_,
     const String & cluster_secret_,
@@ -72,7 +75,9 @@ Connection::Connection(const String & host_, UInt16 port_,
     Protocol::Compression compression_,
     Protocol::Secure secure_)
     : host(host_), port(port_), default_database(default_database_)
-    , user(user_), password(password_), quota_key(quota_key_)
+    , user(user_), password(password_)
+    , ssh_private_key(ssh_private_key_)
+    , quota_key(quota_key_)
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
@@ -104,6 +109,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         for (auto it = addresses.begin(); it != addresses.end();)
         {
+            have_more_addresses_to_connect = it != std::prev(addresses.end());
+
             if (connected)
                 disconnect();
 
@@ -127,7 +134,22 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
             try
             {
-                socket->connect(*it, connection_timeout);
+                if (async_callback)
+                {
+                    socket->connectNB(*it);
+                    while (!socket->poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
+                        async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
+
+                    if (auto err = socket->impl()->socketError())
+                        socket->impl()->error(err); // Throws an exception
+
+                    socket->setBlocking(true);
+                }
+                else
+                {
+                    socket->connect(*it, connection_timeout);
+                }
+
                 current_resolved_address = *it;
                 break;
             }
@@ -162,14 +184,15 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-        in->setAsyncCallback(std::move(async_callback));
+        in->setAsyncCallback(async_callback);
 
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
-
+        out->setAsyncCallback(async_callback);
         connected = true;
 
         sendHello();
-        receiveHello();
+        receiveHello(timeouts.handshake_timeout);
+
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_ADDENDUM)
             sendAddendum();
 
@@ -211,11 +234,39 @@ void Connection::disconnect()
     maybe_compressed_out = nullptr;
     in = nullptr;
     last_input_packet_type.reset();
-    out = nullptr; // can write to socket
+    std::exception_ptr finalize_exception;
+    try
+    {
+        // finalize() can write to socket and throw an exception.
+        if (out)
+            out->finalize();
+    }
+    catch (...)
+    {
+        /// Don't throw an exception here, it will leave Connection in invalid state.
+        finalize_exception = std::current_exception();
+    }
+    out = nullptr;
+
     if (socket)
         socket->close();
     socket = nullptr;
     connected = false;
+    nonce.reset();
+
+    if (finalize_exception)
+        std::rethrow_exception(finalize_exception);
+}
+
+
+String Connection::packStringForSshSign(String challenge)
+{
+    String message;
+    message.append(std::to_string(DBMS_TCP_PROTOCOL_VERSION));
+    message.append(default_database);
+    message.append(user);
+    message.append(challenge);
+    return message;
 }
 
 
@@ -245,9 +296,9 @@ void Connection::sendHello()
                         "Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters");
 
     writeVarUInt(Protocol::Client::Hello, *out);
-    writeStringBinary((DBMS_NAME " ") + client_name, *out);
-    writeVarUInt(DBMS_VERSION_MAJOR, *out);
-    writeVarUInt(DBMS_VERSION_MINOR, *out);
+    writeStringBinary(std::string(VERSION_NAME) + " " + client_name, *out);
+    writeVarUInt(VERSION_MAJOR, *out);
+    writeVarUInt(VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, *out);
     writeStringBinary(default_database, *out);
@@ -255,7 +306,7 @@ void Connection::sendHello()
     /// (NOTE we do not check for DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET, since we cannot ignore inter-server secret if it was requested)
     if (!cluster_secret.empty())
     {
-        writeStringBinary(USER_INTERSERVER_MARKER, *out);
+        writeStringBinary(EncodedUserInfo::USER_INTERSERVER_MARKER, *out);
         writeStringBinary("" /* password */, *out);
 
 #if USE_SSL
@@ -265,6 +316,16 @@ void Connection::sendHello()
                         "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
     }
+#if USE_SSL
+    /// Just inform server that we will authenticate using SSH keys.
+    else if (!ssh_private_key.isEmpty())
+    {
+        writeStringBinary(fmt::format("{}{}", EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER, user), *out);
+        writeStringBinary(password, *out);
+
+        performHandshakeForSSHAuth();
+    }
+#endif
     else
     {
         writeStringBinary(user, *out);
@@ -283,8 +344,45 @@ void Connection::sendAddendum()
 }
 
 
-void Connection::receiveHello()
+void Connection::performHandshakeForSSHAuth()
 {
+#if USE_SSL
+    String challenge;
+    {
+        writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
+        out->next();
+        UInt64 packet_type = 0;
+        if (in->eof())
+            throw Poco::Net::NetException("Connection reset by peer");
+
+        readVarUInt(packet_type, *in);
+        if (packet_type == Protocol::Server::SSHChallenge)
+        {
+            readStringBinary(challenge, *in);
+        }
+        else if (packet_type == Protocol::Server::Exception)
+            receiveException()->rethrow();
+        else
+        {
+            /// Close connection, to not stay in unsynchronised state.
+            disconnect();
+            throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
+        }
+    }
+
+    writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
+    String to_sign = packStringForSshSign(challenge);
+    String signature = ssh_private_key.signString(to_sign);
+    writeStringBinary(signature, *out);
+    out->next();
+#endif
+}
+
+
+void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
+{
+    TimeoutSetter timeout_setter(*socket, socket->getSendTimeout(), handshake_timeout);
+
     /// Receive hello packet.
     UInt64 packet_type = 0;
 
@@ -324,11 +422,23 @@ void Connection::receiveHello()
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
             }
         }
+        if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
+        {
+            chassert(!nonce.has_value());
+
+            UInt64 read_nonce;
+            readIntBinary(read_nonce, *in);
+            nonce.emplace(read_nonce);
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else
     {
+        /// Reset timeout_setter before disconnect,
+        /// because after disconnect socket will be invalid.
+        timeout_setter.reset();
+
         /// Close connection, to not stay in unsynchronised state.
         disconnect();
         throwUnexpectedPacket(packet_type, "Hello or Exception");
@@ -506,7 +616,7 @@ void Connection::sendQuery(
     bool with_pending_data,
     std::function<void(const Progress &)>)
 {
-    OpenTelemetry::SpanHolder span("Connection::sendQuery()");
+    OpenTelemetry::SpanHolder span("Connection::sendQuery()", OpenTelemetry::CLIENT);
     span.addAttribute("clickhouse.query_id", query_id_);
     span.addAttribute("clickhouse.query", query);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
@@ -541,7 +651,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs);
+        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs, settings->enable_deflate_qpl_codec);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -584,6 +694,9 @@ void Connection::sendQuery(
         {
 #if USE_SSL
             std::string data(salt);
+            // For backward compatibility
+            if (nonce.has_value())
+                data += std::to_string(nonce.value());
             data += cluster_secret;
             data += query;
             data += query_id;
@@ -593,8 +706,8 @@ void Connection::sendQuery(
             std::string hash = encodeSHA256(data);
             writeStringBinary(hash, *out);
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
 #endif
         }
         else
@@ -833,7 +946,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             return sink;
         });
         executor = pipeline.execute();
-        executor->execute(/*num_threads = */ 1);
+        executor->execute(/*num_threads = */ 1, false);
 
         auto read_rows = sink->getNumReadRows();
         rows += read_rows;
@@ -960,8 +1073,8 @@ Packet Connection::receivePacket()
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
-            case Protocol::Server::MergeTreeAllRangesAnnounecement:
-                res.announcement = receiveInitialParallelReadAnnounecement();
+            case Protocol::Server::MergeTreeAllRangesAnnouncement:
+                res.announcement = receiveInitialParallelReadAnnouncement();
                 return res;
 
             case Protocol::Server::MergeTreeReadTaskRequest:
@@ -970,6 +1083,11 @@ Packet Connection::receivePacket()
 
             case Protocol::Server::ProfileEvents:
                 res.block = receiveProfileEvents();
+                return res;
+
+            case Protocol::Server::TimezoneUpdate:
+                readStringBinary(server_timezone, *in);
+                res.server_timezone = server_timezone;
                 return res;
 
             default:
@@ -1120,16 +1238,12 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    ParallelReadRequest request;
-    request.deserialize(*in);
-    return request;
+    return ParallelReadRequest::deserialize(*in);
 }
 
-InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnounecement() const
+InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
 {
-    InitialAllRangesAnnouncement announcement;
-    announcement.deserialize(*in);
-    return announcement;
+    return InitialAllRangesAnnouncement::deserialize(*in);
 }
 
 
@@ -1148,10 +1262,11 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         parameters.default_database,
         parameters.user,
         parameters.password,
+        parameters.ssh_private_key,
         parameters.quota_key,
         "", /* cluster */
         "", /* cluster_secret */
-        "client",
+        std::string(DEFAULT_CLIENT_NAME),
         parameters.compression,
         parameters.security);
 }

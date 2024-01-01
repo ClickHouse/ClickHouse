@@ -7,13 +7,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+format="RowBinary"
+
 function query {
     # bash isn't able to store \0 bytes, so use [1; 255] random range
-    echo "SELECT greatest(toUInt8(1), toUInt8(intHash64(number))) FROM system.numbers LIMIT $1 FORMAT RowBinary"
+    echo "SELECT greatest(toUInt8(1), toUInt8(intHash64(number))) FROM system.numbers LIMIT $1 FORMAT $format"
 }
 
 function ch_url() {
-    ${CLICKHOUSE_CURL_COMMAND} -q -sS "${CLICKHOUSE_URL}&max_block_size=$max_block_size&$1" -d "$(query "$2")"
+    ${CLICKHOUSE_CURL_COMMAND} -q -sS \
+        "${CLICKHOUSE_URL}${max_block_size:+"&max_block_size=$max_block_size"}&$1" \
+        -d "$(query "$2")"
 }
 
 
@@ -24,9 +28,9 @@ exception_pattern="DB::Exception:[[:print:]]*"
 function check_only_exception() {
     local res
     res=$(ch_url "$1" "$2")
-    #(echo "$res")
-    #(echo "$res" | wc -l)
-    #(echo "$res" | grep -c "$exception_pattern")
+    # echo "$res"
+    # echo "$res" | wc -l
+    # echo "$res" | grep -c "$exception_pattern"
     [[ $(echo "$res" | wc -l) -eq 1 ]] || echo FAIL 1 "$@"
     [[ $(echo "$res" | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL 2 "$@"
 }
@@ -34,19 +38,23 @@ function check_only_exception() {
 function check_last_line_exception() {
     local res
     res=$(ch_url "$1" "$2")
-    #echo "$res" > res
-    #echo "$res" | wc -c
-    #echo "$res" | tail -n -2
+    # echo "$res" > res
+    # echo "$res" | wc -c
+    # echo "$res" | tail -n -2
     [[ $(echo "$res" | tail -n -1 | grep -c "$exception_pattern") -eq 1 ]] || echo FAIL 3 "$@"
     [[ $(echo "$res" | head -n -1 | grep -c "$exception_pattern") -eq 0 ]] || echo FAIL 4 "$@"
 }
 
 function check_exception_handling() {
+    format=TSV \
+    check_last_line_exception \
+        "max_block_size=30000&max_result_rows=400000&buffer_size=1048577&wait_end_of_query=0" 111222333444
+
     check_only_exception "max_result_bytes=1000"                        1001
     check_only_exception "max_result_bytes=1000&wait_end_of_query=1"    1001
 
-    check_only_exception "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=0" 1048577
-    check_only_exception "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=1" 1048577
+    check_last_line_exception "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=0" 1048577
+    check_only_exception      "max_result_bytes=1048576&buffer_size=1048576&wait_end_of_query=1" 1048577
 
     check_only_exception "max_result_bytes=1500000&buffer_size=2500000&wait_end_of_query=0" 1500001
     check_only_exception "max_result_bytes=1500000&buffer_size=1500000&wait_end_of_query=1" 1500001

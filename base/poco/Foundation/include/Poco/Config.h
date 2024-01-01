@@ -53,13 +53,13 @@
 
 
 // Define if no <locale> header is available (such as on WinCE)
-// #define POCO_NO_LOCALE
+#define POCO_NO_LOCALE
 
 
 // Define to desired default thread stack size
 // Zero means OS default
 #ifndef POCO_THREAD_STACK_SIZE
-	#define POCO_THREAD_STACK_SIZE 0
+#    define POCO_THREAD_STACK_SIZE 0
 #endif
 
 
@@ -89,7 +89,7 @@
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 //
 #ifndef POCO_ENABLE_SOO
-#define POCO_NO_SOO
+#    define POCO_NO_SOO
 #endif
 
 
@@ -98,7 +98,7 @@
 // while those smaller will be placement new-ed into an
 // internal buffer.
 #if !defined(POCO_SMALL_OBJECT_SIZE) && !defined(POCO_NO_SOO)
-	#define POCO_SMALL_OBJECT_SIZE 32
+#    define POCO_SMALL_OBJECT_SIZE 32
 #endif
 
 
@@ -159,9 +159,6 @@
 
 
 // Windows CE has no locale support
-#if defined(_WIN32_WCE)
-	#define POCO_NO_LOCALE
-#endif
 
 
 // Enable the poco_debug_* and poco_trace_* macros

@@ -68,8 +68,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto symbol_index_ptr = SymbolIndex::instance();
-        const SymbolIndex & symbol_index = *symbol_index_ptr;
+        const SymbolIndex & symbol_index = SymbolIndex::instance();
 
         const ColumnPtr & column = arguments[0].column;
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());

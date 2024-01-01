@@ -1,5 +1,7 @@
+#include <base/getFQDNOrHostName.h>
 #include <Interpreters/CrashLog.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -8,7 +10,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/Stopwatch.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 
 namespace DB
@@ -21,6 +23,7 @@ NamesAndTypesList CrashLogElement::getNamesAndTypes()
 {
     return
     {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"timestamp_ns", std::make_shared<DataTypeUInt64>()},
@@ -39,6 +42,7 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(timestamp_ns);
@@ -52,7 +56,7 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
 
     String build_id_hex;
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    build_id_hex = SymbolIndex::instance()->getBuildIDHex();
+    build_id_hex = SymbolIndex::instance().getBuildIDHex();
 #endif
     columns[i++]->insert(build_id_hex);
 }
@@ -80,9 +84,9 @@ void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, co
         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
             trace.push_back(reinterpret_cast<uintptr_t>(stack_trace.getFramePointers()[i]));
 
-        stack_trace.toStringEveryLine([&trace_full](const std::string & line) { trace_full.push_back(line); });
+        stack_trace.toStringEveryLine([&trace_full](std::string_view line) { trace_full.push_back(line); });
 
         CrashLogElement element{static_cast<time_t>(time / 1000000000), time, signal, thread_id, query_id, trace, trace_full};
-        crash_log_owned->add(element);
+        crash_log_owned->add(std::move(element));
     }
 }

@@ -2,13 +2,13 @@
 #include <Common/typeid_cast.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Access/ContextAccess.h>
-#include <TableFunctions/TableFunctionMerge.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 
@@ -24,18 +24,63 @@ namespace ErrorCodes
 
 namespace
 {
-    [[noreturn]] void throwNoTablesMatchRegexp(const String & source_database_regexp, const String & source_table_regexp)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Error while executing table function merge. Either there is no database, which matches regular expression `{}`, or there are "
-            "no tables in database matches `{}`, which fit tables expression: {}",
-            source_database_regexp,
-            source_database_regexp,
-            source_table_regexp);
-    }
+
+[[noreturn]] void throwNoTablesMatchRegexp(const String & source_database_regexp, const String & source_table_regexp)
+{
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Error while executing table function merge. Either there is no database, which matches regular expression `{}`, or there are "
+        "no tables in database matches `{}`, which fit tables expression: {}",
+        source_database_regexp,
+        source_database_regexp,
+        source_table_regexp);
 }
 
+/* merge (db_name, tables_regexp) - creates a temporary StorageMerge.
+ * The structure of the table is taken from the first table that came up, suitable for regexp.
+ * If there is no such table, an exception is thrown.
+ */
+class TableFunctionMerge : public ITableFunction
+{
+public:
+    static constexpr auto name = "merge";
+    std::string getName() const override { return name; }
+
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+    const char * getStorageTypeName() const override { return "Merge"; }
+
+    using TableSet = std::set<String>;
+    using DBToTableSetMap = std::map<String, TableSet>;
+    const DBToTableSetMap & getSourceDatabasesAndTables(ContextPtr context) const;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    static TableSet getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context);
+
+    String source_database_name_or_regexp;
+    String source_table_regexp;
+    bool database_is_regexp = false;
+    mutable std::optional<DBToTableSetMap> source_databases_and_tables;
+};
+
+std::vector<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+{
+    auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
+    auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
+    size_t table_function_arguments_size = table_function_arguments_nodes.size();
+
+    std::vector<size_t> result;
+
+    for (size_t i = 0; i < table_function_arguments_size; ++i)
+    {
+        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
+        if (function_node && function_node->getFunctionName() == "REGEXP")
+            result.push_back(i);
+    }
+
+    return result;
+}
 
 void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
@@ -99,7 +144,7 @@ const TableFunctionMerge::DBToTableSetMap & TableFunctionMerge::getSourceDatabas
     return *source_databases_and_tables;
 }
 
-ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     for (const auto & db_with_tables : getSourceDatabasesAndTables(context))
     {
@@ -115,11 +160,11 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
 }
 
 
-StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
     auto res = std::make_shared<StorageMerge>(
         StorageID(getDatabaseName(), table_name),
-        getActualTableStructure(context),
+        getActualTableStructure(context, is_insert_query),
         String{},
         source_database_name_or_regexp,
         database_is_regexp,
@@ -158,6 +203,8 @@ TableFunctionMerge::getMatchedTablesWithAccess(const String & database_name, con
         tables.emplace(it->name());
     }
     return tables;
+}
+
 }
 
 void registerTableFunctionMerge(TableFunctionFactory & factory)

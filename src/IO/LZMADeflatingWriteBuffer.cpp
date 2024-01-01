@@ -46,7 +46,8 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
 
 LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
 {
-    finalize();
+    /// It is OK to call deflateEnd() twice (one from the finalizeAfter())
+    lzma_end(&lstr);
 }
 
 void LZMADeflatingWriteBuffer::nextImpl()

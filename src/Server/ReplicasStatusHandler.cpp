@@ -28,10 +28,16 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
     {
         HTMLForm params(getContext()->getSettingsRef(), request);
 
-        /// Even if lag is small, output detailed information about the lag.
-        bool verbose = params.get("verbose", "") == "1";
+        const auto & config = getContext()->getConfigRef();
 
         const MergeTreeSettings & settings = getContext()->getReplicatedMergeTreeSettings();
+
+        /// Even if lag is small, output detailed information about the lag.
+        bool verbose = false;
+        bool enable_verbose = config.getBool("enable_verbose_replicas_status", true);
+
+        if (params.get("verbose", "") == "1" && enable_verbose)
+            verbose = true;
 
         bool ok = true;
         WriteBufferFromOwnString message;
@@ -59,24 +65,33 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 time_t absolute_delay = 0;
                 time_t relative_delay = 0;
 
-                table_replicated->getReplicaDelays(absolute_delay, relative_delay);
+                if (!table_replicated->isTableReadOnly())
+                {
+                    table_replicated->getReplicaDelays(absolute_delay, relative_delay);
 
-                if ((settings.min_absolute_delay_to_close && absolute_delay >= static_cast<time_t>(settings.min_absolute_delay_to_close))
-                    || (settings.min_relative_delay_to_close && relative_delay >= static_cast<time_t>(settings.min_relative_delay_to_close)))
-                    ok = false;
+                    if ((settings.min_absolute_delay_to_close && absolute_delay >= static_cast<time_t>(settings.min_absolute_delay_to_close))
+                        || (settings.min_relative_delay_to_close && relative_delay >= static_cast<time_t>(settings.min_relative_delay_to_close)))
+                        ok = false;
 
-                message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(iterator->name())
-                    << ":\tAbsolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".\n";
+                    message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(iterator->name())
+                        << ":\tAbsolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".\n";
+                }
+                else
+                {
+                    message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(iterator->name())
+                        << ":\tis readonly. \n";
+                }
             }
         }
 
-        const auto & config = getContext()->getConfigRef();
-        setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", 10));
+        const auto & server_settings = getContext()->getServerSettings();
+        setResponseDefaultHeaders(response, server_settings.keep_alive_timeout.totalSeconds());
 
         if (!ok)
         {
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
-            verbose = true;
+            if (enable_verbose)
+                verbose = true;
         }
 
         if (verbose)

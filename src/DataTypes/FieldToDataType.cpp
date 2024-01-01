@@ -36,6 +36,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const UInt64 & x) const
     if (x <= std::numeric_limits<UInt8>::max()) return std::make_shared<DataTypeUInt8>();
     if (x <= std::numeric_limits<UInt16>::max()) return std::make_shared<DataTypeUInt16>();
     if (x <= std::numeric_limits<UInt32>::max()) return std::make_shared<DataTypeUInt32>();
+    if (x <= std::numeric_limits<Int64>::max()) return std::make_shared<DataTypeUInt64>(/*unsigned_can_be_signed=*/true);
     return std::make_shared<DataTypeUInt64>();
 }
 

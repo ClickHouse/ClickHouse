@@ -56,7 +56,7 @@ public:
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
     /// For ATTACHing existing data on filesystem.
-    void writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
+    bool writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
 
     /// For proper deduplication in MaterializedViews
     bool lastBlockIsDuplicate() const override
@@ -70,9 +70,10 @@ public:
 
     struct DelayedChunk;
 private:
+    std::vector<String> detectConflictsInAsyncBlockIDs(const std::vector<String> & ids);
+
     using BlockIDsType = std::conditional_t<async_insert, std::vector<String>, String>;
 
-    ZooKeeperRetriesInfo zookeeper_retries_info;
     struct QuorumInfo
     {
         String status_path;
@@ -87,12 +88,14 @@ private:
     size_t checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper);
 
     /// Rename temporary part and commit to ZooKeeper.
-    std::vector<String> commitPart(
+    /// Returns a list of conflicting async blocks and true if the whole parts was deduplicated
+    std::pair<std::vector<String>, bool> commitPart(
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const BlockIDsType & block_id,
         size_t replicas_num,
         bool writing_existing_part);
+
 
     /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
     /// Also checks that replica still alive.
@@ -122,8 +125,8 @@ private:
     bool quorum_parallel = false;
     const bool deduplicate = true;
     bool last_block_is_duplicate = false;
+    UInt64 num_blocks_processed = 0;
 
-    using Logger = Poco::Logger;
     Poco::Logger * log;
 
     ContextPtr context;

@@ -1,5 +1,6 @@
 ---
 slug: /en/operations/backup
+description: In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data.
 ---
 
 # Backup and Restore
@@ -29,7 +30,7 @@ slug: /en/operations/backup
 ```
 
 :::note ALL
-`ALL` is only applicable to the `RESTORE` command.
+Prior to version 23.4 of ClickHouse, `ALL` was only applicable to the `RESTORE` command.
 :::
 
 ## Background
@@ -82,6 +83,9 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
     - [`compression_method`](/docs/en/sql-reference/statements/create/table.md/#column-compression-codecs) and compression_level
     - `password` for the file on disk
     - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
+    - `structure_only`: if enabled, allows to only backup or restore the CREATE statements without the data of tables
+    - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
+    - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
 
 ### Usage examples
 
@@ -202,6 +206,55 @@ end_time:          2022-08-30 09:21:46
 1 row in set. Elapsed: 0.002 sec.
 ```
 
+Along with `system.backups` table, all backup and restore operations are also tracked in the system log table [backup_log](../operations/system-tables/backup_log.md): 
+```
+SELECT *
+FROM system.backup_log
+WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+ORDER BY event_time_microseconds ASC
+FORMAT Vertical
+```
+```response
+Row 1:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.097414
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  CREATING_BACKUP
+error:                   
+start_time:              2023-08-18 11:13:43
+end_time:                1970-01-01 03:00:00
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+Row 2:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.174782
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  BACKUP_FAILED
+#highlight-next-line
+error:                   Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 23.8.1.1)
+start_time:              2023-08-18 11:13:43
+end_time:                2023-08-18 11:13:43
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+2 rows in set. Elapsed: 0.075 sec. 
+```
+
 ## Configuring BACKUP/RESTORE to use an S3 Endpoint
 
 To write backups to an S3 bucket you need three pieces of information:
@@ -213,7 +266,7 @@ To write backups to an S3 bucket you need three pieces of information:
   for example `Abc+123`
 
 :::note
-Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk](/docs/en/integrations/data-ingestion/s3/configuring-s3-for-clickhouse-use.md), just come back to this doc after saving the policy, there is no need to configure ClickHouse to use the S3 bucket.
+Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk](/docs/en/integrations/data-ingestion/s3/index.md#configuring-s3-for-clickhouse-use), just come back to this doc after saving the policy, there is no need to configure ClickHouse to use the S3 bucket.
 :::
 
 The destination for a backup will be specified like this:
@@ -330,7 +383,7 @@ It is also possible to `BACKUP`/`RESTORE` to S3 by configuring an S3 disk in the
             <s3>
                 <volumes>
                     <main>
-                        <disk>s3</disk>
+                        <disk>s3_plain</disk>
                     </main>
                 </volumes>
             </s3>
@@ -353,7 +406,7 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
 :::note
 But keep in mind that:
 - This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
-- It has excessive API calls
+- If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
 :::
 
 ## Alternatives
@@ -382,3 +435,19 @@ Data can be restored from backup using the `ALTER TABLE ... ATTACH PARTITION ...
 For more information about queries related to partition manipulations, see the [ALTER documentation](../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
 
 A third-party tool is available to automate this approach: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
+
+## Settings to disallow concurrent backup/restore
+
+To disallow concurrent backup/restore, you can use these settings respectively.
+
+```xml
+<clickhouse>
+    <backups>
+        <allow_concurrent_backups>false</allow_concurrent_backups>
+        <allow_concurrent_restores>false</allow_concurrent_restores>
+    </backups>
+</clickhouse>
+```
+
+The default value for both is true, so by default concurrent backup/restores are allowed.
+When these settings are false on a cluster, only 1 backup/restore is allowed to run on a cluster at a time.

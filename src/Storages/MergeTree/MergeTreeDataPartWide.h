@@ -25,10 +25,11 @@ public:
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
-        const StorageMetadataPtr & metadata_snapshot,
+        const StorageSnapshotPtr & storage_snapshot,
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
+        const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
@@ -37,6 +38,7 @@ public:
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const Statistics & stats_to_recalc_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity) override;
@@ -47,11 +49,13 @@ public:
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
 
-    String getFileNameForColumn(const NameAndTypePair & column) const override;
+    std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const override;
 
     ~MergeTreeDataPartWide() override;
 
     bool hasColumnFiles(const NameAndTypePair & column) const override;
+
+    std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
 protected:
     static void loadIndexGranularityImpl(

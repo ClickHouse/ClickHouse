@@ -1,7 +1,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 
 namespace DB
@@ -32,6 +32,7 @@ void registerAggregateFunctionsQuantileTDigest(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileTDigestWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileBFloat16(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileBFloat16Weighted(AggregateFunctionFactory &);
+void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory &);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory &);
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory &);
 void registerAggregateFunctionRate(AggregateFunctionFactory &);
@@ -39,7 +40,11 @@ void registerAggregateFunctionsMin(AggregateFunctionFactory &);
 void registerAggregateFunctionsMax(AggregateFunctionFactory &);
 void registerAggregateFunctionsAny(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory &);
-void registerAggregateFunctionsStatisticsSimple(AggregateFunctionFactory &);
+void registerAggregateFunctionsStatisticsSecondMoment(AggregateFunctionFactory &);
+void registerAggregateFunctionsStatisticsThirdMoment(AggregateFunctionFactory &);
+void registerAggregateFunctionsStatisticsFourthMoment(AggregateFunctionFactory &);
+void registerAggregateFunctionsStatisticsCovar(AggregateFunctionFactory &);
+void registerAggregateFunctionsStatisticsCorr(AggregateFunctionFactory &);
 void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory &);
 void registerAggregateFunctionSum(AggregateFunctionFactory &);
 void registerAggregateFunctionSumCount(AggregateFunctionFactory &);
@@ -75,6 +80,9 @@ void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory 
 void registerAggregateFunctionSparkbar(AggregateFunctionFactory &);
 void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
 void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory &);
+void registerAggregateFunctionFlameGraph(AggregateFunctionFactory &);
+void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory);
+void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -88,6 +96,7 @@ void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactor
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
+void registerAggregateFunctionCombinatorMinMax(AggregateFunctionCombinatorFactory & factory);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
 
@@ -119,6 +128,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsQuantileTDigestWeighted(factory);
         registerAggregateFunctionsQuantileBFloat16(factory);
         registerAggregateFunctionsQuantileBFloat16Weighted(factory);
+        registerAggregateFunctionsQuantileApprox(factory);
         registerAggregateFunctionsSequenceMatch(factory);
         registerAggregateFunctionWindowFunnel(factory);
         registerAggregateFunctionRate(factory);
@@ -126,7 +136,11 @@ void registerAggregateFunctions()
         registerAggregateFunctionsMax(factory);
         registerAggregateFunctionsAny(factory);
         registerAggregateFunctionsStatisticsStable(factory);
-        registerAggregateFunctionsStatisticsSimple(factory);
+        registerAggregateFunctionsStatisticsSecondMoment(factory);
+        registerAggregateFunctionsStatisticsThirdMoment(factory);
+        registerAggregateFunctionsStatisticsFourthMoment(factory);
+        registerAggregateFunctionsStatisticsCovar(factory);
+        registerAggregateFunctionsStatisticsCorr(factory);
         registerAggregateFunctionsVarianceMatrix(factory);
         registerAggregateFunctionSum(factory);
         registerAggregateFunctionSumCount(factory);
@@ -162,6 +176,9 @@ void registerAggregateFunctions()
         registerAggregateFunctionExponentialMovingAverage(factory);
         registerAggregateFunctionSparkbar(factory);
         registerAggregateFunctionAnalysisOfVariance(factory);
+        registerAggregateFunctionFlameGraph(factory);
+        registerAggregateFunctionKolmogorovSmirnovTest(factory);
+        registerAggregateFunctionLargestTriangleThreeBuckets(factory);
 
         registerWindowFunctions(factory);
     }
@@ -180,6 +197,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorResample(factory);
         registerAggregateFunctionCombinatorDistinct(factory);
         registerAggregateFunctionCombinatorMap(factory);
+        registerAggregateFunctionCombinatorMinMax(factory);
     }
 }
 

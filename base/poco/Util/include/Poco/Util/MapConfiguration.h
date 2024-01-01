@@ -18,47 +18,50 @@
 #define Util_MapConfiguration_INCLUDED
 
 
-#include "Poco/Util/Util.h"
-#include "Poco/Util/AbstractConfiguration.h"
 #include <map>
+#include "Poco/Util/AbstractConfiguration.h"
+#include "Poco/Util/Util.h"
 
 
-namespace Poco {
-namespace Util {
-
-
-class Util_API MapConfiguration: public AbstractConfiguration
-	/// An implementation of AbstractConfiguration that stores configuration data in a map.
+namespace Poco
 {
-public:
-	MapConfiguration();
-		/// Creates an empty MapConfiguration.
-
-	void copyTo(AbstractConfiguration& config);
-		/// Copies all configuration properties to the given configuration.
-
-	void clear();
-		/// Clears the configuration.
-
-protected:
-	typedef std::map<std::string, std::string> StringMap;
-	typedef StringMap::const_iterator iterator;
-
-	bool getRaw(const std::string& key, std::string& value) const;
-	void setRaw(const std::string& key, const std::string& value);
-	void enumerate(const std::string& key, Keys& range) const;
-	void removeRaw(const std::string& key);
-	~MapConfiguration();
-
-	iterator begin() const;
-	iterator end() const;
-
-private:	
-	StringMap _map;
-};
+namespace Util
+{
 
 
-} } // namespace Poco::Util
+    class Util_API MapConfiguration : public AbstractConfiguration
+    /// An implementation of AbstractConfiguration that stores configuration data in a map.
+    {
+    public:
+        MapConfiguration();
+        /// Creates an empty MapConfiguration.
+
+        void copyTo(AbstractConfiguration & config);
+        /// Copies all configuration properties to the given configuration.
+
+        void clear();
+        /// Clears the configuration.
+
+    protected:
+        typedef std::map<std::string, std::string> StringMap;
+        typedef StringMap::const_iterator iterator;
+
+        bool getRaw(const std::string & key, std::string & value) const;
+        void setRaw(const std::string & key, const std::string & value);
+        void enumerate(const std::string & key, Keys & range) const;
+        void removeRaw(const std::string & key);
+        ~MapConfiguration();
+
+        iterator begin() const;
+        iterator end() const;
+
+    private:
+        StringMap _map;
+    };
+
+
+}
+} // namespace Poco::Util
 
 
 #endif // Util_MapConfiguration_INCLUDED

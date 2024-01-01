@@ -29,6 +29,8 @@ struct MergeTreeReaderSettings
     bool apply_deleted_mask = true;
     /// Put reading task in a common I/O pool, return Async state on prepare()
     bool use_asynchronous_read_from_pool = false;
+    /// If PREWHERE has multiple conditions combined with AND, execute them in separate read/filtering steps.
+    bool enable_multiple_prewhere_read_steps = false;
 };
 
 struct MergeTreeWriterSettings
@@ -56,6 +58,7 @@ struct MergeTreeWriterSettings
         , rewrite_primary_key(rewrite_primary_key_)
         , blocks_are_granules_size(blocks_are_granules_size_)
         , query_write_settings(query_write_settings_)
+        , max_threads_for_annoy_index_creation(global_settings.max_threads_for_annoy_index_creation)
     {
     }
 
@@ -73,6 +76,8 @@ struct MergeTreeWriterSettings
     bool rewrite_primary_key;
     bool blocks_are_granules_size;
     WriteSettings query_write_settings;
+
+    size_t max_threads_for_annoy_index_creation;
 };
 
 }

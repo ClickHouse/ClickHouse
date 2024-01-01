@@ -7,6 +7,7 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/copy.hpp>
@@ -17,6 +18,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -138,7 +140,7 @@ namespace
         /// For example, to execute
         /// GRANT ALL ON mydb.* TO role1
         /// REVOKE ALL ON *.* FROM role1
-        /// the current user needs to have grants only on the 'mydb' database.
+        /// the current user needs to have the grants only on the 'mydb' database.
         AccessRights all_granted_access;
         for (const auto & id : grantees_from_query)
         {
@@ -165,7 +167,7 @@ namespace
         access_to_revoke.grant(elements_to_revoke);
         access_to_revoke.makeIntersection(all_granted_access);
 
-        /// Build more accurate list of elements to revoke, now we use an intesection of the initial list of elements to revoke
+        /// Build more accurate list of elements to revoke, now we use an intersection of the initial list of elements to revoke
         /// and all the granted access rights to these grantees.
         bool grant_option = !elements_to_revoke.empty() && elements_to_revoke[0].grant_option;
         elements_to_revoke.clear();
@@ -330,6 +332,54 @@ namespace
             updateGrantedAccessRightsAndRolesTemplate(*role, elements_to_grant, elements_to_revoke, roles_to_grant, roles_to_revoke, admin_option);
     }
 
+    template <typename T>
+    void grantCurrentGrantsTemplate(
+        T & grantee,
+        const AccessRights & rights_to_grant,
+        const AccessRightsElements & elements_to_revoke)
+    {
+        if (!elements_to_revoke.empty())
+            grantee.access.revoke(elements_to_revoke);
+
+        grantee.access.makeUnion(rights_to_grant);
+    }
+
+    /// Grants current user's grants with grant options to specified user.
+    void grantCurrentGrants(
+        IAccessEntity & grantee,
+        const AccessRights & new_rights,
+        const AccessRightsElements & elements_to_revoke)
+    {
+        if (auto * user = typeid_cast<User *>(&grantee))
+            grantCurrentGrantsTemplate(*user, new_rights, elements_to_revoke);
+        else if (auto * role = typeid_cast<Role *>(&grantee))
+            grantCurrentGrantsTemplate(*role, new_rights, elements_to_revoke);
+    }
+
+    /// Calculates all available rights to grant with current user intersection.
+    void calculateCurrentGrantRightsWithIntersection(
+        AccessRights & rights,
+        std::shared_ptr<const ContextAccess> current_user_access,
+        const AccessRightsElements & elements_to_grant)
+    {
+        AccessRightsElements current_user_grantable_elements;
+        auto available_grant_elements = current_user_access->getAccessRights()->getElements();
+        AccessRights current_user_rights;
+        for (auto & element : available_grant_elements)
+        {
+            if (!element.grant_option && !element.is_partial_revoke)
+                continue;
+
+            if (element.is_partial_revoke)
+                current_user_rights.revoke(element);
+            else
+                current_user_rights.grant(element);
+        }
+
+        rights.grant(elements_to_grant);
+        rights.makeIntersection(current_user_rights);
+    }
+
     /// Updates grants of a specified user or role.
     void updateFromQuery(IAccessEntity & grantee, const ASTGrantQuery & query)
     {
@@ -347,7 +397,8 @@ namespace
 
 BlockIO InterpreterGrantQuery::execute()
 {
-    auto & query = query_ptr->as<ASTGrantQuery &>();
+    const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query->as<ASTGrantQuery &>();
 
     query.replaceCurrentUserTag(getContext()->getUserName());
     query.access_rights_elements.eraseNonGrantable();
@@ -373,12 +424,15 @@ BlockIO InterpreterGrantQuery::execute()
     /// Executing on cluster.
     if (!query.cluster.empty())
     {
+        if (query.current_grants)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "GRANT CURRENT GRANTS can't be executed on cluster.");
+
         auto required_access = getRequiredAccessForExecutingOnCluster(elements_to_grant, elements_to_revoke);
         checkAdminOptionForExecutingOnCluster(*current_user_access, roles_to_grant, roles_to_revoke);
         current_user_access->checkGranteesAreAllowed(grantees);
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(updated_query, getContext(), params);
     }
 
     /// Check if the current user has corresponding access rights granted with grant option.
@@ -386,7 +440,8 @@ BlockIO InterpreterGrantQuery::execute()
     elements_to_grant.replaceEmptyDatabase(current_database);
     elements_to_revoke.replaceEmptyDatabase(current_database);
     bool need_check_grantees_are_allowed = true;
-    checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, elements_to_grant, elements_to_revoke);
+    if (!query.current_grants)
+        checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, elements_to_grant, elements_to_revoke);
 
     /// Check if the current user has corresponding roles granted with admin option.
     checkAdminOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, roles_to_grant, roles_to_revoke, query.admin_option);
@@ -394,11 +449,18 @@ BlockIO InterpreterGrantQuery::execute()
     if (need_check_grantees_are_allowed)
         current_user_access->checkGranteesAreAllowed(grantees);
 
+    AccessRights new_rights;
+    if (query.current_grants)
+        calculateCurrentGrantRightsWithIntersection(new_rights, current_user_access, elements_to_grant);
+
     /// Update roles and users listed in `grantees`.
     auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
     {
         auto clone = entity->clone();
-        updateGrantedAccessRightsAndRoles(*clone, elements_to_grant, elements_to_revoke, roles_to_grant, roles_to_revoke, query.admin_option);
+        if (query.current_grants)
+            grantCurrentGrants(*clone, new_rights, elements_to_revoke);
+        else
+            updateGrantedAccessRightsAndRoles(*clone, elements_to_grant, elements_to_revoke, roles_to_grant, roles_to_revoke, query.admin_option);
         return clone;
     };
 

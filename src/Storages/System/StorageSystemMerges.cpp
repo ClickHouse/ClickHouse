@@ -20,8 +20,10 @@ NamesAndTypesList StorageSystemMerges::getNamesAndTypes()
         {"source_part_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"result_part_path", std::make_shared<DataTypeString>()},
         {"partition_id", std::make_shared<DataTypeString>()},
+        {"partition", std::make_shared<DataTypeString>()},
         {"is_mutation", std::make_shared<DataTypeUInt8>()},
         {"total_size_bytes_compressed", std::make_shared<DataTypeUInt64>()},
+        {"total_size_bytes_uncompressed", std::make_shared<DataTypeUInt64>()},
         {"total_size_marks", std::make_shared<DataTypeUInt64>()},
         {"bytes_read_uncompressed", std::make_shared<DataTypeUInt64>()},
         {"rows_read", std::make_shared<DataTypeUInt64>()},
@@ -57,8 +59,10 @@ void StorageSystemMerges::fillData(MutableColumns & res_columns, ContextPtr cont
         res_columns[i++]->insert(merge.source_part_paths);
         res_columns[i++]->insert(merge.result_part_path);
         res_columns[i++]->insert(merge.partition_id);
+        res_columns[i++]->insert(merge.partition);
         res_columns[i++]->insert(merge.is_mutation);
         res_columns[i++]->insert(merge.total_size_bytes_compressed);
+        res_columns[i++]->insert(merge.total_size_bytes_uncompressed);
         res_columns[i++]->insert(merge.total_size_marks);
         res_columns[i++]->insert(merge.bytes_read_uncompressed);
         res_columns[i++]->insert(merge.rows_read);

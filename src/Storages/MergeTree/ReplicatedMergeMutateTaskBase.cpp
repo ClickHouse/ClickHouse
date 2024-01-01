@@ -2,6 +2,7 @@
 
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Common/ProfileEventsScope.h>
 
 
 namespace DB
@@ -15,7 +16,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
-StorageID ReplicatedMergeMutateTaskBase::getStorageID()
+StorageID ReplicatedMergeMutateTaskBase::getStorageID() const
 {
     return storage.getStorageID();
 }
@@ -29,6 +30,9 @@ void ReplicatedMergeMutateTaskBase::onCompleted()
 
 bool ReplicatedMergeMutateTaskBase::executeStep()
 {
+    /// Metrics will be saved in the local profile_counters.
+    ProfileEventsScope profile_events_scope(&profile_counters);
+
     std::exception_ptr saved_exception;
 
     bool retryable_error = false;
@@ -65,10 +69,9 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             else
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-            /** This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
-                 * The thread that performs this action will sleep a few seconds after the exception.
-                 * See `queue.processEntry` function.
-                 */
+            /// This exception will be written to the queue element, and it can be looked up using `system.replication_queue` table.
+            /// The thread that performs this action will sleep a few seconds after the exception.
+            /// See `queue.processEntry` function.
             throw;
         }
         catch (...)
@@ -82,7 +85,6 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
     {
         saved_exception = std::current_exception();
     }
-
 
     if (!retryable_error && saved_exception)
     {
@@ -116,8 +118,13 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                 }
             }
         }
-
     }
+
+    if (retryable_error)
+        print_exception = false;
+
+    if (saved_exception)
+        std::rethrow_exception(saved_exception);
 
     return false;
 }
@@ -125,9 +132,9 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
 
 bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
-    MemoryTrackerThreadSwitcherPtr switcher;
+    std::optional<ThreadGroupSwitcher> switcher;
     if (merge_mutate_entry)
-        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(*merge_mutate_entry);
+        switcher.emplace((*merge_mutate_entry)->thread_group);
 
     auto remove_processed_entry = [&] () -> bool
     {
@@ -169,7 +176,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 
             part_log_writer = prepare_result.part_log_writer;
 
-            /// Avoid resheduling, execute fetch here, in the same thread.
+            /// Avoid rescheduling, execute fetch here, in the same thread.
             if (!prepare_result.prepared_successfully)
                 return execute_fetch(prepare_result.need_to_check_missing_part_in_fetch);
 

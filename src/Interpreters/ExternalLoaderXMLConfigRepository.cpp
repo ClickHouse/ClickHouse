@@ -34,7 +34,7 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
     std::unordered_set<std::string> patterns_copy;
 
     {
-        std::lock_guard<std::mutex> lock(patterns_mutex);
+        std::lock_guard lock(patterns_mutex);
         patterns_copy = patterns;
     }
 
@@ -71,7 +71,7 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
 
 void ExternalLoaderXMLConfigRepository::updatePatterns(const std::unordered_set<std::string> & patterns_)
 {
-    std::lock_guard<std::mutex> lock(patterns_mutex);
+    std::lock_guard lock(patterns_mutex);
 
     if (patterns == patterns_)
         return;

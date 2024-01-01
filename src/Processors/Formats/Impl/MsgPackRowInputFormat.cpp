@@ -17,6 +17,7 @@
 #include <IO/ReadBufferFromMemory.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
@@ -25,6 +26,7 @@
 #include <DataTypes/DataTypeUUID.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -45,11 +47,11 @@ namespace ErrorCodes
     extern const int UNEXPECTED_END_OF_FILE;
 }
 
-MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
-    : MsgPackRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_) {}
+MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
+    : MsgPackRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, settings) {}
 
-MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_)
-    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), parser(visitor), data_types(header_.getDataTypes())  {}
+MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings)
+    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default), parser(visitor), data_types(header_.getDataTypes())  {}
 
 void MsgPackRowInputFormat::resetParser()
 {
@@ -58,13 +60,13 @@ void MsgPackRowInputFormat::resetParser()
     visitor.reset();
 }
 
-void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type) // NOLINT
+void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type, UInt8 & read) // NOLINT
 {
     while (!info_stack.empty())
     {
         info_stack.pop();
     }
-    info_stack.push(Info{column, type});
+    info_stack.push(Info{column, type, false, std::nullopt, &read});
 }
 
 void MsgPackVisitor::reset()
@@ -137,16 +139,19 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
             assert_cast<ColumnUInt64 &>(column).insertValue(value);
             break;
         }
+        case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             assert_cast<ColumnInt8 &>(column).insertValue(value);
             break;
         }
+        case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
             assert_cast<ColumnInt16 &>(column).insertValue(value);
             break;
         }
+        case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Int32:
         {
             assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
@@ -162,9 +167,33 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
             assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(value);
             break;
         }
+        case TypeIndex::IPv4:
+        {
+            assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(static_cast<UInt32>(value)));
+            break;
+        }
+        case TypeIndex::Decimal32:
+        {
+            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(static_cast<Int32>(value));
+            break;
+        }
+        case TypeIndex::Decimal64:
+        {
+            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(value);
+            break;
+        }
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack integer into column with type {}.", type->getName());
     }
+}
+
+template <typename ColumnType>
+static void insertFromBinaryRepresentation(IColumn & column, DataTypePtr type, const char * value, size_t size)
+{
+    if (size != sizeof(typename ColumnType::ValueType))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of {} value: {}", type->getName(), size);
+
+    assert_cast<ColumnType &>(column).insertData(value, size);
 }
 
 static void insertString(IColumn & column, DataTypePtr type, const char * value, size_t size, bool bin)
@@ -188,6 +217,36 @@ static void insertString(IColumn & column, DataTypePtr type, const char * value,
 
         assert_cast<ColumnUUID &>(column).insertValue(uuid);
         return;
+    }
+
+    if (bin)
+    {
+        switch (type->getTypeId())
+        {
+            case TypeIndex::IPv6:
+                insertFromBinaryRepresentation<ColumnIPv6>(column, type, value, size);
+                return;
+            case TypeIndex::Int128:
+                insertFromBinaryRepresentation<ColumnInt128>(column, type, value, size);
+                return;
+            case TypeIndex::UInt128:
+                insertFromBinaryRepresentation<ColumnUInt128>(column, type, value, size);
+                return;
+            case TypeIndex::Int256:
+                insertFromBinaryRepresentation<ColumnInt256>(column, type, value, size);
+                return;
+            case TypeIndex::UInt256:
+                insertFromBinaryRepresentation<ColumnUInt256>(column, type, value, size);
+                return;
+            case TypeIndex::Decimal128:
+                insertFromBinaryRepresentation<ColumnDecimal<Decimal128>>(column, type, value, size);
+                return;
+            case TypeIndex::Decimal256:
+                insertFromBinaryRepresentation<ColumnDecimal<Decimal256>>(column, type, value, size);
+                return;
+            default:
+                break;
+        }
     }
 
     if (!isStringOrFixedString(type))
@@ -228,11 +287,11 @@ static void insertFloat64(IColumn & column, DataTypePtr type, Float64 value) // 
     assert_cast<ColumnFloat64 &>(column).insertValue(value);
 }
 
-static void insertNull(IColumn & column, DataTypePtr type)
+static void insertNull(IColumn & column, DataTypePtr type, UInt8 * read, bool null_as_default)
 {
     auto insert_func = [&](IColumn & column_, DataTypePtr type_)
     {
-        insertNull(column_, type_);
+        insertNull(column_, type_, read, null_as_default);
     };
 
     /// LowCardinality(Nullable(...))
@@ -240,7 +299,16 @@ static void insertNull(IColumn & column, DataTypePtr type)
         return;
 
     if (!type->isNullable())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack null into non-nullable column with type {}.", type->getName());
+    {
+        if (!null_as_default)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack null into non-nullable column with type {}.", type->getName());
+        column.insertDefault();
+        /// In case of default on null column can have defined DEFAULT expression that should be used.
+        if (read)
+            *read = false;
+        return;
+    }
 
     assert_cast<ColumnNullable &>(column).insertDefault();
 }
@@ -259,8 +327,8 @@ static void insertUUID(IColumn & column, DataTypePtr type, const char * value, s
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack UUID into column with type {}.", type->getName());
     ReadBufferFromMemory buf(value, size);
     UUID uuid;
-    readBinaryBigEndian(uuid.toUnderType().items[0], buf);
-    readBinaryBigEndian(uuid.toUnderType().items[1], buf);
+    readBinaryBigEndian(UUIDHelpers::getHighBytes(uuid), buf);
+    readBinaryBigEndian(UUIDHelpers::getLowBytes(uuid), buf);
     assert_cast<ColumnUUID &>(column).insertValue(uuid);
 }
 
@@ -308,21 +376,49 @@ bool MsgPackVisitor::visit_boolean(bool value)
 
 bool MsgPackVisitor::start_array(size_t size) // NOLINT
 {
-    if (!isArray(info_stack.top().type))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack array into column with type {}.", info_stack.top().type->getName());
+    if (isArray(info_stack.top().type))
+    {
+        auto nested_type = assert_cast<const DataTypeArray &>(*info_stack.top().type).getNestedType();
+        ColumnArray & column_array = assert_cast<ColumnArray &>(info_stack.top().column);
+        ColumnArray::Offsets & offsets = column_array.getOffsets();
+        IColumn & nested_column = column_array.getData();
+        offsets.push_back(offsets.back() + size);
+        if (size > 0)
+            info_stack.push(Info{nested_column, nested_type, false, size, nullptr});
+    }
+    else if (isTuple(info_stack.top().type))
+    {
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*info_stack.top().type);
+        const auto & nested_types = tuple_type.getElements();
+        if (size != nested_types.size())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack array with size {} into Tuple column with {} elements", size, nested_types.size());
 
-    auto nested_type = assert_cast<const DataTypeArray &>(*info_stack.top().type).getNestedType();
-    ColumnArray & column_array = assert_cast<ColumnArray &>(info_stack.top().column);
-    ColumnArray::Offsets & offsets = column_array.getOffsets();
-    IColumn & nested_column = column_array.getData();
-    offsets.push_back(offsets.back() + size);
-    info_stack.push(Info{nested_column, nested_type});
+        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(info_stack.top().column);
+        /// Push nested columns into stack in reverse order.
+        for (ssize_t i = nested_types.size() - 1; i >= 0; --i)
+            info_stack.push(Info{column_tuple.getColumn(i), nested_types[i], true, std::nullopt, nullptr});
+    }
+    else
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack array into column with type {}", info_stack.top().type->getName());
+    }
+
     return true;
 }
 
-bool MsgPackVisitor::end_array() // NOLINT
+
+bool MsgPackVisitor::end_array_item() // NOLINT
 {
-    info_stack.pop();
+    if (info_stack.top().is_tuple_element)
+        info_stack.pop();
+    else
+    {
+        assert(info_stack.top().array_size.has_value());
+        auto & current_array_size = *info_stack.top().array_size;
+        --current_array_size;
+        if (current_array_size == 0)
+            info_stack.pop();
+    }
     return true;
 }
 
@@ -340,7 +436,7 @@ bool MsgPackVisitor::start_map_key() // NOLINT
 {
     auto key_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumns()[0];
     auto key_type = assert_cast<const DataTypeMap &>(*info_stack.top().type).getKeyType();
-    info_stack.push(Info{*key_column, key_type});
+    info_stack.push(Info{*key_column, key_type, false, std::nullopt, nullptr});
     return true;
 }
 
@@ -354,7 +450,7 @@ bool MsgPackVisitor::start_map_value() // NOLINT
 {
     auto value_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumns()[1];
     auto value_type = assert_cast<const DataTypeMap &>(*info_stack.top().type).getValueType();
-    info_stack.push(Info{*value_column, value_type});
+    info_stack.push(Info{*value_column, value_type, false, std::nullopt, nullptr});
     return true;
 }
 
@@ -366,7 +462,7 @@ bool MsgPackVisitor::end_map_value() // NOLINT
 
 bool MsgPackVisitor::visit_nil()
 {
-    insertNull(info_stack.top().column, info_stack.top().type);
+    insertNull(info_stack.top().column, info_stack.top().type, info_stack.top().read, null_as_default);
     return true;
 }
 
@@ -387,14 +483,15 @@ void MsgPackVisitor::parse_error(size_t, size_t) // NOLINT
     throw Exception(ErrorCodes::INCORRECT_DATA, "Error occurred while parsing msgpack data.");
 }
 
-bool MsgPackRowInputFormat::readObject()
+template <typename Parser>
+bool MsgPackRowInputFormat::readObject(Parser & msgpack_parser)
 {
     if (buf->eof())
         return false;
 
     PeekableReadBufferCheckpoint checkpoint{*buf};
     size_t offset = 0;
-    while (!parser.execute(buf->position(), buf->available(), offset))
+    while (!msgpack_parser.execute(buf->position(), buf->available(), offset))
     {
         buf->position() = buf->buffer().end();
         if (buf->eof())
@@ -407,14 +504,33 @@ bool MsgPackRowInputFormat::readObject()
     return true;
 }
 
-bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
+size_t MsgPackRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    msgpack::null_visitor null_visitor;
+    msgpack::detail::parse_helper<msgpack::null_visitor> null_parser(null_visitor);
+
+    size_t columns = getPort().getHeader().columns();
+
+    while (!buf->eof() && num_rows < max_block_size)
+    {
+        for (size_t i = 0; i < columns; ++i)
+            readObject(null_parser);
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
+bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
     size_t column_index = 0;
     bool has_more_data = true;
+    ext.read_columns.resize(columns.size(), true);
     for (; column_index != columns.size(); ++column_index)
     {
-        visitor.set_info(*columns[column_index], data_types[column_index]);
-        has_more_data = readObject();
+        visitor.set_info(*columns[column_index], data_types[column_index], ext.read_columns[column_index]);
+        has_more_data = readObject(parser);
         if (!has_more_data)
             break;
     }
@@ -492,13 +608,26 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
         case msgpack::type::object_type::ARRAY:
         {
             msgpack::object_array object_array = object.via.array;
-            if (object_array.size)
+            if (!object_array.size)
+                return nullptr;
+
+            DataTypes nested_types;
+            nested_types.reserve(object_array.size);
+            bool nested_types_are_equal = true;
+            for (size_t i = 0; i != object_array.size; ++i)
             {
-                auto nested_type = getDataType(object_array.ptr[0]);
-                if (nested_type)
-                    return std::make_shared<DataTypeArray>(getDataType(object_array.ptr[0]));
+                auto nested_type = getDataType(object_array.ptr[i]);
+                if (!nested_type)
+                    return nullptr;
+
+                nested_types.push_back(nested_type);
+                nested_types_are_equal &= nested_type->equals(*nested_types[0]);
             }
-            return nullptr;
+
+            if (nested_types_are_equal)
+                return std::make_shared<DataTypeArray>(nested_types[0]);
+
+            return std::make_shared<DataTypeTuple>(std::move(nested_types));
         }
         case msgpack::type::object_type::MAP:
         {
@@ -525,7 +654,7 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
     UNREACHABLE();
 }
 
-DataTypes MsgPackSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
 {
     if (buf.eof())
         return {};
@@ -547,9 +676,9 @@ void registerInputFormatMsgPack(FormatFactory & factory)
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
-            const FormatSettings &)
+            const FormatSettings & settings)
     {
-        return std::make_shared<MsgPackRowInputFormat>(sample, buf, params);
+        return std::make_shared<MsgPackRowInputFormat>(sample, buf, params, settings);
     });
     factory.registerFileExtension("messagepack", "MsgPack");
 }

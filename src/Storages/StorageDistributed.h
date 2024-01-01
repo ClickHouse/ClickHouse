@@ -2,13 +2,12 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/IStorageCluster.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
@@ -29,6 +28,9 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+struct TreeRewriterResult;
+using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
+
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
   *
@@ -38,7 +40,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class StorageDistributed final : public IStorage, WithContext
 {
     friend class DistributedSink;
-    friend class StorageDistributedDirectoryMonitor;
+    friend class DistributedAsyncInsertBatch;
+    friend class DistributedAsyncInsertDirectoryQueue;
     friend class StorageSystemDistributionQueue;
 
 public:
@@ -118,7 +121,7 @@ public:
     bool supportsParallelInsert() const override { return true; }
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
 
@@ -134,8 +137,8 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void initializeFromDisk();
-    void shutdown() override;
-    void flush() override;
+    void shutdown(bool is_drop) override;
+    void flushAndPrepareForShutdown() override;
     void drop() override;
 
     bool storesDataOnDisk() const override { return data_volume != nullptr; }
@@ -156,6 +159,8 @@ public:
     /// Used by ClusterCopier
     size_t getShardCount() const;
 
+    bool initializeDiskOnConfigChange(const std::set<String> & new_added_disks) override;
+
 private:
     void renameOnDisk(const String & new_path_to_table_data);
 
@@ -164,24 +169,41 @@ private:
     const String & getRelativeDataPath() const { return relative_data_path; }
 
     /// create directory monitors for each existing subdirectory
-    void createDirectoryMonitors(const DiskPtr & disk);
-    /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name);
+    void initializeDirectoryQueuesForDisk(const DiskPtr & disk);
+
+    /// Get directory queue thread and connection pool created by disk and subdirectory name
+    ///
+    /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.
+    DistributedAsyncInsertDirectoryQueue & getDirectoryQueue(const DiskPtr & disk, const std::string & name);
+
+    /// Parse the address corresponding to the directory name of the directory queue
+    Cluster::Addresses parseAddresses(const std::string & name) const;
 
     /// Return list of metrics for all created monitors
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
     ///
     /// Used by StorageSystemDistributionQueue
-    std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
+    std::vector<DistributedAsyncInsertDirectoryQueue::Status> getDirectoryQueueStatuses() const;
 
     static IColumn::Selector createSelector(ClusterPtr cluster, const ColumnWithTypeAndName & result);
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
-    ClusterPtr getOptimizedCluster(ContextPtr, const StorageSnapshotPtr & storage_snapshot, const ASTPtr & query_ptr) const;
+    ClusterPtr getOptimizedCluster(
+        ContextPtr local_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        const SelectQueryInfo & query_info,
+        const TreeRewriterResultPtr & syntax_analyzer_result) const;
 
     ClusterPtr skipUnusedShards(
-        ClusterPtr cluster, const ASTPtr & query_ptr, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
+        ClusterPtr cluster,
+        const SelectQueryInfo & query_info,
+        const TreeRewriterResultPtr & syntax_analyzer_result,
+        const StorageSnapshotPtr & storage_snapshot,
+        ContextPtr context) const;
+
+    ClusterPtr skipUnusedShardsWithAnalyzer(
+        ClusterPtr cluster, const SelectQueryInfo & query_info, const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const;
 
     /// This method returns optimal query processing stage.
     ///
@@ -200,6 +222,7 @@ private:
     /// @return QueryProcessingStage or empty std::optoinal
     /// (in this case regular WithMergeableState should be used)
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
+    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
@@ -231,7 +254,7 @@ private:
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
 
-    ActionBlocker monitors_blocker;
+    ActionBlocker async_insert_blocker;
 
     String relative_data_path;
 
@@ -247,8 +270,10 @@ private:
 
     struct ClusterNodeData
     {
-        std::shared_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
+        std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
         ConnectionPoolPtr connection_pool;
+        Cluster::Addresses addresses;
+        size_t clusters_version;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     mutable std::mutex cluster_nodes_mutex;

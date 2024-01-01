@@ -114,7 +114,6 @@ def start_clickhouse():
 
 
 def copy_zookeeper_data(make_zk_snapshots):
-
     if make_zk_snapshots:  # force zookeeper to create snapshot
         generate_zk_snapshot()
     else:

@@ -21,21 +21,22 @@
 #include "Poco/Foundation.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 class Foundation_API Runnable
-	/// The Runnable interface with the run() method
-	/// must be implemented by classes that provide
-	/// an entry point for a thread.
+/// The Runnable interface with the run() method
+/// must be implemented by classes that provide
+/// an entry point for a thread.
 {
-public:	
-	Runnable();
-	virtual ~Runnable();
-	
-	virtual void run() = 0;
-		/// Do whatever the thread needs to do. Must
-		/// be overridden by subclasses.
+public:
+    Runnable();
+    virtual ~Runnable();
+
+    virtual void run() = 0;
+    /// Do whatever the thread needs to do. Must
+    /// be overridden by subclasses.
 };
 
 

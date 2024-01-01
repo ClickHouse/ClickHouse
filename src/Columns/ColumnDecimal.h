@@ -80,7 +80,7 @@ public:
 
     Float64 getFloat64(size_t n) const final { return DecimalUtils::convertTo<Float64>(data[n], scale); }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     const char * skipSerializedInArena(const char * pos) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
@@ -134,6 +134,11 @@ public:
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
         return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return this->template getNumberOfDefaultRowsImpl<Self>();
     }
 
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override

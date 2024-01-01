@@ -67,6 +67,8 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
     cmd_args.push_back(config.getString(configPrefix() + ".listen_host", DEFAULT_HOST));
     cmd_args.push_back("--http-timeout");
     cmd_args.push_back(std::to_string(getHTTPTimeout().totalMicroseconds()));
+    cmd_args.push_back("--http-max-field-value-size");
+    cmd_args.push_back("99999999999999999"); // something "big" to accept large datasets (issue 47616)
     if (config.has("logger." + configPrefix() + "_log"))
     {
         cmd_args.push_back("--log-path");

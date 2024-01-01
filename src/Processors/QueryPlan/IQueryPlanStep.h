@@ -16,17 +16,17 @@ using Processors = std::vector<ProcessorPtr>;
 
 namespace JSONBuilder { class JSONMap; }
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 /// Description of data stream.
 /// Single logical data stream may relate to many ports of pipeline.
 class DataStream
 {
 public:
     Block header;
-
-    /// Tuples with those columns are distinct.
-    /// It doesn't mean that columns are distinct separately.
-    /// Removing any column from this list breaks this invariant.
-    NameSet distinct_columns = {};
 
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
     bool has_single_port = false;
@@ -51,8 +51,7 @@ public:
 
     bool hasEqualPropertiesWith(const DataStream & other) const
     {
-        return distinct_columns == other.distinct_columns
-            && has_single_port == other.has_single_port
+        return has_single_port == other.has_single_port
             && sort_description == other.sort_description
             && (sort_description.empty() || sort_scope == other.sort_scope);
     }
@@ -113,7 +112,30 @@ public:
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
 
+    /// Updates the input streams of the given step. Used during query plan optimizations.
+    /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
+    /// (e.g. you update data stream traits or correctly remove / add columns).
+    void updateInputStreams(DataStreams input_streams_)
+    {
+        chassert(canUpdateInputStream());
+        input_streams = std::move(input_streams_);
+        updateOutputStream();
+    }
+
+    void updateInputStream(DataStream input_stream) { updateInputStreams(DataStreams{input_stream}); }
+
+    void updateInputStream(DataStream input_stream, size_t idx)
+    {
+        chassert(canUpdateInputStream() && idx < input_streams.size());
+        input_streams[idx] = input_stream;
+        updateOutputStream();
+    }
+
+    virtual bool canUpdateInputStream() const { return false; }
+
 protected:
+    virtual void updateOutputStream() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+
     DataStreams input_streams;
     std::optional<DataStream> output_stream;
 

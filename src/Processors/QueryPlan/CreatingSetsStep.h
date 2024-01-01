@@ -9,15 +9,15 @@ namespace DB
 {
 
 /// Creates sets for subqueries and JOIN. See CreatingSetsTransform.
-class CreatingSetStep : public ITransformingStep, WithContext
+class CreatingSetStep : public ITransformingStep
 {
 public:
     CreatingSetStep(
-            const DataStream & input_stream_,
-            String description_,
-            SubqueryForSet subquery_for_set_,
-            SizeLimits network_transfer_limits_,
-            ContextPtr context_);
+        const DataStream & input_stream_,
+        SetAndKeyPtr set_and_key_,
+        StoragePtr external_table_,
+        SizeLimits network_transfer_limits_,
+        ContextPtr context_);
 
     String getName() const override { return "CreatingSet"; }
 
@@ -29,9 +29,10 @@ public:
 private:
     void updateOutputStream() override;
 
-    String description;
-    SubqueryForSet subquery_for_set;
+    SetAndKeyPtr set_and_key;
+    StoragePtr external_table;
     SizeLimits network_transfer_limits;
+    ContextPtr context;
 };
 
 class CreatingSetsStep : public IQueryPlanStep
@@ -46,7 +47,28 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 };
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets subqueries_for_sets, ContextPtr context);
+/// This is a temporary step which is converted to CreatingSetStep after plan optimization.
+/// Can't be used by itself.
+class DelayedCreatingSetsStep final : public IQueryPlanStep
+{
+public:
+    DelayedCreatingSetsStep(DataStream input_stream, PreparedSets::Subqueries subqueries_, ContextPtr context_);
+
+    String getName() const override { return "DelayedCreatingSets"; }
+
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders, const BuildQueryPipelineSettings &) override;
+
+    static std::vector<std::unique_ptr<QueryPlan>> makePlansForSets(DelayedCreatingSetsStep && step);
+
+    ContextPtr getContext() const { return context; }
+    PreparedSets::Subqueries detachSets() { return std::move(subqueries); }
+
+private:
+    PreparedSets::Subqueries subqueries;
+    ContextPtr context;
+};
+
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context);
 
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
 

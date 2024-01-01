@@ -41,8 +41,14 @@ ClickHouse не работает и не собирается на 32-битны
 
 Выполните в терминале:
 
-    git clone git@github.com:your_github_username/ClickHouse.git --recursive
+    git clone --shallow-submodules git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
+
+Или (если вы хотите использовать sparse checkout для submodules):
+
+    git clone git@github.com:your_github_username/ClickHouse.git
+    cd ClickHouse
+    ./contrib/update-submodules.sh
 
 Замените слово `your_github_username` в команде для git на имя вашего аккаунта на GitHub.
 
@@ -282,7 +288,5 @@ Pull request можно создать, даже если работа над з
 Вероятнее всего, часть сборок не будет успешной с первого раза. Ведь мы проверяем сборку кода и gcc и clang, а при сборке с помощью clang включаются почти все существующие в природе warnings (всегда с флагом `-Werror`). На той же странице, вы сможете найти логи сборки - вам не обязательно самому собирать ClickHouse всеми возможными способами.
 
 ## Навигация по коду ClickHouse {#navigatsiia-po-kodu-clickhouse}
-
-Для навигации по коду онлайн доступен **Woboq**, он расположен [здесь](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). В нём реализовано удобное перемещение между исходными файлами, семантическая подсветка, подсказки, индексация и поиск. Слепок кода обновляется ежедневно.
 
 Также вы можете просматривать исходники на [GitHub](https://github.com/ClickHouse/ClickHouse).

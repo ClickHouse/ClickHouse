@@ -8,7 +8,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <arrow/table.h>
-
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -24,16 +24,15 @@ public:
     ArrowColumnToCHColumn(
         const Block & header_,
         const std::string & format_name_,
-        bool import_nested_,
         bool allow_missing_columns_,
-        bool case_insensitive_matching_ = false);
+        bool null_as_default_,
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
+        bool case_insensitive_matching_ = false,
+        bool is_stream_ = false);
 
-    void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table, size_t num_rows);
+    void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
 
-    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows);
-
-    /// Get missing columns that exists in header but not in arrow::Schema
-    std::vector<size_t> getMissingColumns(const arrow::Schema & schema) const;
+    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows, BlockMissingValues * block_missing_values = nullptr);
 
     /// Transform arrow schema to ClickHouse header. If hint_header is provided,
     /// we will skip columns in schema that are not in hint_header.
@@ -55,10 +54,12 @@ public:
 private:
     const Block & header;
     const std::string format_name;
-    bool import_nested;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
+    bool null_as_default;
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
     bool case_insensitive_matching;
+    bool is_stream;
 
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary

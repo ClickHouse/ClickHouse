@@ -15,11 +15,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -90,7 +88,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
             maximize(max_bits_of_unsigned_integer, 8);
         else if (type == TypeIndex::UInt16)
             maximize(max_bits_of_unsigned_integer, 16);
-        else if (type == TypeIndex::UInt32)
+        else if (type == TypeIndex::UInt32 || type == TypeIndex::IPv4)
             maximize(max_bits_of_unsigned_integer, 32);
         else if (type == TypeIndex::UInt64)
             maximize(max_bits_of_unsigned_integer, 64);
@@ -129,7 +127,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
         size_t min_bit_width_of_integer = std::max(max_bits_of_signed_integer, max_bits_of_unsigned_integer);
 
         /// If unsigned is not covered by signed.
-        if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer) //-V1051
+        if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer)
         {
             // Because 128 and 256 bit integers are significantly slower, we should not promote to them.
             // But if we already have wide numbers, promotion is necessary.
@@ -198,6 +196,35 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
     }
 
     return {};
+}
+
+/// Check if we can convert UInt64 to Int64 to avoid error "There is no supertype for types UInt64, Int64"
+/// during inferring field types.
+/// Example:
+/// [-3236599669630092879, 5607475129431807682]
+/// First field is inferred as Int64, but second one as UInt64, although it also can be Int64.
+/// We don't support Int128 as supertype for Int64 and UInt64, because Int128 is inefficient.
+/// But in this case the result type can be inferred as Array(Int64).
+void convertUInt64toInt64IfPossible(const DataTypes & types, TypeIndexSet & types_set)
+{
+    /// Check if we have UInt64 and at least one Integer type.
+    if (!types_set.contains(TypeIndex::UInt64)
+        || (!types_set.contains(TypeIndex::Int8) && !types_set.contains(TypeIndex::Int16) && !types_set.contains(TypeIndex::Int32)
+            && !types_set.contains(TypeIndex::Int64)))
+        return;
+
+    bool all_uint64_can_be_int64 = true;
+    for (const auto & type : types)
+    {
+        if (const auto * uint64_type = typeid_cast<const DataTypeUInt64 *>(type.get()))
+            all_uint64_can_be_int64 &= uint64_type->canUnsignedBeSigned();
+    }
+
+    if (all_uint64_can_be_int64)
+    {
+        types_set.erase(TypeIndex::UInt64);
+        types_set.insert(TypeIndex::Int64);
+    }
 }
 
 }
@@ -528,13 +555,14 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         size_t have_decimal32 = type_ids.count(TypeIndex::Decimal32);
         size_t have_decimal64 = type_ids.count(TypeIndex::Decimal64);
         size_t have_decimal128 = type_ids.count(TypeIndex::Decimal128);
+        size_t have_decimal256 = type_ids.count(TypeIndex::Decimal256);
 
-        if (have_decimal32 || have_decimal64 || have_decimal128)
+        if (have_decimal32 || have_decimal64 || have_decimal128 || have_decimal256)
         {
-            size_t num_supported = have_decimal32 + have_decimal64 + have_decimal128;
+            size_t num_supported = have_decimal32 + have_decimal64 + have_decimal128 + have_decimal256;
 
-            std::vector<TypeIndex> int_ids = {TypeIndex::Int8, TypeIndex::UInt8, TypeIndex::Int16, TypeIndex::UInt16,
-                                              TypeIndex::Int32, TypeIndex::UInt32, TypeIndex::Int64, TypeIndex::UInt64};
+            std::array<TypeIndex, 8> int_ids = {TypeIndex::Int8, TypeIndex::UInt8, TypeIndex::Int16, TypeIndex::UInt16,
+                                                TypeIndex::Int32, TypeIndex::UInt32, TypeIndex::Int64, TypeIndex::UInt64};
 
             TypeIndex max_int = TypeIndex::Nothing;
             for (auto int_id : int_ids)
@@ -552,8 +580,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             for (const auto & type : types)
             {
                 auto type_id = type->getTypeId();
-                if (type_id != TypeIndex::Decimal32 && type_id != TypeIndex::Decimal64 && type_id != TypeIndex::Decimal128)
+                if (type_id != TypeIndex::Decimal32
+                    && type_id != TypeIndex::Decimal64
+                    && type_id != TypeIndex::Decimal128
+                    && type_id != TypeIndex::Decimal256)
+                {
                     continue;
+                }
 
                 UInt32 scale = getDecimalScale(*type);
                 if (scale > max_scale)
@@ -571,11 +604,13 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     min_precision = DataTypeDecimal<Decimal64>::maxPrecision();
             }
 
-            if (min_precision > DataTypeDecimal<Decimal128>::maxPrecision())
+            if (min_precision > DataTypeDecimal<Decimal256>::maxPrecision())
                 return throwOrReturn<on_error>(types, "because the least supertype is Decimal("
                                 + toString(min_precision) + ',' + toString(max_scale) + ')',
                                 ErrorCodes::NO_COMMON_TYPE);
 
+            if (have_decimal256 || min_precision > DataTypeDecimal<Decimal128>::maxPrecision())
+                return std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), max_scale);
             if (have_decimal128 || min_precision > DataTypeDecimal<Decimal64>::maxPrecision())
                 return std::make_shared<DataTypeDecimal<Decimal128>>(DataTypeDecimal<Decimal128>::maxPrecision(), max_scale);
             if (have_decimal64 || min_precision > DataTypeDecimal<Decimal32>::maxPrecision())
@@ -586,6 +621,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// For numeric types, the most complicated part.
     {
+        /// First, if we have signed integers, try to convert all UInt64 to Int64 if possible.
+        convertUInt64toInt64IfPossible(types, type_ids);
         auto numeric_type = getNumericType<on_error>(type_ids);
         if (numeric_type)
             return numeric_type;

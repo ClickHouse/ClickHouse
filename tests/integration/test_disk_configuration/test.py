@@ -32,6 +32,16 @@ def start_cluster():
             with_minio=True,
             macros={"replica": "node2", "shard": "shard1"},
         )
+        cluster.add_instance(
+            "node3",
+            main_configs=[
+                "configs/config.d/storage_configuration.xml",
+                "configs/config.d/remote_servers.xml",
+                "configs/config.d/mergetree_settings.xml",
+            ],
+            stay_alive=True,
+            with_minio=True,
+        )
 
         cluster.start()
         yield cluster
@@ -42,19 +52,6 @@ def start_cluster():
 
 def test_merge_tree_disk_setting(start_cluster):
     node1 = cluster.instances["node1"]
-
-    assert (
-        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time"
-        in node1.query_and_get_error(
-            f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME} (a Int32)
-        ENGINE = MergeTree()
-        ORDER BY tuple()
-        SETTINGS disk = 'disk_local', storage_policy = 's3';
-    """
-        )
-    )
 
     node1.query(
         f"""
@@ -265,7 +262,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     )
 
     expected = """
-        SETTINGS disk = disk(type = s3, endpoint = \\'http://minio1:9001/root/data2/\\', access_key_id = \\'minio\\', secret_access_key = \\'minio123\\'), index_granularity = 8192
+        SETTINGS disk = disk(type = s3, endpoint = \\'[HIDDEN]\\', access_key_id = \\'[HIDDEN]\\', secret_access_key = \\'[HIDDEN]\\'), index_granularity = 8192
     """
 
     assert expected.strip() in node1.query(f"SHOW CREATE TABLE {TABLE_NAME}_4").strip()
@@ -296,3 +293,137 @@ def test_merge_tree_custom_disk_setting(start_cluster):
             f"SELECT disks FROM system.storage_policies WHERE policy_name = '{policy2}'"
         ).strip()
     )
+
+    node1.query(f"DROP TABLE {TABLE_NAME} SYNC")
+    node1.query(f"DROP TABLE {TABLE_NAME}_2 SYNC")
+    node1.query(f"DROP TABLE {TABLE_NAME}_3 SYNC")
+    node1.query(f"DROP TABLE {TABLE_NAME}_4 SYNC")
+    node2.query(f"DROP TABLE {TABLE_NAME}_4 SYNC")
+
+
+def test_merge_tree_nested_custom_disk_setting(start_cluster):
+    node = cluster.instances["node1"]
+
+    minio = cluster.minio_client
+    for obj in list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)):
+        minio.remove_object(cluster.minio_bucket, obj.object_name)
+    assert (
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
+        == 0
+    )
+
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree() order by tuple()
+        SETTINGS disk = disk(
+                type=cache,
+                max_size='1Gi',
+                path='/var/lib/clickhouse/custom_disk_cache/',
+                disk=disk(
+                    type=s3,
+                    endpoint='http://minio1:9001/root/data/',
+                    access_key_id='minio',
+                    secret_access_key='minio123'));
+    """
+    )
+
+    node.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
+    node.query("SYSTEM DROP FILESYSTEM CACHE")
+
+    # Check cache is filled
+    assert 0 == int(node.query("SELECT count() FROM system.filesystem_cache"))
+    assert 100 == int(node.query(f"SELECT count() FROM {TABLE_NAME}"))
+    node.query(f"SELECT * FROM {TABLE_NAME}")
+    assert 0 < int(node.query("SELECT count() FROM system.filesystem_cache"))
+
+    # Check s3 is filled
+    assert (
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) > 0
+    )
+
+    node.restart_clickhouse()
+
+    assert 100 == int(node.query(f"SELECT count() FROM {TABLE_NAME}"))
+
+    expected = """
+        SETTINGS disk = disk(type = cache, max_size = \\'[HIDDEN]\\', path = \\'[HIDDEN]\\', disk = disk(type = s3, endpoint = \\'[HIDDEN]\\'
+    """
+    assert expected.strip() in node.query(f"SHOW CREATE TABLE {TABLE_NAME}").strip()
+    node.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+
+def test_merge_tree_setting_override(start_cluster):
+    node = cluster.instances["node3"]
+    assert (
+        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time"
+        in node.query_and_get_error(
+            f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS disk = 'kek', storage_policy = 's3';
+    """
+        )
+    )
+
+    assert "Unknown storage policy" in node.query_and_get_error(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple();
+    """
+    )
+
+    assert "Unknown disk" in node.query_and_get_error(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS disk = 'kek';
+    """
+    )
+
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS
+            disk = disk(
+                type=s3,
+                endpoint='http://minio1:9001/root/data/',
+                access_key_id='minio',
+                secret_access_key='minio123');
+    """
+    )
+
+    minio = cluster.minio_client
+    node.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
+    assert int(node.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    assert (
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) > 0
+    )
+
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS disk = 's3'
+    """
+    )
+
+    minio = cluster.minio_client
+    node.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
+    assert int(node.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    assert (
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) > 0
+    )
+    node.query(f"DROP TABLE {TABLE_NAME} SYNC")

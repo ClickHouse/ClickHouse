@@ -5,11 +5,11 @@
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
-#include <Interpreters/Context.h>
 #include <Storages/StorageSQLite.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 
@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int SQLITE_ENGINE_ERROR;
     extern const int UNKNOWN_TABLE;
+    extern const int BAD_ARGUMENTS;
 }
 
 DatabaseSQLite::DatabaseSQLite(
@@ -40,14 +41,14 @@ DatabaseSQLite::DatabaseSQLite(
 
 bool DatabaseSQLite::empty() const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return fetchTablesList().empty();
 }
 
 
 DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     Tables tables;
     auto table_names = fetchTablesList();
@@ -58,7 +59,7 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
 }
 
 
-std::unordered_set<std::string> DatabaseSQLite::fetchTablesList() const
+NameSet DatabaseSQLite::fetchTablesList() const
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
@@ -120,14 +121,14 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
 
 bool DatabaseSQLite::isTableExist(const String & table_name, ContextPtr) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return checkSQLiteTable(table_name);
 }
 
 
 StoragePtr DatabaseSQLite::tryGetTable(const String & table_name, ContextPtr local_context) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return fetchTable(table_name, local_context, false);
 }
 
@@ -175,7 +176,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
 {
     StoragePtr storage;
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         storage = fetchTable(table_name, local_context, false);
     }
     if (!storage)
@@ -187,6 +188,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     }
     auto table_storage_define = database_engine_define->clone();
     ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
+    ast_storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
     auto storage_engine_arguments = ast_storage->engine->arguments;
     auto table_id = storage->getStorageID();
     /// Add table_name to engine arguments
@@ -200,6 +202,24 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     return create_table_query;
 }
 
+void registerDatabaseSQLite(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        auto * engine_define = args.create_query.storage;
+        const ASTFunction * engine = engine_define->engine;
+
+        if (!engine->arguments || engine->arguments->children.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQLite database requires 1 argument: database path");
+
+        const auto & arguments = engine->arguments->children;
+
+        String database_path = safeGetLiteralValue<String>(arguments[0], "SQLite");
+
+        return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
+    };
+    factory.registerDatabase("SQLite", create_fn);
+}
 }
 
 #endif

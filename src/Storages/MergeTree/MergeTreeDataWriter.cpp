@@ -7,7 +7,6 @@
 #include <Disks/createVolume.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <IO/HashingWriteBuffer.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -40,6 +39,7 @@ namespace ProfileEvents
     extern const Event MergeTreeDataProjectionWriterRows;
     extern const Event MergeTreeDataProjectionWriterUncompressedBytes;
     extern const Event MergeTreeDataProjectionWriterCompressedBytes;
+    extern const Event RejectedInserts;
 }
 
 namespace DB
@@ -47,6 +47,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
 }
@@ -58,7 +59,8 @@ void buildScatterSelector(
         const ColumnRawPtrs & columns,
         PODArray<size_t> & partition_num_to_first_row,
         IColumn::Selector & selector,
-        size_t max_parts)
+        size_t max_parts,
+        ContextPtr context)
 {
     /// Use generic hashed variant since partitioning is unlikely to be a bottleneck.
     using Data = HashMap<UInt128, size_t, UInt128TrivialHash>;
@@ -66,6 +68,8 @@ void buildScatterSelector(
 
     size_t num_rows = columns[0]->size();
     size_t partitions_count = 0;
+    size_t throw_on_limit = context->getSettingsRef().throw_on_max_partitions_per_insert_block;
+
     for (size_t i = 0; i < num_rows; ++i)
     {
         Data::key_type key = hash128(i, columns.size(), columns);
@@ -75,7 +79,9 @@ void buildScatterSelector(
 
         if (inserted)
         {
-            if (max_parts && partitions_count >= max_parts)
+            if (max_parts && partitions_count >= max_parts && throw_on_limit)
+            {
+                ProfileEvents::increment(ProfileEvents::RejectedInserts);
                 throw Exception(ErrorCodes::TOO_MANY_PARTS,
                                 "Too many partitions for single INSERT block (more than {}). "
                                 "The limit is controlled by 'max_partitions_per_insert_block' setting. "
@@ -85,6 +91,7 @@ void buildScatterSelector(
                                 "for a table is under 1000..10000. Please note, that partitioning is not intended "
                                 "to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). "
                                 "Partitions are intended for data manipulation (DROP PARTITION, etc).", max_parts);
+            }
 
             partition_num_to_first_row.push_back(i);
             it->getMapped() = partitions_count;
@@ -102,6 +109,18 @@ void buildScatterSelector(
         if (partitions_count > 1)
             selector[i] = it->getMapped();
     }
+    // Checking partitions per insert block again here outside the loop above
+    // so we can log the total number of partitions that would have parts created
+    if (max_parts && partitions_count >= max_parts && !throw_on_limit)
+    {
+        const auto & client_info = context->getClientInfo();
+        Poco::Logger * log = &Poco::Logger::get("MergeTreeDataWriter");
+
+        LOG_WARNING(log, "INSERT query from initial_user {} (query ID: {}) inserted a block "
+                         "that created parts in {} partitions. This is being logged "
+                         "rather than throwing an exception as throw_on_max_partitions_per_insert_block=false.",
+                         client_info.initial_user, client_info.initial_query_id, partitions_count);
+    }
 }
 
 /// Computes ttls and updates ttl infos
@@ -116,7 +135,7 @@ void updateTTL(
 
     if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(ttl_column.get()))
     {
-        const auto & date_lut = DateLUT::instance();
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
         for (const auto & val : column_date->getData())
             ttl_info.update(date_lut.fromDayNum(DayNum(val)));
     }
@@ -129,7 +148,7 @@ void updateTTL(
     {
         if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
         {
-            const auto & date_lut = DateLUT::instance();
+            const auto & date_lut = DateLUT::serverTimezoneInstance();
             ttl_info.update(date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>())));
         }
         else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
@@ -148,6 +167,19 @@ void updateTTL(
 
 }
 
+void MergeTreeDataWriter::TemporaryPart::cancel()
+{
+    try
+    {
+        /// An exception context is needed to proper delete write buffers without finalization
+        throw Exception(ErrorCodes::ABORTED, "Cancel temporary part.");
+    }
+    catch (...)
+    {
+        *this = TemporaryPart{};
+    }
+}
+
 void MergeTreeDataWriter::TemporaryPart::finalize()
 {
     for (auto & stream : streams)
@@ -158,23 +190,23 @@ void MergeTreeDataWriter::TemporaryPart::finalize()
         projection->getDataPartStorage().precommitTransaction();
 }
 
-std::vector<ChunkOffsetsPtr> scatterOffsetsBySelector(ChunkOffsetsPtr chunk_offsets, const IColumn::Selector & selector, size_t partition_num)
+std::vector<AsyncInsertInfoPtr> scatterAsyncInsertInfoBySelector(AsyncInsertInfoPtr async_insert_info, const IColumn::Selector & selector, size_t partition_num)
 {
-    if (nullptr == chunk_offsets)
+    if (nullptr == async_insert_info)
     {
         return {};
     }
     if (selector.empty())
     {
-        return {chunk_offsets};
+        return {async_insert_info};
     }
-    std::vector<ChunkOffsetsPtr> result(partition_num);
+    std::vector<AsyncInsertInfoPtr> result(partition_num);
     std::vector<Int64> last_row_for_partition(partition_num, -1);
     size_t offset_idx = 0;
     for (size_t i = 0; i < selector.size(); ++i)
     {
         ++last_row_for_partition[selector[i]];
-        if (i + 1 == chunk_offsets->offsets[offset_idx])
+        if (i + 1 == async_insert_info->offsets[offset_idx])
         {
             for (size_t part_id = 0; part_id < last_row_for_partition.size(); ++part_id)
             {
@@ -183,9 +215,12 @@ std::vector<ChunkOffsetsPtr> scatterOffsetsBySelector(ChunkOffsetsPtr chunk_offs
                     continue;
                 size_t offset = static_cast<size_t>(last_row + 1);
                 if (result[part_id] == nullptr)
-                    result[part_id] = std::make_shared<ChunkOffsets>();
+                    result[part_id] = std::make_shared<AsyncInsertInfo>();
                 if (result[part_id]->offsets.empty() || offset > *result[part_id]->offsets.rbegin())
+                {
                     result[part_id]->offsets.push_back(offset);
+                    result[part_id]->tokens.push_back(async_insert_info->tokens[offset_idx]);
+                }
             }
             ++offset_idx;
         }
@@ -194,7 +229,7 @@ std::vector<ChunkOffsetsPtr> scatterOffsetsBySelector(ChunkOffsetsPtr chunk_offs
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-    const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, ChunkOffsetsPtr chunk_offsets)
+    const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info)
 {
     BlocksWithPartition result;
     if (!block || !block.rows())
@@ -205,8 +240,11 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
         result.emplace_back(Block(block), Row{});
-        if (chunk_offsets != nullptr)
-            result[0].offsets = std::move(chunk_offsets->offsets);
+        if (async_insert_info != nullptr)
+        {
+            result[0].offsets = std::move(async_insert_info->offsets);
+            result[0].tokens = std::move(async_insert_info->tokens);
+        }
         return result;
     }
 
@@ -221,9 +259,9 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
-    buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts);
+    buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts, context);
 
-    auto chunk_offsets_with_partition = scatterOffsetsBySelector(chunk_offsets, selector, partition_num_to_first_row.size());
+    auto async_insert_info_with_partition = scatterAsyncInsertInfoBySelector(async_insert_info, selector, partition_num_to_first_row.size());
 
     size_t partitions_count = partition_num_to_first_row.size();
     result.reserve(partitions_count);
@@ -242,8 +280,11 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
         /// NOTE: returning a copy of the original block so that calculated partition key columns
         /// do not interfere with possible calculated primary key columns of the same name.
         result.emplace_back(Block(block), get_partition(0));
-        if (!chunk_offsets_with_partition.empty())
-            result[0].offsets = std::move(chunk_offsets_with_partition[0]->offsets);
+        if (!async_insert_info_with_partition.empty())
+        {
+            result[0].offsets = std::move(async_insert_info_with_partition[0]->offsets);
+            result[0].tokens = std::move(async_insert_info_with_partition[0]->tokens);
+        }
         return result;
     }
 
@@ -257,8 +298,11 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
             result[i].block.getByPosition(col).column = std::move(scattered[i]);
     }
 
-    for (size_t i = 0; i < chunk_offsets_with_partition.size(); ++i)
-        result[i].offsets = std::move(chunk_offsets_with_partition[i]->offsets);
+    for (size_t i = 0; i < async_insert_info_with_partition.size(); ++i)
+    {
+        result[i].offsets = std::move(async_insert_info_with_partition[i]->offsets);
+        result[i].tokens = std::move(async_insert_info_with_partition[i]->tokens);
+    }
 
     return result;
 }
@@ -281,23 +325,23 @@ Block MergeTreeDataWriter::mergeBlock(
                 return nullptr;
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.version_column, block_size + 1);
+                    block, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, &Poco::Logger::get("MergeTreeDataWriter"));
+                    false, block_size + 1, /*block_size_bytes=*/0, &Poco::Logger::get("MergeTreeDataWriter"));
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
-                    partition_key_columns, block_size + 1);
+                    partition_key_columns, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Aggregating:
-                return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1);
+                return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingAlgorithm>(
-                    block, 1, sort_description, merging_params.sign_column, block_size + 1);
+                    block, 1, sort_description, merging_params.sign_column, block_size + 1, /*block_size_bytes=*/0);
             case MergeTreeData::MergingParams::Graphite:
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
-                    block, 1, sort_description, block_size + 1, merging_params.graphite_params, time(nullptr));
+                    block, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, merging_params.graphite_params, time(nullptr));
         }
 
         UNREACHABLE();
@@ -321,7 +365,7 @@ Block MergeTreeDataWriter::mergeBlock(
 
     /// Check that after first merge merging_algorithm is waiting for data from input 0.
     if (status.required_source != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: required source after the first merge is not 0.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: required source after the first merge is not 0. Chunk rows: {}, is_finished: {}, required_source: {}, algorithm: {}", status.chunk.getNumRows(), status.is_finished, status.required_source, merging_algorithm->getName());
 
     status = merging_algorithm->merge();
 
@@ -370,7 +414,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         DayNum min_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.get<UInt64>());
         DayNum max_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.get<UInt64>());
 
-        const auto & date_lut = DateLUT::instance();
+        const auto & date_lut = DateLUT::serverTimezoneInstance();
 
         auto min_month = date_lut.toNumYYYYMM(min_date);
         auto max_month = date_lut.toNumYYYYMM(max_date);
@@ -399,9 +443,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
+    auto indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
+
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
-        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);
+        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices)->execute(block);
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
     SortDescription sort_description;
@@ -465,11 +511,15 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    new_data_part->setColumns(columns, infos);
+    new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
+    /// In case of replicated merge tree with zero copy replication
+    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
+    new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     SyncGuardPtr sync_guard;
     if (new_data_part->isStoredOnDisk())
@@ -514,10 +564,17 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
 
-    const auto & index_factory = MergeTreeIndexFactory::instance();
-    auto out = std::make_unique<MergedBlockOutputStream>(new_data_part, metadata_snapshot, columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec,
-        context->getCurrentTransaction(), false, false, context->getWriteSettings());
+    auto out = std::make_unique<MergedBlockOutputStream>(
+        new_data_part,
+        metadata_snapshot,
+        columns,
+        indices,
+        MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns()),
+        compression_codec,
+        context->getCurrentTransaction(),
+        false,
+        false,
+        context->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
 
@@ -587,7 +644,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
-    new_data_part->setColumns(columns, infos);
+    new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 
     if (new_data_part->isStoredOnDisk())
     {
@@ -603,7 +660,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
-        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);
+        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {})->execute(block);
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
     SortDescription sort_description;
@@ -645,6 +702,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         metadata_snapshot,
         columns,
         MergeTreeIndices{},
+        Statistics{}, /// TODO(hanfei): It should be helpful to write statistics for projection result.
         compression_codec,
         NO_TRANSACTION_PTR,
         false, false, data.getContext()->getWriteSettings());

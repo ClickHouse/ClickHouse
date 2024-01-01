@@ -44,6 +44,7 @@ inline std::string_view getURLHostRFC(const char * data, size_t size)
                 case '.':
                 case '-':
                 case '+':
+                case '[':
                     break;
                 case ' ': /// restricted symbols
                 case '\t':
@@ -56,7 +57,6 @@ inline std::string_view getURLHostRFC(const char * data, size_t size)
                 case '\\':
                 case '^':
                 case '~':
-                case '[':
                 case ']':
                 case ';':
                 case '=':
@@ -73,8 +73,16 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
             pos = data;
     }
 
+    bool has_open_bracket = false;
+    bool has_end_bracket = false;
+    if (*pos == '[') /// IPv6 [2001:db8::1]:80
+    {
+        has_open_bracket = true;
+        ++pos;
+    }
     Pos dot_pos = nullptr;
     Pos colon_pos = nullptr;
+    bool has_sub_delims = false;
     bool has_at_symbol = false;
     bool has_terminator_after_colon = false;
     const auto * start_of_host = pos;
@@ -83,10 +91,14 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         switch (*pos)
         {
         case '.':
+            if (has_open_bracket)
+                return std::string_view{};
             if (has_at_symbol || colon_pos == nullptr)
                 dot_pos = pos;
             break;
         case ':':
+            if (has_open_bracket)
+                continue;
             if (has_at_symbol || colon_pos) goto done;
             colon_pos = pos;
             break;
@@ -97,25 +109,41 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case '@': /// myemail@gmail.com
             if (has_terminator_after_colon) return std::string_view{};
             if (has_at_symbol) goto done;
+            has_sub_delims = false;
             has_at_symbol = true;
             start_of_host = pos + 1;
             break;
+        case ';':
+        case '=':
+        case '&':
+        case '~':
+        case '%':
+            /// Symbols above are sub-delims in RFC3986 and should be
+            /// allowed for userinfo (named identification here).
+            ///
+            /// NOTE: that those symbols is allowed for reg-name (host)
+            /// too, but right now host parsing looks more like in
+            /// RFC1034 (in other words domains that are allowed to be
+            /// registered).
+            has_sub_delims = true;
+            continue;
+        case ']':
+            if (has_open_bracket)
+            {
+                has_end_bracket = true;
+                goto done;
+            }
+            [[fallthrough]];
         case ' ': /// restricted symbols in whole URL
         case '\t':
         case '<':
         case '>':
-        case '%':
         case '{':
         case '}':
         case '|':
         case '\\':
         case '^':
-        case '~':
         case '[':
-        case ']':
-        case ';':
-        case '=':
-        case '&':
             if (colon_pos == nullptr)
                 return std::string_view{};
             else
@@ -124,8 +152,14 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
     }
 
 done:
+    if (has_sub_delims)
+        return std::string_view{};
     if (!has_at_symbol)
+    {
+        if (has_open_bracket && has_end_bracket)
+            return std::string_view(start_of_host, pos - start_of_host);
         pos = colon_pos ? colon_pos : pos;
+    }
     return checkAndReturnHost(pos, dot_pos, start_of_host);
 }
 

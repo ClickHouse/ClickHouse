@@ -8,7 +8,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
@@ -21,7 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -120,7 +120,9 @@ DataTypePtr FunctionArrayReduceInRanges::getReturnTypeImpl(const ColumnsWithType
                                                    aggregate_function_name, params_row, "function " + getName(), getContext());
 
         AggregateFunctionProperties properties;
-        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
+        auto action = NullsAction::EMPTY;
+        aggregate_function
+            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, params_row, properties);
     }
 
     return std::make_shared<DataTypeArray>(aggregate_function->getResultType());
@@ -190,7 +192,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
         if (i == 0)
             offsets = offsets_i;
         else if (*offsets_i != *offsets)
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH, "Lengths of all arrays passed to {} must be equal.",
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Lengths of all arrays passed to {} must be equal.",
                 getName());
     }
     const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();

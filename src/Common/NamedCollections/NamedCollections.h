@@ -33,15 +33,27 @@ public:
         SourceId source_id_,
         bool is_mutable_);
 
+    bool has(const Key & key) const;
+
+    bool hasAny(const std::initializer_list<Key> & keys) const;
+
     template <typename T> T get(const Key & key) const;
 
     template <typename T> T getOrDefault(const Key & key, const T & default_value) const;
 
+    template <typename T> T getAny(const std::initializer_list<Key> & keys) const;
+
+    template <typename T> T getAnyOrDefault(const std::initializer_list<Key> & keys, const T & default_value) const;
+
     std::unique_lock<std::mutex> lock();
 
-    template <typename T, bool locked = false> void set(const Key & key, const T & value);
+    template <typename T, bool locked = false>
+    void set(const Key & key, const T & value, std::optional<bool> is_overridable);
 
-    template <typename T, bool locked = false> void setOrUpdate(const Key & key, const T & value);
+    template <typename T, bool locked = false>
+    void setOrUpdate(const Key & key, const T & value, std::optional<bool> is_overridable);
+
+    bool isOverridable(const Key & key, bool default_value) const;
 
     template <bool locked = false> void remove(const Key & key);
 

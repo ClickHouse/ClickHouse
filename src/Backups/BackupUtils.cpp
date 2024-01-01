@@ -1,10 +1,10 @@
 #include <Backups/BackupUtils.h>
-#include <Backups/IBackup.h>
-#include <Backups/RestoreSettings.h>
+#include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/DDLRenamingVisitor.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
 
@@ -60,140 +60,6 @@ DDLRenamingMap makeRenamingMapFromBackupQuery(const ASTBackupQuery::Elements & e
 }
 
 
-void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool)
-{
-    size_t num_active_jobs = 0;
-    std::mutex mutex;
-    std::condition_variable event;
-    std::exception_ptr exception;
-
-    bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
-    auto thread_group = CurrentThread::getGroup();
-
-    for (auto & name_and_entry : backup_entries)
-    {
-        auto & name = name_and_entry.first;
-        auto & entry = name_and_entry.second;
-
-        {
-            std::unique_lock lock{mutex};
-            if (exception)
-                break;
-            ++num_active_jobs;
-        }
-
-        auto job = [&](bool async)
-        {
-            SCOPE_EXIT_SAFE(
-                std::lock_guard lock{mutex};
-                if (!--num_active_jobs)
-                    event.notify_all();
-                if (async)
-                    CurrentThread::detachQueryIfNotDetached();
-            );
-
-            try
-            {
-                if (async && thread_group)
-                    CurrentThread::attachTo(thread_group);
-
-                if (async)
-                    setThreadName("BackupWorker");
-
-                {
-                    std::lock_guard lock{mutex};
-                    if (exception)
-                        return;
-                }
-
-                backup->writeFile(name, std::move(entry));
-            }
-            catch (...)
-            {
-                std::lock_guard lock{mutex};
-                if (!exception)
-                    exception = std::current_exception();
-            }
-        };
-
-        if (always_single_threaded || !thread_pool.trySchedule([job] { job(true); }))
-            job(false);
-    }
-
-    {
-        std::unique_lock lock{mutex};
-        event.wait(lock, [&] { return !num_active_jobs; });
-        if (exception)
-            std::rethrow_exception(exception);
-    }
-}
-
-
-void restoreTablesData(DataRestoreTasks && tasks, ThreadPool & thread_pool)
-{
-    size_t num_active_jobs = 0;
-    std::mutex mutex;
-    std::condition_variable event;
-    std::exception_ptr exception;
-
-    auto thread_group = CurrentThread::getGroup();
-
-    for (auto & task : tasks)
-    {
-        {
-            std::unique_lock lock{mutex};
-            if (exception)
-                break;
-            ++num_active_jobs;
-        }
-
-        auto job = [&](bool async)
-        {
-            SCOPE_EXIT_SAFE(
-                std::lock_guard lock{mutex};
-                if (!--num_active_jobs)
-                    event.notify_all();
-                if (async)
-                    CurrentThread::detachQueryIfNotDetached();
-            );
-
-            try
-            {
-                if (async && thread_group)
-                    CurrentThread::attachTo(thread_group);
-
-                if (async)
-                    setThreadName("RestoreWorker");
-
-                {
-                    std::lock_guard lock{mutex};
-                    if (exception)
-                        return;
-                }
-
-                std::move(task)();
-            }
-            catch (...)
-            {
-                std::lock_guard lock{mutex};
-                if (!exception)
-                    exception = std::current_exception();
-            }
-        };
-
-        if (!thread_pool.trySchedule([job] { job(true); }))
-            job(false);
-    }
-
-    {
-        std::unique_lock lock{mutex};
-        event.wait(lock, [&] { return !num_active_jobs; });
-        if (exception)
-            std::rethrow_exception(exception);
-    }
-}
-
-
 /// Returns access required to execute BACKUP query.
 AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements)
 {
@@ -230,6 +96,28 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
         }
     }
     return required_access;
+}
+
+bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
+{
+    auto adjust_before_comparison = [&](const IAST & query) -> ASTPtr
+    {
+        auto new_query = query.clone();
+        adjustCreateQueryForBackup(new_query, global_context, nullptr);
+        ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*new_query);
+        create.setUUID({});
+        create.if_not_exists = false;
+        return new_query;
+    };
+
+    ASTPtr query1 = adjust_before_comparison(restored_table_create_query);
+    ASTPtr query2 = adjust_before_comparison(create_query_from_backup);
+    return serializeAST(*query1) == serializeAST(*query2);
+}
+
+bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
+{
+    return compareRestoredTableDef(restored_database_create_query, create_query_from_backup, global_context);
 }
 
 }

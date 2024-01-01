@@ -17,12 +17,20 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <Common/CurrentMetrics.h>
 
 
 using Key = UInt64;
 using Value = UInt64;
 using Source = std::vector<Key>;
 
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
+}
 
 template <typename Map>
 struct AggregateIndependent
@@ -274,7 +282,7 @@ int main(int argc, char ** argv)
 
     std::cerr << std::fixed << std::setprecision(2);
 
-    ThreadPool pool(num_threads);
+    ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads);
 
     Source data(n);
 

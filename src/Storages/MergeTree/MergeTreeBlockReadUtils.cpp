@@ -1,10 +1,12 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -14,6 +16,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -29,7 +32,7 @@ namespace
 bool injectRequiredColumnsRecursively(
     const String & column_name,
     const StorageSnapshotPtr & storage_snapshot,
-    const AlterConversions & alter_conversions,
+    const AlterConversionsPtr & alter_conversions,
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const GetColumnsOptions & options,
     Names & columns,
@@ -45,8 +48,8 @@ bool injectRequiredColumnsRecursively(
     if (column_in_storage)
     {
         auto column_name_in_part = column_in_storage->getNameInStorage();
-        if (alter_conversions.isColumnRenamed(column_name_in_part))
-            column_name_in_part = alter_conversions.getColumnOldName(column_name_in_part);
+        if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part))
+            column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
 
         auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
 
@@ -97,13 +100,14 @@ NameSet injectRequiredColumns(
     NameSet injected_columns;
 
     bool have_at_least_one_physical_column = false;
-    AlterConversions alter_conversions;
+    AlterConversionsPtr alter_conversions;
     if (!data_part_info_for_reader.isProjectionPart())
         alter_conversions = data_part_info_for_reader.getAlterConversions();
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withExtendedObjects()
         .withSystemColumns();
+
     if (with_subcolumns)
         options.withSubcolumns();
 
@@ -133,32 +137,6 @@ NameSet injectRequiredColumns(
     return injected_columns;
 }
 
-
-MergeTreeReadTask::MergeTreeReadTask(
-    const DataPartPtr & data_part_,
-    const MarkRanges & mark_ranges_,
-    size_t part_index_in_query_,
-    const NameSet & column_name_set_,
-    const MergeTreeReadTaskColumns & task_columns_,
-    bool remove_prewhere_column_,
-    MergeTreeBlockSizePredictorPtr size_predictor_,
-    int64_t priority_,
-    std::future<MergeTreeReaderPtr> reader_,
-    std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_)
-    : data_part{data_part_}
-    , mark_ranges{mark_ranges_}
-    , part_index_in_query{part_index_in_query_}
-    , column_name_set{column_name_set_}
-    , task_columns{task_columns_}
-    , remove_prewhere_column{remove_prewhere_column_}
-    , size_predictor{size_predictor_}
-    , reader(std::move(reader_))
-    , pre_reader_for_step(std::move(pre_reader_for_step_))
-    , priority(priority_)
-{
-}
-
-
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     const DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
     : data_part(data_part_)
@@ -181,9 +159,8 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
         const auto & column_with_type_and_name = sample_block.getByPosition(pos);
-        const String & column_name = column_with_type_and_name.name;
-        const ColumnPtr & column_data = from_update ? columns[pos]
-                                                    : column_with_type_and_name.column;
+        const auto & column_name = column_with_type_and_name.name;
+        const auto & column_data = from_update ? columns[pos] : column_with_type_and_name.column;
 
         if (!from_update && !names_set.contains(column_name))
             continue;
@@ -231,7 +208,6 @@ void MergeTreeBlockSizePredictor::startBlock()
     for (auto & info : dynamic_columns_infos)
         info.size_bytes = 0;
 }
-
 
 /// TODO: add last_read_row_in_part parameter to take into account gaps between adjacent ranges
 void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay)
@@ -282,89 +258,95 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 }
 
 
-MergeTreeReadTaskColumns getReadTaskColumns(
+MergeTreeReadTask::Columns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
     const Names & system_columns,
     const PrewhereInfoPtr & prewhere_info,
+    const ExpressionActionsSettings & actions_settings,
+    const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns)
 {
-    Names column_names = required_columns;
-    Names pre_column_names;
+    Names column_to_read_after_prewhere = required_columns;
 
     /// Read system columns such as lightweight delete mask "_row_exists" if it is persisted in the part
     for (const auto & name : system_columns)
-    {
         if (data_part_info_for_reader.getColumns().contains(name))
-            column_names.push_back(name);
-    }
+            column_to_read_after_prewhere.push_back(name);
 
-    /// inject columns required for defaults evaluation
+    /// Inject columns required for defaults evaluation
     injectRequiredColumns(
-        data_part_info_for_reader, storage_snapshot, with_subcolumns, column_names);
+        data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
-    MergeTreeReadTaskColumns result;
+    MergeTreeReadTask::Columns result;
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withExtendedObjects()
         .withSystemColumns();
+
     if (with_subcolumns)
         options.withSubcolumns();
 
+    NameSet columns_from_previous_steps;
+    auto add_step = [&](const PrewhereExprStep & step)
+    {
+        Names step_column_names;
+
+        /// Computation results from previous steps might be used in the current step as well. In such a case these
+        /// computed columns will be present in the current step inputs. They don't need to be read from the disk so
+        /// exclude them from the list of columns to read. This filtering must be done before injecting required
+        /// columns to avoid adding unnecessary columns or failing to find required columns that are computation
+        /// results from previous steps.
+        /// Example: step1: sin(a)>b, step2: sin(a)>c
+        for (const auto & name : step.actions->getActionsDAG().getRequiredColumnsNames())
+            if (!columns_from_previous_steps.contains(name))
+                step_column_names.push_back(name);
+
+        if (!step_column_names.empty())
+            injectRequiredColumns(
+                data_part_info_for_reader, storage_snapshot,
+                with_subcolumns, step_column_names);
+
+        /// More columns could have been added, filter them as well by the list of columns from previous steps.
+        Names columns_to_read_in_step;
+        for (const auto & name : step_column_names)
+        {
+            if (columns_from_previous_steps.contains(name))
+                continue;
+
+            columns_to_read_in_step.push_back(name);
+            columns_from_previous_steps.insert(name);
+        }
+
+        /// Add results of the step to the list of already "known" columns so that we don't read or compute them again.
+        for (const auto & name : step.actions->getActionsDAG().getNames())
+            columns_from_previous_steps.insert(name);
+
+        result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, columns_to_read_in_step));
+    };
+
     if (prewhere_info)
     {
-        NameSet pre_name_set;
+        auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
+            prewhere_info,
+            actions_settings,
+            reader_settings.enable_multiple_prewhere_read_steps);
 
-        /// Add column reading steps:
-        /// 1. Columns for row level filter
-        if (prewhere_info->row_level_filter)
-        {
-            Names row_filter_column_names = prewhere_info->row_level_filter->getRequiredColumnsNames();
-            injectRequiredColumns(
-                data_part_info_for_reader, storage_snapshot, with_subcolumns, row_filter_column_names);
-            result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, row_filter_column_names));
-            pre_name_set.insert(row_filter_column_names.begin(), row_filter_column_names.end());
-        }
-
-        /// 2. Columns for prewhere
-        Names all_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumnsNames();
-
-        injectRequiredColumns(
-             data_part_info_for_reader, storage_snapshot, with_subcolumns, all_pre_column_names);
-
-        for (const auto & name : all_pre_column_names)
-        {
-            if (pre_name_set.contains(name))
-                continue;
-            pre_column_names.push_back(name);
-            pre_name_set.insert(name);
-        }
-
-        Names post_column_names;
-        for (const auto & name : column_names)
-            if (!pre_name_set.contains(name))
-                post_column_names.push_back(name);
-
-        column_names = post_column_names;
+        for (const auto & step : prewhere_actions.steps)
+            add_step(*step);
     }
 
-    result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, pre_column_names));
+    /// Remove columns read in prewehere from the list of columns to read
+    Names post_column_names;
+    for (const auto & name : column_to_read_after_prewhere)
+        if (!columns_from_previous_steps.contains(name))
+            post_column_names.push_back(name);
 
-    /// 3. Rest of the requested columns
-    result.columns = storage_snapshot->getColumnsByNames(options, column_names);
+    column_to_read_after_prewhere = std::move(post_column_names);
+
+    /// Rest of the requested columns
+    result.columns = storage_snapshot->getColumnsByNames(options, column_to_read_after_prewhere);
     return result;
-}
-
-
-std::string MergeTreeReadTaskColumns::dump() const
-{
-    WriteBufferFromOwnString s;
-    for (size_t i = 0; i < pre_columns.size(); ++i)
-    {
-        s << "STEP " << i << ": " << pre_columns[i].toString() << "\n";
-    }
-    s << "COLUMNS: " << columns.toString() << "\n";
-    return s.str();
 }
 
 }

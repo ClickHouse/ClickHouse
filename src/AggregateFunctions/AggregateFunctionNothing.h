@@ -13,23 +13,23 @@ namespace DB
 {
 struct Settings;
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 
 /** Aggregate function that takes arbitrary number of arbitrary arguments and does nothing.
   */
 class AggregateFunctionNothing final : public IAggregateFunctionHelper<AggregateFunctionNothing>
 {
 public:
-    AggregateFunctionNothing(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionNothing>(arguments, params, createResultType(arguments)) {}
+    AggregateFunctionNothing(const DataTypes & arguments, const Array & params, const DataTypePtr & result_type_)
+        : IAggregateFunctionHelper<AggregateFunctionNothing>(arguments, params, result_type_) {}
 
     String getName() const override
     {
         return "nothing";
-    }
-
-    static DataTypePtr createResultType(const DataTypes & arguments)
-    {
-        return arguments.empty() ? std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()) : arguments.front();
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -74,7 +74,8 @@ public:
     {
         [[maybe_unused]] char symbol;
         readChar(symbol, buf);
-        assert(symbol == '\0');
+        if (symbol != '\0')
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect state of aggregate function 'nothing', it should contain exactly one zero byte, while it is {}.", static_cast<UInt32>(symbol));
     }
 
     void insertResultInto(AggregateDataPtr __restrict, IColumn & to, Arena *) const override

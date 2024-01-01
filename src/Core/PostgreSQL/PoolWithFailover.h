@@ -8,14 +8,13 @@
 #include "ConnectionHolder.h"
 #include <mutex>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/logger_useful.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StoragePostgreSQL.h>
 
 
 static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SIZE = 16;
 static constexpr inline auto POSTGRESQL_POOL_WAIT_TIMEOUT = 5000;
-static constexpr inline auto POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES = 5;
+static constexpr inline auto POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES = 2;
 
 namespace postgres
 {

@@ -129,6 +129,12 @@ public:
     /// Compute union node projection columns
     NamesAndTypes computeProjectionColumns() const;
 
+    /// Remove unused projection columns
+    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
+
+    /// Remove unused projection columns
+    void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::UNION;
@@ -143,7 +149,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     bool is_subquery = false;

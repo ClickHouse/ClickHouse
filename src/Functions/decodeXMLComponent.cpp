@@ -2,7 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <base/find_symbols.h>
 
 

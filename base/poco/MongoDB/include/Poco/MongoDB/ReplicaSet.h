@@ -18,41 +18,44 @@
 #define MongoDB_ReplicaSet_INCLUDED
 
 
-#include "Poco/Net/SocketAddress.h"
-#include "Poco/MongoDB/Connection.h"
 #include <vector>
+#include "Poco/MongoDB/Connection.h"
+#include "Poco/Net/SocketAddress.h"
 
 
-namespace Poco {
-namespace MongoDB {
-
-
-class MongoDB_API ReplicaSet
-	/// Class for working with a MongoDB replica set.
+namespace Poco
 {
-public:
-	explicit ReplicaSet(const std::vector<Net::SocketAddress>& addresses);
-		/// Creates the ReplicaSet using the given server addresses.
-
-	virtual ~ReplicaSet();
-		/// Destroys the ReplicaSet.
-
-	Connection::Ptr findMaster();
-		/// Tries to find the master MongoDB instance from the addresses
-		/// passed to the constructor.
-		///
-		/// Returns the Connection to the master, or null if no master
-		/// instance was found.
-
-protected:
-	Connection::Ptr isMaster(const Net::SocketAddress& host);
-
-private:
-	std::vector<Net::SocketAddress> _addresses;
-};
+namespace MongoDB
+{
 
 
-} } // namespace Poco::MongoDB
+    class MongoDB_API ReplicaSet
+    /// Class for working with a MongoDB replica set.
+    {
+    public:
+        explicit ReplicaSet(const std::vector<Net::SocketAddress> & addresses);
+        /// Creates the ReplicaSet using the given server addresses.
+
+        virtual ~ReplicaSet();
+        /// Destroys the ReplicaSet.
+
+        Connection::Ptr findMaster();
+        /// Tries to find the master MongoDB instance from the addresses
+        /// passed to the constructor.
+        ///
+        /// Returns the Connection to the master, or null if no master
+        /// instance was found.
+
+    protected:
+        Connection::Ptr isMaster(const Net::SocketAddress & host);
+
+    private:
+        std::vector<Net::SocketAddress> _addresses;
+    };
+
+
+}
+} // namespace Poco::MongoDB
 
 
 #endif // MongoDB_ReplicaSet_INCLUDED

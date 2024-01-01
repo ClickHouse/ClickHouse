@@ -41,7 +41,7 @@ namespace
             key = "backups.allowed_disk[" + std::to_string(++counter) + "]";
             if (!config.has(key))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Disk {} is not allowed for backups, see the 'backups.allowed_disk' configuration parameter", quoteString(disk_name));
+                                "Disk '{}' is not allowed for backups, see the 'backups.allowed_disk' configuration parameter", quoteString(disk_name));
         }
     }
 
@@ -54,7 +54,7 @@ namespace
 
         bool path_ok = path.empty() || (path.is_relative() && (*path.begin() != ".."));
         if (!path_ok)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} to backup must be inside the specified disk {}",
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' to backup must be inside the specified disk '{}'",
                             quoteString(path.c_str()), quoteString(disk_name));
     }
 
@@ -103,7 +103,6 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
 {
     auto creator_fn = [](const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
     {
-        String backup_name_for_logging = params.backup_info.toStringForLogging();
         const String & engine_name = params.backup_info.backup_engine_name;
 
         if (!params.backup_info.id_arg.empty())
@@ -169,20 +168,26 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         {
             std::shared_ptr<IBackupReader> reader;
             if (engine_name == "File")
-                reader = std::make_shared<BackupReaderFile>(path);
+                reader = std::make_shared<BackupReaderFile>(path, params.read_settings, params.write_settings);
             else
-                reader = std::make_shared<BackupReaderDisk>(disk, path);
-            return std::make_unique<BackupImpl>(backup_name_for_logging, archive_params, params.base_backup_info, reader, params.context);
+                reader = std::make_shared<BackupReaderDisk>(disk, path, params.read_settings, params.write_settings);
+            return std::make_unique<BackupImpl>(
+                params.backup_info,
+                archive_params,
+                params.base_backup_info,
+                reader,
+                params.context,
+                params.use_same_s3_credentials_for_base_backup);
         }
         else
         {
             std::shared_ptr<IBackupWriter> writer;
             if (engine_name == "File")
-                writer = std::make_shared<BackupWriterFile>(path);
+                writer = std::make_shared<BackupWriterFile>(path, params.read_settings, params.write_settings);
             else
-                writer = std::make_shared<BackupWriterDisk>(disk, path);
+                writer = std::make_shared<BackupWriterDisk>(disk, path, params.read_settings, params.write_settings);
             return std::make_unique<BackupImpl>(
-                backup_name_for_logging,
+                params.backup_info,
                 archive_params,
                 params.base_backup_info,
                 writer,
@@ -190,7 +195,8 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
                 params.is_internal_backup,
                 params.backup_coordination,
                 params.backup_uuid,
-                params.deduplicate_files);
+                params.deduplicate_files,
+                params.use_same_s3_credentials_for_base_backup);
         }
     };
 

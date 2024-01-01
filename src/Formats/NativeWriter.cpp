@@ -55,7 +55,7 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
-    settings.low_cardinality_max_dictionary_size = 0; //-V1048
+    settings.low_cardinality_max_dictionary_size = 0;
 
     ISerialization::SerializeBinaryBulkStatePtr state;
     serialization.serializeBinaryBulkStatePrefix(*full_column, settings, state);
@@ -135,9 +135,19 @@ size_t NativeWriter::write(const Block & block)
         if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             auto info = column.type->getSerializationInfo(*column.column);
-            serialization = column.type->getSerialization(*info);
+            bool has_custom = false;
 
-            bool has_custom = info->hasCustomSerialization();
+            if (client_revision >= DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
+            {
+                serialization = column.type->getSerialization(*info);
+                has_custom = info->hasCustomSerialization();
+            }
+            else
+            {
+                serialization = column.type->getDefaultSerialization();
+                column.column = recursiveRemoveSparse(column.column);
+            }
+
             writeBinary(static_cast<UInt8>(has_custom), ostr);
             if (has_custom)
                 info->serialializeKindBinary(ostr);

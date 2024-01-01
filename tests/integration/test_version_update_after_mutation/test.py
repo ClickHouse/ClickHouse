@@ -10,25 +10,37 @@ node1 = cluster.add_instance(
     "node1",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.4.9.110",
+    tag="20.8.11.17",
     with_installed_binary=True,
     stay_alive=True,
+    main_configs=[
+        "configs/compat.xml",
+    ],
+    allow_analyzer=False,
 )
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.4.9.110",
+    tag="20.8.11.17",
     with_installed_binary=True,
     stay_alive=True,
+    main_configs=[
+        "configs/compat.xml",
+    ],
+    allow_analyzer=False,
 )
 node3 = cluster.add_instance(
     "node3",
     with_zookeeper=True,
     image="yandex/clickhouse-server",
-    tag="20.4.9.110",
+    tag="20.8.11.17",
     with_installed_binary=True,
     stay_alive=True,
+    main_configs=[
+        "configs/compat.xml",
+    ],
+    allow_analyzer=False,
 )
 
 
@@ -58,8 +70,10 @@ def test_mutate_and_upgrade(start_cluster):
 
     node2.query("DETACH TABLE mt")  # stop being leader
     node1.query("DETACH TABLE mt")  # stop being leader
-    node1.restart_with_latest_version(signal=9, fix_metadata=True)
-    node2.restart_with_latest_version(signal=9, fix_metadata=True)
+    node1.query("SYSTEM FLUSH LOGS")
+    node2.query("SYSTEM FLUSH LOGS")
+    node1.restart_with_latest_version(signal=9, fix_metadata=False)
+    node2.restart_with_latest_version(signal=9, fix_metadata=False)
 
     # After hard restart table can be in readonly mode
     exec_query_with_retry(
@@ -91,8 +105,8 @@ def test_mutate_and_upgrade(start_cluster):
 
     node2.query("OPTIMIZE TABLE mt FINAL")
 
-    assert node1.query("SELECT id FROM mt") == "1\n4\n"
-    assert node2.query("SELECT id FROM mt") == "1\n4\n"
+    assert node1.query("SELECT id FROM mt ORDER BY id") == "1\n4\n"
+    assert node2.query("SELECT id FROM mt ORDER BY id") == "1\n4\n"
 
     for node in [node1, node2]:
         node.query("DROP TABLE mt")
@@ -111,7 +125,11 @@ def test_upgrade_while_mutation(start_cluster):
     node3.query("ALTER TABLE mt1 DELETE WHERE id % 2 == 0")
 
     node3.query("DETACH TABLE mt1")  # stop being leader
-    node3.restart_with_latest_version(signal=9, fix_metadata=True)
+    # Flush logs before restart to avoid trash from system tables which are on database ordindary
+    # (We could be in process of creating some system table, which will leave empty directory on restart,
+    # so when we start moving system tables from ordinary to atomic db, it will complain about some undeleted files)
+    node3.query("SYSTEM FLUSH LOGS")
+    node3.restart_with_latest_version(signal=9, fix_metadata=False)
 
     # checks for readonly
     exec_query_with_retry(node3, "OPTIMIZE TABLE mt1", sleep_time=5, retry_count=60)

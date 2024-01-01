@@ -39,7 +39,7 @@ namespace
             {
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Not found column {} {} in dictionary {}. There are only columns {}",
                                 column.name, column.type->getName(), backQuote(dictionary_name),
-                                StorageDictionary::generateNamesAndTypesDescription(dictionary_names_and_types));
+                                dictionary_names_and_types.toNamesAndTypesDescription());
             }
         }
     }
@@ -78,20 +78,6 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
     }
 
     return dictionary_names_and_types;
-}
-
-
-String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesList & list)
-{
-    WriteBufferFromOwnString ss;
-    bool first = true;
-    for (const auto & name_and_type : list)
-    {
-        if (!std::exchange(first, false))
-            ss << ", ";
-        ss << name_and_type.name << ' ' << name_and_type.type->getName();
-    }
-    return ss.str();
 }
 
 StorageDictionary::StorageDictionary(
@@ -145,7 +131,7 @@ StorageDictionary::~StorageDictionary()
     removeDictionaryConfigurationFromRepository();
 }
 
-void StorageDictionary::checkTableCanBeDropped() const
+void StorageDictionary::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
 {
     if (location == Location::SameDatabaseAndNameAsDictionary)
         throw Exception(ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE,
@@ -159,7 +145,9 @@ void StorageDictionary::checkTableCanBeDropped() const
 
 void StorageDictionary::checkTableCanBeDetached() const
 {
-    checkTableCanBeDropped();
+    /// Actually query context (from DETACH query) should be passed here.
+    /// But we don't use it for this type of storage
+    checkTableCanBeDropped(getContext());
 }
 
 Pipe StorageDictionary::read(
@@ -182,7 +170,7 @@ std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
     return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
 }
 
-void StorageDictionary::shutdown()
+void StorageDictionary::shutdown(bool)
 {
     removeDictionaryConfigurationFromRepository();
 }
@@ -208,13 +196,13 @@ void StorageDictionary::removeDictionaryConfigurationFromRepository()
 
 Poco::Timestamp StorageDictionary::getUpdateTime() const
 {
-    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+    std::lock_guard lock(dictionary_config_mutex);
     return update_time;
 }
 
 LoadablesConfigurationPtr StorageDictionary::getConfiguration() const
 {
-    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+    std::lock_guard lock(dictionary_config_mutex);
     return configuration;
 }
 
@@ -234,7 +222,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
 
     {
-        std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+        std::lock_guard lock(dictionary_config_mutex);
 
         configuration->setString("dictionary.database", new_table_id.database_name);
         configuration->setString("dictionary.name", new_table_id.table_name);
@@ -301,7 +289,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
         dictionary_non_const->setDictionaryComment(new_comment);
     }
 
-    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+    std::lock_guard lock(dictionary_config_mutex);
     configuration->setString("dictionary.comment", new_comment);
 }
 

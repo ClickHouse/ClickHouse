@@ -10,7 +10,6 @@
 #include <Planner/PlannerContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <memory>
 
@@ -190,6 +189,7 @@ struct SelectQueryInfo
     PlannerContextPtr planner_context;
 
     /// Storage table expression
+    /// It's guaranteed to be present in JOIN TREE of `query_tree`
     QueryTreeNodePtr table_expression;
 
     /// Table expression modifiers for storage
@@ -207,8 +207,8 @@ struct SelectQueryInfo
     ///
     /// Configured in StorageDistributed::getQueryProcessingStage()
     ClusterPtr optimized_cluster;
-
-    mutable ParallelReplicasReadingCoordinatorPtr coordinator;
+    /// should we use custom key with the cluster
+    bool use_custom_key = false;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
@@ -217,6 +217,8 @@ struct SelectQueryInfo
 
     /// It is needed for PK analysis based on row_level_policy and additional_filters.
     ASTs filter_asts;
+
+    ASTPtr parallel_replica_custom_key_ast;
 
     /// Filter actions dag for current storage
     ActionsDAGPtr filter_actions_dag;
@@ -246,17 +248,25 @@ struct SelectQueryInfo
     bool is_projection_query = false;
     bool merge_tree_empty_result = false;
     bool settings_limit_offset_done = false;
+    bool is_internal = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 
     bool is_parameterized_view = false;
 
+    bool optimize_trivial_count = false;
+
     // If limit is not 0, that means it's a trivial limit query.
     UInt64 limit = 0;
+
+    /// For IStorageSystemOneBlock
+    std::vector<UInt8> columns_mask;
 
     InputOrderInfoPtr getInputOrderInfo() const
     {
         return input_order_info ? input_order_info : (projection ? projection->input_order_info : nullptr);
     }
+
+    bool isFinal() const;
 };
 }

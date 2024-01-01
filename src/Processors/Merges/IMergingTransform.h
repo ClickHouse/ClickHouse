@@ -17,13 +17,15 @@ public:
         const Block & input_header,
         const Block & output_header,
         bool have_all_inputs_,
-        UInt64 limit_hint_);
+        UInt64 limit_hint_,
+        bool always_read_till_end_);
 
     IMergingTransformBase(
         const Blocks & input_headers,
         const Block & output_header,
         bool have_all_inputs_,
-        UInt64 limit_hint_);
+        UInt64 limit_hint_,
+        bool always_read_till_end_);
 
     OutputPort & getOutputPort() { return outputs.front(); }
 
@@ -67,6 +69,7 @@ private:
     std::atomic<bool> have_all_inputs;
     bool is_initialized = false;
     UInt64 limit_hint = 0;
+    bool always_read_till_end = false;
 
     IProcessor::Status prepareInitializeInputs();
 };
@@ -83,8 +86,9 @@ public:
         const Block & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
+        bool always_read_till_end_,
         Args && ... args)
-        : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_, limit_hint_)
+        : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_, limit_hint_, always_read_till_end_)
         , algorithm(std::forward<Args>(args) ...)
     {
     }
@@ -95,9 +99,10 @@ public:
         const Block & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
+        bool always_read_till_end_,
         bool empty_chunk_on_finish_,
         Args && ... args)
-        : IMergingTransformBase(input_headers, output_header, have_all_inputs_, limit_hint_)
+        : IMergingTransformBase(input_headers, output_header, have_all_inputs_, limit_hint_, always_read_till_end_)
         , empty_chunk_on_finish(empty_chunk_on_finish_)
         , algorithm(std::forward<Args>(args) ...)
     {

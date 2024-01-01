@@ -6,9 +6,16 @@
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
-#include <re2/re2.h>
 #include <stack>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -144,15 +151,15 @@ void ASTColumnsApplyTransformer::appendColumnName(WriteBuffer & ostr) const
     }
 }
 
-void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(func_name.size());
     hash_state.update(func_name);
     if (parameters)
-        parameters->updateTreeHashImpl(hash_state);
+        parameters->updateTreeHashImpl(hash_state, ignore_aliases);
 
     if (lambda)
-        lambda->updateTreeHashImpl(hash_state);
+        lambda->updateTreeHashImpl(hash_state, ignore_aliases);
 
     hash_state.update(lambda_arg.size());
     hash_state.update(lambda_arg);
@@ -160,7 +167,7 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state) const
     hash_state.update(column_name_prefix.size());
     hash_state.update(column_name_prefix);
 
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -209,13 +216,13 @@ void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
         writeChar(')', ostr);
 }
 
-void ASTColumnsExceptTransformer::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsExceptTransformer::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(is_strict);
     hash_state.update(original_pattern.size());
     hash_state.update(original_pattern);
 
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
@@ -290,23 +297,29 @@ bool ASTColumnsExceptTransformer::isColumnMatching(const String & column_name) c
 void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    expr->formatImpl(settings, state, frame);
+    assert(children.size() == 1);
+
+    children[0]->formatImpl(settings, state, frame);
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(name);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
 {
-    expr->appendColumnName(ostr);
+    assert(children.size() == 1);
+
+    children[0]->appendColumnName(ostr);
     writeCString(" AS ", ostr);
     writeProbablyBackQuotedString(name, ostr);
 }
 
-void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    assert(children.size() == 1);
+
     hash_state.update(name.size());
     hash_state.update(name);
-    expr->updateTreeHashImpl(hash_state);
-    IAST::updateTreeHashImpl(hash_state);
+    children[0]->updateTreeHashImpl(hash_state, ignore_aliases);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -348,10 +361,10 @@ void ASTColumnsReplaceTransformer::appendColumnName(WriteBuffer & ostr) const
         writeChar(')', ostr);
 }
 
-void ASTColumnsReplaceTransformer::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsReplaceTransformer::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(is_strict);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTColumnsReplaceTransformer::replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name)
@@ -377,7 +390,7 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
         if (replace_map.find(replacement.name) != replace_map.end())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Expressions in columns transformer REPLACE should not contain the same replacement more than once");
-        replace_map.emplace(replacement.name, replacement.expr);
+        replace_map.emplace(replacement.name, replacement.children[0]);
     }
 
     for (auto & column : nodes)

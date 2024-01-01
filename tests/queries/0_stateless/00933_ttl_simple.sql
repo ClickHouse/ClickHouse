@@ -1,3 +1,16 @@
+-- disable timezone randomization since otherwise TTL may fail at particular datetime, i.e.:
+--
+--     SELECT
+--         now(),
+--         toDate(toTimeZone(now(), 'America/Mazatlan')),
+--         today()
+--
+--     ┌───────────────now()─┬─toDate(toTimeZone(now(), 'America/Mazatlan'))─┬────today()─┐
+--     │ 2023-07-24 06:24:06 │                                    2023-07-23 │ 2023-07-24 │
+--     └─────────────────────┴───────────────────────────────────────────────┴────────────┘
+SET session_timezone = '';
+SET allow_suspicious_ttl_expressions = 1;
+
 drop table if exists ttl_00933_1;
 
 -- Column TTL works only with wide parts, because it's very expensive to apply it for compact parts
@@ -53,7 +66,9 @@ select * from ttl_00933_1 order by d;
 
 -- const DateTime TTL positive
 drop table if exists ttl_00933_1;
-create table ttl_00933_1 (b Int, a Int ttl now()-1000) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
+create table ttl_00933_1 (b Int, a Int ttl '2000-10-10 00:00:00'::DateTime)
+engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
+
 show create table ttl_00933_1;
 insert into ttl_00933_1 values (1, 1);
 optimize table ttl_00933_1 final;
@@ -61,7 +76,7 @@ select * from ttl_00933_1;
 
 -- const DateTime TTL negative
 drop table if exists ttl_00933_1;
-create table ttl_00933_1 (b Int, a Int ttl now()+1000) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
+create table ttl_00933_1 (b Int, a Int ttl '2100-10-10 00:00:00'::DateTime) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
 show create table ttl_00933_1;
 insert into ttl_00933_1 values (1, 1);
 optimize table ttl_00933_1 final;
@@ -69,7 +84,7 @@ select * from ttl_00933_1;
 
 -- const Date TTL positive
 drop table if exists ttl_00933_1;
-create table ttl_00933_1 (b Int, a Int ttl today()-1) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
+create table ttl_00933_1 (b Int, a Int ttl '2000-10-10'::Date) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
 show create table ttl_00933_1;
 insert into ttl_00933_1 values (1, 1);
 optimize table ttl_00933_1 final;
@@ -77,7 +92,7 @@ select * from ttl_00933_1;
 
 -- const Date TTL negative
 drop table if exists ttl_00933_1;
-create table ttl_00933_1 (b Int, a Int ttl today()+1) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
+create table ttl_00933_1 (b Int, a Int ttl '2100-10-10'::Date) engine = MergeTree order by tuple() partition by tuple() settings min_bytes_for_wide_part = 0;
 show create table ttl_00933_1;
 insert into ttl_00933_1 values (1, 1);
 optimize table ttl_00933_1 final;

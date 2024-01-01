@@ -146,7 +146,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
                     const auto & serialization = serializations[index];
-                    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+                    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
                         read_columns[index] = SerializationNullable::deserializeTextEscapedImpl(*columns[index], *in, format_settings, serialization);
                     else
                         serialization->deserializeTextEscaped(*columns[index], *in, format_settings);
@@ -193,7 +193,10 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
     /// return info about defaults set
-    ext.read_columns = read_columns;
+    if (format_settings.defaults_for_omitted_fields)
+        ext.read_columns = read_columns;
+    else
+        ext.read_columns.assign(num_columns, true);
 
     return true;
 }
@@ -211,6 +214,18 @@ void TSKVRowInputFormat::resetParser()
     read_columns.clear();
     seen_columns.clear();
     name_buf.clear();
+}
+
+size_t TSKVRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    while (!in->eof() && num_rows < max_block_size)
+    {
+        skipToUnescapedNextLineOrEOF(*in);
+        ++num_rows;
+    }
+
+    return num_rows;
 }
 
 TSKVSchemaReader::TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

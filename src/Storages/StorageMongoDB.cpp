@@ -7,7 +7,6 @@
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Database.h>
-#include <Poco/Version.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -16,8 +15,11 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Transforms/MongoDBSource.h>
+#include <Processors/Sources/MongoDBSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <unordered_set>
+
+#include <DataTypes/DataTypeArray.h>
 
 namespace DB
 {
@@ -99,6 +101,7 @@ public:
         , db_name(db_name_)
         , metadata_snapshot{metadata_snapshot_}
         , connection(connection_)
+        , is_wire_protocol_old(isMongoDBWireProtocolOld(*connection_))
     {
     }
 
@@ -107,7 +110,7 @@ public:
     void consume(Chunk chunk) override
     {
         Poco::MongoDB::Database db(db_name);
-        Poco::MongoDB::Document::Ptr index = new Poco::MongoDB::Document();
+        Poco::MongoDB::Document::Vector documents;
 
         auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -118,27 +121,96 @@ public:
         const auto data_types = block.getDataTypes();
         const auto data_names = block.getNames();
 
-        std::vector<std::string> row(num_cols);
+        documents.reserve(num_rows);
+
         for (const auto i : collections::range(0, num_rows))
         {
+            Poco::MongoDB::Document::Ptr document = new Poco::MongoDB::Document();
+
             for (const auto j : collections::range(0, num_cols))
             {
-                WriteBufferFromOwnString ostr;
-                data_types[j]->getDefaultSerialization()->serializeText(*columns[j], i, ostr, FormatSettings{});
-                row[j] = ostr.str();
-                index->add(data_names[j], row[j]);
+                insertValueIntoMongoDB(*document, data_names[j], *data_types[j], *columns[j], i);
             }
+
+            documents.push_back(std::move(document));
         }
-        Poco::SharedPtr<Poco::MongoDB::InsertRequest> insert_request = db.createInsertRequest(collection_name);
-        insert_request->documents().push_back(index);
-        connection->sendRequest(*insert_request);
+
+        if (is_wire_protocol_old)
+        {
+            Poco::SharedPtr<Poco::MongoDB::InsertRequest> insert_request = db.createInsertRequest(collection_name);
+            insert_request->documents() = std::move(documents);
+            connection->sendRequest(*insert_request);
+        }
+        else
+        {
+            Poco::SharedPtr<Poco::MongoDB::OpMsgMessage> insert_request = db.createOpMsgMessage(collection_name);
+            insert_request->setCommandName(Poco::MongoDB::OpMsgMessage::CMD_INSERT);
+            insert_request->documents() = std::move(documents);
+            connection->sendRequest(*insert_request);
+        }
     }
 
 private:
+
+    void insertValueIntoMongoDB(
+        Poco::MongoDB::Document & document,
+        const std::string & name,
+        const IDataType & data_type,
+        const IColumn & column,
+        size_t idx)
+    {
+        WhichDataType which(data_type);
+
+        if (which.isArray())
+        {
+            const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+            const ColumnArray::Offsets & offsets = column_array.getOffsets();
+
+            size_t offset = offsets[idx - 1];
+            size_t next_offset = offsets[idx];
+
+            const IColumn & nested_column = column_array.getData();
+
+            const auto * array_type = assert_cast<const DataTypeArray *>(&data_type);
+            const DataTypePtr & nested_type = array_type->getNestedType();
+
+            Poco::MongoDB::Array::Ptr array = new Poco::MongoDB::Array();
+            for (size_t i = 0; i + offset < next_offset; ++i)
+            {
+                insertValueIntoMongoDB(*array, Poco::NumberFormatter::format(i), *nested_type, nested_column, i + offset);
+            }
+
+            document.add(name, array);
+            return;
+        }
+
+        /// MongoDB does not support UInt64 type, so just cast it to Int64
+        if (which.isNativeUInt())
+            document.add(name, static_cast<Poco::Int64>(column.getUInt(idx)));
+        else if (which.isNativeInt())
+            document.add(name, static_cast<Poco::Int64>(column.getInt(idx)));
+        else if (which.isFloat32())
+            document.add(name, static_cast<Float64>(column.getFloat32(idx)));
+        else if (which.isFloat64())
+            document.add(name, static_cast<Float64>(column.getFloat64(idx)));
+        else if (which.isDate())
+            document.add(name, Poco::Timestamp(DateLUT::instance().fromDayNum(DayNum(column.getUInt(idx))) * 1000000));
+        else if (which.isDateTime())
+            document.add(name, Poco::Timestamp(column.getUInt(idx) * 1000000));
+        else
+        {
+            WriteBufferFromOwnString ostr;
+            data_type.getDefaultSerialization()->serializeText(column, idx, ostr, FormatSettings{});
+            document.add(name, ostr.str());
+        }
+    }
+
     String collection_name;
     String db_name;
     StorageMetadataPtr metadata_snapshot;
     std::shared_ptr<Poco::MongoDB::Connection> connection;
+
+    const bool is_wire_protocol_old;
 };
 
 
@@ -162,39 +234,32 @@ Pipe StorageMongoDB::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size));
+    return Pipe(std::make_shared<MongoDBSource>(connection, database_name, collection_name, Poco::MongoDB::Document{}, sample_block, max_block_size));
 }
 
-SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
+SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */, bool /*async_insert*/)
 {
     connectIfNotConnected();
     return std::make_shared<StorageMongoDBSink>(collection_name, database_name, metadata_snapshot, connection);
 }
 
-struct KeysCmp
-{
-    constexpr bool operator()(const auto & lhs, const auto & rhs) const
-    {
-        return lhs == rhs || ((lhs == "table") && (rhs == "collection")) || ((rhs == "table") && (lhs == "collection"));
-    }
-};
 StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
 {
     Configuration configuration;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
     {
         validateNamedCollection(
             *named_collection,
-            std::unordered_multiset<std::string_view, std::hash<std::string_view>, KeysCmp>{"host", "port", "user", "password", "database", "collection", "table"},
+            ValidateKeysMultiset<MongoDBEqualKeysSet>{"host", "port", "user", "username", "password", "database", "db", "collection", "table"},
             {"options"});
 
-        configuration.host = named_collection->get<String>("host");
+        configuration.host = named_collection->getAny<String>({"host", "hostname"});
         configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-        configuration.username = named_collection->get<String>("user");
+        configuration.username = named_collection->getAny<String>({"user", "username"});
         configuration.password = named_collection->get<String>("password");
-        configuration.database = named_collection->get<String>("database");
-        configuration.table = named_collection->getOrDefault<String>("collection", named_collection->getOrDefault<String>("table", ""));
+        configuration.database = named_collection->getAny<String>({"database", "db"});
+        configuration.table = named_collection->getAny<String>({"collection", "table"});
         configuration.options = named_collection->getOrDefault<String>("options", "");
     }
     else

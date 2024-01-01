@@ -131,15 +131,18 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_auto_increment{"AUTO_INCREMENT"};
     ParserKeyword s_comment{"COMMENT"};
     ParserKeyword s_codec{"CODEC"};
+    ParserKeyword s_stat{"STATISTIC"};
     ParserKeyword s_ttl{"TTL"};
     ParserKeyword s_remove{"REMOVE"};
     ParserKeyword s_type{"TYPE"};
     ParserKeyword s_collate{"COLLATE"};
+    ParserKeyword s_primary_key{"PRIMARY KEY"};
     ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;
     ParserCodec codec_parser;
     ParserCollation collation_parser;
+    ParserStatisticType stat_type_parser;
     ParserExpression expression_parser;
 
     /// mandatory column name
@@ -175,8 +178,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
+    ASTPtr stat_type_expression;
     ASTPtr ttl_expression;
     ASTPtr collation_expression;
+    bool primary_key_specifier = false;
 
     auto null_check_without_moving = [&]() -> bool
     {
@@ -198,6 +203,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         && !s_ephemeral.checkWithoutMoving(pos, expected)
         && !s_alias.checkWithoutMoving(pos, expected)
         && !s_auto_increment.checkWithoutMoving(pos, expected)
+        && !s_primary_key.checkWithoutMoving(pos, expected)
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
                 && !s_codec.checkWithoutMoving(pos, expected))))
@@ -244,7 +250,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             auto default_function = std::make_shared<ASTFunction>();
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = std::make_shared<ASTExpressionList>();
-            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTFunction>()->formatWithSecretsHidden()));
+            // Ephemeral columns don't really have secrets but we need to format
+            // into a String, hence the strange call
+            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTFunction>()->formatForLogging()));
             default_expression = default_function;
         }
 
@@ -264,6 +272,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             ParserDataType().parse(tmp_pos, type, tmp_expected);
         }
     }
+    /// This will rule out unusual expressions like *, t.* that cannot appear in DEFAULT
+    if (default_expression && !dynamic_cast<const ASTWithAlias *>(default_expression.get()))
+        return false;
 
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
@@ -293,10 +304,21 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
     }
 
+    if (s_stat.ignore(pos, expected))
+    {
+        if (!stat_type_parser.parse(pos, stat_type_expression, expected))
+            return false;
+    }
+
     if (s_ttl.ignore(pos, expected))
     {
         if (!expression_parser.parse(pos, ttl_expression, expected))
             return false;
+    }
+
+    if (s_primary_key.ignore(pos, expected))
+    {
+        primary_key_specifier = true;
     }
 
     node = column_declaration;
@@ -329,6 +351,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(codec_expression));
     }
 
+    if (stat_type_expression)
+    {
+        column_declaration->stat_type = stat_type_expression;
+        column_declaration->children.push_back(std::move(stat_type_expression));
+    }
+
     if (ttl_expression)
     {
         column_declaration->ttl = ttl_expression;
@@ -339,6 +367,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->collation = collation_expression;
         column_declaration->children.push_back(std::move(collation_expression));
     }
+
+    column_declaration->primary_key_specifier = primary_key_specifier;
 
     return true;
 }
@@ -374,6 +404,16 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserStatisticDeclaration : public IParserBase
+{
+public:
+    ParserStatisticDeclaration() = default;
+
+protected:
+    const char * getName() const override { return "statistics declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserConstraintDeclaration : public IParserBase
 {
 protected:
@@ -385,6 +425,13 @@ class ParserProjectionDeclaration : public IParserBase
 {
 protected:
     const char * getName() const override { return "projection declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserForeignKeyDeclaration : public IParserBase
+{
+protected:
+    const char * getName() const override { return "foreign key declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -533,6 +580,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/// CREATE NAMED COLLECTION name [ON CLUSTER cluster]
 class ParserCreateNamedCollectionQuery : public IParserBase
 {
 protected:

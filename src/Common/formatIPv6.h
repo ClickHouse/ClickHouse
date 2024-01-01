@@ -7,7 +7,7 @@
 #include <utility>
 #include <base/range.h>
 #include <base/unaligned.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 
 constexpr size_t IPV4_BINARY_LENGTH = 4;
@@ -45,7 +45,7 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
  * @return            - true if parsed successfully, false otherwise.
  */
 template <typename T, typename EOFfunction>
-requires (std::is_same<typename std::remove_cv<T>::type, char>::value)
+requires (std::is_same_v<std::remove_cv_t<T>, char>)
 inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t first_octet = -1)
 {
     if (src == nullptr || first_octet > 255)
@@ -82,11 +82,7 @@ inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
             break;
     }
 
-    if constexpr (std::endian::native == std::endian::little)
-        memcpy(dst, &result, sizeof(result));
-    else
-        reverseMemcpy(dst, &result, sizeof(result));
-
+    memcpy(dst, &result, sizeof(result));
     return true;
 }
 

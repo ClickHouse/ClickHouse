@@ -88,6 +88,41 @@ NamesAndTypes UnionNode::computeProjectionColumns() const
     return result_columns;
 }
 
+void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns)
+{
+    auto projection_columns = computeProjectionColumns();
+    size_t projection_columns_size = projection_columns.size();
+    std::unordered_set<size_t> used_projection_column_indexes;
+
+    for (size_t i = 0; i < projection_columns_size; ++i)
+    {
+        const auto & projection_column = projection_columns[i];
+        if (used_projection_columns.contains(projection_column.name))
+            used_projection_column_indexes.insert(i);
+    }
+
+    auto & query_nodes = getQueries().getNodes();
+    for (auto & query_node : query_nodes)
+    {
+        if (auto * query_node_typed = query_node->as<QueryNode>())
+            query_node_typed->removeUnusedProjectionColumns(used_projection_column_indexes);
+        else if (auto * union_node_typed = query_node->as<UnionNode>())
+            union_node_typed->removeUnusedProjectionColumns(used_projection_column_indexes);
+    }
+}
+
+void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
+{
+    auto & query_nodes = getQueries().getNodes();
+    for (auto & query_node : query_nodes)
+    {
+        if (auto * query_node_typed = query_node->as<QueryNode>())
+            query_node_typed->removeUnusedProjectionColumns(used_projection_columns_indexes);
+        else if (auto * union_node_typed = query_node->as<UnionNode>())
+            union_node_typed->removeUnusedProjectionColumns(used_projection_columns_indexes);
+    }
+}
+
 void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "UNION id: " << format_state.getNodeId(this);
@@ -140,13 +175,23 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     return result_union_node;
 }
 
-ASTPtr UnionNode::toASTImpl() const
+ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
     select_with_union_query->union_mode = union_mode;
     select_with_union_query->is_normalized = true;
-    select_with_union_query->children.push_back(getQueriesNode()->toAST());
+    select_with_union_query->children.push_back(getQueriesNode()->toAST(options));
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
+
+    if (is_subquery)
+    {
+        auto subquery = std::make_shared<ASTSubquery>();
+
+        subquery->cte_name = cte_name;
+        subquery->children.push_back(std::move(select_with_union_query));
+
+        return subquery;
+    }
 
     return select_with_union_query;
 }

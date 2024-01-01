@@ -7,6 +7,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.utility import generate_values, replace_config, SafeThread
 from azure.storage.blob import BlobServiceClient
+from test_storage_azure_blob_storage.test import azure_query
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -17,15 +18,63 @@ LOCAL_DISK = "hdd"
 CONTAINER_NAME = "cont"
 
 
+def generate_cluster_def(port):
+    path = os.path.join(
+        os.path.dirname(os.path.realpath(__file__)),
+        "./_gen/disk_storage_conf.xml",
+    )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(
+            f"""<clickhouse>
+    <storage_configuration>
+        <disks>
+            <blob_storage_disk>
+                <type>azure_blob_storage</type>
+                <storage_account_url>http://azurite1:{port}/devstoreaccount1</storage_account_url>
+                <container_name>cont</container_name>
+                <skip_access_check>false</skip_access_check>
+                <account_name>devstoreaccount1</account_name>
+                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+                <max_single_part_upload_size>100000</max_single_part_upload_size>
+                <max_single_download_retries>10</max_single_download_retries>
+                <max_single_read_retries>10</max_single_read_retries>
+            </blob_storage_disk>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <blob_storage_policy>
+                <volumes>
+                    <main>
+                        <disk>blob_storage_disk</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </blob_storage_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+"""
+        )
+    return path
+
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
+        port = cluster.azurite_port
+        path = generate_cluster_def(port)
         cluster.add_instance(
             NODE_NAME,
             main_configs=[
-                "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
+                path,
             ],
             with_azurite=True,
         )
@@ -38,27 +87,10 @@ def cluster():
         cluster.shutdown()
 
 
-# Note: use this for selects and inserts and create table queries.
+# Note: use azure_query for selects and inserts and create table queries.
 # For inserts there is no guarantee that retries will not result in duplicates.
-# But it is better to retry anyway because 'Connection was closed by the server' error
+# But it is better to retry anyway because connection related errors
 # happens in fact only for inserts because reads already have build-in retries in code.
-def azure_query(node, query, try_num=3, settings={}):
-    for i in range(try_num):
-        try:
-            return node.query(query, settings=settings)
-        except Exception as ex:
-            retriable_errors = [
-                "DB::Exception: Azure::Core::Http::TransportException: Connection was closed by the server while trying to read a response"
-            ]
-            retry = False
-            for error in retriable_errors:
-                if error in str(ex):
-                    retry = True
-                    logging.info(f"Try num: {i}. Having retriable error: {ex}")
-                    break
-            if not retry or i == try_num - 1:
-                raise Exception(ex)
-            continue
 
 
 def create_table(node, table_name, **additional_settings):
@@ -66,6 +98,7 @@ def create_table(node, table_name, **additional_settings):
         "storage_policy": "blob_storage_policy",
         "old_parts_lifetime": 1,
         "index_granularity": 512,
+        "temporary_directories_lifetime": 1,
     }
     settings.update(additional_settings)
 
@@ -96,8 +129,11 @@ def test_read_after_cache_is_wiped(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
 
-    values = "('2021-11-13',3,'hello'),('2021-11-14',4,'heyo')"
-
+    # We insert into different partitions, so do it separately to avoid
+    # test flakyness when retrying the query in case of retriable exception.
+    values = "('2021-11-13',3,'hello')"
+    azure_query(node, f"INSERT INTO {TABLE_NAME} VALUES {values}")
+    values = "('2021-11-14',4,'heyo')"
     azure_query(node, f"INSERT INTO {TABLE_NAME} VALUES {values}")
 
     # Wipe cache
@@ -108,8 +144,10 @@ def test_read_after_cache_is_wiped(cluster):
 
     # After cache is populated again, only .bin files should be accessed from Blob Storage.
     assert (
-        azure_query(node, f"SELECT * FROM {TABLE_NAME} order by dt, id FORMAT Values")
-        == values
+        azure_query(
+            node, f"SELECT * FROM {TABLE_NAME} order by dt, id FORMAT Values"
+        ).strip()
+        == "('2021-11-13',3,'hello'),('2021-11-14',4,'heyo')"
     )
 
 
@@ -198,7 +236,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
     node.query(f"SYSTEM START MERGES {TABLE_NAME}")
 
     # Wait for merges and old parts deletion
-    for attempt in range(0, 10):
+    for attempt in range(0, 60):
         parts_count = azure_query(
             node,
             f"SELECT COUNT(*) FROM system.parts WHERE table = '{TABLE_NAME}' FORMAT Values",
@@ -206,10 +244,10 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
         if parts_count == "(1)":
             break
 
-        if attempt == 9:
+        if attempt == 59:
             assert parts_count == "(1)"
 
-        time.sleep(1)
+        time.sleep(10)
 
     assert azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     assert (
@@ -456,7 +494,7 @@ def test_move_replace_partition_to_another_table(cluster):
         == "(512)"
     )
 
-    azure_query(node, f"DROP TABLE {table_clone_name} NO DELAY")
+    azure_query(node, f"DROP TABLE {table_clone_name} SYNC")
     assert azure_query(node, f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     assert (
         azure_query(node, f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values")
@@ -465,7 +503,7 @@ def test_move_replace_partition_to_another_table(cluster):
 
     azure_query(node, f"ALTER TABLE {TABLE_NAME} FREEZE")
 
-    azure_query(node, f"DROP TABLE {TABLE_NAME} NO DELAY")
+    azure_query(node, f"DROP TABLE {TABLE_NAME} SYNC")
 
 
 def test_freeze_unfreeze(cluster):
@@ -500,9 +538,7 @@ def test_apply_new_settings(cluster):
     create_table(node, TABLE_NAME)
     config_path = os.path.join(
         SCRIPT_DIR,
-        "./{}/node/configs/config.d/storage_conf.xml".format(
-            cluster.instances_dir_name
-        ),
+        "./_gen/disk_storage_conf.xml".format(cluster.instances_dir_name),
     )
 
     azure_query(

@@ -266,8 +266,9 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 执行时 `INSERT` 查询时，将省略的输入列值替换为相应列的默认值。 此选项仅适用于 [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) 和 [TabSeparated](../../interfaces/formats.md#tabseparated) 格式。
 
-!!! note "注"
-    启用此选项后，扩展表元数据将从服务器发送到客户端。 它会消耗服务器上的额外计算资源，并可能降低性能。
+:::note
+启用此选项后，扩展表元数据将从服务器发送到客户端。 它会消耗服务器上的额外计算资源，并可能降低性能。
+:::
 
 可能的值:
 
@@ -1087,7 +1088,7 @@ ClickHouse生成异常
 -   [表引擎分布式](../../engines/table-engines/special/distributed.md)
 -   [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
-## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
+## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms}
 
 对于基本间隔 [分布](../../engines/table-engines/special/distributed.md) 表引擎发送数据。 在发生错误时，实际间隔呈指数级增长。
 
@@ -1097,9 +1098,9 @@ ClickHouse生成异常
 
 默认值：100毫秒。
 
-## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
+## distributed_background_insert_max_sleep_time_ms {#distributed_background_insert_max_sleep_time_ms}
 
-的最大间隔 [分布](../../engines/table-engines/special/distributed.md) 表引擎发送数据。 限制在设置的区间的指数增长 [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms) 设置。
+的最大间隔 [分布](../../engines/table-engines/special/distributed.md) 表引擎发送数据。 限制在设置的区间的指数增长 [distributed_background_insert_sleep_time_ms](#distributed_background_insert_sleep_time_ms) 设置。
 
 可能的值:
 
@@ -1107,7 +1108,7 @@ ClickHouse生成异常
 
 默认值：30000毫秒（30秒）。
 
-## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
+## distributed_background_insert_batch {#distributed_background_insert_batch}
 
 启用/禁用批量发送插入的数据。
 
@@ -1202,7 +1203,7 @@ ClickHouse生成异常
 -   类型：布尔
 -   默认值：True
 
-启用数据格式的保序并行分析。 仅支持TSV，TKSV，CSV和JSONEachRow格式。
+启用数据格式的保序并行分析。 仅支持TSV，TSKV，CSV和JSONEachRow格式。
 
 ## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 

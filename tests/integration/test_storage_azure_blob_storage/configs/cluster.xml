@@ -1,0 +1,39 @@
+<clickhouse>
+    <remote_servers>
+        <simple_cluster>
+            <shard>
+                <replica>
+                    <host>node_0</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node_1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node_2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </simple_cluster>
+
+        <cluster_non_existent_port>
+            <shard>
+                <replica>
+                    <host>node_0</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node_1</host>
+                    <port>19000</port>
+                </replica>
+            </shard>
+        </cluster_non_existent_port>
+
+    </remote_servers>
+    <macros>
+        <default_cluster_macro>simple_cluster</default_cluster_macro>
+    </macros>
+</clickhouse>

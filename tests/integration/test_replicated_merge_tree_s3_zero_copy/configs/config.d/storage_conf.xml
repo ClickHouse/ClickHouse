@@ -12,6 +12,7 @@
                 <disk>s3</disk>
                 <max_size>100000000</max_size>
                 <path>./cache_s3/</path>
+                <cache_on_write_operations>1</cache_on_write_operations>
             </cache_s3>
         </disks>
         <policies>
@@ -28,6 +29,7 @@
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
         <allow_remote_fs_zero_copy_replication>true</allow_remote_fs_zero_copy_replication>
+        <ratio_of_defaults_for_sparse_serialization>1.0</ratio_of_defaults_for_sparse_serialization>
     </merge_tree>
 
     <remote_servers>
@@ -53,4 +55,6 @@
         <shard>0</shard>
     </macros>
 
+    <database_atomic_delay_before_drop_table_sec>3</database_atomic_delay_before_drop_table_sec>
+    <database_atomic_drop_error_cooldown_sec>0</database_atomic_drop_error_cooldown_sec>
 </clickhouse>

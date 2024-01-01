@@ -1,7 +1,7 @@
 #include "Suggest.h"
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
@@ -22,29 +22,33 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int OK;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DEADLOCK_AVOIDED;
+    extern const int USER_SESSION_LIMIT_EXCEEDED;
 }
 
 Suggest::Suggest()
 {
     /// Keywords may be not up to date with ClickHouse parser.
-    addWords({
-        "CREATE",       "DATABASE", "IF",     "NOT",       "EXISTS",   "TEMPORARY",   "TABLE",    "ON",          "CLUSTER", "DEFAULT",
-        "MATERIALIZED", "ALIAS",    "ENGINE", "AS",        "VIEW",     "POPULATE",    "SETTINGS", "ATTACH",      "DETACH",  "DROP",
-        "RENAME",       "TO",       "ALTER",  "ADD",       "MODIFY",   "CLEAR",       "COLUMN",   "AFTER",       "COPY",    "PROJECT",
-        "PRIMARY",      "KEY",      "CHECK",  "PARTITION", "PART",     "FREEZE",      "FETCH",    "FROM",        "SHOW",    "INTO",
-        "OUTFILE",      "FORMAT",   "TABLES", "DATABASES", "LIKE",     "PROCESSLIST", "CASE",     "WHEN",        "THEN",    "ELSE",
-        "END",          "DESCRIBE", "DESC",   "USE",       "SET",      "OPTIMIZE",    "FINAL",    "DEDUPLICATE", "INSERT",  "VALUES",
-        "SELECT",       "DISTINCT", "SAMPLE", "ARRAY",     "JOIN",     "GLOBAL",      "LOCAL",    "ANY",         "ALL",     "INNER",
-        "LEFT",         "RIGHT",    "FULL",   "OUTER",     "CROSS",    "USING",       "PREWHERE", "WHERE",       "GROUP",   "BY",
-        "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE",  "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
-        "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
-        "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
-        "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
-        "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",
-    });
+    addWords({"CREATE",       "DATABASE",      "IF",           "NOT",        "EXISTS",   "TEMPORARY",   "TABLE",      "ON",
+              "CLUSTER",      "DEFAULT",       "MATERIALIZED", "ALIAS",      "ENGINE",   "AS",          "VIEW",       "POPULATE",
+              "SETTINGS",     "ATTACH",        "DETACH",       "DROP",       "RENAME",   "TO",          "ALTER",      "ADD",
+              "MODIFY",       "CLEAR",         "COLUMN",       "AFTER",      "COPY",     "PROJECT",     "PRIMARY",    "KEY",
+              "CHECK",        "PARTITION",     "PART",         "FREEZE",     "FETCH",    "FROM",        "SHOW",       "INTO",
+              "OUTFILE",      "FORMAT",        "TABLES",       "DATABASES",  "LIKE",     "PROCESSLIST", "CASE",       "WHEN",
+              "THEN",         "ELSE",          "END",          "DESCRIBE",   "DESC",     "USE",         "SET",        "OPTIMIZE",
+              "FINAL",        "DEDUPLICATE",   "INSERT",       "VALUES",     "SELECT",   "DISTINCT",    "SAMPLE",     "ARRAY",
+              "JOIN",         "GLOBAL",        "LOCAL",        "ANY",        "ALL",      "INNER",       "LEFT",       "RIGHT",
+              "FULL",         "OUTER",         "CROSS",        "USING",      "PREWHERE", "WHERE",       "GROUP",      "BY",
+              "WITH",         "TOTALS",        "HAVING",       "ORDER",      "COLLATE",  "LIMIT",       "UNION",      "AND",
+              "OR",           "ASC",           "IN",           "KILL",       "QUERY",    "SYNC",        "ASYNC",      "TEST",
+              "BETWEEN",      "TRUNCATE",      "USER",         "ROLE",       "PROFILE",  "QUOTA",       "POLICY",     "ROW",
+              "GRANT",        "REVOKE",        "OPTION",       "ADMIN",      "EXCEPT",   "REPLACE",     "IDENTIFIED", "HOST",
+              "NAME",         "READONLY",      "WRITABLE",     "PERMISSIVE", "FOR",      "RESTRICTIVE", "RANDOMIZED", "INTERVAL",
+              "LIMITS",       "ONLY",          "TRACKING",     "IP",         "REGEXP",   "ILIKE",       "CLEANUP",    "APPEND",
+              "IGNORE NULLS", "RESPECT NULLS", "OVER",         "PASTE"});
 }
 
 static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)
@@ -73,6 +77,7 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     };
 
     add_column("name", "functions", false, {});
+    add_column("name", "database_engines", false, {});
     add_column("name", "table_engines", false, {});
     add_column("name", "formats", false, {});
     add_column("name", "table_functions", false, {});
@@ -101,6 +106,7 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
         add_column("name", "columns", true, suggestion_limit);
     }
 
+    /// FIXME: This query does not work with the new analyzer because of bug https://github.com/ClickHouse/ClickHouse/issues/50669
     query = "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res)";
     return query;
 }
@@ -108,30 +114,36 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
 template <typename ConnectionType>
 void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit)
 {
-    loading_thread = std::thread([context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
+    loading_thread = std::thread([my_context = Context::createCopy(context), connection_parameters, suggestion_limit, this]
     {
         ThreadStatus thread_status;
         for (size_t retry = 0; retry < 10; ++retry)
         {
             try
             {
-                auto connection = ConnectionType::createConnection(connection_parameters, context);
+                auto connection = ConnectionType::createConnection(connection_parameters, my_context);
                 fetch(*connection, connection_parameters.timeouts, getLoadSuggestionQuery(suggestion_limit, std::is_same_v<ConnectionType, LocalConnection>));
             }
             catch (const Exception & e)
             {
+                last_error = e.code();
                 if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
                     continue;
-
-                /// We should not use std::cerr here, because this method works concurrently with the main thread.
-                /// WriteBufferFromFileDescriptor will write directly to the file descriptor, avoiding data race on std::cerr.
-
-                WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
-                out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-                out.next();
+                else if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
+                {
+                    /// We should not use std::cerr here, because this method works concurrently with the main thread.
+                    /// WriteBufferFromFileDescriptor will write directly to the file descriptor, avoiding data race on std::cerr.
+                    ///
+                    /// USER_SESSION_LIMIT_EXCEEDED is ignored here. The client will try to receive
+                    /// suggestions using the main connection later.
+                    WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
+                    out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+                    out.next();
+                }
             }
             catch (...)
             {
+                last_error = getCurrentExceptionCode();
                 WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                 out << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
                 out.next();
@@ -142,6 +154,21 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 
         /// Note that keyword suggestions are available even if we cannot load data from server.
     });
+}
+
+void Suggest::load(IServerConnection & connection,
+                   const ConnectionTimeouts & timeouts,
+                   Int32 suggestion_limit)
+{
+    try
+    {
+        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true));
+    }
+    catch (...)
+    {
+        std::cerr << "Suggestions loading exception: " << getCurrentExceptionMessage(false, true) << std::endl;
+        last_error = getCurrentExceptionCode();
+    }
 }
 
 void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
@@ -158,6 +185,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 fillWordsFromBlock(packet.block);
                 continue;
 
+            case Protocol::Server::TimezoneUpdate:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
             case Protocol::Server::Totals:
@@ -171,6 +199,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 return;
 
             case Protocol::Server::EndOfStream:
+                last_error = ErrorCodes::OK;
                 return;
 
             default:

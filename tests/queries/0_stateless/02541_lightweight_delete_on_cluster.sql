@@ -10,8 +10,6 @@ INSERT INTO t1_local VALUES('partition2', 1,2);
 INSERT INTO t1_local VALUES('partition1', 2,3);
 INSERT INTO t1_local VALUES('partition2', 2,4);
 
-SET allow_experimental_lightweight_delete=1;
-
 -- { echoOn }
 
 SELECT * FROM t1_local ORDER BY tc1, tc2;

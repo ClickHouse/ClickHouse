@@ -1,4 +1,5 @@
 SET allow_experimental_analyzer = 1;
+SET single_join_prefer_left_table = 0;
 
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
@@ -254,7 +255,7 @@ DESCRIBE (WITH x -> x + 1 AS test_lambda SELECT test_lambda(1));
 
 SELECT '--';
 
-DESCRIBE (WITH x -> * AS test_lambda SELECT test_lambda(1) AS value, value FROM test_table);
+DESCRIBE (WITH x -> * AS test_lambda SELECT test_lambda(1) AS lambda_value, lambda_value FROM test_table);
 
 SELECT 'Subquery';
 
@@ -531,6 +532,9 @@ SELECT '--';
 
 DESCRIBE (SELECT id, value, t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id, value) INNER JOIN test_table_join_3 AS t3 USING (id, value));
+
+SELECT 'Special functions array, tuple';
+DESCRIBE (SELECT [], array(), [1], array(1), [1, 2], array(1, 2), tuple(1), (1, 2), [[], []], [([], [])], ([], []), ([([], []), ([], [])]));
 
 -- { echoOff }
 

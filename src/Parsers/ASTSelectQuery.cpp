@@ -1,3 +1,4 @@
+#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -41,14 +42,14 @@ ASTPtr ASTSelectQuery::clone() const
 }
 
 
-void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state) const
+void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(distinct);
     hash_state.update(group_by_with_totals);
     hash_state.update(group_by_with_rollup);
     hash_state.update(group_by_with_cube);
     hash_state.update(limit_with_ties);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 
@@ -113,10 +114,8 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (group_by_with_cube)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
 
-    if (group_by_with_grouping_sets)
+    if (group_by_with_grouping_sets && groupBy())
     {
-        if (!groupBy()) /// sanity check, issue 43049
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupt AST");
         auto nested_frame = frame;
         nested_frame.surround_each_list_element_with_parens = true;
         nested_frame.expression_list_prepend_whitespace = false;
@@ -145,7 +144,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         window()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
-    if (orderBy())
+    if (!order_by_all && orderBy())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY" << (s.hilite ? hilite_none : "");
         s.one_line
@@ -161,6 +160,24 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
                 interpolate()->formatImpl(s, state, frame);
                 s.ostr << " )";
             }
+        }
+    }
+
+    if (order_by_all)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY ALL" << (s.hilite ? hilite_none : "");
+
+        auto * elem = orderBy()->children[0]->as<ASTOrderByElement>();
+        s.ostr << (s.hilite ? hilite_keyword : "")
+               << (elem->direction == -1 ? " DESC" : " ASC")
+               << (s.hilite ? hilite_none : "");
+
+        if (elem->nulls_direction_was_explicitly_specified)
+        {
+            s.ostr << (s.hilite ? hilite_keyword : "")
+                   << " NULLS "
+                   << (elem->nulls_direction == elem->direction ? "LAST" : "FIRST")
+                   << (s.hilite ? hilite_none : "");
         }
     }
 

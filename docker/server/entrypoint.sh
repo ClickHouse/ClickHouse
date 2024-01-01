@@ -104,66 +104,76 @@ if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CL
 EOT
 fi
 
-if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
-    # port is needed to check if clickhouse-server is ready for connections
-    HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port --try)"
-    HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port --try)"
+# checking $DATA_DIR for initialization
+if [ -d "${DATA_DIR%/}/data" ]; then
+    DATABASE_ALREADY_EXISTS='true'
+fi
 
-    if [ -n "$HTTP_PORT" ]; then
-        URL="http://127.0.0.1:$HTTP_PORT/ping"
-    else
-        URL="https://127.0.0.1:$HTTPS_PORT/ping"
-    fi
+# only run initialization on an empty data directory
+if [ -z "${DATABASE_ALREADY_EXISTS}" ]; then
+    if [ -n "$(ls /docker-entrypoint-initdb.d/)" ] || [ -n "$CLICKHOUSE_DB" ]; then
+        # port is needed to check if clickhouse-server is ready for connections
+        HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port --try)"
+        HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port --try)"
 
-    # Listen only on localhost until the initialization is done
-    /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
-    pid="$!"
+        if [ -n "$HTTP_PORT" ]; then
+            URL="http://127.0.0.1:$HTTP_PORT/ping"
+        else
+            URL="https://127.0.0.1:$HTTPS_PORT/ping"
+        fi
 
-    # check if clickhouse is ready to accept connections
-    # will try to send ping clickhouse via http_port (max 1000 retries by default, with 1 sec timeout and 1 sec delay between retries)
-    tries=${CLICKHOUSE_INIT_TIMEOUT:-1000}
-    while ! wget --spider --no-check-certificate -T 1 -q "$URL" 2>/dev/null; do
-        if [ "$tries" -le "0" ]; then
-            echo >&2 'ClickHouse init process failed.'
+        # Listen only on localhost until the initialization is done
+        /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" -- --listen_host=127.0.0.1 &
+        pid="$!"
+
+        # check if clickhouse is ready to accept connections
+        # will try to send ping clickhouse via http_port (max 1000 retries by default, with 1 sec timeout and 1 sec delay between retries)
+        tries=${CLICKHOUSE_INIT_TIMEOUT:-1000}
+        while ! wget --spider --no-check-certificate -T 1 -q "$URL" 2>/dev/null; do
+            if [ "$tries" -le "0" ]; then
+                echo >&2 'ClickHouse init process failed.'
+                exit 1
+            fi
+            tries=$(( tries-1 ))
+            sleep 1
+        done
+
+        clickhouseclient=( clickhouse-client --multiquery --host "127.0.0.1" -u "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" )
+
+        echo
+
+        # create default database, if defined
+        if [ -n "$CLICKHOUSE_DB" ]; then
+            echo "$0: create database '$CLICKHOUSE_DB'"
+            "${clickhouseclient[@]}" -q "CREATE DATABASE IF NOT EXISTS $CLICKHOUSE_DB";
+        fi
+
+        for f in /docker-entrypoint-initdb.d/*; do
+            case "$f" in
+                *.sh)
+                    if [ -x "$f" ]; then
+                        echo "$0: running $f"
+                        "$f"
+                    else
+                        echo "$0: sourcing $f"
+                        # shellcheck source=/dev/null
+                        . "$f"
+                    fi
+                    ;;
+                *.sql)    echo "$0: running $f"; "${clickhouseclient[@]}" < "$f" ; echo ;;
+                *.sql.gz) echo "$0: running $f"; gunzip -c "$f" | "${clickhouseclient[@]}"; echo ;;
+                *)        echo "$0: ignoring $f" ;;
+            esac
+            echo
+        done
+
+        if ! kill -s TERM "$pid" || ! wait "$pid"; then
+            echo >&2 'Finishing of ClickHouse init process failed.'
             exit 1
         fi
-        tries=$(( tries-1 ))
-        sleep 1
-    done
-
-    clickhouseclient=( clickhouse-client --multiquery --host "127.0.0.1" -u "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" )
-
-    echo
-
-    # create default database, if defined
-    if [ -n "$CLICKHOUSE_DB" ]; then
-        echo "$0: create database '$CLICKHOUSE_DB'"
-        "${clickhouseclient[@]}" -q "CREATE DATABASE IF NOT EXISTS $CLICKHOUSE_DB";
     fi
-
-    for f in /docker-entrypoint-initdb.d/*; do
-        case "$f" in
-            *.sh)
-                if [ -x "$f" ]; then
-                    echo "$0: running $f"
-                    "$f"
-                else
-                    echo "$0: sourcing $f"
-                    # shellcheck source=/dev/null
-                    . "$f"
-                fi
-                ;;
-            *.sql)    echo "$0: running $f"; "${clickhouseclient[@]}" < "$f" ; echo ;;
-            *.sql.gz) echo "$0: running $f"; gunzip -c "$f" | "${clickhouseclient[@]}"; echo ;;
-            *)        echo "$0: ignoring $f" ;;
-        esac
-        echo
-    done
-
-    if ! kill -s TERM "$pid" || ! wait "$pid"; then
-        echo >&2 'Finishing of ClickHouse init process failed.'
-        exit 1
-    fi
+else
+    echo "ClickHouse Database directory appears to contain a database; Skipping initialization"
 fi
 
 # if no args passed to `docker run` or first argument start with `--`, then the user is passing clickhouse-server arguments
@@ -172,7 +182,19 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
     # so the container can't be finished by ctrl+c
     CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
     export CLICKHOUSE_WATCHDOG_ENABLE
-    exec /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
+
+    # An option for easy restarting and replacing clickhouse-server in a container, especially in Kubernetes.
+    # For example, you can replace the clickhouse-server binary to another and restart it while keeping the container running.
+    if [[ "${CLICKHOUSE_DOCKER_RESTART_ON_EXIT:-0}" -eq "1" ]]; then
+        while true; do
+            # This runs the server as a child process of the shell script:
+            /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@" ||:
+            echo >&2 'ClickHouse Server exited, and the environment variable CLICKHOUSE_DOCKER_RESTART_ON_EXIT is set to 1. Restarting the server.'
+        done
+    else
+        # This replaces the shell script with the server:
+        exec /usr/bin/clickhouse su "${USER}:${GROUP}" /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
+    fi
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image

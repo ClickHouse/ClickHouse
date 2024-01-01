@@ -21,9 +21,10 @@ public:
     using ConsumerPtr = std::shared_ptr<MaterializedPostgreSQLConsumer>;
 
     PostgreSQLReplicationHandler(
-            const String & replication_identifier,
             const String & postgres_database_,
-            const String & current_database_name_,
+            const String & postgres_table_,
+            const String & clickhouse_database_,
+            const String & clickhouse_uuid_,
             const postgres::ConnectionInfo & connection_info_,
             ContextPtr context_,
             bool is_attach_,
@@ -93,8 +94,6 @@ private:
 
     StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
 
-    void reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
-
     PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const String & table_name) const;
 
     String doubleQuoteWithSchema(const String & table_name) const;
@@ -118,10 +117,6 @@ private:
     /// max_block_size for replication stream.
     const size_t max_block_size;
 
-    /// Table structure changes are always tracked. By default, table with changed schema will get into a skip list.
-    /// This setting allows to reloas table in the background.
-    bool allow_automatic_update = false;
-
     /// To distinguish whether current replication handler belongs to a MaterializedPostgreSQL database engine or single storage.
     bool is_materialized_postgresql_database;
 
@@ -134,10 +129,11 @@ private:
     /// This is possible to allow replicating tables from multiple schemas in the same MaterializedPostgreSQL database engine.
     mutable bool schema_as_a_part_of_table_name = false;
 
-    bool user_managed_slot = true;
-    String user_provided_snapshot;
-
-    String replication_slot, publication_name;
+    const bool user_managed_slot;
+    const String user_provided_snapshot;
+    const String replication_slot;
+    const String tmp_replication_slot;
+    const String publication_name;
 
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     ConsumerPtr consumer;
@@ -146,12 +142,15 @@ private:
     BackgroundSchedulePool::TaskHolder consumer_task;
     BackgroundSchedulePool::TaskHolder cleanup_task;
 
+    const UInt64 reschedule_backoff_min_ms;
+    const UInt64 reschedule_backoff_max_ms;
+    const UInt64 reschedule_backoff_factor;
+    UInt64 milliseconds_to_wait;
+
     std::atomic<bool> stop_synchronization = false;
 
     /// MaterializedPostgreSQL tables. Used for managing all operations with its internal nested tables.
     MaterializedStorages materialized_storages;
-
-    UInt64 milliseconds_to_wait;
 
     bool replication_handler_initialized = false;
 };

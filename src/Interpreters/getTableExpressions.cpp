@@ -73,18 +73,21 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
     return nullptr;
 }
 
+/// The parameter is_create_parameterized_view is used in getSampleBlock of the subquery.
+/// If it is set to true, then query parameters are allowed in the subquery, and that expression is not evaluated.
 static NamesAndTypesList getColumnsFromTableExpression(
     const ASTTableExpression & table_expression,
     ContextPtr context,
     NamesAndTypesList & materialized,
     NamesAndTypesList & aliases,
-    NamesAndTypesList & virtuals)
+    NamesAndTypesList & virtuals,
+    bool is_create_parameterized_view)
 {
     NamesAndTypesList names_and_type_list;
     if (table_expression.subquery)
     {
         const auto & subquery = table_expression.subquery->children.at(0);
-        names_and_type_list = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context, true).getNamesAndTypesList();
+        names_and_type_list = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context, true, is_create_parameterized_view).getNamesAndTypesList();
     }
     else if (table_expression.table_function)
     {
@@ -117,7 +120,8 @@ TablesWithColumns getDatabaseAndTablesWithColumns(
         const ASTTableExprConstPtrs & table_expressions,
         ContextPtr context,
         bool include_alias_cols,
-        bool include_materialized_cols)
+        bool include_materialized_cols,
+        bool is_create_parameterized_view)
 {
     TablesWithColumns tables_with_columns;
 
@@ -129,7 +133,7 @@ TablesWithColumns getDatabaseAndTablesWithColumns(
         NamesAndTypesList aliases;
         NamesAndTypesList virtuals;
         NamesAndTypesList names_and_types = getColumnsFromTableExpression(
-            *table_expression, context, materialized, aliases, virtuals);
+            *table_expression, context, materialized, aliases, virtuals, is_create_parameterized_view);
 
         removeDuplicateColumns(names_and_types);
 

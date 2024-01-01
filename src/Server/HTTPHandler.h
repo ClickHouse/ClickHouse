@@ -7,7 +7,14 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace CurrentMetrics
 {
@@ -36,7 +43,7 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */) {}
+    virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}
 
     virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
 
@@ -61,6 +68,8 @@ private:
         std::shared_ptr<WriteBuffer> out_maybe_delayed_and_compressed;
 
         bool finalized = false;
+
+        bool exception_is_written = false;
 
         inline bool hasDelayed() const
         {
@@ -163,7 +172,7 @@ public:
         , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_
         , const std::optional<std::string> & content_type_override_);
 
-    virtual void customizeContext(HTTPServerRequest & request, ContextMutablePtr context) override;
+    void customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body) override;
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 

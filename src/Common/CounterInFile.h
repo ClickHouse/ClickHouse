@@ -4,7 +4,6 @@
 #include <sys/file.h>
 
 #include <string>
-#include <iostream>
 #include <mutex>
 #include <filesystem>
 
@@ -70,13 +69,13 @@ public:
 
         int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);
         if (-1 == fd)
-            DB::throwFromErrnoWithPath("Cannot open file " + path, path, DB::ErrorCodes::CANNOT_OPEN_FILE);
+            DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
 
         try
         {
             int flock_ret = flock(fd, LOCK_EX);
             if (-1 == flock_ret)
-                DB::throwFromErrnoWithPath("Cannot lock file " + path, path, DB::ErrorCodes::CANNOT_OPEN_FILE);
+                DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot lock file {}", path);
 
             if (!file_doesnt_exists)
             {
@@ -146,7 +145,7 @@ public:
 
         int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);
         if (-1 == fd)
-            DB::throwFromErrnoWithPath("Cannot open file " + path, path, DB::ErrorCodes::CANNOT_OPEN_FILE);
+            DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
 
         try
         {

@@ -92,14 +92,14 @@ QUERY id: 0
               LIST id: 37, nodes: 2
                 CONSTANT id: 38, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
                   EXPRESSION
-                    FUNCTION id: 39, function_name: log, function_type: ordinary, result_type: Float64
+                    FUNCTION id: 5, function_name: log, function_type: ordinary, result_type: Float64
                       ARGUMENTS
-                        LIST id: 40, nodes: 1
-                          CONSTANT id: 41, constant_value: UInt64_2, constant_value_type: UInt8
-                FUNCTION id: 42, function_name: avg, function_type: aggregate, result_type: Float64
+                        LIST id: 6, nodes: 1
+                          CONSTANT id: 7, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 39, function_name: avg, function_type: aggregate, result_type: Float64
                   ARGUMENTS
-                    LIST id: 43, nodes: 1
-                      COLUMN id: 44, column_name: number, result_type: UInt64, source_id: 11
+                    LIST id: 40, nodes: 1
+                      COLUMN id: 41, column_name: number, result_type: UInt64, source_id: 11
 SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 WHERE ((number % 5) * (number % 5)) < 5
@@ -162,14 +162,14 @@ QUERY id: 0
               LIST id: 33, nodes: 2
                 CONSTANT id: 34, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
                   EXPRESSION
-                    FUNCTION id: 35, function_name: log, function_type: ordinary, result_type: Float64
+                    FUNCTION id: 5, function_name: log, function_type: ordinary, result_type: Float64
                       ARGUMENTS
-                        LIST id: 36, nodes: 1
-                          CONSTANT id: 37, constant_value: UInt64_2, constant_value_type: UInt8
-                FUNCTION id: 38, function_name: avg, function_type: aggregate, result_type: Float64
+                        LIST id: 6, nodes: 1
+                          CONSTANT id: 7, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 35, function_name: avg, function_type: aggregate, result_type: Float64
                   ARGUMENTS
-                    LIST id: 39, nodes: 1
-                      COLUMN id: 40, column_name: number, result_type: UInt64, source_id: 11
+                    LIST id: 36, nodes: 1
+                      COLUMN id: 37, column_name: number, result_type: UInt64, source_id: 11
 SELECT (number % 5) * (number % 5) AS k
 FROM numbers(10000000)
 WHERE ((number % 5) * (number % 5)) < 5
@@ -332,14 +332,14 @@ QUERY id: 0
               LIST id: 45, nodes: 2
                 CONSTANT id: 46, constant_value: Float64_0.6931471805599453, constant_value_type: Float64
                   EXPRESSION
-                    FUNCTION id: 47, function_name: log, function_type: ordinary, result_type: Float64
+                    FUNCTION id: 5, function_name: log, function_type: ordinary, result_type: Float64
                       ARGUMENTS
-                        LIST id: 48, nodes: 1
-                          CONSTANT id: 49, constant_value: UInt64_2, constant_value_type: UInt8
-                FUNCTION id: 50, function_name: avg, function_type: aggregate, result_type: Float64
+                        LIST id: 6, nodes: 1
+                          CONSTANT id: 7, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 47, function_name: avg, function_type: aggregate, result_type: Float64
                   ARGUMENTS
-                    LIST id: 51, nodes: 1
-                      COLUMN id: 52, column_name: number, result_type: UInt64, source_id: 11
+                    LIST id: 48, nodes: 1
+                      COLUMN id: 49, column_name: number, result_type: UInt64, source_id: 11
 SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 WHERE ((number % 5) * (number % 5)) < 5

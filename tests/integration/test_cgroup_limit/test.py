@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import logging
 import os
 import math
 import subprocess
@@ -16,18 +17,19 @@ def run_command_in_container(cmd, *args):
             f"{alternative_binary}:/usr/bin/clickhouse",
         )
 
-    return subprocess.check_output(
-        [
-            "docker",
-            "run",
-            "--rm",
-            *args,
-            "ubuntu:20.04",
-            "sh",
-            "-c",
-            cmd,
-        ]
-    )
+    command = [
+        "docker",
+        "run",
+        "--rm",
+        *args,
+        "ubuntu:22.04",
+        "sh",
+        "-c",
+        cmd,
+    ]
+
+    logging.debug("Command: %s", " ".join(command))
+    return subprocess.check_output(command)
 
 
 def run_with_cpu_limit(cmd, num_cpus, *args):

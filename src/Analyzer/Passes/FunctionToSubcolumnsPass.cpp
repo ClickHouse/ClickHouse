@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 
 #include <Storages/IStorage.h>
@@ -28,7 +29,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node) const
+    void enterImpl(QueryTreeNodePtr & node) const
     {
         if (!getSettings().optimize_functions_to_subcolumns)
             return;
@@ -181,7 +182,7 @@ public:
 
                 /// Replace `mapContains(map_argument, argument)` with `has(map_argument.keys, argument)`
                 column.name += ".keys";
-                column.type = data_type_map.getKeyType();
+                column.type = std::make_shared<DataTypeArray>(data_type_map.getKeyType());
 
                 auto has_function_argument = std::make_shared<ColumnNode>(column, column_source);
                 function_arguments_nodes[0] = std::move(has_function_argument);

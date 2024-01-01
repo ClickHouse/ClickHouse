@@ -25,10 +25,10 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/formatAST.h>
 
 #include <Interpreters/applyTableOverride.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 
 #include <Storages/StorageFactory.h>
@@ -46,9 +46,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
-
-static const auto NESTED_TABLE_SUFFIX = "_nested";
-static const auto TMP_SUFFIX = "_tmp";
 
 
 /// For the case of single storage.
@@ -76,13 +73,13 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 
     setInMemoryMetadata(storage_metadata);
 
-    String replication_identifier = remote_database_name + "_" + remote_table_name_;
     replication_settings->materialized_postgresql_tables_list = remote_table_name_;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
-            replication_identifier,
             remote_database_name,
+            remote_table_name_,
             table_id_.database_name,
+            toString(table_id_.uuid),
             connection_info,
             getContext(),
             is_attach,
@@ -145,7 +142,7 @@ StoragePtr StorageMaterializedPostgreSQL::createTemporary() const
     if (tmp_storage)
     {
         LOG_TRACE(&Poco::Logger::get("MaterializedPostgreSQLStorage"), "Temporary table {} already exists, dropping", tmp_table_id.getNameForLogs());
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), getContext(), tmp_table_id, /* no delay */true);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), getContext(), tmp_table_id, /* sync */true);
     }
 
     auto new_context = Context::createCopy(context);
@@ -197,7 +194,8 @@ void StorageMaterializedPostgreSQL::createNestedIfNeeded(PostgreSQLTableStructur
         const auto ast_create = getCreateNestedTableQuery(std::move(table_structure), table_override);
         auto table_id = getStorageID();
         auto tmp_nested_table_id = StorageID(table_id.database_name, getNestedTableName());
-        LOG_DEBUG(log, "Creating clickhouse table for postgresql table {}", table_id.getNameForLogs());
+        LOG_DEBUG(log, "Creating clickhouse table for postgresql table {} (ast: {})",
+                  table_id.getNameForLogs(), ast_create->formatForLogging());
 
         InterpreterCreateQuery interpreter(ast_create, nested_context);
         interpreter.execute();
@@ -230,7 +228,7 @@ void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 }
 
 
-void StorageMaterializedPostgreSQL::shutdown()
+void StorageMaterializedPostgreSQL::shutdown(bool)
 {
     if (replication_handler)
         replication_handler->shutdown();
@@ -252,7 +250,7 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
 
     auto nested_table = tryGetNested() != nullptr;
     if (nested_table)
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), sync);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), sync, /* ignore_sync_setting */ true);
 }
 
 
@@ -361,7 +359,8 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
 }
 
 
-std::shared_ptr<ASTExpressionList> StorageMaterializedPostgreSQL::getColumnsExpressionList(const NamesAndTypesList & columns) const
+std::shared_ptr<ASTExpressionList>
+StorageMaterializedPostgreSQL::getColumnsExpressionList(const NamesAndTypesList & columns, std::unordered_map<std::string, ASTPtr> defaults) const
 {
     auto columns_expression_list = std::make_shared<ASTExpressionList>();
     for (const auto & [name, type] : columns)
@@ -370,6 +369,12 @@ std::shared_ptr<ASTExpressionList> StorageMaterializedPostgreSQL::getColumnsExpr
 
         column_declaration->name = name;
         column_declaration->type = getColumnDeclaration(type);
+
+        if (auto it = defaults.find(name); it != defaults.end())
+        {
+            column_declaration->default_expression = it->second;
+            column_declaration->default_specifier = "DEFAULT";
+        }
 
         columns_expression_list->children.emplace_back(column_declaration);
     }
@@ -462,8 +467,28 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
         }
         else
         {
-            ordinary_columns_and_types = table_structure->physical_columns->columns;
-            columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types));
+            const auto columns = table_structure->physical_columns;
+            std::unordered_map<std::string, ASTPtr> defaults;
+            for (const auto & col : columns->columns)
+            {
+                const auto & attr = columns->attributes.at(col.name);
+                if (!attr.attr_def.empty())
+                {
+                    ParserExpression expr_parser;
+                    Expected expected;
+                    ASTPtr result;
+
+                    Tokens tokens(attr.attr_def.data(), attr.attr_def.data() + attr.attr_def.size());
+                    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                    if (!expr_parser.parse(pos, result, expected))
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse default expression: {}", attr.attr_def);
+                    }
+                    defaults.emplace(col.name, result);
+                }
+            }
+            ordinary_columns_and_types = columns->columns;
+            columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types, defaults));
         }
 
         if (ordinary_columns_and_types.empty())
@@ -547,6 +572,10 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
         metadata.setConstraints(args.constraints);
+
+        if (!args.attach && !args.getLocalContext()->getSettingsRef().allow_experimental_materialized_postgresql_table)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
+                                " You can enable it with the `allow_experimental_materialized_postgresql_table` setting");
 
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());

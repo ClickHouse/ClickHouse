@@ -1,4 +1,6 @@
 #include <Common/ZooKeeper/ZooKeeperLock.h>
+#include <Common/logger_useful.h>
+#include <Common/ErrorCodes.h>
 #include <filesystem>
 
 namespace DB
@@ -39,6 +41,16 @@ ZooKeeperLock::~ZooKeeperLock()
     {
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+bool ZooKeeperLock::isLocked() const
+{
+    return locked;
+}
+
+const std::string & ZooKeeperLock::getLockPath() const
+{
+    return lock_path;
 }
 
 void ZooKeeperLock::unlock()

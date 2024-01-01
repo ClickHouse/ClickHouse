@@ -1,4 +1,5 @@
 #include <Databases/DatabaseDictionary.h>
+#include <Databases/DatabaseFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Dictionaries/DictionaryStructure.h>
@@ -105,7 +106,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
 
         auto names_and_types = StorageDictionary::getNamesAndTypes(ExternalDictionariesLoader::getDictionaryStructure(*load_result.config));
         buffer << "CREATE TABLE " << backQuoteIfNeed(getDatabaseName()) << '.' << backQuoteIfNeed(table_name) << " (";
-        buffer << StorageDictionary::generateNamesAndTypesDescription(names_and_types);
+        buffer << names_and_types.toNamesAndTypesDescription();
         buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";
     }
 
@@ -140,4 +141,14 @@ void DatabaseDictionary::shutdown()
 {
 }
 
+void registerDatabaseDictionary(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        return make_shared<DatabaseDictionary>(
+            args.database_name,
+            args.context);
+    };
+    factory.registerDatabase("Dictionary", create_fn);
+}
 }

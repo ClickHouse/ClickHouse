@@ -18,34 +18,35 @@
 #define Foundation_Notification_INCLUDED
 
 
+#include "Poco/AutoPtr.h"
 #include "Poco/Foundation.h"
 #include "Poco/Mutex.h"
 #include "Poco/RefCountedObject.h"
-#include "Poco/AutoPtr.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
-class Foundation_API Notification: public RefCountedObject
-	/// The base class for all notification classes used
-	/// with the NotificationCenter and the NotificationQueue
-	/// classes.
-	/// The Notification class can be used with the AutoPtr
-	/// template class.
+class Foundation_API Notification : public RefCountedObject
+/// The base class for all notification classes used
+/// with the NotificationCenter and the NotificationQueue
+/// classes.
+/// The Notification class can be used with the AutoPtr
+/// template class.
 {
 public:
-	typedef AutoPtr<Notification> Ptr;
-	
-	Notification();
-		/// Creates the notification.
+    typedef AutoPtr<Notification> Ptr;
 
-	virtual std::string name() const;
-		/// Returns the name of the notification.
-		/// The default implementation returns the class name.
+    Notification();
+    /// Creates the notification.
+
+    virtual std::string name() const;
+    /// Returns the name of the notification.
+    /// The default implementation returns the class name.
 
 protected:
-	virtual ~Notification();
+    virtual ~Notification();
 };
 
 

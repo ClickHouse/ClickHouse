@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/SettingsChanges.h>
+
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
@@ -96,13 +98,18 @@ public:
     }
 
     /// Resolve table function with table function, storage and context
-    void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context);
+    void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, std::vector<size_t> unresolved_arguments_indexes_);
 
     /// Get storage id, throws exception if function node is not resolved
     const StorageID & getStorageID() const;
 
     /// Get storage snapshot, throws exception if function node is not resolved
     const StorageSnapshotPtr & getStorageSnapshot() const;
+
+    const std::vector<size_t> & getUnresolvedArgumentIndexes() const
+    {
+        return unresolved_arguments_indexes;
+    }
 
     /// Return true if table function node has table expression modifiers, false otherwise
     bool hasTableExpressionModifiers() const
@@ -114,6 +121,24 @@ public:
     const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
     {
         return table_expression_modifiers;
+    }
+
+    /// Get table expression modifiers
+    std::optional<TableExpressionModifiers> & getTableExpressionModifiers()
+    {
+        return table_expression_modifiers;
+    }
+
+    /// Get settings changes passed to table function
+    const SettingsChanges & getSettingsChanges() const
+    {
+        return settings_changes;
+    }
+
+    /// Set settings changes passed as last argument to table function
+    void setSettingsChanges(SettingsChanges settings_changes_)
+    {
+        settings_changes = std::move(settings_changes_);
     }
 
     /// Set table expression modifiers
@@ -136,7 +161,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     String table_function_name;
@@ -144,7 +169,9 @@ private:
     StoragePtr storage;
     StorageID storage_id;
     StorageSnapshotPtr storage_snapshot;
+    std::vector<size_t> unresolved_arguments_indexes;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
+    SettingsChanges settings_changes;
 
     static constexpr size_t arguments_child_index = 0;
     static constexpr size_t children_size = arguments_child_index + 1;

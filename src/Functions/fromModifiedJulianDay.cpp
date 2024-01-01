@@ -13,12 +13,12 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 
+
 namespace DB
 {
 
     namespace ErrorCodes
     {
-        extern const int CANNOT_FORMAT_DATETIME;
         extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     }
 
@@ -56,25 +56,14 @@ namespace DB
             {
                 if constexpr (nullOnErrors)
                 {
-                    try
-                    {
-                        const GregorianDate<> gd(vec_from[i]);
-                        gd.write(write_buffer);
-                        (*vec_null_map_to)[i] = false;
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::CANNOT_FORMAT_DATETIME)
-                            (*vec_null_map_to)[i] = true;
-                        else
-                            throw;
-                    }
+                    GregorianDate gd;
+                    (*vec_null_map_to)[i] = !(gd.tryInit(vec_from[i]) && gd.tryWrite(write_buffer));
                     writeChar(0, write_buffer);
                     offsets_to[i] = write_buffer.count();
                 }
                 else
                 {
-                    const GregorianDate<> gd(vec_from[i]);
+                    GregorianDate gd(vec_from[i]);
                     gd.write(write_buffer);
                     writeChar(0, write_buffer);
                     offsets_to[i] = write_buffer.count();
@@ -165,8 +154,8 @@ namespace DB
 
         FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
         {
-            const DataTypePtr & from_type = removeNullable(arguments[0].type);
-            DataTypes argument_types = { from_type };
+            DataTypes argument_types = { arguments[0].type };
+            const DataTypePtr & from_type_not_null = removeNullable(arguments[0].type);
 
             FunctionBasePtr base;
             auto call = [&](const auto & types) -> bool
@@ -178,7 +167,7 @@ namespace DB
                 base = std::make_unique<FunctionBaseFromModifiedJulianDay<Name, FromDataType, nullOnErrors>>(argument_types, return_type);
                 return true;
             };
-            bool built = callOnBasicType<void, true, false, false, false>(from_type->getTypeId(), call);
+            bool built = callOnBasicType<void, true, false, false, false>(from_type_not_null->getTypeId(), call);
             if (built)
                 return base;
 
@@ -188,7 +177,7 @@ namespace DB
                 * here causes a SEGV. So we must somehow create a
                 * dummy implementation and return it.
                 */
-            if (WhichDataType(from_type).isNothing()) // Nullable(Nothing)
+            if (WhichDataType(from_type_not_null).isNothing()) // Nullable(Nothing)
                 return std::make_unique<FunctionBaseFromModifiedJulianDay<Name, DataTypeInt32, nullOnErrors>>(argument_types, return_type);
             else
                 // Should not happen.

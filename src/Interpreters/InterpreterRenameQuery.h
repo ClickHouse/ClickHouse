@@ -10,7 +10,7 @@ namespace DB
 class AccessRightsElements;
 class DDLGuard;
 
-/// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMES.
+/// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMEs.
 struct UniqueTableName
 {
     String database_name;
@@ -28,10 +28,10 @@ struct UniqueTableName
 struct RenameDescription
 {
     RenameDescription(const ASTRenameQuery::Element & elem, const String & current_database) :
-            from_database_name(elem.from.database.empty() ? current_database : elem.from.database),
-            from_table_name(elem.from.table),
-            to_database_name(elem.to.database.empty() ? current_database : elem.to.database),
-            to_table_name(elem.to.table),
+            from_database_name(!elem.from.database ? current_database : elem.from.getDatabase()),
+            from_table_name(elem.from.getTable()),
+            to_database_name(!elem.to.database ? current_database : elem.to.getDatabase()),
+            to_table_name(elem.to.getTable()),
             if_exists(elem.if_exists)
     {}
 

@@ -30,7 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -145,6 +145,10 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
+                /// `tables.next()` call is mandatory to drain the iterator before next operation and avoid "Invalid cursor state"
+                if (tables.next())
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Driver returned more than one table for '{}': '{}' and '{}'",
+                                    table_name, catalog_name, tables.table_schema());
                 LOG_TRACE(log, "Will fetch info for table '{}.{}'", catalog_name, table_name);
                 return catalog.find_columns(/* column = */ "", table_name, /* schema = */ "", catalog_name);
             }
@@ -153,6 +157,10 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
+                /// `tables.next()` call is mandatory to drain the iterator before next operation and avoid "Invalid cursor state"
+                if (tables.next())
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Driver returned more than one table for '{}': '{}' and '{}'",
+                                    table_name, catalog_name, tables.table_schema());
                 LOG_TRACE(log, "Will fetch info for table '{}.{}.{}'", catalog_name, schema_name, table_name);
                 return catalog.find_columns(/* column = */ "", table_name, schema_name, catalog_name);
             }
@@ -180,8 +188,19 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             columns.emplace_back(column_name, std::move(column_type));
         }
 
+        /// Usually this should not happen, since in case of table does not
+        /// exists, the call should be succeeded.
+        /// However it is possible sometimes because internally there are two
+        /// queries in ClickHouse ODBC bridge:
+        /// - system.tables
+        /// - system.columns
+        /// And if between this two queries the table will be removed, them
+        /// there will be no columns
+        ///
+        /// Also sometimes system.columns can return empty result because of
+        /// the cached value of total tables to scan.
         if (columns.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns definition was not returned");
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Columns definition was not returned");
 
         WriteBufferFromHTTPServerResponse out(
             response,

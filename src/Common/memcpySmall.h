@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstring>
+#include <sys/types.h> /// ssize_t
 
 #ifdef __SSE2__
 #    include <emmintrin.h>
@@ -8,9 +9,7 @@
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
-#    ifdef HAS_RESERVED_IDENTIFIER
-#        pragma clang diagnostic ignored "-Wreserved-identifier"
-#    endif
+#      pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
 /** memcpy function could work suboptimal if all the following conditions are met:

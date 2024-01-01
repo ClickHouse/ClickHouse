@@ -18,91 +18,97 @@
 #define MongoDB_ResponseMessage_INCLUDED
 
 
-#include "Poco/MongoDB/MongoDB.h"
-#include "Poco/MongoDB/Message.h"
-#include "Poco/MongoDB/Document.h"
-#include <istream>
 #include <cstdlib>
+#include <istream>
+#include "Poco/MongoDB/Document.h"
+#include "Poco/MongoDB/Message.h"
+#include "Poco/MongoDB/MongoDB.h"
 
 
-namespace Poco {
-namespace MongoDB {
-
-
-class MongoDB_API ResponseMessage: public Message
-	/// This class represents a response (OP_REPLY) from MongoDB.
+namespace Poco
 {
-public:
-	ResponseMessage();
-		/// Creates an empty ResponseMessage.
-
-	virtual ~ResponseMessage();
-		/// Destroys the ResponseMessage.
-
-	Int64 cursorID() const;
-		/// Returns the cursor ID.
-
-	void clear();
-		/// Clears the response.
-
-	std::size_t count() const;
-		/// Returns the number of documents in the response.
-
-	Document::Vector& documents();
-		/// Returns a vector containing the received documents.
-
-	bool empty() const;
-		/// Returns true if the response does not contain any documents.
-
-	bool hasDocuments() const;
-		/// Returns true if there is at least one document in the response.
-
-	void read(std::istream& istr);
-		/// Reads the response from the stream.
-
-private:
-	Int32 _responseFlags;
-	Int64 _cursorID;
-	Int32 _startingFrom;
-	Int32 _numberReturned;
-	Document::Vector _documents;
-};
-
-
-//
-// inlines
-//
-inline std::size_t ResponseMessage::count() const
+namespace MongoDB
 {
-	return _documents.size();
+
+
+    class MongoDB_API ResponseMessage : public Message
+    /// This class represents a response (OP_REPLY) from MongoDB.
+    {
+    public:
+        ResponseMessage();
+        /// Creates an empty ResponseMessage.
+
+        ResponseMessage(const Int64 & cursorID);
+        /// Creates an ResponseMessage for existing cursor ID.
+
+        virtual ~ResponseMessage();
+        /// Destroys the ResponseMessage.
+
+        Int64 cursorID() const;
+        /// Returns the cursor ID.
+
+        void clear();
+        /// Clears the response.
+
+        std::size_t count() const;
+        /// Returns the number of documents in the response.
+
+        Document::Vector & documents();
+        /// Returns a vector containing the received documents.
+
+        bool empty() const;
+        /// Returns true if the response does not contain any documents.
+
+        bool hasDocuments() const;
+        /// Returns true if there is at least one document in the response.
+
+        void read(std::istream & istr);
+        /// Reads the response from the stream.
+
+    private:
+        Int32 _responseFlags;
+        Int64 _cursorID;
+        Int32 _startingFrom;
+        Int32 _numberReturned;
+        Document::Vector _documents;
+    };
+
+
+    //
+    // inlines
+    //
+    inline std::size_t ResponseMessage::count() const
+    {
+        return _documents.size();
+    }
+
+
+    inline bool ResponseMessage::empty() const
+    {
+        return _documents.size() == 0;
+    }
+
+
+    inline Int64 ResponseMessage::cursorID() const
+    {
+        return _cursorID;
+    }
+
+
+    inline Document::Vector & ResponseMessage::documents()
+    {
+        return _documents;
+    }
+
+
+    inline bool ResponseMessage::hasDocuments() const
+    {
+        return _documents.size() > 0;
+    }
+
+
 }
-
-
-inline bool ResponseMessage::empty() const
-{
-	return _documents.size() == 0;
-}
-
-
-inline Int64 ResponseMessage::cursorID() const
-{
-	return _cursorID;
-}
-
-
-inline Document::Vector& ResponseMessage::documents()
-{
-	return _documents;
-}
-
-
-inline bool ResponseMessage::hasDocuments() const
-{
-	return _documents.size() > 0;
-}
-
-
-} } // namespace Poco::MongoDB
+} // namespace Poco::MongoDB
 
 
 #endif // MongoDB_ResponseMessage_INCLUDED

@@ -33,7 +33,7 @@ public:
 
     off_t seek(off_t offset_, int whence) override;
 
-    void prefetch(int64_t priority) override;
+    void prefetch(Priority priority) override;
 
     size_t getFileSize() override;
 
@@ -50,10 +50,10 @@ private:
 
     bool hasPendingDataToRead();
 
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, int64_t priority);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
 
     IAsynchronousReader & reader;
-    int64_t base_priority;
+    Priority base_priority;
     std::shared_ptr<ReadBufferFromHDFS> impl;
     std::future<IAsynchronousReader::Result> prefetch_future;
     Memory<> prefetch_buffer;

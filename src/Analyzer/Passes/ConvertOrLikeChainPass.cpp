@@ -4,12 +4,13 @@
 #include <unordered_map>
 #include <vector>
 
+#include <Common/likePatternToRegexp.h>
+
 #include <Core/Field.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/likePatternToRegexp.h>
 
 #include <Interpreters/Context.h>
 
@@ -49,7 +50,7 @@ public:
             && settings.max_hyperscan_regexp_total_length == 0;
     }
 
-    void visitImpl(QueryTreeNodePtr & node)
+    void enterImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "or")

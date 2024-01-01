@@ -163,12 +163,8 @@ static bool compareRetentions(const Retention & a, const Retention & b)
     {
         return false;
     }
-    String error_msg = "age and precision should only grow up: "
-        + std::to_string(a.age) + ":" + std::to_string(a.precision) + " vs "
-        + std::to_string(b.age) + ":" + std::to_string(b.precision);
-    throw Exception::createDeprecated(
-        error_msg,
-        DB::ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Age and precision should only grow up: {}:{} vs {}:{}",
+                    a.age, a.precision, b.age, b.precision);
 }
 
 bool operator==(const Retention & a, const Retention & b)
@@ -358,9 +354,10 @@ static const Pattern & appendGraphitePattern(
                 aggregate_function_name_with_params, aggregate_function_name, params_row, "GraphiteMergeTree storage initialization", context);
 
             /// TODO Not only Float64
+            auto action = NullsAction::EMPTY;
             AggregateFunctionProperties properties;
             pattern.function = AggregateFunctionFactory::instance().get(
-                aggregate_function_name, {std::make_shared<DataTypeFloat64>()}, params_row, properties);
+                aggregate_function_name, action, {std::make_shared<DataTypeFloat64>()}, params_row, properties);
         }
         else if (key == "rule_type")
         {

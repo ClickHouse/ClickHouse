@@ -21,8 +21,10 @@
 #include "Poco/XML/XML.h"
 
 
-namespace Poco {
-namespace XML {
+namespace Poco
+{
+namespace XML
+{
 
 
 //
@@ -42,46 +44,47 @@ namespace XML {
 //
 #if defined(XML_UNICODE_WCHAR_T)
 
-	// Unicode - use wchar_t
-	using XMLChar = wchar_t;
-	using XMLString = std::wstring;
+    // Unicode - use wchar_t
+    using XMLChar = wchar_t;
+    using XMLString = std::wstring;
 
-	std::string fromXMLString(const XMLString& str);
-		/// Converts an XMLString into an UTF-8 encoded
-		/// string.
-		
-	XMLString toXMLString(const std::string& str);
-		/// Converts an UTF-8 encoded string into an
-		/// XMLString
-		
-	#define XML_LIT(lit) L##lit
+    std::string fromXMLString(const XMLString & str);
+    /// Converts an XMLString into an UTF-8 encoded
+    /// string.
+
+    XMLString toXMLString(const std::string & str);
+    /// Converts an UTF-8 encoded string into an
+    /// XMLString
+
+#    define XML_LIT(lit) L##lit
 
 #elif defined(XML_UNICODE)
 
-	// not supported - leave XMLString undefined
+    // not supported - leave XMLString undefined
 
 #else
 
-	// Characters are UTF-8 encoded
-	using XMLChar = char;
-	using XMLString = std::string;
+    // Characters are UTF-8 encoded
+    using XMLChar = char;
+    using XMLString = std::string;
 
-	inline const std::string& fromXMLString(const XMLString& str)
-	{
-		return str;
-	}
+    inline const std::string & fromXMLString(const XMLString & str)
+    {
+        return str;
+    }
 
-	inline const XMLString& toXMLString(const std::string& str)
-	{
-		return str;
-	}
-	
-	#define XML_LIT(lit) lit
+    inline const XMLString & toXMLString(const std::string & str)
+    {
+        return str;
+    }
+
+#    define XML_LIT(lit) lit
 
 #endif
 
 
-} } // namespace Poco::XML
+}
+} // namespace Poco::XML
 
 
 #endif // XML_XMLString_INCLUDED

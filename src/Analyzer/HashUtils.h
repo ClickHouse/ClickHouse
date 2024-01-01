@@ -16,11 +16,11 @@ struct QueryTreeNodeWithHash
 {
     QueryTreeNodeWithHash(QueryTreeNodePtrType node_) /// NOLINT
         : node(std::move(node_))
-        , hash(node->getTreeHash().first)
+        , hash(node->getTreeHash())
     {}
 
     QueryTreeNodePtrType node = nullptr;
-    size_t hash = 0;
+    CityHash_v1_0_2::uint128 hash;
 };
 
 template <typename T>
@@ -55,6 +55,6 @@ struct std::hash<DB::QueryTreeNodeWithHash<T>>
 {
     size_t operator()(const DB::QueryTreeNodeWithHash<T> & node_with_hash) const
     {
-        return node_with_hash.hash;
+        return node_with_hash.hash.low64;
     }
 };

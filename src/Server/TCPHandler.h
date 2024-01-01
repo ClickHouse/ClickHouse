@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Poco/Net/TCPServerConnection.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -20,6 +21,7 @@
 #include <Formats/NativeWriter.h>
 
 #include "IServer.h"
+#include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include "base/types.h"
@@ -72,11 +74,20 @@ struct QueryState
 
     /// Query text.
     String query;
+    /// Parsed query
+    ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
 
+    enum class CancellationStatus: UInt8
+    {
+        FULLY_CANCELLED,
+        READ_CANCELLED,
+        NOT_CANCELLED
+    };
+
     /// Is request cancelled
-    bool is_cancelled = false;
+    CancellationStatus cancellation_status = CancellationStatus::NOT_CANCELLED;
     bool is_connection_closed = false;
     /// empty or not
     bool is_empty = true;
@@ -163,14 +174,13 @@ private:
 
     /// Connection settings, which are extracted from a context.
     bool send_exception_with_stack_trace = true;
-    Poco::Timespan send_timeout = DBMS_DEFAULT_SEND_TIMEOUT_SEC;
-    Poco::Timespan receive_timeout = DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC;
+    Poco::Timespan send_timeout = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0);
+    Poco::Timespan receive_timeout = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0);
     UInt64 poll_interval = DBMS_DEFAULT_POLL_INTERVAL;
     UInt64 idle_connection_timeout = 3600;
     UInt64 interactive_delay = 100000;
     Poco::Timespan sleep_in_send_tables_status;
     UInt64 unknown_packet_in_send_data = 0;
-    Poco::Timespan sleep_in_receive_cancel;
     Poco::Timespan sleep_after_receiving_query;
 
     std::unique_ptr<Session> session;
@@ -187,9 +197,14 @@ private:
 
     String default_database;
 
+    bool is_ssh_based_auth = false;
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
+    bool is_interserver_authenticated = false;
+    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
+    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
+    std::optional<UInt64> nonce;
     String cluster;
 
     std::mutex task_callback_mutex;
@@ -213,6 +228,7 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     std::unique_ptr<Session> makeSession();
+    String prepareStringForSshValidation(String user, String challenge);
 
     bool receiveProxyHeader();
     void receiveHello();
@@ -235,7 +251,9 @@ private:
     [[noreturn]] void receiveUnexpectedTablesStatusRequest();
 
     /// Process INSERT query
+    void startInsertQuery();
     void processInsertQuery();
+    AsynchronousInsertQueue::PushResult processAsyncInsertQuery(AsynchronousInsertQueue & insert_queue);
 
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
@@ -254,7 +272,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement);
+    void sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement);
     void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
@@ -262,6 +280,7 @@ private:
     void sendProfileEvents();
     void sendSelectProfileEvents();
     void sendInsertProfileEvents();
+    void sendTimezone();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
@@ -269,10 +288,15 @@ private:
     void initLogsBlockOutput(const Block & block);
     void initProfileEventsBlockOutput(const Block & block);
 
-    bool isQueryCancelled();
+    using CancellationStatus = QueryState::CancellationStatus;
+
+    void decreaseCancellationStatus(const std::string & log_message);
+    CancellationStatus getQueryCancellationStatus();
 
     /// This function is called from different threads.
     void updateProgress(const Progress & value);
+
+    Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
 };
 
 }

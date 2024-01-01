@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_SETTING;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -65,8 +66,10 @@ namespace
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
+            /// we need to read statistic when `allow_statistic_optimize` is enabled.
+            bool only_analyze = !data.getContext()->getSettings().allow_statistic_optimize;
             InterpreterSelectQuery interpreter(
-                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze(only_analyze).modify());
 
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
@@ -386,6 +389,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryTree:
         {
+            if (!getContext()->getSettingsRef().allow_experimental_analyzer)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "EXPLAIN QUERY TREE is only supported with a new analyzer. Set allow_experimental_analyzer = 1.");
+
             if (ast.getExplainedQuery()->as<ASTSelectWithUnionQuery>() == nullptr)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
 
@@ -531,18 +538,28 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
-            ContextPtr context;
+            ContextPtr context = getContext();
 
-            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
-            interpreter.buildQueryPlan(plan);
-            context = interpreter.getContext();
-            // collect the selected marks, rows, parts during build query pipeline.
-            plan.buildQueryPipeline(
+            if (context->getSettingsRef().allow_experimental_analyzer)
+            {
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                context = interpreter.getContext();
+                plan = std::move(interpreter).extractQueryPlan();
+            }
+            else
+            {
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                context = interpreter.getContext();
+                interpreter.buildQueryPlan(plan);
+            }
+
+            // Collect the selected marks, rows, parts during build query pipeline.
+            // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
+            // it (through QueryPlanResourceHolder).
+            auto builder = plan.buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(context),
                 BuildQueryPipelineSettings::fromContext(context));
 
-            if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
             plan.explainEstimate(res_columns);
             insert_buf = false;
             break;

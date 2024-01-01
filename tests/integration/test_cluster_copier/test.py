@@ -128,7 +128,7 @@ class Task1:
         )
         instance.query(
             "INSERT INTO hits_all SELECT * FROM system.numbers LIMIT 1002",
-            settings={"insert_distributed_sync": 1},
+            settings={"distributed_foreground_insert": 1},
         )
 
     def check(self):
@@ -218,7 +218,7 @@ class Task2:
 
         instance.query(
             "INSERT INTO a_all SELECT toDate(17581 + number) AS date, number AS d FROM system.numbers LIMIT 85",
-            settings={"insert_distributed_sync": 1},
+            settings={"distributed_foreground_insert": 1},
         )
 
     def check(self):
@@ -565,13 +565,20 @@ def test_copy_with_recovering(started_cluster, use_sample_offset):
                 str(COPYING_FAIL_PROBABILITY),
                 "--experimental-use-sample-offset",
                 "1",
+                "--max-table-tries",
+                "10",
             ],
         )
     else:
         execute_task(
             started_cluster,
             Task1(started_cluster),
-            ["--copy-fault-probability", str(COPYING_FAIL_PROBABILITY)],
+            [
+                "--copy-fault-probability",
+                str(COPYING_FAIL_PROBABILITY),
+                "--max-table-tries",
+                "10",
+            ],
         )
 
 
@@ -606,7 +613,12 @@ def test_copy_month_to_week_partition_with_recovering(started_cluster):
     execute_task(
         started_cluster,
         Task2(started_cluster, "test2"),
-        ["--copy-fault-probability", str(COPYING_FAIL_PROBABILITY)],
+        [
+            "--copy-fault-probability",
+            str(COPYING_FAIL_PROBABILITY),
+            "--max-table-tries",
+            "10",
+        ],
     )
 
 

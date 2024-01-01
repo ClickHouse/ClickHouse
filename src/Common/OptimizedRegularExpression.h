@@ -6,9 +6,15 @@
 #include <optional>
 #include <Common/StringSearcher.h>
 #include "config.h"
-#include <re2/re2.h>
-#include <re2_st/re2.h>
 
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 /** Uses two ways to optimize a regular expression:
   * 1. If the regular expression is trivial (reduces to finding a substring in a string),
@@ -37,8 +43,7 @@ namespace OptimizedRegularExpressionDetails
     };
 }
 
-template <bool thread_safe>
-class OptimizedRegularExpressionImpl
+class OptimizedRegularExpression
 {
 public:
     enum Options
@@ -51,13 +56,10 @@ public:
     using Match = OptimizedRegularExpressionDetails::Match;
     using MatchVec = std::vector<Match>;
 
-    using RegexType = std::conditional_t<thread_safe, re2::RE2, re2_st::RE2>;
-    using StringPieceType = std::conditional_t<thread_safe, re2::StringPiece, re2_st::StringPiece>;
-
-    OptimizedRegularExpressionImpl(const std::string & regexp_, int options = 0); /// NOLINT
+    OptimizedRegularExpression(const std::string & regexp_, int options = 0); /// NOLINT
     /// StringSearcher store pointers to required_substring, it must be updated on move.
-    OptimizedRegularExpressionImpl(OptimizedRegularExpressionImpl && rhs) noexcept;
-    OptimizedRegularExpressionImpl(const OptimizedRegularExpressionImpl & rhs) = delete;
+    OptimizedRegularExpression(OptimizedRegularExpression && rhs) noexcept;
+    OptimizedRegularExpression(const OptimizedRegularExpression & rhs) = delete;
 
     bool match(const std::string & subject) const
     {
@@ -86,7 +88,7 @@ public:
     unsigned getNumberOfSubpatterns() const { return number_of_subpatterns; }
 
     /// Get the regexp re2 or nullptr if the pattern is trivial (for output to the log).
-    const std::unique_ptr<RegexType> & getRE2() const { return re2; }
+    const std::unique_ptr<re2::RE2> & getRE2() const { return re2; }
 
     void getAnalyzeResult(std::string & out_required_substring, bool & out_is_trivial, bool & out_required_substring_is_prefix) const
     {
@@ -95,18 +97,22 @@ public:
         out_required_substring_is_prefix = required_substring_is_prefix;
     }
 
+    /// analyze function will extract the longest string literal or multiple alternative string literals from regexp for pre-checking if
+    /// a string contains the string literal(s). If not, we can tell this string can never match the regexp.
+    static void analyze(
+        std::string_view regexp_,
+        std::string & required_substring,
+        bool & is_trivial,
+        bool & required_substring_is_prefix,
+        std::vector<std::string> & alternatives);
+
 private:
     bool is_trivial;
     bool required_substring_is_prefix;
     bool is_case_insensitive;
     std::string required_substring;
-    std::optional<DB::StringSearcher<true, true>> case_sensitive_substring_searcher;
-    std::optional<DB::StringSearcher<false, true>> case_insensitive_substring_searcher;
-    std::unique_ptr<RegexType> re2;
+    std::optional<DB::ASCIICaseSensitiveStringSearcher> case_sensitive_substring_searcher;
+    std::optional<DB::ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
+    std::unique_ptr<re2::RE2> re2;
     unsigned number_of_subpatterns;
-
-    static void analyze(std::string_view regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
 };
-
-using OptimizedRegularExpression = OptimizedRegularExpressionImpl<true>;
-using OptimizedRegularExpressionSingleThreaded = OptimizedRegularExpressionImpl<false>;

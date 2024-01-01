@@ -1,6 +1,6 @@
-insert into foo settings max_threads=1
+[multi] insert into foo settings max_threads=1
 Syntax error (query): failed at position 40 (end of query):
-insert into foo format tsv settings max_threads=1
+[multi] insert into foo format tsv settings max_threads=1
 Can't format ASTInsertQuery with data, since data will be lost.
 [multi] insert into foo format tsv settings max_threads=1
 INSERT INTO foo
@@ -8,7 +8,7 @@ SETTINGS max_threads = 1
 FORMAT tsv
 [oneline] insert into foo format tsv settings max_threads=1
 INSERT INTO foo SETTINGS max_threads = 1 FORMAT tsv
-insert into foo settings max_threads=1 format tsv settings max_threads=1
+[multi] insert into foo settings max_threads=1 format tsv settings max_threads=1
 You have SETTINGS before and after FORMAT
 Cannot parse input: expected '\n' before: 'settings max_threads=1 1'
 1

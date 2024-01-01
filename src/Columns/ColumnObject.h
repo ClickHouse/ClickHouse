@@ -206,8 +206,8 @@ public:
     size_t size() const override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
-    void forEachSubcolumn(ColumnCallback callback) const override;
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
+    void forEachSubcolumn(MutableColumnCallback callback) override;
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     void insert(const Field & field) override;
     void insertDefault() override;
     void insertFrom(const IColumn & src, size_t n) override;
@@ -244,7 +244,7 @@ public:
     StringRef getDataAt(size_t) const override { throwMustBeConcrete(); }
     bool isDefaultAt(size_t) const override { throwMustBeConcrete(); }
     void insertData(const char *, size_t) override { throwMustBeConcrete(); }
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeConcrete(); }
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&, const UInt8 *) const override { throwMustBeConcrete(); }
     const char * deserializeAndInsertFromArena(const char *) override { throwMustBeConcrete(); }
     const char * skipSerializedInArena(const char *) const override { throwMustBeConcrete(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeConcrete(); }
@@ -254,6 +254,7 @@ public:
     bool hasEqualValues() const override { throwMustBeConcrete(); }
     size_t byteSizeAt(size_t) const override { throwMustBeConcrete(); }
     double getRatioOfDefaultRows(double) const override { throwMustBeConcrete(); }
+    UInt64 getNumberOfDefaultRows() const override { throwMustBeConcrete(); }
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeConcrete(); }
 
 private:

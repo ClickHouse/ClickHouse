@@ -76,7 +76,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     , load_all_query(query_builder.composeLoadAllQuery())
     , bridge_helper(bridge_)
     , bridge_url(bridge_helper->getMainURI())
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), {context_->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings().keep_alive_timeout))
 {
     auto url_params = bridge_helper->getURLParams(max_block_size);
     for (const auto & [name, value] : url_params)
@@ -178,7 +178,7 @@ bool XDBCDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (invalidate_query_response == response) //-V1051
+        if (invalidate_query_response == response)
             return false;
         invalidate_query_response = response;
     }

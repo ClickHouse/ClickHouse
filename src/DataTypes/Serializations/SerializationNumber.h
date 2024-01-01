@@ -1,10 +1,13 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
-#include <Columns/ColumnVector.h>
 
 namespace DB
 {
+
+template <typename T>
+class ColumnVector;
 
 template <typename T>
 class SerializationNumber : public SimpleTextSerialization

@@ -67,6 +67,7 @@ struct QueryStatusInfo
 
     /// Optional fields, filled by query
     std::vector<UInt64> thread_ids;
+    size_t peak_threads_usage;
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
     std::shared_ptr<Settings> query_settings;
     std::string current_database;
@@ -86,7 +87,7 @@ protected:
     ClientInfo client_info;
 
     /// Info about all threads involved in query execution
-    ThreadGroupStatusPtr thread_group;
+    ThreadGroupPtr thread_group;
 
     Stopwatch watch;
 
@@ -119,8 +120,22 @@ protected:
 
     mutable std::mutex executors_mutex;
 
-    /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::vector<PipelineExecutor *> executors;
+    struct ExecutorHolder
+    {
+        ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+
+        void cancel();
+
+        void remove();
+
+        PipelineExecutor * executor;
+        std::mutex mutex;
+    };
+
+    using ExecutorHolderPtr = std::shared_ptr<ExecutorHolder>;
+
+    /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
+    std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
 
     enum QueryStreamsStatus
     {
@@ -148,8 +163,9 @@ public:
         const String & query_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
-        ThreadGroupStatusPtr && thread_group_,
+        ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
+        const Settings & query_settings_,
         UInt64 watch_start_nanoseconds);
 
     ~QueryStatus();
@@ -329,6 +345,8 @@ public:
 
     /// User -> queries
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
+    /// query_id -> User
+    using QueriesToUser = std::unordered_map<String, String>;
 
     using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
 
@@ -349,6 +367,9 @@ protected:
 
     /// Stores per-user info: queries, statistics and limits
     UserToQueries user_to_queries;
+
+    /// Stores query IDs and associated users, used for query ID uniqueness check
+    QueriesToUser queries_to_user;
 
     /// Stores info about queries grouped by their priority
     QueryPriorities priorities;
@@ -378,7 +399,7 @@ public:
     /** Register running query. Returns refcounted object, that will remove element from list in destructor.
       * If too many running queries - wait for not more than specified (see settings) amount of time.
       * If timeout is passed - throw an exception.
-      * Don't count KILL QUERY queries.
+      * Don't count KILL QUERY queries or async insert flush queries
       */
     EntryPtr insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
 
@@ -397,16 +418,34 @@ public:
         max_size = max_size_;
     }
 
+    size_t getMaxSize() const
+    {
+        auto lock = unsafeLock();
+        return max_size;
+    }
+
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
     {
         auto lock = unsafeLock();
         max_insert_queries_amount = max_insert_queries_amount_;
     }
 
+    size_t getMaxInsertQueriesAmount() const
+    {
+        auto lock = unsafeLock();
+        return max_insert_queries_amount;
+    }
+
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
     {
         auto lock = unsafeLock();
         max_select_queries_amount = max_select_queries_amount_;
+    }
+
+    size_t getMaxSelectQueriesAmount() const
+    {
+        auto lock = unsafeLock();
+        return max_select_queries_amount;
     }
 
     /// Try call cancel() for input and output streams of query with specified id and user

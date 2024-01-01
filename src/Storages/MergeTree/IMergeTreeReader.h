@@ -3,7 +3,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
@@ -24,7 +23,7 @@ public:
     IMergeTreeReader(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         const NamesAndTypesList & columns_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        const StorageSnapshotPtr & storage_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & all_mark_ranges_,
@@ -46,12 +45,12 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
+    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows, size_t block_number = 0) const;
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
-    /// If part metadata is not equal to storage metadata, than
-    /// try to perform conversions of columns.
+    /// If part metadata is not equal to storage metadata,
+    /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
 
     const NamesAndTypesList & getColumns() const { return requested_columns; }
@@ -61,7 +60,7 @@ public:
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
 
-    virtual void prefetchBeginOfRange(int64_t /* priority */) {}
+    virtual void prefetchBeginOfRange(Priority) {}
 
 protected:
     /// Returns actual column name in part, which can differ from table metadata.
@@ -74,6 +73,8 @@ protected:
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
+    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
+
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
     /// Stores states for IDataType::deserializeBinaryBulk
@@ -85,27 +86,28 @@ protected:
     /// Actual serialization of columns in part.
     Serializations serializations;
 
-    UncompressedCache * uncompressed_cache;
-    MarkCache * mark_cache;
+    UncompressedCache * const uncompressed_cache;
+    MarkCache * const mark_cache;
 
     MergeTreeReaderSettings settings;
 
-    StorageMetadataPtr metadata_snapshot;
-    MarkRanges all_mark_ranges;
+    const StorageSnapshotPtr storage_snapshot;
+    const MarkRanges all_mark_ranges;
 
     /// Position and level (of nesting).
-    using ColumnPositionLevel = std::optional<std::pair<size_t, size_t>>;
+    using ColumnNameLevel = std::optional<std::pair<String, size_t>>;
+
     /// In case of part of the nested column does not exists, offsets should be
     /// read, but only the offsets for the current column, that is why it
     /// returns pair of size_t, not just one.
-    ColumnPositionLevel findColumnForOffsets(const NameAndTypePair & column) const;
+    ColumnNameLevel findColumnForOffsets(const NameAndTypePair & column) const;
 
     NameSet partially_read_columns;
 
-private:
     /// Alter conversions, which must be applied on fly if required
-    AlterConversions alter_conversions;
+    AlterConversionsPtr alter_conversions;
 
+private:
     /// Columns that are requested to read.
     NamesAndTypesList requested_columns;
 

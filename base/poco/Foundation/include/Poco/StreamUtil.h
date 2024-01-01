@@ -55,11 +55,11 @@
 //
 // In this scenario, std::ios::init() is called twice
 // (the first time by the MyIOS constructor, the second
-// time by the std::istream constructor), resulting in 
-// two locale objects being allocated, the pointer second 
-// one overwriting the pointer to the first one and thus 
+// time by the std::istream constructor), resulting in
+// two locale objects being allocated, the pointer second
+// one overwriting the pointer to the first one and thus
 // causing a memory leak.
-// 
+//
 // The workaround is to call init() only once for each
 // stream object - by the istream, ostream or iostream
 // constructor, and not calling init() in ios-derived
@@ -69,23 +69,23 @@
 // init() is called in the MyIOS constructor.
 // Therefore we replace each call to init() with
 // the poco_ios_init macro defined below.
+//
+// Also this macro will adjust exceptions() flags, since by default std::ios
+// will hide exceptions, while in ClickHouse it is better to pass them through.
 
 
 #if !defined(POCO_IOS_INIT_HACK)
-	// Microsoft Visual Studio with Dinkumware STL (but not STLport)
-#	if defined(_MSC_VER) && (!defined(_STLP_MSVC) || defined(_STLP_NO_OWN_IOSTREAMS))
-#		define POCO_IOS_INIT_HACK 1
-    // QNX with Dinkumware but not GNU C++ Library
-#	elif defined(__QNX__) && !defined(__GLIBCPP__)
-#		define POCO_IOS_INIT_HACK 1
-#	endif
+// Microsoft Visual Studio with Dinkumware STL (but not STLport)
 #endif
 
 
 #if defined(POCO_IOS_INIT_HACK)
-#	define poco_ios_init(buf)
+#    define poco_ios_init(buf)
 #else
-#	define poco_ios_init(buf) init(buf)
+#    define poco_ios_init(buf) do {                         \
+    init(buf);                                              \
+    this->exceptions(std::ios::failbit | std::ios::badbit); \
+} while (0)
 #endif
 
 

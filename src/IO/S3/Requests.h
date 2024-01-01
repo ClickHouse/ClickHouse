@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <IO/S3/URI.h>
+#include <IO/S3/ProviderType.h>
 
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/s3/model/HeadObjectRequest.h>
@@ -46,6 +47,22 @@ public:
         return params;
     }
 
+    Aws::String GetChecksumAlgorithmName() const override
+    {
+        /// Return empty string is enough to disable checksums (see
+        /// AWSClient::AddChecksumToRequest [1] for more details).
+        ///
+        ///   [1]: https://github.com/aws/aws-sdk-cpp/blob/b0ee1c0d336dbb371c34358b68fba6c56aae2c92/src/aws-cpp-sdk-core/source/client/AWSClient.cpp#L783-L839
+        if (!checksum)
+            return "";
+        return BaseRequest::GetChecksumAlgorithmName();
+    }
+
+    std::string getRegionOverride() const
+    {
+        return region_override;
+    }
+
     void overrideRegion(std::string region) const
     {
         region_override = std::move(region);
@@ -61,9 +78,28 @@ public:
         return uri_override;
     }
 
+    void setApiMode(ApiMode api_mode_) const
+    {
+        api_mode = api_mode_;
+    }
+
+    /// Disable checksum to avoid extra read of the input stream
+    void disableChecksum() const
+    {
+        checksum = false;
+    }
+
 protected:
     mutable std::string region_override;
     mutable std::optional<S3::URI> uri_override;
+    mutable ApiMode api_mode{ApiMode::AWS};
+    mutable bool checksum = true;
+};
+
+class CopyObjectRequest : public ExtendedRequest<Model::CopyObjectRequest>
+{
+public:
+    Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override;
 };
 
 using HeadObjectRequest = ExtendedRequest<Model::HeadObjectRequest>;
@@ -78,9 +114,44 @@ using UploadPartRequest = ExtendedRequest<Model::UploadPartRequest>;
 using UploadPartCopyRequest = ExtendedRequest<Model::UploadPartCopyRequest>;
 
 using PutObjectRequest = ExtendedRequest<Model::PutObjectRequest>;
-using CopyObjectRequest = ExtendedRequest<Model::CopyObjectRequest>;
 using DeleteObjectRequest = ExtendedRequest<Model::DeleteObjectRequest>;
 using DeleteObjectsRequest = ExtendedRequest<Model::DeleteObjectsRequest>;
+
+
+class ComposeObjectRequest : public ExtendedRequest<Aws::S3::S3Request>
+{
+public:
+    inline const char * GetServiceRequestName() const override { return "ComposeObject"; }
+
+    AWS_S3_API Aws::String SerializePayload() const override;
+
+    AWS_S3_API void AddQueryStringParameters(Aws::Http::URI & uri) const override;
+
+    AWS_S3_API Aws::Http::HeaderValueCollection GetRequestSpecificHeaders() const override;
+
+    AWS_S3_API EndpointParameters GetEndpointContextParams() const override;
+
+    const Aws::String & GetBucket() const;
+    bool BucketHasBeenSet() const;
+    void SetBucket(const Aws::String & value);
+    void SetBucket(Aws::String && value);
+    void SetBucket(const char* value);
+
+    const Aws::String & GetKey() const;
+    bool KeyHasBeenSet() const;
+    void SetKey(const Aws::String & value);
+    void SetKey(Aws::String && value);
+    void SetKey(const char * value);
+
+    void SetComponentNames(std::vector<Aws::String> component_names_);
+
+    void SetContentType(Aws::String value);
+private:
+    Aws::String bucket;
+    Aws::String key;
+    std::vector<Aws::String> component_names;
+    Aws::String content_type;
+};
 
 }
 

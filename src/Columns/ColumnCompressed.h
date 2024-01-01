@@ -64,7 +64,7 @@ public:
         return ColumnCompressed::create(
             size,
             bytes,
-            [column = std::move(column)]{ return column; });
+            [my_column = std::move(column)]{ return my_column; });
     }
 
     /// Helper methods for compression.
@@ -88,7 +88,7 @@ public:
     void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
     void insertDefault() override { throwMustBeDecompressed(); }
     void popBack(size_t) override { throwMustBeDecompressed(); }
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeDecompressed(); }
+    StringRef serializeValueIntoArena(size_t, Arena &, char const *&, const UInt8 *) const override { throwMustBeDecompressed(); }
     const char * deserializeAndInsertFromArena(const char *) override { throwMustBeDecompressed(); }
     const char * skipSerializedInArena(const char *) const override { throwMustBeDecompressed(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }
@@ -117,6 +117,7 @@ public:
     void getExtremes(Field &, Field &) const override { throwMustBeDecompressed(); }
     size_t byteSizeAt(size_t) const override { throwMustBeDecompressed(); }
     double getRatioOfDefaultRows(double) const override { throwMustBeDecompressed(); }
+    UInt64 getNumberOfDefaultRows() const override { throwMustBeDecompressed(); }
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeDecompressed(); }
 
 protected:

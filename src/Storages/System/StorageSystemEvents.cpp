@@ -16,9 +16,16 @@ NamesAndTypesList StorageSystemEvents::getNamesAndTypes()
     };
 }
 
+NamesAndAliases StorageSystemEvents::getNamesAndAliases()
+{
+    return {
+        {"name", std::make_shared<DataTypeString>(), "event"}
+    };
+}
+
 void StorageSystemEvents::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
+    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
         UInt64 value = ProfileEvents::global_counters[i];
 

@@ -1,6 +1,8 @@
 #include "ClusterCopierApp.h"
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/StatusFile.h>
 #include <Common/TerminalSize.h>
+#include <Databases/registerDatabases.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Formats/registerFormats.h>
 #include <Common/scope_guard_safe.h>
@@ -43,7 +45,7 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
     time_t timestamp = Poco::Timestamp().epochTime();
     auto curr_pid = Poco::Process::id();
 
-    process_id = std::to_string(DateLUT::instance().toNumYYYYMMDDhhmmss(timestamp)) + "_" + std::to_string(curr_pid);
+    process_id = std::to_string(DateLUT::serverTimezoneInstance().toNumYYYYMMDDhhmmss(timestamp)) + "_" + std::to_string(curr_pid);
     host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
     process_path = fs::weakly_canonical(fs::path(base_dir) / ("clickhouse-copier_" + process_id));
     fs::create_directories(process_path);
@@ -88,7 +90,7 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
                           .argument("task-path").binding("task-path"));
     options.addOption(Poco::Util::Option("task-file", "", "path to task file for uploading in ZooKeeper to task-path")
                           .argument("task-file").binding("task-file"));
-    options.addOption(Poco::Util::Option("task-upload-force", "", "Force upload task-file even node already exists")
+    options.addOption(Poco::Util::Option("task-upload-force", "", "Force upload task-file even node already exists. Default is false.")
                           .argument("task-upload-force").binding("task-upload-force"));
     options.addOption(Poco::Util::Option("safe-mode", "", "disables ALTER DROP PARTITION in case of errors")
                           .binding("safe-mode"));
@@ -158,6 +160,7 @@ void ClusterCopierApp::mainImpl()
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
+    registerDatabases();
     registerStorages();
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
@@ -191,6 +194,8 @@ void ClusterCopierApp::mainImpl()
     auto task_file = config().getString("task-file", "");
     if (!task_file.empty())
         copier->uploadTaskDescription(task_path, task_file, config().getBool("task-upload-force", false));
+
+    zkutil::validateZooKeeperConfig(config());
 
     copier->init();
     copier->process(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef()));

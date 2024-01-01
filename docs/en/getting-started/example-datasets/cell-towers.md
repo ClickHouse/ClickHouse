@@ -1,9 +1,10 @@
 ---
 slug: /en/getting-started/example-datasets/cell-towers
-sidebar_label: Cell Towers
+sidebar_label: Geo Data
 sidebar_position: 3
-title: "Cell Towers"
+title: "Geo Data using the Cell Tower Dataset"
 ---
+
 import ConnectionDetails from '@site/docs/en/_snippets/_gather_your_details_http.mdx';
 
 import Tabs from '@theme/Tabs';
@@ -163,7 +164,7 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 
 Based on the above query and the [MCC list](https://en.wikipedia.org/wiki/Mobile_country_code), the countries with the most cell towers are: the USA, Germany, and Russia.
 
-You may want to create a [Dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) in ClickHouse to decode these values.
+You may want to create a [Dictionary](../../sql-reference/dictionaries/index.md) in ClickHouse to decode these values.
 
 ## Use case: Incorporate geo data {#use-case}
 
@@ -307,7 +308,7 @@ To build a Superset dashboard using the OpenCelliD dataset you should:
   ![Choose clickhouse connect as database type](@site/docs/en/getting-started/example-datasets/images/superset-choose-a-database.png)
 
 :::note
-  If **ClickHouse Connect** is not one of your options, then you will need to install it.  The comand is `pip install clickhouse-connect`, and more info is [available here](https://pypi.org/project/clickhouse-connect/).
+  If **ClickHouse Connect** is not one of your options, then you will need to install it. The command is `pip install clickhouse-connect`, and more info is [available here](https://pypi.org/project/clickhouse-connect/).
 :::
 
 #### Add your connection details:
@@ -316,7 +317,7 @@ To build a Superset dashboard using the OpenCelliD dataset you should:
   Make sure that you set **SSL** on when connecting to ClickHouse Cloud or other ClickHouse systems that enforce the use of SSL.
 :::
 
-  ![Add ClickHouse as a Superset datasource](@site/docs/en/getting-started/example-datasets/images/superset-connect-a-database.png)
+  ![Add ClickHouse as a Superset data source](@site/docs/en/getting-started/example-datasets/images/superset-connect-a-database.png)
 
 ### Add the table **cell_towers** as a Superset **dataset**
 
@@ -363,5 +364,5 @@ The data is also available for interactive queries in the [Playground](https://p
 
 This [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=) will populate the username and even the query for you.
 
-Although you cannot create tables in the Playground, you can run all of the queries and even use Superset (adjust the hostname and port number).
+Although you cannot create tables in the Playground, you can run all of the queries and even use Superset (adjust the host name and port number).
 :::

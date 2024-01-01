@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserPartition.h>
+#include <Parsers/ParserRefreshStrategy.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -38,11 +39,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_setting("MODIFY SETTING");
     ParserKeyword s_reset_setting("RESET SETTING");
     ParserKeyword s_modify_query("MODIFY QUERY");
+    ParserKeyword s_modify_refresh("MODIFY REFRESH");
 
     ParserKeyword s_add_index("ADD INDEX");
     ParserKeyword s_drop_index("DROP INDEX");
     ParserKeyword s_clear_index("CLEAR INDEX");
     ParserKeyword s_materialize_index("MATERIALIZE INDEX");
+
+    ParserKeyword s_add_statistic("ADD STATISTIC");
+    ParserKeyword s_drop_statistic("DROP STATISTIC");
+    ParserKeyword s_clear_statistic("CLEAR STATISTIC");
+    ParserKeyword s_materialize_statistic("MATERIALIZE STATISTIC");
 
     ParserKeyword s_add_constraint("ADD CONSTRAINT");
     ParserKeyword s_drop_constraint("DROP CONSTRAINT");
@@ -106,12 +113,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_remove_ttl("REMOVE TTL");
     ParserKeyword s_remove_sample_by("REMOVE SAMPLE BY");
+    ParserKeyword s_apply_deleted_mask("APPLY DELETED MASK");
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserIdentifier parser_remove_property;
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
+    ParserStatisticDeclaration parser_stat_decl;
     ParserConstraintDeclaration parser_constraint_decl;
     ParserProjectionDeclaration parser_projection_decl;
     ParserCompoundColumnDeclaration parser_modify_col_decl(false, false, true);
@@ -126,6 +135,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /* allow_empty = */ false);
     ParserNameList values_p;
     ParserSelectWithUnionQuery select_p;
+    ParserRefreshStrategy refresh_p;
     ParserTTLExpressionList parser_ttl_list;
 
     switch (alter_object)
@@ -327,6 +337,61 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         return false;
                 }
             }
+            else if (s_add_statistic.ignore(pos, expected))
+            {
+                if (s_if_not_exists.ignore(pos, expected))
+                    command->if_not_exists = true;
+
+                if (!parser_stat_decl.parse(pos, command->statistic_decl, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::ADD_STATISTIC;
+            }
+            else if (s_drop_statistic.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_stat_decl.parse(pos, command->statistic_decl, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::DROP_STATISTIC;
+            }
+            else if (s_clear_statistic.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_stat_decl.parse(pos, command->statistic_decl, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::DROP_STATISTIC;
+                command->clear_statistic = true;
+                command->detach = false;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command->partition, expected))
+                        return false;
+                }
+            }
+            else if (s_materialize_statistic.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_stat_decl.parse(pos, command->statistic_decl, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::MATERIALIZE_STATISTIC;
+                command->detach = false;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command->partition, expected))
+                        return false;
+                }
+            }
             else if (s_add_projection.ignore(pos, expected))
             {
                 if (s_if_not_exists.ignore(pos, expected))
@@ -403,12 +468,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     command->move_destination_type = DataDestinationType::DISK;
                 else if (s_to_volume.ignore(pos))
                     command->move_destination_type = DataDestinationType::VOLUME;
-                else if (s_to_table.ignore(pos))
-                {
-                    if (!parseDatabaseAndTableName(pos, expected, command->to_database, command->to_table))
-                        return false;
-                    command->move_destination_type = DataDestinationType::TABLE;
-                }
                 else if (s_to_shard.ignore(pos))
                 {
                     command->move_destination_type = DataDestinationType::SHARD;
@@ -416,14 +475,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 else
                     return false;
 
-                if (command->move_destination_type != DataDestinationType::TABLE)
-                {
-                    ASTPtr ast_space_name;
-                    if (!parser_string_literal.parse(pos, ast_space_name, expected))
-                        return false;
+                ASTPtr ast_space_name;
+                if (!parser_string_literal.parse(pos, ast_space_name, expected))
+                    return false;
 
-                    command->move_destination_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
-                }
+                command->move_destination_name = ast_space_name->as<ASTLiteral &>().value.get<const String &>();
             }
             else if (s_move_partition.ignore(pos, expected))
             {
@@ -764,12 +820,28 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
                 command->type = ASTAlterCommand::MODIFY_QUERY;
             }
+            else if (s_modify_refresh.ignore(pos, expected))
+            {
+                if (!refresh_p.parse(pos, command->refresh, expected))
+                    return false;
+                command->type = ASTAlterCommand::MODIFY_REFRESH;
+            }
             else if (s_modify_comment.ignore(pos, expected))
             {
                 if (!parser_string_literal.parse(pos, command->comment, expected))
                     return false;
 
                 command->type = ASTAlterCommand::MODIFY_COMMENT;
+            }
+            else if (s_apply_deleted_mask.ignore(pos, expected))
+            {
+                command->type = ASTAlterCommand::APPLY_DELETED_MASK;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command->partition, expected))
+                        return false;
+                }
             }
             else
                 return false;
@@ -846,12 +918,13 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     node = query;
 
     ParserKeyword s_alter_table("ALTER TABLE");
+    ParserKeyword s_alter_temporary_table("ALTER TEMPORARY TABLE");
     ParserKeyword s_alter_live_view("ALTER LIVE VIEW");
     ParserKeyword s_alter_database("ALTER DATABASE");
 
     ASTAlterQuery::AlterObjectType alter_object_type;
 
-    if (s_alter_table.ignore(pos, expected))
+    if (s_alter_table.ignore(pos, expected) || s_alter_temporary_table.ignore(pos, expected))
     {
         alter_object_type = ASTAlterQuery::AlterObjectType::TABLE;
     }

@@ -6,7 +6,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -16,7 +15,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -105,7 +104,7 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
 
     const auto & argument = arguments[argument_index];
     if (!validator_func(*argument))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {} expected {}",
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {}, expected {}",
                         argument->getName(), std::to_string(argument_index), func.getName(), expected_type_description);
 }
 
@@ -213,22 +212,9 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
         if (i == 0)
             offsets = offsets_i;
         else if (*offsets_i != *offsets)
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH, "Lengths of all arrays passed to aggregate function must be equal.");
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Lengths of all arrays passed to aggregate function must be equal.");
     }
     return {nested_columns, offsets->data()};
-}
-
-bool areTypesEqual(const IDataType & lhs, const IDataType & rhs)
-{
-    const auto & lhs_name = lhs.getName();
-    const auto & rhs_name = rhs.getName();
-
-    return lhs_name == rhs_name;
-}
-
-bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
-{
-    return areTypesEqual(*lhs, *rhs);
 }
 
 ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
@@ -264,7 +250,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
-            if (!result_null_map_column) //-V1051
+            if (!result_null_map_column)
             {
                 result_null_map_column = null_map_column;
             }

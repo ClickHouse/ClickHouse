@@ -10,7 +10,6 @@ namespace DB
   * You can render it with:
   *  dot -T png < pipeline.dot > pipeline.png
   */
-
 template <typename Processors, typename Statuses>
 void printPipeline(const Processors & processors, const Statuses & statuses, WriteBuffer & out)
 {
@@ -18,9 +17,11 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
     out << "  rankdir=\"LR\";\n";
     out << "  { node [shape = rect]\n";
 
-    auto get_proc_id = [](const IProcessor & proc) -> UInt64
+    std::unordered_map<const void *, std::size_t> pointer_to_id;
+    auto get_proc_id = [&](const IProcessor & proc) -> std::size_t
     {
-        return reinterpret_cast<std::uintptr_t>(&proc);
+        auto [it, inserted] = pointer_to_id.try_emplace(&proc, pointer_to_id.size());
+        return it->second;
     };
 
     auto statuses_iter = statuses.begin();
@@ -70,5 +71,4 @@ void printPipeline(const Processors & processors, WriteBuffer & out)
 /// If QueryPlanStep wasn't set for processor, representation may be not correct.
 /// If with_header is set, prints block header for each edge.
 void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool with_header);
-
 }

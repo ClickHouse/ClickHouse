@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS tj;
 
 SET allow_experimental_analyzer = 1;
+SET single_join_prefer_left_table = 0;
 
 CREATE TABLE tj (key2 UInt64, key1 Int64, a UInt64, b UInt64, x UInt64, y UInt64) ENGINE = Join(ALL, RIGHT, key1, key2);
 INSERT INTO tj VALUES (2, -2, 20, 200, 2000, 20000), (3, -3, 30, 300, 3000, 30000), (4, -4, 40, 400, 4000, 40000), (5, -5, 50, 500, 5000, 50000), (6, -6, 60, 600, 6000, 60000);

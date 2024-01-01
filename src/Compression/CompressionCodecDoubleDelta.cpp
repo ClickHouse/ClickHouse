@@ -1,13 +1,11 @@
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
@@ -31,7 +29,7 @@ namespace DB
 /** DoubleDelta column codec implementation.
  *
  * Based on Gorilla paper: http://www.vldb.org/pvldb/vol8/p1816-teller.pdf, which was extended
- * to support 64bit types. The drawback is 1 extra bit for 32-byte wide deltas: 5-bit prefix
+ * to support 64bit types. The drawback is 1 extra bit for 32-bit wide deltas: 5-bit prefix
  * instead of 4-bit prefix.
  *
  * This codec is best used against monotonic integer sequences with constant (or almost constant)
@@ -145,6 +143,8 @@ namespace ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
+    extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
 namespace
@@ -287,13 +287,13 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     using SignedDeltaType = typename std::make_signed_t<UnsignedDeltaType>;
 
     if (source_size % sizeof(ValueType) != 0)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress, data size {} is not aligned to {}",
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with DoubleDelta codec, data size {} is not aligned to {}",
                         source_size, sizeof(ValueType));
     const char * source_end = source + source_size;
     const char * dest_start = dest;
 
     const UInt32 items_count = source_size / sizeof(ValueType);
-    unalignedStoreLE<UInt32>(dest, items_count);
+    unalignedStoreLittleEndian<UInt32>(dest, items_count);
     dest += sizeof(items_count);
 
     ValueType prev_value{};
@@ -301,8 +301,8 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     if (source < source_end)
     {
-        prev_value = unalignedLoadLE<ValueType>(source);
-        unalignedStoreLE<ValueType>(dest, prev_value);
+        prev_value = unalignedLoadLittleEndian<ValueType>(source);
+        unalignedStoreLittleEndian<ValueType>(dest, prev_value);
 
         source += sizeof(prev_value);
         dest += sizeof(prev_value);
@@ -310,10 +310,10 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     if (source < source_end)
     {
-        const ValueType curr_value = unalignedLoadLE<ValueType>(source);
+        const ValueType curr_value = unalignedLoadLittleEndian<ValueType>(source);
 
         prev_delta = curr_value - prev_value;
-        unalignedStoreLE<UnsignedDeltaType>(dest, prev_delta);
+        unalignedStoreLittleEndian<UnsignedDeltaType>(dest, prev_delta);
 
         source += sizeof(curr_value);
         dest += sizeof(prev_delta);
@@ -325,7 +325,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
     int item = 2;
     for (; source < source_end; source += sizeof(ValueType), ++item)
     {
-        const ValueType curr_value = unalignedLoadLE<ValueType>(source);
+        const ValueType curr_value = unalignedLoadLittleEndian<ValueType>(source);
 
         const UnsignedDeltaType delta = curr_value - prev_value;
         const UnsignedDeltaType double_delta = delta - prev_delta;
@@ -369,7 +369,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     if (source + sizeof(UInt32) > source_end)
         return;
 
-    const UInt32 items_count = unalignedLoadLE<UInt32>(source);
+    const UInt32 items_count = unalignedLoadLittleEndian<UInt32>(source);
     source += sizeof(items_count);
 
     ValueType prev_value{};
@@ -379,10 +379,10 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     if (source + sizeof(ValueType) > source_end || items_count < 1)
         return;
 
-    prev_value = unalignedLoadLE<ValueType>(source);
+    prev_value = unalignedLoadLittleEndian<ValueType>(source);
     if (dest + sizeof(prev_value) > output_end)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
-    unalignedStoreLE<ValueType>(dest, prev_value);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress double-delta-encoded data");
+    unalignedStoreLittleEndian<ValueType>(dest, prev_value);
 
     source += sizeof(prev_value);
     dest += sizeof(prev_value);
@@ -391,11 +391,11 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     if (source + sizeof(UnsignedDeltaType) > source_end || items_count < 2)
         return;
 
-    prev_delta = unalignedLoadLE<UnsignedDeltaType>(source);
+    prev_delta = unalignedLoadLittleEndian<UnsignedDeltaType>(source);
     prev_value = prev_value + static_cast<ValueType>(prev_delta);
     if (dest + sizeof(prev_value) > output_end)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
-    unalignedStoreLE<ValueType>(dest, prev_value);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress double-delta-encoded data");
+    unalignedStoreLittleEndian<ValueType>(dest, prev_value);
 
     source += sizeof(prev_delta);
     dest += sizeof(prev_value);
@@ -427,8 +427,8 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         const UnsignedDeltaType delta = double_delta + prev_delta;
         const ValueType curr_value = prev_value + delta;
         if (dest + sizeof(curr_value) > output_end)
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
-        unalignedStoreLE<ValueType>(dest, curr_value);
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress double-delta-encoded data");
+        unalignedStoreLittleEndian<ValueType>(dest, curr_value);
         dest += sizeof(curr_value);
 
         prev_delta = curr_value - prev_value;
@@ -466,7 +466,7 @@ uint8_t CompressionCodecDoubleDelta::getMethodByte() const
 
 void CompressionCodecDoubleDelta::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(data_bytes_size);
 }
 
@@ -489,7 +489,7 @@ UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 s
     size_t start_pos = 2 + bytes_to_skip;
     UInt32 compressed_size = 0;
 
-    switch (data_bytes_size)
+    switch (data_bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
     case 1:
         compressed_size = compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
@@ -511,22 +511,22 @@ UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 s
 void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < 2)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress double-delta encoded data. File has wrong header");
 
     UInt8 bytes_size = source[0];
 
     if (bytes_size == 0)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress double-delta encoded data. File has wrong header");
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 
     if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress. File has wrong header");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress double-delta encoded data. File has wrong header");
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
-    switch (bytes_size)
+    switch (bytes_size) // NOLINT(bugprone-switch-missing-default-case)
     {
     case 1:
         decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
@@ -549,10 +549,28 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
     factory.registerCompressionCodecWithType("DoubleDelta", method_code,
         [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        if (arguments)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec DoubleDelta does not accept any arguments");
+        /// Default bytes size is 1.
+        UInt8 data_bytes_size = 1;
+        if (arguments && !arguments->children.empty())
+        {
+            if (arguments->children.size() > 1)
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "DoubleDelta codec must have 1 parameter, given {}", arguments->children.size());
 
-        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;
+            const auto children = arguments->children;
+            const auto * literal = children[0]->as<ASTLiteral>();
+            if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "DoubleDelta codec argument must be unsigned integer");
+
+            size_t user_bytes_size = literal->value.safeGet<UInt64>();
+            if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Argument value for DoubleDelta codec can be 1, 2, 4 or 8, given {}", user_bytes_size);
+            data_bytes_size = static_cast<UInt8>(user_bytes_size);
+        }
+        else if (column_type)
+        {
+            data_bytes_size = getDataBytesSize(column_type);
+        }
+
         return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
     });
 }

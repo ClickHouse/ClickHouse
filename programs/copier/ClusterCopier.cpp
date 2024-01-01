@@ -5,7 +5,9 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <Common/CurrentMetrics.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -18,6 +20,13 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
+}
 
 namespace DB
 {
@@ -52,7 +61,7 @@ void ClusterCopier::init()
     getContext()->setClustersConfig(task_cluster_current_config, false, task_cluster->clusters_prefix);
 
     /// Set up shards and their priority
-    task_cluster->random_engine.seed(task_cluster->random_device());
+    task_cluster->random_engine.seed(randomSeed());
     for (auto & task_table : task_cluster->table_tasks)
     {
         task_table.cluster_pull = getContext()->getCluster(task_table.cluster_pull_name);
@@ -192,7 +201,7 @@ void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts,
 {
     /// Fetch partitions list from a shard
     {
-        ThreadPool thread_pool(num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
+        ThreadPool thread_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
 
         for (const TaskShardPtr & task_shard : task_table.all_shards)
             thread_pool.scheduleOrThrowOnError([this, timeouts, task_shard]()
@@ -384,7 +393,7 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
             auto code = zookeeper->tryMulti(ops, responses);
 
             if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
-                return std::make_shared<zkutil::EphemeralNodeHolder>(current_worker_path, *zookeeper, false, false, description);
+                return zkutil::EphemeralNodeHolder::existing(current_worker_path, *zookeeper);
 
             if (code == Coordination::Error::ZBADVERSION)
             {
@@ -601,6 +610,8 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         ss << "ALTER TABLE " << getQuotedTable(original_table) << ((partition_name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ") << partition_name;
 
         UInt64 num_shards_drop_partition = executeQueryOnCluster(task_table.cluster_push, ss.str(), task_cluster->settings_push, ClusterExecutionMode::ON_EACH_SHARD);
+        if (num_shards_drop_partition != task_table.cluster_push->getShardCount())
+            return TaskStatus::Error;
 
         LOG_INFO(log, "Drop partition {} in original table {} have been executed successfully on {} shards of {}",
             partition_name, getQuotedTable(original_table), num_shards_drop_partition, task_table.cluster_push->getShardCount());
@@ -622,7 +633,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         Settings settings_push = task_cluster->settings_push;
         ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_NODE;
 
-        if (settings_push.replication_alter_partitions_sync == 1)
+        if (settings_push.alter_sync == 1)
             execution_mode = ClusterExecutionMode::ON_EACH_SHARD;
 
         query_alter_ast_string += " ALTER TABLE " + getQuotedTable(original_table) +
@@ -640,7 +651,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
                 task_cluster->settings_push,
                 execution_mode);
 
-            if (settings_push.replication_alter_partitions_sync == 1)
+            if (settings_push.alter_sync == 1)
             {
                 LOG_INFO(
                     log,
@@ -863,7 +874,7 @@ bool ClusterCopier::tryDropPartitionPiece(
         Settings settings_push = task_cluster->settings_push;
 
         /// It is important, DROP PARTITION must be done synchronously
-        settings_push.replication_alter_partitions_sync = 2;
+        settings_push.alter_sync = 2;
 
         LOG_INFO(log, "Execute distributed DROP PARTITION: {}", query);
         /// We have to drop partition_piece on each replica
@@ -908,7 +919,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
     /// Exit if success
     if (task_status != TaskStatus::Finished)
     {
-        LOG_WARNING(log, "Create destination Tale Failed ");
+        LOG_WARNING(log, "Create destination table failed ");
         return false;
     }
 
@@ -1225,8 +1236,8 @@ TaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const ConnectionTim
             std::this_thread::sleep_for(retry_delay_ms);
         }
 
-        was_active_pieces = (res == TaskStatus::Active);
-        was_failed_pieces = (res == TaskStatus::Error);
+        was_active_pieces |= (res == TaskStatus::Active);
+        was_failed_pieces |= (res == TaskStatus::Error);
     }
 
     if (was_failed_pieces)
@@ -1397,7 +1408,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         /// 3) Create helping table on the whole destination cluster
         auto & settings_push = task_cluster->settings_push;
 
-        auto connection = task_table.cluster_push->getAnyShardInfo().pool->get(timeouts, &settings_push, true);
+        auto connection = task_table.cluster_push->getAnyShardInfo().pool->get(timeouts, settings_push, true);
         String create_query = getRemoteCreateTable(task_shard.task_table.table_push, *connection, settings_push);
 
         ParserCreateQuery parser_create_query;
@@ -1473,7 +1484,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
         if (count != 0)
         {
-            LOG_INFO(log, "Partition {} piece {}is not empty. In contains {} rows.", task_partition.name, current_piece_number, count);
+            LOG_INFO(log, "Partition {} piece {} is not empty. In contains {} rows.", task_partition.name, current_piece_number, count);
             Coordination::Stat stat_shards{};
             zookeeper->get(partition_piece.getPartitionPieceShardsPath(), &stat_shards);
 
@@ -1757,8 +1768,7 @@ void ClusterCopier::dropParticularPartitionPieceFromAllHelpingTables(const TaskT
     LOG_INFO(log, "All helping tables dropped partition {}", partition_name);
 }
 
-String ClusterCopier::getRemoteCreateTable(
-    const DatabaseAndTableName & table, Connection & connection, const Settings & settings)
+String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings & settings)
 {
     auto remote_context = Context::createCopy(context);
     remote_context->setSettings(settings);
@@ -1767,7 +1777,7 @@ String ClusterCopier::getRemoteCreateTable(
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(std::make_shared<RemoteSource>(
-            std::make_shared<RemoteQueryExecutor>(connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context), false, false)));
+            std::make_shared<RemoteQueryExecutor>(connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context), false, false, /* async_query_sending= */ false)));
     Block block = getBlockWithAllStreamData(std::move(builder));
     return typeid_cast<const ColumnString &>(*block.safeGetByPosition(0).column).getDataAt(0).toString();
 }
@@ -1776,9 +1786,11 @@ String ClusterCopier::getRemoteCreateTable(
 ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
 {
     /// Fetch and parse (possibly) new definition
-    auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull, true);
-    String create_query_pull_str
-        = getRemoteCreateTable(task_shard.task_table.table_pull, *connection_entry, task_cluster->settings_pull);
+    auto connection_entry = task_shard.info.pool->get(timeouts, task_cluster->settings_pull, true);
+    String create_query_pull_str = getRemoteCreateTable(
+            task_shard.task_table.table_pull,
+            *connection_entry,
+            task_cluster->settings_pull);
 
     ParserCreateQuery parser_create_query;
     const auto & settings = getContext()->getSettingsRef();
@@ -1867,8 +1879,8 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
     String query;
     {
         WriteBufferFromOwnString wb;
-        wb << "SELECT DISTINCT " << partition_name << " AS partition FROM"
-           << " " << getQuotedTable(task_shard.table_read_shard) << " ORDER BY partition DESC";
+        wb << "SELECT " << partition_name << " AS partition FROM "
+           << getQuotedTable(task_shard.table_read_shard) << " GROUP BY partition ORDER BY partition DESC";
         query = wb.str();
     }
 
@@ -2015,7 +2027,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
             {
                 connections.emplace_back(std::make_shared<Connection>(
                     node.host_name, node.port, node.default_database,
-                    node.user, node.password, node.quota_key, node.cluster, node.cluster_secret,
+                    node.user, node.password, ssh::SSHKey(), node.quota_key, node.cluster, node.cluster_secret,
                     "ClusterCopier", node.compression, node.secure
                 ));
 
@@ -2025,8 +2037,8 @@ UInt64 ClusterCopier::executeQueryOnCluster(
                 /// For unknown reason global context is passed to IStorage::read() method
                 /// So, task_identifier is passed as constructor argument. It is more obvious.
                 auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    *connections.back(), query, header, getContext(),
-                    /*throttler=*/nullptr, Scalars(), Tables(), QueryProcessingStage::Complete);
+                        *connections.back(), query, header, getContext(),
+                        /*throttler=*/nullptr, Scalars(), Tables(), QueryProcessingStage::Complete);
 
                 try
                 {

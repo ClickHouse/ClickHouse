@@ -42,7 +42,6 @@ namespace
     }
 
     /// Performs a request to get the size and last modification time of an object.
-    /// The function performs either HeadObject or GetObjectAttributes request depending on the endpoint.
     std::pair<std::optional<ObjectInfo>, Aws::S3::S3Error> tryGetObjectInfo(
         const S3::Client & client, const String & bucket, const String & key, const String & version_id,
         const S3Settings::RequestSettings & /*request_settings*/, bool with_metadata, bool for_disk_s3)
@@ -86,8 +85,8 @@ ObjectInfo getObjectInfo(
     }
     else if (throw_on_error)
     {
-        throw DB::Exception(ErrorCodes::S3_ERROR,
-            "Failed to get object attributes: {}. HTTP response code: {}",
+        throw S3Exception(error.GetErrorType(),
+            "Failed to get object info: {}. HTTP response code: {}",
             error.GetMessage(), static_cast<size_t>(error.GetResponseCode()));
     }
     return {};

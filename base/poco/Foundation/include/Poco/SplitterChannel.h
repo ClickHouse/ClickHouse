@@ -18,56 +18,57 @@
 #define Foundation_SplitterChannel_INCLUDED
 
 
-#include "Poco/Foundation.h"
-#include "Poco/Channel.h"
-#include "Poco/Mutex.h"
 #include <vector>
+#include "Poco/Channel.h"
+#include "Poco/Foundation.h"
+#include "Poco/Mutex.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
-class Foundation_API SplitterChannel: public Channel
-	/// This channel sends a message to multiple
-	/// channels simultaneously.
+class Foundation_API SplitterChannel : public Channel
+/// This channel sends a message to multiple
+/// channels simultaneously.
 {
 public:
-	SplitterChannel();
-		/// Creates the SplitterChannel.
+    SplitterChannel();
+    /// Creates the SplitterChannel.
 
-	void addChannel(Channel* pChannel);
-		/// Attaches a channel, which may not be null.
-		
-	void removeChannel(Channel* pChannel);
-		/// Removes a channel.
+    void addChannel(Channel * pChannel);
+    /// Attaches a channel, which may not be null.
 
-	void log(const Message& msg);
-		/// Sends the given Message to all
-		/// attaches channels. 
+    void removeChannel(Channel * pChannel);
+    /// Removes a channel.
 
-	void setProperty(const std::string& name, const std::string& value);
-		/// Sets or changes a configuration property.
-		///
-		/// Only the "channel" property is supported, which allows
-		/// adding a comma-separated list of channels via the LoggingRegistry.
-		/// The "channel" property is set-only.
-		/// To simplify file-based configuration, all property
-		/// names starting with "channel" are treated as "channel".
+    void log(const Message & msg);
+    /// Sends the given Message to all
+    /// attaches channels.
 
-	void close();
-		/// Removes all channels.
-		
-	int count() const;
-		/// Returns the number of channels in the SplitterChannel.
+    void setProperty(const std::string & name, const std::string & value);
+    /// Sets or changes a configuration property.
+    ///
+    /// Only the "channel" property is supported, which allows
+    /// adding a comma-separated list of channels via the LoggingRegistry.
+    /// The "channel" property is set-only.
+    /// To simplify file-based configuration, all property
+    /// names starting with "channel" are treated as "channel".
+
+    void close();
+    /// Removes all channels.
+
+    int count() const;
+    /// Returns the number of channels in the SplitterChannel.
 
 protected:
-	~SplitterChannel();
+    ~SplitterChannel();
 
 private:
-	typedef std::vector<Channel*> ChannelVec;
-	
-	ChannelVec        _channels;
-	mutable FastMutex _mutex;
+    typedef std::vector<Channel *> ChannelVec;
+
+    ChannelVec _channels;
+    mutable FastMutex _mutex;
 };
 
 

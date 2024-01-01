@@ -1,6 +1,6 @@
 ---
 slug: /en/engines/table-engines/integrations/odbc
-sidebar_position: 2
+sidebar_position: 150
 sidebar_label: ODBC
 ---
 
@@ -28,15 +28,15 @@ See a detailed description of the [CREATE TABLE](../../../sql-reference/statemen
 
 The table structure can differ from the source table structure:
 
--   Column names should be the same as in the source table, but you can use just some of these columns and in any order.
--   Column types may differ from those in the source table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
--   The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+- Column names should be the same as in the source table, but you can use just some of these columns and in any order.
+- Column types may differ from those in the source table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+- The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 
--   `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
--   `external_database` — Name of a database in an external DBMS.
--   `external_table` — Name of a table in the `external_database`.
+- `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
+- `external_database` — Name of a database in an external DBMS.
+- `external_table` — Name of a table in the `external_database`.
 
 ## Usage Example {#usage-example}
 
@@ -54,7 +54,7 @@ $ sudo mysql
 
 ``` sql
 mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
-mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'localhost' WITH GRANT OPTION;
 ```
 
 Then configure the connection in `/etc/odbc.ini`.
@@ -66,7 +66,7 @@ DRIVER = /usr/local/lib/libmyodbc5w.so
 SERVER = 127.0.0.1
 PORT = 3306
 DATABASE = test
-USERNAME = clickhouse
+USER = clickhouse
 PASSWORD = clickhouse
 ```
 
@@ -83,6 +83,9 @@ $ isql -v mysqlconn
 Table in MySQL:
 
 ``` text
+mysql> CREATE DATABASE test;
+Query OK, 1 row affected (0,01 sec)
+
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -91,10 +94,10 @@ mysql> CREATE TABLE `test`.`test` (
     ->   PRIMARY KEY (`int_id`));
 Query OK, 0 rows affected (0,09 sec)
 
-mysql> insert into test (`int_id`, `float`) VALUES (1,2);
+mysql> insert into test.test (`int_id`, `float`) VALUES (1,2);
 Query OK, 1 row affected (0,00 sec)
 
-mysql> select * from test;
+mysql> select * from test.test;
 +------+----------+-----+----------+
 | int_id | int_nullable | float | float_nullable |
 +------+----------+-----+----------+
@@ -126,5 +129,5 @@ SELECT * FROM odbc_t
 
 ## See Also {#see-also}
 
--   [ODBC dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
--   [ODBC table function](../../../sql-reference/table-functions/odbc.md)
+- [ODBC dictionaries](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-odbc)
+- [ODBC table function](../../../sql-reference/table-functions/odbc.md)

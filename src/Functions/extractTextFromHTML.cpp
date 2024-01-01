@@ -70,16 +70,16 @@ namespace ErrorCodes
 namespace
 {
 
-inline bool startsWith(const char * s, const char * end, const char * prefix)
+inline bool startsWith(const char * s, const char * end, const std::string_view prefix)
 {
-    return s + strlen(prefix) < end && 0 == memcmp(s, prefix, strlen(prefix));
+    return s + prefix.length() < end && 0 == memcmp(s, prefix.data(), prefix.length());
 }
 
-inline bool checkAndSkip(const char * __restrict & s, const char * end, const char * prefix)
+inline bool checkAndSkip(const char * __restrict & s, const char * end, const std::string_view prefix)
 {
     if (startsWith(s, end, prefix))
     {
-        s += strlen(prefix);
+        s += prefix.length();
         return true;
     }
     return false;
@@ -138,7 +138,7 @@ bool processCDATA(const char * __restrict & src, const char * end, char * __rest
     return true;
 }
 
-bool processElementAndSkipContent(const char * __restrict & src, const char * end, const char * tag_name)
+bool processElementAndSkipContent(const char * __restrict & src, const char * end, const std::string_view tag_name)
 {
     const auto * old_src = src;
 

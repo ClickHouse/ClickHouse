@@ -19,8 +19,8 @@ endif()
 if (NOT "$ENV{CFLAGS}" STREQUAL ""
     OR NOT "$ENV{CXXFLAGS}" STREQUAL ""
     OR NOT "$ENV{LDFLAGS}" STREQUAL ""
-    OR CMAKE_C_FLAGS OR CMAKE_CXX_FLAGS OR CMAKE_EXE_LINKER_FLAGS OR CMAKE_SHARED_LINKER_FLAGS OR CMAKE_MODULE_LINKER_FLAGS
-    OR CMAKE_C_FLAGS_INIT OR CMAKE_CXX_FLAGS_INIT OR CMAKE_EXE_LINKER_FLAGS_INIT OR CMAKE_SHARED_LINKER_FLAGS_INIT OR CMAKE_MODULE_LINKER_FLAGS_INIT)
+    OR CMAKE_C_FLAGS OR CMAKE_CXX_FLAGS OR CMAKE_EXE_LINKER_FLAGS OR CMAKE_MODULE_LINKER_FLAGS
+    OR CMAKE_C_FLAGS_INIT OR CMAKE_CXX_FLAGS_INIT OR CMAKE_EXE_LINKER_FLAGS_INIT OR CMAKE_MODULE_LINKER_FLAGS_INIT)
 
     # if $ENV
     message("CFLAGS: $ENV{CFLAGS}")
@@ -36,7 +36,6 @@ if (NOT "$ENV{CFLAGS}" STREQUAL ""
     message("CMAKE_C_FLAGS_INIT: ${CMAKE_C_FLAGS_INIT}")
     message("CMAKE_CXX_FLAGS_INIT: ${CMAKE_CXX_FLAGS_INIT}")
     message("CMAKE_EXE_LINKER_FLAGS_INIT: ${CMAKE_EXE_LINKER_FLAGS_INIT}")
-    message("CMAKE_SHARED_LINKER_FLAGS_INIT: ${CMAKE_SHARED_LINKER_FLAGS_INIT}")
     message("CMAKE_MODULE_LINKER_FLAGS_INIT: ${CMAKE_MODULE_LINKER_FLAGS_INIT}")
 
     message(FATAL_ERROR "
@@ -79,12 +78,23 @@ if (OS MATCHES "Linux"
     AND ("$ENV{CC}" MATCHES ".*clang.*" OR CMAKE_C_COMPILER MATCHES ".*clang.*"))
 
     if (ARCH MATCHES "amd64|x86_64")
+        # NOTE: right now musl is not ready, since unwind is too slow with it
+        #
+        # FWIW the following had been tried:
+        # - update musl
+        # - compile musl with debug
+        # - compile musl with debug and -fasynchronous-unwind-tables
+        #
+        # But none of this changes anything so far.
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-x86_64.cmake" CACHE INTERNAL "")
     elseif (ARCH MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)")
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-aarch64.cmake" CACHE INTERNAL "")
     elseif (ARCH MATCHES "^(ppc64le.*|PPC64LE.*)")
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-ppc64le.cmake" CACHE INTERNAL "")
+    elseif (ARCH MATCHES "^(s390x.*|S390X.*)")
+        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-s390x.cmake" CACHE INTERNAL "")
     else ()
         message (FATAL_ERROR "Unsupported architecture: ${ARCH}")
     endif ()
+
 endif()
