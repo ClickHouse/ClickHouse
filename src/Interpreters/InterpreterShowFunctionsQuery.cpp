@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowFunctionsQuery.h>
 
 #include <Interpreters/Context.h>
@@ -41,6 +42,16 @@ FROM {}.{})",
     }
 
     return rewritten_query;
+}
+
+void registerInterpreterShowFunctionsQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowFunctionsQuery>(args.query, args.context);
+    };
+
+    factory.registerInterpreter("InterpreterShowFunctionsQuery", create_fn);
 }
 
 }

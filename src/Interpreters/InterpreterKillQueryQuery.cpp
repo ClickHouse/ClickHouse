@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/queryToString.h>
@@ -450,6 +451,16 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
                 | AccessType::ALTER_MATERIALIZE_TTL
             );
     return required_access;
+}
+
+void registerInterpreterKillQueryQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterKillQueryQuery>(args.query, args.context);
+    };
+
+    factory.registerInterpreter("InterpreterKillQueryQuery", create_fn);
 }
 
 }

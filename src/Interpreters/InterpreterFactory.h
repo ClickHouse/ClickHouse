@@ -21,6 +21,7 @@ public:
         ASTPtr & query;
         ContextMutablePtr context;
         const SelectQueryOptions & options;
+        bool allow_materialized;
     };
 
     static std::unique_ptr<IInterpreter> get(

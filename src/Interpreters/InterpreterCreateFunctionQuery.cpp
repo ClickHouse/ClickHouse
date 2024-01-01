@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 
 #include <Access/ContextAccess.h>
@@ -51,6 +52,16 @@ BlockIO InterpreterCreateFunctionQuery::execute()
     UserDefinedSQLFunctionFactory::instance().registerFunction(current_context, function_name, updated_query_ptr, throw_if_exists, replace_if_exists);
 
     return {};
+}
+
+void registerInterpreterCreateFunctionQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateFunctionQuery>(args.query, args.context);
+    };
+    
+    factory.registerInterpreter("InterpreterCreateFunctionQuery", create_fn);
 }
 
 }

@@ -1,5 +1,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUndropQuery.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTUndropQuery.h>
@@ -71,5 +72,15 @@ AccessRightsElements InterpreterUndropQuery::getRequiredAccessForDDLOnCluster() 
 
     required_access.emplace_back(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
     return required_access;
+}
+
+void registerInterpreterUndropQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterUndropQuery>(args.query, args.context);
+    };
+
+    factory.registerInterpreter("InterpreterUndropQuery", create_fn);
 }
 }
