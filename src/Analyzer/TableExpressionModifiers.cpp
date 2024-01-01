@@ -12,6 +12,8 @@ namespace DB
 
 void TableExpressionModifiers::dump(WriteBuffer & buffer) const
 {
+    buffer << "stream: " << has_stream;
+
     buffer << "final: " << has_final;
 
     if (sample_size_ratio)
@@ -23,6 +25,7 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
 
 void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
 {
+    hash_state.update(has_stream);
     hash_state.update(has_final);
     hash_state.update(sample_size_ratio.has_value());
     hash_state.update(sample_offset_ratio.has_value());
@@ -43,6 +46,10 @@ void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
 String TableExpressionModifiers::formatForErrorMessage() const
 {
     WriteBufferFromOwnString buffer;
+
+    if (has_stream)
+        buffer << "STREAM";
+
     if (has_final)
         buffer << "FINAL";
 

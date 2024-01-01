@@ -23,6 +23,7 @@ while (false)
 
 void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    hash_state.update(stream);
     hash_state.update(final);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
