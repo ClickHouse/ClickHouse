@@ -1099,7 +1099,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     auto split_ranges_in_parts = [this](const auto & parts)
     {
         RangesInDataParts parts_with_split_ranges;
-        for (auto part: parts)
+        for (const auto & part: parts)
         {
             auto ranges_to_get_from_part = this->splitRanges(part.ranges, -1);
             parts_with_split_ranges.emplace_back(part.data_part, part.alter_conversions, part.part_index_in_query, std::move(ranges_to_get_from_part));
