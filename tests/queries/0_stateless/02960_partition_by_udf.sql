@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP FUNCTION IF EXISTS f1;
 CREATE FUNCTION f1 AS (x) -> x;
 
