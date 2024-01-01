@@ -132,7 +132,6 @@ void validate(const ASTCreateQuery & create_query)
 DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
     cckMetadataPathForOrdinary(create, metadata_path);
-    validate(create);
 
     DatabasePtr impl = getImpl(create, metadata_path, context);
 
@@ -165,12 +164,16 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     const String & database_name = create.getDatabase();
     const String & engine_name = storage->engine->name;
 
+    if (!database_engines.contains(engine_name))
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", engine_name);
+
+    /// if the engine is found (i.e. registered with the factory instance), then validate if the
+    /// supplied engine arguments, settings and table overrides are valid for the engine.
+    validate(create);
+
     bool has_engine_args = false;
     if (storage->engine->arguments)
         has_engine_args = true;
-
-    if (!database_engines.contains(engine_name))
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", engine_name);
 
     ASTs empty_engine_args;
     Arguments arguments{
