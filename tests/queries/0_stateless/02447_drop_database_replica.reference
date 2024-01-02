@@ -12,9 +12,6 @@ t
 2
 rdb_default	1	1	s1	r1	1
 2
-s1	r1	OK	2	0
-s1	r2	QUEUED	2	0
-s2	r1	QUEUED	2	0
 2
 s1	r1	OK	2	0
 s1	r2	QUEUED	2	0
@@ -27,5 +24,4 @@ rdb_default	1	2	s1	r2	0
 t
 t2
 t3
-t4
 rdb_default_4	1	1	s1	r1	1
