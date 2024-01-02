@@ -38,7 +38,7 @@ public:
     virtual void resetParser();
 
     virtual void setReadBuffer(ReadBuffer & in_);
-    ReadBuffer & getReadBuffer() const { return *in; }
+    virtual void resetReadBuffer() { in = nullptr; }
 
     virtual const BlockMissingValues & getMissingValues() const
     {
@@ -61,6 +61,8 @@ public:
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
 protected:
+    ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
+
     ColumnMappingPtr column_mapping{};
 
     InputFormatErrorsLoggerPtr errors_logger;

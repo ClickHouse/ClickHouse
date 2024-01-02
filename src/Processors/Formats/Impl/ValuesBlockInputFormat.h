@@ -34,6 +34,7 @@ public:
 
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
     /// TODO: remove context somehow.
     void setContext(ContextPtr & context_) { context = Context::createCopy(context_); }

@@ -431,7 +431,6 @@ try
         log_elements.reserve(data->entries.size());
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
-    std::unique_ptr<ReadBuffer> last_buffer;
     auto chunk_info = std::make_shared<ChunkOffsets>();
     for (const auto & entry : data->entries)
     {
@@ -439,10 +438,6 @@ try
         current_entry = entry;
         total_rows += executor.execute(*buffer);
         chunk_info->offsets.push_back(total_rows);
-
-        /// Keep buffer, because it still can be used
-        /// in destructor, while resetting buffer at next iteration.
-        last_buffer = std::move(buffer);
 
         if (insert_log)
         {
@@ -470,7 +465,6 @@ try
         }
     }
 
-    format->addBuffer(std::move(last_buffer));
     auto insert_query_id = insert_context->getCurrentQueryId();
 
     if (total_rows == 0)
