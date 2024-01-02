@@ -197,14 +197,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// STATISTIC(tdigest(200))
-class ParserStatisticType : public IParserBase
-{
-protected:
-    const char * getName() const override { return "statistic"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 /** Parse collation
   * COLLATE utf8_unicode_ci NOT NULL
   */

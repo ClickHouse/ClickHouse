@@ -897,12 +897,6 @@ Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
 
 Disabled by default.
 
-### input_format_csv_allow_cr_end_of_line {#input_format_csv_allow_cr_end_of_line}
-
-If it is set true, CR(\\r) will be allowed at end of line not followed by LF(\\n)
-
-Disabled by default.
-
 ### input_format_csv_enum_as_number {#input_format_csv_enum_as_number}
 
 When enabled, always treat enum values as enum ids for CSV input format. It's recommended to enable this setting if data contains only enum ids to optimize enum parsing.
@@ -1129,13 +1123,6 @@ Result
 ```text
 a  0  1971-01-01
 ```
-
-## input_format_csv_try_infer_numbers_from_strings {#input_format_csv_try_infer_numbers_from_strings}
-
-If enabled, during schema inference ClickHouse will try to infer numbers from string fields.
-It can be useful if CSV data contains quoted UInt64 numbers.
-
-Disabled by default.
 
 ## Values format settings {#values-format-settings}
 

@@ -17,7 +17,6 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
     extern const Event DiskReadElapsedMicroseconds;
-    extern const Event AsynchronousReaderIgnoredBytes;
 }
 
 namespace CurrentMetrics
@@ -43,7 +42,7 @@ std::future<IAsynchronousReader::Result> SynchronousReader::submit(Request reque
 #if defined(POSIX_FADV_WILLNEED)
     int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
     if (0 != posix_fadvise(fd, request.offset, request.size, POSIX_FADV_WILLNEED))
-        throw ErrnoException(ErrorCodes::CANNOT_ADVISE, "Cannot posix_fadvise");
+        throwFromErrno("Cannot posix_fadvise", ErrorCodes::CANNOT_ADVISE);
 #endif
 
     return std::async(std::launch::deferred, [request, this]
@@ -73,7 +72,7 @@ IAsynchronousReader::Result SynchronousReader::execute(Request request)
         if (-1 == res && errno != EINTR)
         {
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd);
+            throwFromErrno(fmt::format("Cannot read from file {}", fd), ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
         }
 
         if (res > 0)
@@ -89,7 +88,6 @@ IAsynchronousReader::Result SynchronousReader::execute(Request request)
     watch.stop();
     ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-    ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
     return Result{ .size = bytes_read, .offset = request.ignore };
 }
 

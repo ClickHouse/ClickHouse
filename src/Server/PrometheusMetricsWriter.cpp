@@ -50,7 +50,6 @@ PrometheusMetricsWriter::PrometheusMetricsWriter(
     , send_events(config.getBool(config_name + ".events", true))
     , send_metrics(config.getBool(config_name + ".metrics", true))
     , send_asynchronous_metrics(config.getBool(config_name + ".asynchronous_metrics", true))
-    , send_errors(config.getBool(config_name + ".errors", true))
 {
 }
 
@@ -113,42 +112,12 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
             std::string metric_doc{value.documentation};
             convertHelpToSingleLine(metric_doc);
 
+            // TODO: add HELP section? asynchronous_metrics contains only key and value
             writeOutLine(wb, "# HELP", key, metric_doc);
             writeOutLine(wb, "# TYPE", key, "gauge");
             writeOutLine(wb, key, value.value);
         }
     }
-
-    if (send_errors)
-    {
-        size_t total_count = 0;
-
-        for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
-        {
-            const auto & error = ErrorCodes::values[i].get();
-            std::string_view name = ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(i));
-
-            if (name.empty())
-                continue;
-
-            std::string key{error_metrics_prefix + toString(name)};
-            std::string help = fmt::format("The number of {} errors since last server restart", name);
-
-            writeOutLine(wb, "# HELP", key, help);
-            writeOutLine(wb, "# TYPE", key, "counter");
-            /// We are interested in errors which are happened only on this server.
-            writeOutLine(wb, key, error.local.count);
-
-            total_count += error.local.count;
-        }
-
-        /// Write the total number of errors as a separate metric
-        std::string key{error_metrics_prefix + toString("ALL")};
-        writeOutLine(wb, "# HELP", key, "The total number of errors since last server restart");
-        writeOutLine(wb, "# TYPE", key, "counter");
-        writeOutLine(wb, key, total_count);
-    }
-
 }
 
 }

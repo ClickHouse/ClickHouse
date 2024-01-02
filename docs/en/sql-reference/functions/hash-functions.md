@@ -319,9 +319,9 @@ This is a relatively fast non-cryptographic hash function of average quality for
 Calculates a 64-bit hash code from any type of integer.
 It works faster than intHash32. Average quality.
 
-## SHA1, SHA224, SHA256, SHA512, SHA512_256
+## SHA1, SHA224, SHA256, SHA512
 
-Calculates SHA-1, SHA-224, SHA-256, SHA-512, SHA-512-256 hash from a string and returns the resulting set of bytes as [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
+Calculates SHA-1, SHA-224, SHA-256, SHA-512 hash from a string and returns the resulting set of bytes as [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
 
 **Syntax**
 
@@ -1775,34 +1775,4 @@ Result:
 ┌─Tuple──────────────────────────────────────────────────────────────────┐
 │ (('queries','database','analytical'),('oriented','processing','DBMS')) │
 └────────────────────────────────────────────────────────────────────────┘
-```
-
-## sqid
-
-Transforms numbers into YouTube-like short URL hash called [Sqid](https://sqids.org/).
-
-**Syntax**
-
-```sql
-sqid(number1, ...)
-```
-
-**Arguments**
-
-- A variable number of UInt8, UInt16, UInt32 or UInt64 numbers.
-
-**Returned Value**
-
-A hash id [String](/docs/en/sql-reference/data-types/string.md).
-
-**Example**
-
-```sql
-SELECT sqid(1, 2, 3, 4, 5);
-```
-
-```response
-┌─sqid(1, 2, 3, 4, 5)─┐
-│ gXHfJ1C6dN          │
-└─────────────────────┘
 ```

@@ -115,9 +115,9 @@ public:
         return getNested()->alterPartition(metadata_snapshot, commands, context);
     }
 
-    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings, ContextPtr context) const override
+    void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const override
     {
-        getNested()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings, context);
+        getNested()->checkAlterPartitionIsPossible(commands, metadata_snapshot, settings);
     }
 
     bool optimize(
@@ -138,23 +138,19 @@ public:
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 
     void startup() override { getNested()->startup(); }
-    void shutdown(bool is_drop) override { getNested()->shutdown(is_drop); }
+    void shutdown() override { getNested()->shutdown(); }
     void flushAndPrepareForShutdown() override { getNested()->flushAndPrepareForShutdown(); }
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 
-    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override
+    bool supportsIndexForIn() const override { return getNested()->supportsIndexForIn(); }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
     {
-        return getNested()->getCheckTaskList(check_task_filter, context);
+        return getNested()->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
-    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override
-    {
-        return getNested()->checkDataNext(check_task_list);
-    }
-
+    CheckResults checkData(const ASTPtr & query, ContextPtr context) override { return getNested()->checkData(query, context); }
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableCanBeDropped(query_context); }
-
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }

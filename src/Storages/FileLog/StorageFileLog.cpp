@@ -1,7 +1,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -347,8 +346,7 @@ Pipe StorageFileLog::read(
             getMaxBlockSize(),
             getPollTimeoutMillisecond(),
             stream_number,
-            max_streams_number,
-            filelog_settings->handle_error_mode));
+            max_streams_number));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -382,7 +380,7 @@ void StorageFileLog::startup()
         task->holder->activateAndSchedule();
 }
 
-void StorageFileLog::shutdown(bool)
+void StorageFileLog::shutdown()
 {
     if (task)
     {
@@ -710,8 +708,7 @@ bool StorageFileLog::streamToViews()
             getPollMaxBatchSize(),
             getPollTimeoutMillisecond(),
             stream_number,
-            max_streams_number,
-            filelog_settings->handle_error_mode));
+            max_streams_number));
     }
 
     auto input= Pipe::unitePipes(std::move(pipes));
@@ -981,17 +978,13 @@ bool StorageFileLog::updateFileInfos()
 
 NamesAndTypesList StorageFileLog::getVirtuals() const
 {
-    auto virtuals = NamesAndTypesList{
+    return NamesAndTypesList{
         {"_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_offset", std::make_shared<DataTypeUInt64>()}};
-
-    if (filelog_settings->handle_error_mode == StreamingHandleErrorMode::STREAM)
-    {
-        virtuals.push_back({"_raw_record", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-    }
-
-    return virtuals;
 }
 
+Names StorageFileLog::getVirtualColumnNames()
+{
+    return {"_filename", "_offset"};
+}
 }

@@ -166,20 +166,18 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
     if (!best_partition_id_to_optimize.empty())
     {
-        return selectAllPartsToMergeWithinPartition(
-            future_part,
-            can_merge_callback,
-            best_partition_id_to_optimize,
-            /*final=*/true,
-            metadata_snapshot,
-            txn,
-            out_disable_reason,
-            /*optimize_skip_merged_partitions=*/true);
+            return selectAllPartsToMergeWithinPartition(
+                future_part,
+                can_merge_callback,
+                best_partition_id_to_optimize,
+                /*final=*/true,
+                metadata_snapshot,
+                txn,
+                out_disable_reason,
+                /*optimize_skip_merged_partitions=*/true);
     }
 
-    if (!out_disable_reason.empty())
-        out_disable_reason += ". ";
-    out_disable_reason += "There is no need to merge parts according to merge selector algorithm";
+    out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
     return SelectPartsDecision::CANNOT_SELECT;
 }
 

@@ -709,6 +709,11 @@ MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, query, context);
 }
 
+bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
+{
+    return false;
+}
+
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
 {
     size_t max_rows = index.arguments[0].get<size_t>();

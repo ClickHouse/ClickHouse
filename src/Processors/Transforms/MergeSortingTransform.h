@@ -33,12 +33,16 @@ public:
 
     String getName() const override { return "MergeSortingTransform"; }
 
+    PartialResultStatus getPartialResultProcessorSupportStatus() const override { return PartialResultStatus::FullSupported; }
+
 protected:
     void consume(Chunk chunk) override;
     void serialize() override;
     void generate() override;
 
     Processors expandPipeline() override;
+
+    ProcessorPtr getPartialResultProcessor(const ProcessorPtr & current_processor, UInt64 partial_result_limit, UInt64 partial_result_duration_ms) override;
 
 private:
     size_t max_bytes_before_remerge;
@@ -59,6 +63,13 @@ private:
     void remerge();
 
     ProcessorPtr external_merging_sorted;
+
+    friend class MergeSortingPartialResultTransform;
+    /// The mutex protects variables that are used for creating a snapshot of the current processor.
+    /// The current implementation of MergeSortingPartialResultTransform uses the 'generated_prefix' variable to check
+    /// whether the processor has started sending data through the main pipeline, and the corresponding partial result processor should stop creating snapshots.
+    /// Additionally, the mutex protects the 'chunks' variable and all variables in the 'remerge' function, which is used to transition 'chunks' to a sorted state.
+    std::mutex snapshot_mutex;
 };
 
 }

@@ -7,8 +7,6 @@ import os
 import time
 
 import logging
-from typing import Literal
-
 import docker
 import pymysql.connections
 import pytest
@@ -579,37 +577,6 @@ def test_mysql_set_variables(started_cluster):
     assert code == 0
 
 
-def test_mysql_boolean_format(started_cluster):
-    node.query(
-        """
-            CREATE OR REPLACE TABLE mysql_boolean_format_test
-            (
-                `a` Bool,
-                `b` Nullable(Bool),
-                `c` LowCardinality(Nullable(Bool))
-            ) ENGINE MergeTree ORDER BY a;
-        """,
-        settings={"password": "123", "allow_suspicious_low_cardinality_types": 1},
-    )
-    node.query(
-        "INSERT INTO mysql_boolean_format_test VALUES (false, true, false), (true, false, true);",
-        settings={"password": "123"},
-    )
-    code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
-        """
-        mysql --protocol tcp -h {host} -P {port} default -u user_with_double_sha1 --password=abacaba
-        -e "SELECT * FROM mysql_boolean_format_test;"
-        """.format(
-            host=started_cluster.get_instance_ip("node"), port=server_port
-        ),
-        demux=True,
-    )
-    logging.debug(
-        f"test_mysql_boolean_format code:{code} stdout:{stdout}, stderr:{stderr}"
-    )
-    assert stdout.decode() == "a\tb\tc\n" + "0\t1\t0\n" + "1\t0\t1\n"
-
-
 def test_python_client(started_cluster):
     client = pymysql.connections.Connection(
         host=started_cluster.get_instance_ip("node"),
@@ -792,32 +759,79 @@ def test_mysqljs_client(started_cluster, nodejs_container):
     assert code == 1
 
 
-def test_java_client_text(started_cluster, java_container):
-    command = setup_java_client(started_cluster, "false")
-    code, (stdout, stderr) = java_container.exec_run(
-        command,
-        demux=True,
-    )
-
-    with open(os.path.join(SCRIPT_DIR, "java_client.reference")) as fp:
+def test_java_client(started_cluster, java_container):
+    with open(os.path.join(SCRIPT_DIR, "java.reference")) as fp:
         reference = fp.read()
 
-    assert stdout.decode() == reference
-    assert code == 0
-
-
-def test_java_client_binary(started_cluster, java_container):
-    command = setup_java_client(started_cluster, "true")
+    # database not exists exception.
     code, (stdout, stderr) = java_container.exec_run(
-        command,
+        "java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database "
+        "abc".format(host=started_cluster.get_instance_ip("node"), port=server_port),
         demux=True,
     )
+    assert code == 1
 
-    with open(os.path.join(SCRIPT_DIR, "java_client.reference")) as fp:
+    # empty password passed.
+    code, (stdout, stderr) = java_container.exec_run(
+        "java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database "
+        "default".format(
+            host=started_cluster.get_instance_ip("node"), port=server_port
+        ),
+        demux=True,
+    )
+    assert code == 0
+    assert stdout.decode() == reference
+
+    # non-empty password passed.
+    code, (stdout, stderr) = java_container.exec_run(
+        "java JavaConnectorTest --host {host} --port {port} --user default --password 123 --database "
+        "default".format(
+            host=started_cluster.get_instance_ip("node"), port=server_port
+        ),
+        demux=True,
+    )
+    assert code == 0
+    assert stdout.decode() == reference
+
+    # double-sha1 password passed.
+    code, (stdout, stderr) = java_container.exec_run(
+        "java JavaConnectorTest --host {host} --port {port} --user user_with_double_sha1 --password abacaba  --database "
+        "default".format(
+            host=started_cluster.get_instance_ip("node"), port=server_port
+        ),
+        demux=True,
+    )
+    assert code == 0
+    assert stdout.decode() == reference
+
+
+def test_prepared_statements(started_cluster, java_container):
+    with open(os.path.join(SCRIPT_DIR, "prepared_statements.reference")) as fp:
         reference = fp.read()
 
-    assert stdout.decode() == reference
+    with open(os.path.join(SCRIPT_DIR, "prepared_statements_test.sql")) as sql:
+        statements = list(
+            filter(
+                lambda s: s != "",
+                map(lambda s: s.strip().replace("\n", " "), sql.read().split(";")),
+            )
+        )
+
+    for statement in statements:
+        node.query(
+            statement,
+            settings={"password": "123", "allow_suspicious_low_cardinality_types": 1},
+        )
+
+    code, (stdout, stderr) = java_container.exec_run(
+        "java PreparedStatementsTest --host {host} --port {port} --user user_with_double_sha1 --password abacaba  --database "
+        "default".format(
+            host=started_cluster.get_instance_ip("node"), port=server_port
+        ),
+        demux=True,
+    )
     assert code == 0
+    assert stdout.decode() == reference
 
 
 def test_types(started_cluster):
@@ -879,31 +893,3 @@ def test_types(started_cluster):
             assert math.isnan(result[key])
         else:
             assert result[key] == value
-
-
-def setup_java_client(started_cluster, binary: Literal["true", "false"]):
-    with open(os.path.join(SCRIPT_DIR, "java_client_test.sql")) as sql:
-        statements = list(
-            filter(
-                lambda s: s != "",
-                map(lambda s: s.strip().replace("\n", " "), sql.read().split(";")),
-            )
-        )
-
-    for statement in statements:
-        node.query(
-            statement,
-            settings={"password": "123", "allow_suspicious_low_cardinality_types": 1},
-        )
-
-    return (
-        "java MySQLJavaClientTest "
-        "--host {host} "
-        "--port {port} "
-        "--user user_with_double_sha1 "
-        "--password abacaba "
-        "--database default "
-        "--binary {binary}"
-    ).format(
-        host=started_cluster.get_instance_ip("node"), port=server_port, binary=binary
-    )

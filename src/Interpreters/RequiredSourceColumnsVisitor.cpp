@@ -8,7 +8,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
-#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -127,7 +126,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
 
         if (const auto * identifier = node->as<ASTIdentifier>())
             data.addColumnIdentifier(*identifier);
-        else if (!node->as<ASTLiteral>())
+        else
             data.addColumnAliasIfAny(*node);
     }
 

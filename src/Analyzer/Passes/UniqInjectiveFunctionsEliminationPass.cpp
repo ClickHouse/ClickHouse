@@ -76,9 +76,7 @@ public:
             argument_types.emplace_back(function_node_argument->getResultType());
 
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(
-            function_node->getFunctionName(),
-            NullsAction::EMPTY,
+        auto aggregate_function = AggregateFunctionFactory::instance().get(function_node->getFunctionName(),
             argument_types,
             function_node->getAggregateFunction()->getParameters(),
             properties);

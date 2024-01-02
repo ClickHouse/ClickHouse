@@ -22,6 +22,8 @@ public:
 
     MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query_info, ContextPtr context) const override;
 
+    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
+
 private:
     size_t bits_per_row;
     size_t hash_functions;

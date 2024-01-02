@@ -32,7 +32,11 @@ private:
     LZ4F_preferences_t kPrefs; /// NOLINT
     LZ4F_compressionContext_t ctx;
 
-    Memory<> tmp_memory;
+    void * in_data;
+    void * out_data;
+
+    size_t in_capacity;
+    size_t out_capacity;
 
     bool first_time = true;
 };

@@ -2136,7 +2136,7 @@ SELECT * FROM test_table
 -   [distributed_replica_error_cap](#settings-distributed_replica_error_cap)
 -   [distributed_replica_error_half_life](#settings-distributed_replica_error_half_life)
 
-## distributed_background_insert_sleep_time_ms {#distributed_background_insert_sleep_time_ms}
+## distributed_directory_monitor_sleep_time_ms {#distributed_directory_monitor_sleep_time_ms}
 
 Основной интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Фактический интервал растёт экспоненциально при возникновении ошибок.
 
@@ -2146,9 +2146,9 @@ SELECT * FROM test_table
 
 Значение по умолчанию: 100 миллисекунд.
 
-## distributed_background_insert_max_sleep_time_ms {#distributed_background_insert_max_sleep_time_ms}
+## distributed_directory_monitor_max_sleep_time_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-Максимальный интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Ограничивает экпоненциальный рост интервала, установленого настройкой [distributed_background_insert_sleep_time_ms](#distributed_background_insert_sleep_time_ms).
+Максимальный интервал отправки данных движком таблиц [Distributed](../../engines/table-engines/special/distributed.md). Ограничивает экпоненциальный рост интервала, установленого настройкой [distributed_directory_monitor_sleep_time_ms](#distributed_directory_monitor_sleep_time_ms).
 
 Возможные значения:
 
@@ -2156,7 +2156,7 @@ SELECT * FROM test_table
 
 Значение по умолчанию: 30000 миллисекунд (30 секунд).
 
-## distributed_background_insert_batch {#distributed_background_insert_batch}
+## distributed_directory_monitor_batch_inserts {#distributed_directory_monitor_batch_inserts}
 
 Включает/выключает пакетную отправку вставленных данных.
 
@@ -2249,7 +2249,7 @@ SELECT * FROM test_table
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
-Включает или отключает режим, при котором входящие данные разбиваются на части, парсинг каждой из которых осуществляется параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TSKV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+Включает или отключает режим, при котором входящие данные разбиваются на части, парсинг каждой из которых осуществляется параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 
 Возможные значения:
 
@@ -2260,7 +2260,7 @@ SELECT * FROM test_table
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
-Включает или отключает режим, при котором исходящие данные форматируются параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TSKV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+Включает или отключает режим, при котором исходящие данные форматируются параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 
 Возможные значения:
 
@@ -2323,11 +2323,11 @@ SELECT * FROM test_table
 
 Значение по умолчанию: 0.
 
-## distributed_foreground_insert {#distributed_foreground_insert}
+## insert_distributed_sync {#insert_distributed_sync}
 
 Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](../../engines/table-engines/special/distributed.md#distributed)).
 
-По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `distributed_foreground_insert=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).
+По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `insert_distributed_sync=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).
 
 Возможные значения:
 
@@ -3837,18 +3837,6 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 -   1 — Функции возвращают результаты типа `Date32` или `DateTime64` для аргументов типа `Date32` или `DateTime64` и возвращают `Date` или `DateTime` в других случаях.
 
 Значение по умолчанию: `0`.
-
-## date_time_overflow_behavior {#date_time_overflow_behavior}
-
-Задаёт поведение при преобразовании [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), а также численных типов данных к Date, Date32, DateTime, DateTime64 в случае, если результат выходит за пределы диапазона значений необходимого типа.
-
-Возможные значения:
-
-- `ignore` — Молча игнорирует переполнение. В таком случае, результатом будет случайное значение.
-- `throw` — Выкинуть исключение при переполнении.
-- `saturate` — Молча округлить до ближайшего (то есть наибольшего или наименьшего) значения из диапазона значений результата.
-
-Значение по умолчанию: `ignore`.
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere}
 

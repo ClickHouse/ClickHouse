@@ -3,7 +3,6 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/checkStackSize.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -76,7 +75,6 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
-    extern const int SYNTAX_ERROR;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -414,7 +412,7 @@ FutureSetPtr makeExplicitSet(
 
     auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef().transform_null_in);
 
-    auto set_key = right_arg->getTreeHash(/*ignore_aliases=*/ true);
+    auto set_key = right_arg->getTreeHash();
     if (auto set = prepared_sets.findTuple(set_key, set_element_keys))
         return set; /// Already prepared.
 
@@ -693,8 +691,6 @@ bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
 
 void ActionsMatcher::visit(const ASTPtr & ast, Data & data)
 {
-    checkStackSize();
-
     if (const auto * identifier = ast->as<ASTIdentifier>())
         visit(*identifier, ast, data);
     else if (const auto * table = ast->as<ASTTableIdentifier>())
@@ -762,8 +758,8 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 
     ASTs columns;
     size_t tid = 0;
-    auto untuple_alias = function->tryGetAlias();
-    for (const auto & element_name : tuple_type->getElementNames())
+    auto func_alias = function->tryGetAlias();
+    for (const auto & name [[maybe_unused]] : tuple_type->getElementNames())
     {
         auto tuple_ast = function->arguments->children[0];
 
@@ -777,12 +773,8 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         visit(*literal, literal, data);
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
-        if (!untuple_alias.empty())
-        {
-            auto element_alias = tuple_type->haveExplicitNames() ? element_name : toString(tid);
-            func->setAlias(untuple_alias + "." + element_alias);
-        }
-
+        if (!func_alias.empty())
+            func->setAlias(func_alias + "." + toString(tid));
         auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
 
@@ -847,19 +839,6 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Dat
     }
 }
 
-namespace
-{
-void checkFunctionHasEmptyNullsAction(const ASTFunction & node)
-{
-    if (node.nulls_action != NullsAction::EMPTY)
-        throw Exception(
-            ErrorCodes::SYNTAX_ERROR,
-            "Function {} cannot use {} NULLS",
-            node.name,
-            node.nulls_action == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
-}
-}
-
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
     auto column_name = ast->getColumnName();
@@ -874,7 +853,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     {
         if (node.arguments->children.size() != 1)
             throw Exception(ErrorCodes::TYPE_MISMATCH, "arrayJoin requires exactly 1 argument");
-        checkFunctionHasEmptyNullsAction(node);
 
         ASTPtr arg = node.arguments->children.at(0);
         visit(arg, data);
@@ -886,7 +864,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (node.name == "grouping")
     {
-        checkFunctionHasEmptyNullsAction(node);
         if (data.only_consts)
             return; // Can not perform constant folding, because this function can be executed only after GROUP BY
 
@@ -938,7 +915,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     FutureSetPtr prepared_set;
     if (checkFunctionIsInOrGlobalInOperator(node))
     {
-        checkFunctionHasEmptyNullsAction(node);
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 
@@ -969,7 +945,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     /// A special function `indexHint`. Everything that is inside it is not calculated
     if (node.name == "indexHint")
     {
-        checkFunctionHasEmptyNullsAction(node);
         if (data.only_consts)
         {
             /// We need to collect constants inside `indexHint` for index analysis.
@@ -1107,8 +1082,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (node.parameters)
             throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
     }
-
-    checkFunctionHasEmptyNullsAction(node);
 
     Names argument_names;
     DataTypes argument_types;
@@ -1411,13 +1384,10 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             set_key = query_tree->getTreeHash();
         }
         else
-            set_key = right_in_operand->getTreeHash(/*ignore_aliases=*/ true);
+            set_key = right_in_operand->getTreeHash();
 
         if (auto set = data.prepared_sets->findSubquery(set_key))
-        {
-            set->markAsINSubquery();
             return set;
-        }
 
         FutureSetPtr external_table_set;
 
@@ -1463,8 +1433,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             interpreter->buildQueryPlan(*source);
         }
 
-        return data.prepared_sets->addFromSubquery(
-            set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef(), /*in_subquery=*/true);
+        return data.prepared_sets->addFromSubquery(set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
     }
     else
     {

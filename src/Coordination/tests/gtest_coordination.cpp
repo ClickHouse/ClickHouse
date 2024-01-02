@@ -71,15 +71,6 @@ protected:
     DB::KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true);
     Poco::Logger * log{&Poco::Logger::get("CoordinationTest")};
 
-    void SetUp() override
-    {
-        Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
-        Poco::Logger::root().setChannel(channel);
-        Poco::Logger::root().setLevel("trace");
-
-        keeper_context->local_logs_preprocessed = true;
-    }
-
     void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
 
     void setSnapshotDirectory(const std::string & path)
@@ -1000,7 +991,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
 
     DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_11_15.bin" + params.extension, DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        "./logs/changelog_11_15.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(0);
 
     DB::KeeperLogStore changelog_reader(
@@ -1048,7 +1039,6 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_EQ(changelog_reader2.last_entry()->get_term(), 7777);
 }
 
-/// Truncating all entries
 TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
 {
     auto params = GetParam();
@@ -1073,7 +1063,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
 
     DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_1_20.bin" + params.extension, DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        "./logs/changelog_1_20.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(30);
 
     DB::KeeperLogStore changelog_reader(
@@ -1101,152 +1091,6 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     changelog_reader2.init(1, 0);
     EXPECT_EQ(changelog_reader2.size(), 1);
     EXPECT_EQ(changelog_reader2.last_entry()->get_term(), 7777);
-}
-
-/// Truncating only some entries from the end
-/// For compressed logs we have no reliable way of knowing how many log entries were lost 
-/// after we truncate some bytes from the end
-TEST_F(CoordinationTest, ChangelogTestReadAfterBrokenTruncate3)
-{
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
-        DB::FlushSettings(),
-        keeper_context);
-    changelog.init(1, 0);
-
-    for (size_t i = 0; i < 35; ++i)
-    {
-        auto entry = getLogEntry(std::to_string(i) + "_hello_world", (i + 44) * 10);
-        changelog.append(entry);
-    }
-
-    changelog.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin"));
-    EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin"));
-
-    DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_1_20.bin", DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
-    plain_buf.truncate(plain_buf.size() - 30);
-
-    DB::KeeperLogStore changelog_reader(
-        DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
-        DB::FlushSettings(),
-        keeper_context);
-    changelog_reader.init(1, 0);
-
-    EXPECT_EQ(changelog_reader.size(), 19);
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin"));
-    assertBrokenLogRemoved("./logs", "changelog_21_40.bin");
-    EXPECT_TRUE(fs::exists("./logs/changelog_20_39.bin"));
-    auto entry = getLogEntry("hello_world", 7777);
-    changelog_reader.append(entry);
-    changelog_reader.end_of_append_batch(0, 0);
-
-    waitDurableLogs(changelog_reader);
-
-    EXPECT_EQ(changelog_reader.size(), 20);
-    EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
-}
-
-TEST_F(CoordinationTest, ChangelogTestMixedLogTypes)
-{
-    ChangelogDirTest test("./logs");
-    setLogDirectory("./logs");
-
-    std::vector<std::string> changelog_files;
-
-    const auto verify_changelog_files = [&]
-    {
-        for (const auto & log_file : changelog_files)
-            EXPECT_TRUE(fs::exists(log_file)) << "File " << log_file << " not found";
-    };
-
-    size_t last_term = 0;
-    size_t log_size = 0;
-
-    const auto append_log = [&](auto & changelog, const std::string & data, uint64_t term)
-    {
-        last_term = term;
-        ++log_size;
-        auto entry = getLogEntry(data, last_term);
-        changelog.append(entry);
-    };
-
-    const auto verify_log_content = [&](const auto & changelog)
-    {
-        EXPECT_EQ(changelog.size(), log_size);
-        EXPECT_EQ(changelog.last_entry()->get_term(), last_term);
-    };
-
-    {
-        SCOPED_TRACE("Initial uncompressed log");
-        DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
-            DB::FlushSettings(),
-            keeper_context);
-        changelog.init(1, 0);
-
-        for (size_t i = 0; i < 35; ++i)
-            append_log(changelog, std::to_string(i) + "_hello_world", (i+ 44) * 10);
-
-        changelog.end_of_append_batch(0, 0);
-
-        waitDurableLogs(changelog);
-        changelog_files.push_back("./logs/changelog_1_20.bin");
-        changelog_files.push_back("./logs/changelog_21_40.bin");
-        verify_changelog_files();
-
-        verify_log_content(changelog);
-    }
-
-    {
-        SCOPED_TRACE("Compressed log");
-        DB::KeeperLogStore changelog_compressed(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = true, .rotate_interval = 20},
-            DB::FlushSettings(),
-            keeper_context);
-        changelog_compressed.init(1, 0);
-
-        verify_changelog_files();
-        verify_log_content(changelog_compressed);
-
-        append_log(changelog_compressed, "hello_world", 7777);
-        changelog_compressed.end_of_append_batch(0, 0);
-
-        waitDurableLogs(changelog_compressed);
-
-        verify_log_content(changelog_compressed);
-
-        changelog_files.push_back("./logs/changelog_36_55.bin.zstd");
-        verify_changelog_files();
-    }
-
-    {
-        SCOPED_TRACE("Final uncompressed log");
-        DB::KeeperLogStore changelog(
-            DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
-            DB::FlushSettings(),
-            keeper_context);
-        changelog.init(1, 0);
-
-        verify_changelog_files();
-        verify_log_content(changelog);
-
-        append_log(changelog, "hello_world", 7778);
-        changelog.end_of_append_batch(0, 0);
-
-        waitDurableLogs(changelog);
-
-        verify_log_content(changelog);
-
-        changelog_files.push_back("./logs/changelog_37_56.bin");
-        verify_changelog_files();
-    }
 }
 
 TEST_P(CoordinationTest, ChangelogTestLostFiles)
@@ -1733,7 +1577,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotBroken)
 
     /// Let's corrupt file
     DB::WriteBufferFromFile plain_buf(
-        "./snapshots/snapshot_50.bin" + params.extension, DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        "./snapshots/snapshot_50.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(34);
     plain_buf.sync();
 
@@ -2770,7 +2614,7 @@ TEST_P(CoordinationTest, TestDurableState)
     {
         SCOPED_TRACE("Read from corrupted file");
         state_manager.reset();
-        DB::WriteBufferFromFile write_buf("./state", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
+        DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
         write_buf.seek(20, SEEK_SET);
         DB::writeIntBinary(31, write_buf);
         write_buf.sync();
@@ -2787,7 +2631,7 @@ TEST_P(CoordinationTest, TestDurableState)
         SCOPED_TRACE("Read from file with invalid size");
         state_manager.reset();
 
-        DB::WriteBufferFromFile write_buf("./state", DB::DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+        DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
         DB::writeIntBinary(20, write_buf);
         write_buf.sync();
         write_buf.close();
@@ -3066,5 +2910,14 @@ TEST_P(CoordinationTest, TestReapplyingDeltas)
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,
     ::testing::ValuesIn(std::initializer_list<CompressionParam>{CompressionParam{true, ".zstd"}, CompressionParam{false, ""}}));
+
+int main(int argc, char ** argv)
+{
+    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+    Poco::Logger::root().setChannel(channel);
+    Poco::Logger::root().setLevel("trace");
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+}
 
 #endif

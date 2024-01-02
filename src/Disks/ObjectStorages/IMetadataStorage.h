@@ -126,10 +126,10 @@ public:
     virtual void createEmptyMetadataFile(const std::string & path) = 0;
 
     /// Create metadata file on paths with content (blob_name, size_in_bytes)
-    virtual void createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) = 0;
+    virtual void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) = 0;
 
     /// Add to new blob to metadata file (way to implement appends)
-    virtual void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* key */, uint64_t /* size_in_bytes */)
+    virtual void addBlobToMetadata(const std::string & /* path */, const std::string & /* blob_name */, uint64_t /* size_in_bytes */)
     {
         throwNotImplemented();
     }
@@ -220,6 +220,8 @@ public:
     /// Return object information (absolute_path, bytes_size, ...) for metadata path.
     /// object_storage_path is absolute.
     virtual StoredObjects getStorageObjects(const std::string & path) const = 0;
+
+    virtual std::string getObjectStorageRootPath() const = 0;
 
 private:
     [[noreturn]] static void throwNotImplemented()

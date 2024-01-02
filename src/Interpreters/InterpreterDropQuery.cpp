@@ -267,7 +267,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef().check_table_dependencies;
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
 
-            table->flushAndShutdown(true);
+            table->flushAndShutdown();
 
             TableExclusiveLockHolder table_lock;
             if (database->getUUID() == UUIDHelpers::Nil)

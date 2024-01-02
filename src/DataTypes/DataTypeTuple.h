@@ -34,6 +34,7 @@ public:
     std::string doGetName() const override;
     std::string doGetPrettyName(size_t indent) const override;
     const char * getFamilyName() const override { return "Tuple"; }
+    String getSQLCompatibleName() const override { return "JSON"; }
 
     bool canBeInsideNullable() const override { return false; }
     bool supportsSparseSerialization() const override { return true; }

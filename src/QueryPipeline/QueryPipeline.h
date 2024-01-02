@@ -75,7 +75,8 @@ public:
         std::shared_ptr<Processors> processors_,
         OutputPort * output_,
         OutputPort * totals_ = nullptr,
-        OutputPort * extremes_ = nullptr);
+        OutputPort * extremes_ = nullptr,
+        OutputPort * partial_result_ = nullptr);
 
     bool initialized() const { return !processors->empty(); }
     /// When initialized, exactly one of the following is true.
@@ -154,6 +155,7 @@ private:
     OutputPort * output = nullptr;
     OutputPort * totals = nullptr;
     OutputPort * extremes = nullptr;
+    OutputPort * partial_result = nullptr;
 
     QueryStatusPtr process_list_element;
 
@@ -162,12 +164,14 @@ private:
     size_t num_threads = 0;
     bool concurrency_control = false;
 
+    UInt64 partial_result_limit = 0;
+    UInt64 partial_result_duration_ms = 0;
+
     friend class PushingPipelineExecutor;
     friend class PullingPipelineExecutor;
     friend class PushingAsyncPipelineExecutor;
     friend class PullingAsyncPipelineExecutor;
     friend class CompletedPipelineExecutor;
-    friend class RefreshTask;
     friend class QueryPipelineBuilder;
 };
 

@@ -138,13 +138,13 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     }
 }
 
-void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state) const
 {
     hash_state.update(table_id.database_name);
     hash_state.update(table_id.table_name);
     hash_state.update(table_id.uuid);
     hash_state.update(format);
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 

@@ -1,10 +1,10 @@
 #include "WebUIRequestHandler.h"
 #include "IServer.h"
 
+#include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <Interpreters/Context.h>
 #include <IO/HTTPCommon.h>
 
 #ifdef __clang__
@@ -24,7 +24,6 @@
 INCBIN(resource_play_html, SOURCE_DIR "/programs/server/play.html");
 INCBIN(resource_dashboard_html, SOURCE_DIR "/programs/server/dashboard.html");
 INCBIN(resource_uplot_js, SOURCE_DIR "/programs/server/js/uplot.js");
-INCBIN(resource_binary_html, SOURCE_DIR "/programs/server/binary.html");
 
 
 namespace DB
@@ -38,7 +37,7 @@ WebUIRequestHandler::WebUIRequestHandler(IServer & server_)
 
 void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
+    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
 
     response.setContentType("text/html; charset=UTF-8");
 
@@ -67,11 +66,6 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
         RE2::Replace(&html, uplot_url, "/js/uplot.js");
 
         *response.send() << html;
-    }
-    else if (request.getURI().starts_with("/binary"))
-    {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        *response.send() << std::string_view(reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize);
     }
     else if (request.getURI() == "/js/uplot.js")
     {

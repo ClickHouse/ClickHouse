@@ -9,7 +9,6 @@ extract_into_parent_list(clickhouse_functions_sources dbms_sources
     FunctionHelpers.cpp
     extractTimeZoneFromFunctionArguments.cpp
     FunctionsLogical.cpp
-    CastOverloadResolver.cpp
 )
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
     IFunction.h
@@ -17,7 +16,6 @@ extract_into_parent_list(clickhouse_functions_headers dbms_headers
     FunctionHelpers.h
     extractTimeZoneFromFunctionArguments.h
     FunctionsLogical.h
-    CastOverloadResolver.h
 )
 
 add_library(clickhouse_functions_obj OBJECT ${clickhouse_functions_headers} ${clickhouse_functions_sources})
@@ -79,10 +77,6 @@ if (ENABLE_NLP)
     list (APPEND PRIVATE_LIBS ch_contrib::cld2)
 endif()
 
-if (TARGET ch_contrib::sqids)
-    list (APPEND PRIVATE_LIBS ch_contrib::sqids)
-endif()
-
 if (TARGET ch_contrib::h3)
     list (APPEND PRIVATE_LIBS ch_contrib::h3)
 endif()
@@ -99,10 +93,6 @@ if (TARGET ch_contrib::rapidjson)
     list (APPEND PRIVATE_LIBS ch_contrib::rapidjson)
 endif()
 
-if (TARGET ch_contrib::pocketfft)
-    list (APPEND PRIVATE_LIBS ch_contrib::pocketfft)
-endif()
-
 if (TARGET ch_contrib::crc32-vpmsum)
     list (APPEND PUBLIC_LIBS ch_contrib::crc32-vpmsum)
 endif()
@@ -115,9 +105,6 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_url>)
 
 add_subdirectory(array)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_array>)
-
-add_subdirectory(Kusto)
-list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_kusto>)
 
 if (TARGET ch_contrib::datasketches)
     add_subdirectory(UniqTheta)

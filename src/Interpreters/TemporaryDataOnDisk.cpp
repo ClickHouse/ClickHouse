@@ -11,13 +11,8 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
 
-#include <Core/Defines.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
-
-namespace ProfileEvents
-{
-    extern const Event ExternalProcessingFilesTotal;
-}
 
 namespace DB
 {
@@ -60,17 +55,17 @@ TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, Cu
     , current_metric_scope(metric_scope)
 {}
 
-std::unique_ptr<WriteBufferFromFileBase> TemporaryDataOnDisk::createRawStream(size_t max_file_size)
+WriteBufferPtr TemporaryDataOnDisk::createRawStream(size_t max_file_size)
 {
     if (file_cache)
     {
         auto holder = createCacheFile(max_file_size);
-        return std::make_unique<WriteBufferToFileSegment>(std::move(holder));
+        return std::make_shared<WriteBufferToFileSegment>(std::move(holder));
     }
     else if (volume)
     {
         auto tmp_file = createRegularFile(max_file_size);
-        return std::make_unique<WriteBufferFromTemporaryFile>(std::move(tmp_file));
+        return std::make_shared<WriteBufferFromTemporaryFile>(std::move(tmp_file));
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDiskScope has no cache and no volume");
@@ -102,14 +97,9 @@ FileSegmentsHolderPtr TemporaryDataOnDisk::createCacheFile(size_t max_file_size)
     if (!file_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDiskScope has no cache");
 
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
-
     const auto key = FileSegment::Key::random();
     auto holder = file_cache->set(key, 0, std::max(10_MiB, max_file_size), CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true));
-
-    chassert(holder->size() == 1);
-    holder->back().getKeyMetadata()->createBaseDirectory();
-
+    fs::create_directories(file_cache->getPathInLocalCache(key));
     return holder;
 }
 
@@ -130,7 +120,7 @@ TemporaryFileOnDiskHolder TemporaryDataOnDisk::createRegularFile(size_t max_file
     {
         disk = volume->getDisk();
     }
-    /// We do not increment ProfileEvents::ExternalProcessingFilesTotal here because it is incremented in TemporaryFileOnDisk constructor.
+
     return std::make_unique<TemporaryFileOnDisk>(disk, current_metric_scope);
 }
 
@@ -215,16 +205,16 @@ struct TemporaryFileStream::OutputWriter
 
 struct TemporaryFileStream::InputReader
 {
-    InputReader(const String & path, const Block & header_, size_t size = 0)
-        : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
+    InputReader(const String & path, const Block & header_)
+        : in_file_buf(path)
         , in_compressed_buf(in_file_buf)
         , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
     {
         LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Reading {} from {}", header_.dumpStructure(), path);
     }
 
-    explicit InputReader(const String & path, size_t size = 0)
-        : in_file_buf(path, size ? std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, size) : DBMS_DEFAULT_BUFFER_SIZE)
+    explicit InputReader(const String & path)
+        : in_file_buf(path)
         , in_compressed_buf(in_file_buf)
         , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
     {
@@ -315,7 +305,7 @@ Block TemporaryFileStream::read()
 
     if (!in_reader)
     {
-        in_reader = std::make_unique<InputReader>(getPath(), header, getSize());
+        in_reader = std::make_unique<InputReader>(getPath(), header);
     }
 
     Block block = in_reader->read();
@@ -378,16 +368,6 @@ String TemporaryFileStream::getPath() const
         return file->getAbsolutePath();
     if (segment_holder && !segment_holder->empty())
         return segment_holder->front().getPathInLocalCache();
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream has no file");
-}
-
-size_t TemporaryFileStream::getSize() const
-{
-    if (file)
-        return file->getDisk()->getFileSize(file->getRelativePath());
-    if (segment_holder && !segment_holder->empty())
-        return segment_holder->front().getReservedSize();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream has no file");
 }

@@ -55,6 +55,7 @@ set (SRCS
     src/DigestStream.cpp
     src/DirectoryIterator.cpp
     src/DirectoryIteratorStrategy.cpp
+    src/DirectoryWatcher.cpp
     src/Environment.cpp
     src/Error.cpp
     src/ErrorHandler.cpp

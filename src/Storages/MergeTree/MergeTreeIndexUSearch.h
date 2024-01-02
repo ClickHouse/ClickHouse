@@ -102,6 +102,8 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
 
+    bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return false; }
+
 private:
     const String distance_function;
     const unum::usearch::scalar_kind_t scalar_kind;

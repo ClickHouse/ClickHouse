@@ -1,6 +1,5 @@
 #include <Interpreters/QueryLog.h>
 
-#include <base/getFQDNOrHostName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -56,7 +55,6 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
 
     return
     {
-        {"hostname", low_cardinality_string},
         {"type", std::move(query_status_datatype)},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
@@ -162,7 +160,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(type);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);

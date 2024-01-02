@@ -27,17 +27,6 @@ set(RE2_SOURCES
 
 add_library(_re2 ${RE2_SOURCES})
 target_include_directories(_re2 PUBLIC "${SRC_DIR}")
-target_link_libraries(_re2 PRIVATE
-    absl::base
-    absl::core_headers
-    absl::fixed_array
-    absl::flat_hash_map
-    absl::flat_hash_set
-    absl::inlined_vector
-    absl::strings
-    absl::str_format
-    absl::synchronization
-    absl::optional
-    absl::span)
+target_link_libraries(_re2 ch_contrib::abseil_str_format)
 
 add_library(ch_contrib::re2 ALIAS _re2)

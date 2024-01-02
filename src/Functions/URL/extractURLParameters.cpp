@@ -1,14 +1,8 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionTokens.h>
-
+#include <Functions/FunctionsStringArray.h>
 
 namespace DB
 {
-
-namespace
-{
-
-using Pos = const char *;
 
 class ExtractURLParametersImpl
 {
@@ -19,6 +13,7 @@ private:
 
 public:
     static constexpr auto name = "extractURLParameters";
+    static String getName() { return name; }
 
     static bool isVariadic() { return false; }
     static size_t getNumberOfArguments() { return 1; }
@@ -93,9 +88,8 @@ public:
     }
 };
 
+struct NameExtractURLParameters { static constexpr auto name = "extractURLParameters"; };
 using FunctionExtractURLParameters = FunctionTokens<ExtractURLParametersImpl>;
-
-}
 
 REGISTER_FUNCTION(ExtractURLParameters)
 {

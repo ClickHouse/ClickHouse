@@ -921,7 +921,7 @@ Expression ((Project names + Projection))
       Window (Window step for window \'PARTITION BY p_0 ORDER BY o_1 ASC\')
         Sorting (Sorting for window \'PARTITION BY p_0 ORDER BY o_1 ASC\')
           Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
-            ReadFromSystemNumbers
+            ReadFromStorage (SystemNumbers)
 explain select
     count(*) over (order by o, number),
     count(*) over (order by number)
@@ -936,7 +936,7 @@ Expression ((Project names + Projection))
         Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))) [lifted up part])
           Sorting (Sorting for window \'ORDER BY number_1 ASC\')
             Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
-              ReadFromSystemNumbers
+              ReadFromStorage (SystemNumbers)
 -- A test case for the sort comparator found by fuzzer.
 SELECT
     max(number) OVER (ORDER BY number DESC NULLS FIRST),
