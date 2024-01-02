@@ -94,6 +94,7 @@ public:
 
 protected:
     friend class HDFSSource;
+    friend class ReadFromHDFS;
 
 private:
     std::vector<String> uris;
@@ -144,7 +145,6 @@ public:
         UInt64 max_block_size_,
         std::shared_ptr<IteratorWrapper> file_iterator_,
         bool need_only_count_);
-        //const SelectQueryInfo & query_info_);
 
     String getName() const override;
 
@@ -163,7 +163,6 @@ private:
     ColumnsDescription columns_description;
     bool need_only_count;
     size_t total_rows_in_file = 0;
-    //SelectQueryInfo query_info;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;

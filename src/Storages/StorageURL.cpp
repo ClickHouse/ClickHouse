@@ -896,15 +896,10 @@ public:
         : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
         , storage(std::move(storage_))
         , uri_options(uri_options_)
-        // , paths(std::move(paths_))
-        // , archive_info(std::move(archive_info_))
-        // , virtual_columns(std::move(virtual_columns_))
-        // , distributed_processing(distributed_processing_)
         , info(std::move(info_))
         , need_only_count(need_only_count_)
         , read_uri_params(std::move(read_uri_params_))
         , read_post_data_callback(std::move(read_post_data_callback_))
-        // , total_bytes_to_read(total_bytes_to_read_)
         , context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
@@ -915,18 +910,10 @@ private:
     std::shared_ptr<IStorageURLBase> storage;
     std::vector<String> * uri_options;
 
-    // std::vector<std::string> paths;
-    // std::optional<StorageFile::ArchiveInfo> archive_info;
-
-    // NamesAndTypesList virtual_columns;
-    // const bool distributed_processing;
-
     ReadFromFormatInfo info;
     const bool need_only_count;
     std::vector<std::pair<std::string, std::string>> read_uri_params;
     std::function<void(std::ostream &)> read_post_data_callback;
-
-    // size_t total_bytes_to_read;
 
     ContextPtr context;
 
@@ -936,9 +923,6 @@ private:
     std::shared_ptr<StorageURLSource::IteratorWrapper> iterator_wrapper;
     bool is_url_with_globs = false;
     bool is_empty_glob = false;
-
-    // FieldVectorPtr keys;
-    // bool all_scan = false;
 
     void createIterator(const ActionsDAG::Node * predicate);
 };

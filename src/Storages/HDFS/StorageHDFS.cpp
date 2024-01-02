@@ -411,7 +411,6 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
 class HDFSSource::DisclosedGlobIterator::Impl
 {
 public:
-
     Impl(const String & uri, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
     {
         const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
@@ -854,10 +853,6 @@ public:
 
     ReadFromHDFS(
         Block sample_block,
-        std::vector<String> uris_,
-        bool distributed_processing_,
-        NamesAndTypesList virtual_columns_,
-        bool is_path_with_globs_,
         ReadFromFormatInfo info_,
         bool need_only_count_,
         std::shared_ptr<StorageHDFS> storage_,
@@ -865,10 +860,6 @@ public:
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
-        , uris(std::move(uris_))
-        , distributed_processing(distributed_processing_)
-        , virtual_columns(std::move(virtual_columns_))
-        , is_path_with_globs(is_path_with_globs_)
         , info(std::move(info_))
         , need_only_count(need_only_count_)
         , storage(std::move(storage_))
@@ -879,10 +870,6 @@ public:
     }
 
 private:
-    std::vector<String> uris;
-    const bool distributed_processing;
-    NamesAndTypesList virtual_columns;
-    bool is_path_with_globs;
     ReadFromFormatInfo info;
     const bool need_only_count;
     std::shared_ptr<StorageHDFS> storage;
@@ -924,10 +911,6 @@ void StorageHDFS::read(
 
     auto reading = std::make_unique<ReadFromHDFS>(
         read_from_format_info.source_header,
-        uris,
-        distributed_processing,
-        virtual_columns,
-        is_path_with_globs,
         std::move(read_from_format_info),
         need_only_count,
         std::move(this_ptr),
@@ -943,17 +926,17 @@ void ReadFromHDFS::createIterator(const ActionsDAG::Node * predicate)
     if (iterator_wrapper)
         return;
 
-    if (distributed_processing)
+    if (storage->distributed_processing)
     {
         iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>(
             [callback = context->getReadTaskCallback()]() -> StorageHDFS::PathWithInfo {
                 return StorageHDFS::PathWithInfo{callback(), std::nullopt};
         });
     }
-    else if (is_path_with_globs)
+    else if (storage->is_path_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(uris[0], predicate, virtual_columns, context);
+        auto glob_iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(storage->uris[0], predicate, storage->virtual_columns, context);
         iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>([glob_iterator]()
         {
             return glob_iterator->next();
@@ -961,7 +944,7 @@ void ReadFromHDFS::createIterator(const ActionsDAG::Node * predicate)
     }
     else
     {
-        auto uris_iterator = std::make_shared<HDFSSource::URISIterator>(uris, predicate, virtual_columns, context);
+        auto uris_iterator = std::make_shared<HDFSSource::URISIterator>(storage->uris, predicate, storage->virtual_columns, context);
         iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>([uris_iterator]()
         {
             return uris_iterator->next();
