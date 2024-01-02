@@ -126,6 +126,8 @@ public:
         bool enable_parallel_reading
     );
 
+    QueryPlanStepPtr clone() const override;
+
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
 
@@ -174,7 +176,11 @@ public:
         Poco::Logger * log,
         std::optional<Indexes> & indexes);
 
-    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
+    MergeTreeDataSelectAnalysisResultPtr trySelectRangesToRead(
+        MergeTreeData::DataPartsVector parts,
+        std::vector<AlterConversionsPtr> alter_conversions) const;
+
+    AnalysisResult selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions) const;
 

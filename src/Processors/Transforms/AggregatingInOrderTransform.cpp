@@ -351,7 +351,9 @@ FinalizeAggregatedTransform::FinalizeAggregatedTransform(Block header, Aggregati
 void FinalizeAggregatedTransform::transform(Chunk & chunk)
 {
     if (params->final)
+    {
         finalizeChunk(chunk, aggregates_mask);
+    }
     else if (!chunk.getChunkInfo())
     {
         auto info = std::make_shared<AggregatedChunkInfo>();

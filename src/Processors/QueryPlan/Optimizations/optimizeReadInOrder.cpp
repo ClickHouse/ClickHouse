@@ -1,3 +1,6 @@
+#include "Processors/QueryPlan/IQueryPlanStep.h"
+#include "Processors/QueryPlan/PartsSplitter.h"
+#include "Storages/SelectQueryInfo.h"
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Functions/IFunction.h>
@@ -6,6 +9,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Poco/Logger.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -31,12 +35,12 @@
 namespace DB::QueryPlanOptimizations
 {
 
-static ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
+static ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool skip_optimized)
 {
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
         /// Already read-in-order, skip.
-        if (reading->getQueryInfo().input_order_info)
+        if (skip_optimized && reading->getQueryInfo().input_order_info)
             return nullptr;
 
         const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
@@ -68,10 +72,10 @@ static ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
 
 using StepStack = std::vector<IQueryPlanStep*>;
 
-static QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & backward_path)
+static QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & backward_path, bool skip_optimized)
 {
     IQueryPlanStep * step = node.step.get();
-    if (auto * reading = checkSupportedReadingStep(step))
+    if (auto * reading = checkSupportedReadingStep(step, skip_optimized))
     {
         backward_path.push_back(node.step.get());
         return &node;
@@ -83,10 +87,10 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & bac
     backward_path.push_back(node.step.get());
 
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
-        return findReadingStep(*node.children.front(), backward_path);
+        return findReadingStep(*node.children.front(), backward_path, skip_optimized);
 
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
-        return findReadingStep(*node.children.front(), backward_path);
+        return findReadingStep(*node.children.front(), backward_path, skip_optimized);
 
     return nullptr;
 }
@@ -789,7 +793,7 @@ AggregationInputOrder buildInputOrderInfo(
 
 InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & node, StepStack & backward_path)
 {
-    QueryPlan::Node * reading_node = findReadingStep(node, backward_path);
+    QueryPlan::Node * reading_node = findReadingStep(node, backward_path, /*skip_optimized=*/ true);
     if (!reading_node)
         return nullptr;
 
@@ -841,18 +845,21 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, QueryPlan::Node & n
     return nullptr;
 }
 
-AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node, StepStack & backward_path)
+void optimizeAggregationInOrder(AggregatingStep & aggregating, QueryPlan::Node & aggregating_node, QueryPlan::Nodes & nodes)
 {
-    QueryPlan::Node * reading_node = findReadingStep(node, backward_path);
+    StepStack backward_path;
+
+    auto & child_node = *aggregating_node.children.front();
+    auto * reading_node = findReadingStep(child_node, backward_path, /*skip_optimized=*/ true);
     if (!reading_node)
-        return {};
+        return;
 
     const auto & keys = aggregating.getParams().keys;
     size_t limit = 0;
 
     ActionsDAGPtr dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    buildSortingDAG(child_node, dag, fixed_columns, limit);
 
     if (dag && !fixed_columns.empty())
         enreachFixedColumns(*dag, fixed_columns);
@@ -864,17 +871,54 @@ AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPl
             fixed_columns,
             dag, keys);
 
-        if (order_info.input_order)
-        {
-            bool can_read = reading->requestReadingInOrder(
-                order_info.input_order->used_prefix_of_sorting_key_size,
-                order_info.input_order->direction,
-                order_info.input_order->limit);
-            if (!can_read)
-                return {};
-        }
+        if (!order_info.input_order)
+            return;
 
-        return order_info;
+        bool can_read = reading->requestReadingInOrder(
+            order_info.input_order->used_prefix_of_sorting_key_size,
+            order_info.input_order->direction,
+            order_info.input_order->limit);
+
+        if (!can_read)
+            return;
+
+        StepStack new_backward_path;
+
+        auto & aggregating_node_no_merge = cloneQueryPlanTree(aggregating_node, nodes);
+        auto * reading_node_no_merge = findReadingStep(*aggregating_node_no_merge.children.front(), new_backward_path, /*skip_optimized=*/ false);
+        chassert(reading_node_no_merge != nullptr);
+
+        auto & aggregating_no_merge = assert_cast<AggregatingStep &>(*aggregating_node_no_merge.step);
+        auto & reading_no_merge = assert_cast<ReadFromMergeTree &>(*reading_node_no_merge->step);
+
+        auto analysis_result = reading->selectRangesToRead(reading->getParts(), reading->getAlterConvertionsForParts());
+        auto analysis_result_no_merge = analysis_result;
+
+        auto split_result = splitPartsRanges(analysis_result.parts_with_ranges, /*force_process_all_ranges=*/ true);
+
+        /// TODO: correct other fields.
+        analysis_result.parts_with_ranges = std::move(split_result.intersecting_parts_ranges);
+        analysis_result_no_merge.parts_with_ranges = std::move(split_result.non_intersecting_parts_ranges);
+
+        reading->setAnalyzedResult(std::make_shared<MergeTreeDataSelectAnalysisResult>(std::move(analysis_result)));
+        reading_no_merge.setAnalyzedResult(std::make_shared<MergeTreeDataSelectAnalysisResult>(std::move(analysis_result_no_merge)));
+
+        aggregating.applyOrder(order_info.sort_description_for_merging, order_info.group_by_sort_description);
+        aggregating_no_merge.applyOrder(std::move(order_info.sort_description_for_merging), std::move(order_info.group_by_sort_description));
+        aggregating_no_merge.skipMerging();
+
+        auto & union_node = aggregating_node;
+        auto & aggregating_node_with_merge = nodes.emplace_back();
+
+        std::swap(union_node, aggregating_node_with_merge);
+
+        DataStreams input_streams{aggregating.getOutputStream(), aggregating_no_merge.getOutputStream()};
+        union_node.step = std::make_unique<UnionStep>(std::move(input_streams));
+        union_node.children.push_back(&aggregating_node_with_merge);
+        union_node.children.push_back(&aggregating_node_no_merge);
+
+        updateStepsDataStreams(backward_path);
+        updateStepsDataStreams(new_backward_path);
     }
     else if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
     {
@@ -883,17 +927,16 @@ AggregationInputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPl
             fixed_columns,
             dag, keys);
 
-        if (order_info.input_order)
-        {
-            bool can_read = merge->requestReadingInOrder(order_info.input_order);
-            if (!can_read)
-                return {};
-        }
+        if (!order_info.input_order)
+            return;
 
-        return order_info;
+        bool can_read = merge->requestReadingInOrder(order_info.input_order);
+        if (!can_read)
+            return;
+
+        aggregating.applyOrder(std::move(order_info.sort_description_for_merging), std::move(order_info.group_by_sort_description));
+        updateStepsDataStreams(backward_path);
     }
-
-    return {};
 }
 
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
@@ -978,7 +1021,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     }
 }
 
-void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
+void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 {
     if (node.children.size() != 1)
         return;
@@ -994,14 +1037,7 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     if (aggregating->getParams().overflow_row)
         return;
 
-    /// TODO: maybe add support for UNION later.
-    std::vector<IQueryPlanStep*> steps_to_update;
-    if (auto order_info = buildInputOrderInfo(*aggregating, *node.children.front(), steps_to_update); order_info.input_order)
-    {
-        aggregating->applyOrder(std::move(order_info.sort_description_for_merging), std::move(order_info.group_by_sort_description));
-        /// update data stream's sorting properties
-        updateStepsDataStreams(steps_to_update);
-    }
+    optimizeAggregationInOrder(*aggregating, node, nodes);
 }
 
 /// This optimization is obsolete and will be removed.

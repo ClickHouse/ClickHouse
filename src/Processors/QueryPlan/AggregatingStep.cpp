@@ -136,6 +136,26 @@ AggregatingStep::AggregatingStep(
     }
 }
 
+QueryPlanStepPtr AggregatingStep::clone() const
+{
+    return std::make_unique<AggregatingStep>(
+        getInputStreams().front(),
+        params,
+        grouping_sets_params,
+        final,
+        max_block_size,
+        aggregation_in_order_max_block_bytes,
+        merge_threads,
+        temporary_data_merge_threads,
+        storage_has_evenly_distributed_read,
+        group_by_use_nulls,
+        sort_description_for_merging,
+        group_by_sort_description,
+        should_produce_results_in_order_of_bucket_number,
+        memory_bound_merging_of_aggregation_results_enabled,
+        explicit_sorting_required_for_aggregation_in_order);
+}
+
 void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_)
 {
     sort_description_for_merging = std::move(sort_description_for_merging_);

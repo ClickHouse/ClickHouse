@@ -222,270 +222,6 @@ struct PartsRangesIterator
     EventType event;
 };
 
-struct SplitPartsRangesResult
-{
-    RangesInDataParts non_intersecting_parts_ranges;
-    RangesInDataParts intersecting_parts_ranges;
-};
-
-SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool force_process_all_ranges)
-{
-    /** Split ranges in data parts into intersecting ranges in data parts and non intersecting ranges in data parts.
-      *
-      * For each marks range we will create 2 events (RangeStart, RangeEnd), add these events into array and sort them by primary key index
-      * value at this event.
-      *
-      * After that we will scan sorted events and maintain current intersecting parts ranges.
-      * If current intersecting parts ranges is 1, for each event (RangeStart, RangeEnd) we can extract non intersecting range
-      * from single part range.
-      *
-      * There can be 4 possible cases:
-      *
-      * 1. RangeStart after RangeStart:
-      *
-      * Example:
-      *
-      * range 1 [----            ...
-      * range 2      [(value_1)    ...
-      *
-      * In this scenario we can extract non intersecting part of range 1. This non intersecting part will have start
-      * of range 1 and end with rightmost mark from range 1 that contains value less than value_1.
-      *
-      * 2. RangeStart after RangeEnd:
-      *
-      * Example:
-      *
-      * range 1   [              ----              ...
-      * range 2   [   (value_1)]
-      * range 3                      [(value_2)    ...
-      *
-      * In this case we can extract non intersecting part of range 1. This non intersecting part will have start
-      * of leftmost mark from range 1 that contains value greater than value_1 and end with rightmost mark from range 1
-      * that contains value less than value_2.
-      *
-      * 3. RangeEnd after RangeStart:
-      *
-      * Example:
-      *
-      * range 1   [----]
-      *
-      * In this case we can extract range 1 as non intersecting.
-      *
-      * 4. RangeEnd after RangeEnd
-      *
-      * Example:
-      *
-      * range 1    [    ...              ----]
-      * range 2    [    ...    (value_1)]
-      *
-      * In this case we can extract non intersecting part of range 1. This non intersecting part will have start
-      * of leftmost mark from range 1 that contains value greater than value_1 and end with range 1 end.
-      *
-      * Additional details:
-      *
-      * 1. If part level is 0, we must process all ranges from this part, because they can contain duplicate primary keys.
-      * 2. If non intersecting range is small, it is better to not add it to non intersecting ranges, to avoid expensive seeks.
-      */
-
-    IndexAccess index_access(ranges_in_data_parts);
-    std::vector<PartsRangesIterator> parts_ranges;
-
-    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
-    {
-        for (const auto & range : ranges_in_data_parts[part_index].ranges)
-        {
-            const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
-            parts_ranges.push_back(
-                {index_access.getValue(part_index, range.begin), range, part_index, PartsRangesIterator::EventType::RangeStart});
-
-            const bool value_is_defined_at_end_mark = range.end < index_granularity.getMarksCount();
-            if (!value_is_defined_at_end_mark)
-                continue;
-
-            parts_ranges.push_back(
-                {index_access.getValue(part_index, range.end), range, part_index, PartsRangesIterator::EventType::RangeEnd});
-        }
-    }
-
-    std::sort(parts_ranges.begin(), parts_ranges.end());
-
-    RangesInDataPartsBuilder intersecting_ranges_in_data_parts_builder(ranges_in_data_parts);
-    RangesInDataPartsBuilder non_intersecting_ranges_in_data_parts_builder(ranges_in_data_parts);
-
-    static constexpr size_t min_number_of_marks_for_non_intersecting_range = 2;
-
-    auto add_non_intersecting_range = [&](size_t part_index, MarkRange mark_range)
-    {
-        non_intersecting_ranges_in_data_parts_builder.addRange(part_index, mark_range);
-    };
-
-    auto add_intersecting_range = [&](size_t part_index, MarkRange mark_range)
-    {
-        intersecting_ranges_in_data_parts_builder.addRange(part_index, mark_range);
-    };
-
-    std::unordered_map<size_t, MarkRange> part_index_start_to_range;
-
-    chassert(!parts_ranges.empty());
-    chassert(parts_ranges[0].event == PartsRangesIterator::EventType::RangeStart);
-    part_index_start_to_range[parts_ranges[0].part_index] = parts_ranges[0].range;
-
-    size_t parts_ranges_size = parts_ranges.size();
-    for (size_t i = 1; i < parts_ranges_size; ++i)
-    {
-        auto & previous_part_range = parts_ranges[i - 1];
-        auto & current_part_range = parts_ranges[i];
-        size_t intersecting_parts = part_index_start_to_range.size();
-        bool range_start = current_part_range.event == PartsRangesIterator::EventType::RangeStart;
-
-        if (range_start)
-        {
-            auto [it, inserted] = part_index_start_to_range.emplace(current_part_range.part_index, current_part_range.range);
-            chassert(inserted);
-
-            if (intersecting_parts != 1)
-                continue;
-
-            if (previous_part_range.event == PartsRangesIterator::EventType::RangeStart)
-            {
-                /// If part level is 0, we must process whole previous part because it can contain duplicate primary keys
-                if (force_process_all_ranges || ranges_in_data_parts[previous_part_range.part_index].data_part->info.level == 0)
-                    continue;
-
-                /// Case 1 Range Start after Range Start
-                size_t begin = previous_part_range.range.begin;
-                std::optional<size_t> end_optional = index_access.findRightmostMarkLessThanValueInRange(previous_part_range.part_index,
-                    current_part_range.value,
-                    previous_part_range.range);
-
-                if (!end_optional)
-                    continue;
-
-                size_t end = *end_optional;
-
-                if (end - begin >= min_number_of_marks_for_non_intersecting_range)
-                {
-                    part_index_start_to_range[previous_part_range.part_index].begin = end;
-                    add_non_intersecting_range(previous_part_range.part_index, MarkRange{begin, end});
-                }
-
-                continue;
-            }
-
-            auto other_interval_it = part_index_start_to_range.begin();
-            for (; other_interval_it != part_index_start_to_range.end(); ++other_interval_it)
-            {
-                if (other_interval_it != it)
-                    break;
-            }
-
-            chassert(other_interval_it != part_index_start_to_range.end());
-            size_t other_interval_part_index = other_interval_it->first;
-            MarkRange other_interval_range = other_interval_it->second;
-
-            /// If part level is 0, we must process whole other intersecting part because it can contain duplicate primary keys
-            if (force_process_all_ranges || ranges_in_data_parts[other_interval_part_index].data_part->info.level == 0)
-                continue;
-
-            /// Case 2 Range Start after Range End
-            std::optional<size_t> begin_optional = index_access.findLeftmostMarkGreaterThanValueInRange(other_interval_part_index,
-                previous_part_range.value,
-                other_interval_range);
-            if (!begin_optional)
-                continue;
-
-            std::optional<size_t> end_optional = index_access.findRightmostMarkLessThanValueInRange(other_interval_part_index,
-                current_part_range.value,
-                other_interval_range);
-            if (!end_optional)
-                continue;
-
-            size_t begin = *end_optional;
-            size_t end = *end_optional;
-
-            if (end - begin >= min_number_of_marks_for_non_intersecting_range)
-            {
-                other_interval_it->second.begin = end;
-                add_intersecting_range(other_interval_part_index, MarkRange{other_interval_range.begin, begin});
-                add_non_intersecting_range(other_interval_part_index, MarkRange{begin, end});
-            }
-            continue;
-        }
-
-        chassert(current_part_range.event == PartsRangesIterator::EventType::RangeEnd);
-
-        /** If there are more than 1 part ranges that we are currently processing
-          * that means that this part range is intersecting with other range.
-          *
-          * If part level is 0, we must process whole part because it can contain duplicate primary keys.
-          */
-        if (intersecting_parts != 1 || force_process_all_ranges || ranges_in_data_parts[current_part_range.part_index].data_part->info.level == 0)
-        {
-            add_intersecting_range(current_part_range.part_index, part_index_start_to_range[current_part_range.part_index]);
-            part_index_start_to_range.erase(current_part_range.part_index);
-            continue;
-        }
-
-        if (previous_part_range.event == PartsRangesIterator::EventType::RangeStart)
-        {
-            chassert(current_part_range.part_index == previous_part_range.part_index);
-            chassert(current_part_range.range == previous_part_range.range);
-
-            /// Case 3 Range End after Range Start
-            non_intersecting_ranges_in_data_parts_builder.addRange(current_part_range.part_index, current_part_range.range);
-            part_index_start_to_range.erase(current_part_range.part_index);
-            continue;
-        }
-
-        chassert(previous_part_range.event == PartsRangesIterator::EventType::RangeEnd);
-        chassert(previous_part_range.part_index != current_part_range.part_index);
-
-        /// Case 4 Range End after Range End
-        std::optional<size_t> begin_optional = index_access.findLeftmostMarkGreaterThanValueInRange(current_part_range.part_index,
-            previous_part_range.value,
-            current_part_range.range);
-        size_t end = current_part_range.range.end;
-
-        if (begin_optional && end - *begin_optional >= min_number_of_marks_for_non_intersecting_range)
-        {
-            size_t begin = *begin_optional;
-            add_intersecting_range(current_part_range.part_index, MarkRange{part_index_start_to_range[current_part_range.part_index].begin, begin});
-            add_non_intersecting_range(current_part_range.part_index, MarkRange{begin, end});
-        }
-        else
-        {
-            add_intersecting_range(current_part_range.part_index, MarkRange{part_index_start_to_range[current_part_range.part_index].begin, end});
-        }
-
-        part_index_start_to_range.erase(current_part_range.part_index);
-    }
-
-    /// Process parts ranges with undefined value at end mark
-    bool is_intersecting = part_index_start_to_range.size() > 1;
-    for (const auto & [part_index, mark_range] : part_index_start_to_range)
-    {
-        if (is_intersecting)
-            add_intersecting_range(part_index, mark_range);
-        else
-            add_non_intersecting_range(part_index, mark_range);
-    }
-
-    auto && non_intersecting_ranges_in_data_parts = std::move(non_intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
-    auto && intersecting_ranges_in_data_parts = std::move(intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
-
-    std::stable_sort(
-        non_intersecting_ranges_in_data_parts.begin(),
-        non_intersecting_ranges_in_data_parts.end(),
-        [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
-
-    std::stable_sort(
-        intersecting_ranges_in_data_parts.begin(),
-        intersecting_ranges_in_data_parts.end(),
-        [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
-
-    return {std::move(non_intersecting_ranges_in_data_parts), std::move(intersecting_ranges_in_data_parts)};
-}
-
 std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersectingPartsRangesIntoLayers(RangesInDataParts intersecting_ranges_in_data_parts, size_t max_layers)
 {
     // We will advance the iterator pointing to the mark with the smallest PK value until
@@ -602,7 +338,6 @@ std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersecting
     return {std::move(result_layers), std::move(borders)};
 }
 
-
 /// Will return borders.size()+1 filters in total, i-th filter will accept rows with PK values within the range (borders[i-1], borders[i]].
 ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> & borders)
 {
@@ -705,6 +440,263 @@ static void reorderColumns(ActionsDAG & dag, const Block & header, const std::st
     dag.getOutputs() = std::move(new_outputs);
 }
 
+SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, size_t min_level)
+{
+    /** Split ranges in data parts into intersecting ranges in data parts and non intersecting ranges in data parts.
+      *
+      * For each marks range we will create 2 events (RangeStart, RangeEnd), add these events into array and sort them by primary key index
+      * value at this event.
+      *
+      * After that we will scan sorted events and maintain current intersecting parts ranges.
+      * If current intersecting parts ranges is 1, for each event (RangeStart, RangeEnd) we can extract non intersecting range
+      * from single part range.
+      *
+      * There can be 4 possible cases:
+      *
+      * 1. RangeStart after RangeStart:
+      *
+      * Example:
+      *
+      * range 1 [----            ...
+      * range 2      [(value_1)    ...
+      *
+      * In this scenario we can extract non intersecting part of range 1. This non intersecting part will have start
+      * of range 1 and end with rightmost mark from range 1 that contains value less than value_1.
+      *
+      * 2. RangeStart after RangeEnd:
+      *
+      * Example:
+      *
+      * range 1   [              ----              ...
+      * range 2   [   (value_1)]
+      * range 3                      [(value_2)    ...
+      *
+      * In this case we can extract non intersecting part of range 1. This non intersecting part will have start
+      * of leftmost mark from range 1 that contains value greater than value_1 and end with rightmost mark from range 1
+      * that contains value less than value_2.
+      *
+      * 3. RangeEnd after RangeStart:
+      *
+      * Example:
+      *
+      * range 1   [----]
+      *
+      * In this case we can extract range 1 as non intersecting.
+      *
+      * 4. RangeEnd after RangeEnd
+      *
+      * Example:
+      *
+      * range 1    [    ...              ----]
+      * range 2    [    ...    (value_1)]
+      *
+      * In this case we can extract non intersecting part of range 1. This non intersecting part will have start
+      * of leftmost mark from range 1 that contains value greater than value_1 and end with range 1 end.
+      *
+      * Additional details:
+      *
+      * 1. If part level is 0, we must process all ranges from this part, because they can contain duplicate primary keys.
+      */
+
+    IndexAccess index_access(ranges_in_data_parts);
+    std::vector<PartsRangesIterator> parts_ranges;
+
+    for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
+    {
+        for (const auto & range : ranges_in_data_parts[part_index].ranges)
+        {
+            const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
+            parts_ranges.push_back(
+                {index_access.getValue(part_index, range.begin), range, part_index, PartsRangesIterator::EventType::RangeStart});
+
+            const bool value_is_defined_at_end_mark = range.end < index_granularity.getMarksCount();
+            if (!value_is_defined_at_end_mark)
+                continue;
+
+            parts_ranges.push_back(
+                {index_access.getValue(part_index, range.end), range, part_index, PartsRangesIterator::EventType::RangeEnd});
+        }
+    }
+
+    std::sort(parts_ranges.begin(), parts_ranges.end());
+
+    RangesInDataPartsBuilder intersecting_ranges_in_data_parts_builder(ranges_in_data_parts);
+    RangesInDataPartsBuilder non_intersecting_ranges_in_data_parts_builder(ranges_in_data_parts);
+
+    static constexpr size_t min_number_of_marks_for_non_intersecting_range = 2;
+
+    auto add_non_intersecting_range = [&](size_t part_index, MarkRange mark_range)
+    {
+        non_intersecting_ranges_in_data_parts_builder.addRange(part_index, mark_range);
+    };
+
+    auto add_intersecting_range = [&](size_t part_index, MarkRange mark_range)
+    {
+        intersecting_ranges_in_data_parts_builder.addRange(part_index, mark_range);
+    };
+
+    std::unordered_map<size_t, MarkRange> part_index_start_to_range;
+
+    chassert(!parts_ranges.empty());
+    chassert(parts_ranges[0].event == PartsRangesIterator::EventType::RangeStart);
+    part_index_start_to_range[parts_ranges[0].part_index] = parts_ranges[0].range;
+
+    size_t parts_ranges_size = parts_ranges.size();
+    for (size_t i = 1; i < parts_ranges_size; ++i)
+    {
+        auto & previous_part_range = parts_ranges[i - 1];
+        auto & current_part_range = parts_ranges[i];
+        size_t intersecting_parts = part_index_start_to_range.size();
+        bool range_start = current_part_range.event == PartsRangesIterator::EventType::RangeStart;
+
+        if (range_start)
+        {
+            auto [it, inserted] = part_index_start_to_range.emplace(current_part_range.part_index, current_part_range.range);
+            chassert(inserted);
+
+            if (intersecting_parts != 1)
+                continue;
+
+            if (previous_part_range.event == PartsRangesIterator::EventType::RangeStart)
+            {
+                /// If part level is 0, we must process whole previous part because it can contain duplicate primary keys
+                if (ranges_in_data_parts[previous_part_range.part_index].data_part->info.level < min_level)
+                    continue;
+
+                /// Case 1 Range Start after Range Start
+                size_t begin = previous_part_range.range.begin;
+                std::optional<size_t> end_optional = index_access.findRightmostMarkLessThanValueInRange(previous_part_range.part_index,
+                    current_part_range.value,
+                    previous_part_range.range);
+
+                if (!end_optional)
+                    continue;
+
+                size_t end = *end_optional;
+
+                if (end - begin >= min_number_of_marks_for_non_intersecting_range)
+                {
+                    part_index_start_to_range[previous_part_range.part_index].begin = end;
+                    add_non_intersecting_range(previous_part_range.part_index, MarkRange{begin, end});
+                }
+
+                continue;
+            }
+
+            auto other_interval_it = part_index_start_to_range.begin();
+            for (; other_interval_it != part_index_start_to_range.end(); ++other_interval_it)
+            {
+                if (other_interval_it != it)
+                    break;
+            }
+
+            chassert(other_interval_it != part_index_start_to_range.end());
+            size_t other_interval_part_index = other_interval_it->first;
+            MarkRange other_interval_range = other_interval_it->second;
+
+            /// If part level is 0, we must process whole other intersecting part because it can contain duplicate primary keys
+            if (ranges_in_data_parts[other_interval_part_index].data_part->info.level < min_level)
+                continue;
+
+            /// Case 2 Range Start after Range End
+            std::optional<size_t> begin_optional = index_access.findLeftmostMarkGreaterThanValueInRange(other_interval_part_index,
+                previous_part_range.value,
+                other_interval_range);
+            if (!begin_optional)
+                continue;
+
+            std::optional<size_t> end_optional = index_access.findRightmostMarkLessThanValueInRange(other_interval_part_index,
+                current_part_range.value,
+                other_interval_range);
+            if (!end_optional)
+                continue;
+
+            size_t begin = *end_optional;
+            size_t end = *end_optional;
+
+            if (end - begin >= min_number_of_marks_for_non_intersecting_range)
+            {
+                other_interval_it->second.begin = end;
+                add_intersecting_range(other_interval_part_index, MarkRange{other_interval_range.begin, begin});
+                add_non_intersecting_range(other_interval_part_index, MarkRange{begin, end});
+            }
+            continue;
+        }
+
+        chassert(current_part_range.event == PartsRangesIterator::EventType::RangeEnd);
+
+        /** If there are more than 1 part ranges that we are currently processing
+          * that means that this part range is intersecting with other range.
+          *
+          * If part level is 0, we must process whole part because it can contain duplicate primary keys.
+          */
+        if (intersecting_parts != 1 || ranges_in_data_parts[current_part_range.part_index].data_part->info.level < min_level)
+        {
+            add_intersecting_range(current_part_range.part_index, part_index_start_to_range[current_part_range.part_index]);
+            part_index_start_to_range.erase(current_part_range.part_index);
+            continue;
+        }
+
+        if (previous_part_range.event == PartsRangesIterator::EventType::RangeStart)
+        {
+            chassert(current_part_range.part_index == previous_part_range.part_index);
+            chassert(current_part_range.range == previous_part_range.range);
+
+            /// Case 3 Range End after Range Start
+            non_intersecting_ranges_in_data_parts_builder.addRange(current_part_range.part_index, current_part_range.range);
+            part_index_start_to_range.erase(current_part_range.part_index);
+            continue;
+        }
+
+        chassert(previous_part_range.event == PartsRangesIterator::EventType::RangeEnd);
+        chassert(previous_part_range.part_index != current_part_range.part_index);
+
+        /// Case 4 Range End after Range End
+        std::optional<size_t> begin_optional = index_access.findLeftmostMarkGreaterThanValueInRange(current_part_range.part_index,
+            previous_part_range.value,
+            current_part_range.range);
+        size_t end = current_part_range.range.end;
+
+        if (begin_optional && end - *begin_optional >= min_number_of_marks_for_non_intersecting_range)
+        {
+            size_t begin = *begin_optional;
+            add_intersecting_range(current_part_range.part_index, MarkRange{part_index_start_to_range[current_part_range.part_index].begin, begin});
+            add_non_intersecting_range(current_part_range.part_index, MarkRange{begin, end});
+        }
+        else
+        {
+            add_intersecting_range(current_part_range.part_index, MarkRange{part_index_start_to_range[current_part_range.part_index].begin, end});
+        }
+
+        part_index_start_to_range.erase(current_part_range.part_index);
+    }
+
+    /// Process parts ranges with undefined value at end mark
+    bool is_intersecting = part_index_start_to_range.size() > 1;
+    for (const auto & [part_index, mark_range] : part_index_start_to_range)
+    {
+        if (is_intersecting)
+            add_intersecting_range(part_index, mark_range);
+        else
+            add_non_intersecting_range(part_index, mark_range);
+    }
+
+    auto && non_intersecting_ranges_in_data_parts = std::move(non_intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
+    auto && intersecting_ranges_in_data_parts = std::move(intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
+
+    std::stable_sort(
+        non_intersecting_ranges_in_data_parts.begin(),
+        non_intersecting_ranges_in_data_parts.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
+
+    std::stable_sort(
+        intersecting_ranges_in_data_parts.begin(),
+        intersecting_ranges_in_data_parts.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
+
+    return {std::move(non_intersecting_ranges_in_data_parts), std::move(intersecting_ranges_in_data_parts)};
+}
+
 SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     const KeyDescription & primary_key,
     ExpressionActionsPtr sorting_expr,
@@ -712,14 +704,14 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     size_t max_layers,
     ContextPtr context,
     ReadingInOrderStepGetter && in_order_reading_step_getter,
-    bool force_process_all_ranges)
+    size_t min_level)
 {
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
     SplitPartsWithRangesByPrimaryKeyResult result;
 
-    SplitPartsRangesResult split_result = splitPartsRanges(std::move(parts), force_process_all_ranges);
+    SplitPartsRangesResult split_result = splitPartsRanges(std::move(parts), min_level);
     result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
 
     auto && [layers, borders] = splitIntersectingPartsRangesIntoLayers(std::move(split_result.intersecting_parts_ranges), max_layers);

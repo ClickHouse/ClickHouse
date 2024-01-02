@@ -554,4 +554,18 @@ std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndRe
     return {std::move(plan.nodes), std::move(plan.resources)};
 }
 
+QueryPlan::Node & cloneQueryPlanTree(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+{
+    auto & new_root = nodes.emplace_back();
+    new_root.step = root.step->clone();
+
+    for (const auto & child : root.children)
+    {
+        auto & new_child = cloneQueryPlanTree(*child, nodes);
+        new_root.children.push_back(&new_child);
+    }
+
+    return new_root;
+}
+
 }
