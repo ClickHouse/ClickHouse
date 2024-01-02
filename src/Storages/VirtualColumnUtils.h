@@ -58,25 +58,6 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
 
 NamesAndTypesList getPathFileAndSizeVirtualsForStorage(NamesAndTypesList storage_columns);
 
-ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const String & path_example, const ContextPtr & context);
-
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context, ASTPtr filter_ast);
-
-template <typename T>
-void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context, ASTPtr filter_ast)
-{
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, query, virtual_columns, context, filter_ast);
-    const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
-    if (indexes.size() == sources.size())
-        return;
-
-    std::vector<T> filtered_sources;
-    filtered_sources.reserve(indexes.size());
-    for (auto index : indexes)
-        filtered_sources.emplace_back(std::move(sources[index]));
-    sources = std::move(filtered_sources);
-}
-
 ActionsDAGPtr createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 
 ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ActionsDAGPtr & dag, const NamesAndTypesList & virtual_columns, const ContextPtr & context);

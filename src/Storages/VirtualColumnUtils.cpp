@@ -424,44 +424,6 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     return block.getByName("_idx").column;
 }
 
-ASTPtr createPathAndFileFilterAst(const ASTPtr & query, const NamesAndTypesList & virtual_columns, const String & path_example, const ContextPtr & context)
-{
-    if (!query || virtual_columns.empty())
-        return {};
-
-    Block block;
-    for (const auto & column : virtual_columns)
-    {
-        if (column.name == "_file" || column.name == "_path")
-            block.insert({column.type->createColumn(), column.type, column.name});
-    }
-    /// Create a block with one row to construct filter
-    /// Append "idx" column as the filter result
-    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-    addPathAndFileToVirtualColumns(block, path_example, 0);
-    ASTPtr filter_ast;
-    prepareFilterBlockWithQuery(query, context, block, filter_ast);
-    return filter_ast;
-}
-
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context, ASTPtr filter_ast)
-{
-    Block block;
-    for (const auto & column : virtual_columns)
-    {
-        if (column.name == "_file" || column.name == "_path")
-            block.insert({column.type->createColumn(), column.type, column.name});
-    }
-    block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-
-    for (size_t i = 0; i != paths.size(); ++i)
-        addPathAndFileToVirtualColumns(block, paths[i], i);
-
-    filterBlockWithQuery(query, block, context, filter_ast);
-
-    return block.getByName("_idx").column;
-}
-
 void addRequestedPathFileAndSizeVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns, const String & path, std::optional<size_t> size, const String * filename)
 {
