@@ -8,7 +8,7 @@
 
 namespace DB
 {
-NamesAndTypesList StorageSystemQuotasUsage::getNamesAndTypes()
+ColumnsDescription StorageSystemQuotasUsage::getColumnsDescription()
 {
     return StorageSystemQuotaUsage::getNamesAndTypesImpl(/* add_column_is_current = */ true);
 }

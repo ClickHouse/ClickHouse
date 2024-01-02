@@ -14,30 +14,28 @@ namespace DB
 
 ColumnsDescription MetricLogElement::getColumnsDescription()
 {
-    NamesAndTypesList columns_with_type_and_name;
+    ColumnsDescription result;
 
-    columns_with_type_and_name.emplace_back("hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
-    columns_with_type_and_name.emplace_back("event_date", std::make_shared<DataTypeDate>());
-    columns_with_type_and_name.emplace_back("event_time", std::make_shared<DataTypeDateTime>());
-    columns_with_type_and_name.emplace_back("event_time_microseconds", std::make_shared<DataTypeDateTime64>(6));
+    result.add({"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."});
+    result.add({"event_date", std::make_shared<DataTypeDate>(), "Event date."});
+    result.add({"event_time", std::make_shared<DataTypeDateTime>(), "Event time."});
+    result.add({"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Event time with microseconds resolution."});
 
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
     {
-        std::string name;
-        name += "ProfileEvent_";
-        name += ProfileEvents::getName(ProfileEvents::Event(i));
-        columns_with_type_and_name.emplace_back(std::move(name), std::make_shared<DataTypeUInt64>());
+        auto name = fmt::format("ProfileEvent_{}", ProfileEvents::getName(ProfileEvents::Event(i)));
+        auto * comment = ProfileEvents::getDocumentation(ProfileEvents::Event(i));
+        result.add({std::move(name), std::make_shared<DataTypeUInt64>(), comment});
     }
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
     {
-        std::string name;
-        name += "CurrentMetric_";
-        name += CurrentMetrics::getName(CurrentMetrics::Metric(i));
-        columns_with_type_and_name.emplace_back(std::move(name), std::make_shared<DataTypeInt64>());
+        auto name = fmt::format("CurrentMetric_{}", CurrentMetrics::getName(CurrentMetrics::Metric(i)));
+        auto * comment = CurrentMetrics::getDocumentation(CurrentMetrics::Metric(i));
+        result.add({std::move(name), std::make_shared<DataTypeInt64>(), comment});
     }
 
-    return ColumnsDescription(columns_with_type_and_name);
+    return result;
 }
 
 

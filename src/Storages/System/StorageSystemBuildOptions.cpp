@@ -8,11 +8,12 @@ extern const char * auto_config_build[];
 namespace DB
 {
 
-NamesAndTypesList StorageSystemBuildOptions::getNamesAndTypes()
+ColumnsDescription StorageSystemBuildOptions::getColumnsDescription()
 {
-    return {
-        {"name", std::make_shared<DataTypeString>()},
-        {"value", std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Name of the build option, e.g. `USE_ODBC`."},
+        {"value", std::make_shared<DataTypeString>(), "Value of the build option, e.g. `1`."},
     };
 }
 

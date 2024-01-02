@@ -6,10 +6,11 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemDatabaseEngines::getNamesAndTypes()
+ColumnsDescription StorageSystemDatabaseEngines::getColumnsDescription()
 {
-    return {
-        {"name", std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "The name of database engine."},
     };
 }
 

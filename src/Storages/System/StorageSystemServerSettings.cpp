@@ -18,17 +18,18 @@ namespace CurrentMetrics
 
 namespace DB
 {
-NamesAndTypesList StorageSystemServerSettings::getNamesAndTypes()
+ColumnsDescription StorageSystemServerSettings::getColumnsDescription()
 {
-    return {
-        {"name", std::make_shared<DataTypeString>()},
-        {"value", std::make_shared<DataTypeString>()},
-        {"default", std::make_shared<DataTypeString>()},
-        {"changed", std::make_shared<DataTypeUInt8>()},
-        {"description", std::make_shared<DataTypeString>()},
-        {"type", std::make_shared<DataTypeString>()},
-        {"is_obsolete", std::make_shared<DataTypeUInt8>()},
-        {"is_hot_reloadable", std::make_shared<DataTypeUInt8>()}
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Server setting name."},
+        {"value", std::make_shared<DataTypeString>(), "Server setting value."},
+        {"default", std::make_shared<DataTypeString>(), "Server setting default value."},
+        {"changed", std::make_shared<DataTypeUInt8>(), "Shows whether a setting was specified in config.xml"},
+        {"description", std::make_shared<DataTypeString>(), "Short server setting description."},
+        {"type", std::make_shared<DataTypeString>(), "Server setting value type."},
+        {"is_obsolete", std::make_shared<DataTypeUInt8>(), "Shows whether a setting is obsolete."},
+        {"is_hot_reloadable", std::make_shared<DataTypeUInt8>(), "Shows whether a setting can be changed at runtime."}
     };
 }
 

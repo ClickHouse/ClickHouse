@@ -15,18 +15,18 @@ namespace DB
 
 static constexpr auto TIME_SCALE = 6;
 
-NamesAndTypesList StorageSystemAsynchronousInserts::getNamesAndTypes()
+ColumnsDescription StorageSystemAsynchronousInserts::getColumnsDescription()
 {
-    return
+    return ColumnsDescription
     {
-        {"query", std::make_shared<DataTypeString>()},
-        {"database", std::make_shared<DataTypeString>()},
-        {"table", std::make_shared<DataTypeString>()},
-        {"format", std::make_shared<DataTypeString>()},
-        {"first_update", std::make_shared<DataTypeDateTime64>(TIME_SCALE)},
-        {"total_bytes", std::make_shared<DataTypeUInt64>()},
-        {"entries.query_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"entries.bytes", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
+        {"query", std::make_shared<DataTypeString>(), "Query string."},
+        {"database", std::make_shared<DataTypeString>(), "The name of the database the table is in."},
+        {"table", std::make_shared<DataTypeString>(), "Table name."},
+        {"format", std::make_shared<DataTypeString>(), "Format name."},
+        {"first_update", std::make_shared<DataTypeDateTime64>(TIME_SCALE), "First insert time with microseconds resolution."},
+        {"total_bytes", std::make_shared<DataTypeUInt64>(), "Total number of bytes waiting in the queue."},
+        {"entries.query_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Array of query ids of the inserts waiting in the queue."},
+        {"entries.bytes", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Array of bytes of each insert query waiting in the queue."},
     };
 }
 

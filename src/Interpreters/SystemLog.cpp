@@ -486,7 +486,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         ColumnsWithTypeAndName log_element_columns;
         auto log_element_names_and_types = LogElement::getColumnsDescription();
 
-        /// TODO: Check order of columns.
         for (const auto & name_and_type : log_element_names_and_types.getAll())
             log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
 

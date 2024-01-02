@@ -31,15 +31,18 @@ static String getSchemaString(const ColumnsDescription & columns)
     return buf.str();
 }
 
-NamesAndTypesList StorageSystemSchemaInferenceCache::getNamesAndTypes()
+ColumnsDescription StorageSystemSchemaInferenceCache::getColumnsDescription()
 {
-    return {
-        {"storage", std::make_shared<DataTypeString>()},
-        {"source", std::make_shared<DataTypeString>()},
-        {"format", std::make_shared<DataTypeString>()},
-        {"additional_format_info", std::make_shared<DataTypeString>()},
-        {"registration_time", std::make_shared<DataTypeDateTime>()},
-        {"schema", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+    return ColumnsDescription
+    {
+        {"storage", std::make_shared<DataTypeString>(), "Storage name: File, URL, S3 or HDFS."},
+        {"source", std::make_shared<DataTypeString>(), "File source."},
+        {"format", std::make_shared<DataTypeString>(), "Format name."},
+        {"additional_format_info", std::make_shared<DataTypeString>(),
+            "Additional information required to identify the schema. For example, format specific settings."
+        },
+        {"registration_time", std::make_shared<DataTypeDateTime>(), "Timestamp when schema was added in cache."},
+        {"schema", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Cached schema."},
         {"number_of_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"schema_inference_mode", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
     };

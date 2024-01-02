@@ -9,16 +9,17 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemQueryCache::getNamesAndTypes()
+ColumnsDescription StorageSystemQueryCache::getColumnsDescription()
 {
-    return {
-        {"query", std::make_shared<DataTypeString>()},
-        {"result_size", std::make_shared<DataTypeUInt64>()},
-        {"stale", std::make_shared<DataTypeUInt8>()},
-        {"shared", std::make_shared<DataTypeUInt8>()},
-        {"compressed", std::make_shared<DataTypeUInt8>()},
-        {"expires_at", std::make_shared<DataTypeDateTime>()},
-        {"key_hash", std::make_shared<DataTypeUInt64>()}
+    return ColumnsDescription
+    {
+        {"query", std::make_shared<DataTypeString>(), "Query string."},
+        {"result_size", std::make_shared<DataTypeUInt64>(), "Size of the query cache entry."},
+        {"stale", std::make_shared<DataTypeUInt8>(), "If the query cache entry is stale."},
+        {"shared", std::make_shared<DataTypeUInt8>(), "If the query cache entry is shared between multiple users."},
+        {"compressed", std::make_shared<DataTypeUInt8>(), "If the query cache entry is compressed."},
+        {"expires_at", std::make_shared<DataTypeDateTime>(), "When the query cache entry becomes stale."},
+        {"key_hash", std::make_shared<DataTypeUInt64>(), "A hash of the query string, used as a key to find query cache entries."}
     };
 }
 
