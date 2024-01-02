@@ -194,6 +194,7 @@ stop
 # Let's enable S3 storage by default
 export USE_S3_STORAGE_FOR_MERGE_TREE=1
 export ZOOKEEPER_FAULT_INJECTION=1
+export USE_S3_STORAGE_WITH_OBJECT_KEY_TYPE="${S3_OBJECT_KEY_TYPES[$((RANDOM % ${#S3_OBJECT_KEY_TYPES[@]}))]}"
 configure
 
 # But we still need default disk because some tables loaded only into it

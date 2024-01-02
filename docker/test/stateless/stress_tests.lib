@@ -9,6 +9,9 @@ FAIL="\tFAIL\t\\N\t"
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=300
 
+export S3_OBJECT_KEY_TYPES=("generate-suffix" "generate-full-key" "generate-template-key")
+export USE_S3_STORAGE_WITH_OBJECT_KEY_TYPE="${S3_OBJECT_KEY_TYPES[0]}"
+
 function escaped()
 {
     # That's the simplest way I found to escape a string in bash. Yep, bash is the most convenient programming language.
