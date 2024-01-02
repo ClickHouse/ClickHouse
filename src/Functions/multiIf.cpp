@@ -398,7 +398,8 @@ private:
             PaddedPODArray<UInt8> & null_map_data = assert_cast<ColumnUInt8 &>(*null_map).getData();
             std::vector<const T*> data_cols(instructions.size());
             std::vector<const UInt8 *> null_map_cols(instructions.size());
-            for (size_t i = 0; i < instructions.size(); ++i)
+            int first_non_nullable_source = -1;
+            for (int i = 0; i < static_cast<int>(instructions.size()); ++i)
             {
                 if (instructions[i].source->isNullable())
                 {
@@ -415,7 +416,11 @@ private:
                 }
                 else
                 {
-                    null_map_cols[i] = (i == 0 ? ColumnUInt8::create(rows, 0)->getData().data() : null_map_cols[0]);
+                    if (first_non_nullable_source < 0)
+                    {
+                        first_non_nullable_source = i;
+                    }
+                    null_map_cols[i] = (i == first_non_nullable_source ? ColumnUInt8::create(rows, 0)->getData().data() : null_map_cols[first_non_nullable_source]);
                     data_cols[i] = assert_cast<const ColumnVector<T> &>(*instructions[i].source).getData().data();
                 }
             }
