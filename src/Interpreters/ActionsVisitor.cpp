@@ -1049,12 +1049,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             for (const auto & arg : node.arguments->children)
             {
-                if (auto const * function = arg->as<ASTFunction>();
-                    function && function->name == "lambda")
-                {
-                    // Lambda function is a special case. It shouldn't be visited here.
-                    continue;
-                }
                 visit(arg, data);
             }
             return;

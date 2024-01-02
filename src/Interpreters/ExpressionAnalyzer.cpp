@@ -1473,8 +1473,7 @@ void SelectQueryExpressionAnalyzer::appendSelectSkipWindowExpressions(Expression
     {
         // Skip window function columns here -- they are calculated after
         // other SELECT expressions by a special step.
-        // Also skipping lambda functions because they can't be explicitly evaluated.
-        if (function->is_window_function || function->name == "lambda")
+        if (function->is_window_function)
             return;
         if (function->compute_after_window_functions)
         {
