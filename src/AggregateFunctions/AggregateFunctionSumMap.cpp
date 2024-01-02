@@ -545,7 +545,24 @@ public:
         }
     }
 
-    bool keepKey(const Field & key) const { return keys_to_keep.contains(key); }
+    bool keepKey(const Field & key) const
+    {
+        if (keys_to_keep.contains(key))
+            return true;
+
+        if (key.getType() == Field::Types::UInt64)
+        {
+            const auto & value = key.get<const UInt64 &>();
+            if(value <= std::numeric_limits<Int64>::max())
+                return keys_to_keep.contains(Field(Int64(value)));
+        }
+        else if (key.getType() == Field::Types::Int64)
+        {
+            const auto & value = key.get<const Int64 &>();
+            if (value >= 0)
+                return keys_to_keep.contains(Field(UInt64(value)));
+        }
+    }
 };
 
 
