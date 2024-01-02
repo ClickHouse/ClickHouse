@@ -80,5 +80,5 @@ def test_details(started_cluster):
 
     assert (
         node.query("SHOW CREATE USER user_details_time_only")
-        == "CREATE USER user_details_time_only VALID UNTIL \\'2023-01-01 22:03:40\\'\n"
+        == "CREATE USER user_details_time_only VALID UNTIL \\'2024-01-01 22:03:40\\'\n"
     )
