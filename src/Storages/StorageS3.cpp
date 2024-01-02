@@ -263,55 +263,6 @@ public:
     Impl(
         const S3::Client & client_,
         const S3::URI & globbed_uri_,
-        ASTPtr & query_,
-        const NamesAndTypesList & virtual_columns_,
-        ContextPtr context_,
-        KeysWithInfo * read_keys_,
-        const S3Settings::RequestSettings & request_settings_,
-        std::function<void(FileProgress)> file_progress_callback_)
-        : WithContext(context_)
-        , client(client_.clone())
-        , globbed_uri(globbed_uri_)
-        , query(query_)
-        , virtual_columns(virtual_columns_)
-        , read_keys(read_keys_)
-        , request_settings(request_settings_)
-        , list_objects_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, CurrentMetrics::StorageS3ThreadsScheduled, 1)
-        , list_objects_scheduler(threadPoolCallbackRunner<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
-        , file_progress_callback(file_progress_callback_)
-    {
-        if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
-            throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Expression can not have wildcards inside bucket name");
-
-        const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
-
-        /// We don't have to list bucket, because there is no asterisks.
-        if (key_prefix.size() == globbed_uri.key.size())
-        {
-            buffer.emplace_back(std::make_shared<KeyWithInfo>(globbed_uri.key, std::nullopt));
-            buffer_iter = buffer.begin();
-            is_finished = true;
-            return;
-        }
-
-        request.SetBucket(globbed_uri.bucket);
-        request.SetPrefix(key_prefix);
-        request.SetMaxKeys(static_cast<int>(request_settings.list_object_keys_size));
-
-        outcome_future = listObjectsAsync();
-
-        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
-        if (!matcher->ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", globbed_uri.key, matcher->error());
-
-        recursive = globbed_uri.key == "/**" ? true : false;
-        fillInternalBufferAssumeLocked();
-    }
-
-    Impl(
-        const S3::Client & client_,
-        const S3::URI & globbed_uri_,
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns_,
         ContextPtr context_,
@@ -357,7 +308,6 @@ public:
         fillInternalBufferAssumeLocked();
 
         filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
-        is_initialized = true;
     }
 
     KeyWithInfoPtr next()
@@ -475,22 +425,7 @@ private:
             return;
         }
 
-        if (!is_initialized)
-        {
-            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, fs::path(globbed_uri.bucket) / temp_buffer.front()->key, getContext());
-            is_initialized = true;
-        }
-
-        if (filter_ast)
-        {
-            std::vector<String> paths;
-            paths.reserve(temp_buffer.size());
-            for (const auto & key_with_info : temp_buffer)
-                paths.push_back(fs::path(globbed_uri.bucket) / key_with_info->key);
-
-            VirtualColumnUtils::filterByPathOrFile(temp_buffer, paths, query, virtual_columns, getContext(), filter_ast);
-        }
-        else if (filter_dag)
+        if (filter_dag)
         {
             std::vector<String> paths;
             paths.reserve(temp_buffer.size());
@@ -539,8 +474,6 @@ private:
     S3::URI globbed_uri;
     ASTPtr query;
     NamesAndTypesList virtual_columns;
-    bool is_initialized{false};
-    ASTPtr filter_ast;
     ActionsDAGPtr filter_dag;
     std::unique_ptr<re2::RE2> matcher;
     bool recursive{false};
@@ -555,19 +488,6 @@ private:
     std::future<ListObjectsOutcome> outcome_future;
     std::function<void(FileProgress)> file_progress_callback;
 };
-
-StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
-    const S3::Client & client_,
-    const S3::URI & globbed_uri_,
-    ASTPtr query,
-    const NamesAndTypesList & virtual_columns_,
-    ContextPtr context,
-    KeysWithInfo * read_keys_,
-    const S3Settings::RequestSettings & request_settings_,
-    std::function<void(FileProgress)> file_progress_callback_)
-    : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_, query, virtual_columns_, context, read_keys_, request_settings_, file_progress_callback_))
-{
-}
 
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
     const S3::Client & client_,

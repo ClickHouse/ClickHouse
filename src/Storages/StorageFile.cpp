@@ -932,24 +932,6 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
 
 using StorageFilePtr = std::shared_ptr<StorageFile>;
 
-
-StorageFileSource::FilesIterator::FilesIterator(
-    const Strings & files_,
-    std::optional<StorageFile::ArchiveInfo> archive_info_,
-    ASTPtr query,
-    const NamesAndTypesList & virtual_columns,
-    ContextPtr context_,
-    bool distributed_processing_)
-    : files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_), context(context_)
-{
-    ASTPtr filter_ast;
-    if (!distributed_processing && !archive_info && !files.empty() && !files[0].empty())
-        filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, files[0], context_);
-
-    if (filter_ast)
-        VirtualColumnUtils::filterByPathOrFile(files, files, query, virtual_columns, context_, filter_ast);
-}
-
 StorageFileSource::FilesIterator::FilesIterator(
     const Strings & files_,
     std::optional<StorageFile::ArchiveInfo> archive_info_,

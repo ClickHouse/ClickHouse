@@ -159,16 +159,6 @@ public:
             AzureObjectStorage * object_storage_,
             const std::string & container_,
             String blob_path_with_globs_,
-            ASTPtr query_,
-            const NamesAndTypesList & virtual_columns_,
-            ContextPtr context_,
-            RelativePathsWithMetadata * outer_blobs_,
-            std::function<void(FileProgress)> file_progress_callback_ = {});
-
-        GlobIterator(
-            AzureObjectStorage * object_storage_,
-            const std::string & container_,
-            String blob_path_with_globs_,
             const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns_,
             ContextPtr context_,
@@ -182,8 +172,6 @@ public:
         AzureObjectStorage * object_storage;
         std::string container;
         String blob_path_with_globs;
-        ASTPtr query;
-        ASTPtr filter_ast;
         ActionsDAGPtr filter_dag;
         NamesAndTypesList virtual_columns;
 
@@ -198,7 +186,6 @@ public:
 
         void createFilterAST(const String & any_key);
         bool is_finished = false;
-        bool is_initialized = false;
         std::mutex next_mutex;
 
         std::function<void(FileProgress)> file_progress_callback;

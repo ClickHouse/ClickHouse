@@ -115,7 +115,6 @@ public:
     class DisclosedGlobIterator
     {
         public:
-            DisclosedGlobIterator(const String & uri_, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
             DisclosedGlobIterator(const String & uri_, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
             StorageHDFS::PathWithInfo next();
         private:

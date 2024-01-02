@@ -196,14 +196,6 @@ public:
         explicit FilesIterator(
             const Strings & files_,
             std::optional<StorageFile::ArchiveInfo> archive_info_,
-            ASTPtr query,
-            const NamesAndTypesList & virtual_columns,
-            ContextPtr context_,
-            bool distributed_processing_ = false);
-
-        explicit FilesIterator(
-            const Strings & files_,
-            std::optional<StorageFile::ArchiveInfo> archive_info_,
             const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns,
             ContextPtr context_,

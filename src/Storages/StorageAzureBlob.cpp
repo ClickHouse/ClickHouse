@@ -915,53 +915,6 @@ StorageAzureBlobSource::GlobIterator::GlobIterator(
     AzureObjectStorage * object_storage_,
     const std::string & container_,
     String blob_path_with_globs_,
-    ASTPtr query_,
-    const NamesAndTypesList & virtual_columns_,
-    ContextPtr context_,
-    RelativePathsWithMetadata * outer_blobs_,
-    std::function<void(FileProgress)> file_progress_callback_)
-    : IIterator(context_)
-    , object_storage(object_storage_)
-    , container(container_)
-    , blob_path_with_globs(blob_path_with_globs_)
-    , query(query_)
-    , virtual_columns(virtual_columns_)
-    , outer_blobs(outer_blobs_)
-    , file_progress_callback(file_progress_callback_)
-{
-
-    const String key_prefix = blob_path_with_globs.substr(0, blob_path_with_globs.find_first_of("*?{"));
-
-    /// We don't have to list bucket, because there is no asterisks.
-    if (key_prefix.size() == blob_path_with_globs.size())
-    {
-        auto object_metadata = object_storage->getObjectMetadata(blob_path_with_globs);
-        blobs_with_metadata.emplace_back(
-            blob_path_with_globs,
-            object_metadata);
-        if (outer_blobs)
-            outer_blobs->emplace_back(blobs_with_metadata.back());
-        if (file_progress_callback)
-            file_progress_callback(FileProgress(0, object_metadata.size_bytes));
-        is_finished = true;
-        return;
-    }
-
-    object_storage_iterator = object_storage->iterate(key_prefix);
-
-    matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(blob_path_with_globs));
-
-    if (!matcher->ok())
-        throw Exception(
-            ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", blob_path_with_globs, matcher->error());
-
-    recursive = blob_path_with_globs == "/**" ? true : false;
-}
-
-StorageAzureBlobSource::GlobIterator::GlobIterator(
-    AzureObjectStorage * object_storage_,
-    const std::string & container_,
-    String blob_path_with_globs_,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns_,
     ContextPtr context_,
@@ -1004,7 +957,6 @@ StorageAzureBlobSource::GlobIterator::GlobIterator(
     recursive = blob_path_with_globs == "/**" ? true : false;
 
     filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
-    is_initialized = true;
 }
 
 RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
@@ -1044,22 +996,8 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
         }
 
         index = 0;
-        if (!is_initialized)
-        {
-            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, fs::path(container) / new_batch.front().relative_path, getContext());
-            is_initialized = true;
-        }
 
-        if (filter_ast)
-        {
-            std::vector<String> paths;
-            paths.reserve(new_batch.size());
-            for (auto & path_with_metadata : new_batch)
-                paths.push_back(fs::path(container) / path_with_metadata.relative_path);
-
-            VirtualColumnUtils::filterByPathOrFile(new_batch, paths, query, virtual_columns, getContext(), filter_ast);
-        }
-        else if (filter_dag)
+        if (filter_dag)
         {
             std::vector<String> paths;
             paths.reserve(new_batch.size());

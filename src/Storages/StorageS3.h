@@ -78,16 +78,6 @@ public:
         DisclosedGlobIterator(
             const S3::Client & client_,
             const S3::URI & globbed_uri_,
-            ASTPtr query,
-            const NamesAndTypesList & virtual_columns,
-            ContextPtr context,
-            KeysWithInfo * read_keys_ = nullptr,
-            const S3Settings::RequestSettings & request_settings_ = {},
-            std::function<void(FileProgress)> progress_callback_ = {});
-
-        DisclosedGlobIterator(
-            const S3::Client & client_,
-            const S3::URI & globbed_uri_,
             const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns,
             ContextPtr context,

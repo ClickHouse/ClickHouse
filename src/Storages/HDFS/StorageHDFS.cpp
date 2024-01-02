@@ -440,34 +440,6 @@ public:
         uris_iter = uris.begin();
     }
 
-    Impl(const String & uri, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
-    {
-        const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
-        uris = getPathsList(path_from_uri, uri_without_path, context);
-        ASTPtr filter_ast;
-        if (!uris.empty())
-             filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, uris[0].path, context);
-
-        if (filter_ast)
-        {
-            std::vector<String> paths;
-            paths.reserve(uris.size());
-            for (const auto & path_with_info : uris)
-                paths.push_back(path_with_info.path);
-
-            VirtualColumnUtils::filterByPathOrFile(uris, paths, query, virtual_columns, context, filter_ast);
-        }
-        auto file_progress_callback = context->getFileProgressCallback();
-
-        for (auto & elem : uris)
-        {
-            elem.path = uri_without_path + elem.path;
-            if (file_progress_callback && elem.info)
-                file_progress_callback(FileProgress(0, elem.info->size));
-        }
-        uris_iter = uris.begin();
-    }
-
     StorageHDFS::PathWithInfo next()
     {
         std::lock_guard lock(mutex);
@@ -549,9 +521,6 @@ private:
     std::function<void(FileProgress)> file_progress_callback;
 };
 
-HDFSSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
-    : pimpl(std::make_shared<HDFSSource::DisclosedGlobIterator::Impl>(uri, query, virtual_columns, context)) {}
-
 HDFSSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
     : pimpl(std::make_shared<HDFSSource::DisclosedGlobIterator::Impl>(uri, predicate, virtual_columns, context)) {}
 
@@ -577,7 +546,6 @@ HDFSSource::HDFSSource(
     UInt64 max_block_size_,
     std::shared_ptr<IteratorWrapper> file_iterator_,
     bool need_only_count_)
-    //const SelectQueryInfo & query_info_)
     : ISource(info.source_header, false)
     , WithContext(context_)
     , storage(std::move(storage_))
@@ -588,7 +556,6 @@ HDFSSource::HDFSSource(
     , file_iterator(file_iterator_)
     , columns_description(info.columns_description)
     , need_only_count(need_only_count_)
-    //, query_info(query_info_)
 {
     initialize();
 }
