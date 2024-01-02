@@ -4,6 +4,7 @@ from github import Github
 
 from commit_status_helper import (
     CI_STATUS_NAME,
+    NotSet,
     get_commit,
     get_commit_filtered_statuses,
     post_commit_status,
@@ -18,9 +19,9 @@ def main():
 
     pr_info = PRInfo(need_orgs=True)
     gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
     # Update the Mergeable Check at the final step
-    update_mergeable_check(commit, pr_info, CI_STATUS_NAME)
+    update_mergeable_check(gh, pr_info, CI_STATUS_NAME)
+    commit = get_commit(gh, pr_info.sha)
 
     statuses = [
         status
@@ -35,11 +36,10 @@ def main():
         post_commit_status(
             commit,
             "success",
-            status.target_url,
+            status.target_url or NotSet,
             "All checks finished",
             CI_STATUS_NAME,
             pr_info,
-            dump_to_file=True,
         )
 
 

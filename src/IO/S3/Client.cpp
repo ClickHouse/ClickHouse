@@ -20,14 +20,11 @@
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
 #include <IO/S3/Credentials.h>
-#include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
-
-#include <base/sleep.h>
 
 
 namespace ProfileEvents
@@ -51,12 +48,11 @@ namespace ErrorCodes
 namespace S3
 {
 
-Client::RetryStrategy::RetryStrategy(uint32_t maxRetries_, uint32_t scaleFactor_, uint32_t maxDelayMs_)
-    : maxRetries(maxRetries_)
-    , scaleFactor(scaleFactor_)
-    , maxDelayMs(maxDelayMs_)
+Client::RetryStrategy::RetryStrategy(std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy_)
+    : wrapped_strategy(std::move(wrapped_strategy_))
 {
-    chassert(maxDelayMs <= uint64_t(scaleFactor) * (1ul << 31l));
+    if (!wrapped_strategy)
+        wrapped_strategy = Aws::Client::InitRetryStrategy();
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
@@ -65,31 +61,39 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
         return false;
 
-    if (attemptedRetries >= maxRetries)
-        return false;
-
-    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-            return false;
-
-    return error.ShouldRetry();
+    return wrapped_strategy->ShouldRetry(error, attemptedRetries);
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
-long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>&, long attemptedRetries) const
+long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
 {
-    if (attemptedRetries == 0)
-    {
-        return 0;
-    }
-
-    uint64_t backoffLimitedPow = 1ul << std::min(attemptedRetries, 31l);
-    return std::min<uint64_t>(scaleFactor * backoffLimitedPow, maxDelayMs);
+    return wrapped_strategy->CalculateDelayBeforeNextRetry(error, attemptedRetries);
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::GetMaxAttempts() const
 {
-    return maxRetries + 1;
+    return wrapped_strategy->GetMaxAttempts();
+}
+
+void Client::RetryStrategy::GetSendToken()
+{
+    return wrapped_strategy->GetSendToken();
+}
+
+bool Client::RetryStrategy::HasSendToken()
+{
+    return wrapped_strategy->HasSendToken();
+}
+
+void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome)
+{
+    return wrapped_strategy->RequestBookkeeping(httpResponseOutcome);
+}
+
+void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome, const Aws::Client::AWSError<Aws::Client::CoreErrors>& lastError)
+{
+    return wrapped_strategy->RequestBookkeeping(httpResponseOutcome, lastError);
 }
 
 namespace
@@ -103,20 +107,6 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
     assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
 }
 
-void addAdditionalAMZHeadersToCanonicalHeadersList(
-    Aws::AmazonWebServiceRequest & request,
-    const HTTPHeaderEntries & extra_headers
-)
-{
-    for (const auto & [name, value] : extra_headers)
-    {
-        if (name.starts_with("x-amz-"))
-        {
-            request.SetAdditionalCustomHeaderValue(name, value);
-        }
-    }
-}
-
 }
 
 std::unique_ptr<Client> Client::create(
@@ -125,16 +115,23 @@ std::unique_ptr<Client> Client::create(
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
     const PocoHTTPClientConfiguration & client_configuration,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-    const ClientSettings & client_settings)
+    bool use_virtual_addressing)
 {
     verifyClientConfiguration(client_configuration);
     return std::unique_ptr<Client>(
-        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings));
+        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, use_virtual_addressing));
 }
 
-std::unique_ptr<Client> Client::clone() const
+std::unique_ptr<Client> Client::clone(
+    std::optional<std::shared_ptr<RetryStrategy>> override_retry_strategy,
+    std::optional<Int64> override_request_timeout_ms) const
 {
-    return std::unique_ptr<Client>(new Client(*this, client_configuration));
+    PocoHTTPClientConfiguration new_configuration = client_configuration;
+    if (override_retry_strategy.has_value())
+        new_configuration.retryStrategy = *override_retry_strategy;
+    if (override_request_timeout_ms.has_value())
+        new_configuration.requestTimeoutMs = *override_request_timeout_ms;
+    return std::unique_ptr<Client>(new Client(*this, new_configuration));
 }
 
 namespace
@@ -159,12 +156,12 @@ Client::Client(
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
     const PocoHTTPClientConfiguration & client_configuration_,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads_,
-    const ClientSettings & client_settings_)
-    : Aws::S3::S3Client(credentials_provider_, client_configuration_, sign_payloads_, client_settings_.use_virtual_addressing)
+    bool use_virtual_addressing_)
+    : Aws::S3::S3Client(credentials_provider_, client_configuration_, sign_payloads_, use_virtual_addressing_)
     , credentials_provider(credentials_provider_)
     , client_configuration(client_configuration_)
     , sign_payloads(sign_payloads_)
-    , client_settings(client_settings_)
+    , use_virtual_addressing(use_virtual_addressing_)
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
     , log(&Poco::Logger::get("S3Client"))
@@ -204,12 +201,12 @@ Client::Client(
 Client::Client(
     const Client & other, const PocoHTTPClientConfiguration & client_configuration_)
     : Aws::S3::S3Client(other.credentials_provider, client_configuration_, other.sign_payloads,
-                        other.client_settings.use_virtual_addressing)
+                        other.use_virtual_addressing)
     , initial_endpoint(other.initial_endpoint)
     , credentials_provider(other.credentials_provider)
     , client_configuration(client_configuration_)
     , sign_payloads(other.sign_payloads)
-    , client_settings(other.client_settings)
+    , use_virtual_addressing(other.use_virtual_addressing)
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , provider_type(other.provider_type)
@@ -279,13 +276,11 @@ template void Client::setKMSHeaders<CreateMultipartUploadRequest>(CreateMultipar
 template void Client::setKMSHeaders<CopyObjectRequest>(CopyObjectRequest & request) const;
 template void Client::setKMSHeaders<PutObjectRequest>(PutObjectRequest & request) const;
 
-Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
+Model::HeadObjectOutcome Client::HeadObject(const HeadObjectRequest & request) const
 {
     const auto & bucket = request.GetBucket();
 
     request.setApiMode(api_mode);
-
-    addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -362,119 +357,102 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
 /// doRequest calls virtuall function from Aws::S3::Client while DB::S3::Client has not virtual calls for each request type
 
-Model::ListObjectsV2Outcome Client::ListObjectsV2(ListObjectsV2Request & request) const
+Model::ListObjectsV2Outcome Client::ListObjectsV2(const ListObjectsV2Request & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
         request, [this](const Model::ListObjectsV2Request & req) { return ListObjectsV2(req); });
 }
 
-Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) const
+Model::ListObjectsOutcome Client::ListObjects(const ListObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
         request, [this](const Model::ListObjectsRequest & req) { return ListObjects(req); });
 }
 
-Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
+Model::GetObjectOutcome Client::GetObject(const GetObjectRequest & request) const
 {
     return doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); });
 }
 
-Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
+Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(const AbortMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); });
 }
 
-Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(CreateMultipartUploadRequest & request) const
+Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(const CreateMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
 }
 
-Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
+Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(const CompleteMultipartUploadRequest & request) const
 {
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
 
+    if (!outcome.IsSuccess() || provider_type != ProviderType::GCS)
+        return outcome;
+
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    if (!outcome.IsSuccess()
-        && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
-    {
-        auto check_request = HeadObjectRequest()
-                                 .WithBucket(bucket)
-                                 .WithKey(key);
-        auto check_outcome = HeadObject(check_request);
+    /// For GCS we will try to compose object at the end, otherwise we cannot do a native copy
+    /// for the object (e.g. for backups)
+    /// We don't care if the compose fails, because the upload was still successful, only the
+    /// performance for copying the object will be affected
+    S3::ComposeObjectRequest compose_req;
+    compose_req.SetBucket(bucket);
+    compose_req.SetKey(key);
+    compose_req.SetComponentNames({key});
+    compose_req.SetContentType("binary/octet-stream");
+    auto compose_outcome = ComposeObject(compose_req);
 
-        /// if the key exists, than MultipartUpload has been completed at some of the retries
-        /// rewrite outcome with success status
-        if (check_outcome.IsSuccess())
-            outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
-    }
-
-    if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
-    {
-        /// For GCS we will try to compose object at the end, otherwise we cannot do a native copy
-        /// for the object (e.g. for backups)
-        /// We don't care if the compose fails, because the upload was still successful, only the
-        /// performance for copying the object will be affected
-        S3::ComposeObjectRequest compose_req;
-        compose_req.SetBucket(bucket);
-        compose_req.SetKey(key);
-        compose_req.SetComponentNames({key});
-        compose_req.SetContentType("binary/octet-stream");
-        auto compose_outcome = ComposeObject(compose_req);
-
-        if (compose_outcome.IsSuccess())
-            LOG_TRACE(log, "Composing object was successful");
-        else
-            LOG_INFO(
-                log,
-                "Failed to compose object. Message: {}, Key: {}, Bucket: {}",
-                compose_outcome.GetError().GetMessage(), key, bucket);
-    }
+    if (compose_outcome.IsSuccess())
+        LOG_TRACE(log, "Composing object was successful");
+    else
+        LOG_INFO(log, "Failed to compose object. Message: {}, Key: {}, Bucket: {}", compose_outcome.GetError().GetMessage(), key, bucket);
 
     return outcome;
 }
 
-Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
+Model::CopyObjectOutcome Client::CopyObject(const CopyObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::CopyObjectRequest & req) { return CopyObject(req); });
 }
 
-Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
+Model::PutObjectOutcome Client::PutObject(const PutObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::PutObjectRequest & req) { return PutObject(req); });
 }
 
-Model::UploadPartOutcome Client::UploadPart(UploadPartRequest & request) const
+Model::UploadPartOutcome Client::UploadPart(const UploadPartRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::UploadPartRequest & req) { return UploadPart(req); });
 }
 
-Model::UploadPartCopyOutcome Client::UploadPartCopy(UploadPartCopyRequest & request) const
+Model::UploadPartCopyOutcome Client::UploadPartCopy(const UploadPartCopyRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::UploadPartCopyRequest & req) { return UploadPartCopy(req); });
 }
 
-Model::DeleteObjectOutcome Client::DeleteObject(DeleteObjectRequest & request) const
+Model::DeleteObjectOutcome Client::DeleteObject(const DeleteObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::DeleteObjectRequest & req) { return DeleteObject(req); });
 }
 
-Model::DeleteObjectsOutcome Client::DeleteObjects(DeleteObjectsRequest & request) const
+Model::DeleteObjectsOutcome Client::DeleteObjects(const DeleteObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](const Model::DeleteObjectsRequest & req) { return DeleteObjects(req); });
 }
 
-Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & request) const
+Client::ComposeObjectOutcome Client::ComposeObject(const ComposeObjectRequest & request) const
 {
     auto request_fn = [this](const ComposeObjectRequest & req)
     {
@@ -506,13 +484,10 @@ Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & reques
 
 template <typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType>
-Client::doRequest(RequestType & request, RequestFn request_fn) const
+Client::doRequest(const RequestType & request, RequestFn request_fn) const
 {
-    addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
-    if (client_settings.disable_checksum)
-        request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -570,9 +545,6 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (!new_uri)
             return result;
 
-        if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
-            new_uri->addRegionToURI(request.getRegionOverride());
-
         const auto & current_uri_override = request.getURIOverride();
         /// we already tried with this URI
         if (current_uri_override && current_uri_override->uri == new_uri->uri)
@@ -590,14 +562,12 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 
 template <bool IsReadMethod, typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType>
-Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const
+Client::doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn request_fn) const
 {
-    addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     auto with_retries = [this, request_fn_ = std::move(request_fn)] (const RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
         const Int64 max_attempts = client_configuration.retryStrategy->GetMaxAttempts();
-        chassert(max_attempts > 0);
         std::exception_ptr last_exception = nullptr;
         for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
@@ -637,15 +607,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 last_exception = std::current_exception();
 
                 auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
-
-                /// Check if query is canceled
-                if (!client_configuration.retryStrategy->ShouldRetry(error, attempt_no))
-                    break;
-
-                auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
-                LOG_WARNING(log, "Request failed, now waiting {} ms before attempting again", sleep_ms);
-                sleepForMilliseconds(sleep_ms);
-
+                client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
                 continue;
             }
         }
@@ -688,8 +650,6 @@ std::string Client::getRegionForBucket(const std::string & bucket, bool force_de
     LOG_INFO(log, "Resolving region for bucket {}", bucket);
     Aws::S3::Model::HeadBucketRequest req;
     req.SetBucket(bucket);
-
-    addAdditionalAMZHeadersToCanonicalHeadersList(req, client_configuration.extra_headers);
 
     std::string region;
     auto outcome = HeadBucket(req);
@@ -848,7 +808,7 @@ ClientFactory & ClientFactory::instance()
 
 std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const PocoHTTPClientConfiguration & cfg_,
-    ClientSettings client_settings,
+    bool is_virtual_hosted_style,
     const String & access_key_id,
     const String & secret_access_key,
     const String & server_side_encryption_customer_key_base64,
@@ -885,19 +845,14 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             std::move(credentials),
             credentials_configuration);
 
-    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts);
-
-    /// Use virtual addressing if endpoint is not specified.
-    if (client_configuration.endpointOverride.empty())
-        client_settings.use_virtual_addressing = true;
-
+    client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(std::move(client_configuration.retryStrategy));
     return Client::create(
         client_configuration.s3_max_redirects,
         std::move(sse_kms_config),
         credentials_provider,
         client_configuration, // Client configuration.
         Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-        client_settings
+        is_virtual_hosted_style || client_configuration.endpointOverride.empty() /// Use virtual addressing if endpoint is not specified.
     );
 }
 
@@ -905,16 +860,13 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     const String & force_region,
     const RemoteHostFilter & remote_host_filter,
     unsigned int s3_max_redirects,
-    unsigned int s3_retry_attempts,
     bool enable_s3_requests_logging,
     bool for_disk_s3,
     const ThrottlerPtr & get_request_throttler,
     const ThrottlerPtr & put_request_throttler,
     const String & protocol)
 {
-    auto context = Context::getGlobalContextInstance();
-    chassert(context);
-    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
+    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol));
 
     auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
     auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
@@ -924,10 +876,8 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         force_region,
         remote_host_filter,
         s3_max_redirects,
-        s3_retry_attempts,
         enable_s3_requests_logging,
         for_disk_s3,
-        context->getGlobalContext()->getSettingsRef().s3_use_adaptive_timeouts,
         get_request_throttler,
         put_request_throttler,
         error_report);

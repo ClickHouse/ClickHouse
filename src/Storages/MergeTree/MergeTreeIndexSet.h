@@ -35,10 +35,9 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
 
     ~MergeTreeIndexGranuleSet() override = default;
 
-    const String index_name;
-    const size_t max_rows;
-    const Block index_sample_block;
-
+    String index_name;
+    size_t max_rows;
+    Block index_sample_block;
     Block block;
 };
 
@@ -146,10 +145,12 @@ public:
     ~MergeTreeIndexSet() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query, ContextPtr context) const override;
+
+    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
     size_t max_rows = 0;
 };

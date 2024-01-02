@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <re2/re2.h>
 
 #include <azure/storage/common/storage_credential.hpp>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -38,14 +39,6 @@
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 using namespace Azure::Storage::Blobs;
 
@@ -53,7 +46,6 @@ namespace CurrentMetrics
 {
     extern const Metric ObjectStorageAzureThreads;
     extern const Metric ObjectStorageAzureThreadsActive;
-    extern const Metric ObjectStorageAzureThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -479,12 +471,7 @@ StorageAzureBlob::StorageAzureBlob(
         storage_metadata.setColumns(columns);
     }
     else
-    {
-        /// We don't allow special columns in File storage.
-        if (!columns_.hasOnlyOrdinary())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine AzureBlobStorage doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");
         storage_metadata.setColumns(columns_);
-    }
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -494,7 +481,7 @@ StorageAzureBlob::StorageAzureBlob(
     for (const auto & key : configuration.blobs_paths)
         objects.emplace_back(key);
 
-    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 void StorageAzureBlob::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
@@ -800,11 +787,6 @@ NamesAndTypesList StorageAzureBlob::getVirtuals() const
     return virtual_columns;
 }
 
-Names StorageAzureBlob::getVirtualColumnNames()
-{
-    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
-}
-
 bool StorageAzureBlob::supportsPartitionBy() const
 {
     return true;
@@ -849,14 +831,10 @@ StorageAzureBlobSource::GlobIterator::GlobIterator(
     /// We don't have to list bucket, because there is no asterisks.
     if (key_prefix.size() == blob_path_with_globs.size())
     {
-        auto object_metadata = object_storage->getObjectMetadata(blob_path_with_globs);
-        blobs_with_metadata.emplace_back(
-            blob_path_with_globs,
-            object_metadata);
+        ObjectMetadata object_metadata = object_storage->getObjectMetadata(blob_path_with_globs);
+        blobs_with_metadata.emplace_back(blob_path_with_globs, object_metadata);
         if (outer_blobs)
             outer_blobs->emplace_back(blobs_with_metadata.back());
-        if (file_progress_callback)
-            file_progress_callback(FileProgress(0, object_metadata.size_bytes));
         is_finished = true;
         return;
     }
@@ -931,10 +909,8 @@ RelativePathWithMetadata StorageAzureBlobSource::GlobIterator::next()
         blobs_with_metadata = std::move(new_batch);
         if (file_progress_callback)
         {
-            for (const auto & [relative_path, info] : blobs_with_metadata)
-            {
+            for (const auto & [_, info] : blobs_with_metadata)
                 file_progress_callback(FileProgress(0, info.size_bytes));
-            }
         }
     }
 
@@ -980,7 +956,7 @@ StorageAzureBlobSource::KeysIterator::KeysIterator(
         ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
-        keys.emplace_back(key, object_metadata);
+        keys.emplace_back(RelativePathWithMetadata{key, object_metadata});
     }
 
     if (outer_blobs)
@@ -1016,11 +992,7 @@ Chunk StorageAzureBlobSource::generate()
             if (const auto * input_format = reader.getInputFormat())
                 chunk_size = input_format->getApproxBytesReadForChunk();
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
-            VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(
-                chunk,
-                requested_virtual_columns,
-                fs::path(container) / reader.getRelativePath(),
-                reader.getRelativePathWithMetadata().metadata.size_bytes);
+            VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, fs::path(container) / reader.getRelativePath());
             return chunk;
         }
 
@@ -1097,7 +1069,7 @@ StorageAzureBlobSource::StorageAzureBlobSource(
     , file_iterator(file_iterator_)
     , need_only_count(need_only_count_)
     , query_info(query_info_)
-    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, CurrentMetrics::ObjectStorageAzureThreadsScheduled, 1)
+    , create_reader_pool(CurrentMetrics::ObjectStorageAzureThreads, CurrentMetrics::ObjectStorageAzureThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "AzureReader"))
 {
     reader = createReader();
@@ -1128,8 +1100,7 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
-    std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files
-        ? tryGetNumRowsFromCache(path_with_metadata) : std::nullopt;
+    std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files ? tryGetNumRowsFromCache(path_with_metadata) : std::nullopt;
     if (num_rows_from_cache)
     {
         /// We should not return single chunk with all number of rows,
@@ -1152,6 +1123,7 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
                 format, *read_buf, sample_block, getContext(), max_block_size,
                 format_settings, max_parsing_threads, std::nullopt,
                 /* is_remote_fs */ true, compression_method);
+        input_format->setQueryInfo(query_info, getContext());
 
         if (need_only_count)
             input_format->needOnlyCount();
@@ -1229,18 +1201,11 @@ namespace
         {
         }
 
-        std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() override
+        std::unique_ptr<ReadBuffer> next() override
         {
-            /// For default mode check cached columns for currently read keys on first iteration.
-            if (first && getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
-            {
-                if (auto cached_columns = tryGetColumnsFromCache(read_keys.begin(), read_keys.end()))
-                    return {nullptr, cached_columns};
-            }
+            auto [key, metadata] = file_iterator->next();
 
-            current_path_with_metadata = file_iterator->next();
-
-            if (current_path_with_metadata.relative_path.empty())
+            if (key.empty())
             {
                 if (first)
                     throw Exception(
@@ -1248,102 +1213,49 @@ namespace
                         "Cannot extract table structure from {} format file, because there are no files with provided path "
                         "in AzureBlobStorage. You must specify table structure manually", configuration.format);
 
-                return {nullptr, std::nullopt};
+                return nullptr;
             }
 
-            first = false;
+            current_path = key;
 
-            /// AzureBlobStorage file iterator could get new keys after new iteration, check them in schema cache if schema inference mode is default.
-            if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT && read_keys.size() > prev_read_keys_size)
+            ///AzureBlobStorage file iterator could get new keys after new iteration, check them in schema cache.
+            if (getContext()->getSettingsRef().schema_inference_use_cache_for_azure && read_keys.size() > prev_read_keys_size)
             {
-                auto columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end());
+                columns_from_cache = StorageAzureBlob::tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), configuration, format_settings, getContext());
                 prev_read_keys_size = read_keys.size();
                 if (columns_from_cache)
-                    return {nullptr, columns_from_cache};
-            }
-            else if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
-            {
-                RelativePathsWithMetadata paths = {current_path_with_metadata};
-                if (auto columns_from_cache = tryGetColumnsFromCache(paths.begin(), paths.end()))
-                    return {nullptr, columns_from_cache};
+                    return nullptr;
             }
 
             first = false;
             int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
-            return {wrapReadBufferWithCompressionMethod(
-                object_storage->readObject(StoredObject(current_path_with_metadata.relative_path), getContext()->getReadSettings(), {}, current_path_with_metadata.metadata.size_bytes),
-                chooseCompressionMethod(current_path_with_metadata.relative_path, configuration.compression_method),
-                zstd_window_log_max), std::nullopt};
+            return wrapReadBufferWithCompressionMethod(
+                object_storage->readObject(StoredObject(key), getContext()->getReadSettings(), {}, metadata.size_bytes),
+                chooseCompressionMethod(key, configuration.compression_method),
+                zstd_window_log_max);
         }
+
+        std::optional<ColumnsDescription> getCachedColumns() override { return columns_from_cache; }
 
         void setNumRowsToLastFile(size_t num_rows) override
         {
-            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_azure)
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_s3)
                 return;
 
-            String source = fs::path(configuration.connection_url) / configuration.container / current_path_with_metadata.relative_path;
+            String source = fs::path(configuration.connection_url) / configuration.container / current_path;
             auto key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
             StorageAzureBlob::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
-        void setSchemaToLastFile(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_azure
-                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::UNION)
-                return;
-
-            String source = fs::path(configuration.connection_url) / configuration.container / current_path_with_metadata.relative_path;
-            auto key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
-            StorageAzureBlob::getSchemaCache(getContext()).addColumns(key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_azure
-                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::DEFAULT)
-                return;
-
-            auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
-            Strings sources;
-            sources.reserve(read_keys.size());
-            std::transform(read_keys.begin(), read_keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket + '/' + elem.relative_path; });
-            auto cache_keys = getKeysForSchemaCache(sources, configuration.format, format_settings, getContext());
-            StorageAzureBlob::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
-        }
-
-        String getLastFileName() const override { return current_path_with_metadata.relative_path; }
-
     private:
-        std::optional<ColumnsDescription> tryGetColumnsFromCache(const RelativePathsWithMetadata::const_iterator & begin, const RelativePathsWithMetadata::const_iterator & end)
-        {
-            auto & schema_cache = StorageAzureBlob::getSchemaCache(getContext());
-            for (auto it = begin; it < end; ++it)
-            {
-                auto get_last_mod_time = [&] -> std::optional<time_t>
-                {
-                    if (it->metadata.last_modified)
-                        return it->metadata.last_modified->epochTime();
-                    return std::nullopt;
-                };
-
-                auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
-                String source = host_and_bucket + '/' + it->relative_path;
-                auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
-                auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
-                if (columns)
-                    return columns;
-            }
-
-            return std::nullopt;
-        }
-
         std::shared_ptr<StorageAzureBlobSource::IIterator> file_iterator;
         AzureObjectStorage * object_storage;
         const StorageAzureBlob::Configuration & configuration;
         const std::optional<FormatSettings> & format_settings;
         const RelativePathsWithMetadata & read_keys;
+        std::optional<ColumnsDescription> columns_from_cache;
         size_t prev_read_keys_size;
-        RelativePathWithMetadata current_path_with_metadata;
+        String current_path;
         bool first = true;
     };
 }
@@ -1373,8 +1285,72 @@ ColumnsDescription StorageAzureBlob::getTableStructureFromData(
             object_storage, configuration.container, configuration.blobs_paths, nullptr, NamesAndTypesList{}, ctx, &read_keys);
     }
 
-    ReadBufferIterator read_buffer_iterator(file_iterator, object_storage, configuration, format_settings, read_keys, ctx);
-    return readSchemaFromFormat(configuration.format, format_settings, read_buffer_iterator, configuration.withGlobs(), ctx);
+    std::optional<ColumnsDescription> columns_from_cache;
+    if (ctx->getSettingsRef().schema_inference_use_cache_for_azure)
+        columns_from_cache = tryGetColumnsFromCache(read_keys.begin(), read_keys.end(), configuration, format_settings, ctx);
+
+    ColumnsDescription columns;
+    if (columns_from_cache)
+    {
+        columns = *columns_from_cache;
+    }
+    else
+    {
+        ReadBufferIterator read_buffer_iterator(file_iterator, object_storage, configuration, format_settings, read_keys, ctx);
+        columns = readSchemaFromFormat(configuration.format, format_settings, read_buffer_iterator, configuration.withGlobs(), ctx);
+    }
+
+    if (ctx->getSettingsRef().schema_inference_use_cache_for_azure)
+        addColumnsToCache(read_keys, columns, configuration, format_settings, configuration.format, ctx);
+
+    return columns;
+
+}
+
+std::optional<ColumnsDescription> StorageAzureBlob::tryGetColumnsFromCache(
+        const RelativePathsWithMetadata::const_iterator & begin,
+        const RelativePathsWithMetadata::const_iterator & end,
+        const StorageAzureBlob::Configuration & configuration,
+        const std::optional<FormatSettings> & format_settings,
+        const ContextPtr & ctx)
+{
+    auto & schema_cache = getSchemaCache(ctx);
+    for (auto it = begin; it < end; ++it)
+    {
+        auto get_last_mod_time = [&] -> std::optional<time_t>
+        {
+            if (it->metadata.last_modified)
+                return it->metadata.last_modified->epochTime();
+            return std::nullopt;
+        };
+
+        auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
+        String source = host_and_bucket + '/' + it->relative_path;
+        auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, ctx);
+        auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
+        if (columns)
+            return columns;
+    }
+
+    return std::nullopt;
+
+}
+
+void StorageAzureBlob::addColumnsToCache(
+    const RelativePathsWithMetadata & keys,
+    const ColumnsDescription & columns,
+    const StorageAzureBlob::Configuration & configuration,
+    const std::optional<FormatSettings> & format_settings,
+    const String & format_name,
+    const ContextPtr & ctx)
+{
+    auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
+    Strings sources;
+    sources.reserve(keys.size());
+    std::transform(keys.begin(), keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket + '/' + elem.relative_path; });
+    auto cache_keys = getKeysForSchemaCache(sources, format_name, format_settings, ctx);
+    auto & schema_cache = getSchemaCache(ctx);
+    schema_cache.addManyColumns(cache_keys, columns);
 }
 
 SchemaCache & StorageAzureBlob::getSchemaCache(const ContextPtr & ctx)
@@ -1389,7 +1365,7 @@ std::unique_ptr<ReadBuffer> StorageAzureBlobSource::createAsyncAzureReadBuffer(
 {
     auto modified_settings{read_settings};
     modified_settings.remote_read_min_bytes_for_seek = modified_settings.remote_fs_buffer_size;
-    auto async_reader = object_storage->readObjects(StoredObjects{StoredObject{key, /* local_path */ "", object_size}}, modified_settings);
+    auto async_reader = object_storage->readObjects(StoredObjects{StoredObject{key, object_size}}, modified_settings);
 
     async_reader->setReadUntilEnd();
     if (read_settings.remote_fs_prefetch)

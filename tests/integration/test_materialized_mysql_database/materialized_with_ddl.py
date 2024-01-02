@@ -1875,49 +1875,6 @@ def double_quoted_comment(clickhouse_node, mysql_node, service_name):
     mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
 
 
-def default_values(clickhouse_node, mysql_node, service_name):
-    db = "default_values"
-    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
-    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
-    mysql_node.query(f"CREATE DATABASE {db}")
-    columns = f"""
-        id INT PRIMARY KEY,
-        -- literal defaults
-        i INT             DEFAULT 0,
-        c1 VARCHAR(10)    DEFAULT '',
-        c1_2 VARCHAR(10)  DEFAULT 'abc',
-        c2 VARCHAR(10)    DEFAULT "",
-        c2_2 VARCHAR(10)  DEFAULT "abc",
-        -- expression defaults
-        c3 VARCHAR(10)    DEFAULT (CONCAT('1', '2', RAND())),
-        c4 VARCHAR(10)    DEFAULT (CONCAT('', RAND())),
-        c5 VARCHAR(10)    DEFAULT (CONCAT("1", "2", RAND())),
-        c6 VARCHAR(10)    DEFAULT (CONCAT("", RAND())),
-        c7 VARCHAR(10)    DEFAULT (CONCAT(CONCAT('', "", '1', "2", RAND()), RAND() * CURRENT_DATE)),
-        c8 VARCHAR(10)    DEFAULT (CONCAT('1', "2", '', "", RAND(), CONCAT(RAND(), CONCAT('1', "2", '', "", RAND(), RAND() * CURRENT_DATE)))),
-        c9 VARCHAR(10)    DEFAULT (""),
-        c10 VARCHAR(10)   DEFAULT (''),
-        f FLOAT           DEFAULT (RAND() * RAND()),
-        f_2 FLOAT         DEFAULT 0.0,
-        b BINARY(16)      DEFAULT (UUID_TO_BIN(UUID())),
-        d DATE            DEFAULT (CURRENT_DATE + INTERVAL 1 YEAR)
-    """
-    mysql_node.query(f"CREATE TABLE {db}.full_t1({columns})")
-    clickhouse_node.query(
-        f"CREATE DATABASE {db} ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
-    )
-    # incremental
-    mysql_node.query(f"CREATE TABLE {db}.inc_t1({columns})")
-    check_query(
-        clickhouse_node,
-        f"SHOW TABLES FROM {db}",
-        "full_t1\ninc_t1\n",
-    )
-
-    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
-    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
-
-
 def materialized_with_enum8_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS materialized_with_enum8_test")
     clickhouse_node.query("DROP DATABASE IF EXISTS materialized_with_enum8_test")

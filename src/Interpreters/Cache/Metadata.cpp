@@ -134,12 +134,12 @@ std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) co
         / CacheMetadata::getFileNameForFileSegment(file_segment.offset(), file_segment.getKind());
 }
 
-CacheMetadata::CacheMetadata(const std::string & path_, size_t background_download_queue_size_limit_, size_t background_download_threads_)
+
+CacheMetadata::CacheMetadata(const std::string & path_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
-    , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
+    , download_queue(std::make_shared<DownloadQueue>())
     , log(&Poco::Logger::get("CacheMetadata"))
-    , download_threads_num(background_download_threads_)
 {
 }
 
@@ -168,16 +168,10 @@ String CacheMetadata::getPathForKey(const Key & key) const
     return fs::path(path) / key_str.substr(0, 3) / key_str;
 }
 
-CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
+CacheMetadataGuard::Lock CacheMetadata::lockMetadata() const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheLockMetadataMicroseconds);
     return guard.lock();
-}
-
-CacheMetadata::MetadataBucket & CacheMetadata::getMetadataBucket(const Key & key)
-{
-    const auto bucket = key.key % buckets_num;
-    return metadata_buckets[bucket];
 }
 
 LockedKeyPtr CacheMetadata::lockKeyMetadata(
@@ -226,11 +220,10 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
     KeyNotFoundPolicy key_not_found_policy,
     bool is_initial_load)
 {
-    auto & bucket = getMetadataBucket(key);
-    auto lock = bucket.lock();
+    auto lock = lockMetadata();
 
-    auto it = bucket.find(key);
-    if (it == bucket.end())
+    auto it = find(key);
+    if (it == end())
     {
         if (key_not_found_policy == KeyNotFoundPolicy::THROW)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
@@ -239,7 +232,7 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
         else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
             return nullptr;
 
-        it = bucket.emplace(
+        it = emplace(
             key, std::make_shared<KeyMetadata>(
                 key, getPathForKey(key), cleanup_queue, download_queue, log, key_prefix_directory_mutex, is_initial_load)).first;
     }
@@ -247,66 +240,52 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
     return it->second;
 }
 
-bool CacheMetadata::isEmpty() const
-{
-    for (const auto & bucket : metadata_buckets)
-        if (!bucket.empty())
-            return false;
-    return true;
-}
-
 void CacheMetadata::iterate(IterateFunc && func)
 {
-    for (auto & bucket : metadata_buckets)
+    auto lock = lockMetadata();
+    for (auto & [key, key_metadata] : *this)
     {
-        auto lk = bucket.lock();
-        for (auto & [key, key_metadata] : bucket)
+        auto locked_key = key_metadata->lockNoStateCheck();
+        const auto key_state = locked_key->getKeyState();
+
+        if (key_state == KeyMetadata::KeyState::ACTIVE)
         {
-            auto locked_key = key_metadata->lockNoStateCheck();
-            const auto key_state = locked_key->getKeyState();
-
-            if (key_state == KeyMetadata::KeyState::ACTIVE)
-            {
-                func(*locked_key);
-                continue;
-            }
-            else if (key_state == KeyMetadata::KeyState::REMOVING)
-                continue;
-
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Cannot lock key {}: key does not exist", key_metadata->key);
+            func(*locked_key);
+            continue;
         }
+        else if (key_state == KeyMetadata::KeyState::REMOVING)
+            continue;
+
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Cannot lock key {}: key does not exist", key_metadata->key);
     }
 }
 
 void CacheMetadata::removeAllKeys(bool if_releasable)
 {
-    for (auto & bucket : metadata_buckets)
+    auto lock = lockMetadata();
+    for (auto it = begin(); it != end();)
     {
-        auto lock = bucket.lock();
-        for (auto it = bucket.begin(); it != bucket.end();)
+        auto locked_key = it->second->lockNoStateCheck();
+        if (locked_key->getKeyState() == KeyMetadata::KeyState::ACTIVE)
         {
-            auto locked_key = it->second->lockNoStateCheck();
-            if (locked_key->getKeyState() == KeyMetadata::KeyState::ACTIVE)
+            bool removed_all = locked_key->removeAllFileSegments(if_releasable);
+            if (removed_all)
             {
-                bool removed_all = locked_key->removeAllFileSegments(if_releasable);
-                if (removed_all)
-                {
-                    it = removeEmptyKey(bucket, it, *locked_key, lock);
-                    continue;
-                }
+                it = removeEmptyKey(it, *locked_key, lock);
+                continue;
             }
-            ++it;
         }
+        ++it;
     }
 }
 
 void CacheMetadata::removeKey(const Key & key, bool if_exists, bool if_releasable)
 {
-    auto & bucket = getMetadataBucket(key);
-    auto lock = bucket.lock();
-    auto it = bucket.find(key);
-    if (it == bucket.end())
+    auto metadata_lock = lockMetadata();
+
+    auto it = find(key);
+    if (it == end())
     {
         if (if_exists)
             return;
@@ -326,23 +305,18 @@ void CacheMetadata::removeKey(const Key & key, bool if_exists, bool if_releasabl
 
     bool removed_all = locked_key->removeAllFileSegments(if_releasable);
     if (removed_all)
-        removeEmptyKey(bucket, it, *locked_key, lock);
+        removeEmptyKey(it, *locked_key, metadata_lock);
 }
 
-CacheMetadata::MetadataBucket::iterator
-CacheMetadata::removeEmptyKey(
-    MetadataBucket & bucket,
-    MetadataBucket::iterator it,
-    LockedKey & locked_key,
-    const CacheMetadataGuard::Lock &)
+CacheMetadata::iterator CacheMetadata::removeEmptyKey(iterator it, LockedKey & locked_key, const CacheMetadataGuard::Lock &)
 {
     const auto & key = locked_key.getKey();
 
-    if (!locked_key.empty())
+    if (!it->second->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove non-empty key: {}", key);
 
     locked_key.markAsRemoved();
-    auto next_it = bucket.erase(it);
+    auto next_it = erase(it);
 
     LOG_DEBUG(log, "Key {} is removed from metadata", key);
 
@@ -352,10 +326,7 @@ CacheMetadata::removeEmptyKey(
     try
     {
         if (fs::exists(key_directory))
-        {
             fs::remove_all(key_directory);
-            LOG_TEST(log, "Directory ({}) for key {} removed", key_directory.string(), key);
-        }
     }
     catch (...)
     {
@@ -368,10 +339,7 @@ CacheMetadata::removeEmptyKey(
     {
         std::unique_lock mutex(key_prefix_directory_mutex);
         if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
-        {
             fs::remove(key_prefix_directory);
-            LOG_TEST(log, "Prefix directory ({}) for key {} removed", key_prefix_directory.string(), key);
-        }
     }
     catch (...)
     {
@@ -394,6 +362,12 @@ public:
                 return;
             inserted = keys.insert(key).second;
         }
+        /// There is an invariant that key cannot be submitted for removal if it is already in removal queue.
+        /// Because
+        /// 1) when submit key to removal it acquires state REMOVING and we submit key for removal only if it has ACTIVE state.
+        /// 2) if a key is added to cache and it was found in removal queue - it will be removed from the queue and get state ACTIVE.
+        /// and both these actions are synchronized by the same KeyGuard.
+        chassert(inserted);
         if (inserted)
         {
             CurrentMetrics::add(CurrentMetrics::FilesystemCacheDelayedCleanupElements);
@@ -444,18 +418,16 @@ void CacheMetadata::cleanupThreadFunc()
 
         try
         {
+            auto lock = lockMetadata();
 
-            auto & bucket = getMetadataBucket(key);
-            auto lock = bucket.lock();
-
-            auto it = bucket.find(key);
-            if (it == bucket.end())
+            auto it = find(key);
+            if (it == end())
                 continue;
 
             auto locked_key = it->second->lockNoStateCheck();
             if (locked_key->getKeyState() == KeyMetadata::KeyState::REMOVING)
             {
-                removeEmptyKey(bucket, it, *locked_key, lock);
+                removeEmptyKey(it, *locked_key, lock);
             }
         }
         catch (...)
@@ -465,27 +437,27 @@ void CacheMetadata::cleanupThreadFunc()
     }
 }
 
+void CacheMetadata::cancelCleanup()
+{
+    cleanup_queue->cancel();
+}
+
 class DownloadQueue
 {
 friend struct CacheMetadata;
 public:
-    explicit DownloadQueue(size_t queue_size_limit_) : queue_size_limit(queue_size_limit_) {}
-
-    bool add(FileSegmentPtr file_segment)
+    void add(FileSegmentPtr file_segment)
     {
         {
             std::lock_guard lock(mutex);
-            if (cancelled || (queue_size_limit && queue.size() >= queue_size_limit))
-                return false;
+            if (cancelled)
+                return;
             queue.push(DownloadInfo{file_segment->key(), file_segment->offset(), file_segment});
         }
 
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheDownloadQueueElements);
         cv.notify_one();
-        return true;
     }
-
-    bool setQueueLimit(size_t size) { return queue_size_limit.exchange(size) != size; }
 
 private:
     void cancel()
@@ -497,8 +469,7 @@ private:
         cv.notify_all();
     }
 
-    std::atomic<size_t> queue_size_limit;
-    mutable std::mutex mutex;
+    std::mutex mutex;
     std::condition_variable cv;
     bool cancelled = false;
 
@@ -515,11 +486,10 @@ private:
         /// before we actually started background download.
         std::weak_ptr<FileSegment> file_segment;
     };
-
     std::queue<DownloadInfo> queue;
 };
 
-void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
+void CacheMetadata::downloadThreadFunc()
 {
     std::optional<Memory<>> memory;
     while (true)
@@ -530,13 +500,13 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
 
         {
             std::unique_lock lock(download_queue->mutex);
-            if (download_queue->cancelled || stop_flag)
+            if (download_queue->cancelled)
                 return;
 
             if (download_queue->queue.empty())
             {
-                download_queue->cv.wait(lock, [&](){ return download_queue->cancelled || !download_queue->queue.empty() || stop_flag; });
-                if (download_queue->cancelled || stop_flag)
+                download_queue->cv.wait(lock, [&](){ return download_queue->cancelled || !download_queue->queue.empty(); });
+                if (download_queue->cancelled)
                     return;
             }
 
@@ -611,11 +581,6 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
     }
 }
 
-bool CacheMetadata::setBackgroundDownloadQueueSizeLimit(size_t size)
-{
-    return download_queue->setQueueLimit(size);
-}
-
 void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory)
 {
     LOG_TEST(
@@ -679,85 +644,9 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     LOG_TEST(log, "Downloaded file segment: {}", file_segment.getInfoForLog());
 }
 
-void CacheMetadata::startup()
-{
-    download_threads.reserve(download_threads_num);
-    for (size_t i = 0; i < download_threads_num; ++i)
-    {
-        download_threads.emplace_back(std::make_shared<DownloadThread>());
-        download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>([this, thread = download_threads.back()] { downloadThreadFunc(thread->stop_flag); });
-    }
-    cleanup_thread = std::make_unique<ThreadFromGlobalPool>([this]{ cleanupThreadFunc(); });
-}
-
-void CacheMetadata::shutdown()
+void CacheMetadata::cancelDownload()
 {
     download_queue->cancel();
-    cleanup_queue->cancel();
-
-    for (auto & download_thread : download_threads)
-    {
-        if (download_thread->thread && download_thread->thread->joinable())
-            download_thread->thread->join();
-    }
-    if (cleanup_thread && cleanup_thread->joinable())
-        cleanup_thread->join();
-}
-
-bool CacheMetadata::isBackgroundDownloadEnabled()
-{
-    return download_threads_num;
-}
-
-bool CacheMetadata::setBackgroundDownloadThreads(size_t threads_num)
-{
-    if (threads_num == download_threads_num)
-        return false;
-
-    SCOPE_EXIT({ download_threads_num = download_threads.size(); });
-
-    if (threads_num > download_threads_num)
-    {
-        size_t add_threads = threads_num - download_threads_num;
-        for (size_t i = 0; i < add_threads; ++i)
-        {
-            download_threads.emplace_back(std::make_shared<DownloadThread>());
-            try
-            {
-                download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>(
-                    [this, thread = download_threads.back()] { downloadThreadFunc(thread->stop_flag); });
-            }
-            catch (...)
-            {
-                download_threads.pop_back();
-                throw;
-            }
-        }
-    }
-    else if (threads_num < download_threads_num)
-    {
-        size_t remove_threads = download_threads_num - threads_num;
-
-        {
-            std::lock_guard lock(download_queue->mutex);
-            for (size_t i = 0; i < remove_threads; ++i)
-                download_threads[download_threads.size() - 1 - i]->stop_flag = true;
-        }
-
-        download_queue->cv.notify_all();
-
-        for (size_t i = 0; i < remove_threads; ++i)
-        {
-            chassert(download_threads.back()->stop_flag);
-
-            auto & thread = download_threads.back()->thread;
-            if (thread && thread->joinable())
-                thread->join();
-
-            download_threads.pop_back();
-        }
-    }
-    return true;
 }
 
 LockedKey::LockedKey(std::shared_ptr<KeyMetadata> key_metadata_)
@@ -937,12 +826,12 @@ void LockedKey::shrinkFileSegmentToDownloadedSize(
     chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
 }
 
-bool LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &)
+void LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &)
 {
     auto it = key_metadata->find(offset);
     if (it == key_metadata->end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is not offset {}", offset);
-    return key_metadata->download_queue->add(it->second->file_segment);
+    key_metadata->download_queue->add(it->second->file_segment);
 }
 
 std::optional<FileSegment::Range> LockedKey::hasIntersectingRange(const FileSegment::Range & range) const
@@ -1012,10 +901,9 @@ std::string LockedKey::toString() const
     return result;
 }
 
-
-std::vector<FileSegment::Info> LockedKey::sync()
+FileSegments LockedKey::sync()
 {
-    std::vector<FileSegment::Info> broken;
+    FileSegments broken;
     for (auto it = key_metadata->begin(); it != key_metadata->end();)
     {
         if (it->second->evicting() || !it->second->releasable())
@@ -1046,7 +934,7 @@ std::vector<FileSegment::Info> LockedKey::sync()
                 "File segment has DOWNLOADED state, but file does not exist ({})",
                 file_segment->getInfoForLog());
 
-            broken.push_back(FileSegment::getInfo(file_segment));
+            broken.push_back(FileSegment::getSnapshot(file_segment));
             it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */true);
             continue;
         }
@@ -1065,7 +953,7 @@ std::vector<FileSegment::Info> LockedKey::sync()
             "File segment has unexpected size. Having {}, expected {} ({})",
             actual_size, expected_size, file_segment->getInfoForLog());
 
-        broken.push_back(FileSegment::getInfo(file_segment));
+        broken.push_back(FileSegment::getSnapshot(file_segment));
         it = removeFileSegment(file_segment->offset(), file_segment->lock(), /* can_be_broken */false);
     }
     return broken;

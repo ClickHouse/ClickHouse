@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/EventFD.h>
@@ -24,7 +24,7 @@ struct MergeTreeSource::AsyncReadingState
         /// which can be called from background thread.
         /// Invariant:
         ///   * background thread changes status InProgress -> IsFinished
-        ///   * (status == InProgress) => (MergeTreeSelectProcessor is alive)
+        ///   * (status == InProgress) => (MergeTreeBaseSelectProcessor is alive)
 
         void setResult(ChunkAndProgress chunk_)
         {
@@ -118,7 +118,7 @@ struct MergeTreeSource::AsyncReadingState
         ///  (executing thread)                         (bg pool thread)
         ///                                             Control::finish()
         ///                                             stage = Stage::IsFinished;
-        ///  ~MergeTreeSelectProcessor()
+        ///  ~MergeTreeBaseSelectProcessor()
         ///  ~AsyncReadingState()
         ///  control->stage != Stage::InProgress
         ///  ~EventFD()
@@ -133,12 +133,12 @@ private:
 };
 #endif
 
-MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_)
-    : ISource(processor_->getHeader())
-    , processor(std::move(processor_))
+MergeTreeSource::MergeTreeSource(MergeTreeSelectAlgorithmPtr algorithm_)
+    : ISource(algorithm_->getHeader())
+    , algorithm(std::move(algorithm_))
 {
 #if defined(OS_LINUX)
-    if (processor->getSettings().use_asynchronous_read_from_pool)
+    if (algorithm->getSettings().use_asynchronous_read_from_pool)
         async_reading_state = std::make_unique<AsyncReadingState>();
 #endif
 }
@@ -147,12 +147,12 @@ MergeTreeSource::~MergeTreeSource() = default;
 
 std::string MergeTreeSource::getName() const
 {
-    return processor->getName();
+    return algorithm->getName();
 }
 
 void MergeTreeSource::onCancel()
 {
-    processor->cancel();
+    algorithm->cancel();
 }
 
 ISource::Status MergeTreeSource::prepare()
@@ -184,7 +184,7 @@ Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
     finished = chunk.is_finished;
 
     /// We can return a chunk with no rows even if are not finished.
-    /// This allows to report progress when all the rows are filtered out inside MergeTreeSelectProcessor by PREWHERE logic.
+    /// This allows to report progress when all the rows are filtered out inside MergeTreeBaseSelectProcessor by PREWHERE logic.
     return std::move(chunk.chunk);
 }
 
@@ -200,7 +200,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
         chassert(async_reading_state->getStage() == AsyncReadingState::Stage::NotStarted);
 
         /// It is important to store control into job.
-        /// Otherwise, race between job and ~MergeTreeSelectProcessor is possible.
+        /// Otherwise, race between job and ~MergeTreeBaseSelectProcessor is possible.
         auto job = [this, control = async_reading_state->start()]() mutable
         {
             auto holder = std::move(control);
@@ -208,7 +208,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
             try
             {
                 OpenTelemetry::SpanHolder span{"MergeTreeSource::tryGenerate()"};
-                holder->setResult(processor->read());
+                holder->setResult(algorithm->read());
             }
             catch (...)
             {
@@ -223,7 +223,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
 #endif
 
     OpenTelemetry::SpanHolder span{"MergeTreeSource::tryGenerate()"};
-    return processReadResult(processor->read());
+    return processReadResult(algorithm->read());
 }
 
 #if defined(OS_LINUX)

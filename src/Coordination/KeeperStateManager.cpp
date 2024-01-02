@@ -10,7 +10,6 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
 #include <Common/logger_useful.h>
-#include "Coordination/CoordinationSettings.h"
 
 namespace DB
 {
@@ -75,7 +74,7 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
 /// 4. No duplicate IDs
 /// 5. Our ID present in hostnames list
 KeeperStateManager::KeeperConfigurationWrapper
-KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us, bool enable_async_replication) const
+KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
     const bool hostname_checks_enabled = config.getBool(config_prefix + ".hostname_checks_enabled", true);
 
@@ -185,8 +184,6 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         total_servers++;
     }
 
-    result.cluster_config->set_async_replication(enable_async_replication);
-
     if (!result.config && !allow_without_us)
         throw Exception(ErrorCodes::RAFT_ERROR, "Our server id {} not found in raft_configuration section", my_server_id);
 
@@ -223,7 +220,6 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
     , secure(false)
     , log_store(nuraft::cs_new<KeeperLogStore>(
           LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 5000},
-          FlushSettings{},
           keeper_context_))
     , server_state_file_name("state")
     , keeper_context(keeper_context_)
@@ -246,18 +242,15 @@ KeeperStateManager::KeeperStateManager(
     : my_server_id(my_server_id_)
     , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
     , config_prefix(config_prefix_)
-    , configuration_wrapper(parseServersConfiguration(config, false, coordination_settings->async_replication))
+    , configuration_wrapper(parseServersConfiguration(config, false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
           LogFileSettings
           {
-              .force_sync = coordination_settings->force_sync,
-              .compress_logs = coordination_settings->compress_logs,
-              .rotate_interval = coordination_settings->rotate_log_storage_interval,
-              .max_size = coordination_settings->max_log_file_size,
-              .overallocate_size = coordination_settings->log_file_overallocate_size},
-          FlushSettings
-          {
-              .max_flush_batch_size = coordination_settings->max_flush_batch_size,
+            .force_sync = coordination_settings->force_sync,
+            .compress_logs = coordination_settings->compress_logs,
+            .rotate_interval = coordination_settings->rotate_log_storage_interval,
+            .max_size = coordination_settings->max_log_file_size,
+            .overallocate_size = coordination_settings->log_file_overallocate_size
           },
           keeper_context_))
     , server_state_file_name(server_state_file_name_)
@@ -269,7 +262,6 @@ KeeperStateManager::KeeperStateManager(
 void KeeperStateManager::loadLogStore(uint64_t last_commited_index, uint64_t logs_to_keep)
 {
     log_store->init(last_commited_index, logs_to_keep);
-    log_store_initialized = true;
 }
 
 void KeeperStateManager::system_exit(const int /* exit_code */)
@@ -362,8 +354,6 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
 nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
 {
-    chassert(log_store_initialized);
-
     const auto & old_path = getOldServerStatePath();
 
     auto disk = getStateFileDisk();
@@ -457,19 +447,13 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
         disk->removeFile(copy_lock_file);
     }
 
-    if (log_store->next_slot() != 1)
-        LOG_ERROR(
-            logger,
-            "No state was read but Keeper contains data which indicates that the state file was lost. This is dangerous and can lead to "
-            "data loss.");
-
+    LOG_WARNING(logger, "No state was read");
     return nullptr;
 }
 
-ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
-    const Poco::Util::AbstractConfiguration & config, const CoordinationSettingsPtr & coordination_settings) const
+ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const
 {
-    auto new_configuration_wrapper = parseServersConfiguration(config, true, coordination_settings->async_replication);
+    auto new_configuration_wrapper = parseServersConfiguration(config, true);
 
     std::unordered_map<int, KeeperServerConfigPtr> new_ids, old_ids;
     for (const auto & new_server : new_configuration_wrapper.cluster_config->get_servers())

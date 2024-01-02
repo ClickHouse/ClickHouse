@@ -2,7 +2,6 @@
 
 #if USE_AWS_S3
 
-#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseS3.h>
 
 #include <Interpreters/Context.h>
@@ -256,7 +255,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
 
         if (engine_args.size() > 3)
-            throw Exception::createRuntime(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message.c_str());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, error_message.c_str());
 
         if (engine_args.empty())
             return result;
@@ -270,7 +269,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
             if (boost::iequals(second_arg, "NOSIGN"))
                 result.no_sign_request = true;
             else
-                throw Exception::createRuntime(ErrorCodes::BAD_ARGUMENTS, error_message.c_str());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, error_message.c_str());
         }
 
         // url, access_key_id, secret_access_key
@@ -280,7 +279,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
             auto secret_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
 
             if (key_id.empty() || secret_key.empty() || boost::iequals(key_id, "NOSIGN"))
-                throw Exception::createRuntime(ErrorCodes::BAD_ARGUMENTS, error_message.c_str());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, error_message.c_str());
 
             result.access_key_id = key_id;
             result.secret_access_key = secret_key;
@@ -308,24 +307,6 @@ DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const Filter
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-void registerDatabaseS3(DatabaseFactory & factory)
-{
-    auto create_fn = [](const DatabaseFactory::Arguments & args)
-    {
-        auto * engine_define = args.create_query.storage;
-        const ASTFunction * engine = engine_define->engine;
-
-        DatabaseS3::Configuration config;
-
-        if (engine->arguments && !engine->arguments->children.empty())
-        {
-            ASTs & engine_args = engine->arguments->children;
-            config = DatabaseS3::parseArguments(engine_args, args.context);
-        }
-
-        return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
-    };
-    factory.registerDatabase("S3", create_fn);
 }
-}
+
 #endif

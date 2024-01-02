@@ -7,8 +7,6 @@ assignees: ''
 
 ---
 
-> Please make sure that the version you're using is still supported (you can find the list [here](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#scope-and-supported-versions)).
-
 > You have to provide the following information whenever possible.
 
 **Describe what's wrong**

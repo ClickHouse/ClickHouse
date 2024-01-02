@@ -47,7 +47,6 @@ job &
 
 wait
 
-# truncate before drop, avoid removing all the mutations (it's slow) in DatabaseCatalog's thread (may affect other tests)
 $CLICKHOUSE_CLIENT --multiquery -q "
 select count() from system.mutations where database = currentDatabase() and table = 'many_mutations' and not is_done;
 system start merges many_mutations;
@@ -56,6 +55,5 @@ system flush logs;
 select count() from system.mutations where database = currentDatabase() and table = 'many_mutations' and not is_done;
 select count() from many_mutations;
 select * from system.part_log where database = currentDatabase() and table == 'many_mutations' and peak_memory_usage > 1e9;
-truncate table many_mutations;
 drop table many_mutations;
 "

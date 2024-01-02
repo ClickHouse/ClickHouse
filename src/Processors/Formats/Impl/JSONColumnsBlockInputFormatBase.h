@@ -80,8 +80,7 @@ class JSONColumnsSchemaReaderBase : public ISchemaReader
 public:
     JSONColumnsSchemaReaderBase(ReadBuffer & in_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
 
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
-    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
 
     bool needContext() const override { return !hints_str.empty(); }
     void setContext(ContextPtr & ctx) override;

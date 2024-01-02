@@ -6,7 +6,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTStatisticDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
@@ -59,15 +58,6 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         }
         return res;
     }
-    else if (command->type == ASTAlterCommand::APPLY_DELETED_MASK)
-    {
-        MutationCommand res;
-        res.ast = command->ptr();
-        res.type = APPLY_DELETED_MASK;
-        res.predicate = command->predicate;
-        res.partition = command->partition;
-        return res;
-    }
     else if (command->type == ASTAlterCommand::MATERIALIZE_INDEX)
     {
         MutationCommand res;
@@ -76,16 +66,6 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.partition = command->partition;
         res.predicate = nullptr;
         res.index_name = command->index->as<ASTIdentifier &>().name();
-        return res;
-    }
-    else if (command->type == ASTAlterCommand::MATERIALIZE_STATISTIC)
-    {
-        MutationCommand res;
-        res.ast = command->ptr();
-        res.type = MATERIALIZE_STATISTIC;
-        res.partition = command->partition;
-        res.predicate = nullptr;
-        res.statistic_columns = command->statistic_decl->as<ASTStatisticDeclaration &>().getColumnNames();
         return res;
     }
     else if (command->type == ASTAlterCommand::MATERIALIZE_PROJECTION)
@@ -140,18 +120,6 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             res.partition = command->partition;
         if (command->clear_index)
             res.clear = true;
-        return res;
-    }
-    else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_STATISTIC)
-    {
-        MutationCommand res;
-        res.ast = command->ptr();
-        res.type = MutationCommand::Type::DROP_STATISTIC;
-        if (command->partition)
-            res.partition = command->partition;
-        if (command->clear_index)
-            res.clear = true;
-        res.statistic_columns = command->statistic_decl->as<ASTStatisticDeclaration &>().getColumnNames();
         return res;
     }
     else if (parse_alter_commands && command->type == ASTAlterCommand::DROP_PROJECTION)

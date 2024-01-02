@@ -162,10 +162,10 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         try
         {
             if (my_table_func_ptr)
-                try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, current_settings, PoolMode::GET_MANY);
+                try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, &current_settings, PoolMode::GET_MANY);
             else
                 try_results = my_shard.shard_info.pool->getManyChecked(
-                    timeouts, current_settings, PoolMode::GET_MANY,
+                    timeouts, &current_settings, PoolMode::GET_MANY,
                     my_shard.main_table ? my_shard.main_table.getQualifiedName() : my_main_table.getQualifiedName());
         }
         catch (const Exception & ex)
@@ -187,7 +187,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         if (try_results.empty() || local_delay < max_remote_delay)
         {
             auto plan = createLocalPlan(
-                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count);
+                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, 0, 0, /*coordinator=*/nullptr);
 
             return std::move(*plan->buildQueryPipeline(
                 QueryPlanOptimizationSettings::fromContext(my_context),
@@ -236,29 +236,26 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     scalars["_shard_num"]
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
-    if (context->canUseTaskBasedParallelReplicas())
+    if (context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS)
     {
         if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
         {
             const String cluster_for_parallel_replicas = context->getSettingsRef().cluster_for_parallel_replicas;
             if (cluster_for_parallel_replicas != cluster_name)
-                LOG_INFO(
-                    log,
-                    "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is "
-                    "used: {}",
-                    cluster_for_parallel_replicas,
-                    cluster_name);
+                LOG_INFO(log, "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is used: {}",
+                         cluster_for_parallel_replicas, cluster_name);
         }
-
-        LOG_TRACE(log, "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
         context->setSetting("cluster_for_parallel_replicas", cluster_name);
     }
 
-    auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-        shard.shard_info.pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage);
+    std::shared_ptr<RemoteQueryExecutor> remote_query_executor;
+
+    remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+            shard.shard_info.pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage);
+
     remote_query_executor->setLogger(log);
 
-    if (context->canUseTaskBasedParallelReplicas())
+    if (context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS)
     {
         // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
         // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
@@ -274,8 +271,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     if (!table_func_ptr)
         remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
 
-    pipes.emplace_back(
-        createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
+    pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
     addConvertingActions(pipes.back(), output_stream->header);
 }
 
@@ -307,6 +303,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Block header_,
     QueryProcessingStage::Enum stage_,
     StorageID main_table_,
+    ASTPtr table_func_ptr_,
     ContextMutablePtr context_,
     ThrottlerPtr throttler_,
     Scalars scalars_,
@@ -319,6 +316,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
     , main_table(std::move(main_table_))
+    , table_func_ptr(table_func_ptr_)
     , context(context_)
     , throttler(throttler_)
     , scalars(scalars_)
@@ -367,9 +365,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             IConnections::ReplicaInfo replica_info
             {
                 .all_replicas_count = all_replicas_count,
-                /// `shard_num` will be equal to the number of the given replica in the cluster (set by `Cluster::getClusterWithReplicasAsShards`).
-                /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
-                .number_of_current_replica = shard.shard_num - 1,
+                .number_of_current_replica = 0
             };
 
             addPipeForSingeReplica(pipes, shard.pool, replica_info);
@@ -388,9 +384,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         IConnections::ReplicaInfo replica_info
         {
             .all_replicas_count = all_replicas_count,
-            /// `shard_num` will be equal to the number of the given replica in the cluster (set by `Cluster::getClusterWithReplicasAsShards`).
-            /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
-            .number_of_current_replica = current_shard->shard_num - 1,
+            .number_of_current_replica = pipes.size()
         };
 
         addPipeForSingeReplica(pipes, current_shard->pool, replica_info);

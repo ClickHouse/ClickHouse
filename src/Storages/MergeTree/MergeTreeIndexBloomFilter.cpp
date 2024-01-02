@@ -38,7 +38,34 @@ MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, index.column_names.size());
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+bool MergeTreeIndexBloomFilter::mayBenefitFromIndexForIn(const ASTPtr & node) const
+{
+    Names required_columns = index.expression->getRequiredColumns();
+    NameSet required_columns_set(required_columns.begin(), required_columns.end());
+
+    std::vector<ASTPtr> nodes_to_check;
+    nodes_to_check.emplace_back(node);
+
+    while (!nodes_to_check.empty())
+    {
+        auto node_to_check = nodes_to_check.back();
+        nodes_to_check.pop_back();
+
+        const auto & column_name = node_to_check->getColumnName();
+        if (required_columns_set.find(column_name) != required_columns_set.end())
+            return true;
+
+        if (const auto * function = typeid_cast<const ASTFunction *>(node_to_check.get()))
+        {
+            auto & function_arguments_children = function->arguments->children;
+            nodes_to_check.insert(nodes_to_check.end(), function_arguments_children.begin(), function_arguments_children.end());
+        }
+    }
+
+    return false;
+}
+
+MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, index.column_names);
 }

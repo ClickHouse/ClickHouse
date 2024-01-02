@@ -14,7 +14,6 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory);
-void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory);
 #if USE_HIVE
 void registerFileSegmentationEngineHiveText(FormatFactory & factory);
 #endif
@@ -101,9 +100,7 @@ void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
-void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory);
-void registerInputFormatNpy(FormatFactory & factory);
 
 #if USE_HIVE
 void registerInputFormatHiveText(FormatFactory & factory);
@@ -145,9 +142,7 @@ void registerTemplateSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory);
 void registerBSONEachRowSchemaReader(FormatFactory & factory);
 void registerParquetMetadataSchemaReader(FormatFactory & factory);
-void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
-void registerNpySchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
@@ -161,7 +156,6 @@ void registerFormats()
     registerFileSegmentationEngineJSONEachRow(factory);
     registerFileSegmentationEngineJSONAsString(factory);
     registerFileSegmentationEngineJSONAsObject(factory);
-    registerFileSegmentationEngineJSONCompactEachRow(factory);
 #if USE_HIVE
     registerFileSegmentationEngineHiveText(factory);
 #endif
@@ -249,9 +243,7 @@ void registerFormats()
     registerInputFormatMySQLDump(factory);
 
     registerInputFormatParquetMetadata(factory);
-    registerInputFormatDWARF(factory);
     registerInputFormatOne(factory);
-    registerInputFormatNpy(factory);
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
@@ -288,9 +280,7 @@ void registerFormats()
     registerMySQLSchemaReader(factory);
     registerBSONEachRowSchemaReader(factory);
     registerParquetMetadataSchemaReader(factory);
-    registerDWARFSchemaReader(factory);
     registerOneSchemaReader(factory);
-    registerNpySchemaReader(factory);
 }
 
 }

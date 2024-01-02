@@ -522,10 +522,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         uri,
         Poco::Net::HTTPRequest::HTTP_POST,
         nullptr,
+        timeouts,
         creds,
         DBMS_DEFAULT_BUFFER_SIZE,
         0, /* no redirects */
-        context->getCommonFetchesSessionFactory());
+        static_cast<uint64_t>(data_settings->replicated_max_parallel_fetches_for_host));
 
     int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
     String remote_fs_metadata = parse<String>(in->getResponseCookie("remote_fs_metadata", ""));
@@ -778,7 +779,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     }
 
     MergedBlockOutputStream part_out(
-        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, {},
+        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {},
         CompressionCodecFactory::instance().get("NONE", {}), NO_TRANSACTION_PTR);
 
     part_out.write(block);

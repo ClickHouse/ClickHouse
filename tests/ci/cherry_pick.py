@@ -35,7 +35,12 @@ from typing import List, Optional
 from env_helper import TEMP_PATH
 from get_robot_token import get_best_robot_token
 from git_helper import git_runner, is_shallow
-from github_helper import GitHub, PullRequest, PullRequests, Repository
+from github_helper import (
+    GitHub,
+    PullRequest,
+    PullRequests,
+    Repository,
+)
 from ssh import SSHKey
 
 
@@ -53,37 +58,25 @@ class ReleaseBranch:
     CHERRYPICK_DESCRIPTION = """Original pull-request #{pr_number}
 
 This pull-request is a first step of an automated backporting.
-It contains changes similar to calling `git cherry-pick` locally.
-If you intend to continue backporting the changes, then resolve all conflicts if any.
+It contains changes like after calling a local command `git cherry-pick`.
+If you intend to continue backporting this changes, then resolve all conflicts if any.
 Otherwise, if you do not want to backport them, then just close this pull-request.
 
 The check results does not matter at this step - you can safely ignore them.
 
 ### Note
 
-This pull-request will be merged automatically. Please, **do not merge it manually** \
-(but if you accidentally did, nothing bad will happen).
+This pull-request will be merged automatically as it reaches the mergeable state, \
+**do not merge it manually**.
 
-### Troubleshooting
+### If the PR was closed and then reopened
 
-#### If the PR was manually reopened after being closed
+If it stuck, check {pr_url} for `{backport_created_label}` and delete it if \
+necessary. Manually merging will do nothing, since `{backport_created_label}` \
+prevents the original PR {pr_url} from being processed.
 
-If this PR is stuck (i.e. not automatically merged after one day), check {pr_url} for \
-`{backport_created_label}` *label* and delete it.
-
-Manually merging will do nothing. The `{backport_created_label}` *label* prevents the \
-original PR {pr_url} from being processed.
-
-#### If the conflicts were resolved in a wrong way
-
-If this cherry-pick PR is completely screwed by a wrong conflicts resolution, and you \
-want to recreate it:
-
-- delete the `{label_cherrypick}` label from the PR
-- delete this branch from the repository
-
-You also need to check the original PR {pr_url} for `{backport_created_label}`, and \
-delete if it's presented there
+If you want to recreate the PR: delete the `{label_cherrypick}` label and delete this branch.
+You may also need to delete the `{backport_created_label}` label from the original PR.
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \
 backporting.
@@ -408,7 +401,12 @@ class Backport:
 
     def receive_release_prs(self):
         logging.info("Getting release PRs")
-        self.release_prs = self.gh.get_release_pulls(self._repo_name)
+        self.release_prs = self.gh.get_pulls_from_search(
+            query=f"type:pr repo:{self._repo_name} is:open",
+            sort="created",
+            order="asc",
+            label="release",
+        )
         self.release_branches = [pr.head.ref for pr in self.release_prs]
         self.labels_to_backport = [
             f"v{branch}-must-backport" for branch in self.release_branches
@@ -418,9 +416,7 @@ class Backport:
             logging.info("Fetching from %s", self._fetch_from)
             fetch_from_repo = self.gh.get_repo(self._fetch_from)
             git_runner(
-                "git fetch "
-                f"{fetch_from_repo.ssh_url if self.is_remote_ssh else fetch_from_repo.clone_url} "
-                f"{fetch_from_repo.default_branch} --no-tags"
+                f"git fetch {fetch_from_repo.ssh_url if self.is_remote_ssh else fetch_from_repo.clone_url} {fetch_from_repo.default_branch} --no-tags"
             )
 
         logging.info("Active releases: %s", ", ".join(self.release_branches))
@@ -440,7 +436,7 @@ class Backport:
             logging.info("Resetting %s to %s/%s", branch, self.remote, branch)
             git_runner(f"git branch -f {branch} {self.remote}/{branch}")
 
-    def receive_prs_for_backport(self, reserve_search_days: int) -> None:
+    def receive_prs_for_backport(self):
         # The commits in the oldest open release branch
         oldest_branch_commits = git_runner(
             "git log --no-merges --format=%H --reverse "
@@ -450,18 +446,16 @@ class Backport:
         since_commit = oldest_branch_commits.split("\n", 1)[0]
         since_date = date.fromisoformat(
             git_runner.run(f"git log -1 --format=format:%cs {since_commit}")
-        ) - timedelta(days=reserve_search_days)
+        )
         # To not have a possible TZ issues
         tomorrow = date.today() + timedelta(days=1)
         logging.info("Receive PRs suppose to be backported")
 
-        query_args = dict(
+        self.prs_for_backport = self.gh.get_pulls_from_search(
             query=f"type:pr repo:{self._fetch_from} -label:{self.backport_created_label}",
             label=",".join(self.labels_to_backport + [self.must_create_backport_label]),
             merged=[since_date, tomorrow],
         )
-        logging.info("Query to find the backport PRs:\n %s", query_args)
-        self.prs_for_backport = self.gh.get_pulls_from_search(**query_args)
         logging.info(
             "PRs to be backported:\n %s",
             "\n ".join([pr.html_url for pr in self.prs_for_backport]),
@@ -583,17 +577,12 @@ def parse_args():
         choices=(Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD),
         help="label to filter PRs to backport",
     )
+
     parser.add_argument(
         "--backport-created-label",
         default=Labels.BACKPORTS_CREATED,
         choices=(Labels.BACKPORTS_CREATED, Labels.BACKPORTS_CREATED_CLOUD),
         help="label to mark PRs as backported",
-    )
-    parser.add_argument(
-        "--reserve-search-days",
-        default=0,
-        type=int,
-        help="safity reserve for the PRs search days, necessary for cloud",
     )
 
     parser.add_argument(
@@ -659,7 +648,7 @@ def main():
     bp.gh.cache_path = temp_path / "gh_cache"
     bp.receive_release_prs()
     bp.update_local_release_branches()
-    bp.receive_prs_for_backport(args.reserve_search_days)
+    bp.receive_prs_for_backport()
     bp.process_backports()
     if bp.error is not None:
         logging.error("Finished successfully, but errors occured!")

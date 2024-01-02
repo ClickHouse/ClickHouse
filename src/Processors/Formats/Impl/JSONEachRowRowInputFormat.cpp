@@ -365,14 +365,9 @@ void JSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTyp
     transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
 }
 
-void JSONEachRowSchemaReader::transformTypesFromDifferentFilesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
-{
-    transformInferredJSONTypesFromDifferentFilesIfNeeded(type, new_type, format_settings);
-}
-
 void JSONEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
 {
-    transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
+    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONEachRow(FormatFactory & factory)

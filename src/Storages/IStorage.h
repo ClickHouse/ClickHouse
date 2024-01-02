@@ -68,8 +68,6 @@ using DatabaseAndTableName = std::pair<String, String>;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
-class ConditionEstimator;
-
 struct ColumnSize
 {
     size_t marks = 0;
@@ -93,7 +91,7 @@ using IndexSize = ColumnSize;
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
-class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<>
+class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>, public IHints<1, IStorage>
 {
 public:
     IStorage() = delete;
@@ -136,8 +134,6 @@ public:
 
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
-
-    virtual ConditionEstimator getConditionEstimatorByPredicate(const SelectQueryInfo &, const StorageSnapshotPtr &, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -499,11 +495,7 @@ public:
         ContextPtr /* context */);
 
     /// Checks that partition commands can be applied to storage.
-    virtual void checkAlterPartitionIsPossible(
-        const PartitionCommands & commands,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Settings & settings,
-        ContextPtr context) const;
+    virtual void checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & metadata_snapshot, const Settings & settings) const;
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
@@ -568,10 +560,10 @@ public:
       * @see shutdown()
       * @see flushAndPrepareForShutdown()
       */
-    void flushAndShutdown(bool is_drop = false)
+    void flushAndShutdown()
     {
         flushAndPrepareForShutdown();
-        shutdown(is_drop);
+        shutdown();
     }
 
     /** If the table have to do some complicated work when destroying an object - do it in advance.
@@ -579,7 +571,7 @@ public:
       * By default, does nothing.
       * Can be called simultaneously from different threads, even after a call to drop().
       */
-    virtual void shutdown(bool is_drop = false) { UNUSED(is_drop); } // NOLINT
+    virtual void shutdown() {}
 
     /// Called before shutdown() to flush data to underlying storage
     /// Data in memory need to be persistent
@@ -597,47 +589,15 @@ public:
 
     std::atomic<bool> is_dropped{false};
     std::atomic<bool> is_detached{false};
-    std::atomic<bool> is_being_restarted{false};
 
-    /** A list of tasks to check a validity of data.
-      * Each IStorage implementation may interpret this task in its own way.
-      * E.g. for some storages it's a list of files in filesystem, for others it can be a list of parts.
-      * Also it may hold resources (e.g. locks) required during check.
-      */
-    struct DataValidationTasksBase
-    {
-        /// Number of entries left to check.
-        /// It decreases after each call to checkDataNext().
-        virtual size_t size() const = 0;
-        virtual ~DataValidationTasksBase() = default;
-    };
+    /// Does table support index for IN sections
+    virtual bool supportsIndexForIn() const { return false; }
 
-    using DataValidationTasksPtr = std::shared_ptr<DataValidationTasksBase>;
+    /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
+    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
 
-    /// Specifies to check all data / partition / part
-    using CheckTaskFilter = std::variant<std::monostate, ASTPtr, String>;
-    virtual DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & /* check_task_filter */, ContextPtr /* context */);
-
-    /** Executes one task from the list.
-      * If no tasks left - returns nullopt.
-      * Note: Function `checkDataNext` is accessing `check_task_list` thread-safely,
-      *   and can be called simultaneously for the same `getCheckTaskList` result
-      *   to process different tasks in parallel.
-      * Usage:
-      *
-      * auto check_task_list = storage.getCheckTaskList({}, context);
-      * size_t total_tasks = check_task_list->size();
-      * while (true)
-      * {
-      *     size_t tasks_left = check_task_list->size();
-      *     std::cout << "Checking data: " << (total_tasks - tasks_left) << " / " << total_tasks << " tasks done." << std::endl;
-      *     auto result = storage.checkDataNext(check_task_list);
-      *     if (!result)
-      *         break;
-      *     doSomething(*result);
-      * }
-      */
-    virtual std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list);
+    /// Checks validity of the data
+    virtual CheckResults checkData(const ASTPtr & /* query */, ContextPtr /* context */) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName()); }
 
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.
@@ -686,15 +646,6 @@ public:
     /// when considering in-memory blocks.
     virtual std::optional<UInt64> totalBytes(const Settings &) const { return {}; }
 
-    /// If it is possible to quickly determine exact number of uncompressed bytes for the table on storage:
-    /// - disk (uncompressed)
-    ///
-    /// Used for:
-    /// - For total_bytes_uncompressed column in system.tables
-    ///
-    /// Does not take underlying Storage (if any) into account
-    virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
-
     /// Number of rows INSERTed since server start.
     ///
     /// Does not take the underlying Storage (if any) into account.
@@ -722,9 +673,6 @@ public:
     {
         return getStorageSnapshot(metadata_snapshot, query_context);
     }
-
-    /// Re initialize disks in case the underlying storage policy changed
-    virtual bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) { return true; }
 
     /// A helper to implement read()
     static void readFromPipe(

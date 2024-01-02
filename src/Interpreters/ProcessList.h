@@ -67,7 +67,6 @@ struct QueryStatusInfo
 
     /// Optional fields, filled by query
     std::vector<UInt64> thread_ids;
-    size_t peak_threads_usage;
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
     std::shared_ptr<Settings> query_settings;
     std::string current_database;
@@ -345,8 +344,6 @@ public:
 
     /// User -> queries
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
-    /// query_id -> User
-    using QueriesToUser = std::unordered_map<String, String>;
 
     using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
 
@@ -367,9 +364,6 @@ protected:
 
     /// Stores per-user info: queries, statistics and limits
     UserToQueries user_to_queries;
-
-    /// Stores query IDs and associated users, used for query ID uniqueness check
-    QueriesToUser queries_to_user;
 
     /// Stores info about queries grouped by their priority
     QueryPriorities priorities;
@@ -418,34 +412,16 @@ public:
         max_size = max_size_;
     }
 
-    size_t getMaxSize() const
-    {
-        auto lock = unsafeLock();
-        return max_size;
-    }
-
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
     {
         auto lock = unsafeLock();
         max_insert_queries_amount = max_insert_queries_amount_;
     }
 
-    size_t getMaxInsertQueriesAmount() const
-    {
-        auto lock = unsafeLock();
-        return max_insert_queries_amount;
-    }
-
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
     {
         auto lock = unsafeLock();
         max_select_queries_amount = max_select_queries_amount_;
-    }
-
-    size_t getMaxSelectQueriesAmount() const
-    {
-        auto lock = unsafeLock();
-        return max_select_queries_amount;
     }
 
     /// Try call cancel() for input and output streams of query with specified id and user

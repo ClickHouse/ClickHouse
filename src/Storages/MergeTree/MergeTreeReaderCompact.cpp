@@ -112,10 +112,15 @@ void MergeTreeReaderCompact::initialize()
             compressed_data_buffer = non_cached_buffer.get();
         }
     }
+    catch (const Exception & e)
+    {
+        if (!isRetryableException(e))
+            data_part_info_for_read->reportBroken();
+        throw;
+    }
     catch (...)
     {
-        if (!isRetryableException(std::current_exception()))
-            data_part_info_for_read->reportBroken();
+        data_part_info_for_read->reportBroken();
         throw;
     }
 }
@@ -152,7 +157,7 @@ void MergeTreeReaderCompact::fillColumnPositions()
             auto [name_in_storage, subcolumn_name] = Nested::splitName(column_to_read.name);
 
             /// If it is a part of Nested, we need to get the column from
-            /// storage metadata which is converted to Nested type with subcolumns.
+            /// storage metatadata which is converted to Nested type with subcolumns.
             /// It is required for proper counting of shared streams.
             if (!subcolumn_name.empty())
             {
@@ -234,21 +239,18 @@ size_t MergeTreeReaderCompact::readRows(
                         "Cannot read all data in MergeTreeReaderCompact. Rows read: {}. Rows expected: {}.",
                         read_rows_in_column, rows_to_read);
             }
-            catch (...)
+            catch (Exception & e)
             {
-                if (!isRetryableException(std::current_exception()))
+                if (!isRetryableException(e))
                     data_part_info_for_read->reportBroken();
 
                 /// Better diagnostics.
-                try
-                {
-                    rethrow_exception(std::current_exception());
-                }
-                catch (Exception & e)
-                {
-                    e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
-                }
-
+                e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
+                throw;
+            }
+            catch (...)
+            {
+                data_part_info_for_read->reportBroken();
                 throw;
             }
         }
@@ -394,10 +396,15 @@ try
     seekToMark(all_mark_ranges.front().begin, 0);
     data_buffer->prefetch(priority);
 }
+catch (const Exception & e)
+{
+    if (!isRetryableException(e))
+        data_part_info_for_read->reportBroken();
+    throw;
+}
 catch (...)
 {
-    if (!isRetryableException(std::current_exception()))
-        data_part_info_for_read->reportBroken();
+    data_part_info_for_read->reportBroken();
     throw;
 }
 

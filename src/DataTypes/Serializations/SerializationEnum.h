@@ -1,35 +1,20 @@
 #pragma once
 
-#include <memory>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/EnumValues.h>
-#include <DataTypes/DataTypeEnum.h>
 
 namespace DB
 {
 
 template <typename Type>
-class SerializationEnum : public SerializationNumber<Type>
+class SerializationEnum : public SerializationNumber<Type>, public EnumValues<Type>
 {
 public:
     using typename SerializationNumber<Type>::FieldType;
     using typename SerializationNumber<Type>::ColumnType;
-    using Values = EnumValues<Type>::Values;
+    using typename EnumValues<Type>::Values;
 
-    // SerializationEnum can be constructed in two ways:
-    /// - Make a copy of the Enum name-to-type mapping.
-    /// - Only store a reference to an existing mapping. This is faster if the Enum has a lot of different values or if SerializationEnum is
-    ///   constructed very frequently. Make sure that the pointed-to mapping has a longer lifespan than SerializationEnum!
-
-    explicit SerializationEnum(const Values & values_)
-        : own_enum_values(values_), ref_enum_values(own_enum_values.value())
-    {
-    }
-
-    explicit SerializationEnum(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type)
-        : own_enum_type(enum_type), ref_enum_values(*enum_type)
-    {
-    }
+    explicit SerializationEnum(const Values & values_) : EnumValues<Type>(values_) {}
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -44,18 +29,12 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
-    void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-
     FieldType readValue(ReadBuffer & istr) const
     {
         FieldType x;
         readText(x, istr);
-        return ref_enum_values.findByValue(x)->first;
+        return this->findByValue(x)->first;
     }
-
-    std::optional<EnumValues<Type>> own_enum_values;
-    std::shared_ptr<const DataTypeEnum<Type>> own_enum_type;
-    const EnumValues<Type> & ref_enum_values;
 };
 
 }

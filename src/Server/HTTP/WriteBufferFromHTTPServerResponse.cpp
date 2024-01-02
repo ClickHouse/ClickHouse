@@ -44,7 +44,6 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
 
 void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 {
-    accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
     writeHeaderProgressImpl("X-ClickHouse-Summary: ");
 }
 
@@ -136,7 +135,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
-    UInt64 keep_alive_timeout_,
+    size_t keep_alive_timeout_,
     bool compress_,
     CompressionMethod compression_method_)
     : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE)
@@ -160,7 +159,6 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
     accumulated_progress.incrementPiecewiseAtomically(progress);
     if (send_progress && progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
     {
-        accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
         progress_watch.restart();
 
         /// Send all common headers before our special progress headers.

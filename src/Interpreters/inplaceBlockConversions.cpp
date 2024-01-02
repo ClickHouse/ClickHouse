@@ -20,7 +20,6 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/BlockNumberColumn.h>
 
 
 namespace DB
@@ -104,7 +103,7 @@ void addDefaultRequiredExpressionsRecursively(
         /// and this identifier will be in required columns. If such column is not in ColumnsDescription we ignore it.
 
         /// This column is required, but doesn't have default expression, so lets use "default default"
-        const auto & column = columns.get(required_column_name);
+        auto column = columns.get(required_column_name);
         auto default_value = column.type->getDefault();
         ASTPtr expr = std::make_shared<ASTLiteral>(default_value);
         if (is_column_in_query && convert_null_to_default)
@@ -261,7 +260,7 @@ void fillMissingColumns(
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
-    StorageMetadataPtr metadata_snapshot, size_t block_number)
+    StorageMetadataPtr metadata_snapshot)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -340,14 +339,9 @@ void fillMissingColumns(
         }
         else
         {
-            if (requested_column->name == BlockNumberColumn::name)
-                res_columns[i] = type->createColumnConst(num_rows, block_number)->convertToFullColumnIfConst();
-            else
-                /// We must turn a constant column into a full column because the interpreter could infer
-                /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
-                res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
-
-
+            /// We must turn a constant column into a full column because the interpreter could infer
+            /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
+            res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
         }
     }
 }

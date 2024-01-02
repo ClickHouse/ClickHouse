@@ -114,7 +114,6 @@ public:
         Coordination::ZooKeeperRequestPtr request;
         int64_t zxid{0};
         std::optional<Digest> digest;
-        int64_t log_idx{0};
     };
 
     struct AuthID
@@ -135,7 +134,7 @@ public:
     /// Just vector of SHA1 from user:password
     using AuthIDs = std::vector<AuthID>;
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
-    using Watches = std::unordered_map<String /* path, relative of root_path */, SessionIDs>;
+    using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
 
     int64_t session_id_counter{1};
 
@@ -314,7 +313,7 @@ public:
 
     // Apply uncommitted state to another storage using only transactions
     // with zxid > last_zxid
-    void applyUncommittedState(KeeperStorage & other, int64_t last_log_idx);
+    void applyUncommittedState(KeeperStorage & other, int64_t last_zxid);
 
     Coordination::Error commit(int64_t zxid);
 
@@ -363,8 +362,6 @@ public:
     {
         int64_t zxid;
         Digest nodes_digest;
-        /// index in storage of the log containing the transaction
-        int64_t log_idx = 0;
     };
 
     std::deque<TransactionInfo> uncommitted_transactions;
@@ -434,8 +431,7 @@ public:
         int64_t time,
         int64_t new_last_zxid,
         bool check_acl = true,
-        std::optional<Digest> digest = std::nullopt,
-        int64_t log_idx = 0);
+        std::optional<Digest> digest = std::nullopt);
     void rollbackRequest(int64_t rollback_zxid, bool allow_missing);
 
     void finalize();

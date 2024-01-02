@@ -34,7 +34,7 @@ namespace ErrorCodes
 }
 
 static inline WriteBufferPtr
-responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, UInt64 keep_alive_timeout)
+responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, unsigned int keep_alive_timeout)
 {
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -90,7 +90,7 @@ static inline void trySendExceptionToClient(
 
 void StaticRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
+    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", 10);
     const auto & out = responseWriteBuffer(request, response, keep_alive_timeout);
 
     try
@@ -168,13 +168,8 @@ HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server,
     int status = config.getInt(config_prefix + ".handler.status", 200);
     std::string response_content = config.getRawString(config_prefix + ".handler.response_content", "Ok.\n");
     std::string response_content_type = config.getString(config_prefix + ".handler.content_type", "text/plain; charset=UTF-8");
-
-    auto creator = [&server, response_content, status, response_content_type]() -> std::unique_ptr<StaticRequestHandler>
-    {
-        return std::make_unique<StaticRequestHandler>(server, response_content, status, response_content_type);
-    };
-
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(creator));
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(
+        server, std::move(response_content), std::move(status), std::move(response_content_type));
 
     factory->addFiltersFromConfig(config, config_prefix);
 

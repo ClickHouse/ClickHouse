@@ -46,17 +46,10 @@
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
 
+#include <re2/re2.h>
+
 #include <chrono>
 #include <sstream>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -68,7 +61,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
@@ -79,19 +71,15 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
-    extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_COMPILE_REGEXP;
-    extern const int DUPLICATE_COLUMN;
-    extern const int ILLEGAL_COLUMN;
-    extern const int THERE_IS_NO_COLUMN;
+
     extern const int UNKNOWN_ELEMENT_IN_AST;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
     extern const int TOO_DEEP_AST;
     extern const int TOO_BIG_AST;
     extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 
     extern const int SYNTAX_ERROR;
 
@@ -202,9 +190,7 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     {
         return HTTPResponse::HTTP_FORBIDDEN;
     }
-    else if (exception_code == ErrorCodes::BAD_ARGUMENTS ||
-             exception_code == ErrorCodes::CANNOT_COMPILE_REGEXP ||
-             exception_code == ErrorCodes::CANNOT_PARSE_TEXT ||
+    else if (exception_code == ErrorCodes::CANNOT_PARSE_TEXT ||
              exception_code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE ||
              exception_code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING ||
              exception_code == ErrorCodes::CANNOT_PARSE_DATE ||
@@ -214,19 +200,14 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::CANNOT_PARSE_IPV4 ||
              exception_code == ErrorCodes::CANNOT_PARSE_IPV6 ||
              exception_code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED ||
-             exception_code == ErrorCodes::CANNOT_PARSE_UUID ||
-             exception_code == ErrorCodes::DUPLICATE_COLUMN ||
-             exception_code == ErrorCodes::ILLEGAL_COLUMN ||
              exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
              exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE ||
-             exception_code == ErrorCodes::THERE_IS_NO_COLUMN ||
              exception_code == ErrorCodes::TOO_DEEP_AST ||
              exception_code == ErrorCodes::TOO_BIG_AST ||
              exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE ||
              exception_code == ErrorCodes::SYNTAX_ERROR ||
              exception_code == ErrorCodes::INCORRECT_DATA ||
-             exception_code == ErrorCodes::TYPE_MISMATCH ||
-             exception_code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE)
+             exception_code == ErrorCodes::TYPE_MISMATCH)
     {
         return HTTPResponse::HTTP_BAD_REQUEST;
     }
@@ -616,10 +597,12 @@ void HTTPHandler::processQuery(
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
+    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
+
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response,
         request.getMethod() == HTTPRequest::HTTP_HEAD,
-        context->getServerSettings().keep_alive_timeout.totalSeconds(),
+        keep_alive_timeout,
         client_supports_http_compression,
         http_response_compression_method);
 
@@ -729,8 +712,8 @@ void HTTPHandler::processQuery(
     /// to some other value.
     const auto & settings = context->getSettingsRef();
 
-    /// Anything else beside HTTP POST should be readonly queries.
-    if (request.getMethod() != HTTPServerRequest::HTTP_POST)
+    /// Only readonly queries are allowed for HTTP GET requests.
+    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
     {
         if (settings.readonly == 0)
             context->setSetting("readonly", 2);
@@ -884,7 +867,6 @@ void HTTPHandler::processQuery(
         /* allow_into_outfile = */ false,
         context,
         set_query_result,
-        QueryFlags{},
         {},
         handle_exception_in_output_format);
 
@@ -1059,13 +1041,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             response.setChunkedTransferEncoding(true);
 
         HTMLForm params(default_settings, request);
-
-        if (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true))
-            with_stacktrace = true;
-
-        if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
-            close_session = true;
-
+        with_stacktrace = params.getParsed<bool>("stacktrace", false);
+        close_session = params.getParsed<bool>("close_session", false);
         if (close_session)
             session_id = params.get("session_id");
 
@@ -1196,16 +1173,6 @@ bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, cons
         return true;
     }
 
-    if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
-    {
-        /// Save name and values of substitution in dictionary.
-        const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
-
-        if (receive_params.contains(parameter_name))
-            context->setQueryParameter(parameter_name, value);
-        return true;
-    }
-
     return false;
 }
 
@@ -1276,12 +1243,8 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     if (config.has(config_prefix + ".handler.content_type"))
         content_type_override = config.getString(config_prefix + ".handler.content_type");
 
-    auto creator = [&server, query_param_name, content_type_override] () -> std::unique_ptr<DynamicQueryHandler>
-    {
-        return std::make_unique<DynamicQueryHandler>(server, query_param_name, content_type_override);
-    };
-
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(
+        server, std::move(query_param_name), std::move(content_type_override));
 
     factory->addFiltersFromConfig(config, config_prefix);
 
@@ -1352,40 +1315,25 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         auto regex = getCompiledRegex(url_expression);
         if (capturingNamedQueryParam(analyze_receive_params, regex))
         {
-            auto creator = [
-                &server,
-                analyze_receive_params,
-                predefined_query,
-                regex,
-                headers_name_with_regex,
-                content_type_override]
-                -> std::unique_ptr<PredefinedQueryHandler>
-            {
-                return std::make_unique<PredefinedQueryHandler>(
-                    server, analyze_receive_params, predefined_query, regex,
-                    headers_name_with_regex, content_type_override);
-            };
-            factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
+            factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
+                server,
+                std::move(analyze_receive_params),
+                std::move(predefined_query),
+                std::move(regex),
+                std::move(headers_name_with_regex),
+                std::move(content_type_override));
             factory->addFiltersFromConfig(config, config_prefix);
             return factory;
         }
     }
 
-    auto creator = [
-        &server,
-        analyze_receive_params,
-        predefined_query,
-        headers_name_with_regex,
-        content_type_override]
-        -> std::unique_ptr<PredefinedQueryHandler>
-    {
-        return std::make_unique<PredefinedQueryHandler>(
-            server, analyze_receive_params, predefined_query, CompiledRegexPtr{},
-            headers_name_with_regex, content_type_override);
-    };
-
-    factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
-
+    factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
+        server,
+        std::move(analyze_receive_params),
+        std::move(predefined_query),
+        CompiledRegexPtr{},
+        std::move(headers_name_with_regex),
+        std::move(content_type_override));
     factory->addFiltersFromConfig(config, config_prefix);
 
     return factory;

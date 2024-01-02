@@ -2,7 +2,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/StatusFile.h>
 #include <Common/TerminalSize.h>
-#include <Databases/registerDatabases.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Formats/registerFormats.h>
 #include <Common/scope_guard_safe.h>
@@ -90,7 +89,7 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
                           .argument("task-path").binding("task-path"));
     options.addOption(Poco::Util::Option("task-file", "", "path to task file for uploading in ZooKeeper to task-path")
                           .argument("task-file").binding("task-file"));
-    options.addOption(Poco::Util::Option("task-upload-force", "", "Force upload task-file even node already exists. Default is false.")
+    options.addOption(Poco::Util::Option("task-upload-force", "", "Force upload task-file even node already exists")
                           .argument("task-upload-force").binding("task-upload-force"));
     options.addOption(Poco::Util::Option("safe-mode", "", "disables ALTER DROP PARTITION in case of errors")
                           .binding("safe-mode"));
@@ -160,7 +159,6 @@ void ClusterCopierApp::mainImpl()
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
-    registerDatabases();
     registerStorages();
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);

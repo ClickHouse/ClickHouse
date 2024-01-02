@@ -38,19 +38,19 @@ DistinctTransform
 DistinctTransform
 -- Check reading in order for distinct
 -- disabled, distinct columns match sorting key
-algorithm: Thread
+MergeTreeThread
 -- enabled, distinct columns match sorting key
-algorithm: InOrder
+MergeTreeInOrder
 -- enabled, distinct columns form prefix of sorting key
-algorithm: InOrder
+MergeTreeInOrder
 -- enabled, distinct columns DON't form prefix of sorting key
-algorithm: Thread
+MergeTreeThread
 -- enabled, distinct columns contains constant columns, non-const columns form prefix of sorting key
-algorithm: InOrder
+MergeTreeInOrder
 -- enabled, distinct columns contains constant columns, non-const columns match prefix of sorting key
-algorithm: InOrder
+MergeTreeInOrder
 -- enabled, only part of distinct columns form prefix of sorting key
-algorithm: Thread
+MergeTreeThread
 === disable new analyzer ===
 -- enabled, check that sorting properties are propagated from ReadFromMergeTree till preliminary distinct
 Sorting (Stream): a ASC, b ASC

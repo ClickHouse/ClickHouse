@@ -62,6 +62,10 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
             func();
             break;
         }
+        catch (const Azure::Core::Http::TransportException & e)
+        {
+            handle_exception(e, i);
+        }
         catch (const Azure::Core::RequestFailedException & e)
         {
             handle_exception(e, i);
