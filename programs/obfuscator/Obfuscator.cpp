@@ -1243,11 +1243,11 @@ try
         || !options.count("input-format")
         || !options.count("output-format"))
     {
-        std::cout << documentation << "\n"
-            << "\nUsage: clickhouse obfuscator [options] < in > out\n"
-            << "\nInput must be seekable file (it will be read twice).\n"
-            << "\n" << description << "\n"
-            << "\nExample:\n    clickhouse obfuscator --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
+        const::std::string app_name = std::string_view(argv[0]).contains("clickhouse-obfuscator") ? "clickhouse-obfuscator" : "clickhouse obfuscator";
+        std::cout << documentation;
+        std::cout << fmt::format("\nUsage: {app} [options] < in > out\n\nInput must be seekable file (it will be read twice).\n", fmt::arg("app", app_name));
+        std::cout << description;
+        std::cout << fmt::format("\nExample:\n    {app} --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n", fmt::arg("app", app_name));
         return 0;
     }
 

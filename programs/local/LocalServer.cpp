@@ -780,15 +780,15 @@ void LocalServer::processConfig()
 }
 
 
-[[ maybe_unused ]] static std::string getHelpHeader()
+String LocalServer::getHelpHeader()
 {
-    return
-        "Usage: clickhouse local [initial table definition] [--query <query>]\n"
+    return fmt::format(
+        "Usage: {app} [initial table definition] [--query <query>]\n"
 
         "clickhouse-local allows to execute SQL queries on your data files without running clickhouse-server.\n\n"
 
         "It can run as command line tool that does single action or as interactive client."
-        " For interactive experience you can just run 'clickhouse local' or add --interactive argument to your command."
+        " For interactive experience you can just run '{app}' or add --interactive argument to your command."
         " It will set up tables, run queries and pass control as if it is clickhouse-client."
         " Then you can execute your SQL queries in usual manner."
         " Non-interactive mode requires query as an argument and exits when queries finish."
@@ -800,29 +800,25 @@ void LocalServer::processConfig()
         "    CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);\n"
         "Or through corresponding command line parameters --table --structure --input-format and --file.\n\n"
 
-        "clickhouse-local supports all features and engines of ClickHouse."
+        "{app} supports all features and engines of ClickHouse."
         " You can query data from remote engines and store results locally or other way around."
         " For table engines that actually store data on a disk like Log and MergeTree"
-        " clickhouse-local puts data to temporary directory that is not reused between runs.\n\n"
-        "clickhouse-local can be used to query data from stopped clickhouse-server installation with --path to"
-        " local directory with data.\n";
+        " {app} puts data to temporary directory that is not reused between runs.\n\n"
+        "{app} can be used to query data from stopped clickhouse-server installation with --path to"
+        " local directory with data.\n",
+        fmt::arg("app", app_name));
 }
 
 
-[[ maybe_unused ]] static std::string getHelpFooter()
+String LocalServer::getHelpFooter()
 {
-    return
-        "Note: If you have clickhouse installed on your system you can use 'clickhouse-local'"
-        " invocation with a dash.\n\n"
+    return fmt::format("Note: If you have clickhouse installed on your system you can use 'clickhouse-local' invocation with a dash.\n\n"
         "Example printing memory used by each Unix user:\n"
-        "ps aux | tail -n +2 | awk '{ printf(\"%s\\t%s\\n\", $1, $4) }' | "
-        "clickhouse-local -S \"user String, mem Float64\" -q"
-            " \"SELECT user, round(sum(mem), 2) as mem_total FROM table GROUP BY user ORDER"
-            " BY mem_total DESC FORMAT PrettyCompact\"\n\n"
+        "ps aux | tail -n +2 | awk '{{ printf(\"%s\\t%s\\n\", $1, $4) }}'"
+        " | {app} -S \"user String, mem Float64\" -q \"SELECT user, round(sum(mem), 2) as mem_total FROM table GROUP BY user ORDER BY mem_total DESC FORMAT PrettyCompact\"\n\n"
         "Example reading file from S3, converting format and writing to a file:\n"
-        "clickhouse-local --query \"SELECT c1 as version, c2 as date "
-        "FROM url('https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv')"
-        " INTO OUTFILE '/tmp/versions.json'\"";
+        "{app} --query \"SELECT c1 as version, c2 as date FROM url('https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv') INTO OUTFILE '/tmp/versions.json'\"",
+        fmt::arg("app", app_name));
 }
 
 

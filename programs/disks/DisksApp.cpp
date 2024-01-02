@@ -31,14 +31,16 @@ void DisksApp::printHelpMessage(ProgramOptionsDescription & command_option_descr
     help_description->add(command_option_description);
 
     std::cout << "ClickHouse disk management tool\n";
-    std::cout << "usage clickhouse disks [OPTION]\n" << "clickhouse-disks\n\n";
+    std::cout << fmt::format("Usage {} [OPTION] ", app_name);
 
     for (const auto & current_command : supported_commands)
-        std::cout << command_descriptions[current_command]->command_name
+    {
+        std::cout << "\t"
+                  << command_descriptions[current_command]->command_name
                   << "\t"
                   << command_descriptions[current_command]->description
                   << "\n\n";
-
+    }
     std::cout << command_option_description << '\n';
 }
 
@@ -88,10 +90,9 @@ void DisksApp::processOptions()
         config().setString("log-level", options["log-level"].as<String>());
 }
 
-void DisksApp::init(std::vector<String> & common_arguments)
+void DisksApp::init(const char * cmd, std::vector<String> & common_arguments)
 {
-    stopOptionsProcessing();
-
+    app_name = std::string_view(cmd).contains("clickhouse-disks") ? "clickhouse-disks" : "clickhouse disks";
     ProgramOptionsDescription options_description{createOptionsDescription("clickhouse-disks", getTerminalWidth())};
 
     po::positional_options_description positional_options_description;
@@ -249,7 +250,7 @@ int mainEntryClickHouseDisks(int argc, char ** argv)
     {
         DB::DisksApp app;
         std::vector<String> common_arguments{argv + 1, argv + argc};
-        app.init(common_arguments);
+        app.init(argv[0], common_arguments);
         return app.run();
     }
     catch (const DB::Exception & e)

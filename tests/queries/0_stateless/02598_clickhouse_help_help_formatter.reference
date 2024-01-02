@@ -287,6 +287,32 @@ example, --http_port=8010
 --umask=mask                       Set the daemon's umask (octal, e.g. 027).
 --pidfile=path                     Write the process ID of the application to 
                                    given file.
+
+clickhouse keeper-client
+
+usage: 
+clickhouse [OPTION]
+
+
+--help                          show help and exit
+-h<host>, --host=<host>         server hostname. default `localhost`
+-p<port>, --port=<port>         server port. default `9181`
+-q<query>, --query=<query>      will execute given query, then exit.
+--connection-timeout=<seconds>  set connection timeout in seconds. default 
+                                10s.
+--session-timeout=<seconds>     set session timeout in seconds. default 10s.
+--operation-timeout=<seconds>   set operation timeout in seconds. default 10s.
+-c<file>, --config-file=<file>  if set, will try to get a connection string 
+                                from clickhouse config. default `config.xml`
+--history-file=<file>           set path of history file. default 
+                                `~/.keeper-client-history`
+--log-level=<level>             set log level
+--no-confirmation               if set, will not require a confirmation on 
+                                several commands. default false for 
+                                interactive and true for query
+--tests-mode                    run keeper-client in a special mode for tests.
+                                all commands output are separated by special 
+                                symbols. default false
 ================SYMLINK==============================
 
 clickhouse-server
@@ -522,3 +548,29 @@ example, --http_port=8010
 --umask=mask                       Set the daemon's umask (octal, e.g. 027).
 --pidfile=path                     Write the process ID of the application to 
                                    given file.
+
+clickhouse-keeper-client
+
+usage: 
+clickhouse-keeper-client [OPTION]
+
+
+--help                          show help and exit
+-h<host>, --host=<host>         server hostname. default `localhost`
+-p<port>, --port=<port>         server port. default `9181`
+-q<query>, --query=<query>      will execute given query, then exit.
+--connection-timeout=<seconds>  set connection timeout in seconds. default 
+                                10s.
+--session-timeout=<seconds>     set session timeout in seconds. default 10s.
+--operation-timeout=<seconds>   set operation timeout in seconds. default 10s.
+-c<file>, --config-file=<file>  if set, will try to get a connection string 
+                                from clickhouse config. default `config.xml`
+--history-file=<file>           set path of history file. default 
+                                `~/.keeper-client-history`
+--log-level=<level>             set log level
+--no-confirmation               if set, will not require a confirmation on 
+                                several commands. default false for 
+                                interactive and true for query
+--tests-mode                    run keeper-client in a special mode for tests.
+                                all commands output are separated by special 
+                                symbols. default false

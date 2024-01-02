@@ -35,6 +35,7 @@
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
+#include "base/types.h"
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -572,14 +573,14 @@ public:
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
-[[ maybe_unused ]] static std::string getHelpHeader()
+static std::string getHelpHeader(const std::string app_name)
 {
-    return
-        "Usage: clickhouse benchmark [options] < queries.txt\n"
-        "Usage: clickhouse benchmark [options] --query \"query text\"\n"
-
+    return fmt::format(
+        "Usage: {app} [options] < queries.tsv\n"
+        "Usage: {app} [options] --query \"query text\"\n"
         "clickhouse-benchmark connects to ClickHouse server,"
-        " repeatedly sends specified queries and produces reports query statistics.\n";
+        " repeatedly sends specified queries and produces reports query statistics."
+        " Multiple queries can be used if passed in TSV format.\n", fmt::arg("app", app_name));
 }
 
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
@@ -592,7 +593,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         using boost::program_options::value;
 
         /// Note: according to the standard, subsequent calls to getenv can mangle previous result.
-        /// So we copy the results to std::string.
+        /// So we copy the results to std::std::string.
         std::optional<std::string> env_user_str;
         std::optional<std::string> env_password_str;
         std::optional<std::string> env_quota_key_str;
@@ -648,7 +649,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << getHelpHeader();
+            const::std::string app_name = std::string_view(argv[0]).contains("clickhouse-benchmark") ? "clickhouse-benchmark" : "clickhouse benchmark";
+            std::cout << getHelpHeader(app_name);
             std::cout << desc << "\n";
             return 1;
         }

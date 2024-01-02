@@ -25,6 +25,9 @@ echo -e "\nclickhouse copier\n"
 $CLICKHOUSE_BINARY copier --help
 echo -e "\nclickhouse keeper\n"
 $CLICKHOUSE_BINARY keeper --help
+echo -e "\nclickhouse keeper-client\n"
+$CLICKHOUSE_BINARY keeper-client --help
+
 
 echo "================SYMLINK=============================="
 
@@ -34,5 +37,7 @@ echo -e "\nclickhouse-copier\n"
 ${CLICKHOUSE_BINARY}-copier --help
 echo -e "\nclickhouse-keeper\n"
 ${CLICKHOUSE_BINARY}-keeper --help
+echo -e "\nclickhouse-keeper-client\n"
+${CLICKHOUSE_BINARY}-keeper-client --help
 
 stty columns $backup_stty_size 2>/dev/null ||:

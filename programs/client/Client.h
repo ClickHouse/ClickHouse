@@ -49,5 +49,7 @@ private:
     void showWarnings();
     void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();
+    String getHelpHeader();
+    String getHelpFooter();
 };
 }

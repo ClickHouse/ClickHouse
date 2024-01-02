@@ -22,7 +22,7 @@ class DisksApp : public Poco::Util::Application, public Loggers
 public:
     DisksApp() = default;
 
-    void init(std::vector<String> & common_arguments);
+    void init(const char * cmd, std::vector<String> & common_arguments);
 
     int main(const std::vector<String> & args) override;
 
@@ -48,6 +48,7 @@ protected:
     ContextMutablePtr global_context;
     SharedContextHolder shared_context;
 
+    String app_name;
     String command_name;
     std::vector<String> command_arguments;
 

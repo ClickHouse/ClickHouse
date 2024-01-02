@@ -56,15 +56,15 @@ clickhouse help [args]
 
 clickhouse benchmark
 
-Usage: clickhouse benchmark [options] < queries.txt
+Usage: clickhouse benchmark [options] < queries.tsv
 Usage: clickhouse benchmark [options] --query "query text"
-clickhouse-benchmark connects to ClickHouse server, repeatedly sends specified queries and produces reports query statistics.
+clickhouse-benchmark connects to ClickHouse server, repeatedly sends specified queries and produces reports query statistics. Multiple queries can be used if passed in TSV format.
 
 clickhouse client
 
 Usage: clickhouse client [initial table definition] [--query <query>]
-clickhouse-client is a client application that is used to connect to ClickHouse.
-It can run queries as command line tool if you pass queries as an argument or as interactive client. Queries can run one at a time, or in in a multiquery mode with --multiquery option. To change settings you may use 'SET' statements and SETTINGS clause in queries or set is for a  session with corresponding clickhouse-client arguments.
+clickhouse client is a client application that is used to connect to ClickHouse.
+It can run queries as command line tool if you pass queries as an argument or as interactive client. Queries can run one at a time, or in in a multiquery mode with --multiquery option. To change settings you may use 'SET' statements and SETTINGS clause in queries or set is for a  session with corresponding clickhouse client arguments.
 'clickhouse client' command will try connect to clickhouse-server running on the same server. If you have credentials set up pass them with --user <username> --password <password> or with --ask-password argument that will open command prompt.
 
 This one will try connect to tcp native port(9000) without encryption:
@@ -84,12 +84,12 @@ To configure initial environment two ways are supported: queries or command line
     CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);
 Or through corresponding command line parameters --table --structure --input-format and --file.
 
-clickhouse-local supports all features and engines of ClickHouse. You can query data from remote engines and store results locally or other way around. For table engines that actually store data on a disk like Log and MergeTree clickhouse-local puts data to temporary directory that is not reused between runs.
+clickhouse local supports all features and engines of ClickHouse. You can query data from remote engines and store results locally or other way around. For table engines that actually store data on a disk like Log and MergeTree clickhouse local puts data to temporary directory that is not reused between runs.
 
-clickhouse-local can be used to query data from stopped clickhouse-server installation with --path to local directory with data.
+clickhouse local can be used to query data from stopped clickhouse-server installation with --path to local directory with data.
 
 Example reading file from S3, converting format and writing to a file:
-clickhouse-local --query "SELECT c1 as version, c2 as date FROM url('https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv') INTO OUTFILE '/tmp/versions.json'"
+clickhouse local --query "SELECT c1 as version, c2 as date FROM url('https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv') INTO OUTFILE '/tmp/versions.json'"
 In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.
 
 clickhouse compressor
@@ -100,27 +100,23 @@ Alternative usage: clickhouse compressor [options] INPUT OUTPUT
 clickhouse disks
 
 ClickHouse disk management tool
-usage clickhouse disks [OPTION]
-clickhouse-disks
+Usage clickhouse disks [OPTION] 	read	Read a file from `FROM_PATH` to `TO_PATH`
 
-read	Read a file from `FROM_PATH` to `TO_PATH`
+	write	Write a file from `FROM_PATH` to `TO_PATH`
 
-write	Write a file from `FROM_PATH` to `TO_PATH`
+	link	Create hardlink from `from_path` to `to_path`
 
-link	Create hardlink from `from_path` to `to_path`
+	mkdir	Create a directory
 
-mkdir	Create a directory
+	remove	Remove file or directory with all children. Throws exception if file doesn't exists. Path should be in format './' or './path' or 'path'
 
-remove	Remove file or directory with all children. Throws exception if file doesn't exists.
-Path should be in format './' or './path' or 'path'
+	move	Move file or directory from `from_path` to `to_path`
 
-move	Move file or directory from `from_path` to `to_path`
+	copy	Recursively copy data from `FROM_PATH` to `TO_PATH`
 
-copy	Recursively copy data from `FROM_PATH` to `TO_PATH`
+	list	List files at path[s]
 
-list	List files at path[s]
-
-list-disks	List disks names
+	list-disks	List disks names
 
 clickhouse-disks:
   -h [ --help ]     Print common help message
@@ -384,11 +380,9 @@ And you should take care and look at exact algorithm, how this tool works, and p
 
 This tool works fine only with reasonable amount of data (at least 1000s of rows).
 
-
 Usage: clickhouse obfuscator [options] < in > out
 
 Input must be seekable file (it will be read twice).
-
 Example:
     clickhouse obfuscator --seed "$(head -c16 /dev/urandom | base64)" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv
 
@@ -474,10 +468,10 @@ objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse.
 
 clickhouse-local
 
-Usage: clickhouse local [initial table definition] [--query <query>]
+Usage: clickhouse-local [initial table definition] [--query <query>]
 clickhouse-local allows to execute SQL queries on your data files without running clickhouse-server.
 
-It can run as command line tool that does single action or as interactive client. For interactive experience you can just run 'clickhouse local' or add --interactive argument to your command. It will set up tables, run queries and pass control as if it is clickhouse-client. Then you can execute your SQL queries in usual manner. Non-interactive mode requires query as an argument and exits when queries finish. Multiple SQL queries can be passed as --query argument.
+It can run as command line tool that does single action or as interactive client. For interactive experience you can just run 'clickhouse-local' or add --interactive argument to your command. It will set up tables, run queries and pass control as if it is clickhouse-client. Then you can execute your SQL queries in usual manner. Non-interactive mode requires query as an argument and exits when queries finish. Multiple SQL queries can be passed as --query argument.
 
 To configure initial environment two ways are supported: queries or command line parameters. Either just in first query like this:
     CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);
@@ -493,22 +487,22 @@ In addition, --param_name=value can be specified for substitution of parameters 
 
 clickhouse-client
 
-Usage: clickhouse client [initial table definition] [--query <query>]
+Usage: clickhouse-client [initial table definition] [--query <query>]
 clickhouse-client is a client application that is used to connect to ClickHouse.
 It can run queries as command line tool if you pass queries as an argument or as interactive client. Queries can run one at a time, or in in a multiquery mode with --multiquery option. To change settings you may use 'SET' statements and SETTINGS clause in queries or set is for a  session with corresponding clickhouse-client arguments.
-'clickhouse client' command will try connect to clickhouse-server running on the same server. If you have credentials set up pass them with --user <username> --password <password> or with --ask-password argument that will open command prompt.
+'clickhouse-client' command will try connect to clickhouse-server running on the same server. If you have credentials set up pass them with --user <username> --password <password> or with --ask-password argument that will open command prompt.
 
 This one will try connect to tcp native port(9000) without encryption:
-    clickhouse client --host clickhouse.example.com --password mysecretpassword
+    clickhouse-client --host clickhouse.example.com --password mysecretpassword
 To connect to secure endpoint just set --secure argument. If you have  artered port set it with --port <your port>.
-    clickhouse client --secure --host clickhouse.example.com --password mysecretpassword
+    clickhouse-client --secure --host clickhouse.example.com --password mysecretpassword
 
 
 clickhouse-benchmark
 
-Usage: clickhouse benchmark [options] < queries.txt
-Usage: clickhouse benchmark [options] --query "query text"
-clickhouse-benchmark connects to ClickHouse server, repeatedly sends specified queries and produces reports query statistics.
+Usage: clickhouse-benchmark [options] < queries.tsv
+Usage: clickhouse-benchmark [options] --query "query text"
+clickhouse-benchmark connects to ClickHouse server, repeatedly sends specified queries and produces reports query statistics. Multiple queries can be used if passed in TSV format.
 
 clickhouse-extract
 
@@ -519,8 +513,8 @@ Usage: clickhouse extract-from-config [options]
 
 clickhouse-compressor
 
-Usage: clickhouse compressor [options] < INPUT > OUTPUT
-Alternative usage: clickhouse compressor [options] INPUT OUTPUT
+Usage: clickhouse-compressor [options] < INPUT > OUTPUT
+Alternative usage: clickhouse-compressor [options] INPUT OUTPUT
 
 clickhouse-format
 
@@ -569,13 +563,11 @@ And you should take care and look at exact algorithm, how this tool works, and p
 
 This tool works fine only with reasonable amount of data (at least 1000s of rows).
 
-
-Usage: clickhouse obfuscator [options] < in > out
+Usage: clickhouse-obfuscator [options] < in > out
 
 Input must be seekable file (it will be read twice).
-
 Example:
-    clickhouse obfuscator --seed "$(head -c16 /dev/urandom | base64)" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv
+    clickhouse-obfuscator --seed "$(head -c16 /dev/urandom | base64)" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv
 
 clickhouse-git-import
 
@@ -744,27 +736,23 @@ Usage: clickhouse su user:group ...
 clickhouse-disks
 
 ClickHouse disk management tool
-usage clickhouse disks [OPTION]
-clickhouse-disks
+Usage clickhouse-disks [OPTION] 	read	Read a file from `FROM_PATH` to `TO_PATH`
 
-read	Read a file from `FROM_PATH` to `TO_PATH`
+	write	Write a file from `FROM_PATH` to `TO_PATH`
 
-write	Write a file from `FROM_PATH` to `TO_PATH`
+	link	Create hardlink from `from_path` to `to_path`
 
-link	Create hardlink from `from_path` to `to_path`
+	mkdir	Create a directory
 
-mkdir	Create a directory
+	remove	Remove file or directory with all children. Throws exception if file doesn't exists. Path should be in format './' or './path' or 'path'
 
-remove	Remove file or directory with all children. Throws exception if file doesn't exists.
-Path should be in format './' or './path' or 'path'
+	move	Move file or directory from `from_path` to `to_path`
 
-move	Move file or directory from `from_path` to `to_path`
+	copy	Recursively copy data from `FROM_PATH` to `TO_PATH`
 
-copy	Recursively copy data from `FROM_PATH` to `TO_PATH`
+	list	List files at path[s]
 
-list	List files at path[s]
-
-list-disks	List disks names
+	list-disks	List disks names
 
 clickhouse-disks:
   -h [ --help ]     Print common help message
