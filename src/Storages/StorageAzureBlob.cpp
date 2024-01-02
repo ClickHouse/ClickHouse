@@ -1,8 +1,4 @@
 #include <Storages/StorageAzureBlob.h>
-#include "Processors/QueryPlan/QueryPlan.h"
-#include "Processors/QueryPlan/SourceStepWithFilter.h"
-#include "Processors/Sources/NullSource.h"
-
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Formats/FormatFactory.h>
@@ -24,6 +20,9 @@
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSnapshot.h>

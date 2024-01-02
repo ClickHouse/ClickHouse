@@ -1,7 +1,3 @@
-#include "Processors/QueryPlan/QueryPlan.h"
-#include "Processors/QueryPlan/SourceStepWithFilter.h"
-#include "Processors/Sources/NullSource.h"
-#include "QueryPipeline/QueryPipelineBuilder.h"
 #include "config.h"
 
 #if USE_AWS_S3
@@ -10,11 +6,14 @@
 #include <IO/CompressionMethod.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTInsertQuery.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/Sources/NullSource.h>
 #include <Storages/S3Queue/S3QueueTableMetadata.h>
 #include <Storages/S3Queue/StorageS3Queue.h>
 #include <Storages/S3Queue/S3QueueFilesMetadata.h>
@@ -24,6 +23,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <filesystem>
 
 

@@ -1,4 +1,3 @@
-#include "Processors/Sources/NullSource.h"
 #include "config.h"
 
 #if USE_HDFS
@@ -16,6 +15,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 

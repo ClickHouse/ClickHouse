@@ -1,7 +1,4 @@
-#include "Processors/Sources/NullSource.h"
 #include "config.h"
-#include <Common/ProfileEvents.h>
-#include "Parsers/ASTCreateQuery.h"
 
 #if USE_AWS_S3
 
@@ -17,6 +14,7 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
@@ -43,6 +41,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 
@@ -58,6 +57,7 @@
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>

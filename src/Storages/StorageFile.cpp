@@ -38,6 +38,8 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -45,8 +47,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -1330,25 +1330,15 @@ public:
     ReadFromFile(
         Block sample_block,
         std::shared_ptr<StorageFile> storage_,
-        std::vector<std::string> paths_,
-        std::optional<StorageFile::ArchiveInfo> archive_info_,
-        NamesAndTypesList virtual_columns_,
-        bool distributed_processing_,
         ReadFromFormatInfo info_,
         const bool need_only_count_,
-        size_t total_bytes_to_read_,
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
         , storage(std::move(storage_))
-        , paths(std::move(paths_))
-        , archive_info(std::move(archive_info_))
-        , virtual_columns(std::move(virtual_columns_))
-        , distributed_processing(distributed_processing_)
         , info(std::move(info_))
         , need_only_count(need_only_count_)
-        , total_bytes_to_read(total_bytes_to_read_)
         , context(std::move(context_))
         , max_block_size(max_block_size_)
         , max_num_streams(num_streams_)
@@ -1357,27 +1347,14 @@ public:
 
 private:
     std::shared_ptr<StorageFile> storage;
-
-    std::vector<std::string> paths;
-    std::optional<StorageFile::ArchiveInfo> archive_info;
-
-    NamesAndTypesList virtual_columns;
-    const bool distributed_processing;
-
     ReadFromFormatInfo info;
     const bool need_only_count;
 
-    size_t total_bytes_to_read;
-
     ContextPtr context;
-
     size_t max_block_size;
     const size_t max_num_streams;
 
     std::shared_ptr<StorageFileSource::FilesIterator> files_iterator;
-
-    // FieldVectorPtr keys;
-    // bool all_scan = false;
 
     void createIterator(const ActionsDAG::Node * predicate);
 };
@@ -1435,13 +1412,8 @@ void StorageFile::read(
     auto reading = std::make_unique<ReadFromFile>(
         read_from_format_info.source_header,
         std::move(this_ptr),
-        paths,
-        archive_info,
-        virtual_columns,
-        distributed_processing,
         std::move(read_from_format_info),
         need_only_count,
-        total_bytes_to_read,
         context,
         max_block_size,
         num_streams);
@@ -1454,7 +1426,13 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
     if (files_iterator)
         return;
 
-    files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, archive_info, predicate, virtual_columns, context, distributed_processing);
+    files_iterator = std::make_shared<StorageFileSource::FilesIterator>(
+        storage->paths,
+        storage->archive_info,
+        predicate,
+        storage->virtual_columns,
+        context,
+        storage->distributed_processing);
 }
 
 void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -1464,10 +1442,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     size_t num_streams = max_num_streams;
 
     size_t files_to_read = 0;
-    if (archive_info)
-        files_to_read = archive_info->paths_to_archives.size();
+    if (storage->archive_info)
+        files_to_read = storage->archive_info->paths_to_archives.size();
     else
-        files_to_read = paths.size();
+        files_to_read = storage->paths.size();
 
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
@@ -1478,8 +1456,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     /// Set total number of bytes to process. For progress bar.
     auto progress_callback = context->getFileProgressCallback();
 
-    if (progress_callback && !archive_info)
-        progress_callback(FileProgress(0, total_bytes_to_read));
+    if (progress_callback && !storage->archive_info)
+        progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     for (size_t i = 0; i < num_streams; ++i)
     {
