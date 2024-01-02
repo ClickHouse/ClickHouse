@@ -69,7 +69,6 @@ public:
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
-        NameSet array_joined_column_names,
         bool single_point_ = false,
         bool strict_ = false);
 

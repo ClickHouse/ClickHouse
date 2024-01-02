@@ -75,6 +75,13 @@ namespace ErrorCodes
 }
 namespace
 {
+    struct HDFSFileInfoDeleter
+    {
+        /// Can have only one entry (see hdfsGetPathInfo())
+        void operator()(hdfsFileInfo * info) { hdfsFreeFileInfo(info, 1); }
+    };
+    using HDFSFileInfoPtr = std::unique_ptr<hdfsFileInfo, HDFSFileInfoDeleter>;
+
     /* Recursive directory listing with matched paths as a result.
      * Have the same method in StorageFile.
      */
@@ -90,13 +97,12 @@ namespace
         if (first_glob_pos == std::string::npos)
         {
             const String path = fs::path(path_for_ls + for_match.substr(1)).lexically_normal();
-            HDFSFileInfo ls;
-            ls.file_info = hdfsGetPathInfo(fs.get(), path.c_str());
-            if (ls.file_info != nullptr) // NOLINT
+            HDFSFileInfoPtr hdfs_info(hdfsGetPathInfo(fs.get(), path.c_str()));
+            if (hdfs_info) // NOLINT
             {
                 result.push_back(StorageHDFS::PathWithInfo{
                         String(path),
-                        StorageHDFS::PathInfo{ls.file_info->mLastMod, static_cast<size_t>(ls.file_info->mSize)}});
+                        StorageHDFS::PathInfo{hdfs_info->mLastMod, static_cast<size_t>(hdfs_info->mSize)}});
             }
             return result;
         }
@@ -184,13 +190,6 @@ namespace
         }
         return res;
     }
-
-    struct HDFSFileInfoDeleter
-    {
-        /// Can have only one entry (see hdfsGetPathInfo())
-        void operator()(hdfsFileInfo * info) { hdfsFreeFileInfo(info, 1); }
-    };
-    using HDFSFileInfoPtr = std::unique_ptr<hdfsFileInfo, HDFSFileInfoDeleter>;
 }
 
 StorageHDFS::StorageHDFS(
@@ -260,10 +259,17 @@ namespace
         {
         }
 
-        std::unique_ptr<ReadBuffer> next() override
+        std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() override
         {
-            StorageHDFS::PathWithInfo path_with_info;
             bool is_first = current_index == 0;
+            /// For default mode check cached columns for all paths on first iteration.
+            if (is_first && getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+            {
+                if (auto cached_columns = tryGetColumnsFromCache(paths_with_info))
+                    return {nullptr, cached_columns};
+            }
+
+            StorageHDFS::PathWithInfo path_with_info;
 
             while (true)
             {
@@ -273,26 +279,33 @@ namespace
                         throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                                         "Cannot extract table structure from {} format file, because all files are empty. "
                                         "You must specify table structure manually", format);
-                    return nullptr;
+                    return {nullptr, std::nullopt};
                 }
 
                 path_with_info = paths_with_info[current_index++];
                 if (getContext()->getSettingsRef().hdfs_skip_empty_files && path_with_info.info && path_with_info.info->size == 0)
                     continue;
 
+                if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
+                {
+                    std::vector<StorageHDFS::PathWithInfo> paths = {path_with_info};
+                    if (auto cached_columns = tryGetColumnsFromCache(paths))
+                        return {nullptr, cached_columns};
+                }
+
                 auto compression = chooseCompressionMethod(path_with_info.path, compression_method);
                 auto impl = std::make_unique<ReadBufferFromHDFS>(uri_without_path, path_with_info.path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
                 if (!getContext()->getSettingsRef().hdfs_skip_empty_files || !impl->eof())
                 {
                     const Int64 zstd_window_log_max = getContext()->getSettingsRef().zstd_window_log_max;
-                    return wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max));
+                    return {wrapReadBufferWithCompressionMethod(std::move(impl), compression, static_cast<int>(zstd_window_log_max)), std::nullopt};
                 }
             }
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
         {
-            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_s3)
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_hdfs)
                 return;
 
             String source = uri_without_path + paths_with_info[current_index - 1].path;
@@ -300,7 +313,71 @@ namespace
             StorageHDFS::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
+        void setSchemaToLastFile(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_hdfs
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::UNION)
+                return;
+
+            String source = uri_without_path + paths_with_info[current_index - 1].path;
+            auto key = getKeyForSchemaCache(source, format, std::nullopt, getContext());
+            StorageHDFS::getSchemaCache(getContext()).addColumns(key, columns);
+        }
+
+        void setResultingSchema(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_hdfs
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::DEFAULT)
+                return;
+
+            Strings sources;
+            sources.reserve(paths_with_info.size());
+            std::transform(paths_with_info.begin(), paths_with_info.end(), std::back_inserter(sources), [&](const StorageHDFS::PathWithInfo & path_with_info){ return uri_without_path + path_with_info.path; });
+            auto cache_keys = getKeysForSchemaCache(sources, format, {}, getContext());
+            StorageHDFS::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
+        }
+
+        String getLastFileName() const override
+        {
+            if (current_index != 0)
+                return paths_with_info[current_index - 1].path;
+
+            return "";
+        }
+
     private:
+        std::optional<ColumnsDescription> tryGetColumnsFromCache(const std::vector<StorageHDFS::PathWithInfo> & paths_with_info_)
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_hdfs)
+                return std::nullopt;
+
+            auto & schema_cache = StorageHDFS::getSchemaCache(getContext());
+            for (const auto & path_with_info : paths_with_info_)
+            {
+                auto get_last_mod_time = [&]() -> std::optional<time_t>
+                {
+                    if (path_with_info.info)
+                        return path_with_info.info->last_mod_time;
+
+                    auto builder = createHDFSBuilder(uri_without_path + "/", getContext()->getGlobalContext()->getConfigRef());
+                    auto fs = createHDFSFS(builder.get());
+                    HDFSFileInfoPtr hdfs_info(hdfsGetPathInfo(fs.get(), path_with_info.path.c_str()));
+                    if (hdfs_info)
+                        return hdfs_info->mLastMod;
+
+                    return std::nullopt;
+                };
+
+                String url = uri_without_path + path_with_info.path;
+                auto cache_key = getKeyForSchemaCache(url, format, {}, getContext());
+                auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
+                if (columns)
+                    return columns;
+            }
+
+            return std::nullopt;
+        }
+
         const std::vector<StorageHDFS::PathWithInfo> & paths_with_info;
         const String & uri_without_path;
         const String & format;
@@ -324,25 +401,8 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
             "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path."
             " You must specify table structure manually", format);
 
-    std::optional<ColumnsDescription> columns_from_cache;
-    if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
-        columns_from_cache = tryGetColumnsFromCache(paths_with_info, uri_without_path, format, ctx);
-
-    ColumnsDescription columns;
-    if (columns_from_cache)
-    {
-        columns = *columns_from_cache;
-    }
-    else
-    {
-        ReadBufferIterator read_buffer_iterator(paths_with_info, uri_without_path, format, compression_method, ctx);
-        columns = readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths_with_info.size() > 1, ctx);
-    }
-
-    if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
-        addColumnsToCache(paths_with_info, uri_without_path, columns, format, ctx);
-
-    return columns;
+    ReadBufferIterator read_buffer_iterator(paths_with_info, uri_without_path, format, compression_method, ctx);
+    return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, paths_with_info.size() > 1, ctx);
 }
 
 class HDFSSource::DisclosedGlobIterator::Impl
@@ -549,7 +609,7 @@ bool HDFSSource::initialize()
         /// We should not return single chunk with all number of rows,
         /// because there is a chance that this chunk will be materialized later
         /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
-        /// Instead, we use special ConstChunkGenerator that will generate chunks
+        /// Instead, we use a special ConstChunkGenerator that will generate chunks
         /// with max_block_size rows until total number of rows is reached.
         auto source = std::make_shared<ConstChunkGenerator>(block_for_format, *num_rows_from_cache, max_block_size);
         builder.init(Pipe(source));
@@ -576,7 +636,7 @@ bool HDFSSource::initialize()
     }
 
     /// Add ExtractColumnsTransform to extract requested columns/subcolumns
-    /// from chunk read by IInputFormat.
+    /// from the chunk read by IInputFormat.
     builder.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
@@ -978,54 +1038,6 @@ SchemaCache & StorageHDFS::getSchemaCache(const ContextPtr & ctx)
 {
     static SchemaCache schema_cache(ctx->getConfigRef().getUInt("schema_inference_cache_max_elements_for_hdfs", DEFAULT_SCHEMA_CACHE_ELEMENTS));
     return schema_cache;
-}
-
-std::optional<ColumnsDescription> StorageHDFS::tryGetColumnsFromCache(
-    const std::vector<StorageHDFS::PathWithInfo> & paths_with_info,
-    const String & uri_without_path,
-    const String & format_name,
-    const ContextPtr & ctx)
-{
-    auto & schema_cache = getSchemaCache(ctx);
-    for (const auto & path_with_info : paths_with_info)
-    {
-        auto get_last_mod_time = [&]() -> std::optional<time_t>
-        {
-            if (path_with_info.info)
-                return path_with_info.info->last_mod_time;
-
-            auto builder = createHDFSBuilder(uri_without_path + "/", ctx->getGlobalContext()->getConfigRef());
-            auto fs = createHDFSFS(builder.get());
-            HDFSFileInfoPtr hdfs_info(hdfsGetPathInfo(fs.get(), path_with_info.path.c_str()));
-            if (hdfs_info)
-                return hdfs_info->mLastMod;
-
-            return std::nullopt;
-        };
-
-        String url = uri_without_path + path_with_info.path;
-        auto cache_key = getKeyForSchemaCache(url, format_name, {}, ctx);
-        auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
-        if (columns)
-            return columns;
-    }
-
-    return std::nullopt;
-}
-
-void StorageHDFS::addColumnsToCache(
-    const std::vector<StorageHDFS::PathWithInfo> & paths_with_info,
-    const String & uri_without_path,
-    const ColumnsDescription & columns,
-    const String & format_name,
-    const ContextPtr & ctx)
-{
-    auto & schema_cache = getSchemaCache(ctx);
-    Strings sources;
-    sources.reserve(paths_with_info.size());
-    std::transform(paths_with_info.begin(), paths_with_info.end(), std::back_inserter(sources), [&](const PathWithInfo & path_with_info){ return uri_without_path + path_with_info.path; });
-    auto cache_keys = getKeysForSchemaCache(sources, format_name, {}, ctx);
-    schema_cache.addManyColumns(cache_keys, columns);
 }
 
 }

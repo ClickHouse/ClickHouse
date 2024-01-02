@@ -34,6 +34,7 @@ public:
 
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
     /// TODO: remove context somehow.
     void setContext(ContextPtr & context_) { context = Context::createCopy(context_); }
@@ -111,6 +112,7 @@ public:
 
 private:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     PeekableReadBuffer buf;
     ParserExpression parser;

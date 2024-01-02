@@ -66,11 +66,6 @@ def get_scales(runner_type: str) -> Tuple[int, int]:
     # Let's have it the same as the other ASG
     # UPDATE THE COMMENT ON CHANGES
     scale_up = 3
-    if runner_type.startswith("private-"):
-        scale_up = 1
-    elif runner_type == "limited-tester":
-        # The limited runners should inflate and deflate faster
-        scale_up = 2
     return scale_down, scale_up
 
 
@@ -120,7 +115,9 @@ def set_capacity(
         # Are we already at the capacity limits
         stop = stop or asg["MaxSize"] <= asg["DesiredCapacity"]
         # Let's calculate a new desired capacity
-        desired_capacity = asg["DesiredCapacity"] + (capacity_deficit // scale_up)
+        desired_capacity = (
+            asg["DesiredCapacity"] + (capacity_deficit + scale_up - 1) // scale_up
+        )
         desired_capacity = max(desired_capacity, asg["MinSize"])
         desired_capacity = min(desired_capacity, asg["MaxSize"])
         # Finally, should the capacity be even changed

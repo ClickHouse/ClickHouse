@@ -642,13 +642,19 @@ void ValuesBlockInputFormat::resetParser()
     IInputFormat::resetParser();
     // I'm not resetting parser modes here.
     // There is a good chance that all messages have the same format.
-    buf->reset();
     total_rows = 0;
 }
 
 void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
+}
+
+void ValuesBlockInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    IInputFormat::resetReadBuffer();
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -699,6 +705,11 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
     }
 
     return data_types;
+}
+
+void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatValues(FormatFactory & factory)

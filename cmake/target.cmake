@@ -12,6 +12,8 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
 elseif (CMAKE_SYSTEM_NAME MATCHES "Darwin")
     set (OS_DARWIN 1)
     add_definitions(-D OS_DARWIN)
+    # For MAP_ANON/MAP_ANONYMOUS
+    add_definitions(-D _DARWIN_C_SOURCE)
 elseif (CMAKE_SYSTEM_NAME MATCHES "SunOS")
     set (OS_SUNOS 1)
     add_definitions(-D OS_SUNOS)
@@ -72,9 +74,4 @@ if (CMAKE_CROSSCOMPILING)
     endif ()
 
     message (STATUS "Cross-compiling for target: ${CMAKE_CXX_COMPILE_TARGET}")
-endif ()
-
-if (USE_MUSL)
-    # Does not work for unknown reason
-    set (ENABLE_RUST OFF CACHE INTERNAL "")
 endif ()

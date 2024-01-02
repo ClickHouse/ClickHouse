@@ -8,6 +8,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 #include <Common/atomicRename.h>
+#include <Common/formatReadable.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/loadLocalDiskConfig.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -359,21 +360,21 @@ void DiskLocal::removeFile(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
     if (0 != unlink(fs_path.c_str()))
-        throwFromErrnoWithPath("Cannot unlink file " + fs_path.string(), fs_path, ErrorCodes::CANNOT_UNLINK);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
 }
 
 void DiskLocal::removeFileIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
     if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
-        throwFromErrnoWithPath("Cannot unlink file " + fs_path.string(), fs_path, ErrorCodes::CANNOT_UNLINK);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, fs_path, "Cannot unlink file {}", fs_path);
 }
 
 void DiskLocal::removeDirectory(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
     if (0 != rmdir(fs_path.c_str()))
-        throwFromErrnoWithPath("Cannot rmdir " + fs_path.string(), fs_path, ErrorCodes::CANNOT_RMDIR);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot remove directory {}", fs_path);
 }
 
 void DiskLocal::removeRecursive(const String & path)
@@ -412,7 +413,7 @@ void DiskLocal::truncateFile(const String & path, size_t size)
 {
     int res = truncate((fs::path(disk_path) / path).string().data(), size);
     if (-1 == res)
-        throwFromErrnoWithPath("Cannot truncate file " + path, path, ErrorCodes::CANNOT_TRUNCATE_FILE);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate {}", path);
 }
 
 void DiskLocal::createFile(const String & path)
@@ -709,7 +710,7 @@ struct stat DiskLocal::stat(const String & path) const
     auto full_path = fs::path(disk_path) / path;
     if (::stat(full_path.string().c_str(), &st) == 0)
         return st;
-    DB::throwFromErrnoWithPath("Cannot stat file: " + path, path, DB::ErrorCodes::CANNOT_STAT);
+    DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot stat file: {}", path);
 }
 
 void DiskLocal::chmod(const String & path, mode_t mode)
@@ -717,7 +718,7 @@ void DiskLocal::chmod(const String & path, mode_t mode)
     auto full_path = fs::path(disk_path) / path;
     if (::chmod(full_path.string().c_str(), mode) == 0)
         return;
-    DB::throwFromErrnoWithPath("Cannot chmod file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+    DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
 }
 
 void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)

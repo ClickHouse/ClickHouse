@@ -113,6 +113,13 @@ public:
         return global_ctx->promise.get_future();
     }
 
+    MergeTreeData::MutableDataPartPtr getUnfinishedPart()
+    {
+        if (global_ctx)
+            return global_ctx->new_data_part;
+        return nullptr;
+    }
+
     bool execute();
 
 private:
@@ -154,7 +161,6 @@ private:
         bool deduplicate{false};
         Names deduplicate_by_columns{};
         bool cleanup{false};
-        size_t cleanedup_rows_count{0};
 
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};

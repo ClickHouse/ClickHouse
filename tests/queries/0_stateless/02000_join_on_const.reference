@@ -65,3 +65,7 @@ SELECT * FROM (SELECT 1 as a) as t1 FULL JOIN  ( SELECT ('b', 256) as b ) AS t2 
 SELECT * FROM (SELECT 1 as a) as t1 SEMI JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
 SELECT * FROM (SELECT 1 as a) as t1 ANTI JOIN  ( SELECT ('b', 256) as b ) AS t2 ON NULL;
 1	('',0)
+2
+4	2	Nullable(UInt64)	UInt8
+4	2	UInt64	Nullable(UInt8)
+4	2	Nullable(UInt64)	Nullable(UInt8)

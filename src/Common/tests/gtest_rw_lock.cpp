@@ -31,11 +31,13 @@ namespace
     public:
         Events() : start_time(std::chrono::steady_clock::now()) {}
 
-        void add(String && event)
+        void add(String && event, std::chrono::milliseconds correction = std::chrono::milliseconds::zero())
         {
             String timepoint = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count());
             if (timepoint.length() < 5)
                 timepoint.insert(0, 5 - timepoint.length(), ' ');
+            if (correction.count())
+                std::this_thread::sleep_for(correction);
             std::lock_guard lock{mutex};
             //std::cout << timepoint << " : " << event << std::endl;
             events.emplace_back(std::move(event));
@@ -324,6 +326,22 @@ TEST(Common, RWLockNotUpgradeableWithNoQuery)
 
 TEST(Common, RWLockWriteLockTimeoutDuringRead)
 {
+    /// 0                 100                         200                      300                 400
+    /// <---------------------------------------- ra ---------------------------------------------->
+    ///                     <----- wc (acquiring lock, failed by timeout) ----->
+    ///                                                                                             <wd>
+    ///
+    ///    0 : Locking ra
+    ///    0 : Locked ra
+    ///  100 : Locking wc
+    ///  300 : Failed to lock wc
+    ///  400 : Unlocking ra
+    ///  400 : Unlocked ra
+    ///  400 : Locking wd
+    ///  400 : Locked wd
+    ///  400 : Unlocking wd
+    ///  400 : Unlocked wd
+
     static auto rw_lock = RWLockImpl::create();
     Events events;
 
@@ -379,6 +397,27 @@ TEST(Common, RWLockWriteLockTimeoutDuringRead)
 
 TEST(Common, RWLockWriteLockTimeoutDuringTwoReads)
 {
+    /// 0                 100                         200                         300               400                500
+    /// <---------------------------------------- ra ----------------------------------------------->
+    ///                     <------ wc (acquiring lock, failed by timeout) ------->
+    ///                                                 <-- rb (acquiring lock) --><---------- rb (locked) ------------>
+    ///                                                                                                                 <wd>
+    ///
+    ///    0 : Locking ra
+    ///    0 : Locked ra
+    ///  100 : Locking wc
+    ///  200 : Locking rb
+    ///  300 : Failed to lock wc
+    ///  300 : Locked rb
+    ///  400 : Unlocking ra
+    ///  400 : Unlocked ra
+    ///  500 : Unlocking rb
+    ///  500 : Unlocked rb
+    ///  501 : Locking wd
+    ///  501 : Locked wd
+    ///  501 : Unlocking wd
+    ///  501 : Unlocked wd
+
     static auto rw_lock = RWLockImpl::create();
     Events events;
 
@@ -402,10 +441,14 @@ TEST(Common, RWLockWriteLockTimeoutDuringTwoReads)
         events.add("Locking rb");
 
         auto rb = rw_lock->getLock(RWLockImpl::Read, "rb");
-        events.add(rb ? "Locked rb" : "Failed to lock rb");
+
+        /// `correction` is used here to add an event to `events` a little later.
+        /// (Because the event "Locked rb" happens at nearly the same time as "Failed to lock wc" and we don't want our test to be flaky.)
+        auto correction = std::chrono::duration<int, std::milli>(50);
+        events.add(rb ? "Locked rb" : "Failed to lock rb", correction);
         EXPECT_NE(rb, nullptr);
 
-        std::this_thread::sleep_for(std::chrono::duration<int, std::milli>(200));
+        std::this_thread::sleep_for(std::chrono::duration<int, std::milli>(200) - correction);
         events.add("Unlocking rb");
         rb.reset();
         events.add("Unlocked rb");
@@ -454,6 +497,25 @@ TEST(Common, RWLockWriteLockTimeoutDuringTwoReads)
 
 TEST(Common, RWLockWriteLockTimeoutDuringWriteWithWaitingRead)
 {
+    /// 0                 100                         200                        300                 400                500
+    /// <--------------------------------------------------- wa -------------------------------------------------------->
+    ///                     <------ wb (acquiring lock, failed by timeout) ------>
+    ///                                                 <-- rc (acquiring lock, failed by timeout) -->
+    ///                                                                                                                  <wd>
+    ///
+    ///    0 : Locking wa
+    ///    0 : Locked wa
+    ///  100 : Locking wb
+    ///  200 : Locking rc
+    ///  300 : Failed to lock wb
+    ///  400 : Failed to lock rc
+    ///  500 : Unlocking wa
+    ///  500 : Unlocked wa
+    ///  501 : Locking wd
+    ///  501 : Locked wd
+    ///  501 : Unlocking wd
+    ///  501 : Unlocked wd
+
     static auto rw_lock = RWLockImpl::create();
     Events events;
 

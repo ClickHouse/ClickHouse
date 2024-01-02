@@ -921,6 +921,7 @@ void StorageDistributed::read(
         sharding_key_expr,
         sharding_key_column_name,
         query_info.cluster,
+        distributed_settings,
         additional_shard_filter_generator);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
@@ -1299,8 +1300,6 @@ void StorageDistributed::drop()
 
         disk->removeRecursive(relative_data_path);
     }
-
-    LOG_DEBUG(log, "Removed");
 }
 
 Strings StorageDistributed::getDataPaths() const
@@ -1327,8 +1326,6 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, Co
         it->second.directory_queue->shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
-
-    LOG_DEBUG(log, "Removed");
 }
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const

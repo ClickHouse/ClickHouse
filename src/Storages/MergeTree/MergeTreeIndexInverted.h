@@ -171,8 +171,6 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
-
     GinFilterParameters params;
     /// Function for selecting next token.
     std::unique_ptr<ITokenExtractor> token_extractor;
