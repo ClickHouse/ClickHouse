@@ -2660,8 +2660,8 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
             if (!src_replicas.empty() && entry_matches)
             {
                 // Condition: entry's source_replica is one of the specified ones, or not in the system anymore, or is empty
-                source_replica_condition = src_replicas.count(entry->source_replica) > 0 ||
-                    existing_replicas.find(entry->source_replica) == existing_replicas.end() ||
+                source_replica_condition = src_replicas.contains(entry->source_replica) ||
+                    !existing_replicas.contains(entry->source_replica) ||
                     entry->source_replica.empty();
             }
 
