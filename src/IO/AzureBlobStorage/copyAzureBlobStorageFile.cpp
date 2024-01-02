@@ -22,14 +22,16 @@ namespace ProfileEvents
     extern const Event DiskAzureUploadPart;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int INVALID_CONFIG_PARAMETER;
+}
+
 
 size_t max_single_operation_copy_size = 256 * 1024 * 1024;
 
@@ -106,6 +108,60 @@ namespace
         std::mutex bg_tasks_mutex;
         std::condition_variable bg_tasks_condvar;
 
+        void calculatePartSize()
+        {
+            if (!total_size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
+
+            auto max_part_number = settings.get()->max_part_number;
+            auto min_upload_part_size = settings.get()->min_upload_part_size;
+            auto max_upload_part_size = settings.get()->max_upload_part_size;
+
+            if (!max_part_number)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_part_number must not be 0");
+            else if (!min_upload_part_size)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "min_upload_part_size must not be 0");
+            else if (max_upload_part_size < min_upload_part_size)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be less than min_upload_part_size");
+
+            size_t part_size = min_upload_part_size;
+            size_t num_parts = (total_size + part_size - 1) / part_size;
+
+            if (num_parts > max_part_number)
+            {
+                part_size = (total_size + max_part_number - 1) / max_part_number;
+                num_parts = (total_size + part_size - 1) / part_size;
+            }
+
+            if (part_size > max_upload_part_size)
+            {
+                part_size = max_upload_part_size;
+                num_parts = (total_size + part_size - 1) / part_size;
+            }
+
+            if (num_parts < 1 || num_parts > max_part_number || part_size < min_upload_part_size || part_size > max_upload_part_size)
+            {
+                String msg;
+                if (num_parts < 1)
+                    msg = "Number of parts is zero";
+                else if (num_parts > max_part_number)
+                    msg = fmt::format("Number of parts exceeds {}", num_parts, max_part_number);
+                else if (part_size < min_upload_part_size)
+                    msg = fmt::format("Size of a part is less than {}", part_size, min_upload_part_size);
+                else
+                    msg = fmt::format("Size of a part exceeds {}", part_size, max_upload_part_size);
+
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "{} while writing {} bytes to AzureBlobStorage. Check max_part_number = {}, "
+                    "min_upload_part_size = {}, max_upload_part_size = {}",
+                    msg, total_size, max_part_number, min_upload_part_size, max_upload_part_size);
+            }
+
+            /// We've calculated the size of a normal part (the final part can be smaller).
+            normal_part_size = part_size;
+        }
+
     public:
         void performCopy()
         {
@@ -120,7 +176,7 @@ namespace
 
         void performMultipartUpload()
         {
-            normal_part_size = 1024;
+            calculatePartSize();
 
             size_t position = offset;
             size_t end_position = offset + total_size;

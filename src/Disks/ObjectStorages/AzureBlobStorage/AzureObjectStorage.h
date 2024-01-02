@@ -24,12 +24,18 @@ struct AzureObjectStorageSettings
         uint64_t min_bytes_for_seek_,
         int max_single_read_retries_,
         int max_single_download_retries_,
-        int list_object_keys_size_)
+        int list_object_keys_size_,
+        size_t min_upload_part_size_,
+        size_t max_upload_part_size_,
+        size_t max_part_number_)
         : max_single_part_upload_size(max_single_part_upload_size_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , max_single_read_retries(max_single_read_retries_)
         , max_single_download_retries(max_single_download_retries_)
         , list_object_keys_size(list_object_keys_size_)
+        , min_upload_part_size(min_upload_part_size_)
+        , max_upload_part_size(max_upload_part_size_)
+        , max_part_number(max_part_number_)
     {
     }
 
@@ -40,6 +46,9 @@ struct AzureObjectStorageSettings
     size_t max_single_read_retries = 3;
     size_t max_single_download_retries = 3;
     int list_object_keys_size = 1000;
+    size_t min_upload_part_size = 16 * 1024 * 1024;
+    size_t max_upload_part_size = 5ULL * 1024 * 1024 * 1024;
+    size_t max_part_number = 10000;
 };
 
 using AzureClient = Azure::Storage::Blobs::BlobContainerClient;

@@ -1139,7 +1139,7 @@ StorageAzureBlobSource::ReaderHolder StorageAzureBlobSource::createReader()
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
-    std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files
+        std::optional<size_t> num_rows_from_cache = need_only_count && getContext()->getSettingsRef().use_cache_for_count_from_files
         ? tryGetNumRowsFromCache(path_with_metadata) : std::nullopt;
     if (num_rows_from_cache)
     {

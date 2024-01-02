@@ -24,8 +24,6 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=["configs/config.xml"],
-            user_configs=["configs/disable_profilers.xml", "configs/users.xml"],
             with_azurite=True,
         )
         cluster.start()
