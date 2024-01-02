@@ -12,7 +12,15 @@ ALTER TABLE destination ATTACH PARTITION ID '20100302' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION '20100302' FROM source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed since destination partition expr is monotonically increasing and compatible. Note that even though
 -- the destination partition expression is more granular, the data would still fall in the same partition. Thus, it is valid
@@ -28,7 +36,15 @@ ALTER TABLE destination ATTACH PARTITION ID '201003' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION '201003' FROM source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed since destination partition expr is monotonically increasing and compatible for those specific values
 DROP TABLE IF EXISTS source;
@@ -44,7 +60,15 @@ ALTER TABLE destination ATTACH PARTITION ID '0' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION 0 FROM source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed because dst partition exp is monot inc and data is not split
 DROP TABLE IF EXISTS source;
@@ -60,7 +84,15 @@ ALTER TABLE destination ATTACH PARTITION ID '17908065610379824077' from source;
 
 SELECT * FROM source ORDER BY productName;
 SELECT * FROM destination ORDER BY productName;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION '17908065610379824077' from source;
+
+SELECT * FROM source ORDER BY productName;
+SELECT * FROM destination ORDER BY productName;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed, extra test case to validate https://github.com/ClickHouse/ClickHouse/pull/39507#issuecomment-1747574133
 
@@ -76,7 +108,15 @@ ALTER TABLE destination ATTACH PARTITION ID '14670' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION '14670' from source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed, extra test case to validate https://github.com/ClickHouse/ClickHouse/pull/39507#issuecomment-1747511726
 
@@ -92,7 +132,15 @@ ALTER TABLE destination ATTACH PARTITION ID '2010' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION '2010' from source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed, partitioned table to unpartitioned. Since the destination is unpartitioned, parts would ultimately
 -- fall into the same partition.
@@ -108,7 +156,15 @@ ALTER TABLE destination ATTACH PARTITION ID '201003' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION '201003' from source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Same as above, but destination partition by expression is explicitly defined. Test case required to validate that
 -- partition by tuple() is accepted.
@@ -123,7 +179,15 @@ ALTER TABLE destination ATTACH PARTITION ID '201003' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION '201003' from source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed because the destination partition expression columns are a subset of the source partition expression columns
 -- Columns in this case refer to the expression elements, not to the actual table columns
@@ -138,7 +202,15 @@ ALTER TABLE destination ATTACH PARTITION ID '1-2-3' FROM source;
 
 SELECT * FROM source ORDER BY (a, b, c);
 SELECT * FROM destination ORDER BY (a, b, c);
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION (1, 2, 3) from source;
+
+SELECT * FROM source ORDER BY (a, b, c);
+SELECT * FROM destination ORDER BY (a, b, c);
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed because the destination partition expression columns are a subset of the source partition expression columns
 -- Columns in this case refer to the expression elements, not to the actual table columns
@@ -153,7 +225,15 @@ ALTER TABLE destination ATTACH PARTITION ID '1-2-3' FROM source;
 
 SELECT * FROM source ORDER BY (a, b, c);
 SELECT * FROM destination ORDER BY (a, b, c);
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION (1, 2, 3) from source;
+
+SELECT * FROM source ORDER BY (a, b, c);
+SELECT * FROM destination ORDER BY (a, b, c);
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed. Special test case, tricky to explain. First column of source partition expression is
 -- timestamp, while first column of destination partition expression is `A`. One of the previous implementations
@@ -170,7 +250,15 @@ ALTER TABLE destination ATTACH PARTITION ID '201003-0' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION (201003, 0) from source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed. Destination partition expression contains multiple expressions, but all of them are monotonically
 -- increasing in the source partition min max indexes.
@@ -186,7 +274,15 @@ ALTER TABLE destination ATTACH PARTITION ID '6-12' FROM source;
 
 SELECT * FROM source ORDER BY A;
 SELECT * FROM destination ORDER BY A;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION (6, 12) from source;
+
+SELECT * FROM source ORDER BY A;
+SELECT * FROM destination ORDER BY A;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed. The same scenario as above, but partition expressions inverted.
 DROP TABLE IF EXISTS source;
@@ -201,7 +297,15 @@ ALTER TABLE destination ATTACH PARTITION ID '3-6' FROM source;
 
 SELECT * FROM source ORDER BY A;
 SELECT * FROM destination ORDER BY A;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION (3, 6) from source;
+
+SELECT * FROM source ORDER BY A;
+SELECT * FROM destination ORDER BY A;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed, it is a local operation, no different than regular attach. Replicated to replicated.
 DROP TABLE IF EXISTS source;
@@ -224,7 +328,15 @@ ALTER TABLE destination ATTACH PARTITION ID '20100302' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION '20100302' from source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should be allowed, it is a local operation, no different than regular attach. Non replicated to replicated
 DROP TABLE IF EXISTS source SYNC;
@@ -243,7 +355,15 @@ ALTER TABLE destination ATTACH PARTITION ID '20100302' FROM source;
 
 SELECT * FROM source ORDER BY timestamp;
 SELECT * FROM destination ORDER BY timestamp;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
+
+TRUNCATE TABLE destination;
+
+ALTER TABLE destination ATTACH PARTITION '20100302' from source;
+
+SELECT * FROM source ORDER BY timestamp;
+SELECT * FROM destination ORDER BY timestamp;
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Should not be allowed because data would be split into two different partitions
 DROP TABLE IF EXISTS source SYNC;
@@ -255,6 +375,7 @@ CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() 
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01'), ('2010-03-03 02:01:03');
 
 ALTER TABLE destination ATTACH PARTITION ID '201003' FROM source; -- { serverError 248 }
+ALTER TABLE destination ATTACH PARTITION '201003' from source; -- { serverError 248 }
 
 -- Should not be allowed because data would be split into two different partitions
 DROP TABLE IF EXISTS source;
@@ -267,6 +388,7 @@ CREATE TABLE destination (timestamp DateTime, A Int64) engine=MergeTree ORDER BY
 INSERT INTO TABLE source VALUES ('2010-03-02 02:01:01', 1), ('2010-03-02 02:01:03', 2);
 
 ALTER TABLE destination ATTACH PARTITION ID '0' FROM source; -- { serverError 248 }
+ALTER TABLE destination ATTACH PARTITION 0 FROM source; -- { serverError 248 }
 
 -- Should not be allowed because dst partition exp takes more than two arguments, so it's not considered monotonically inc
 DROP TABLE IF EXISTS source;
@@ -279,6 +401,7 @@ INSERT INTO TABLE source VALUES ('spaghetti', 'food'), ('mop', 'general');
 INSERT INTO TABLE source VALUES ('rice', 'food');
 
 ALTER TABLE destination ATTACH PARTITION ID '4590ba78048910b74a47d5bfb308abed' from source; -- { serverError 36 }
+ALTER TABLE destination ATTACH PARTITION 'food' from source; -- { serverError 36 }
 
 -- Should not be allowed because dst partition exp depends on a different set of columns
 DROP TABLE IF EXISTS source;
@@ -291,6 +414,7 @@ INSERT INTO TABLE source VALUES ('spaghetti', 'food'), ('mop', 'general');
 INSERT INTO TABLE source VALUES ('rice', 'food');
 
 ALTER TABLE destination ATTACH PARTITION ID '4590ba78048910b74a47d5bfb308abed' from source; -- { serverError 36 }
+ALTER TABLE destination ATTACH PARTITION 'food' from source; -- { serverError 36 }
 
 -- Should not be allowed because dst partition exp is not monotonically increasing
 DROP TABLE IF EXISTS source;
@@ -303,6 +427,7 @@ INSERT INTO TABLE source VALUES ('bread'), ('mop');
 INSERT INTO TABLE source VALUES ('broccoli');
 
 ALTER TABLE destination ATTACH PARTITION ID '4589453b7ee96ce9de1265bd57674496' from source; -- { serverError 36 }
+ALTER TABLE destination ATTACH PARTITION 'br' from source; -- { serverError 36 }
 
 -- Empty/ non-existent partition, same partition expression. Nothing should happen
 DROP TABLE IF EXISTS source;
@@ -312,9 +437,10 @@ CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTI
 CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 
 ALTER TABLE destination ATTACH PARTITION ID '1' FROM source;
+ALTER TABLE destination ATTACH PARTITION 1 FROM source;
 
 SELECT * FROM destination;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Empty/ non-existent partition, different partition expression. Nothing should happen
 -- https://github.com/ClickHouse/ClickHouse/pull/39507#discussion_r1399839045
@@ -325,9 +451,10 @@ CREATE TABLE source (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTI
 CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() PARTITION BY toYYYYMM(timestamp);
 
 ALTER TABLE destination ATTACH PARTITION ID '1' FROM source;
+ALTER TABLE destination ATTACH PARTITION 1 FROM source;
 
 SELECT * FROM destination;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Replace instead of attach. Empty/ non-existent partition, same partition expression. Nothing should happen
 -- https://github.com/ClickHouse/ClickHouse/pull/39507#discussion_r1399839045
@@ -340,7 +467,7 @@ CREATE TABLE destination (timestamp DateTime) engine=MergeTree ORDER BY tuple() 
 ALTER TABLE destination REPLACE PARTITION '1' FROM source;
 
 SELECT * FROM destination;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
 
 -- Replace instead of attach. Empty/ non-existent partition to non-empty partition, same partition id.
 -- https://github.com/ClickHouse/ClickHouse/pull/39507#discussion_r1399839045
@@ -355,4 +482,4 @@ INSERT INTO TABLE destination VALUES (1);
 ALTER TABLE destination REPLACE PARTITION '1' FROM source;
 
 SELECT * FROM destination;
-SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase();
+SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
