@@ -18,63 +18,15 @@ LOCAL_DISK = "hdd"
 CONTAINER_NAME = "cont"
 
 
-def generate_cluster_def(port):
-    path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/disk_storage_conf.xml",
-    )
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write(
-            f"""<clickhouse>
-    <storage_configuration>
-        <disks>
-            <blob_storage_disk>
-                <type>azure_blob_storage</type>
-                <storage_account_url>http://azurite1:{port}/devstoreaccount1</storage_account_url>
-                <container_name>cont</container_name>
-                <skip_access_check>false</skip_access_check>
-                <account_name>devstoreaccount1</account_name>
-                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
-                <max_single_part_upload_size>100000</max_single_part_upload_size>
-                <max_single_download_retries>10</max_single_download_retries>
-                <max_single_read_retries>10</max_single_read_retries>
-            </blob_storage_disk>
-            <hdd>
-                <type>local</type>
-                <path>/</path>
-            </hdd>
-        </disks>
-        <policies>
-            <blob_storage_policy>
-                <volumes>
-                    <main>
-                        <disk>blob_storage_disk</disk>
-                    </main>
-                    <external>
-                        <disk>hdd</disk>
-                    </external>
-                </volumes>
-            </blob_storage_policy>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-"""
-        )
-    return path
-
-
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        port = cluster.azurite_port
-        path = generate_cluster_def(port)
         cluster.add_instance(
             NODE_NAME,
             main_configs=[
+                "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
-                path,
             ],
             with_azurite=True,
         )
@@ -538,7 +490,9 @@ def test_apply_new_settings(cluster):
     create_table(node, TABLE_NAME)
     config_path = os.path.join(
         SCRIPT_DIR,
-        "./_gen/disk_storage_conf.xml".format(cluster.instances_dir_name),
+        "./{}/node/configs/config.d/storage_conf.xml".format(
+            cluster.instances_dir_name
+        ),
     )
 
     azure_query(

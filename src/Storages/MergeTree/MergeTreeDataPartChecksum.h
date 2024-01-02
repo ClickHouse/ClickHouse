@@ -88,7 +88,6 @@ struct MergeTreeDataPartChecksums
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);
 
     UInt64 getTotalSizeOnDisk() const;
-    UInt64 getTotalSizeUncompressedOnDisk() const;
 };
 
 /// A kind of MergeTreeDataPartChecksums intended to be stored in ZooKeeper (to save its RAM)

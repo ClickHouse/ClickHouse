@@ -616,10 +616,12 @@ void HTTPHandler::processQuery(
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
+    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
+
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response,
         request.getMethod() == HTTPRequest::HTTP_HEAD,
-        context->getServerSettings().keep_alive_timeout.totalSeconds(),
+        keep_alive_timeout,
         client_supports_http_compression,
         http_response_compression_method);
 
@@ -729,8 +731,8 @@ void HTTPHandler::processQuery(
     /// to some other value.
     const auto & settings = context->getSettingsRef();
 
-    /// Anything else beside HTTP POST should be readonly queries.
-    if (request.getMethod() != HTTPServerRequest::HTTP_POST)
+    /// Only readonly queries are allowed for HTTP GET requests.
+    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
     {
         if (settings.readonly == 0)
             context->setSetting("readonly", 2);
@@ -884,7 +886,6 @@ void HTTPHandler::processQuery(
         /* allow_into_outfile = */ false,
         context,
         set_query_result,
-        QueryFlags{},
         {},
         handle_exception_in_output_format);
 
@@ -1059,13 +1060,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             response.setChunkedTransferEncoding(true);
 
         HTMLForm params(default_settings, request);
-
-        if (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true))
-            with_stacktrace = true;
-
-        if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
-            close_session = true;
-
+        with_stacktrace = params.getParsed<bool>("stacktrace", false);
+        close_session = params.getParsed<bool>("close_session", false);
         if (close_session)
             session_id = params.get("session_id");
 
@@ -1196,16 +1192,6 @@ bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, cons
         return true;
     }
 
-    if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
-    {
-        /// Save name and values of substitution in dictionary.
-        const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
-
-        if (receive_params.contains(parameter_name))
-            context->setQueryParameter(parameter_name, value);
-        return true;
-    }
-
     return false;
 }
 
@@ -1276,12 +1262,8 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     if (config.has(config_prefix + ".handler.content_type"))
         content_type_override = config.getString(config_prefix + ".handler.content_type");
 
-    auto creator = [&server, query_param_name, content_type_override] () -> std::unique_ptr<DynamicQueryHandler>
-    {
-        return std::make_unique<DynamicQueryHandler>(server, query_param_name, content_type_override);
-    };
-
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(
+        server, std::move(query_param_name), std::move(content_type_override));
 
     factory->addFiltersFromConfig(config, config_prefix);
 
@@ -1352,40 +1334,25 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         auto regex = getCompiledRegex(url_expression);
         if (capturingNamedQueryParam(analyze_receive_params, regex))
         {
-            auto creator = [
-                &server,
-                analyze_receive_params,
-                predefined_query,
-                regex,
-                headers_name_with_regex,
-                content_type_override]
-                -> std::unique_ptr<PredefinedQueryHandler>
-            {
-                return std::make_unique<PredefinedQueryHandler>(
-                    server, analyze_receive_params, predefined_query, regex,
-                    headers_name_with_regex, content_type_override);
-            };
-            factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
+            factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
+                server,
+                std::move(analyze_receive_params),
+                std::move(predefined_query),
+                std::move(regex),
+                std::move(headers_name_with_regex),
+                std::move(content_type_override));
             factory->addFiltersFromConfig(config, config_prefix);
             return factory;
         }
     }
 
-    auto creator = [
-        &server,
-        analyze_receive_params,
-        predefined_query,
-        headers_name_with_regex,
-        content_type_override]
-        -> std::unique_ptr<PredefinedQueryHandler>
-    {
-        return std::make_unique<PredefinedQueryHandler>(
-            server, analyze_receive_params, predefined_query, CompiledRegexPtr{},
-            headers_name_with_regex, content_type_override);
-    };
-
-    factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
-
+    factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(
+        server,
+        std::move(analyze_receive_params),
+        std::move(predefined_query),
+        CompiledRegexPtr{},
+        std::move(headers_name_with_regex),
+        std::move(content_type_override));
     factory->addFiltersFromConfig(config, config_prefix);
 
     return factory;

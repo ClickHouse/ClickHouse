@@ -38,7 +38,6 @@ CREATE TABLE system.clusters
     `cluster` String,
     `shard_num` UInt32,
     `shard_weight` UInt32,
-    `internal_replication` UInt8,
     `replica_num` UInt32,
     `host_name` String,
     `host_address` String,
@@ -52,7 +51,7 @@ CREATE TABLE system.clusters
     `database_shard_name` String,
     `database_replica_name` String,
     `is_active` Nullable(UInt8),
-    `name` String ALIAS cluster
+    `name` String
 )
 ENGINE = SystemClusters
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -135,7 +134,7 @@ CREATE TABLE system.databases
     `uuid` UUID,
     `engine_full` String,
     `comment` String,
-    `database` String ALIAS name
+    `database` String
 )
 ENGINE = SystemDatabases
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -266,7 +265,7 @@ CREATE TABLE system.events
     `event` String,
     `value` UInt64,
     `description` String,
-    `name` String ALIAS event
+    `name` String
 )
 ENGINE = SystemEvents
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -377,7 +376,7 @@ CREATE TABLE system.metrics
     `metric` String,
     `value` Int64,
     `description` String,
-    `name` String ALIAS metric
+    `name` String
 )
 ENGINE = SystemMetrics
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -406,7 +405,6 @@ CREATE TABLE system.mutations
     `parts_to_do_names` Array(String),
     `parts_to_do` Int64,
     `is_done` UInt8,
-    `is_killed` UInt8,
     `latest_failed_part` String,
     `latest_fail_time` DateTime,
     `latest_fail_reason` String
@@ -515,9 +513,9 @@ CREATE TABLE system.parts
     `has_lightweight_delete` UInt8,
     `last_removal_attempt_time` DateTime,
     `removal_state` String,
-    `bytes` UInt64 ALIAS bytes_on_disk,
-    `marks_size` UInt64 ALIAS marks_bytes,
-    `part_name` String ALIAS name
+    `bytes` UInt64,
+    `marks_size` UInt64,
+    `part_name` String
 )
 ENGINE = SystemParts
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -564,8 +562,6 @@ CREATE TABLE system.parts_columns
     `column_marks_bytes` UInt64,
     `column_modification_time` Nullable(DateTime),
     `serialization_kind` String,
-    `substreams` Array(String),
-    `filenames` Array(String),
     `subcolumns.names` Array(String),
     `subcolumns.types` Array(String),
     `subcolumns.serializations` Array(String),
@@ -573,9 +569,9 @@ CREATE TABLE system.parts_columns
     `subcolumns.data_compressed_bytes` Array(UInt64),
     `subcolumns.data_uncompressed_bytes` Array(UInt64),
     `subcolumns.marks_bytes` Array(UInt64),
-    `bytes` UInt64 ALIAS bytes_on_disk,
-    `marks_size` UInt64 ALIAS marks_bytes,
-    `part_name` String ALIAS name
+    `bytes` UInt64,
+    `marks_size` UInt64,
+    `part_name` String
 )
 ENGINE = SystemPartsColumns
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -620,10 +616,10 @@ CREATE TABLE system.processes
     `ProfileEvents` Map(String, UInt64),
     `Settings` Map(String, String),
     `current_database` String,
-    `ProfileEvents.Names` Array(String) ALIAS mapKeys(ProfileEvents),
-    `ProfileEvents.Values` Array(UInt64) ALIAS mapValues(ProfileEvents),
-    `Settings.Names` Array(String) ALIAS mapKeys(Settings),
-    `Settings.Values` Array(String) ALIAS mapValues(Settings)
+    `ProfileEvents.Names` Array(String),
+    `ProfileEvents.Values` Array(UInt64),
+    `Settings.Names` Array(String),
+    `Settings.Values` Array(String)
 )
 ENGINE = SystemProcesses
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -686,9 +682,9 @@ CREATE TABLE system.projection_parts
     `rows_where_ttl_info.expression` Array(String),
     `rows_where_ttl_info.min` Array(DateTime),
     `rows_where_ttl_info.max` Array(DateTime),
-    `bytes` UInt64 ALIAS bytes_on_disk,
-    `marks_size` UInt64 ALIAS marks_bytes,
-    `part_name` String ALIAS name
+    `bytes` UInt64,
+    `marks_size` UInt64,
+    `part_name` String
 )
 ENGINE = SystemProjectionParts
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -742,9 +738,9 @@ CREATE TABLE system.projection_parts_columns
     `column_data_uncompressed_bytes` UInt64,
     `column_marks_bytes` UInt64,
     `column_modification_time` Nullable(DateTime),
-    `bytes` UInt64 ALIAS bytes_on_disk,
-    `marks_size` UInt64 ALIAS marks_bytes,
-    `part_name` String ALIAS name
+    `bytes` UInt64,
+    `marks_size` UInt64,
+    `part_name` String
 )
 ENGINE = SystemProjectionPartsColumns
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -1087,7 +1083,6 @@ CREATE TABLE system.tables
     `storage_policy` String,
     `total_rows` Nullable(UInt64),
     `total_bytes` Nullable(UInt64),
-    `total_bytes_uncompressed` Nullable(UInt64),
     `parts` Nullable(UInt64),
     `active_parts` Nullable(UInt64),
     `total_marks` Nullable(UInt64),
@@ -1099,7 +1094,7 @@ CREATE TABLE system.tables
     `loading_dependencies_table` Array(String),
     `loading_dependent_database` Array(String),
     `loading_dependent_table` Array(String),
-    `table` String ALIAS name
+    `table` String
 )
 ENGINE = SystemTables
 COMMENT 'SYSTEM TABLE is built on the fly.'
@@ -1123,7 +1118,7 @@ CREATE TABLE system.users
     `name` String,
     `id` UUID,
     `storage` String,
-    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9),
+    `auth_type` Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8),
     `auth_params` String,
     `host_ip` Array(String),
     `host_names` Array(String),

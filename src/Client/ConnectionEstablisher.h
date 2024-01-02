@@ -22,7 +22,7 @@ public:
 
     ConnectionEstablisher(IConnectionPool * pool_,
                           const ConnectionTimeouts * timeouts_,
-                          const Settings & settings_,
+                          const Settings * settings_,
                           Poco::Logger * log,
                           const QualifiedTableName * table_to_check = nullptr);
 
@@ -37,12 +37,13 @@ public:
 private:
     IConnectionPool * pool;
     const ConnectionTimeouts * timeouts;
-    const Settings & settings;
+    const Settings * settings;
     Poco::Logger * log;
     const QualifiedTableName * table_to_check;
 
     bool is_finished;
     AsyncCallback async_callback = {};
+
 };
 
 #if defined(OS_LINUX)
@@ -60,7 +61,7 @@ public:
 
     ConnectionEstablisherAsync(IConnectionPool * pool_,
                                const ConnectionTimeouts * timeouts_,
-                               const Settings & settings_,
+                               const Settings * settings_,
                                Poco::Logger * log_,
                                const QualifiedTableName * table_to_check_ = nullptr);
 
@@ -71,7 +72,7 @@ public:
     /// Check if the process of connection establishing was finished.
     /// The process is considered finished if connection is ready,
     /// some exception occurred or timeout exceeded.
-    bool isFinished() const { return is_finished; }
+    bool isFinished() { return is_finished; }
     TryResult getResult() const { return result; }
 
     const std::string & getFailMessage() const { return fail_message; }
@@ -86,10 +87,7 @@ private:
 
     struct Task : public AsyncTask
     {
-        explicit Task(ConnectionEstablisherAsync & connection_establisher_async_)
-            : connection_establisher_async(connection_establisher_async_)
-        {
-        }
+        Task(ConnectionEstablisherAsync & connection_establisher_async_) : connection_establisher_async(connection_establisher_async_) {}
 
         ConnectionEstablisherAsync & connection_establisher_async;
 

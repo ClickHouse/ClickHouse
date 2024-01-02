@@ -314,7 +314,7 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
 
     if (ast_node && prepared_sets)
     {
-        auto key = ast_node->getTreeHash(/*ignore_aliases=*/ true);
+        auto key = ast_node->getTreeHash();
         const auto & sets = prepared_sets->getSetsFromTuple();
         auto it = sets.find(key);
         if (it != sets.end() && !it->second.empty())
@@ -338,9 +338,9 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types)
     if (prepared_sets && ast_node)
     {
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->findSubquery(ast_node->getTreeHash(/*ignore_aliases=*/ true));
+            return prepared_sets->findSubquery(ast_node->getTreeHash());
 
-        return prepared_sets->findTuple(ast_node->getTreeHash(/*ignore_aliases=*/ true), data_types);
+        return prepared_sets->findTuple(ast_node->getTreeHash(), data_types);
     }
     else if (dag_node)
     {
@@ -396,12 +396,6 @@ size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
 
 RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
 {
-    const size_t total_arguments = getArgumentsSize();
-    if (index >= total_arguments) /// Bug #52632
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "RPNBuilderFunctionTreeNode has {} arguments, attempted to get argument at index {}",
-                total_arguments, index);
-
     if (ast_node)
     {
         const auto * ast_function = assert_cast<const ASTFunction *>(ast_node);

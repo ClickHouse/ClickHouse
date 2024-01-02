@@ -212,7 +212,7 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
         {
             auto rc = index->add(static_cast<uint32_t>(index->size()), &column_array_data_float_data[column_array_offsets[current_row - 1]]);
             if (!rc)
-                throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, rc.error.release());
+                throw Exception(ErrorCodes::INCORRECT_DATA, rc.error.release());
 
             ProfileEvents::increment(ProfileEvents::USearchAddCount);
             ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, rc.visited_members);
@@ -243,7 +243,7 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
         {
             auto rc = index->add(static_cast<uint32_t>(index->size()), item.data());
             if (!rc)
-                throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, rc.error.release());
+                throw Exception(ErrorCodes::INCORRECT_DATA, rc.error.release());
 
             ProfileEvents::increment(ProfileEvents::USearchAddCount);
             ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, rc.visited_members);

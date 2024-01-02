@@ -45,13 +45,15 @@ public:
         bool has_force_restore_data_flag);
 
     void startup() override;
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     ~StorageMergeTree() override;
 
     std::string getName() const override { return merging_params.getModeName() + "MergeTree"; }
 
     bool supportsParallelInsert() const override { return true; }
+
+    bool supportsIndexForIn() const override { return true; }
 
     bool supportsTransactions() const override { return true; }
 
@@ -68,7 +70,6 @@ public:
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
-    std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -107,12 +108,11 @@ public:
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
-    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override;
-    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
+    CheckResults checkData(const ASTPtr & query, ContextPtr context) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
-    std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
+    size_t getNumberOfUnfinishedMutations() const override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
@@ -278,32 +278,6 @@ private:
     friend class MergePlainMergeTreeTask;
     friend class MutatePlainMergeTreeTask;
 
-    struct DataValidationTasks : public IStorage::DataValidationTasksBase
-    {
-        DataValidationTasks(DataPartsVector && parts_, ContextPtr context_)
-            : parts(std::move(parts_)), it(parts.begin()), context(std::move(context_))
-        {}
-
-        DataPartPtr next()
-        {
-            std::lock_guard lock(mutex);
-            if (it == parts.end())
-                return nullptr;
-            return *(it++);
-        }
-
-        size_t size() const override
-        {
-            std::lock_guard lock(mutex);
-            return std::distance(it, parts.end());
-        }
-
-        mutable std::mutex mutex;
-        DataPartsVector parts;
-        DataPartsVector::const_iterator it;
-
-        ContextPtr context;
-    };
 
 protected:
     std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const override;

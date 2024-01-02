@@ -3,12 +3,8 @@
 
 #if USE_SSL
 
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsAES.h>
-
-
-namespace DB
-{
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/FunctionsAES.h>
 
 namespace
 {
@@ -21,6 +17,9 @@ struct TryDecryptImpl
 };
 
 }
+
+namespace DB
+{
 
 REGISTER_FUNCTION(TryDecrypt)
 {

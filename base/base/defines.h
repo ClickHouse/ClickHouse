@@ -119,16 +119,17 @@
         #include <base/types.h>
         namespace DB
         {
-            [[noreturn]] void abortOnFailedAssertion(const String & description);
+            void abortOnFailedAssertion(const String & description);
         }
-        #define chassert(x) do { static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(#x); } while (0)
+        #define chassert(x) static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(#x)
         #define UNREACHABLE() abort()
         // clang-format off
     #else
         /// Here sizeof() trick is used to suppress unused warning for result,
         /// since simple "(void)x" will evaluate the expression, while
         /// "sizeof(!(x))" will not.
-        #define chassert(x) (void)sizeof(!(x))
+        #define NIL_EXPRESSION(x) (void)sizeof(!(x))
+        #define chassert(x) NIL_EXPRESSION(x)
         #define UNREACHABLE() __builtin_unreachable()
     #endif
 #endif
@@ -149,7 +150,6 @@
 #    define TSA_ACQUIRE_SHARED(...) __attribute__((acquire_shared_capability(__VA_ARGS__)))          /// function acquires a shared capability, but does not release it
 #    define TSA_TRY_ACQUIRE_SHARED(...) __attribute__((try_acquire_shared_capability(__VA_ARGS__)))  /// function tries to acquire a shared capability and returns a boolean value indicating success or failure
 #    define TSA_RELEASE_SHARED(...) __attribute__((release_shared_capability(__VA_ARGS__)))          /// function releases the given shared capability
-#    define TSA_SCOPED_LOCKABLE __attribute__((scoped_lockable)) /// object of a class has scoped lockable capability
 
 /// Macros for suppressing TSA warnings for specific reads/writes (instead of suppressing it for the whole function)
 /// They use a lambda function to apply function attribute to a single statement. This enable us to suppress warnings locally instead of
@@ -177,7 +177,6 @@
 #    define TSA_ACQUIRE_SHARED(...)
 #    define TSA_TRY_ACQUIRE_SHARED(...)
 #    define TSA_RELEASE_SHARED(...)
-#    define TSA_SCOPED_LOCKABLE
 
 #    define TSA_SUPPRESS_WARNING_FOR_READ(x) (x)
 #    define TSA_SUPPRESS_WARNING_FOR_WRITE(x) (x)

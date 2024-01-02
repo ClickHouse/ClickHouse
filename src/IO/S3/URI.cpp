@@ -26,7 +26,7 @@ struct URIConverter
     static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper)
     {
         Macros macros({{"bucket", uri.getHost()}});
-        uri = macros.expand(mapper[uri.getScheme()]).empty() ? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + uri.getPathAndQuery());
+        uri = macros.expand(mapper[uri.getScheme()]).empty()? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + "/" + uri.getPathAndQuery());
     }
 };
 
@@ -144,12 +144,6 @@ URI::URI(const std::string & uri_)
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
-}
-
-void URI::addRegionToURI(const std::string &region)
-{
-    if (auto pos = endpoint.find("amazonaws.com"); pos != std::string::npos)
-        endpoint = endpoint.substr(0, pos) + region + "." + endpoint.substr(pos);
 }
 
 void URI::validateBucket(const String & bucket, const Poco::URI & uri)

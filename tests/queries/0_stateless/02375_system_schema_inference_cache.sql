@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest
 
 set input_format_json_try_infer_numbers_from_strings=1;
 insert into function file('02374_data1.jsonl') select number as x, 'str' as s from numbers(10);

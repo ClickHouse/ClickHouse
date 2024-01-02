@@ -29,14 +29,14 @@ void LazyPipeFDs::open()
 
 #ifndef OS_DARWIN
     if (0 != pipe2(fds_rw, O_CLOEXEC))
-        throw ErrnoException(ErrorCodes::CANNOT_PIPE, "Cannot create pipe");
+        throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_PIPE);
 #else
     if (0 != pipe(fds_rw))
-        throw ErrnoException(ErrorCodes::CANNOT_PIPE, "Cannot create pipe");
+        throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_PIPE);
     if (0 != fcntl(fds_rw[0], F_SETFD, FD_CLOEXEC))
-        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot setup auto-close on exec for read end of pipe");
+        throwFromErrno("Cannot setup auto-close on exec for read end of pipe", ErrorCodes::CANNOT_FCNTL);
     if (0 != fcntl(fds_rw[1], F_SETFD, FD_CLOEXEC))
-        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot setup auto-close on exec for write end of pipe");
+        throwFromErrno("Cannot setup auto-close on exec for write end of pipe", ErrorCodes::CANNOT_FCNTL);
 #endif
 }
 
@@ -47,7 +47,7 @@ void LazyPipeFDs::close()
         if (fd < 0)
             continue;
         if (0 != ::close(fd))
-            throw ErrnoException(ErrorCodes::CANNOT_PIPE, "Cannot close pipe");
+            throwFromErrno("Cannot close pipe", ErrorCodes::CANNOT_PIPE);
         fd = -1;
     }
 }
@@ -74,18 +74,18 @@ void LazyPipeFDs::setNonBlockingWrite()
 {
     int flags = fcntl(fds_rw[1], F_GETFL, 0);
     if (-1 == flags)
-        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot get file status flags of pipe");
+        throwFromErrno("Cannot get file status flags of pipe", ErrorCodes::CANNOT_FCNTL);
     if (-1 == fcntl(fds_rw[1], F_SETFL, flags | O_NONBLOCK))
-        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot set non-blocking mode of pipe");
+        throwFromErrno("Cannot set non-blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
 }
 
 void LazyPipeFDs::setNonBlockingRead()
 {
     int flags = fcntl(fds_rw[0], F_GETFL, 0);
     if (-1 == flags)
-        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot get file status flags of pipe");
+        throwFromErrno("Cannot get file status flags of pipe", ErrorCodes::CANNOT_FCNTL);
     if (-1 == fcntl(fds_rw[0], F_SETFL, flags | O_NONBLOCK))
-        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot set non-blocking mode of pipe");
+        throwFromErrno("Cannot set non-blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
 }
 
 void LazyPipeFDs::setNonBlockingReadWrite()
@@ -110,13 +110,13 @@ void LazyPipeFDs::tryIncreaseSize(int desired_size)
             /// It will work nevertheless.
         }
         else
-            throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot get pipe capacity");
+            throwFromErrno("Cannot get pipe capacity", ErrorCodes::CANNOT_FCNTL);
     }
     else
     {
         for (errno = 0; errno != EPERM && pipe_size < desired_size; pipe_size *= 2)
             if (-1 == fcntl(fds_rw[1], F_SETPIPE_SZ, pipe_size * 2) && errno != EPERM)
-                throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot increase pipe capacity to {}", pipe_size * 2);
+                throwFromErrno("Cannot increase pipe capacity to " + std::to_string(pipe_size * 2), ErrorCodes::CANNOT_FCNTL);
 
         LOG_TRACE(log, "Pipe capacity is {}", ReadableSize(std::min(pipe_size, desired_size)));
     }

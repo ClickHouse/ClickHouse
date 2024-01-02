@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import argparse
 from pathlib import Path
 from typing import Tuple
 import subprocess
@@ -9,10 +8,11 @@ import sys
 import time
 
 from ci_config import CI_CONFIG, BuildConfig
-from cache_utils import CargoCache
-
+from ccache_utils import CargoCache
+from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_JOB_API_URL,
+    IMAGES_PATH,
     REPO_COPY,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
@@ -23,7 +23,6 @@ from pr_info import PRInfo
 from report import BuildResult, FAILURE, StatusType, SUCCESS
 from s3_helper import S3Helper
 from tee_popen import TeePopen
-import docker_images_helper
 from version_helper import (
     ClickHouseVersion,
     get_version_from_repo,
@@ -164,12 +163,7 @@ def check_for_success_run(
         0,
         GITHUB_JOB_API_URL(),
     )
-    result_json_path = build_result.write_json(Path(TEMP_PATH))
-    logging.info(
-        "Build result file %s is written, content:\n %s",
-        result_json_path,
-        result_json_path.read_text(encoding="utf-8"),
-    )
+    build_result.write_json(Path(TEMP_PATH))
     # Fail build job if not successeded
     if not success:
         sys.exit(1)
@@ -211,35 +205,17 @@ def upload_master_static_binaries(
     elif pr_info.base_ref != "master":
         return
 
-    # Full binary with debug info:
-    s3_path_full = "/".join((pr_info.base_ref, static_binary_name, "clickhouse-full"))
-    binary_full = build_output_path / "clickhouse"
-    url_full = s3_helper.upload_build_file_to_s3(binary_full, s3_path_full)
-    print(f"::notice ::Binary static URL (with debug info): {url_full}")
-
-    # Stripped binary without debug info:
-    s3_path_compact = "/".join((pr_info.base_ref, static_binary_name, "clickhouse"))
-    binary_compact = build_output_path / "clickhouse-stripped"
-    url_compact = s3_helper.upload_build_file_to_s3(binary_compact, s3_path_compact)
-    print(f"::notice ::Binary static URL (compact): {url_compact}")
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser("Clickhouse builder script")
-    parser.add_argument(
-        "build_name",
-        help="build name",
-    )
-    return parser.parse_args()
+    s3_path = "/".join((pr_info.base_ref, static_binary_name, "clickhouse"))
+    binary = build_output_path / "clickhouse"
+    url = s3_helper.upload_build_file_to_s3(binary, s3_path)
+    print(f"::notice ::Binary static URL: {url}")
 
 
 def main():
     logging.basicConfig(level=logging.INFO)
 
-    args = parse_args()
-
     stopwatch = Stopwatch()
-    build_name = args.build_name
+    build_name = sys.argv[1]
 
     build_config = CI_CONFIG.build_config[build_name]
 
@@ -262,12 +238,14 @@ def main():
         (performance_pr, pr_info.sha, build_name, "performance.tar.zst")
     )
 
-    # FIXME: to be removed in favor of "skip by job digest"
     # If this is rerun, then we try to find already created artifacts and just
     # put them as github actions artifact (result)
     # The s3_path_prefix has additional "/" in the end to prevent finding
     # e.g. `binary_darwin_aarch64/clickhouse` for `binary_darwin`
     check_for_success_run(s3_helper, f"{s3_path_prefix}/", build_name, version)
+
+    docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
+    image_version = docker_image.version
 
     logging.info("Got version from repo %s", version.string)
 
@@ -291,17 +269,13 @@ def main():
     )
     cargo_cache.download()
 
-    docker_image = docker_images_helper.pull_image(
-        docker_images_helper.get_docker_image(IMAGE_NAME)
-    )
-
     packager_cmd = get_packager_cmd(
         build_config,
         repo_path / "docker" / "packager",
         build_output_path,
         cargo_cache.directory,
         version.string,
-        docker_image.version,
+        image_version,
         official_flag,
     )
 
@@ -449,10 +423,9 @@ FORMAT JSONCompactEachRow"""
         )
         profile_data_file = temp_path / "profile.json"
         with open(profile_data_file, "wb") as profile_fd:
-            for profile_source in profiles_dir.iterdir():
-                if profile_source.name != "binary_sizes.txt":
-                    with open(profiles_dir / profile_source, "rb") as ps_fd:
-                        profile_fd.write(ps_fd.read())
+            for profile_sourse in profiles_dir.iterdir():
+                with open(profiles_dir / profile_sourse, "rb") as ps_fd:
+                    profile_fd.write(ps_fd.read())
 
         logging.info(
             "::notice ::Log Uploading profile data, path: %s, size: %s, query: %s",
@@ -461,32 +434,6 @@ FORMAT JSONCompactEachRow"""
             query,
         )
         ch_helper.insert_file(url, auth, query, profile_data_file)
-
-        query = f"""INSERT INTO binary_sizes
-(
-    pull_request_number,
-    commit_sha,
-    check_start_time,
-    check_name,
-    instance_type,
-    instance_id,
-    file,
-    size
-)
-SELECT {pr_info.number}, '{pr_info.sha}', '{stopwatch.start_time_str}', '{build_name}', '{instance_type}', '{instance_id}', file, size
-FROM input('size UInt64, file String')
-SETTINGS format_regexp = '^\\s*(\\d+) (.+)$'
-FORMAT Regexp"""
-
-        binary_sizes_file = profiles_dir / "binary_sizes.txt"
-
-        logging.info(
-            "::notice ::Log Uploading binary sizes data, path: %s, size: %s, query: %s",
-            binary_sizes_file,
-            binary_sizes_file.stat().st_size,
-            query,
-        )
-        ch_helper.insert_file(url, auth, query, binary_sizes_file)
 
     # Upload statistics to CI database
     prepared_events = prepare_tests_results_for_clickhouse(

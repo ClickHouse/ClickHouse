@@ -310,7 +310,7 @@ void RegExpTreeDictionary::loadData()
     if (!source_ptr->hasUpdateField())
     {
         QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        PullingPipelineExecutor executor(pipeline);
 
         Block block;
         while (executor.pull(block))
@@ -867,17 +867,12 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
         String dictionary_layout_prefix = config_prefix + ".layout" + ".regexp_tree";
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
+        RegExpTreeDictionary::Configuration configuration{
+            .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false), .lifetime = dict_lifetime};
+
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
-        const auto * clickhouse_source = typeid_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
-
-        RegExpTreeDictionary::Configuration configuration{
-            .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false),
-            .lifetime = dict_lifetime,
-            .use_async_executor = use_async_executor,
-        };
 
         return std::make_unique<RegExpTreeDictionary>(
             dict_id,

@@ -406,7 +406,7 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
 :::note
 But keep in mind that:
 - This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
-- If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
+- It has excessive API calls
 :::
 
 ## Alternatives

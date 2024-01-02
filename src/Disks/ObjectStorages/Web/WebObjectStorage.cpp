@@ -28,7 +28,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int FILE_DOESNT_EXIST;
 }
 
 void WebObjectStorage::initialize(const String & uri_path, const std::unique_lock<std::shared_mutex> & lock) const
@@ -47,7 +46,7 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
             ReadWriteBufferFromHTTP::OutStreamCallback(),
             ConnectionTimeouts::getHTTPTimeouts(
                 getContext()->getSettingsRef(),
-                getContext()->getServerSettings().keep_alive_timeout),
+                {getContext()->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
             credentials,
             /* max_redirects= */ 0,
             /* buffer_size_= */ DBMS_DEFAULT_BUFFER_SIZE,
@@ -125,19 +124,7 @@ bool WebObjectStorage::exists(const StoredObject & object) const
 bool WebObjectStorage::exists(const std::string & path) const
 {
     LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Checking existence of path: {}", path);
-    return tryGetFileInfo(path) != std::nullopt;
-}
 
-WebObjectStorage::FileData WebObjectStorage::getFileInfo(const String & path) const
-{
-    auto file_info = tryGetFileInfo(path);
-    if (!file_info)
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No such file: {}", path);
-    return file_info.value();
-}
-
-std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const String & path) const
-{
     std::shared_lock shared_lock(metadata_mutex);
 
     if (files.find(path) == files.end())
@@ -158,10 +145,10 @@ std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const
     }
 
     if (files.empty())
-        return std::nullopt;
+        return false;
 
-    if (auto it = files.find(path); it != files.end())
-        return it->second;
+    if (files.contains(path))
+        return true;
 
     /// `object_storage.files` contains files + directories only inside `metadata_path / uuid_3_digit / uuid /`
     /// (specific table files only), but we need to be able to also tell if `exists(<metadata_path>)`, for example.
@@ -171,23 +158,13 @@ std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const
     );
 
     if (it == files.end())
-        return std::nullopt;
+        return false;
 
     if (startsWith(it->first, path)
         || (it != files.begin() && startsWith(std::prev(it)->first, path)))
-    {
-        shared_lock.unlock();
-        std::unique_lock unique_lock(metadata_mutex);
+        return true;
 
-        /// Add this directory path not files cache to simplify further checks for this path.
-        files.emplace(std::make_pair(path, FileData({.type = FileType::Directory})));
-
-        unique_lock.unlock();
-        shared_lock.lock();
-
-        return FileData{ .type = FileType::Directory };
-    }
-    return std::nullopt;
+    return false;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObjects( /// NOLINT

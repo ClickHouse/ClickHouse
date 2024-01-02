@@ -796,23 +796,22 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        bool first_arg_is_date_or_datetime_or_string = isDateOrDate32OrDateTimeOrDateTime64(type0) || isString(type0);
-        bool second_arg_is_date_or_datetime_or_string = isDateOrDate32OrDateTimeOrDateTime64(type1) || isString(type1);
+        bool first_is_date_or_datetime = isDateOrDate32(type0) || isDateTime(type0) || isDateTime64(type0);
+        bool second_is_date_or_datetime = isDateOrDate32(type1) || isDateTime(type1) || isDateTime64(type1);
 
-        /// Exactly one argument must be Date or DateTime or String
-        if (first_arg_is_date_or_datetime_or_string == second_arg_is_date_or_datetime_or_string)
+        /// Exactly one argument must be Date or DateTime
+        if (first_is_date_or_datetime == second_is_date_or_datetime)
             return {};
 
-        /// Special case when the function is plus or minus, one of arguments is Date or DateTime or String and another is Interval.
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         /// We construct another function (example: addMonths) and call it.
 
         if constexpr (!is_plus && !is_minus)
             return {};
 
-        const DataTypePtr & type_time = first_arg_is_date_or_datetime_or_string ? type0 : type1;
-        const DataTypePtr & type_interval = first_arg_is_date_or_datetime_or_string ? type1 : type0;
+        const DataTypePtr & type_time = first_is_date_or_datetime ? type0 : type1;
+        const DataTypePtr & type_interval = first_is_date_or_datetime ? type1 : type0;
 
-        bool first_or_second_arg_is_string = isString(type0) || isString(type1);
         bool interval_is_number = isNumber(type_interval);
 
         const DataTypeInterval * interval_data_type = nullptr;
@@ -823,12 +822,8 @@ class FunctionBinaryArithmetic : public IFunction
             if (!interval_data_type)
                 return {};
         }
-        else if (first_or_second_arg_is_string)
-        {
-            return {};
-        }
 
-        if (second_arg_is_date_or_datetime_or_string && is_minus)
+        if (second_is_date_or_datetime && is_minus)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
                                                                   "argument of type Interval cannot be first", name);
 
@@ -853,11 +848,11 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForDateTupleOfIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        bool first_arg_is_date_or_datetime = isDateOrDate32OrDateTimeOrDateTime64(type0);
-        bool second_arg_is_date_or_datetime = isDateOrDate32OrDateTimeOrDateTime64(type1);
+        bool first_is_date_or_datetime = isDateOrDate32(type0) || isDateTime(type0) || isDateTime64(type0);
+        bool second_is_date_or_datetime = isDateOrDate32(type1) || isDateTime(type1) || isDateTime64(type1);
 
         /// Exactly one argument must be Date or DateTime
-        if (first_arg_is_date_or_datetime == second_arg_is_date_or_datetime)
+        if (first_is_date_or_datetime == second_is_date_or_datetime)
             return {};
 
         if (!isTuple(type0) && !isTuple(type1))
@@ -868,7 +863,7 @@ class FunctionBinaryArithmetic : public IFunction
         if constexpr (!is_plus && !is_minus)
             return {};
 
-        if (isTuple(type0) && second_arg_is_date_or_datetime && is_minus)
+        if (isTuple(type0) && second_is_date_or_datetime && is_minus)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
                                                                   "argument of Tuple type cannot be first", name);
 
@@ -1128,7 +1123,7 @@ class FunctionBinaryArithmetic : public IFunction
         ColumnsWithTypeAndName new_arguments = arguments;
 
         /// Interval argument must be second.
-        if (isDateOrDate32OrDateTimeOrDateTime64(arguments[1].type) || isString(arguments[1].type))
+        if (isDateOrDate32(arguments[1].type) || isDateTime(arguments[1].type) || isDateTime64(arguments[1].type))
             std::swap(new_arguments[0], new_arguments[1]);
 
         /// Change interval argument type to its representation
@@ -1483,17 +1478,6 @@ public:
             return getReturnTypeImplStatic(new_arguments, context);
         }
 
-        /// Special case - one or both arguments are IPv6
-        if (isIPv6(arguments[0]) || isIPv6(arguments[1]))
-        {
-            DataTypes new_arguments {
-                    isIPv6(arguments[0]) ? std::make_shared<DataTypeUInt128>() : arguments[0],
-                    isIPv6(arguments[1]) ? std::make_shared<DataTypeUInt128>() : arguments[1],
-            };
-
-            return getReturnTypeImplStatic(new_arguments, context);
-        }
-
 
         if constexpr (is_plus || is_minus)
         {
@@ -1527,7 +1511,7 @@ public:
             }
         }
 
-        /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
         {
             ColumnsWithTypeAndName new_arguments(2);
@@ -1536,7 +1520,7 @@ public:
                 new_arguments[i].type = arguments[i];
 
             /// Interval argument must be second.
-            if (isDateOrDate32OrDateTimeOrDateTime64(new_arguments[1].type) || isString(new_arguments[1].type))
+            if (isDateOrDate32(new_arguments[1].type) || isDateTime(new_arguments[1].type) || isDateTime64(new_arguments[1].type))
                 std::swap(new_arguments[0], new_arguments[1]);
 
             /// Change interval argument to its representation
@@ -2120,7 +2104,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             return executeAggregateAddition(arguments, result_type, input_rows_count);
         }
 
-        /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0].type, arguments[1].type, context))
         {
             return executeDateTimeIntervalPlusMinus(arguments, result_type, input_rows_count, function_builder);
@@ -2185,25 +2169,6 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 {
                     isIPv4(arguments[1].type) ? castColumn(arguments[1], std::make_shared<DataTypeUInt32>()) : arguments[1].column,
                     isIPv4(arguments[1].type) ? std::make_shared<DataTypeUInt32>() : arguments[1].type,
-                    arguments[1].name
-                }
-            };
-
-            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
-        }
-
-        /// Special case - one or both arguments are IPv6
-        if (isIPv6(arguments[0].type) || isIPv6(arguments[1].type))
-        {
-            ColumnsWithTypeAndName new_arguments {
-                {
-                    isIPv6(arguments[0].type) ? castColumn(arguments[0], std::make_shared<DataTypeUInt128>()) : arguments[0].column,
-                    isIPv6(arguments[0].type) ? std::make_shared<DataTypeUInt128>() : arguments[0].type,
-                    arguments[0].name,
-                },
-                {
-                    isIPv6(arguments[1].type) ? castColumn(arguments[1], std::make_shared<DataTypeUInt128>()) : arguments[1].column,
-                    isIPv6(arguments[1].type) ? std::make_shared<DataTypeUInt128>() : arguments[1].type,
                     arguments[1].name
                 }
             };

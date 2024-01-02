@@ -106,15 +106,6 @@ Possible values:
 
 Default value: 0.
 
-## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
-
-Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)
-
-- Maximum volume of RAM (in bytes) that can be used by the single [ORDER BY](../../sql-reference/statements/select/order-by.md) operation. Recommended value is half of available system memory
-- 0 — `ORDER BY` in external memory disabled.
-
-Default value: 0.
-
 ## max_rows_to_sort {#max-rows-to-sort}
 
 A maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
@@ -139,7 +130,7 @@ Limit on the number of bytes in the result. The same as the previous setting.
 
 What to do if the volume of the result exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
 
-Using ‘break’ is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](../../operations/settings/settings.md#setting-max_block_size) and depends on [max_threads](../../operations/settings/settings.md#max_threads).
+Using ‘break’ is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](../../operations/settings/settings.md#setting-max_block_size) and depends on [max_threads](../../operations/settings/settings.md#settings-max_threads).
 
 Example:
 
@@ -172,27 +163,7 @@ If you set `timeout_before_checking_execution_speed `to 0, ClickHouse will use c
 
 ## timeout_overflow_mode {#timeout-overflow-mode}
 
-What to do if the query is run longer than `max_execution_time`: `throw` or `break`. By default, `throw`.
-
-# max_execution_time_leaf
-
-Similar semantic to `max_execution_time` but only apply on leaf node for distributed or remote queries.
-
-For example, if we want to limit execution time on leaf node to `10s` but no limit on the initial node, instead of having `max_execution_time` in the nested subquery settings:
-
-``` sql
-SELECT count() FROM cluster(cluster, view(SELECT * FROM t SETTINGS max_execution_time = 10));
-```
-
-We can use `max_execution_time_leaf` as the query settings:
-
-``` sql
-SELECT count() FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
-```
-
-# timeout_overflow_mode_leaf
-
-What to do when the query in leaf node run longer than `max_execution_time_leaf`: `throw` or `break`. By default, `throw`.
+What to do if the query is run longer than ‘max_execution_time’: ‘throw’ or ‘break’. By default, throw.
 
 ## min_execution_speed {#min-execution-speed}
 

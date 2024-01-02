@@ -43,23 +43,22 @@ Additional join types available in ClickHouse:
 - `LEFT ANTI JOIN` and `RIGHT ANTI JOIN`, a blacklist on “join keys”, without producing a cartesian product.
 - `LEFT ANY JOIN`, `RIGHT ANY JOIN` and `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
 - `ASOF JOIN` and `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
-- `PASTE JOIN`, performs a horizontal concatenation of two tables.
 
 :::note
-When [join_algorithm](../../../operations/settings/settings.md#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
+When [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
 :::
 
 ## Settings
 
-The default join type can be overridden using [join_default_strictness](../../../operations/settings/settings.md#join_default_strictness) setting.
+The default join type can be overridden using [join_default_strictness](../../../operations/settings/settings.md#settings-join_default_strictness) setting.
 
 The behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys) setting.
 
 
 **See also**
 
-- [join_algorithm](../../../operations/settings/settings.md#join_algorithm)
-- [join_any_take_last_row](../../../operations/settings/settings.md#join_any_take_last_row)
+- [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm)
+- [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
 - [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
 - [partial_merge_join_optimizations](../../../operations/settings/settings.md#partial_merge_join_optimizations)
 - [partial_merge_join_rows_in_right_blocks](../../../operations/settings/settings.md#partial_merge_join_rows_in_right_blocks)
@@ -270,33 +269,6 @@ For example, consider the following tables:
 `ASOF` join is **not** supported in the [Join](../../../engines/table-engines/special/join.md) table engine.
 :::
 
-## PASTE JOIN Usage
-
-The result of `PASTE JOIN` is a table that contains all columns from left subquery followed by all columns from the right subquery.
-The rows are matched based on their positions in the original tables (the order of rows should be defined). 
-If the subqueries return a different number of rows, extra rows will be cut.
-
-Example:
-```SQL
-SELECT *
-FROM
-(
-    SELECT number AS a
-    FROM numbers(2)
-) AS t1
-PASTE JOIN
-(
-    SELECT number AS a
-    FROM numbers(2)
-    ORDER BY a DESC
-) AS t2
-
-┌─a─┬─t2.a─┐
-│ 0 │    1 │
-│ 1 │    0 │
-└───┴──────┘
-```
-
 ## Distributed JOIN
 
 There are two ways to execute join involving distributed tables:
@@ -362,7 +334,6 @@ For multiple `JOIN` clauses in a single `SELECT` query:
 
 - Taking all the columns via `*` is available only if tables are joined, not subqueries.
 - The `PREWHERE` clause is not available.
-- The `USING` clause is not available.
 
 For `ON`, `WHERE`, and `GROUP BY` clauses:
 
@@ -380,7 +351,7 @@ If you need a `JOIN` for joining with dimension tables (these are relatively sma
 
 ### Memory Limitations
 
-By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the right_table and creates a hash table for it in RAM. If `join_algorithm = 'auto'` is enabled, then after some threshold of memory consumption, ClickHouse falls back to [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join algorithm. For `JOIN` algorithms description see the [join_algorithm](../../../operations/settings/settings.md#join_algorithm) setting.
+By default, ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the right_table and creates a hash table for it in RAM. If `join_algorithm = 'auto'` is enabled, then after some threshold of memory consumption, ClickHouse falls back to [merge](https://en.wikipedia.org/wiki/Sort-merge_join) join algorithm. For `JOIN` algorithms description see the [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm) setting.
 
 If you need to restrict `JOIN` operation memory consumption use the following settings:
 

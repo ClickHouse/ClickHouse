@@ -12,9 +12,9 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
@@ -288,7 +288,7 @@ DictionaryHierarchyParentToChildIndexPtr FlatDictionary::getHierarchicalIndex() 
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
-    DictionaryHierarchicalParentToChildIndex::ParentToChildIndex parent_to_child;
+    HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
     parent_to_child.reserve(element_count);
 
     UInt64 child_keys_size = static_cast<UInt64>(parent_keys.size());
@@ -395,7 +395,7 @@ void FlatDictionary::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        PullingPipelineExecutor executor(pipeline);
         update_field_loaded_block.reset();
         Block block;
 
@@ -436,7 +436,7 @@ void FlatDictionary::loadData()
     if (!source_ptr->hasUpdateField())
     {
         QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        PullingPipelineExecutor executor(pipeline);
 
         Block block;
         while (executor.pull(block))

@@ -2,7 +2,6 @@
 
 import csv
 import logging
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -22,8 +21,8 @@ from commit_status_helper import (
     post_commit_status,
     format_description,
 )
-from docker_images_helper import DockerImage, pull_image, get_docker_image
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from docker_pull_helper import DockerImage, get_image_with_version
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResult, TestResults, read_test_results
@@ -33,28 +32,14 @@ from tee_popen import TeePopen
 from upload_result_helper import upload_results
 
 
-def get_additional_envs() -> List[str]:
-    result = []
-    # some cloud-specific features require feature flags enabled
-    # so we need this ENV to be able to disable the randomization
-    # of feature flags
-    result.append("RANDOMIZE_KEEPER_FEATURE_FLAGS=1")
-
-    return result
-
-
 def get_run_command(
     build_path: Path,
     result_path: Path,
     repo_tests_path: Path,
     server_log_path: Path,
-    additional_envs: List[str],
     ci_logs_args: str,
     image: DockerImage,
 ) -> str:
-    envs = [f"-e {e}" for e in additional_envs]
-    env_str = " ".join(envs)
-
     cmd = (
         "docker run --cap-add=SYS_PTRACE "
         # For dmesg and sysctl
@@ -65,7 +50,7 @@ def get_run_command(
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} "
+        f"--volume={server_log_path}:/var/log/clickhouse-server {image} "
     )
 
     return cmd
@@ -127,15 +112,12 @@ def run_stress_test(docker_image_name: str) -> None:
 
     stopwatch = Stopwatch()
     temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(REPO_COPY)
     repo_tests_path = repo_path / "tests"
+    reports_path = Path(REPORTS_PATH)
 
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    check_name = sys.argv[1]
 
     pr_info = PRInfo()
 
@@ -147,7 +129,7 @@ def run_stress_test(docker_image_name: str) -> None:
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = pull_image(get_docker_image(docker_image_name))
+    docker_image = get_image_with_version(reports_path, docker_image_name)
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
@@ -166,14 +148,11 @@ def run_stress_test(docker_image_name: str) -> None:
         pr_info, stopwatch.start_time_str, check_name
     )
 
-    additional_envs = get_additional_envs()
-
     run_command = get_run_command(
         packages_path,
         result_path,
         repo_tests_path,
         server_log_path,
-        additional_envs,
         ci_logs_args,
         docker_image,
     )
@@ -216,9 +195,7 @@ def run_stress_test(docker_image_name: str) -> None:
     )
     print(f"::notice ::Report url: {report_url}")
 
-    post_commit_status(
-        commit, state, report_url, description, check_name, pr_info, dump_to_file=True
-    )
+    post_commit_status(commit, state, report_url, description, check_name, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

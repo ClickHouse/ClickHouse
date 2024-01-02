@@ -100,6 +100,8 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
 
+    bool mayBenefitFromIndexForIn(const ASTPtr & /*node*/) const override { return false; }
+
 private:
     const UInt64 trees;
     const String distance_function;

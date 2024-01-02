@@ -44,9 +44,9 @@ void DiskSelector::initialize(const Poco::Util::AbstractConfiguration & config, 
         if (disk_name == default_disk_name)
             has_default_disk = true;
 
-        const auto disk_config_prefix = config_prefix + "." + disk_name;
+        auto disk_config_prefix = config_prefix + "." + disk_name;
 
-        if (disk_validator && !disk_validator(config, disk_config_prefix, disk_name))
+        if (disk_validator && !disk_validator(config, disk_config_prefix))
             continue;
 
         disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context, disks));

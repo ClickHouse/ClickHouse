@@ -7,10 +7,8 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Common/logger_useful.h>
-#include <Storages/ProjectionsDescription.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <algorithm>
+#include <stack>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -109,19 +107,6 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     if (normal_projections.empty())
         return false;
 
-    ContextPtr context = reading->getContext();
-    auto it = std::find_if(normal_projections.begin(), normal_projections.end(), [&](const auto * projection)
-    {
-        return projection->name == context->getSettings().preferred_optimize_projection_name.value;
-    });
-
-    if (it != normal_projections.end())
-    {
-        const ProjectionDescription * preferred_projection = *it;
-        normal_projections.clear();
-        normal_projections.push_back(preferred_projection);
-    }
-
     QueryDAG query;
     {
         auto & child = iter->node->children[iter->next_child - 1];
@@ -137,21 +122,12 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 
     const Names & required_columns = reading->getRealColumnNames();
     const auto & parts = reading->getParts();
-    const auto & alter_conversions = reading->getAlterConvertionsForParts();
     const auto & query_info = reading->getQueryInfo();
+    ContextPtr context = reading->getContext();
     MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
 
-    auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
+    auto ordinary_reading_select_result = reading->selectRangesToRead(parts, /* alter_conversions = */ {});
     size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
-
-    /// Nothing to read. Ignore projections.
-    if (ordinary_reading_marks == 0)
-    {
-        reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
-        return false;
-    }
-
-    const auto & parts_with_ranges = ordinary_reading_select_result->partsWithRanges();
 
     std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
 
@@ -168,16 +144,8 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
             added_filter_nodes.nodes.push_back(query.filter_node);
 
         bool analyzed = analyzeProjectionCandidate(
-            candidate,
-            *reading,
-            reader,
-            required_columns,
-            parts_with_ranges,
-            metadata,
-            query_info,
-            context,
-            max_added_blocks,
-            added_filter_nodes);
+            candidate, *reading, reader, required_columns, parts,
+            metadata, query_info, context, max_added_blocks, added_filter_nodes);
 
         if (!analyzed)
             continue;

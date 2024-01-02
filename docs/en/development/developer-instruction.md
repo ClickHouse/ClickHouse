@@ -7,49 +7,61 @@ description: Prerequisites and an overview of how to build ClickHouse
 
 # Getting Started Guide for Building ClickHouse
 
-ClickHouse can be build on Linux, FreeBSD and macOS. If you use Windows, you can still build ClickHouse in a virtual machine running Linux, e.g. [VirtualBox](https://www.virtualbox.org/) with Ubuntu.
+The building of ClickHouse is supported on Linux, FreeBSD and macOS.
 
-ClickHouse requires a 64-bit system to compile and run, 32-bit systems do not work.
+If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
+
+ClickHouse cannot work or build on a 32-bit system. You should acquire access to a 64-bit system and you can continue reading.
 
 ## Creating a Repository on GitHub {#creating-a-repository-on-github}
 
-To start developing for ClickHouse you will need a [GitHub](https://www.virtualbox.org/) account. Please also generate a SSH key locally (if you don't have one already) and upload the public key to GitHub as this is a prerequisite for contributing patches.
+To start working with ClickHouse repository you will need a GitHub account.
 
-Next, create a fork of the [ClickHouse repository](https://github.com/ClickHouse/ClickHouse/) in your personal account by clicking the "fork" button in the upper right corner.
+You probably already have one, but if you do not, please register at https://github.com. In case you do not have SSH keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same SSH keys that you use with any other SSH servers - probably you already have those.
 
-To contribute, e.g. a fix for an issue or a feature, please commit your changes to a branch in your fork, then create a "pull request" with the changes to the main repository.
+Create a fork of ClickHouse repository. To do that please click on the “fork” button in the upper right corner at https://github.com/ClickHouse/ClickHouse. It will fork your own copy of ClickHouse/ClickHouse to your account.
 
-For working with Git repositories, please install `git`. In Ubuntu run these commands in a terminal:
+The development process consists of first committing the intended changes into your fork of ClickHouse and then creating a “pull request” for these changes to be accepted into the main repository (ClickHouse/ClickHouse).
 
-```sh
-sudo apt update
-sudo apt install git
-```
+To work with git repositories, please install `git`.
 
-A cheatsheet for using Git can be found [here](https://education.github.com/git-cheat-sheet-education.pdf). The detailed manual for Git is [here](https://git-scm.com/book/en/v2).
+To do that in Ubuntu you would run in the command line terminal:
+
+    sudo apt update
+    sudo apt install git
+
+A brief manual on using Git can be found here: https://education.github.com/git-cheat-sheet-education.pdf.
+For a detailed manual on Git see https://git-scm.com/book/en/v2.
 
 ## Cloning a Repository to Your Development Machine {#cloning-a-repository-to-your-development-machine}
 
-First, download the source files to your working machine, i.e. clone the repository:
+Next, you need to download the source files onto your working machine. This is called “to clone a repository” because it creates a local copy of the repository on your working machine.
 
-```sh
-git clone git@github.com:your_github_username/ClickHouse.git  # replace placeholder with your GitHub user name
-cd ClickHouse
-```
+In the command line terminal run:
 
-This command creates a directory `ClickHouse/` containing the source code of ClickHouse. If you specify a custom checkout directory after the URL but it is important that this path does not contain whitespaces as it may lead to problems with the build later on.
+    git clone --shallow-submodules git@github.com:your_github_username/ClickHouse.git
+    cd ClickHouse
 
-The ClickHouse repository uses Git submodules, i.e. references to external repositories (usually 3rd party libraries used by ClickHouse). These are not checked out by default. To do so, you can either
+Or (if you'd like to use sparse checkout for submodules and avoid checking out unneeded files):
 
-- run `git clone` with option `--recurse-submodules`,
+    git clone git@github.com:your_github_username/ClickHouse.git
+    cd ClickHouse
+    ./contrib/update-submodules.sh
 
-- if `git clone` did not check out submodules, run `git submodule update --init --jobs <N>` (e.g. `<N> = 12` to parallelize the checkout) to achieve the same as the previous alternative, or
+Note: please, substitute *your_github_username* with what is appropriate!
 
-- if `git clone` did not check out submodules and you like to use [sparse](https://github.blog/2020-01-17-bring-your-monorepo-down-to-size-with-sparse-checkout/) and [shallow](https://github.blog/2020-12-21-get-up-to-speed-with-partial-clone-and-shallow-clone/) submodule checkout to omit unneeded files and history in submodules to save space (ca. 5 GB instead of ca. 15 GB), run `./contrib/update-submodules.sh`. Not really recommended as it generally makes working with submodules less convenient and slower.
+This command will create a directory `ClickHouse` containing the working copy of the project.
 
-You can check the Git status with the command: `git submodule status`.
+It is important that the path to the working directory contains no whitespaces as it may lead to problems with running the build system.
 
-If you get the following error message
+Please note that ClickHouse repository uses `submodules`. That is what the references to additional repositories are called (i.e. external libraries on which the project depends). It means that when cloning the repository you need to specify the `--recursive` flag as in the example above. If the repository has been cloned without submodules, to download them you need to run the following:
+
+    git submodule init
+    git submodule update
+
+You can check the status with the command: `git submodule status`.
+
+If you get the following error message:
 
     Permission denied (publickey).
     fatal: Could not read from remote repository.
@@ -57,7 +69,7 @@ If you get the following error message
     Please make sure you have the correct access rights
     and the repository exists.
 
-it generally means that the SSH keys for connecting to GitHub are missing. These keys are normally located in `~/.ssh`. For SSH keys to be accepted you need to upload them in GitHub's settings.
+It generally means that the SSH keys for connecting to GitHub are missing. These keys are normally located in `~/.ssh`. For SSH keys to be accepted you need to upload them in the settings section of GitHub UI.
 
 You can also clone the repository via https protocol:
 
@@ -71,17 +83,42 @@ You can also add original ClickHouse repo address to your local repository to pu
 
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
-:::note 
-Instructions below assume you are building on Linux. If you are cross-compiling or building on macOS, please also check for operating system and architecture specific guides, such as building [on macOS for macOS](build-osx.md), [on Linux for macOS](build-cross-osx.md), [on Linux for Linux/RISC-V](build-cross-riscv.md) and so on.
-:::
+### Working with Submodules {#working-with-submodules}
+
+Working with submodules in git could be painful. Next commands will help to manage it:
+
+    # ! each command accepts
+    # Update remote URLs for submodules. Barely rare case
+    git submodule sync
+    # Add new submodules
+    git submodule init
+    # Update existing submodules to the current state
+    git submodule update
+    # Two last commands could be merged together
+    git submodule update --init
+
+The next commands would help you to reset all submodules to the initial state (!WARNING! - any changes inside will be deleted):
+
+    # Synchronizes submodules' remote URL with .gitmodules
+    git submodule sync
+    # Update the registered submodules with initialize not yet initialized
+    git submodule update --init
+    # Reset all changes done after HEAD
+    git submodule foreach git reset --hard
+    # Clean files from .gitignore
+    git submodule foreach git clean -xfd
+    # Repeat last 4 commands for all submodule
+    git submodule foreach git submodule sync
+    git submodule foreach git submodule update --init
+    git submodule foreach git submodule foreach git reset --hard
+    git submodule foreach git submodule foreach git clean -xfd
 
 ## Build System {#build-system}
 
 ClickHouse uses CMake and Ninja for building.
 
-- CMake - a meta-build system that can generate Ninja files (build tasks).
-
-- Ninja - a smaller build system with a focus on the speed used to execute those cmake generated tasks.
+CMake - a meta-build system that can generate Ninja files (build tasks).
+Ninja - a smaller build system with a focus on the speed used to execute those cmake generated tasks.
 
 To install on Ubuntu, Debian or Mint run `sudo apt install cmake ninja-build`.
 
@@ -182,21 +219,13 @@ You can also run your custom-built ClickHouse binary with the config file from t
 
 ## IDE (Integrated Development Environment) {#ide-integrated-development-environment}
 
-**CLion (recommended)**
+If you do not know which IDE to use, we recommend that you use CLion. CLion is commercial software, but it offers 30 days free trial period. It is also free of charge for students. CLion can be used both on Linux and on macOS.
 
-If you do not know which IDE to use, we recommend that you use [CLion](https://www.jetbrains.com/clion/). CLion is commercial software but it offers a 30 day free trial. It is also free of charge for students. CLion can be used on both Linux and macOS.
+KDevelop and QTCreator are other great alternatives of an IDE for developing ClickHouse. KDevelop comes in as a very handy IDE although unstable. If KDevelop crashes after a while upon opening project, you should click “Stop All” button as soon as it has opened the list of project’s files. After doing so KDevelop should be fine to work with.
 
-A few things to know when using CLion to develop ClickHouse:
+As simple code editors, you can use Sublime Text or Visual Studio Code, or Kate (all of which are available on Linux).
 
-- CLion creates a `build` path on its own and automatically selects `debug` for the build type
-- It uses a version of CMake that is defined in CLion and not the one installed by you
-- CLion will use `make` to run build tasks instead of `ninja` (this is normal behavior)
-
-**Other alternatives**
-
-[KDevelop](https://kdevelop.org/) and [QTCreator](https://www.qt.io/product/development-tools) are other great alternative IDEs for developing ClickHouse. While KDevelop is a great IDE, it is sometimes unstable. If KDevelop crashes when opening a project, you should click the “Stop All” button as soon as it has opened the list of project’s files. After doing so, KDevelop should be fine to work with.
-
-Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Visual Studio Code](https://code.visualstudio.com/), or [Kate](https://kate-editor.org/) (all of which are available on Linux). If you are using VS Code, we recommend using the [clangd extension](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) to replace IntelliSense as it is much more performant.
+Just in case, it is worth mentioning that CLion creates `build` path on its own, it also on its own selects `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally, CLion will use `make` to run build tasks instead of `ninja`. This is normal behaviour, just keep that in mind to avoid confusion.
 
 ## Writing Code {#writing-code}
 
@@ -253,7 +282,7 @@ Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHous
 
 If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
 ```
--DENABLE_LIBRARIES=0
+-DENABLE_LIBRARIES=0 -DENABLE_EMBEDDED_COMPILER=0
 ```
 
 In case of problems with any of the development options, you are on your own!

@@ -12,8 +12,6 @@
 #include <base/getThreadId.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
-
 
 namespace ProfileEvents
 {
@@ -30,11 +28,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace FailPoints
-{
-    extern const char prefetched_reader_pool_failpoint[];
-}
-
 bool MergeTreePrefetchedReadPool::TaskHolder::operator<(const TaskHolder & other) const
 {
     chassert(task->priority >= 0);
@@ -44,53 +37,27 @@ bool MergeTreePrefetchedReadPool::TaskHolder::operator<(const TaskHolder & other
     return task->priority > other.task->priority; /// Less is better.
 }
 
-
-MergeTreePrefetchedReadPool::PrefetchedReaders::~PrefetchedReaders()
-{
-    for (auto & prefetch_future : prefetch_futures)
-        if (prefetch_future.valid())
-            prefetch_future.wait();
-}
-
-MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
+MergeTreePrefetchedReadPool::PrefetechedReaders::PrefetechedReaders(
     MergeTreeReadTask::Readers readers_,
     Priority priority_,
     MergeTreePrefetchedReadPool & pool_)
     : is_valid(true)
     , readers(std::move(readers_))
 {
-    try
-    {
-        prefetch_futures.reserve(1 + readers.prewhere.size());
+    prefetch_futures.push_back(pool_.createPrefetchedFuture(readers.main.get(), priority_));
 
-        prefetch_futures.push_back(pool_.createPrefetchedFuture(readers.main.get(), priority_));
-
-        for (const auto & reader : readers.prewhere)
-            prefetch_futures.push_back(pool_.createPrefetchedFuture(reader.get(), priority_));
-
-        fiu_do_on(FailPoints::prefetched_reader_pool_failpoint,
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for prefetched reader enabled");
-        });
-    }
-    catch (...) /// in case of memory exceptions we have to wait
-    {
-        for (auto & prefetch_future : prefetch_futures)
-            if (prefetch_future.valid())
-                prefetch_future.wait();
-
-        throw;
-    }
+    for (const auto & reader : readers.prewhere)
+        prefetch_futures.push_back(pool_.createPrefetchedFuture(reader.get(), priority_));
 }
 
-void MergeTreePrefetchedReadPool::PrefetchedReaders::wait()
+void MergeTreePrefetchedReadPool::PrefetechedReaders::wait()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
     for (auto & prefetch_future : prefetch_futures)
         prefetch_future.wait();
 }
 
-MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetchedReaders::get()
+MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetechedReaders::get()
 {
     SCOPE_EXIT({ is_valid = false; });
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
@@ -158,12 +125,12 @@ std::future<void> MergeTreePrefetchedReadPool::createPrefetchedFuture(IMergeTree
 
 void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & task)
 {
-    if (task.isValidReadersFuture())
+    if (task.readers_future.valid())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task already has a reader");
 
     auto extras = getExtras();
     auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges);
-    task.readers_future = std::make_unique<PrefetchedReaders>(std::move(readers), task.priority, *this);
+    task.readers_future = PrefetechedReaders(std::move(readers), task.priority, *this);
 }
 
 void MergeTreePrefetchedReadPool::startPrefetches()
@@ -243,7 +210,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 
         auto task_it = std::find_if(
             thread_tasks.begin(), thread_tasks.end(),
-            [](const auto & task) { return task->isValidReadersFuture(); });
+            [](const auto & task) { return task->readers_future.valid(); });
 
         if (task_it == thread_tasks.end())
         {
@@ -270,7 +237,7 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 
         auto task_it = std::find_if(
             thread_tasks.begin(), thread_tasks.end(),
-            [](const auto & task) { return task->isValidReadersFuture(); });
+            [](const auto & task) { return task->readers_future.valid(); });
 
         assert(task_it != thread_tasks.end());
         auto thread_task = std::move(*task_it);
@@ -318,13 +285,13 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, MergeTreeReadTask * previous_task)
 {
-    if (task.isValidReadersFuture())
+    if (task.readers_future.valid())
     {
         auto size_predictor = task.read_info->shared_size_predictor
             ? std::make_unique<MergeTreeBlockSizePredictor>(*task.read_info->shared_size_predictor)
             : nullptr;
 
-        return std::make_unique<MergeTreeReadTask>(task.read_info, task.readers_future->get(), task.ranges, std::move(size_predictor));
+        return std::make_unique<MergeTreeReadTask>(task.read_info, task.readers_future.get(), task.ranges, std::move(size_predictor));
     }
 
     return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, previous_task);
@@ -395,7 +362,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
     for (const auto & part : per_part_statistics)
         total_size_approx += part.sum_marks * part.approx_size_of_mark;
 
-    size_t min_prefetch_step_marks = pool_settings.min_marks_for_concurrent_read;
+    size_t min_prefetch_step_marks = 0;
     for (size_t i = 0; i < per_part_infos.size(); ++i)
     {
         auto & part_stat = per_part_statistics[i];
@@ -596,7 +563,7 @@ std::string MergeTreePrefetchedReadPool::dumpTasks(const TasksPerThread & tasks)
             {
                 result << '\t';
                 result << ++no << ": ";
-                result << "reader future: " << task->isValidReadersFuture() << ", ";
+                result << "reader future: " << task->readers_future.valid() << ", ";
                 result << "part: " << task->read_info->data_part->name << ", ";
                 result << "ranges: " << toString(task->ranges);
             }

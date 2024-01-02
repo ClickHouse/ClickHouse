@@ -54,31 +54,10 @@ if (SANITIZE)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
 
+        # llvm-tblgen, that is used during LLVM build, doesn't work with UBSan.
+        set (ENABLE_EMBEDDED_COMPILER 0 CACHE BOOL "")
+
     else ()
         message (FATAL_ERROR "Unknown sanitizer type: ${SANITIZE}")
     endif ()
 endif()
-
-# Default coverage instrumentation (dumping the coverage map on exit)
-option(WITH_COVERAGE "Instrumentation for code coverage with default implementation" OFF)
-
-if (WITH_COVERAGE)
-    message (INFORMATION "Enabled instrumentation for code coverage")
-    set(COVERAGE_FLAGS "-fprofile-instr-generate -fcoverage-mapping")
-endif()
-
-option (SANITIZE_COVERAGE "Instrumentation for code coverage with custom callbacks" OFF)
-
-if (SANITIZE_COVERAGE)
-    message (INFORMATION "Enabled instrumentation for code coverage")
-
-    # We set this define for whole build to indicate that at least some parts are compiled with coverage.
-    # And to expose it in system.build_options.
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSANITIZE_COVERAGE=1")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSANITIZE_COVERAGE=1")
-
-    # But the actual coverage will be enabled on per-library basis: for ClickHouse code, but not for 3rd-party.
-    set (COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard,pc-table")
-endif()
-
-set (WITHOUT_COVERAGE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table")

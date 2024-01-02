@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/AsynchronousInsertQueue.h>
+#include "Common/Exception.h"
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
@@ -30,9 +30,6 @@ struct AsynchronousInsertLogElement
     UInt64 rows{};
     String exception;
     Status status{};
-
-    using DataKind = AsynchronousInsertQueue::DataKind;
-    DataKind data_kind{};
 
     time_t flush_time{};
     Decimal64 flush_time_microseconds{};

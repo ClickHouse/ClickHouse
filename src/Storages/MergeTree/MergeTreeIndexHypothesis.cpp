@@ -91,6 +91,11 @@ MergeTreeIndexMergedConditionPtr MergeTreeIndexHypothesis::createIndexMergedCond
         query_info, storage_metadata->getConstraints(), index.granularity);
 }
 
+bool MergeTreeIndexHypothesis::mayBenefitFromIndexForIn(const ASTPtr &) const
+{
+    return false;
+}
+
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index)
 {
     return std::make_shared<MergeTreeIndexHypothesis>(index);

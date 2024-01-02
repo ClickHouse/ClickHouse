@@ -52,7 +52,7 @@ std::vector<size_t> TableFunctionS3::skipAnalysisForArguments(const QueryTreeNod
     return result;
 }
 
-/// This is needed to avoid copy-paste. Because s3Cluster arguments only differ in additional argument (first) - cluster name
+/// This is needed to avoid copy-pase. Because s3Cluster arguments only differ in additional argument (first) - cluster name
 void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
@@ -71,7 +71,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         if (header_it != args.end())
             args.erase(header_it);
 
-        if (args.empty() || args.size() > 7)
+        if (args.empty() || args.size() > 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "The signature of table function {} shall be the following:\n{}", getName(), getSignature());
 
         for (auto & arg : args)
@@ -81,7 +81,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
         static std::unordered_map<size_t, std::unordered_map<std::string_view, size_t>> size_to_args
         {
             {1, {{}}},
-            {7, {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}}}
+            {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}}}
         };
 
         std::unordered_map<std::string_view, size_t> args_to_idx;
@@ -118,12 +118,11 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
             else
                 args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
         }
-        /// For 4 arguments we support 4 possible variants:
+        /// For 4 arguments we support 3 possible variants:
         /// - s3(source, format, structure, compression_method),
-        /// - s3(source, access_key_id, access_key_id, format),
-        /// - s3(source, access_key_id, access_key_id, session_token)
+        /// - s3(source, access_key_id, access_key_id, format)
         /// - s3(source, NOSIGN, format, structure)
-        /// We can distinguish them by looking at the 2-nd and 4-th argument: check if it's a format name or not.
+        /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
         else if (args.size() == 4)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "format/access_key_id/NOSIGN");
@@ -133,28 +132,14 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
                 args_to_idx = {{"format", 2}, {"structure", 3}};
             }
             else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
-            {
                 args_to_idx = {{"format", 1}, {"structure", 2}, {"compression_method", 3}};
-            }
             else
-            {
-                auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
-                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
-                {
-                    args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
-                }
-                else
-                {
-                    args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}};
-                }
-            }
+                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
         }
-        /// For 5 arguments we support 3 possible variants:
+        /// For 5 arguments we support 2 possible variants:
         /// - s3(source, access_key_id, access_key_id, format, structure)
-        /// - s3(source, access_key_id, access_key_id, session_token, format)
         /// - s3(source, NOSIGN, format, structure, compression_method)
-        /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN keyword name or no,
-        /// and by the 4-th argument, check if it's a format name or not
+        /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN keyword name or not.
         else if (args.size() == 5)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "NOSIGN/access_key_id");
@@ -164,33 +149,7 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
                 args_to_idx = {{"format", 2}, {"structure", 3}, {"compression_method", 4}};
             }
             else
-            {
-                auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
-                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
-                {
-                    args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}};
-                }
-                else
-                {
-                    args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}};
-                }
-            }
-        }
-        // For 6 arguments we support 2 possible variants:
-        /// - s3(source, access_key_id, access_key_id, format, structure, compression_method)
-        /// - s3(source, access_key_id, access_key_id, session_token, format, structure)
-        /// We can distinguish them by looking at the 4-th argument: check if it's a format name or not
-        else if (args.size() == 6)
-        {
-            auto fourth_arg = checkAndGetLiteralArgument<String>(args[3], "format/session_token");
-            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
-            {
-                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}};
-            }
-            else
-            {
-                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}};
-            }
+                args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}};
         }
         else
         {
@@ -221,9 +180,6 @@ void TableFunctionS3::parseArgumentsImpl(ASTs & args, const ContextPtr & context
 
         if (args_to_idx.contains("secret_access_key"))
             configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(args[args_to_idx["secret_access_key"]], "secret_access_key");
-
-        if (args_to_idx.contains("session_token"))
-            configuration.auth_settings.session_token = checkAndGetLiteralArgument<String>(args[args_to_idx["session_token"]], "session_token");
 
         configuration.auth_settings.no_sign_request = no_sign_request;
 
@@ -378,12 +334,6 @@ ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context, 
 bool TableFunctionS3::supportsReadingSubsetOfColumns(const ContextPtr & context)
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration.format, context);
-}
-
-std::unordered_set<String> TableFunctionS3::getVirtualsToCheckBeforeUsingStructureHint() const
-{
-    auto virtual_column_names = StorageS3::getVirtualColumnNames();
-    return {virtual_column_names.begin(), virtual_column_names.end()};
 }
 
 StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const

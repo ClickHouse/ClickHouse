@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ctime>
+#include <time.h>
 #include <cstdlib>
 #include <climits>
 #include <random>
@@ -180,7 +180,6 @@ PoolWithFailoverBase<TNestedPool>::getShuffledPools(
     shuffled_pools.reserve(nested_pools.size());
     for (size_t i = 0; i < nested_pools.size(); ++i)
         shuffled_pools.push_back(ShuffledPool{nested_pools[i].get(), &pool_states[i], i, /* error_count = */ 0, /* slowdown_count = */ 0});
-
     ::sort(
         shuffled_pools.begin(), shuffled_pools.end(),
         [](const ShuffledPool & lhs, const ShuffledPool & rhs)

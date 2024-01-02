@@ -481,7 +481,7 @@ public:
         if (file.fd == -1)
         {
             auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-            ErrnoException::throwFromPath(error_code, file_path, "Cannot open file {}", file_path);
+            throwFromErrnoWithPath("Cannot open file " + file_path, file_path, error_code);
         }
 
         allocateSizeForNextPartition();
@@ -490,8 +490,7 @@ public:
     void allocateSizeForNextPartition()
     {
         if (preallocateDiskSpace(file.fd, current_blocks_size * block_size, block_size * file_blocks_size) < 0)
-            ErrnoException::throwFromPath(
-                ErrorCodes::CANNOT_ALLOCATE_MEMORY, file_path, "Cannot preallocate space for the file {}", file_path);
+            throwFromErrnoWithPath("Cannot preallocate space for the file " + file_path, file_path, ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         current_blocks_size += file_blocks_size;
     }
@@ -553,11 +552,11 @@ public:
         Stopwatch watch;
         #if defined(OS_DARWIN)
         if (::fsync(file.fd) < 0)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, file_path, "Cannot fsync {}", file_path);
-#    else
+            throwFromErrnoWithPath("Cannot fsync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
+        #else
         if (::fdatasync(file.fd) < 0)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, file_path, "Cannot fdatasync {}", file_path);
-#    endif
+            throwFromErrnoWithPath("Cannot fdatasync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
+        #endif
         ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
 
         current_block_index += buffer_size_in_blocks;
@@ -599,13 +598,13 @@ public:
         while (io_submit(aio_context.ctx, 1, &request_ptr) != 1)
         {
             if (errno != EINTR)
-                throw ErrnoException(ErrorCodes::CANNOT_IO_SUBMIT, "io_submit: Failed to submit a request for asynchronous IO");
+                throwFromErrno("io_submit: Failed to submit a request for asynchronous IO", ErrorCodes::CANNOT_IO_SUBMIT);
         }
 
         while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) != 1)
         {
             if (errno != EINTR)
-                throw ErrnoException(ErrorCodes::CANNOT_IO_GETEVENTS, "io_getevents: Failed to get an event for asynchronous IO");
+                throwFromErrno("io_getevents: Failed to get an event for asynchronous IO", ErrorCodes::CANNOT_IO_GETEVENTS);
         }
 
         auto read_bytes = eventResult(event);
@@ -693,7 +692,7 @@ public:
             while (to_pop < to_push && (popped = io_getevents(aio_context.ctx, to_push - to_pop, to_push - to_pop, &events[to_pop], nullptr)) <= 0)
             {
                 if (errno != EINTR)
-                    throw ErrnoException(ErrorCodes::CANNOT_IO_GETEVENTS, "io_getevents: Failed to get an event for asynchronous IO");
+                    throwFromErrno("io_getevents: Failed to get an event for asynchronous IO", ErrorCodes::CANNOT_IO_GETEVENTS);
             }
 
             for (size_t i = to_pop; i < to_pop + popped; ++i)
@@ -744,7 +743,7 @@ public:
             while (new_tasks_count > 0 && (pushed = io_submit(aio_context.ctx, new_tasks_count, &pointers[to_push])) <= 0)
             {
                 if (errno != EINTR)
-                    throw ErrnoException(ErrorCodes::CANNOT_IO_SUBMIT, "io_submit: Failed to submit a request for asynchronous IO");
+                    throwFromErrno("io_submit: Failed to submit a request for asynchronous IO", ErrorCodes::CANNOT_IO_SUBMIT);
             }
 
             to_push += pushed;

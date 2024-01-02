@@ -1840,9 +1840,9 @@ Converts an `Int64` to a `DateTime64` value with fixed sub-second precision and 
 **Syntax**
 
 ``` sql
-fromUnixTimestamp64Milli(value[, timezone])
-fromUnixTimestamp64Micro(value[, timezone])
-fromUnixTimestamp64Nano(value[, timezone])
+fromUnixTimestamp64Milli(value [, timezone])
+fromUnixTimestamp64Micro(value [, timezone])
+fromUnixTimestamp64Nano(value [, timezone])
 ```
 
 **Arguments**
@@ -1982,12 +1982,12 @@ Result:
 
 ## snowflakeToDateTime
 
-Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime](/docs/en/sql-reference/data-types/datetime.md) format.
+Extracts time from [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as [DateTime](/docs/en/sql-reference/data-types/datetime.md) format.
 
 **Syntax**
 
 ``` sql
-snowflakeToDateTime(value[, time_zone])
+snowflakeToDateTime(value [, time_zone])
 ```
 
 **Parameters**
@@ -1997,7 +1997,7 @@ snowflakeToDateTime(value[, time_zone])
 
 **Returned value**
 
-- The timestamp component of `value` as a [DateTime](/docs/en/sql-reference/data-types/datetime.md) value.
+- Input value converted to the [DateTime](/docs/en/sql-reference/data-types/datetime.md) data type.
 
 **Example**
 
@@ -2018,12 +2018,12 @@ Result:
 
 ## snowflakeToDateTime64
 
-Extracts the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) in [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) format.
+Extracts time from [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) format.
 
 **Syntax**
 
 ``` sql
-snowflakeToDateTime64(value[, time_zone])
+snowflakeToDateTime64(value [, time_zone])
 ```
 
 **Parameters**
@@ -2033,7 +2033,7 @@ snowflakeToDateTime64(value[, time_zone])
 
 **Returned value**
 
-- The timestamp component of `value` as a [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) with scale = 3, i.e. millisecond precision.
+- Input value converted to the [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) data type.
 
 **Example**
 
@@ -2054,7 +2054,7 @@ Result:
 
 ## dateTimeToSnowflake
 
-Converts a [DateTime](/docs/en/sql-reference/data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+Converts [DateTime](/docs/en/sql-reference/data-types/datetime.md) value to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
 
@@ -2064,7 +2064,7 @@ dateTimeToSnowflake(value)
 
 **Parameters**
 
-- `value` — Date with time. [DateTime](/docs/en/sql-reference/data-types/datetime.md).
+- `value` — Date and time. [DateTime](/docs/en/sql-reference/data-types/datetime.md).
 
 **Returned value**
 
@@ -2088,7 +2088,7 @@ Result:
 
 ## dateTime64ToSnowflake
 
-Convert a [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
+Convert [DateTime64](/docs/en/sql-reference/data-types/datetime64.md) to the first [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) at the giving time.
 
 **Syntax**
 
@@ -2098,7 +2098,7 @@ dateTime64ToSnowflake(value)
 
 **Parameters**
 
-- `value` — Date with time. [DateTime64](/docs/en/sql-reference/data-types/datetime64.md).
+- `value` — Date and time. [DateTime64](/docs/en/sql-reference/data-types/datetime64.md).
 
 **Returned value**
 

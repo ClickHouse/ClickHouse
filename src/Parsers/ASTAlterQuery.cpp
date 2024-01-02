@@ -201,33 +201,6 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
             partition->formatImpl(settings, state, frame);
         }
     }
-    else if (type == ASTAlterCommand::ADD_STATISTIC)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD STATISTIC " << (if_not_exists ? "IF NOT EXISTS " : "")
-                      << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
-    }
-    else if (type == ASTAlterCommand::DROP_STATISTIC)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistic ? "CLEAR " : "DROP ") << "STATISTIC "
-                      << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
-        if (partition)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(settings, state, frame);
-        }
-    }
-    else if (type == ASTAlterCommand::MATERIALIZE_STATISTIC)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE STATISTIC " << (settings.hilite ? hilite_none : "");
-        statistic_decl->formatImpl(settings, state, frame);
-        if (partition)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(settings, state, frame);
-        }
-    }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD CONSTRAINT " << (if_not_exists ? "IF NOT EXISTS " : "")
@@ -453,12 +426,6 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
                       << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
     }
-    else if (type == ASTAlterCommand::MODIFY_REFRESH)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY REFRESH " << settings.nl_or_ws
-                      << (settings.hilite ? hilite_none : "");
-        refresh->formatImpl(settings, state, frame);
-    }
     else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "REFRESH " << (settings.hilite ? hilite_none : "");
@@ -471,16 +438,6 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
         rename_to->formatImpl(settings, state, frame);
-    }
-    else if (type == ASTAlterCommand::APPLY_DELETED_MASK)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY DELETED MASK" << (settings.hilite ? hilite_none : "");
-
-        if (partition)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
-            partition->formatImpl(settings, state, frame);
-        }
     }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
@@ -527,11 +484,6 @@ bool ASTAlterQuery::isFetchAlter() const
 bool ASTAlterQuery::isDropPartitionAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::DROP_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::DROP_DETACHED_PARTITION);
-}
-
-bool ASTAlterQuery::isCommentAlter() const
-{
-    return isOneCommandTypeOnly(ASTAlterCommand::COMMENT_COLUMN) || isOneCommandTypeOnly(ASTAlterCommand::MODIFY_COMMENT);
 }
 
 bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const

@@ -66,8 +66,6 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
 
         {"serialization_kind",                         std::make_shared<DataTypeString>()},
-        {"substreams",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"filenames",                                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"subcolumns.names",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"subcolumns.types",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"subcolumns.serializations",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
@@ -129,14 +127,12 @@ void StorageSystemPartsColumns::processNextStorage(
         {
             ++column_position;
             size_t src_index = 0, res_index = 0;
-
             if (columns_mask[src_index++])
             {
                 WriteBufferFromOwnString out;
                 part->partition.serializeText(*info.data, out, format_settings);
                 columns[res_index++]->insert(out.str());
             }
-
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])
@@ -253,23 +249,6 @@ void StorageSystemPartsColumns::processNextStorage(
             auto serialization = part->getSerialization(column.name);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(ISerialization::kindToString(serialization->getKind()));
-
-            Array substreams;
-            Array filenames;
-
-            serialization->enumerateStreams([&](const auto & subpath)
-            {
-                auto substream = ISerialization::getFileNameForStream(column.name, subpath);
-                auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, part->checksums);
-
-                substreams.push_back(std::move(substream));
-                filenames.push_back(filename.value_or(""));
-            });
-
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(substreams);
-            if (columns_mask[src_index++])
-                columns[res_index++]->insert(filenames);
 
             Array subcolumn_names;
             Array subcolumn_types;

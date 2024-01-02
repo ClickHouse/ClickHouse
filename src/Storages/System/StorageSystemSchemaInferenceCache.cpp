@@ -40,8 +40,7 @@ NamesAndTypesList StorageSystemSchemaInferenceCache::getNamesAndTypes()
         {"additional_format_info", std::make_shared<DataTypeString>()},
         {"registration_time", std::make_shared<DataTypeDateTime>()},
         {"schema", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"number_of_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"schema_inference_mode", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"number_of_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())}
     };
 }
 
@@ -65,7 +64,6 @@ static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cach
             res_columns[6]->insert(*schema_info.num_rows);
         else
             res_columns[6]->insertDefault();
-        res_columns[7]->insert(key.schema_inference_mode);
     }
 }
 

@@ -1,5 +1,5 @@
 #include <Processors/LimitTransform.h>
-
+#include <Processors/Transforms/LimitPartialResultTransform.h>
 
 namespace DB
 {
@@ -180,7 +180,6 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         return Status::NeedData;
 
     data.current_chunk = input.pull(true);
-
     auto rows = data.current_chunk.getNumRows();
 
     if (rows_before_limit_at_least && !data.input_port_has_counter)
@@ -365,6 +364,12 @@ bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort
         if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *previous_row_sort_columns[i], 1))
             return false;
     return true;
+}
+
+ProcessorPtr LimitTransform::getPartialResultProcessor(const ProcessorPtr & /*current_processor*/, UInt64 partial_result_limit, UInt64 partial_result_duration_ms)
+{
+    const auto & header = inputs.front().getHeader();
+    return std::make_shared<LimitPartialResultTransform>(header, partial_result_limit, partial_result_duration_ms, limit, offset);
 }
 
 }

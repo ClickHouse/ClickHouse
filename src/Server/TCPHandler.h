@@ -21,7 +21,6 @@
 #include <Formats/NativeWriter.h>
 
 #include "IServer.h"
-#include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include "base/types.h"
@@ -74,8 +73,6 @@ struct QueryState
 
     /// Query text.
     String query;
-    /// Parsed query
-    ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
 
@@ -251,9 +248,7 @@ private:
     [[noreturn]] void receiveUnexpectedTablesStatusRequest();
 
     /// Process INSERT query
-    void startInsertQuery();
     void processInsertQuery();
-    AsynchronousInsertQueue::PushResult processAsyncInsertQuery(AsynchronousInsertQueue & insert_queue);
 
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();

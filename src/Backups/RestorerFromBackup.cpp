@@ -43,6 +43,14 @@ namespace Stage = BackupCoordinationStage;
 
 namespace
 {
+    /// Uppercases the first character of a passed string.
+    String toUpperFirst(const String & str)
+    {
+        String res = str;
+        res[0] = std::toupper(res[0]);
+        return res;
+    }
+
     /// Outputs "table <name>" or "temporary table <name>"
     String tableNameWithTypeToString(const String & database_name, const String & table_name, bool first_upper)
     {
@@ -137,7 +145,7 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 
 void RestorerFromBackup::setStage(const String & new_stage, const String & message)
 {
-    LOG_TRACE(log, "Setting stage: {}", new_stage);
+    LOG_TRACE(log, fmt::runtime(toUpperFirst(new_stage)));
     current_stage = new_stage;
 
     if (restore_coordination)

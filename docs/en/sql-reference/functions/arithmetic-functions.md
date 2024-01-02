@@ -73,7 +73,7 @@ Calculates the product of two values `a` and `b`.
 multiply(a, b)
 ```
 
-Alias: `a * b` (operator)
+Alias: `a \* b` (operator)
 
 ## divide
 
@@ -345,9 +345,9 @@ Result:
 ┌─multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
 │                                               -26.8609633 │
 └───────────────────────────────────────────────────────────┘
-┌───────a─┬──────b─┬─multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
-│ -12.647 │ 2.1239 │                                                         -26.8609 │
-└─────────┴────────┴──────────────────────────────────────────────────────────────────┘
+┌─multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
+│                                                         -26.8609 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql
@@ -440,41 +440,4 @@ DB::Exception: Decimal result's scale is less than argument's one: While process
 ┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 5)─┐
 │ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
 └─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
-```
-
-## byteSwap
-
-Reverses the bytes of an integer, i.e. changes its [endianness](https://en.wikipedia.org/wiki/Endianness).
-
-**Syntax**
-
-```sql
-byteSwap(a)
-```
-
-**Example**
-
-```sql
-byteSwap(3351772109)
-```
-
-Result:
-
-```result
-┌─byteSwap(3351772109)─┐
-│           3455829959 │
-└──────────────────────┘
-```
-
-The above example can be worked out in the following manner:
-1. Convert the base-10 integer to its equivalent hexadecimal format in big-endian format, i.e. 3351772109 -> C7 C7 FB CD (4 bytes)
-2. Reverse the bytes, i.e. C7 C7 FB CD -> CD FB C7 C7
-3. Convert the result back to an integer assuming big-endian, i.e. CD FB C7 C7  -> 3455829959
-
-One use case of this function is reversing IPv4s:
-
-```result
-┌─toIPv4(byteSwap(toUInt32(toIPv4('205.251.199.199'))))─┐
-│ 199.199.251.205                                       │
-└───────────────────────────────────────────────────────┘
 ```

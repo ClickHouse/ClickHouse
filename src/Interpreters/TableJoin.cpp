@@ -34,7 +34,6 @@
 #include <type_traits>
 #include <vector>
 
-#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -376,7 +375,7 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
              */
-            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage());
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
             {
@@ -559,8 +558,7 @@ TableJoin::createConvertingActions(
       */
     NameToNameMap left_column_rename;
     NameToNameMap right_column_rename;
-
-    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage());
+    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
     if (!left_type_map.empty() || !right_type_map.empty())
     {
         left_dag = applyKeyConvertToTable(left_sample_columns, left_type_map, JoinTableSide::Left, left_column_rename);
@@ -614,11 +612,8 @@ TableJoin::createConvertingActions(
 }
 
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right)
+void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool strict)
 {
-    /// FullSortingMerge and PartialMerge join algorithms don't support joining keys with different types
-    /// (e.g. String and LowCardinality(String))
-    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
     if (!left_type_map.empty() || !right_type_map.empty())
         return;
 
@@ -650,7 +645,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         const auto & ltype = ltypeit->second;
         const auto & rtype = rtypeit->second;
 
-        bool type_equals = require_strict_keys_match ? ltype->equals(*rtype) : JoinCommon::typesEqualUpToNullability(ltype, rtype);
+        bool type_equals = strict ? ltype->equals(*rtype) : JoinCommon::typesEqualUpToNullability(ltype, rtype);
         if (type_equals)
             return true;
 
@@ -941,9 +936,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (std::find(join_algorithm.begin(), join_algorithm.end(), JoinAlgorithm::PARALLEL_HASH) == join_algorithm.end())
-        return false;
-    if (!right_storage_name.empty())
+    if (!right_storage_name.empty() || !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH))
         return false;
     if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)
         return false;
