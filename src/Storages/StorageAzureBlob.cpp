@@ -1,6 +1,7 @@
 #include <Storages/StorageAzureBlob.h>
 #include "Processors/QueryPlan/QueryPlan.h"
 #include "Processors/QueryPlan/SourceStepWithFilter.h"
+#include "Processors/Sources/NullSource.h"
 
 
 #if USE_AZURE_BLOB_STORAGE
@@ -800,7 +801,14 @@ void ReadFromAzureBlob::initializePipeline(QueryPipelineBuilder & pipeline, cons
             need_only_count));
     }
 
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    if (pipe.empty())
+        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+
+    for (const auto & processor : pipe.getProcessors())
+        processors.emplace_back(processor);
+
+    pipeline.init(std::move(pipe));
 }
 
 SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)

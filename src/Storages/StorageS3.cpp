@@ -1,3 +1,4 @@
+#include "Processors/Sources/NullSource.h"
 #include "config.h"
 #include <Common/ProfileEvents.h>
 #include "Parsers/ASTCreateQuery.h"
@@ -1352,7 +1353,14 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
             need_only_count));
     }
 
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    if (pipe.empty())
+        pipe = Pipe(std::make_shared<NullSource>(read_from_format_info.source_header));
+
+    for (const auto & processor : pipe.getProcessors())
+        processors.emplace_back(processor);
+
+    pipeline.init(std::move(pipe));
 }
 
 SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)

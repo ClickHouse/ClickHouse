@@ -1477,6 +1477,8 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
 
 void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    createIterator(nullptr);
+
     size_t num_streams = max_num_streams;
 
     size_t files_to_read = 0;
@@ -1522,6 +1524,9 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
     if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < max_num_streams)
         pipe.resize(max_num_streams);
+
+    if (pipe.empty())
+        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);

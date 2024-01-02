@@ -1,5 +1,6 @@
 #include "Processors/QueryPlan/QueryPlan.h"
 #include "Processors/QueryPlan/SourceStepWithFilter.h"
+#include "Processors/Sources/NullSource.h"
 #include "QueryPipeline/QueryPipelineBuilder.h"
 #include "config.h"
 
@@ -218,16 +219,12 @@ public:
         Block sample_block,
         ReadFromFormatInfo info_,
         std::shared_ptr<StorageS3Queue> storage_,
-        // StorageSnapshotPtr storage_snapshot_,
-        // Names column_names_,
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
         : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
         , info(std::move(info_))
         , storage(std::move(storage_))
-        // , storage_snapshot(std::move(storage_snapshot_))
-        // , column_names(std::move(column_names_))
         , context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
@@ -237,8 +234,6 @@ public:
 private:
     ReadFromFormatInfo info;
     std::shared_ptr<StorageS3Queue> storage;
-    // StorageSnapshotPtr storage_snapshot;
-    // Names column_names;
     ContextPtr context;
     size_t max_block_size;
     size_t num_streams;
@@ -296,8 +291,6 @@ void StorageS3Queue::read(
         read_from_format_info.source_header,
         read_from_format_info,
         std::move(this_ptr),
-        // storage_snapshot,
-        // column_names,
         local_context,
         max_block_size,
         num_streams);
@@ -313,7 +306,15 @@ void ReadFromS3Queue::initializePipeline(QueryPipelineBuilder & pipeline, const 
     createIterator(nullptr);
     for (size_t i = 0; i < adjusted_num_streams; ++i)
         pipes.emplace_back(storage->createSource(info, iterator, max_block_size, context));
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
+
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    if (pipe.empty())
+        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+
+    for (const auto & processor : pipe.getProcessors())
+        processors.emplace_back(processor);
+
+    pipeline.init(std::move(pipe));
 }
 
 std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(

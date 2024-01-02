@@ -1,3 +1,4 @@
+#include "Processors/Sources/NullSource.h"
 #include "config.h"
 
 #if USE_HDFS
@@ -1014,10 +1015,17 @@ void ReadFromHDFS::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             context,
             max_block_size,
             iterator_wrapper,
-            need_only_count)); //,
-            //query_info));
+            need_only_count));
     }
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
+
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    if (pipe.empty())
+        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+
+    for (const auto & processor : pipe.getProcessors())
+        processors.emplace_back(processor);
+
+    pipeline.init(std::move(pipe));
 }
 
 SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_insert*/)
