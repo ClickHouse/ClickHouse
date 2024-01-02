@@ -339,14 +339,14 @@ void MergeTreeReaderCompact::readData(
         ColumnPtr temp_column;
 
         auto it = columns_cache_for_subcolumns.find(name_type_in_storage.name);
-        if (it != columns_cache_for_subcolumns.end())
+        if (!name_level_for_offsets.has_value() && it != columns_cache_for_subcolumns.end())
         {
             temp_column = it->second;
             columns_cache_was_used = true;
         }
         else
         {
-            /// In case of reading onlys offset use the correct serialization for reading of the prefix
+            /// In case of reading only offset use the correct serialization for reading of the prefix
             auto serialization = getSerializationInPart(name_type_in_storage);
             temp_column = name_type_in_storage.type->createColumn(*serialization);
 
@@ -361,7 +361,9 @@ void MergeTreeReaderCompact::readData(
             deserialize_settings.getter = buffer_getter;
             serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
             serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
-            columns_cache_for_subcolumns[name_type_in_storage.name] = temp_column;
+
+            if (!name_level_for_offsets.has_value())
+                columns_cache_for_subcolumns[name_type_in_storage.name] = temp_column;
         }
 
         auto subcolumn = name_type_in_storage.type->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
