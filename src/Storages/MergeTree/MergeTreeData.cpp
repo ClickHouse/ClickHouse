@@ -4770,31 +4770,6 @@ void MergeTreeData::sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * 
     const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
     size_t fields_count = key_sample_block.columns();
 
-    auto partition_value_ast = partition_ast.value->clone();
-    auto partition_ast_fields_count = getPartitionAstFieldsCount(partition_ast, partition_value_ast);
-
-    if (partition_ast_fields_count != fields_count)
-        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
-                        "Wrong number of fields in the partition expression: {}, must be: {}",
-                        partition_ast_fields_count, fields_count);
-
-
-    // this one does not seem necessary, but well... not sure it's going to be harmful, because it would fail later if there are no arguments
-    if (fields_count == 0)
-    {
-        /// Function tuple(...) requires at least one argument, so empty key is a special case
-        assert(!partition_ast_fields_count);
-        assert(typeid_cast<ASTFunction *>(partition_value_ast.get()));
-        assert(partition_value_ast->as<ASTFunction>()->name == "tuple");
-        assert(partition_value_ast->as<ASTFunction>()->arguments);
-        auto args = partition_value_ast->as<ASTFunction>()->arguments;
-        if (!args)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected at least one argument in partition AST");
-        bool empty_tuple = partition_value_ast->as<ASTFunction>()->arguments->children.empty();
-        if (!empty_tuple)
-            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
-    }
-
     Row partition_row(fields_count);
     MergeTreePartition partition(std::move(partition_row));
     String partition_id = partition.getID(*this);
