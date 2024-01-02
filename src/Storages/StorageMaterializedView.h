@@ -72,7 +72,7 @@ public:
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
-    const StorageID & getTargetTableId() const { return target_table_id; }
+    StorageID getTargetTableId() const { return target_table_id; }
 
     /// Get the virtual column of the target table;
     NamesAndTypesList getVirtuals() const override;
@@ -119,7 +119,6 @@ private:
     std::tuple<ContextMutablePtr, std::shared_ptr<ASTInsertQuery>> prepareRefresh() const;
     StorageID exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context);
 
-    StorageID getTargetTableId() const;
     void setTargetTableId(StorageID id);
     void updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name);
 };
