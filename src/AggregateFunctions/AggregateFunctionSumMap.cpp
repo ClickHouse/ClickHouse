@@ -550,6 +550,8 @@ public:
         if (keys_to_keep.contains(key))
             return true;
 
+        // Determine whether the numerical value of the key can have both types (UInt or Int),
+        // and use the other type with the same numerical value for keepKey verification.
         if (key.getType() == Field::Types::UInt64)
         {
             const auto & value = key.get<const UInt64 &>();
