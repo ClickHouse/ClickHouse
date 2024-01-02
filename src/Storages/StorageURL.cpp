@@ -906,7 +906,7 @@ public:
 
     ReadFromURL(
         Block sample_block,
-        std::shared_ptr<StorageURL> storage_,
+        std::shared_ptr<IStorageURLBase> storage_,
         std::vector<String> * uri_options_,
         ReadFromFormatInfo info_,
         const bool need_only_count_,
@@ -934,7 +934,7 @@ public:
     }
 
 private:
-    std::shared_ptr<StorageURL> storage;
+    std::shared_ptr<IStorageURLBase> storage;
     std::vector<String> * uri_options;
 
     // std::vector<std::string> paths;
@@ -999,7 +999,7 @@ void IStorageURLBase::read(
         processed_stage,
         max_block_size);
 
-    auto this_ptr = std::static_pointer_cast<StorageURL>(shared_from_this());
+    auto this_ptr = std::static_pointer_cast<IStorageURLBase>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromURL>(
         read_from_format_info.source_header,
