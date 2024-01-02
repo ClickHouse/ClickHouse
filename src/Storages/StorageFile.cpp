@@ -1517,7 +1517,16 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             need_only_count));
     }
 
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    size_t output_ports = pipe.numOutputPorts();
+    const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
+    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < max_num_streams)
+        pipe.resize(max_num_streams);
+
+    for (const auto & processor : pipe.getProcessors())
+        processors.emplace_back(processor);
+
+    pipeline.init(std::move(pipe));
 }
 
 
