@@ -24,7 +24,6 @@ void IInputFormat::resetParser()
 
 void IInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    chassert(in); // not supported by random-access formats
     in = &in_;
 }
 

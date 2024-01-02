@@ -79,13 +79,14 @@ void JSONRowInputFormat::readSuffix()
 
 void JSONRowInputFormat::setReadBuffer(DB::ReadBuffer & in_)
 {
-    peekable_buf->setSubBuffer(in_);
+    peekable_buf = std::make_unique<PeekableReadBuffer>(in_);
+    JSONEachRowRowInputFormat::setReadBuffer(*peekable_buf);
 }
 
-void JSONRowInputFormat::resetParser()
+void JSONRowInputFormat::resetReadBuffer()
 {
-    JSONEachRowRowInputFormat::resetParser();
-    peekable_buf->reset();
+    peekable_buf.reset();
+    JSONEachRowRowInputFormat::resetReadBuffer();
 }
 
 JSONRowSchemaReader::JSONRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
