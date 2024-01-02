@@ -41,8 +41,7 @@ protected:
                 filter_actions_dag,
                 context,
                 keys.getNames(),
-                std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(keys.getColumnsWithTypeAndName())),
-                NameSet{});
+                std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(keys.getColumnsWithTypeAndName())));
         }
     }
 

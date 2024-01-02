@@ -77,6 +77,7 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     };
 
     add_column("name", "functions", false, {});
+    add_column("name", "database_engines", false, {});
     add_column("name", "table_engines", false, {});
     add_column("name", "formats", false, {});
     add_column("name", "table_functions", false, {});
