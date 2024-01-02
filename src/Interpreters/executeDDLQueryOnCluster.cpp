@@ -312,7 +312,8 @@ DDLQueryStatusSource::DDLQueryStatusSource(
     , log(&Poco::Logger::get("DDLQueryStatusSource"))
 {
     auto output_mode = context->getSettingsRef().distributed_ddl_output_mode;
-    throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::NONE;
+    throw_on_timeout = output_mode == DistributedDDLOutputMode::THROW || output_mode == DistributedDDLOutputMode::THROW_ONLY_ACTIVE
+        || output_mode == DistributedDDLOutputMode::NONE;
 
     if (hosts_to_wait)
     {
