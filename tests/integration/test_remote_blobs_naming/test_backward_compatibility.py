@@ -216,12 +216,16 @@ def drop_table_scope(nodes, tables, create_statements):
                 node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
-@pytest.mark.parametrize("test_case", [("s3_plain", False),
-                                       ("s3", False),
-                                       ("s3", True),
-                                       ("s3_template_key", False),
-                                       ("s3_template_key", True),
-                                       ])
+@pytest.mark.parametrize(
+    "test_case",
+    [
+        ("s3_plain", False),
+        ("s3", False),
+        ("s3", True),
+        ("s3_template_key", False),
+        ("s3_template_key", True),
+    ],
+)
 def test_replicated_merge_tree(cluster, test_case):
     storage_policy, zero_copy = test_case
 
@@ -245,7 +249,9 @@ def test_replicated_merge_tree(cluster, test_case):
                     allow_remote_fs_zero_copy_replication='{1 if zero_copy else 0}'
                 """
 
-    with drop_table_scope([node_old, node_new], ["test_replicated_merge_tree"], [create_table_statement]):
+    with drop_table_scope(
+        [node_old, node_new], ["test_replicated_merge_tree"], [create_table_statement]
+    ):
         node_old.query("INSERT INTO test_replicated_merge_tree VALUES (0, 'a')")
         node_new.query("INSERT INTO test_replicated_merge_tree VALUES (1, 'b')")
 
@@ -253,81 +259,116 @@ def test_replicated_merge_tree(cluster, test_case):
         node_old.query("SYSTEM SYNC REPLICA test_replicated_merge_tree")
         node_new.query("SYSTEM SYNC REPLICA test_replicated_merge_tree")
 
-        count_old = node_old.query("SELECT count() FROM test_replicated_merge_tree").strip()
-        count_new = node_new.query("SELECT count() FROM test_replicated_merge_tree").strip()
+        count_old = node_old.query(
+            "SELECT count() FROM test_replicated_merge_tree"
+        ).strip()
+        count_new = node_new.query(
+            "SELECT count() FROM test_replicated_merge_tree"
+        ).strip()
 
         assert count_old == "2"
         assert count_new == "2"
 
         if not zero_copy:
             return
+
         def get_remote_pathes(node, table_name, only_remote_path=True):
-            uuid = node.query(f"""
+            uuid = node.query(
+                f"""
                 SELECT uuid
                 FROM system.tables
                 WHERE name = '{table_name}'
-            """).strip()
+                """
+            ).strip()
             assert uuid
-            return node.query(f"""
-                        SELECT {"remote_path" if only_remote_path else "*"}
-                        FROM system.remote_data_paths
-                        WHERE
-                            local_path LIKE '%{uuid}%'
-                            AND local_path NOT LIKE '%format_version.txt%'
-                        ORDER BY ALL
-                    """).strip()
+            return node.query(
+                f"""
+                SELECT {"remote_path" if only_remote_path else "*"}
+                FROM system.remote_data_paths
+                WHERE
+                    local_path LIKE '%{uuid}%'
+                    AND local_path NOT LIKE '%format_version.txt%'
+                ORDER BY ALL
+                """
+            ).strip()
 
-        remote_pathes_old = get_remote_pathes(node_old, 'test_replicated_merge_tree')
-        remote_pathes_new = get_remote_pathes(node_new, 'test_replicated_merge_tree')
+        remote_pathes_old = get_remote_pathes(node_old, "test_replicated_merge_tree")
+        remote_pathes_new = get_remote_pathes(node_new, "test_replicated_merge_tree")
 
         assert len(remote_pathes_old) > 0
         assert remote_pathes_old == remote_pathes_new, (
             str(unified_diff(remote_pathes_old, remote_pathes_new))
-            + "\n\nold:\n" + get_remote_pathes(node_old, 'test_replicated_merge_tree', False)
-            + "\n\nnew:\n" + get_remote_pathes(node_new, 'test_replicated_merge_tree', False)
+            + "\n\nold:\n"
+            + get_remote_pathes(node_old, "test_replicated_merge_tree", False)
+            + "\n\nnew:\n"
+            + get_remote_pathes(node_new, "test_replicated_merge_tree", False)
         )
 
         def count_lines_with(lines, pattern):
             return sum([1 for x in lines if pattern in x])
 
-        remore_pathes_with_old_format = count_lines_with(remote_pathes_old.split(), "old-style-prefix")
-        remore_pathes_with_new_format = count_lines_with(remote_pathes_old.split(), "new-style-prefix")
+        remore_pathes_with_old_format = count_lines_with(
+            remote_pathes_old.split(), "old-style-prefix"
+        )
+        remore_pathes_with_new_format = count_lines_with(
+            remote_pathes_old.split(), "new-style-prefix"
+        )
 
         if storage_policy == "s3_template_key":
             assert remore_pathes_with_old_format == remore_pathes_with_new_format
             assert remore_pathes_with_old_format == len(remote_pathes_old.split()) / 2
         else:
             assert remore_pathes_with_old_format == len(remote_pathes_old.split())
-            assert remore_pathes_with_new_format ==  0
+            assert remore_pathes_with_new_format == 0
 
-        parts =  node_old.query("""
-            SELECT name
-            FROM system.parts
-            WHERE
-                table = 'test_replicated_merge_tree'
-                AND active
-            ORDER BY ALL
-        """).strip().split()
-        table_shared_uuid = node_old.query(f"SELECT value FROM system.zookeeper WHERE path='{zk_table_path}' and name='table_shared_id'").strip()
+        parts = (
+            node_old.query(
+                """
+                SELECT name
+                FROM system.parts
+                WHERE
+                    table = 'test_replicated_merge_tree'
+                    AND active
+                ORDER BY ALL
+                """
+            )
+            .strip()
+            .split()
+        )
+        table_shared_uuid = node_old.query(
+            f"SELECT value FROM system.zookeeper WHERE path='{zk_table_path}' and name='table_shared_id'"
+        ).strip()
 
         part_blobs = {}
         blobs_replicas = {}
 
         for part in parts:
-            blobs = node_old.query(f"""
-                SELECT name
-                FROM system.zookeeper
-                WHERE path='/clickhouse/zero_copy/zero_copy_s3/{table_shared_uuid}/{part}'
-                ORDER BY ALL
-            """).strip().split()
+            blobs = (
+                node_old.query(
+                    f"""
+                    SELECT name
+                    FROM system.zookeeper
+                    WHERE path='/clickhouse/zero_copy/zero_copy_s3/{table_shared_uuid}/{part}'
+                    ORDER BY ALL
+                    """
+                )
+                .strip()
+                .split()
+            )
 
             for blob in blobs:
-                replicas = node_old.query(f"""
-                                SELECT name
-                                FROM system.zookeeper
-                                WHERE path='/clickhouse/zero_copy/zero_copy_s3/{table_shared_uuid}/{part}/{blob}'
-                                ORDER BY ALL
-                            """).strip().split()
+                replicas = (
+                    node_old.query(
+                        f"""
+                        SELECT name
+                        FROM system.zookeeper
+                        WHERE path='/clickhouse/zero_copy/zero_copy_s3/{table_shared_uuid}/{part}/{blob}'
+                        ORDER BY ALL
+                        """
+                    )
+                    .strip()
+                    .split()
+                )
                 assert blob not in blobs_replicas
                 blobs_replicas[blob] = replicas
 
@@ -345,17 +386,22 @@ def test_replicated_merge_tree(cluster, test_case):
         for replicas in blobs_replicas.values():
             assert len(replicas) == 2, "blobs_replicas: " + str(blobs_replicas)
 
-
         for blob in blobs_replicas.keys():
-            assert re.match("(old-style-prefix_with-several-section|[a-z]{3}-first-random-part_new-style-prefix_constant-part)_[a-z]{3}_[a-z]{29}", blob), (
-                "blobs_replicas: " + str(blobs_replicas)
-            )
+            assert re.match(
+                "(old-style-prefix_with-several-section|[a-z]{3}-first-random-part_new-style-prefix_constant-part)_[a-z]{3}_[a-z]{29}",
+                blob,
+            ), "blobs_replicas: " + str(blobs_replicas)
 
-        old_style_count = sum([1 for x in blobs_replicas.keys() if "old-style-prefix" in x])
-        new_style_count = sum([1 for x in blobs_replicas.keys() if "new-style-prefix" in x])
+        old_style_count = sum(
+            [1 for x in blobs_replicas.keys() if "old-style-prefix" in x]
+        )
+        new_style_count = sum(
+            [1 for x in blobs_replicas.keys() if "new-style-prefix" in x]
+        )
 
-        assert (new_style_count > 0 and old_style_count == new_style_count) \
-               or (new_style_count == 0  and old_style_count == len(blobs_replicas))
+        assert (new_style_count > 0 and old_style_count == new_style_count) or (
+            new_style_count == 0 and old_style_count == len(blobs_replicas)
+        )
 
 
 def switch_config_write_full_object_key(node, enable):
