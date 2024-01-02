@@ -3,7 +3,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/AlterConversions.h>
 #include <DataTypes/ObjectUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -29,7 +28,6 @@ public:
     explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_))
         , parts({part_})
-        , alter_conversions({part_->storage.getAlterConversionsForPart(part_)})
         , storage(part_->storage)
         , partition_id(part_->info.partition_id)
     {
@@ -52,12 +50,11 @@ public:
         if (!hasDynamicSubcolumns(storage_columns))
             return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 
-        auto data_parts = storage.getDataPartsVectorForInternalUsage();
-
         auto object_columns = getConcreteObjectColumns(
-            data_parts.begin(), data_parts.end(), storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
+            parts.begin(), parts.end(),
+            storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
 
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns));
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns);
     }
 
     void read(
@@ -73,7 +70,6 @@ public:
         query_plan.addStep(MergeTreeDataSelectExecutor(storage)
                                               .readFromParts(
                                                   parts,
-                                                  alter_conversions,
                                                   column_names,
                                                   storage_snapshot,
                                                   query_info,
@@ -86,9 +82,15 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
+    bool supportsIndexForIn() const override { return true; }
+
     bool supportsDynamicSubcolumns() const override { return true; }
 
-    bool supportsSubcolumns() const override { return true; }
+    bool mayBenefitFromIndexForIn(
+        const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
+    {
+        return storage.mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
+    }
 
     NamesAndTypesList getVirtuals() const override
     {
@@ -124,7 +126,6 @@ public:
 
 private:
     const MergeTreeData::DataPartsVector parts;
-    const std::vector<AlterConversionsPtr> alter_conversions;
     const MergeTreeData & storage;
     const String partition_id;
     const MergeTreeDataSelectAnalysisResultPtr analysis_result_ptr;

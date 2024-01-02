@@ -22,11 +22,12 @@ private:
     friend class MetadataStorageFromDiskTransaction;
 
     mutable SharedMutex metadata_mutex;
+
     DiskPtr disk;
-    String compatible_key_prefix;
+    std::string object_storage_root_path;
 
 public:
-    MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix);
+    MetadataStorageFromDisk(DiskPtr disk_, const std::string & object_storage_root_path_);
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -66,6 +67,8 @@ public:
 
     StoredObjects getStorageObjects(const std::string & path) const override;
 
+    std::string getObjectStorageRootPath() const override { return object_storage_root_path; }
+
     DiskObjectStorageMetadataPtr readMetadata(const std::string & path) const;
 
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<SharedMutex> & lock) const;
@@ -101,9 +104,9 @@ public:
 
     void createEmptyMetadataFile(const std::string & path) override;
 
-    void createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
+    void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
 
-    void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
+    void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
 

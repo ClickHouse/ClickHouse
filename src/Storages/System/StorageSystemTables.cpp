@@ -3,13 +3,12 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/System/StorageSystemTables.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Databases/IDatabase.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Common/typeid_cast.h>
@@ -18,10 +17,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
 #include <Processors/ISource.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <DataTypes/DataTypeUUID.h>
 
 
@@ -54,7 +50,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"storage_policy", std::make_shared<DataTypeString>()},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"total_bytes_uncompressed", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
@@ -73,10 +68,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
 }
 
 
-namespace
-{
-
-ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context)
+static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr context)
 {
     MutableColumnPtr column = ColumnString::create();
 
@@ -90,31 +82,13 @@ ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr co
     }
 
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
-    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
+    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
     return block.getByPosition(0).column;
 }
 
-ColumnPtr getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr & filtered_databases_column, ContextPtr context)
+static ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filtered_databases_column, ContextPtr context)
 {
-    Block sample {
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")
-    };
-
-    MutableColumnPtr database_column = ColumnString::create();
-    MutableColumnPtr engine_column;
-
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, sample);
-    if (dag)
-    {
-        bool filter_by_engine = false;
-        for (const auto * input : dag->getInputs())
-            if (input->result_name == "engine")
-                filter_by_engine = true;
-
-        if (filter_by_engine)
-            engine_column= ColumnString::create();
-    }
+    MutableColumnPtr column = ColumnString::create();
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
     {
@@ -124,26 +98,17 @@ ColumnPtr getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr 
             continue;
 
         for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-        {
-            database_column->insert(table_it->name());
-            if (engine_column)
-                engine_column->insert(table_it->table()->getName());
-        }
+            column->insert(table_it->name());
     }
 
-    Block block {ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "name")};
-    if (engine_column)
-        block.insert(ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"));
-
-    if (dag)
-        VirtualColumnUtils::filterBlockWithDAG(dag, block, context);
-
+    Block block {ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "name")};
+    VirtualColumnUtils::filterBlockWithQuery(query, block, context);
     return block.getByPosition(0).column;
 }
 
 /// Avoid heavy operation on tables if we only queried columns that we can get without table object.
 /// Otherwise it will require table initialization for Lazy database.
-bool needTable(const DatabasePtr & database, const Block & header)
+static bool needTable(const DatabasePtr & database, const Block & header)
 {
     if (database->getEngineName() != "Lazy")
         return true;
@@ -271,7 +236,7 @@ protected:
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
                             ASTPtr ast = temp_db ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context) : nullptr;
-                            res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
+                            res_columns[res_index++]->insert(ast ? ast->formatWithSecretsHidden() : "");
                         }
 
                         // engine_full
@@ -424,7 +389,7 @@ protected:
                     }
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
+                        res_columns[res_index++]->insert(ast ? ast->formatWithSecretsHidden() : "");
 
                     if (columns_mask[src_index++])
                     {
@@ -432,7 +397,7 @@ protected:
 
                         if (ast_create && ast_create->storage)
                         {
-                            engine_full = format({context, *ast_create->storage});
+                            engine_full = ast_create->storage->formatWithSecretsHidden();
 
                             static const char * const extra_head = " ENGINE = ";
                             if (startsWith(engine_full, extra_head))
@@ -446,7 +411,7 @@ protected:
                     {
                         String as_select;
                         if (ast_create && ast_create->select)
-                            as_select = format({context, *ast_create->select});
+                            as_select = ast_create->select->formatWithSecretsHidden();
                         res_columns[res_index++]->insert(as_select);
                     }
                 }
@@ -461,7 +426,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -469,7 +434,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -477,7 +442,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -485,7 +450,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                        res_columns[res_index++]->insert(expression_ptr->formatWithSecretsHidden());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -515,15 +480,6 @@ protected:
                     auto total_bytes = table->totalBytes(settings);
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index++])
-                {
-                    auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
-                    if (total_bytes_uncompressed)
-                        res_columns[res_index++]->insert(*total_bytes_uncompressed);
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -644,69 +600,40 @@ private:
     std::string database_name;
 };
 
-}
 
-class ReadFromSystemTables : public SourceStepWithFilter
-{
-public:
-    std::string getName() const override { return "ReadFromSystemTables"; }
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-
-    ReadFromSystemTables(
-        Block sample_block,
-        ContextPtr context_,
-        std::vector<UInt8> columns_mask_,
-        size_t max_block_size_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
-        , context(std::move(context_))
-        , columns_mask(std::move(columns_mask_))
-        , max_block_size(max_block_size_)
-    {
-    }
-
-private:
-    ContextPtr context;
-    std::vector<UInt8> columns_mask;
-    size_t max_block_size;
-};
-
-void StorageSystemTables::read(
-    QueryPlan & query_plan,
+Pipe StorageSystemTables::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
+
+    /// Create a mask of what columns are needed in the result.
+
+    NameSet names_set(column_names.begin(), column_names.end());
+
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    Block res_block;
 
-    auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
+    std::vector<UInt8> columns_mask(sample_block.columns());
+    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
+    {
+        if (names_set.contains(sample_block.getByPosition(i).name))
+        {
+            columns_mask[i] = 1;
+            res_block.insert(sample_block.getByPosition(i));
+        }
+    }
 
-    auto reading = std::make_unique<ReadFromSystemTables>(
-        std::move(res_block),
-        context,
-        std::move(columns_mask),
-        max_block_size);
+    ColumnPtr filtered_databases_column = getFilteredDatabases(query_info, context);
+    ColumnPtr filtered_tables_column = getFilteredTables(query_info.query, filtered_databases_column, context);
 
-    query_plan.addStep(std::move(reading));
-}
-
-void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
-{
-    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
-    const ActionsDAG::Node * predicate = nullptr;
-    if (filter_actions_dag)
-        predicate = filter_actions_dag->getOutputs().at(0);
-
-    ColumnPtr filtered_databases_column = getFilteredDatabases(predicate, context);
-    ColumnPtr filtered_tables_column = getFilteredTables(predicate, filtered_databases_column, context);
-
-    Pipe pipe(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), getOutputStream().header, max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
-    pipeline.init(std::move(pipe));
+    return Pipe(std::make_shared<TablesBlockSource>(
+        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
 }
 
 }

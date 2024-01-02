@@ -68,7 +68,6 @@ accurateCastOrDefault
 accurateCastOrNull
 acos
 acosh
-addDate
 addDays
 addHours
 addMicroseconds
@@ -98,7 +97,6 @@ arrayCumSum
 arrayCumSumNonNegative
 arrayDifference
 arrayDistinct
-arrayDotProduct
 arrayElement
 arrayEnumerate
 arrayEnumerateDense
@@ -113,7 +111,6 @@ arrayFirstIndex
 arrayFirstOrNull
 arrayFlatten
 arrayIntersect
-arrayJaccardIndex
 arrayJoin
 arrayLast
 arrayLastIndex
@@ -126,7 +123,6 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
-arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -231,7 +227,6 @@ dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
 dateTrunc
-decodeHTMLComponent
 decodeURLComponent
 decodeURLFormComponent
 decodeXMLComponent
@@ -241,6 +236,10 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 degrees
 demangle
+detectCharset
+detectLanguageUnknown
+detectProgrammingLanguage
+detectTonality
 divide
 dotProduct
 dumpColumnStructure
@@ -305,7 +304,6 @@ formatRowNoNewline
 fragment
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
-fromUTCTimestamp
 fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
@@ -344,12 +342,9 @@ has
 hasAll
 hasAny
 hasColumnInTable
-hasSubsequence
-hasSubsequenceCaseInsensitive
-hasSubsequenceCaseInsensitiveUTF8
-hasSubsequenceUTF8
 hasSubstr
 hasThreadFuzzer
+hashid
 hex
 hiveHash
 hop
@@ -367,8 +362,6 @@ in
 inIgnoreSet
 indexHint
 indexOf
-initcap
-initcapUTF8
 initialQueryID
 initializeAggregation
 intDiv
@@ -396,7 +389,6 @@ javaHashUTF16LE
 joinGet
 joinGetOrNull
 jumpConsistentHash
-kafkaMurmurHash
 kostikConsistentHash
 lcm
 least
@@ -424,16 +416,24 @@ makeDateTime
 makeDateTime64
 map
 mapAdd
+mapApply
+mapContains
+mapContainsKeyLike
+mapExtractKeyLike
+mapFilter
 mapFromArrays
+mapKeys
 mapPopulateSeries
 mapSubtract
 mapUpdate
+mapValues
 match
 materialize
 max2
+meiliMatch
 metroHash64
 min2
-minSampleSizeContinuous
+minSampleSizeContinous
 minSampleSizeConversion
 minus
 modulo
@@ -660,7 +660,6 @@ sleep
 sleepEachRow
 snowflakeToDateTime
 snowflakeToDateTime64
-space
 splitByChar
 splitByNonAlpha
 splitByRegexp
@@ -669,10 +668,7 @@ splitByWhitespace
 sqrt
 startsWith
 subBitmap
-subDate
 substring
-substringIndex
-substringIndexUTF8
 substringUTF8
 subtractDays
 subtractHours
@@ -694,6 +690,7 @@ throwIf
 tid
 timeSlot
 timeSlots
+timezone
 timezoneOf
 timezoneOffset
 toBool
@@ -791,7 +788,6 @@ toIntervalWeek
 toIntervalYear
 toJSONString
 toLastDayOfMonth
-toLastDayOfWeek
 toLowCardinality
 toMinute
 toModifiedJulianDay
@@ -853,7 +849,6 @@ toUInt8
 toUInt8OrDefault
 toUInt8OrNull
 toUInt8OrZero
-toUTCTimestamp
 toUUID
 toUUIDOrDefault
 toUUIDOrNull
@@ -886,18 +881,11 @@ tumble
 tumbleEnd
 tumbleStart
 tuple
-tupleConcat
 tupleDivide
 tupleDivideByNumber
 tupleElement
 tupleHammingDistance
-tupleIntDiv
-tupleIntDivByNumber
-tupleIntDivOrZero
-tupleIntDivOrZeroByNumber
 tupleMinus
-tupleModulo
-tupleModuloByNumber
 tupleMultiply
 tupleMultiplyByNumber
 tupleNegate

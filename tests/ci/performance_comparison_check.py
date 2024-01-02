@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+
 import os
 import logging
 import sys
@@ -14,30 +15,25 @@ from github import Github
 
 from commit_status_helper import RerunHelper, get_commit, post_commit_status
 from ci_config import CI_CONFIG
-from docker_images_helper import pull_image, get_docker_image
+from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_EVENT_PATH,
     GITHUB_RUN_URL,
     REPO_COPY,
+    REPORTS_PATH,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
     TEMP_PATH,
-    REPORT_PATH,
 )
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from tee_popen import TeePopen
-from clickhouse_helper import get_instance_type, get_instance_id
-from stopwatch import Stopwatch
-from build_download_helper import download_builds_filter
 
 IMAGE_NAME = "clickhouse/performance-comparison"
 
 
 def get_run_command(
-    check_start_time,
-    check_name,
     workspace,
     result_path,
     repo_tests_path,
@@ -46,44 +42,24 @@ def get_run_command(
     additional_env,
     image,
 ):
-    instance_type = get_instance_type()
-    instance_id = get_instance_id()
-
-    envs = [
-        f"-e CHECK_START_TIME='{check_start_time}'",
-        f"-e CHECK_NAME='{check_name}'",
-        f"-e INSTANCE_TYPE='{instance_type}'",
-        f"-e INSTANCE_ID='{instance_id}'",
-        f"-e PR_TO_TEST={pr_to_test}",
-        f"-e SHA_TO_TEST={sha_to_test}",
-    ]
-
-    env_str = " ".join(envs)
-
     return (
         f"docker run --privileged --volume={workspace}:/workspace "
         f"--volume={result_path}:/output "
         f"--volume={repo_tests_path}:/usr/share/clickhouse-test "
-        f"--volume={TEMP_PATH}:/artifacts "
         f"--cap-add syslog --cap-add sys_admin --cap-add sys_rawio "
-        f"{env_str} {additional_env} "
+        f"-e PR_TO_TEST={pr_to_test} -e SHA_TO_TEST={sha_to_test} {additional_env} "
         f"{image}"
     )
 
 
 def main():
     logging.basicConfig(level=logging.INFO)
-
-    stopwatch = Stopwatch()
-
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
     repo_tests_path = Path(REPO_COPY, "tests")
+    reports_path = Path(REPORTS_PATH)
 
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    check_name = sys.argv[1]
     required_build = CI_CONFIG.test_configs[check_name].required_build
 
     with open(GITHUB_EVENT_PATH, "r", encoding="utf-8") as event_file:
@@ -127,13 +103,7 @@ def main():
         message = "Skipped, not labeled with 'pr-performance'"
         report_url = GITHUB_RUN_URL
         post_commit_status(
-            commit,
-            status,
-            report_url,
-            message,
-            check_name_with_group,
-            pr_info,
-            dump_to_file=True,
+            commit, status, report_url, message, check_name_with_group, pr_info
         )
         sys.exit(0)
 
@@ -151,7 +121,7 @@ def main():
         .replace("/", "_")
     )
 
-    docker_image = pull_image(get_docker_image(IMAGE_NAME))
+    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
     result_path = temp_path / "result"
     result_path.mkdir(parents=True, exist_ok=True)
@@ -168,16 +138,9 @@ def main():
         "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX": check_name_prefix,
     }
 
-    download_builds_filter(
-        check_name, REPORT_PATH, TEMP_PATH, lambda url: "performance.tar.zst" in url
-    )
-    assert os.path.exists(f"{TEMP_PATH}/performance.tar.zst"), "Perf artifact not found"
-
     docker_env += "".join([f" -e {name}" for name in env_extra])
 
     run_command = get_run_command(
-        stopwatch.start_time_str,
-        check_name,
         result_path,
         result_path,
         repo_tests_path,
@@ -232,13 +195,6 @@ def main():
     except Exception:
         traceback.print_exc()
 
-    def too_many_slow(msg):
-        match = re.search(r"(|.* )(\d+) slower.*", msg)
-        # This threshold should be synchronized with the value in
-        # https://github.com/ClickHouse/ClickHouse/blob/master/docker/test/performance-comparison/report.py#L629
-        threshold = 5
-        return int(match.group(2).strip()) > threshold if match else False
-
     # Try to fetch status from the report.
     status = ""
     message = ""
@@ -254,7 +210,7 @@ def main():
 
         # TODO: Remove me, always green mode for the first time, unless errors
         status = "success"
-        if "errors" in message.lower() or too_many_slow(message.lower()):
+        if "errors" in message.lower():
             status = "failure"
         # TODO: Remove until here
     except Exception:
@@ -279,13 +235,7 @@ def main():
     )
 
     post_commit_status(
-        commit,
-        status,
-        report_url,
-        message,
-        check_name_with_group,
-        pr_info,
-        dump_to_file=True,
+        commit, status, report_url, message, check_name_with_group, pr_info
     )
 
     if status == "error":

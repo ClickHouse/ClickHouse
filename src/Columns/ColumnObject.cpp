@@ -2,17 +2,17 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnSparse.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashSet.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <numeric>
-
 
 namespace DB
 {
@@ -559,7 +559,6 @@ FieldInfo ColumnObject::Subcolumn::getFieldInfo() const
         .have_nulls = base_type->isNullable(),
         .need_convert = false,
         .num_dimensions = least_common_type.getNumberOfDimensions(),
-        .need_fold_dimension = false,
     };
 }
 
@@ -665,18 +664,18 @@ size_t ColumnObject::allocatedBytes() const
     return res;
 }
 
-void ColumnObject::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnObject::forEachSubcolumn(ColumnCallback callback) const
 {
-    for (auto & entry : subcolumns)
-        for (auto & part : entry->data.data)
+    for (const auto & entry : subcolumns)
+        for (const auto & part : entry->data.data)
             callback(part);
 }
 
-void ColumnObject::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnObject::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
-    for (auto & entry : subcolumns)
+    for (const auto & entry : subcolumns)
     {
-        for (auto & part : entry->data.data)
+        for (const auto & part : entry->data.data)
         {
             callback(*part);
             part->forEachSubcolumnRecursively(callback);

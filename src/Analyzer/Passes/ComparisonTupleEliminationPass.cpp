@@ -1,8 +1,6 @@
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
 
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeNothing.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -52,13 +50,6 @@ public:
         const auto & rhs_argument = arguments[1];
         const auto & rhs_argument_result_type = rhs_argument->getResultType();
         if (!isTuple(rhs_argument_result_type))
-            return;
-
-        if (function_node->getResultType()->equals(DataTypeNullable(std::make_shared<DataTypeNothing>())))
-            /** The function `equals` can return Nullable(Nothing), e.g., in the case of (a, b) == (NULL, 1).
-              * On the other hand, `AND` returns Nullable(UInt8), so we would need to convert types.
-              * It's better to just skip this trivial case.
-              */
             return;
 
         auto lhs_argument_node_type = lhs_argument->getNodeType();

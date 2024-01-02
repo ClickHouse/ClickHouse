@@ -1,6 +1,0 @@
-client no multiquery
-Cannot read data after semicolon (and input_format_values_allow_data_after_semicolon=0)
-client multiquery
-local no multiquery
-Cannot read data after semicolon (and input_format_values_allow_data_after_semicolon=0)
-local multiquery

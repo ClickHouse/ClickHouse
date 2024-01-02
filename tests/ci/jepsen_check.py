@@ -27,7 +27,6 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from upload_result_helper import upload_results
 from version_helper import get_version_from_repo
-from build_check import get_release_or_pr
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 
@@ -214,7 +213,12 @@ def main():
 
     build_name = get_build_name_for_check(check_name)
 
-    release_or_pr, _ = get_release_or_pr(pr_info, get_version_from_repo())
+    if pr_info.number == 0:
+        version = get_version_from_repo()
+        release_or_pr = f"{version.major}.{version.minor}"
+    else:
+        # PR number for anything else
+        release_or_pr = str(pr_info.number)
 
     # This check run separately from other checks because it requires exclusive
     # run (see .github/workflows/jepsen.yml) So we cannot add explicit
@@ -292,9 +296,7 @@ def main():
     )
 
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(
-        commit, status, report_url, description, check_name, pr_info, dump_to_file=True
-    )
+    post_commit_status(commit, status, report_url, description, check_name, pr_info)
 
     ch_helper = ClickHouseHelper()
     prepared_events = prepare_tests_results_for_clickhouse(

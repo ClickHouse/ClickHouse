@@ -79,7 +79,6 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         column_names,
         columns_description.getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
-        LiteralEscapingStyle::Regular,
         remote_database_name,
         remote_table_name,
         local_context);
@@ -117,7 +116,7 @@ Pipe StorageXDBC::read(
     return IStorageURLBase::read(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
 
-SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     bridge_helper->startBridgeSync();
 
@@ -142,7 +141,7 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
         local_context,
         ConnectionTimeouts::getHTTPTimeouts(
             local_context->getSettingsRef(),
-            local_context->getServerSettings().keep_alive_timeout),
+            {local_context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
         compression_method);
 }
 

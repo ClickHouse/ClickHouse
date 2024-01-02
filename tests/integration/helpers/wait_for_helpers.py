@@ -28,12 +28,3 @@ def wait_for_delete_empty_parts(node, table, database=None, **kwargs):
         f"WHERE active AND rows = 0 AND table = '{table}' AND database = '{database}'"
     )
     assert_eq_with_retry(node, empty_parts_query, "0\n", **kwargs)
-
-
-def wait_for_merges(node, table, database=None, **kwargs):
-    table, database = _parse_table_database(table, database)
-    merges_count_query = (
-        f"SELECT count() > 0 FROM system.merges "
-        f"WHERE table = '{table}' AND database = '{database}'"
-    )
-    assert_eq_with_retry(node, merges_count_query, "1\n", **kwargs)

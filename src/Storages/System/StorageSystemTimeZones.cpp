@@ -10,8 +10,7 @@ namespace DB
 {
 NamesAndTypesList StorageSystemTimeZones::getNamesAndTypes()
 {
-    return
-    {
+    return {
         {"time_zone", std::make_shared<DataTypeString>()},
     };
 }

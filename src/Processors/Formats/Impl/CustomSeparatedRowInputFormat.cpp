@@ -44,7 +44,7 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
         format_settings_,
         std::make_unique<CustomSeparatedFormatReader>(*buf_, ignore_spaces_, format_settings_),
         format_settings_.custom.try_detect_header)
-    , buf(std::move(buf_)), ignore_spaces(ignore_spaces_)
+    , buf(std::move(buf_))
 {
     /// In case of CustomSeparatedWithNames(AndTypes) formats and enabled setting input_format_with_names_use_header we don't know
     /// the exact number of columns in data (because it can contain unknown columns). So, if field_delimiter and row_after_delimiter are
@@ -140,13 +140,10 @@ void CustomSeparatedFormatReader::skipRowBetweenDelimiter()
 void CustomSeparatedFormatReader::skipField()
 {
     skipSpaces();
-    if (format_settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV)
-        readCSVFieldWithTwoPossibleDelimiters(*buf, format_settings.csv, format_settings.custom.field_delimiter, format_settings.custom.row_after_delimiter);
-    else
-        skipFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
+    skipFieldByEscapingRule(*buf, format_settings.custom.escaping_rule, format_settings);
 }
 
-bool CustomSeparatedFormatReader::checkForEndOfRow()
+bool CustomSeparatedFormatReader::checkEndOfRow()
 {
     PeekableReadBufferCheckpoint checkpoint{*buf, true};
 
@@ -204,12 +201,12 @@ std::vector<String> CustomSeparatedFormatReader::readRowImpl()
     std::vector<String> values;
     skipRowStartDelimiter();
 
-    if (columns == 0 || allowVariableNumberOfColumns())
+    if (columns == 0)
     {
         do
         {
             values.push_back(readFieldIntoString<mode>(values.empty(), false, true));
-        } while (!checkForEndOfRow());
+        } while (!checkEndOfRow());
         columns = values.size();
     }
     else
@@ -222,34 +219,19 @@ std::vector<String> CustomSeparatedFormatReader::readRowImpl()
     return values;
 }
 
-void CustomSeparatedFormatReader::skipRow()
+void CustomSeparatedFormatReader::skipHeaderRow()
 {
     skipRowStartDelimiter();
-
-    /// If the number of columns in row is unknown,
-    /// we should check for end of row after each field.
-    if (columns == 0 || allowVariableNumberOfColumns())
+    bool first = true;
+    do
     {
-        bool first = true;
-        do
-        {
-            if (!first)
-                skipFieldDelimiter();
-            first = false;
+        if (!first)
+            skipFieldDelimiter();
+        first = false;
 
-            skipField();
-        }
-        while (!checkForEndOfRow());
+        skipField();
     }
-    else
-    {
-        for (size_t i = 0; i != columns; ++i)
-        {
-            if (i != 0)
-                skipFieldDelimiter();
-            skipField();
-        }
-    }
+    while (!checkEndOfRow());
 
     skipRowEndDelimiter();
 }
@@ -302,8 +284,6 @@ bool CustomSeparatedFormatReader::checkForSuffixImpl(bool check_eof)
 
         /// Allow optional \n before eof.
         checkChar('\n', *buf);
-        if (format_settings.custom.skip_trailing_empty_lines)
-            while (checkChar('\n', *buf) || checkChar('\r', *buf));
         return buf->eof();
     }
 
@@ -315,8 +295,6 @@ bool CustomSeparatedFormatReader::checkForSuffixImpl(bool check_eof)
 
         /// Allow optional \n before eof.
         checkChar('\n', *buf);
-        if (format_settings.custom.skip_trailing_empty_lines)
-            while (checkChar('\n', *buf) || checkChar('\r', *buf));
         if (buf->eof())
             return true;
     }
@@ -388,7 +366,7 @@ CustomSeparatedSchemaReader::CustomSeparatedSchemaReader(
 {
 }
 
-std::optional<std::pair<std::vector<String>, DataTypes>> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::pair<std::vector<String>, DataTypes> CustomSeparatedSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (no_more_data || reader.checkForSuffix())
     {
@@ -404,15 +382,12 @@ std::optional<std::pair<std::vector<String>, DataTypes>> CustomSeparatedSchemaRe
 
     auto fields = reader.readRow();
     auto data_types = tryInferDataTypesByEscapingRule(fields, reader.getFormatSettings(), reader.getEscapingRule(), &json_inference_info);
-    return std::make_pair(std::move(fields), std::move(data_types));
+    return {fields, data_types};
 }
 
-std::optional<DataTypes> CustomSeparatedSchemaReader::readRowAndGetDataTypesImpl()
+DataTypes CustomSeparatedSchemaReader::readRowAndGetDataTypesImpl()
 {
-    auto fields_with_types = readRowAndGetFieldsAndDataTypes();
-    if (!fields_with_types)
-        return {};
-    return std::move(fields_with_types->second);
+    return readRowAndGetFieldsAndDataTypes().second;
 }
 
 void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)

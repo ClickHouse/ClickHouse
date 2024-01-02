@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Columns/ColumnArray.h>
 #include <IO/WriteSettings.h>
-#include <Storages/Statistics/Statistics.h>
 
 
 namespace DB
@@ -20,7 +19,6 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
-        const Statistics & statistics,
         CompressionCodecPtr default_codec_,
         const MergeTreeTransactionPtr & txn,
         bool reset_columns_ = false,
@@ -47,9 +45,9 @@ public:
         std::unique_ptr<Impl> impl;
 
         explicit Finalizer(std::unique_ptr<Impl> impl_);
+        ~Finalizer();
         Finalizer(Finalizer &&) noexcept;
         Finalizer & operator=(Finalizer &&) noexcept;
-        ~Finalizer();
 
         void finish();
     };

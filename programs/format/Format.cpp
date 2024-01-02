@@ -17,7 +17,6 @@
 
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
-#include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -25,7 +24,6 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/registerStorages.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
@@ -33,9 +31,6 @@
 
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
-
-extern const char * auto_time_zones[];
-
 
 namespace DB
 {
@@ -131,7 +126,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             registerFunctions();
             registerAggregateFunctions();
             registerTableFunctions();
-            registerDatabases();
             registerStorages();
             registerFormats();
 
@@ -139,25 +133,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
             auto all_known_storage_names = StorageFactory::instance().getAllRegisteredNames();
             auto all_known_data_type_names = DataTypeFactory::instance().getAllRegisteredNames();
-            auto all_known_settings = Settings().getAllRegisteredNames();
-            auto all_known_merge_tree_settings = MergeTreeSettings().getAllRegisteredNames();
 
             additional_names.insert(all_known_storage_names.begin(), all_known_storage_names.end());
             additional_names.insert(all_known_data_type_names.begin(), all_known_data_type_names.end());
-            additional_names.insert(all_known_settings.begin(), all_known_settings.end());
-            additional_names.insert(all_known_merge_tree_settings.begin(), all_known_merge_tree_settings.end());
-
-            for (auto * it = auto_time_zones; *it; ++it)
-            {
-                String time_zone_name = *it;
-
-                /// Example: Europe/Amsterdam
-                Strings split;
-                boost::split(split, time_zone_name, [](char c){ return c == '/'; });
-                for (const auto & word : split)
-                    if (!word.empty())
-                        additional_names.insert(word);
-            }
 
             KnownIdentifierFunc is_known_identifier = [&](std::string_view name)
             {
@@ -173,7 +151,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
             WriteBufferFromFileDescriptor out(STDOUT_FILENO);
             obfuscateQueries(query, out, obfuscated_words_map, used_nouns, hash_func, is_known_identifier);
-            out.finalize();
         }
         else
         {
@@ -185,22 +162,20 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             {
                 ASTPtr res = parseQueryAndMovePosition(
                     parser, pos, end, "query", multiple, cmd_settings.max_query_size, cmd_settings.max_parser_depth);
-
-                /// For insert query with data(INSERT INTO ... VALUES ...), that will lead to the formatting failure,
-                /// we should throw an exception early, and make exception message more readable.
+                /// For insert query with data(INSERT INTO ... VALUES ...), will lead to format fail,
+                /// should throw exception early and make exception message more readable.
                 if (const auto * insert_query = res->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 {
                     throw Exception(DB::ErrorCodes::INVALID_FORMAT_INSERT_QUERY_WITH_DATA,
                         "Can't format ASTInsertQuery with data, since data will be lost");
                 }
-
                 if (!quiet)
                 {
                     if (!backslash)
                     {
                         WriteBufferFromOStream res_buf(std::cout, 4096);
                         formatAST(*res, res_buf, hilite, oneline);
-                        res_buf.finalize();
+                        res_buf.next();
                         if (multiple)
                             std::cout << "\n;\n";
                         std::cout << std::endl;
@@ -224,7 +199,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                             res_cout.write(*s_pos++);
                         }
 
-                        res_cout.finalize();
+                        res_cout.next();
                         if (multiple)
                             std::cout << " \\\n;\n";
                         std::cout << std::endl;

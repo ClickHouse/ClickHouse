@@ -1,23 +1,15 @@
 #include <Interpreters/Access/InterpreterCreateSettingsProfileQuery.h>
-
-#include <Access/AccessControl.h>
-#include <Access/Common/AccessFlags.h>
-#include <Access/SettingsProfile.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Access/AccessControl.h>
+#include <Access/SettingsProfile.h>
+#include <Access/Common/AccessFlags.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
-}
-
 namespace
 {
     void updateSettingsProfileFromQueryImpl(
@@ -49,9 +41,7 @@ namespace
 
 BlockIO InterpreterCreateSettingsProfileQuery::execute()
 {
-    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
-    auto & query = updated_query_ptr->as<ASTCreateSettingsProfileQuery &>();
-
+    auto & query = query_ptr->as<ASTCreateSettingsProfileQuery &>();
     auto & access_control = getContext()->getAccessControl();
     if (query.alter)
         getContext()->checkAccess(AccessType::ALTER_SETTINGS_PROFILE);
@@ -64,28 +54,18 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
         settings_from_query = SettingsProfileElements{*query.settings, access_control};
 
         if (!query.attach)
-            getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::PROFILE);
+            getContext()->checkSettingsConstraints(*settings_from_query);
     }
 
     if (!query.cluster.empty())
     {
         query.replaceCurrentUserTag(getContext()->getUserName());
-        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
+        return executeDDLQueryOnCluster(query_ptr, getContext());
     }
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.to_roles)
         roles_from_query = RolesOrUsersSet{*query.to_roles, access_control, getContext()->getUserID()};
-
-
-    IAccessStorage * storage = &access_control;
-    MultipleAccessStorage::StoragePtr storage_ptr;
-
-    if (!query.storage_name.empty())
-    {
-        storage_ptr = access_control.getStorageByName(query.storage_name);
-        storage = storage_ptr.get();
-    }
 
     if (query.alter)
     {
@@ -97,11 +77,11 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
         };
         if (query.if_exists)
         {
-            auto ids = storage->find<SettingsProfile>(query.names);
-            storage->tryUpdate(ids, update_func);
+            auto ids = access_control.find<SettingsProfile>(query.names);
+            access_control.tryUpdate(ids, update_func);
         }
         else
-            storage->update(storage->getIDs<SettingsProfile>(query.names), update_func);
+            access_control.update(access_control.getIDs<SettingsProfile>(query.names), update_func);
     }
     else
     {
@@ -113,21 +93,12 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
             new_profiles.emplace_back(std::move(new_profile));
         }
 
-        if (!query.storage_name.empty())
-        {
-            for (const auto & name : query.names)
-            {
-                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::SETTINGS_PROFILE, name, storage_ptr))
-                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Settings profile {} already exists in storage {}", name, another_storage_ptr->getStorageName());
-            }
-        }
-
         if (query.if_not_exists)
-            storage->tryInsert(new_profiles);
+            access_control.tryInsert(new_profiles);
         else if (query.or_replace)
-            storage->insertOrReplace(new_profiles);
+            access_control.insertOrReplace(new_profiles);
         else
-            storage->insert(new_profiles);
+            access_control.insert(new_profiles);
     }
 
     return {};

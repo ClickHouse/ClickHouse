@@ -8,6 +8,8 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             bash \
             tzdata \
+            fakeroot \
+            debhelper \
             parallel \
             expect \
             python3 \
@@ -18,6 +20,7 @@ RUN apt-get update -y \
             sudo \
             openssl \
             netcat-openbsd \
+            telnet \
             brotli \
     && apt-get clean
 

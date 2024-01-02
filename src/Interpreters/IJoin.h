@@ -7,6 +7,7 @@
 #include <Core/Block.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -48,13 +49,11 @@ class IJoin
 public:
     virtual ~IJoin() = default;
 
-    virtual std::string getName() const = 0;
-
     virtual const TableJoin & getTableJoin() const = 0;
 
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.
-    virtual bool addBlockToJoin(const Block & block, bool check_limits = true) = 0; /// NOLINT
+    virtual bool addJoinedBlock(const Block & block, bool check_limits = true) = 0; /// NOLINT
 
     /* Some initialization may be required before joinBlock() call.
      * It's better to done in in constructor, but left block exact structure is not known at that moment.
@@ -64,7 +63,7 @@ public:
 
     virtual void checkTypesOfKeys(const Block & block) const = 0;
 
-    /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addBlockToJoin).
+    /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addJoinedBlock).
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
 
@@ -81,7 +80,7 @@ public:
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;
 
-    /// StorageJoin/Dictionary is already filled. No need to call addBlockToJoin.
+    /// StorageJoin/Dictionary is already filled. No need to call addJoinedBlock.
     /// Different query plan is used for such joins.
     virtual bool isFilled() const { return pipelineType() == JoinPipelineType::FilledRight; }
     virtual JoinPipelineType pipelineType() const { return JoinPipelineType::FillRightFirst; }

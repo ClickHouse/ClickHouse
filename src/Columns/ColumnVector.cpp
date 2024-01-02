@@ -3,7 +3,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
-#include <Columns/RadixSortHelper.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
@@ -50,28 +49,11 @@ namespace ErrorCodes
 }
 
 template <typename T>
-StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const
+StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    constexpr size_t null_bit_size = sizeof(UInt8);
-    StringRef res;
-    char * pos;
-    if (null_bit)
-    {
-        res.size = * null_bit ? null_bit_size : null_bit_size + sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-        memcpy(pos, null_bit, null_bit_size);
-        if (*null_bit) return res;
-        pos += null_bit_size;
-    }
-    else
-    {
-        res.size = sizeof(T);
-        pos = arena.allocContinue(res.size, begin);
-        res.data = pos;
-    }
+    auto * pos = arena.allocContinue(sizeof(T), begin);
     unalignedStore<T>(pos, data[n]);
-    return res;
+    return StringRef(pos, sizeof(T));
 }
 
 template <typename T>
@@ -193,6 +175,26 @@ struct ColumnVector<T>::equals
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
+namespace
+{
+    template <typename T>
+    struct ValueWithIndex
+    {
+        T value;
+        UInt32 index;
+    };
+
+    template <typename T>
+    struct RadixSortTraits : RadixSortNumTraits<T>
+    {
+        using Element = ValueWithIndex<T>;
+        using Result = size_t;
+
+        static T & extractKey(Element & elem) { return elem.value; }
+        static size_t extractResult(Element & elem) { return elem.index; }
+    };
+}
+
 #if USE_EMBEDDED_COMPILER
 
 template <typename T>
@@ -235,25 +237,35 @@ template <typename T>
 void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
-    size_t data_size = data.size();
-    res.resize(data_size);
+    size_t s = data.size();
+    res.resize(s);
 
-    if (data_size == 0)
+    if (s == 0)
         return;
 
-    if (limit >= data_size)
+    if (limit >= s)
         limit = 0;
 
-    for (size_t i = 0; i < data_size; ++i)
-        res[i] = i;
-
-    if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
+    if (limit)
     {
-        if (!limit)
-        {
-            /// A case for radix sort
-            /// LSD RadixSort is stable
+        for (size_t i = 0; i < s; ++i)
+            res[i] = i;
 
+        if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+            ::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
+        else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+            ::partial_sort(res.begin(), res.begin() + limit, res.end(), less_stable(*this, nan_direction_hint));
+        else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+            ::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
+        else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+            ::partial_sort(res.begin(), res.begin() + limit, res.end(), greater_stable(*this, nan_direction_hint));
+    }
+    else
+    {
+        /// A case for radix sort
+        /// LSD RadixSort is stable
+        if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
+        {
             bool reverse = direction == IColumn::PermutationSortDirection::Descending;
             bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
             bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
@@ -262,27 +274,13 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
             bool use_radix_sort = (sort_is_stable && ascending && !std::is_floating_point_v<T>) || !sort_is_stable;
 
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
-            if (data_size >= 256 && data_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
+            if (s >= 256 && s <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
-                bool try_sort = false;
-
-                if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-                    try_sort = trySort(res.begin(), res.end(), less(*this, nan_direction_hint));
-                else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-                    try_sort = trySort(res.begin(), res.end(), less_stable(*this, nan_direction_hint));
-                else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-                    try_sort = trySort(res.begin(), res.end(), greater(*this, nan_direction_hint));
-                else
-                    try_sort = trySort(res.begin(), res.end(), greater_stable(*this, nan_direction_hint));
-
-                if (try_sort)
-                    return;
-
-                PaddedPODArray<ValueWithIndex<T>> pairs(data_size);
-                for (UInt32 i = 0; i < static_cast<UInt32>(data_size); ++i)
+                PaddedPODArray<ValueWithIndex<T>> pairs(s);
+                for (UInt32 i = 0; i < static_cast<UInt32>(s); ++i)
                     pairs[i] = {data[i], i};
 
-                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res.data());
+                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s, reverse, res.data());
 
                 /// Radix sort treats all NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
@@ -290,9 +288,9 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
                 {
                     size_t nans_to_move = 0;
 
-                    for (size_t i = 0; i < data_size; ++i)
+                    for (size_t i = 0; i < s; ++i)
                     {
-                        if (isNaN(data[res[reverse ? i : data_size - 1 - i]]))
+                        if (isNaN(data[res[reverse ? i : s - 1 - i]]))
                             ++nans_to_move;
                         else
                             break;
@@ -300,35 +298,38 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                     if (nans_to_move)
                     {
-                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : data_size - nans_to_move), std::end(res));
+                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : s - nans_to_move), std::end(res));
                     }
                 }
-
                 return;
             }
         }
-    }
 
-    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        this->getPermutationImpl(limit, res, less(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        this->getPermutationImpl(limit, res, less_stable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        this->getPermutationImpl(limit, res, greater(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
-    else
-        this->getPermutationImpl(limit, res, greater_stable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+        /// Default sorting algorithm.
+        for (size_t i = 0; i < s; ++i)
+            res[i] = i;
+
+        if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+            ::sort(res.begin(), res.end(), less(*this, nan_direction_hint));
+        else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+            ::sort(res.begin(), res.end(), less_stable(*this, nan_direction_hint));
+        else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+            ::sort(res.begin(), res.end(), greater(*this, nan_direction_hint));
+        else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+            ::sort(res.begin(), res.end(), greater_stable(*this, nan_direction_hint));
+    }
 }
 
 template <typename T>
 void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
+    bool reverse = direction == IColumn::PermutationSortDirection::Descending;
+    bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
+    bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
+
     auto sort = [&](auto begin, auto end, auto pred)
     {
-        bool reverse = direction == IColumn::PermutationSortDirection::Descending;
-        bool ascending = direction == IColumn::PermutationSortDirection::Ascending;
-        bool sort_is_stable = stability == IColumn::PermutationSortStability::Stable;
-
         /// A case for radix sort
         if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
         {
@@ -339,10 +340,6 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
-                bool try_sort = trySort(begin, end, pred);
-                if (try_sort)
-                    return;
-
                 PaddedPODArray<ValueWithIndex<T>> pairs(size);
                 size_t index = 0;
 
@@ -419,7 +416,7 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
 template <typename T>
 MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 {
-    auto res = this->create(size);
+    auto res = this->create();
 
     if (size > 0)
     {
@@ -913,6 +910,9 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     max = NearestFieldType<T>(cur_max);
 }
 
+
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+
 template <typename T>
 ColumnPtr ColumnVector<T>::compress() const
 {
@@ -930,11 +930,11 @@ ColumnPtr ColumnVector<T>::compress() const
 
     const size_t compressed_size = compressed->size();
     return ColumnCompressed::create(data_size, compressed_size,
-        [my_compressed = std::move(compressed), column_size = data_size]
+        [compressed = std::move(compressed), column_size = data_size]
         {
             auto res = ColumnVector<T>::create(column_size);
             ColumnCompressed::decompressBuffer(
-                my_compressed->data(), res->getData().data(), my_compressed->size(), column_size * sizeof(T));
+                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
             return res;
         });
 }

@@ -95,7 +95,8 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     {
         int result = hdfsSync(fs.get(), fout);
         if (result < 0)
-            throw ErrnoException(ErrorCodes::CANNOT_FSYNC, "Cannot HDFS sync {} {}", hdfs_uri, std::string(hdfsGetLastError()));
+            throwFromErrno("Cannot HDFS sync" + hdfs_uri + " " + std::string(hdfsGetLastError()),
+                ErrorCodes::CANNOT_FSYNC);
     }
 };
 
@@ -106,9 +107,8 @@ WriteBufferFromHDFS::WriteBufferFromHDFS(
         const WriteSettings & write_settings_,
         size_t buf_size_,
         int flags_)
-    : WriteBufferFromFileBase(buf_size_, nullptr, 0)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size_)
     , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, config_, replication_, write_settings_, flags_))
-    , filename(hdfs_name_)
 {
 }
 

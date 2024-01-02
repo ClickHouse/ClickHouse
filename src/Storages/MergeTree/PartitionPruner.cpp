@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/PartitionPruner.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -10,7 +9,7 @@ namespace
 KeyCondition buildKeyCondition(const KeyDescription & partition_key, const SelectQueryInfo & query_info, ContextPtr context, bool strict)
 {
     if (context->getSettingsRef().allow_experimental_analyzer)
-        return {query_info.filter_actions_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */, strict};
+        return {query_info.filter_actions_dag, context, partition_key.column_names, partition_key.expression, {}, true /* single_point */, strict};
 
     return {query_info, context, partition_key.column_names, partition_key.expression, true /* single_point */, strict};
 }
@@ -24,14 +23,7 @@ PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, const Sele
 {
 }
 
-PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, ActionsDAGPtr filter_actions_dag, ContextPtr context, bool strict)
-    : partition_key(MergeTreePartition::adjustPartitionKey(metadata, context))
-    , partition_condition(filter_actions_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */, strict)
-    , useless(strict ? partition_condition.anyUnknownOrAlwaysTrue() : partition_condition.alwaysUnknownOrTrue())
-{
-}
-
-bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
+bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part)
 {
     if (part.isEmpty())
         return true;

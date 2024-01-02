@@ -11,6 +11,7 @@
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
+#include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <Interpreters/FunctionMaskingArgumentCheckVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
@@ -24,7 +25,6 @@
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
 #include <Interpreters/RewriteSumIfFunctionVisitor.h>
 #include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
-#include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -288,6 +288,13 @@ void optimizeDuplicatesInOrderBy(const ASTSelectQuery * select_query)
         elems = std::move(unique_elems);
 }
 
+/// Optimize duplicate ORDER BY
+void optimizeDuplicateOrderBy(ASTPtr & query, ContextPtr context)
+{
+    DuplicateOrderByVisitor::Data order_by_data{context};
+    DuplicateOrderByVisitor(order_by_data).visit(query);
+}
+
 /// Return simple subselect (without UNIONs or JOINs or SETTINGS) if any
 const ASTSelectQuery * getSimpleSubselect(const ASTSelectQuery & select)
 {
@@ -371,6 +378,41 @@ std::unordered_set<String> getDistinctNames(const ASTSelectQuery & select)
     return names;
 }
 
+/// Remove DISTINCT from query if columns are known as DISTINCT from subquery
+void optimizeDuplicateDistinct(ASTSelectQuery & select)
+{
+    if (!select.select() || select.select()->children.empty())
+        return;
+
+    const ASTSelectQuery * subselect = getSimpleSubselect(select);
+    if (!subselect)
+        return;
+
+    std::unordered_set<String> distinct_names = getDistinctNames(*subselect);
+    std::unordered_set<std::string_view> selected_names;
+
+    /// Check source column names from select list (ignore aliases and table names)
+    for (const auto & id : select.select()->children)
+    {
+        const auto * identifier = id->as<ASTIdentifier>();
+        if (!identifier)
+            return;
+
+        const String & name = identifier->shortName();
+        if (!distinct_names.contains(name))
+            return; /// Not a distinct column, keep DISTINCT for it.
+
+        selected_names.emplace(name);
+    }
+
+    /// select columns list != distinct columns list
+    /// SELECT DISTINCT a FROM (SELECT DISTINCT a, b FROM ...)) -- cannot remove DISTINCT
+    if (selected_names.size() != distinct_names.size())
+        return;
+
+    select.distinct = false;
+}
+
 /// Replace monotonous functions in ORDER BY if they don't participate in GROUP BY expression,
 /// has a single argument and not an aggregate functions.
 void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, ContextPtr context,
@@ -408,8 +450,8 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
             {
                 for (auto & elem : set->children)
                 {
-                    const auto hash = elem->getTreeHash(/*ignore_aliases=*/ true);
-                    const auto key = toString(hash);
+                    auto hash = elem->getTreeHash();
+                    String key = toString(hash.first) + '_' + toString(hash.second);
                     group_by_hashes.insert(key);
                 }
             }
@@ -418,8 +460,8 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         {
             for (auto & elem : group_by->children)
             {
-                const auto hash = elem->getTreeHash(/*ignore_aliases=*/ true);
-                const auto key = toString(hash);
+                auto hash = elem->getTreeHash();
+                String key = toString(hash.first) + '_' + toString(hash.second);
                 group_by_hashes.insert(key);
             }
         }
@@ -605,6 +647,12 @@ void optimizeAggregationFunctions(ASTPtr & query)
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
+void optimizeAnyFunctions(ASTPtr & query)
+{
+    RewriteAnyFunctionVisitor::Data data = {};
+    RewriteAnyFunctionVisitor(data).visit(query);
+}
+
 void optimizeSumIfFunctions(ASTPtr & query)
 {
     RewriteSumIfFunctionVisitor::Data data = {};
@@ -627,21 +675,6 @@ void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
 {
     RemoveInjectiveFunctionsVisitor::Data data(context);
     RemoveInjectiveFunctionsVisitor(data).visit(query);
-}
-
-void optimizeDateFilters(ASTSelectQuery * select_query, const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns, ContextPtr context)
-{
-    /// Predicates in HAVING clause has been moved to WHERE clause.
-    if (select_query->where())
-    {
-        OptimizeDateOrDateTimeConverterWithPreimageVisitor::Data data{tables_with_columns, context};
-        OptimizeDateOrDateTimeConverterWithPreimageVisitor(data).visit(select_query->refWhere());
-    }
-    if (select_query->prewhere())
-    {
-        OptimizeDateOrDateTimeConverterWithPreimageVisitor::Data data{tables_with_columns, context};
-        OptimizeDateOrDateTimeConverterWithPreimageVisitor(data).visit(select_query->refPrewhere());
-    }
 }
 
 void transformIfStringsIntoEnum(ASTPtr & query)
@@ -747,15 +780,16 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
                 tables_with_columns, result.storage_snapshot->metadata, result.storage);
     }
 
-    /// Rewrite date filters to avoid the calls of converters such as toYear, toYYYYMM, etc.
-    optimizeDateFilters(select_query, tables_with_columns, context);
-
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);
 
     /// GROUP BY functions of other keys elimination.
     if (settings.optimize_group_by_function_keys)
         optimizeGroupByFunctionKeys(select_query);
+
+    /// Move all operations out of any function
+    if (settings.optimize_move_functions_out_of_any)
+        optimizeAnyFunctions(query);
 
     if (settings.optimize_normalize_count_variants)
         optimizeCountConstantAndSumOne(query, context);
@@ -776,6 +810,17 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         && !select_query->group_by_with_rollup
         && !select_query->group_by_with_cube)
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
+
+    /// Remove duplicate ORDER BY and DISTINCT from subqueries.
+    if (settings.optimize_duplicate_order_by_and_distinct)
+    {
+        optimizeDuplicateOrderBy(query, context);
+
+        /// DISTINCT has special meaning in Distributed query with enabled distributed_group_by_no_merge
+        /// TODO: disable Distributed/remote() tables only
+        if (!settings.distributed_group_by_no_merge)
+            optimizeDuplicateDistinct(*select_query);
+    }
 
     /// Remove functions from ORDER BY if its argument is also in ORDER BY
     if (settings.optimize_redundant_functions_in_order_by)
