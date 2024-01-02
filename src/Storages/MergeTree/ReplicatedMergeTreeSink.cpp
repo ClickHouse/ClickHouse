@@ -1158,8 +1158,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
     /// Note: checking is_active is not enough since it's ephemeral, and the version can be the same after recreation,
     /// so need to check host node as well
     auto get_results = zookeeper->tryGet(Strings{storage.replica_path + "/is_active", storage.replica_path + "/host"});
-    const auto & is_active = get_results.at(0);
-    const auto & host = get_results.at(1);
+    const auto & is_active = get_results[0];
+    const auto & host = get_results[1];
     if ((is_active.error == Coordination::Error::ZNONODE || is_active.stat.version != is_active_node_version)
         || (host.error == Coordination::Error::ZNONODE || host.stat.version != host_node_version))
         throw Exception(
