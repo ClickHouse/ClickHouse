@@ -339,9 +339,15 @@ void MergeTreeReaderCompact::readData(
         ColumnPtr temp_column;
 
         auto it = columns_cache_for_subcolumns.find(name_type_in_storage.name);
-        if (!name_level_for_offsets.has_value() && it != columns_cache_for_subcolumns.end())
+        if (!column_for_offsets && it != columns_cache_for_subcolumns.end())
         {
             temp_column = it->second;
+            auto subcolumn = name_type_in_storage.type->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
+            if (column->empty())
+                column = IColumn::mutate(subcolumn);
+            else
+                column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+
             columns_cache_was_used = true;
         }
         else
@@ -362,17 +368,17 @@ void MergeTreeReaderCompact::readData(
             serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
             serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
 
-            if (!name_level_for_offsets.has_value())
+            if (!column_for_offsets)
                 columns_cache_for_subcolumns[name_type_in_storage.name] = temp_column;
+
+            auto subcolumn = name_type_in_storage.type->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
+
+            /// TODO: Avoid extra copying.
+            if (column->empty())
+                column = subcolumn;
+            else
+                column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
         }
-
-        auto subcolumn = name_type_in_storage.type->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
-
-        /// TODO: Avoid extra copying.
-        if (column->empty())
-            column = subcolumn;
-        else
-            column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
     }
     else
     {
