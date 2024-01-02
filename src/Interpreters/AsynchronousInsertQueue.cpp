@@ -573,7 +573,6 @@ try
         log_elements.reserve(data->entries.size());
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
-    std::unique_ptr<ReadBuffer> last_buffer;
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
     for (const auto & entry : data->entries)
     {
@@ -584,10 +583,6 @@ try
         total_rows += num_rows;
         chunk_info->offsets.push_back(total_rows);
         chunk_info->tokens.push_back(entry->async_dedup_token);
-
-        /// Keep buffer, because it still can be used
-        /// in destructor, while resetting buffer at next iteration.
-        last_buffer = std::move(buffer);
 
         if (insert_log)
         {
@@ -619,7 +614,6 @@ try
         }
     }
 
-    format->addBuffer(std::move(last_buffer));
     ProfileEvents::increment(ProfileEvents::AsyncInsertRows, total_rows);
 
     auto finish_entries = [&]
