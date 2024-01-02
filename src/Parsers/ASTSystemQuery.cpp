@@ -220,9 +220,8 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                     print_identifier(*it);
 
                     // Add a comma and space after each identifier, except the last one
-                    if (std::next(it) != src_replicas.end()) {
+                    if (std::next(it) != src_replicas.end())
                         settings.ostr << ", ";
-            }
                 }
             }
         }
