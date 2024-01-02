@@ -163,7 +163,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
 ColumnsDescription::ColumnsDescription(std::initializer_list<ColumnDescription> ordinary)
 {
     for (auto && elem : ordinary)
-        add(std::move(elem));
+        add(elem);
 }
 
 ColumnsDescription ColumnsDescription::fromNamesAndTypes(NamesAndTypes ordinary)
