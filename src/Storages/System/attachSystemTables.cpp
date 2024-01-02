@@ -45,6 +45,7 @@
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
+#include <Storages/System/StorageSystemDatabaseEngines.h>
 #include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
@@ -109,7 +110,7 @@
 namespace DB
 {
 
-void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
 {
     attach<StorageSystemOne>(context, system_database, "one");
     attach<StorageSystemNumbers>(context, system_database, "numbers", false);
@@ -132,6 +133,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators");
     attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families");
     attach<StorageSystemCollations>(context, system_database, "collations");
+    attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines");
     attach<StorageSystemContributors>(context, system_database, "contributors");
     attach<StorageSystemUsers>(context, system_database, "users");
@@ -170,11 +172,6 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
 #endif
-}
-
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
-{
-    attachSystemTablesLocal(context, system_database);
 
     attach<StorageSystemParts>(context, system_database, "parts");
     attach<StorageSystemProjectionParts>(context, system_database, "projection_parts");
