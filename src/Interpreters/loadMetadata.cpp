@@ -1,3 +1,4 @@
+#include <Common/thread_local_rng.h>
 #include <Common/ThreadPool.h>
 #include <Common/PoolId.h>
 

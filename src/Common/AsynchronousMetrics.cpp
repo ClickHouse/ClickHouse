@@ -1,3 +1,4 @@
+#include <Common/formatReadable.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
@@ -8,6 +9,7 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <base/errnoToString.h>
+#include <base/getPageSize.h>
 #include <sys/resource.h>
 #include <chrono>
 
