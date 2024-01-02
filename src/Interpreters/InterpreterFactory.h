@@ -24,12 +24,13 @@ public:
         bool allow_materialized;
     };
 
-    static std::unique_ptr<IInterpreter> get(
+    using InterpreterPtr = std::unique_ptr<IInterpreter>;
+
+     InterpreterPtr get(
         ASTPtr & query,
         ContextMutablePtr context,
         const SelectQueryOptions & options = {});
 
-    using InterpreterPtr = std::unique_ptr<IInterpreter>;
     using CreatorFn = std::function<InterpreterPtr(const Arguments & arguments)>;
 
     using Interpreters = std::unordered_map<String, CreatorFn>;

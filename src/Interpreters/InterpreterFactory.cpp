@@ -145,7 +145,7 @@ void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn
         throw Exception(ErrorCodes::LOGICAL_ERROR, "InterpreterFactory: the interpreter name '{}' is not unique", name);
 }
 
-std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr /*context*/, const SelectQueryOptions & /*options*/)
+InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
     ProfileEvents::increment(ProfileEvents::Query);
 
@@ -158,255 +158,243 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
         ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
     }
 
-//    if (query->as<ASTSelectQuery>())
-//    {
-//        if (context->getSettingsRef().allow_experimental_analyzer)
-//            return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
-//
-//        /// This is internal part of ASTSelectWithUnionQuery.
-//        /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
-//        return std::make_unique<InterpreterSelectQuery>(query, context, options);
-//    }
-//    else if (query->as<ASTSelectWithUnionQuery>())
-//    {
-//        ProfileEvents::increment(ProfileEvents::SelectQuery);
-//
-//        if (context->getSettingsRef().allow_experimental_analyzer)
-//            return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
-//
-//        return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
-//    }
-//    else if (query->as<ASTSelectIntersectExceptQuery>())
-//    {
-//        return std::make_unique<InterpreterSelectIntersectExceptQuery>(query, context, options);
-//    }
-//    else if (query->as<ASTInsertQuery>())
-//    {
-//        ProfileEvents::increment(ProfileEvents::InsertQuery);
-//        bool allow_materialized = static_cast<bool>(context->getSettingsRef().insert_allow_materialized_columns);
-//        return std::make_unique<InterpreterInsertQuery>(query, context, allow_materialized);
-//    }
-////    else if (query->as<ASTCreateQuery>())
-//    {
-//        return std::make_unique<InterpreterCreateQuery>(query, context);
-//    }
-//    else if (query->as<ASTDropQuery>())
-//    {
-//        return std::make_unique<InterpreterDropQuery>(query, context);
-//    }
-//    else if (query->as<ASTUndropQuery>())
-//    {
-//        return std::make_unique<InterpreterUndropQuery>(query, context);
-//    }
-//    else if (query->as<ASTRenameQuery>())
-//    {
-//        return std::make_unique<InterpreterRenameQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowTablesQuery>())
-//    {
-//        return std::make_unique<InterpreterShowTablesQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowColumnsQuery>())
-//    {
-//        return std::make_unique<InterpreterShowColumnsQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowIndexesQuery>())
-//    {
-//        return std::make_unique<InterpreterShowIndexesQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowSettingQuery>())
-//    {
-//        return std::make_unique<InterpreterShowSettingQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowEnginesQuery>())
-//    {
-//        return std::make_unique<InterpreterShowEnginesQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowFunctionsQuery>())
-//    {
-//        return std::make_unique<InterpreterShowFunctionsQuery>(query, context);
-//    }
-//    else if (query->as<ASTUseQuery>())
-//    {
-//        return std::make_unique<InterpreterUseQuery>(query, context);
-//    }
-//    else if (query->as<ASTSetQuery>())
-//    {
-//        /// readonly is checked inside InterpreterSetQuery
-//        return std::make_unique<InterpreterSetQuery>(query, context);
-//    }
-//    else if (query->as<ASTSetRoleQuery>())
-//    {
-//        return std::make_unique<InterpreterSetRoleQuery>(query, context);
-//    }
-//    else if (query->as<ASTOptimizeQuery>())
-//    {
-//        return std::make_unique<InterpreterOptimizeQuery>(query, context);
-//    }
-//    else if (query->as<ASTExistsDatabaseQuery>())
-//    {
-//        return std::make_unique<InterpreterExistsQuery>(query, context);
-//    }
-//    else if (query->as<ASTExistsTableQuery>())
-//    {
-//        return std::make_unique<InterpreterExistsQuery>(query, context);
-//    }
-//    else if (query->as<ASTExistsViewQuery>())
-//    {
-//        return std::make_unique<InterpreterExistsQuery>(query, context);
-//    }
-//    else if (query->as<ASTExistsDictionaryQuery>())
-//    {
-//        return std::make_unique<InterpreterExistsQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowCreateTableQuery>())
-//    {
-//        return std::make_unique<InterpreterShowCreateQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowCreateViewQuery>())
-//    {
-//        return std::make_unique<InterpreterShowCreateQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowCreateDatabaseQuery>())
-//    {
-//        return std::make_unique<InterpreterShowCreateQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowCreateDictionaryQuery>())
-//    {
-//        return std::make_unique<InterpreterShowCreateQuery>(query, context);
-//    }
-//    else if (query->as<ASTDescribeQuery>())
-//    {
-//        return std::make_unique<InterpreterDescribeQuery>(query, context);
-//    }
-//    else if (query->as<ASTDescribeCacheQuery>())
-//    {
-//        return std::make_unique<InterpreterDescribeCacheQuery>(query, context);
-//    }
-//    else if (query->as<ASTExplainQuery>())
-//    {
-//        return std::make_unique<InterpreterExplainQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowProcesslistQuery>())
-//    {
-//        return std::make_unique<InterpreterShowProcesslistQuery>(query, context);
-//    }
-//    else if (query->as<ASTAlterQuery>())
-//    {
-//        return std::make_unique<InterpreterAlterQuery>(query, context);
-//    }
-//    else if (query->as<ASTAlterNamedCollectionQuery>())
-//    {
-//        return std::make_unique<InterpreterAlterNamedCollectionQuery>(query, context);
-//    }
-//    else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>())
-//    {
-//        return std::make_unique<InterpreterCheckQuery>(query, context);
-//    }
-//    else if (query->as<ASTKillQueryQuery>())
-//    {
-//        return std::make_unique<InterpreterKillQueryQuery>(query, context);
-//    }
-//    else if (query->as<ASTSystemQuery>())
-//    {
-//        return std::make_unique<InterpreterSystemQuery>(query, context);
-//    }
-//    else if (query->as<ASTWatchQuery>())
-//    {
-//        return std::make_unique<InterpreterWatchQuery>(query, context);
-//    }
-//    else if (query->as<ASTCreateUserQuery>())
-//    {
-//        return std::make_unique<InterpreterCreateUserQuery>(query, context);
-//    }
-//    else if (query->as<ASTCreateRoleQuery>())
-//    {
-//        return std::make_unique<InterpreterCreateRoleQuery>(query, context);
-//    }
-//    else if (query->as<ASTCreateQuotaQuery>())
-//    {
-//        return std::make_unique<InterpreterCreateQuotaQuery>(query, context);
-//    }
-//    else if (query->as<ASTCreateRowPolicyQuery>())
-//    {
-//        return std::make_unique<InterpreterCreateRowPolicyQuery>(query, context);
-//    }
-//    else if (query->as<ASTCreateSettingsProfileQuery>())
-//    {
-//        return std::make_unique<InterpreterCreateSettingsProfileQuery>(query, context);
-//    }
-//    else if (query->as<ASTDropAccessEntityQuery>())
-//    {
-//        return std::make_unique<InterpreterDropAccessEntityQuery>(query, context);
-//    }
-//    else if (query->as<ASTMoveAccessEntityQuery>())
-//    {
-//        return std::make_unique<InterpreterMoveAccessEntityQuery>(query, context);
-//    }
-//    else if (query->as<ASTDropNamedCollectionQuery>())
-//    {
-//        return std::make_unique<InterpreterDropNamedCollectionQuery>(query, context);
-//    }
-//    else if (query->as<ASTGrantQuery>())
-//    {
-//        return std::make_unique<InterpreterGrantQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowCreateAccessEntityQuery>())
-//    {
-//        return std::make_unique<InterpreterShowCreateAccessEntityQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowGrantsQuery>())
-//    {
-//        return std::make_unique<InterpreterShowGrantsQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowAccessEntitiesQuery>())
-//    {
-//        return std::make_unique<InterpreterShowAccessEntitiesQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowAccessQuery>())
-//    {
-//        return std::make_unique<InterpreterShowAccessQuery>(query, context);
-//    }
-//    else if (query->as<ASTShowPrivilegesQuery>())
-//    {
-//        return std::make_unique<InterpreterShowPrivilegesQuery>(query, context);
-//    }
-//    else if (query->as<ASTExternalDDLQuery>())
-//    {
-//        return std::make_unique<InterpreterExternalDDLQuery>(query, context);
-//    }
-//    else if (query->as<ASTTransactionControl>())
-//    {
-//        return std::make_unique<InterpreterTransactionControlQuery>(query, context);
-//    }
-//    else if (query->as<ASTCreateFunctionQuery>())
-//    {
-//        return std::make_unique<InterpreterCreateFunctionQuery>(query, context);
-//    }
-//    else if (query->as<ASTDropFunctionQuery>())
-//    {
-//        return std::make_unique<InterpreterDropFunctionQuery>(query, context);
-//    }
-//    else if (query->as<ASTCreateIndexQuery>())
-//    {
-//        return std::make_unique<InterpreterCreateIndexQuery>(query, context);
-//    }
-//    else if (query->as<ASTCreateNamedCollectionQuery>())
-//    {
-//        return std::make_unique<InterpreterCreateNamedCollectionQuery>(query, context);
-//    }
-//    else if (query->as<ASTDropIndexQuery>())
-//    {
-//        return std::make_unique<InterpreterDropIndexQuery>(query, context);
-//    }
-//    else if (query->as<ASTBackupQuery>())
-//    {
-//        return std::make_unique<InterpreterBackupQuery>(query, context);
-//    }
-//    else if (query->as<ASTDeleteQuery>())
-//    {
-//        return std::make_unique<InterpreterDeleteQuery>(query, context);
-//    }
+    Arguments arguments {
+        .query = query,
+        .context = context,
+        .options = options
+    };
+    String interpreter_name;
+    if (query->as<ASTSelectQuery>())
+    {
+        if (context->getSettingsRef().allow_experimental_analyzer)
+            interpreter_name = "InterpreterSelectQueryAnalyzer";
+        /// This is internal part of ASTSelectWithUnionQuery.
+        /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
+        else interpreter_name = "InterpreterSelectQuery";
+    }
+    else if (query->as<ASTSelectWithUnionQuery>())
+    {
+        ProfileEvents::increment(ProfileEvents::SelectQuery);
+
+        if (context->getSettingsRef().allow_experimental_analyzer)
+            interpreter_name = "InterpreterSelectQueryAnalyzer";
+        else interpreter_name = "InterpreterSelectWithUnionQuery";
+    }
+    else if (query->as<ASTSelectIntersectExceptQuery>())
+    {
+        interpreter_name = "InterpreterSelectIntersectExceptQuery";
+    }
+    else if (query->as<ASTInsertQuery>())
+    {
+        ProfileEvents::increment(ProfileEvents::InsertQuery);
+        bool allow_materialized = static_cast<bool>(context->getSettingsRef().insert_allow_materialized_columns);
+        arguments.allow_materialized = allow_materialized;
+        interpreter_name = "InterpreterInsertQuery";
+    }
+    else if (query->as<ASTCreateQuery>())
+    {
+        interpreter_name = "InterpreterCreateQuery";
+    }
+    else if (query->as<ASTDropQuery>())
+    {
+        interpreter_name = "InterpreterDropQuery";
+    }
+    else if (query->as<ASTUndropQuery>())
+    {
+        interpreter_name = "InterpreterUndropQuery";
+    }
+    else if (query->as<ASTRenameQuery>())
+    {
+        interpreter_name = "InterpreterRenameQuery";
+    }
+    else if (query->as<ASTShowTablesQuery>())
+    {
+        interpreter_name = "InterpreterShowTablesQuery";
+    }
+    else if (query->as<ASTShowColumnsQuery>())
+    {
+        interpreter_name = "InterpreterShowColumnsQuery";
+    }
+    else if (query->as<ASTShowIndexesQuery>())
+    {
+        interpreter_name = "InterpreterShowIndexesQuery";
+    }
+    else if (query->as<ASTShowSettingQuery>())
+    {
+        interpreter_name = "InterpreterShowSettingQuery";
+    }
+    else if (query->as<ASTShowEnginesQuery>())
+    {
+        interpreter_name = "InterpreterShowEnginesQuery";
+    }
+    else if (query->as<ASTShowFunctionsQuery>())
+    {
+        interpreter_name = "InterpreterShowFunctionsQuery";
+    }
+    else if (query->as<ASTUseQuery>())
+    {
+        interpreter_name = "InterpreterUseQuery";
+    }
+    else if (query->as<ASTSetQuery>())
+    {
+        /// readonly is checked inside InterpreterSetQuery
+        interpreter_name = "InterpreterSetQuery";
+    }
+    else if (query->as<ASTSetRoleQuery>())
+    {
+        interpreter_name = "InterpreterSetRoleQuery";
+    }
+    else if (query->as<ASTOptimizeQuery>())
+    {
+        interpreter_name = "InterpreterOptimizeQuery";
+    }
+    else if (query->as<ASTExistsDatabaseQuery>() || query->as<ASTExistsTableQuery>() || query->as<ASTExistsViewQuery>() || query->as<ASTExistsDictionaryQuery>())
+    {
+        interpreter_name = "InterpreterExistsQuery";
+    }
+    else if (query->as<ASTShowCreateTableQuery>() || query->as<ASTShowCreateViewQuery>() || query->as<ASTShowCreateDatabaseQuery>() || query->as<ASTShowCreateDictionaryQuery>())
+    {
+        interpreter_name = "InterpreterShowCreateQuery";
+    }
+    else if (query->as<ASTDescribeQuery>())
+    {
+        interpreter_name = "InterpreterDescribeQuery";
+    }
+    else if (query->as<ASTDescribeCacheQuery>())
+    {
+        interpreter_name = "InterpreterDescribeCacheQuery";
+    }
+    else if (query->as<ASTExplainQuery>())
+    {
+        interpreter_name = "InterpreterExplainQuery";
+    }
+    else if (query->as<ASTShowProcesslistQuery>())
+    {
+        interpreter_name = "InterpreterShowProcesslistQuery";
+    }
+    else if (query->as<ASTAlterQuery>())
+    {
+        interpreter_name = "InterpreterAlterQuery";
+    }
+    else if (query->as<ASTAlterNamedCollectionQuery>())
+    {
+        interpreter_name = "InterpreterAlterNamedCollectionQuery";
+    }
+    else if (query->as<ASTCheckTableQuery>() || query->as<ASTCheckAllTablesQuery>())
+    {
+        interpreter_name = "InterpreterCheckQuery";
+    }
+    else if (query->as<ASTKillQueryQuery>())
+    {
+        interpreter_name = "InterpreterKillQueryQuery";
+    }
+    else if (query->as<ASTSystemQuery>())
+    {
+        interpreter_name = "InterpreterSystemQuery";
+    }
+    else if (query->as<ASTWatchQuery>())
+    {
+        interpreter_name = "InterpreterWatchQuery";
+    }
+    else if (query->as<ASTCreateUserQuery>())
+    {
+        interpreter_name = "InterpreterCreateUserQuery";
+    }
+    else if (query->as<ASTCreateRoleQuery>())
+    {
+        interpreter_name = "InterpreterCreateRoleQuery";
+    }
+    else if (query->as<ASTCreateQuotaQuery>())
+    {
+        interpreter_name = "InterpreterCreateQuotaQuery";
+    }
+    else if (query->as<ASTCreateRowPolicyQuery>())
+    {
+        interpreter_name = "InterpreterCreateRowPolicyQuery";
+    }
+    else if (query->as<ASTCreateSettingsProfileQuery>())
+    {
+        interpreter_name = "InterpreterCreateSettingsProfileQuery";
+    }
+    else if (query->as<ASTDropAccessEntityQuery>())
+    {
+        interpreter_name = "InterpreterDropAccessEntityQuery";
+    }
+    else if (query->as<ASTMoveAccessEntityQuery>())
+    {
+        interpreter_name = "InterpreterMoveAccessEntityQuery";
+    }
+    else if (query->as<ASTDropNamedCollectionQuery>())
+    {
+        interpreter_name = "InterpreterDropNamedCollectionQuery";
+    }
+    else if (query->as<ASTGrantQuery>())
+    {
+        interpreter_name = "InterpreterGrantQuery";
+    }
+    else if (query->as<ASTShowCreateAccessEntityQuery>())
+    {
+        interpreter_name = "InterpreterShowCreateAccessEntityQuery";
+    }
+    else if (query->as<ASTShowGrantsQuery>())
+    {
+        interpreter_name = "InterpreterShowGrantsQuery";
+    }
+    else if (query->as<ASTShowAccessEntitiesQuery>())
+    {
+        interpreter_name = "InterpreterShowAccessEntitiesQuery";
+    }
+    else if (query->as<ASTShowAccessQuery>())
+    {
+        interpreter_name= "InterpreterShowAccessQuery";
+    }
+    else if (query->as<ASTShowPrivilegesQuery>())
+    {
+        interpreter_name = "InterpreterShowPrivilegesQuery";
+    }
+    else if (query->as<ASTExternalDDLQuery>())
+    {
+        interpreter_name = "InterpreterExternalDDLQuery";
+    }
+    else if (query->as<ASTTransactionControl>())
+    {
+        interpreter_name = "InterpreterTransactionControlQuery";
+    }
+    else if (query->as<ASTCreateFunctionQuery>())
+    {
+        interpreter_name = "InterpreterCreateFunctionQuery";
+    }
+    else if (query->as<ASTDropFunctionQuery>())
+    {
+        interpreter_name = "InterpreterDropFunctionQuery";
+    }
+    else if (query->as<ASTCreateIndexQuery>())
+    {
+        interpreter_name = "InterpreterCreateIndexQuery";
+    }
+    else if (query->as<ASTCreateNamedCollectionQuery>())
+    {
+        interpreter_name = "InterpreterCreateNamedCollectionQuery";
+    }
+    else if (query->as<ASTDropIndexQuery>())
+    {
+        interpreter_name = "InterpreterDropIndexQuery";
+    }
+    else if (query->as<ASTBackupQuery>())
+    {
+        interpreter_name = "InterpreterBackupQuery";
+    }
+    else if (query->as<ASTDeleteQuery>())
+    {
+        interpreter_name = "InterpreterDeleteQuery";
+    }
+
+    if(!interpreters.contains(interpreter_name))
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Unknown type of query: {}", query->getID());
+
+    // creator_fn creates and returns a InterpreterPtr with the supplied arguments
+    auto creator_fn = interpreters.at(interpreter_name);
+
+    return creator_fn(arguments);
 }
 }
