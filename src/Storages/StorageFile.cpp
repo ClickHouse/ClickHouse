@@ -1469,14 +1469,17 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         if (storage->has_peekable_read_buffer_from_fd.exchange(false))
             read_buffer = std::move(storage->peekable_read_buffer_from_fd);
 
-        pipes.emplace_back(std::make_shared<StorageFileSource>(
+        auto source = std::make_shared<StorageFileSource>(
             info,
             storage,
             context,
             max_block_size,
             files_iterator,
             std::move(read_buffer),
-            need_only_count));
+            need_only_count);
+
+        source->setKeyCondition(filter_nodes.nodes, context);
+        pipes.emplace_back(std::move(source));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

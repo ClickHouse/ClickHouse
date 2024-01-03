@@ -36,7 +36,10 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
+#include "Functions/FunctionsLogical.h"
 #include "Functions/IFunction.h"
+#include "Functions/IFunctionAdaptors.h"
+#include "Functions/indexHint.h"
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -518,6 +521,37 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     return nullptr;
 
             return &node_copy;
+        }
+        else if (node->function_base->getName() == "indexHint")
+        {
+            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node->function_base.get()))
+            {
+                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
+                {
+                    auto index_hint_dag = index_hint->getActions()->clone();
+                    ActionsDAG::NodeRawConstPtrs atoms;
+                    for (const auto & output : index_hint_dag->getOutputs())
+                        if (const auto * child_copy = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes))
+                            atoms.push_back(child_copy);
+
+                    if (!atoms.empty())
+                    {
+                        const auto * res = atoms.at(0);
+
+                        if (atoms.size() > 1)
+                        {
+                            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+                            res = &index_hint_dag->addFunction(func_builder_and, atoms, {});
+                        }
+
+                        if (!res->result_type->equals(*node->result_type))
+                            res = &index_hint_dag->addCast(*res, node->result_type, {});
+
+                        additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(*index_hint_dag)));
+                        return res;
+                    }
+                }
+            }
         }
     }
 

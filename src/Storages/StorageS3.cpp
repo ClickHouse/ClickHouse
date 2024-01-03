@@ -1255,7 +1255,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
     pipes.reserve(num_streams);
     for (size_t i = 0; i < num_streams; ++i)
     {
-        pipes.emplace_back(std::make_shared<StorageS3Source>(
+        auto source = std::make_shared<StorageS3Source>(
             read_from_format_info,
             query_configuration.format,
             storage.getName(),
@@ -1270,7 +1270,10 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
             query_configuration.url.uri.getHost() + std::to_string(query_configuration.url.uri.getPort()),
             iterator_wrapper,
             max_parsing_threads,
-            need_only_count));
+            need_only_count);
+
+        source->setKeyCondition(filter_nodes.nodes, local_context);
+        pipes.emplace_back(std::move(source));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

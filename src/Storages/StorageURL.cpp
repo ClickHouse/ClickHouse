@@ -1064,7 +1064,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        pipes.emplace_back(std::make_shared<StorageURLSource>(
+        auto source = std::make_shared<StorageURLSource>(
             info,
             iterator_wrapper,
             storage->getReadMethod(),
@@ -1080,7 +1080,10 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             storage->headers,
             read_uri_params,
             is_url_with_globs,
-            need_only_count));
+            need_only_count);
+
+        source->setKeyCondition(filter_nodes.nodes, context);
+        pipes.emplace_back(std::move(source));
     }
 
     if (uri_options)
