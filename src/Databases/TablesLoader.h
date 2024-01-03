@@ -82,8 +82,6 @@ private:
 
     void buildDependencyGraph();
     void removeUnresolvableDependencies();
-    void loadTablesInTopologicalOrder();
-    void startLoadingTables(ContextMutablePtr load_context, const std::vector<StorageID> & tables_to_load, size_t level);
 };
 
 }

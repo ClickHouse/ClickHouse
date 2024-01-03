@@ -1,0 +1,2 @@
+[[ -v $_CLICKHOUSE_COMPLETION_LOADED ]] || source "$(dirname "${BASH_SOURCE[0]}")/clickhouse-bootstrap"
+_complete_clickhouse_generic chc

@@ -16,6 +16,7 @@
             <value>az-zoo2</value>
             <enable_auto_detection_on_cloud>1</enable_auto_detection_on_cloud>
         </availability_zone>
+        <max_memory_usage_soft_limit>20000000</max_memory_usage_soft_limit>
 
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
@@ -24,7 +25,6 @@
             <force_sync>false</force_sync>
             <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
-	    <max_memory_usage_soft_limit>20000000</max_memory_usage_soft_limit>
 
             <async_replication>1</async_replication>
         </coordination_settings>
