@@ -51,7 +51,6 @@
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
-#include <Parsers/queryToString.h>
 
 namespace
 {
