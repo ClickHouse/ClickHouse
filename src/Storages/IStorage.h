@@ -515,6 +515,7 @@ public:
         bool /*final*/,
         bool /*deduplicate*/,
         const Names & /* deduplicate_by_columns */,
+        bool /*cleanup*/,
         ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());

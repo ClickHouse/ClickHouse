@@ -5,6 +5,7 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -85,6 +86,12 @@ public:
     {
         for (auto & child : columns.children)
             visit(child);
+    }
+
+    void visit(ASTRefreshStrategy & refresh) const
+    {
+        ASTPtr unused;
+        visit(refresh, unused);
     }
 
 private:
@@ -227,6 +234,13 @@ private:
                 visit(child);
             }
         }
+    }
+
+    void visit(ASTRefreshStrategy & refresh, ASTPtr &) const
+    {
+        if (refresh.dependencies)
+            for (auto & table : refresh.dependencies->children)
+                tryVisit<ASTTableIdentifier>(table);
     }
 
     void visitChildren(IAST & ast) const
