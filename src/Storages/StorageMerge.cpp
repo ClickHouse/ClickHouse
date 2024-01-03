@@ -545,6 +545,14 @@ void ReadFromMerge::createChildPlans()
         query_info.input_order_info = input_sorting_info;
     }
 
+<<<<<<< HEAD
+=======
+    auto sample_block = merge_storage_snapshot->getMetadataForQuery()->getSampleBlock();
+
+    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
+    QueryPlanResourceHolder resources;
+
+>>>>>>> parent of a01acf5d2a6 (remove projection from StorageSnapshot)
     for (const auto & table : selected_tables)
     {
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);

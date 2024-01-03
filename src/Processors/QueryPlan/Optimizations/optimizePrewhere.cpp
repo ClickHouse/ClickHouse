@@ -137,7 +137,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
 
     if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
     {
-        const auto & sampling_key = storage_snapshot->metadata->getSamplingKey();
+        const auto & sampling_key = storage_snapshot->getMetadataForQuery()->getSamplingKey();
         const auto & sampling_source_columns = sampling_key.expression->getRequiredColumnsWithTypes();
         for (const auto & column : sampling_source_columns)
             required_columns_after_filter.push_back(ColumnWithTypeAndName(column.type, column.name));

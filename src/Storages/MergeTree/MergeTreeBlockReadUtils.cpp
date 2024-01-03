@@ -70,7 +70,7 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    auto metadata_snapshot = storage_snapshot->metadata;
+    auto metadata_snapshot = storage_snapshot->getMetadataForQuery();
     const auto column_default = metadata_snapshot->getColumns().getDefault(column_name);
     if (!column_default)
         return false;
