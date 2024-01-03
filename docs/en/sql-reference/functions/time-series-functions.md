@@ -76,6 +76,8 @@ seriesDecomposeSTL(series, period);
 - `series` - An array of numeric values
 - `period` - A positive number
 
+The number of data points in `series` should be atleast twice the value of `period`.
+
 **Returned value**
 
 - Array of arrays
