@@ -819,34 +819,6 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
 
-
-std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(
-    const MergeTreeData & data,
-    const MergeTreeData::DataPartsVector & parts,
-    const ASTPtr & query,
-    ContextPtr context)
-{
-    std::unordered_set<String> part_values;
-    ASTPtr expression_ast;
-    auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, true /* one_part */);
-
-    if (virtual_columns_block.rows() == 0)
-        return {};
-
-    // Generate valid expressions for filtering
-    VirtualColumnUtils::prepareFilterBlockWithQuery(query, context, virtual_columns_block, expression_ast);
-
-    // If there is still something left, fill the virtual block and do the filtering.
-    if (expression_ast)
-    {
-        virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
-        VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context, expression_ast);
-        return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
-    }
-
-    return {};
-}
-
 void MergeTreeDataSelectExecutor::filterPartsByPartition(
     const std::optional<PartitionPruner> & partition_pruner,
     const std::optional<KeyCondition> & minmax_idx_condition,

@@ -137,7 +137,7 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
 }
 
 MergeTreeConditionFullText::MergeTreeConditionFullText(
-    const SelectQueryInfo & query_info,
+    const ActionsDAGPtr & filter_actions_dag,
     ContextPtr context,
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
@@ -146,38 +146,16 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , token_extractor(token_extactor_)
-    , prepared_sets(query_info.prepared_sets)
 {
-    if (context->getSettingsRef().allow_experimental_analyzer)
-    {
-        if (!query_info.filter_actions_dag)
-        {
-            rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
-            return;
-        }
-
-        RPNBuilder<RPNElement> builder(
-            query_info.filter_actions_dag->getOutputs().at(0),
-            context,
-            [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
-        rpn = std::move(builder).extractRPN();
-        return;
-    }
-
-    ASTPtr filter_node = buildFilterNode(query_info.query);
-
-    if (!filter_node)
+    if (!filter_actions_dag)
     {
         rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
 
-    auto block_with_constants = KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
     RPNBuilder<RPNElement> builder(
-        filter_node,
+        filter_actions_dag->getOutputs().at(0),
         context,
-        std::move(block_with_constants),
-        query_info.prepared_sets,
         [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
     rpn = std::move(builder).extractRPN();
 }
@@ -691,9 +669,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator(const 
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
-        const SelectQueryInfo & query, ContextPtr context) const
+        const ActionsDAGPtr & filter_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionFullText>(query, context, index.sample_block, params, token_extractor.get());
+    return std::make_shared<MergeTreeConditionFullText>(filter_dag, context, index.sample_block, params, token_extractor.get());
 }
 
 MergeTreeIndexPtr bloomFilterIndexCreator(

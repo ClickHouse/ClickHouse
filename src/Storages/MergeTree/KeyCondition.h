@@ -38,7 +38,7 @@ struct ActionDAGNodes;
   */
 class KeyCondition
 {
-public:
+private:
     /// Construct key condition from AST SELECT query WHERE, PREWHERE and additional filters
     KeyCondition(
         const ASTPtr & query,
@@ -63,6 +63,7 @@ public:
         bool single_point_ = false,
         bool strict_ = false);
 
+public:
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
         ActionsDAGPtr filter_dag,
