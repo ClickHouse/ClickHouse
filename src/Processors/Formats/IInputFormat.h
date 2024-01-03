@@ -39,7 +39,7 @@ public:
     virtual void resetParser();
 
     virtual void setReadBuffer(ReadBuffer & in_);
-    ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
+    virtual void resetReadBuffer() { in = nullptr; }
 
     virtual const BlockMissingValues & getMissingValues() const
     {
@@ -64,6 +64,8 @@ public:
     void needOnlyCount() { need_only_count = true; }
 
 protected:
+    ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
+
     virtual Chunk getChunkForCount(size_t rows);
 
     ColumnMappingPtr column_mapping{};
