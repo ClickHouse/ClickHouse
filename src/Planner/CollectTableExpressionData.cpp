@@ -77,12 +77,12 @@ public:
         {
             /// Replace ALIAS column with expression
             bool column_already_exists = table_expression_data.hasColumn(column_node->getColumnName());
-            if (column_already_exists)
-                return;
+            if (!column_already_exists)
+            {
+                auto column_identifier = planner_context.getGlobalPlannerContext()->createColumnIdentifier(node);
+                table_expression_data.addAliasColumnName(column_node->getColumnName(), column_identifier);
+            }
 
-            auto column_identifier = planner_context.getGlobalPlannerContext()->createColumnIdentifier(node);
-
-            table_expression_data.addAliasColumnName(column_node->getColumnName(), column_identifier);
             node = column_node->getExpression();
             visitImpl(node);
             return;
