@@ -133,6 +133,12 @@ FDBKeeper::FDBKeeper(const zkutil::ZooKeeperArgs & args)
         chroot.pop_back();
     LOG_DEBUG(log, "Using chroot: {}", chroot);
 
+    /// Mark support feature
+    keeper_feature.enableFeatureFlag(KeeperFeatureFlag::CHECK_NOT_EXISTS);
+    keeper_feature.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
+    keeper_feature.enableFeatureFlag(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
+    keeper_feature.enableFeatureFlag(KeeperFeatureFlag::MULTI_READ);
+
     /// Init fdb database
     throwIfFDBError(fdb_create_database(cluster_file_path.c_str(), &db));
     static int64_t timeout_ms = 5000;

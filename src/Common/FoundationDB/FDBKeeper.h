@@ -98,22 +98,9 @@ public:
     }
 #pragma clang diagnostic pop
 
-    bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const override
-    {
-        switch (feature_flag)
-        {
-            case DB::KeeperFeatureFlag::CHECK_NOT_EXISTS:
-            case DB::KeeperFeatureFlag::FILTERED_LIST:
-            case DB::KeeperFeatureFlag::MULTI_READ:
-            case DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS:
-                return true;
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcovered-switch-default"
-            default:
-                return false;
-#pragma clang diagnostic pop
-        }
-    }
+    bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const override { return keeper_feature.isEnabled(feature_flag); }
+
+    const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature; }
 
     /// Expire session and finish all pending requests
     void finalize(const String & reason) override;
@@ -141,5 +128,6 @@ private:
     FDBTransaction * newTrx();
 
     String chroot;
+    DB::KeeperFeatureFlags keeper_feature;
 };
 }

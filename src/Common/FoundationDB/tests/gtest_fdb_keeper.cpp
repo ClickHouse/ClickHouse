@@ -1603,4 +1603,20 @@ TEST_P(FDBKeeperChrootSuite, CreateIgnoreExists)
     ASSERT_EQ(create_resp.path_created, "/a");
     ASSERT_EQ(create_resp.error, Error::ZOK);
 }
+
+TEST_F(FDBKeeperSuite, CheckFeatureFlags)
+{
+    std::vector<KeeperFeatureFlag> flags = {
+        KeeperFeatureFlag::CHECK_NOT_EXISTS,
+        KeeperFeatureFlag::CREATE_IF_NOT_EXISTS,
+        KeeperFeatureFlag::FILTERED_LIST,
+        KeeperFeatureFlag::MULTI_READ,
+    };
+
+    for (auto flag : flags)
+    {
+        ASSERT_TRUE(keeper->getKeeperFeatureFlags()->isEnabled(flag));
+        ASSERT_TRUE(keeper->isFeatureEnabled(flag));
+    }
+}
 #endif
