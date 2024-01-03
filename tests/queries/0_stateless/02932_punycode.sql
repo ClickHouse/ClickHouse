@@ -9,8 +9,8 @@ SELECT punycodeDecode(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT punycodeEncode(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT punycodeDecode('two', 'strings'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT punycodeEncode('two', 'strings'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT punycodeDecode(toFixedString('two', 3)); -- { serverError ILLEGAL_COLUMN }
-SELECT punycodeEncode(toFixedString('two', 3)); -- { serverError ILLEGAL_COLUMN }
+SELECT punycodeDecode(toFixedString('two', 3)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT punycodeEncode(toFixedString('two', 3)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '-- Regular cases';
 
