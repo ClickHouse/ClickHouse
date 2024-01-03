@@ -225,6 +225,7 @@ quit
 
     setup_logs_replication
 
+    set +e
     $repo_dir/tests/clickhouse-test --fuzz \
         --query-fuzzer-runs=1000 \
         --create-query-fuzzer-runs=50 \
@@ -237,8 +238,9 @@ quit
 
     fuzzer_exit_code=$?
     echo "Fuzzer exit code is $fuzzer_exit_code"
+    set -e
 
-    # If the server dies, most often the fuzzer returns Code 210: Connetion
+# If the server dies, most often the fuzzer returns Code 210: Connetion
     # refused, and sometimes also code 32: attempt to read after eof. For
     # simplicity, check again whether the server is accepting connections using
     # clickhouse-client. We don't check for the existence of the server process, because
