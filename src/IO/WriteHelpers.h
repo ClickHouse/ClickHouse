@@ -63,7 +63,9 @@ namespace ErrorCodes
 
 inline void writeChar(char x, WriteBuffer & buf)
 {
-    buf.write(x);
+    buf.nextIfAtEnd();
+    *buf.position() = x;
+    ++buf.position();
 }
 
 /// Write the same character n times.
