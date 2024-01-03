@@ -106,13 +106,14 @@ void CSVRowInputFormat::syncAfterError()
 
 void CSVRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
 }
 
-void CSVRowInputFormat::resetParser()
+void CSVRowInputFormat::resetReadBuffer()
 {
-    RowInputFormatWithNamesAndTypes::resetParser();
-    buf->reset();
+    buf.reset();
+    RowInputFormatWithNamesAndTypes::resetReadBuffer();
 }
 
 void CSVFormatReader::skipRow()
@@ -167,7 +168,9 @@ void CSVFormatReader::skipRow()
             else if (*pos == '\r')
             {
                 ++istr.position();
-                if (!istr.eof() && *pos == '\n')
+                if (format_settings.csv.allow_cr_end_of_line)
+                    return;
+                else if (!istr.eof() && *pos == '\n')
                 {
                     ++pos;
                     return;
@@ -509,7 +512,7 @@ void registerInputFormatCSV(FormatFactory & factory)
     registerWithNamesAndTypes("CSV", register_func);
 }
 
-std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
+std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, const FormatSettings & settings)
 {
     char * pos = in.position();
     bool quotes = false;
@@ -561,7 +564,9 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
             else if (*pos == '\r')
             {
                 ++pos;
-                if (loadAtPosition(in, memory, pos) && *pos == '\n')
+                if (settings.csv.allow_cr_end_of_line)
+                    continue;
+                else if (loadAtPosition(in, memory, pos) && *pos == '\n')
                     ++pos;
                 else
                     continue;
@@ -584,9 +589,12 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
     auto register_func = [&](const String & format_name, bool, bool)
     {
         static constexpr size_t min_rows = 3; /// Make it 3 for header auto detection (first 3 rows must be always in the same segment).
-        factory.registerFileSegmentationEngine(format_name, [](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+        factory.registerFileSegmentationEngineCreator(format_name, [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
         {
-            return fileSegmentationEngineCSVImpl(in, memory, min_bytes, min_rows, max_rows);
+            return [settings] (ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+            {
+                return fileSegmentationEngineCSVImpl(in, memory, min_bytes, min_rows, max_rows, settings);
+            };
         });
     };
 

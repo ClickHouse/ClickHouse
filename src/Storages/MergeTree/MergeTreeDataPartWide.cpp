@@ -50,13 +50,14 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartWide::getWriter(
     const NamesAndTypesList & columns_list,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+    const Statistics & stats_to_recalc_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity)
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
         shared_from_this(), columns_list,
-        metadata_snapshot, indices_to_recalc,
+        metadata_snapshot, indices_to_recalc, stats_to_recalc_,
         getMarksFileExtension(),
         default_codec_, writer_settings, computed_index_granularity);
 }
@@ -198,8 +199,10 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                     if (!stream_name)
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "No {}.{} file checksum for column {} in part {}",
-                            *stream_name, DATA_FILE_EXTENSION, name_type.name, getDataPartStorage().getFullPath());
+                            "No stream ({}) file checksum for column {} in part {}",
+                            DATA_FILE_EXTENSION,
+                            name_type.name,
+                            getDataPartStorage().getFullPath());
 
                     auto mrk_file_name = *stream_name + marks_file_extension;
                     if (!checksums.files.contains(mrk_file_name))

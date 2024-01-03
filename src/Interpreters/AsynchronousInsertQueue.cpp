@@ -39,6 +39,7 @@ namespace CurrentMetrics
     extern const Metric PendingAsyncInsert;
     extern const Metric AsynchronousInsertThreads;
     extern const Metric AsynchronousInsertThreadsActive;
+    extern const Metric AsynchronousInsertThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -85,7 +86,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     SipHash siphash;
 
     siphash.update(data_kind);
-    query->updateTreeHash(siphash);
+    query->updateTreeHash(siphash, /*ignore_aliases=*/ true);
 
     if (user_id)
     {
@@ -175,7 +176,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
     , pool_size(pool_size_)
     , flush_on_shutdown(flush_on_shutdown_)
     , queue_shards(pool_size)
-    , pool(CurrentMetrics::AsynchronousInsertThreads, CurrentMetrics::AsynchronousInsertThreadsActive, pool_size)
+    , pool(CurrentMetrics::AsynchronousInsertThreads, CurrentMetrics::AsynchronousInsertThreadsActive, CurrentMetrics::AsynchronousInsertThreadsScheduled, pool_size)
 {
     if (!pool_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "pool_size cannot be zero");
@@ -766,7 +767,6 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     };
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
-    std::unique_ptr<ReadBuffer> last_buffer;
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
     auto query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef().log_queries_cut_to_length);
 
@@ -782,11 +782,6 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer);
-
-        /// Keep buffer, because it still can be used
-        /// in destructor, while resetting buffer at next iteration.
-        last_buffer = std::move(buffer);
-
         total_rows += num_rows;
         chunk_info->offsets.push_back(total_rows);
         chunk_info->tokens.push_back(entry->async_dedup_token);
@@ -794,8 +789,6 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         add_to_async_insert_log(entry, query_for_logging, current_exception, num_rows, num_bytes);
         current_exception.clear();
     }
-
-    format->addBuffer(std::move(last_buffer));
 
     Chunk chunk(executor.getResultColumns(), total_rows);
     chunk.setChunkInfo(std::move(chunk_info));

@@ -436,8 +436,8 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 
     auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
 
-    query_node->resolveProjectionColumns(projection_columns);
     query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
+    query_node->resolveProjectionColumns(projection_columns);
     query_node->getJoinTree() = table_expression;
     query_node->setIsSubquery(true);
 

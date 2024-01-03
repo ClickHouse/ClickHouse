@@ -34,7 +34,12 @@ public:
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); }
 
     /** write the data in the buffer (from the beginning of the buffer to the current position);
-      * set the position to the beginning; throw an exception, if something is wrong
+      * set the position to the beginning; throw an exception, if something is wrong.
+      *
+      * Next call doesn't guarantee that buffer capacity is regained after.
+      * Some buffers (i.g WriteBufferFromS3) flush its data only after certain amount of consumed data.
+      * If direct write is performed into [position(), buffer().end()) and its length is not enough,
+      * you need to fill it first (i.g with write call), after it the capacity is regained.
       */
     inline void next()
     {

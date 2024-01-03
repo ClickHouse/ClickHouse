@@ -16,6 +16,7 @@
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -78,6 +79,11 @@ bool isRetryableException(const std::exception_ptr exception_ptr)
     catch (const ErrnoException & e)
     {
         if (e.getErrno() == EMFILE)
+            return true;
+    }
+    catch (const Coordination::Exception  & e)
+    {
+        if (Coordination::isHardwareError(e.code))
             return true;
     }
     catch (const Exception & e)
@@ -335,7 +341,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             &Poco::Logger::get("checkDataPart"),
             "Will drop cache for data part {} and will check it once again", data_part->name);
 
-        auto & cache = *FileCacheFactory::instance().getByName(*cache_name).cache;
+        auto & cache = *FileCacheFactory::instance().getByName(*cache_name)->cache;
         for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
         {
             auto file_name = it->name();

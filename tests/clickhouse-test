@@ -8,6 +8,7 @@
 import enum
 from queue import Full
 import shutil
+import itertools
 import sys
 import os
 import os.path
@@ -31,7 +32,7 @@ from typing import Tuple, Union, Optional, Dict, Set, List
 import subprocess
 from subprocess import Popen
 from subprocess import PIPE
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import time, sleep
 from errno import ESRCH
 
@@ -278,36 +279,42 @@ def need_retry(args, stdout, stderr, total_time):
     )
 
 
-def get_processlist_with_stacktraces(args):
-    try:
-        if args.replicated_database:
-            return clickhouse_execute(
+def get_processlist_size(args):
+    if args.replicated_database:
+        return int(
+            clickhouse_execute(
                 args,
                 """
-            SELECT materialize(hostName() || '::' || tcpPort()::String) as host_port, *
-            -- NOTE: view() here to do JOIN on shards, instead of initiator
-            FROM clusterAllReplicas('test_cluster_database_replicated', view(
                 SELECT
-                    p.*,
-                    arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
-                        x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
-                        s.trace), '\n') AS stacktrace
-                    )) AS stacktraces
-                FROM system.processes p
-                JOIN system.stack_trace s USING (query_id)
+                    count()
+                FROM
+                    FROM system.processes
                 WHERE query NOT LIKE '%system.processes%'
-                GROUP BY p.*
-            ))
-            ORDER BY elapsed DESC FORMAT Vertical
-            """,
-                settings={
-                    "allow_introspection_functions": 1,
-                },
-            )
-        else:
-            return clickhouse_execute(
+                """,
+            ).strip()
+        )
+    else:
+        return int(
+            clickhouse_execute(
                 args,
                 """
+                SELECT
+                    count()
+                FROM system.processes
+                WHERE query NOT LIKE '%system.processes%'
+                """,
+            ).strip()
+        )
+
+
+def get_processlist_with_stacktraces(args):
+    if args.replicated_database:
+        return clickhouse_execute(
+            args,
+            """
+        SELECT materialize(hostName() || '::' || tcpPort()::String) as host_port, *
+        -- NOTE: view() here to do JOIN on shards, instead of initiator
+        FROM clusterAllReplicas('test_cluster_database_replicated', view(
             SELECT
                 p.*,
                 arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
@@ -318,14 +325,35 @@ def get_processlist_with_stacktraces(args):
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
             GROUP BY p.*
-            ORDER BY elapsed DESC FORMAT Vertical
-            """,
-                settings={
-                    "allow_introspection_functions": 1,
-                },
-            )
-    except Exception as e:
-        return "Failed to get processlist: " + str(e)
+        ))
+        ORDER BY elapsed DESC FORMAT Vertical
+        """,
+            settings={
+                "allow_introspection_functions": 1,
+            },
+            timeout=120,
+        )
+    else:
+        return clickhouse_execute(
+            args,
+            """
+        SELECT
+            p.*,
+            arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
+                x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
+                s.trace), '\n') AS stacktrace
+            )) AS stacktraces
+        FROM system.processes p
+        JOIN system.stack_trace s USING (query_id)
+        WHERE query NOT LIKE '%system.processes%'
+        GROUP BY p.*
+        ORDER BY elapsed DESC FORMAT Vertical
+        """,
+            settings={
+                "allow_introspection_functions": 1,
+            },
+            timeout=120,
+        )
 
 
 def get_transactions_list(args):
@@ -510,6 +538,7 @@ class FailureReason(enum.Enum):
     FAST_ONLY = "running fast tests only"
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
+    NON_ATOMIC_DB = "database engine not Atomic"
     S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
@@ -561,8 +590,12 @@ class SettingsRandomizer:
         "prefer_localhost_replica": lambda: random.randint(0, 1),
         "max_block_size": lambda: random.randint(8000, 100000),
         "max_threads": lambda: random.randint(1, 64),
-        "optimize_or_like_chain": lambda: random.randint(0, 1),
+        "optimize_append_index": lambda: random.randint(0, 1),
+        "optimize_if_chain_to_multiif": lambda: random.randint(0, 1),
+        "optimize_if_transform_strings_to_enum": lambda: random.randint(0, 1),
         "optimize_read_in_order": lambda: random.randint(0, 1),
+        "optimize_or_like_chain": lambda: random.randint(0, 1),
+        "optimize_substitute_columns": lambda: random.randint(0, 1),
         "enable_multiple_prewhere_read_steps": lambda: random.randint(0, 1),
         "read_in_order_two_level_merge_threshold": lambda: random.randint(0, 100),
         "optimize_aggregation_in_order": lambda: random.randint(0, 1),
@@ -584,6 +617,11 @@ class SettingsRandomizer:
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
+        "filesystem_cache_segments_batch_size": lambda: random.choice([0, 3, 10, 50]),
+        "read_from_filesystem_cache_if_exists_otherwise_bypass_cache": lambda: random.randint(
+            0, 1
+        ),
+        "throw_on_error_from_cache_on_write_operations": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "allow_prefetched_read_pool_for_remote_filesystem": lambda: random.randint(
             0, 1
@@ -608,6 +646,13 @@ class SettingsRandomizer:
         "compile_sort_description": lambda: random.randint(0, 1),
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
+        "max_bytes_before_external_sort": threshold_generator(
+            0.3, 0.5, 1, 10 * 1024 * 1024 * 1024
+        ),
+        "max_bytes_before_external_group_by": threshold_generator(
+            0.3, 0.5, 1, 10 * 1024 * 1024 * 1024
+        ),
+        "max_bytes_before_remerge_sort": lambda: random.randint(1, 3000000000),
         "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
         "http_response_buffer_size": lambda: random.randint(0, 10 * 1048576),
         "http_wait_end_of_query": lambda: random.random() > 0.5,
@@ -964,6 +1009,13 @@ class TestCase:
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
+        elif (
+            tags
+            and ("atomic-database" in tags)
+            and (args.replicated_database or args.db_engine not in (None, "Atomic"))
+        ):
+            return FailureReason.NON_ATOMIC_DB
+
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
         elif (
@@ -1010,7 +1062,24 @@ class TestCase:
         if proc:
             if proc.returncode is None:
                 try:
-                    proc.kill()
+                    pgid = os.getpgid(proc.pid)
+                    # NOTE: this still may leave some processes, that had been
+                    # created by timeout(1), since it also creates new process
+                    # group. But this should not be a problem with default
+                    # options, since the default time for each test is 10min,
+                    # and this is way more bigger then the timeout for each
+                    # timeout(1) invocation.
+                    #
+                    # But as a workaround we are sending SIGTERM first, and
+                    # only after SIGKILL, that way timeout(1) will have an
+                    # ability to terminate childrens (though not always since
+                    # signals are asynchronous).
+                    os.killpg(pgid, signal.SIGTERM)
+                    # This may not be enough, but this is at least something
+                    # (and anyway it is OK to spend 0.1 second more in case of
+                    # test timeout).
+                    sleep(0.1)
+                    os.killpg(pgid, signal.SIGKILL)
                 except OSError as e:
                     if e.errno != ESRCH:
                         raise
@@ -1196,6 +1265,25 @@ class TestCase:
             description_full += result.reason.value
 
         description_full += result.description
+
+        if (
+            args.collect_per_test_coverage
+            and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+        ):
+            clickhouse_execute(
+                args,
+                f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverage()",
+                retry_error_codes=True,
+            )
+
+            coverage = clickhouse_execute(
+                args,
+                "SELECT length(coverage())",
+                retry_error_codes=True,
+            ).decode()
+
+            description_full += f" Coverage: {coverage}"
+
         description_full += "\n"
 
         if result.status == TestStatus.FAIL and self.testcase_args:
@@ -1257,9 +1345,20 @@ class TestCase:
                 + pattern
             )
 
+        # We want to calculate per-test code coverage. That's why we reset it before each test.
+        if (
+            args.collect_per_test_coverage
+            and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+        ):
+            clickhouse_execute(
+                args,
+                "SYSTEM RESET COVERAGE",
+                retry_error_codes=True,
+            )
+
         command = pattern.format(**params)
 
-        proc = Popen(command, shell=True, env=os.environ)
+        proc = Popen(command, shell=True, env=os.environ, start_new_session=True)
 
         while (
             datetime.now() - start_time
@@ -1641,6 +1740,8 @@ class TestSuite:
             if USE_JINJA
             else None
         )
+        if j2env is not None:
+            j2env.globals.update(product=itertools.product)
 
         for test_name in os.listdir(self.suite_path):
             if not is_test_from_dir(self.suite_path, test_name):
@@ -1936,6 +2037,7 @@ class BuildFlags:
     UNDEFINED = "ubsan"
     MEMORY = "msan"
     DEBUG = "debug"
+    SANITIZE_COVERAGE = "sanitize-coverage"
     RELEASE = "release"
     ORDINARY_DATABASE = "ordinary-database"
     POLYMORPHIC_PARTS = "polymorphic-parts"
@@ -1955,6 +2057,8 @@ def collect_build_flags(args):
         result.append(BuildFlags.UNDEFINED)
     elif b"-fsanitize=memory" in value:
         result.append(BuildFlags.MEMORY)
+    elif b"-DSANITIZE_COVERAGE=1" in value:
+        result.append(BuildFlags.SANITIZE_COVERAGE)
 
     value = clickhouse_execute(
         args, "SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'"
@@ -2136,6 +2240,8 @@ def reportCoverageFor(args, what, query, permissive=False):
     return True
 
 
+# This is high-level coverage on per-component basis (functions, data types, etc.)
+# Don't be confused with the code coverage.
 def reportCoverage(args):
     clickhouse_execute(args, "SYSTEM FLUSH LOGS")
 
@@ -2226,7 +2332,7 @@ def reportLogStats(args):
         GROUP BY message_format_string
         ORDER BY count DESC
         LIMIT 100
-        FORMAT TSVWithNamesAndTypes
+        FORMAT PrettySpaceNoEscapes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop patterns of log messages:\n")
@@ -2246,7 +2352,7 @@ def reportLogStats(args):
         GROUP BY pattern
         ORDER BY count DESC
         LIMIT 30
-        FORMAT TSVWithNamesAndTypes
+        FORMAT PrettySpaceNoEscapes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop messages without format string (fmt::runtime):\n")
@@ -2259,10 +2365,10 @@ def reportLogStats(args):
         WHERE (now() - toIntervalMinute(240)) < event_time
         AND (message NOT LIKE (replaceRegexpAll(message_format_string, '{[:.0-9dfx]*}', '%') AS s))
         AND (message NOT LIKE concat('%Exception: ', s, '%'))
-        GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT TSVWithNamesAndTypes
+        GROUP BY message_format_string ORDER BY count() DESC LIMIT 20 FORMAT PrettySpaceNoEscapes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
-    print("\nTop messages that does not match its format string:\n")
+    print("\nTop messages not matching their format strings:\n")
     print(value)
     print("\n")
 
@@ -2290,13 +2396,13 @@ def reportLogStats(args):
               'Attempt to read after eof', 'String size is too big ({}), maximum: {}'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(message), 1, 120),
-            min(if(length(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)')) as pref > 0, pref, length(message)) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate
+            min(if(length(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)')) as prefix_len > 0, prefix_len, length(message)) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate
         FROM system.text_log
         WHERE (now() - toIntervalMinute(240)) < event_time
             AND (length(message_format_string) < 16
-                OR (message ilike '%DB::Exception%' AND length_without_exception_boilerplate < 30))
+                OR (message ILIKE '%DB::Exception%' AND length_without_exception_boilerplate < 30))
             AND message_format_string NOT IN known_short_messages
-        GROUP BY message_format_string ORDER BY c DESC LIMIT 50 FORMAT TSVWithNamesAndTypes
+        GROUP BY message_format_string ORDER BY c DESC LIMIT 50 FORMAT PrettySpaceNoEscapes
     """
     value = clickhouse_execute(args, query).decode(errors="replace")
     print("\nTop short messages:\n")
@@ -2398,6 +2504,28 @@ def main(args):
         print(f"Failed to create databases for tests: {e}")
         server_died.set()
 
+    if (
+        args.collect_per_test_coverage
+        and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+    ):
+        clickhouse_execute(
+            args,
+            """
+                CREATE TABLE IF NOT EXISTS system.coverage
+                (
+                    time DateTime,
+                    test_name String,
+                    coverage Array(UInt64)
+                ) ENGINE = MergeTree ORDER BY test_name;
+            """,
+        )
+
+        # Coverage collected at the system startup before running any tests:
+        clickhouse_execute(
+            args,
+            "INSERT INTO system.coverage SELECT now(), '', coverage()",
+        )
+
     total_tests_run = 0
 
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
@@ -2415,11 +2543,42 @@ def main(args):
 
     if args.hung_check:
         # Some queries may execute in background for some time after test was finished. This is normal.
-        for _ in range(1, 60):
-            processlist = get_processlist_with_stacktraces(args)
-            if not processlist:
-                break
-            sleep(1)
+        print("Checking the hung queries: ", end="")
+        hung_count = 0
+        try:
+            deadline = datetime.now() + timedelta(seconds=90)
+            while datetime.now() < deadline:
+                hung_count = get_processlist_size(args)
+                if hung_count == 0:
+                    print(" done")
+                    break
+                print(". ", end="")
+        except Exception as e:
+            print(
+                colored(
+                    "\nHung check failed. Failed to get processlist size: " + str(e),
+                    args,
+                    "red",
+                    attrs=["bold"],
+                )
+            )
+            exit_code.value = 1
+
+        processlist = ""
+        if hung_count > 0:
+            try:
+                processlist = get_processlist_with_stacktraces(args)
+            except Exception as e:
+                print(
+                    colored(
+                        "\nHung check failed. Failed to get processlist with stacktraces: "
+                        + str(e),
+                        args,
+                        "red",
+                        attrs=["bold"],
+                    )
+                )
+                exit_code.value = 1
 
         if processlist:
             print(
@@ -2750,6 +2909,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Check what high-level server components were covered by tests",
+    )
+    parser.add_argument(
+        "--collect-per-test-coverage",
+        action="store_true",
+        default=False,
+        help="Create `system.coverage` table on the server and collect information about low-level code coverage on a per test basis there",
     )
     parser.add_argument(
         "--report-logs-stats",

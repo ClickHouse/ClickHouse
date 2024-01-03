@@ -1,7 +1,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
+#include <Common/thread_local_rng.h>
 #include <Common/NaNUtils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
@@ -196,7 +197,7 @@ struct PoissonDistribution
   * Accepts only constant arguments
   * Similar to the functions rand and rand64 an additional 'tag' argument could be added to the
   * end of arguments list (this argument will be ignored) which will guarantee that functions are not sticked together
-  * during optimisations.
+  * during optimizations.
   * Example: SELECT randNormal(0, 1, 1), randNormal(0, 1, 2) FROM numbers(10)
   * This query will return two different columns
   */

@@ -207,11 +207,11 @@ quit
 
     gdb -batch -command script.gdb -p $server_pid &
     sleep 5
-    # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
+    # gdb will send SIGSTOP, spend some time loading debug info, and then send SIGCONT, wait for it (up to send_timeout, 300s)
     time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 
     # Check connectivity after we attach gdb, because it might cause the server
-    # to freeze and the fuzzer will fail. In debug build it can take a lot of time.
+    # to freeze, and the fuzzer will fail. In debug build, it can take a lot of time.
     for _ in {1..180}
     do
         if clickhouse-client --query "select 1"
@@ -221,7 +221,7 @@ quit
         sleep 1
     done
     kill -0 $server_pid # This checks that it is our server that is started and not some other one
-    echo 'Server started and responded'
+    echo 'Server started and responded.'
 
     setup_logs_replication
 
@@ -229,7 +229,7 @@ quit
         --query-fuzzer-runs=1000 \
         --create-query-fuzzer-runs=50 \
          $NEW_TESTS_OPT \
-        --client-option receive_timeout=10 receive_data_timeout_ms=1000 stacktrace \
+        --client-option receive_timeout=10 receive_data_timeout_ms=1000 smax_memory_usage_in_client=1000000000  tacktrace \
         --global_time_limit=1800 \
         --jobs=16 \
         --order=random \
@@ -238,10 +238,10 @@ quit
     fuzzer_exit_code=$?
     echo "Fuzzer exit code is $fuzzer_exit_code"
 
-    # If the server dies, most often the fuzzer returns code 210: connetion
+    # If the server dies, most often the fuzzer returns Code 210: Connetion
     # refused, and sometimes also code 32: attempt to read after eof. For
-    # simplicity, check again whether the server is accepting connections, using
-    # clickhouse-client. We don't check for existence of server process, because
+    # simplicity, check again whether the server is accepting connections using
+    # clickhouse-client. We don't check for the existence of the server process, because
     # the process is still present while the server is terminating and not
     # accepting the connections anymore.
 

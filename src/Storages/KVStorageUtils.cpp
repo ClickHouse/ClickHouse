@@ -72,7 +72,7 @@ bool traverseASTFilter(
                 return false;
             value = args.children.at(1);
 
-            PreparedSets::Hash set_key = value->getTreeHash();
+            PreparedSets::Hash set_key = value->getTreeHash(/*ignore_aliases=*/ true);
             FutureSetPtr future_set;
 
             if ((value->as<ASTSubquery>() || value->as<ASTIdentifier>()))

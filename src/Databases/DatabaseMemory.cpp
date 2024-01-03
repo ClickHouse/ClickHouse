@@ -1,5 +1,6 @@
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DDLDependencyVisitor.h>
@@ -20,7 +21,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
-    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
 }
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
@@ -177,21 +177,30 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
 
         auto storage_id = local_context->tryResolveStorageID(StorageID{"", table_name}, Context::ResolveExternal);
         if (!storage_id)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                            "Couldn't resolve the name of temporary table {}", backQuoteIfNeed(table_name));
+        {
+            LOG_WARNING(log, "Couldn't resolve the name of temporary table {}", backQuoteIfNeed(table_name));
+            continue;
+        }
 
         /// Here `storage_id.table_name` looks like looks like "_tmp_ab9b15a3-fb43-4670-abec-14a0e9eb70f1"
         /// it's not the real name of the table.
         auto create_table_query = tryGetCreateTableQuery(storage_id.table_name, local_context);
         if (!create_table_query)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                            "Couldn't get a create query for temporary table {}", backQuoteIfNeed(table_name));
+        {
+            LOG_WARNING(log, "Couldn't get a create query for temporary table {}", backQuoteIfNeed(table_name));
+            continue;
+        }
 
-        const auto & create = create_table_query->as<const ASTCreateQuery &>();
-        if (create.getTable() != table_name)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                            "Got a create query with unexpected name {} for temporary table {}",
-                            backQuoteIfNeed(create.getTable()), backQuoteIfNeed(table_name));
+        auto * create = create_table_query->as<ASTCreateQuery>();
+        if (create->getTable() != table_name)
+        {
+            /// Probably the database has been just renamed. Use the older name for backup to keep the backup consistent.
+            LOG_WARNING(log, "Got a create query with unexpected name {} for temporary table {}",
+                        backQuoteIfNeed(create->getTable()), backQuoteIfNeed(table_name));
+            create_table_query = create_table_query->clone();
+            create = create_table_query->as<ASTCreateQuery>();
+            create->setTable(table_name);
+        }
 
         chassert(storage);
         storage->adjustCreateQueryForBackup(create_table_query);
@@ -199,6 +208,17 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     }
 
     return res;
+}
+
+void registerDatabaseMemory(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        return make_shared<DatabaseMemory>(
+            args.database_name,
+            args.context);
+    };
+    factory.registerDatabase("Memory", create_fn);
 }
 
 }

@@ -116,7 +116,7 @@ namespace
 void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
-    if (query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+    if (!query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         return;
 
     if (!query_context->getCurrentTransaction())
@@ -130,13 +130,11 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
         else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
             storage = table_function_node->getStorage();
 
-        if (storage->supportsTransactions())
-            continue;
-
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Storage {} (table {}) does not support transactions",
-            storage->getName(),
-            storage->getStorageID().getNameForLogs());
+        if (storage && !storage->supportsTransactions())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Storage {} (table {}) does not support transactions",
+                storage->getName(),
+                storage->getStorageID().getNameForLogs());
     }
 }
 
@@ -376,6 +374,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
         settings.optimize_group_by_constant_keys,
+        settings.min_hit_rate_to_use_consecutive_keys_optimization,
         stats_collecting_params);
 
     return aggregator_params;
@@ -478,7 +477,8 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
         settings.max_threads,
-        settings.max_block_size);
+        settings.max_block_size,
+        settings.min_hit_rate_to_use_consecutive_keys_optimization);
 
     bool is_remote_storage = false;
     bool parallel_replicas_from_merge_tree = false;
@@ -917,6 +917,7 @@ void addWindowSteps(QueryPlan & query_plan,
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window_description.full_sort_description,
+                window_description.partition_by,
                 0 /*limit*/,
                 sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
@@ -1333,35 +1334,73 @@ void Planner::buildPlanForQueryNode()
         query_node.getHaving() = {};
     }
 
-    checkStoragesSupportTransactions(planner_context);
     collectSets(query_tree, *planner_context);
+
+    const auto & settings = query_context->getSettingsRef();
+    if (query_context->canUseTaskBasedParallelReplicas())
+    {
+        if (planner_context->getPreparedSets().hasSubqueries())
+        {
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
+
+            auto & mutable_context = planner_context->getMutableQueryContext();
+            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            LOG_DEBUG(&Poco::Logger::get("Planner"), "Disabling parallel replicas to execute a query with IN with subquery");
+        }
+    }
+
     collectTableExpressionData(query_tree, planner_context);
+    checkStoragesSupportTransactions(planner_context);
 
     if (!select_query_options.only_analyze)
         collectFiltersForAnalysis(query_tree, planner_context);
 
-    const auto & settings = query_context->getSettingsRef();
-
-    /// Check support for JOIN for parallel replicas with custom key
-    if (planner_context->getTableExpressionNodeToData().size() > 1)
+    if (query_context->canUseTaskBasedParallelReplicas())
     {
-        if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
+        const auto & table_expression_nodes = planner_context->getTableExpressionNodeToData();
+        for (const auto & it : table_expression_nodes)
         {
-            LOG_DEBUG(
-                &Poco::Logger::get("Planner"),
-                "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+            auto * table_node = it.first->as<TableNode>();
+            if (!table_node)
+                continue;
 
-            auto & mutable_context = planner_context->getMutableQueryContext();
-            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            mutable_context->setSetting("parallel_replicas_custom_key", String{""});
-        }
-        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+            const auto & modifiers = table_node->getTableExpressionModifiers();
+            if (modifiers.has_value() && modifiers->hasFinal())
+            {
+                if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
+                else
+                {
+                    LOG_DEBUG(
+                        &Poco::Logger::get("Planner"),
+                        "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+                    auto & mutable_context = planner_context->getMutableQueryContext();
+                    mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                }
+            }
         }
     }
 
-    /// TODO: Also disable parallel replicas in case of FINAL
+    if (query_context->canUseTaskBasedParallelReplicas() || !settings.parallel_replicas_custom_key.value.empty())
+    {
+        /// Check support for JOIN for parallel replicas with custom key
+        if (planner_context->getTableExpressionNodeToData().size() > 1)
+        {
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+            else
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("Planner"),
+                    "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+
+                auto & mutable_context = planner_context->getMutableQueryContext();
+                mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                mutable_context->setSetting("parallel_replicas_custom_key", String{""});
+            }
+        }
+    }
 
     auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
     auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
@@ -1390,7 +1429,7 @@ void Planner::buildPlanForQueryNode()
         planner_context,
         query_processing_info);
 
-    std::vector<ActionsDAGPtr> result_actions_to_execute;
+    std::vector<ActionsDAGPtr> result_actions_to_execute = std::move(join_tree_query_plan.actions_dags);
 
     for (auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
     {

@@ -393,43 +393,9 @@ Reverses the sequence of bytes in a string.
 
 Reverses a sequence of Unicode code points in a string. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
-## format
-
-Format the `pattern` string with the strings listed in the arguments, similar to formatting in Python. The pattern string can contain replacement fields surrounded by curly braces `{}`. Anything not contained in braces is considered literal text and copied verbatim into the output. Literal brace character can be escaped by two braces: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are implicitly given monotonically increasing numbers).
-
-**Syntax**
-
-```sql
-format(pattern, s0, s1, …)
-```
-
-**Example**
-
-``` sql
-SELECT format('{1} {0} {1}', 'World', 'Hello')
-```
-
-```result
-┌─format('{1} {0} {1}', 'World', 'Hello')─┐
-│ Hello World Hello                       │
-└─────────────────────────────────────────┘
-```
-
-With implicit numbers:
-
-``` sql
-SELECT format('{} {}', 'Hello', 'World')
-```
-
-```result
-┌─format('{} {}', 'Hello', 'World')─┐
-│ Hello World                       │
-└───────────────────────────────────┘
-```
-
 ## concat
 
-Concatenates the strings listed in the arguments without separator.
+Concatenates the given arguments.
 
 **Syntax**
 
@@ -439,7 +405,9 @@ concat(s1, s2, ...)
 
 **Arguments**
 
-Values of type String or FixedString.
+At least one value of arbitrary type.
+
+Arguments which are not of types [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md) are converted to strings using their default serialization. As this decreases performance, it is not recommended to use non-String/FixedString arguments.
 
 **Returned values**
 
@@ -448,6 +416,8 @@ The String created by concatenating the arguments.
 If any of arguments is `NULL`, the function returns `NULL`.
 
 **Example**
+
+Query:
 
 ``` sql
 SELECT concat('Hello, ', 'World!');
@@ -459,6 +429,20 @@ Result:
 ┌─concat('Hello, ', 'World!')─┐
 │ Hello, World!               │
 └─────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT concat(42, 144);
+```
+
+Result:
+
+```result
+┌─concat(42, 144)─┐
+│ 42144           │
+└─────────────────┘
 ```
 
 ## concatAssumeInjective
@@ -526,6 +510,8 @@ Concatenates the given strings with a given separator.
 concatWithSeparator(sep, expr1, expr2, expr3...)
 ```
 
+Alias: `concat_ws`
+
 **Arguments**
 
 - sep — separator. Const [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
@@ -547,8 +533,8 @@ Result:
 
 ```result
 ┌─concatWithSeparator('a', '1', '2', '3', '4')─┐
-│ 1a2a3a4                           │
-└───────────────────────────────────┘
+│ 1a2a3a4                                      │
+└──────────────────────────────────────────────┘
 ```
 
 ## concatWithSeparatorAssumeInjective
@@ -557,26 +543,52 @@ Like `concatWithSeparator` but assumes that `concatWithSeparator(sep, expr1, exp
 
 A function is called injective if it returns for different arguments different results. In other words: different arguments never produce identical result.
 
-## substring(s, offset, length)
+## substring
 
-Returns a substring with `length` many bytes, starting at the byte at index `offset`. Character indexing starts from 1.
+Returns the substring of a string `s` which starts at the specified byte index `offset`. Byte counting starts from 1. If `offset` is 0, an empty string is returned. If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning. An optional argument `length` specifies the maximum number of bytes the returned substring may have.
 
 **Syntax**
 
 ```sql
-substring(s, offset, length)
+substring(s, offset[, length])
 ```
 
 Alias:
 - `substr`
 - `mid`
 
+**Arguments**
+
+- `s` — The string to calculate a substring from. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md) or [Enum](../../sql-reference/data-types/enum.md)
+- `offset` — The starting position of the substring in `s` . [(U)Int*](../../sql-reference/data-types/int-uint.md).
+- `length` — The maximum length of the substring. [(U)Int*](../../sql-reference/data-types/int-uint.md). Optional.
+
+**Returned value**
+
+A substring of `s` with `length` many bytes, starting at index `offset`.
+
+Type: `String`.
+
+**Example**
+
+``` sql
+SELECT 'database' AS db, substr(db, 5), substr(db, 5, 1)
+```
+
+Result:
+
+```result
+┌─db───────┬─substring('database', 5)─┬─substring('database', 5, 1)─┐
+│ database │ base                     │ b                           │
+└──────────┴──────────────────────────┴─────────────────────────────┘
+```
+
 ## substringUTF8
 
 Like `substring` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
 
-## substringIndex(s, delim, count)
+## substringIndex
 
 Returns the substring of `s` before `count` occurrences of the delimiter `delim`, as in Spark or MySQL.
 
@@ -607,7 +619,7 @@ Result:
 └──────────────────────────────────────────────┘
 ```
 
-## substringIndexUTF8(s, delim, count)
+## substringIndexUTF8
 
 Like `substringIndex` but for Unicode code points. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
@@ -1239,7 +1251,7 @@ This function also replaces numeric character references with Unicode characters
 **Syntax**
 
 ``` sql
-decodeHTMComponent(x)
+decodeHTMLComponent(x)
 ```
 
 **Arguments**
@@ -1256,7 +1268,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 ``` sql
 SELECT decodeHTMLComponent(''CH');
-SELECT decodeHMLComponent('I&heartsuit;ClickHouse');
+SELECT decodeHTMLComponent('I&heartsuit;ClickHouse');
 ```
 
 Result:

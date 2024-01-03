@@ -143,12 +143,6 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 
-    bool supportsIndexForIn() const override { return getNested()->supportsIndexForIn(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
-    {
-        return getNested()->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
-    }
-
     DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override
     {
         return getNested()->getCheckTaskList(check_task_filter, context);

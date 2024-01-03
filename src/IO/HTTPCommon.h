@@ -113,4 +113,6 @@ std::istream * receiveResponse(
 
 void assertResponseIsOk(
     const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, std::istream & istr, bool allow_redirects = false);
+
+void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts);
 }

@@ -285,6 +285,8 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Name
 
     auto add_alias = [&](const String & alias_name, const String & column_name)
     {
+        if (!tmp_columns.has(column_name))
+            return;
         ColumnDescription column(alias_name, tmp_columns.get(column_name).type);
         column.default_desc.kind = ColumnDefaultKind::Alias;
         column.default_desc.expression = std::make_shared<ASTIdentifier>(column_name);

@@ -83,8 +83,8 @@ void S3QueueTableMetadata::checkImmutableFieldsEquals(const S3QueueTableMetadata
             ErrorCodes::METADATA_MISMATCH,
             "Existing table metadata in ZooKeeper differs in engine mode. "
             "Stored in ZooKeeper: {}, local: {}",
-            DB::toString(from_zk.after_processing),
-            DB::toString(after_processing));
+            DB::toString(from_zk.mode),
+            DB::toString(mode));
 
     if (s3queue_tracked_files_limit != from_zk.s3queue_tracked_files_limit)
         throw Exception(

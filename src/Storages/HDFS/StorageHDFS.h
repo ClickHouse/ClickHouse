@@ -69,6 +69,7 @@ public:
         TableExclusiveLockHolder &) override;
 
     NamesAndTypesList getVirtuals() const override;
+    static Names getVirtualColumnNames();
 
     bool supportsPartitionBy() const override { return true; }
 
@@ -94,19 +95,6 @@ protected:
     friend class HDFSSource;
 
 private:
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const std::vector<StorageHDFS::PathWithInfo> & paths_with_info,
-        const String & uri_without_path,
-        const String & format_name,
-        const ContextPtr & ctx);
-
-    static void addColumnsToCache(
-        const std::vector<StorageHDFS::PathWithInfo> & paths,
-        const String & uri_without_path,
-        const ColumnsDescription & columns,
-        const String & format_name,
-        const ContextPtr & ctx);
-
     std::vector<String> uris;
     String format_name;
     String compression_method;
@@ -181,6 +169,7 @@ private:
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     String current_path;
+    std::optional<size_t> current_file_size;
 
     /// Recreate ReadBuffer and PullingPipelineExecutor for each file.
     bool initialize();

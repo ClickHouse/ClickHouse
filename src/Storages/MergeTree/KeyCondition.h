@@ -4,6 +4,7 @@
 
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
+#include <Core/PlainRanges.h>
 
 #include <Parsers/ASTExpressionList.h>
 
@@ -68,7 +69,6 @@ public:
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
-        NameSet array_joined_column_names,
         bool single_point_ = false,
         bool strict_ = false);
 
@@ -161,6 +161,16 @@ public:
     static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
 
     bool matchesExactContinuousRange() const;
+
+    /// Extract plain ranges of the condition.
+    /// Note that only support one column key condition.
+    ///
+    /// Now some cases are parsed to unknown function:
+    ///     1. where 1=1
+    ///     2. where true
+    ///     3. no where
+    /// TODO handle the cases when generate RPN.
+    bool extractPlainRanges(Ranges & ranges) const;
 
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
@@ -325,6 +335,10 @@ private:
     void findHyperrectanglesForArgumentsOfSpaceFillingCurves();
 
     RPN rpn;
+
+    /// If query has no filter, rpn will has one element with unknown function.
+    /// This flag identify whether there are filters.
+    bool has_filter;
 
     ColumnIndices key_columns;
     std::vector<size_t> key_indices;

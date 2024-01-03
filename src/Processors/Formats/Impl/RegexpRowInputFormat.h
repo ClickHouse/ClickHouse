@@ -61,8 +61,8 @@ public:
     RegexpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "RegexpRowInputFormat"; }
-    void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
 private:
     RegexpRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_);
@@ -89,7 +89,6 @@ private:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
-
 
     using EscapingRule = FormatSettings::EscapingRule;
     RegexpFieldExtractor field_extractor;
