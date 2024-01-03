@@ -188,7 +188,7 @@ private:
         using CharRanges = std::vector<std::pair<re2::Rune, re2::Rune>>;
 
     public:
-        RegexpCharClassFunction(Regexp * re_)
+        explicit RegexpCharClassFunction(Regexp * re_)
         {
             CharClass * cc = re_->cc();
             chassert(cc);
@@ -198,7 +198,7 @@ private:
             char_count = cc->size();
             char_ranges.reserve(std::distance(cc->begin(), cc->end()));
 
-            for (auto it = cc->begin(); it != cc->end(); ++it)
+            for (const auto * it = cc->begin(); it != cc->end(); ++it)
             {
                 char_ranges.emplace_back(it->lo, it->hi);
             }
@@ -246,7 +246,7 @@ private:
     class RegexpLiteralStringFunction : public NodeFunction
     {
     public:
-        RegexpLiteralStringFunction(Regexp * re_)
+        explicit RegexpLiteralStringFunction(Regexp * re_)
         {
             if (re_->nrunes() == 0)
                 return;
@@ -279,7 +279,7 @@ private:
     class RegexpLiteralFunction : public NodeFunction
     {
     public:
-        RegexpLiteralFunction(Regexp * re_)
+        explicit RegexpLiteralFunction(Regexp * re_)
         {
             char buffer[UTFmax];
 
@@ -308,7 +308,7 @@ private:
     class ThrowExceptionFunction : public NodeFunction
     {
     public:
-        ThrowExceptionFunction(Regexp * re_)
+        explicit ThrowExceptionFunction(Regexp * re_)
             : operation(magic_enum::enum_name(re_->op()))
         {
         }
@@ -332,7 +332,7 @@ private:
 
 
 public:
-    RandomStringPrepareWalker(bool logging)
+    explicit RandomStringPrepareWalker(bool logging)
         : logger(logging ? &Poco::Logger::get("GeneratorCombiner") : nullptr)
     {
         if (logger)
@@ -344,7 +344,7 @@ public:
         if (root == nullptr)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "no root has been set");
 
-        if (generators.size() == 0)
+        if (generators.empty())
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "no generators");
 
         auto root_func = generators.at(root);
@@ -458,7 +458,6 @@ private:
         return pre_arg;
     }
 
-private:
     Poco::Logger * logger = nullptr;
 
     Regexp * root = nullptr;

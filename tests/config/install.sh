@@ -141,7 +141,14 @@ if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; th
 fi
 
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
-    case "$USE_S3_STORAGE_WITH_OBJECT_KEY_TYPE" in
+    object_key_types_options=("generate-suffix" "generate-full-key" "generate-template-key")
+    object_key_type="${object_key_types_options[$((RANDOM % ${#object_key_types_options[0]}))]}"
+
+    if [[ -n "$RANDOMIZE_OBJECT_KEY_TYPE" ]] && [[ "$RANDOMIZE_OBJECT_KEY_TYPE" -eq 1 ]]; then
+      object_key_type="${randomize_options[$((RANDOM % ${#randomize_options[@]}))]}"
+    fi
+
+    case object_key_type in
         "generate-full-key")
             ln -sf $SRC_PATH/config.d/storage_metadata_with_full_object_key.xml $DEST_SERVER_PATH/config.d/
             ;;

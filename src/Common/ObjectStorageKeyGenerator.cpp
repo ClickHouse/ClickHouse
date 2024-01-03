@@ -15,7 +15,6 @@ public:
     , re_gen(key_template, /*logging*/ false)
     {
     }
-
     DB::ObjectStorageKey generate(const String &) const override
     {
         return DB::ObjectStorageKey::createAsAbsolute(re_gen.generate());
@@ -30,7 +29,7 @@ private:
 class GeneratorWithPrefix : public DB::IObjectStorageKeysGenerator
 {
 public:
-    GeneratorWithPrefix(String key_prefix_)
+    explicit GeneratorWithPrefix(String key_prefix_)
         : key_prefix(std::move(key_prefix_))
     {}
 
@@ -41,7 +40,6 @@ public:
         /// Total length is 32 a-z characters for enough randomness.
         /// First 3 characters are used as a prefix for
         /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
-
         constexpr size_t key_name_total_size = 32;
         constexpr size_t key_name_prefix_size = 3;
 
