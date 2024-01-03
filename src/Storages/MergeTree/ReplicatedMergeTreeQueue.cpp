@@ -2643,11 +2643,13 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
 
         std::unordered_set<String> existing_replicas;
         if (!src_replicas.empty())
-       {
-            existing_replicas = std::unordered_set<String>(
-                zookeeper->getChildren(zookeeper_path + "/replicas").begin(),
-                zookeeper->getChildren(zookeeper_path + "/replicas").end());
-       }
+        {
+            Coordination::Stat stat;
+            Strings unfiltered_hosts;
+            unfiltered_hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
+            for (const auto & host : unfiltered_hosts)
+                existing_replicas.insert(host);
+        }
 
         out_entry_names.reserve(queue.size());
 
@@ -2660,9 +2662,8 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
             if (!src_replicas.empty() && entry_matches)
             {
                 // Condition: entry's source_replica is one of the specified ones, or not in the system anymore, or is empty
-                source_replica_condition = src_replicas.contains(entry->source_replica) ||
-                    !existing_replicas.contains(entry->source_replica) ||
-                    entry->source_replica.empty();
+                source_replica_condition = src_replicas.contains(entry->source_replica)
+                    || !existing_replicas.contains(entry->source_replica) || entry->source_replica.empty();
             }
 
             if (entry_matches && source_replica_condition)
