@@ -30,4 +30,7 @@ void iota(T * begin, size_t count, T first_value)
 template void iota(UInt8 * begin, size_t count, UInt8 first_value);
 template void iota(UInt32 * begin, size_t count, UInt32 first_value);
 template void iota(UInt64 * begin, size_t count, UInt64 first_value);
+#if defined(OS_DARWIN)
+template void iota(size_t * begin, size_t count, size_t first_value);
+#endif
 }

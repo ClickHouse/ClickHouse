@@ -21,7 +21,7 @@ namespace
 std::vector<UInt64> getVectorWithNumbersUpToN(size_t n)
 {
     std::vector<UInt64> res(n);
-    iota(res.data(), res.size(), size_t(0));
+    iota(res.data(), res.size(), UInt64(0));
     return res;
 }
 
