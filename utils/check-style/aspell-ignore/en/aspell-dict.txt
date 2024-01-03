@@ -344,6 +344,7 @@ Hypot
 IANA
 IDE
 IDEs
+IDNA
 IMDS
 INFILE
 INSERTed
@@ -701,8 +702,6 @@ PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
-TotalPrimaryKeyBytesInMemory
-TotalPrimaryKeyBytesInMemoryAllocated
 PrivateKeyPassphraseHandler
 ProfileEvents
 Profiler
@@ -913,6 +912,7 @@ ThreadsInOvercommitTracker
 Timeunit
 TinyLog
 Tkachenko
+ToASCII
 ToCenterChild
 ToChildren
 ToGeo
@@ -921,10 +921,13 @@ ToIPv
 ToParent
 ToSnowflake
 ToString
+ToUnicode
 Toolset
 TopK
 TotalBytesOfMergeTreeTables
 TotalPartsOfMergeTreeTables
+TotalPrimaryKeyBytesInMemory
+TotalPrimaryKeyBytesInMemoryAllocated
 TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
@@ -1652,6 +1655,9 @@ hyvor
 icosahedron
 icudata
 idempotency
+idnaDecode
+idnaEncode
+idnaEncodeOrNull
 ifNotFinite
 ifNull
 iframe
@@ -1849,14 +1855,14 @@ metrica
 metroHash
 mfedotov
 minMap
+minSampleSizeContinuous
+minSampleSizeConversion
 mindsdb
 minimalistic
 mininum
 miniselect
 minmap
 minmax
-minSampleSizeContinuous
-minSampleSizeConversion
 mins
 misconfiguration
 mispredictions
@@ -2077,7 +2083,9 @@ pseudorandomize
 psql
 ptrs
 punycodeDecode
+punycodeDecodeOrNull
 punycodeEncode
+punycodeEncodeOrNull
 pushdown
 pwrite
 py
