@@ -118,7 +118,7 @@ std::string DataTypeTuple::doGetPrettyName(size_t indent) const
     }
     else
     {
-        s << "Tuple(\n";
+        s << "Tuple(";
 
         for (size_t i = 0; i != size; ++i)
         {
