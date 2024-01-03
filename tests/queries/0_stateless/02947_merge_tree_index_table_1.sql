@@ -13,8 +13,8 @@ INSERT INTO t_merge_tree_index SELECT number % 5, number, 'v' || toString(number
 INSERT INTO t_merge_tree_index SELECT number % 5, number, 'v' || toString(number * number) FROM numbers(10, 10);
 
 SELECT * FROM t_merge_tree_index ORDER BY _part, a, b;
-SELECT * FROM mergeTreeIndex(currentDatabase(), t_merge_tree_index) ORDER BY part_name, a, b FORMAT PrettyCompactNoEscapesMonoBlock;
-SELECT * FROM mergeTreeIndex(currentDatabase(), t_merge_tree_index, with_marks = true) ORDER BY part_name, a, b FORMAT PrettyCompactNoEscapesMonoBlock;
+SELECT * FROM mergeTreeIndex(currentDatabase(), t_merge_tree_index) ORDER BY part_name, mark_number FORMAT PrettyCompactNoEscapesMonoBlock;
+SELECT * FROM mergeTreeIndex(currentDatabase(), t_merge_tree_index, with_marks = true) ORDER BY part_name, mark_number FORMAT PrettyCompactNoEscapesMonoBlock;
 
 DROP TABLE t_merge_tree_index;
 
@@ -31,7 +31,7 @@ INSERT INTO t_merge_tree_index SELECT number % 4, number, 'v' || toString(number
 INSERT INTO t_merge_tree_index SELECT number % 4, number, 'v' || toString(number * number) FROM numbers(10, 10);
 
 SELECT * FROM t_merge_tree_index ORDER BY _part, a, b;
-SELECT * FROM mergeTreeIndex(currentDatabase(), t_merge_tree_index) ORDER BY part_name, a, b FORMAT PrettyCompactNoEscapesMonoBlock;
-SELECT * FROM mergeTreeIndex(currentDatabase(), t_merge_tree_index, with_marks = true) ORDER BY part_name, a, b FORMAT PrettyCompactNoEscapesMonoBlock;
+SELECT * FROM mergeTreeIndex(currentDatabase(), t_merge_tree_index) ORDER BY part_name, mark_number FORMAT PrettyCompactNoEscapesMonoBlock;
+SELECT * FROM mergeTreeIndex(currentDatabase(), t_merge_tree_index, with_marks = true) ORDER BY part_name, mark_number FORMAT PrettyCompactNoEscapesMonoBlock;
 
 DROP TABLE t_merge_tree_index;

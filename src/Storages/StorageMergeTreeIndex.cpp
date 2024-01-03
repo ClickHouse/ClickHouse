@@ -285,7 +285,7 @@ MergeTreeData::DataPartsVector StorageMergeTreeIndex::getFilteredDataParts(Selec
     for (const auto & part : data_parts)
         all_part_names->insert(part->name);
 
-    Block filtered_block {{std::move(all_part_names), std::make_shared<DataTypeString>(), part_name_column.name}};
+    Block filtered_block{{std::move(all_part_names), std::make_shared<DataTypeString>(), part_name_column.name}};
     VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
 
     if (!filtered_block.rows())

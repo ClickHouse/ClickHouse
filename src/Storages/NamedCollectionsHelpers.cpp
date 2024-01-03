@@ -6,7 +6,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
-#include <variant>
 
 namespace DB
 {
