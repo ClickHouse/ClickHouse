@@ -17,6 +17,7 @@
 
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
+#include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -130,6 +131,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             registerFunctions();
             registerAggregateFunctions();
             registerTableFunctions();
+            registerDatabases();
             registerStorages();
             registerFormats();
 

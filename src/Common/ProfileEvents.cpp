@@ -587,6 +587,19 @@ The server successfully detected this situation and will download merged part fr
     M(LogError, "Number of log messages with level Error") \
     M(LogFatal, "Number of log messages with level Fatal") \
     \
+    M(InterfaceHTTPSendBytes, "Number of bytes sent through HTTP interfaces") \
+    M(InterfaceHTTPReceiveBytes, "Number of bytes received through HTTP interfaces") \
+    M(InterfaceNativeSendBytes, "Number of bytes sent through native interfaces") \
+    M(InterfaceNativeReceiveBytes, "Number of bytes received through native interfaces") \
+    M(InterfacePrometheusSendBytes, "Number of bytes sent through Prometheus interfaces") \
+    M(InterfacePrometheusReceiveBytes, "Number of bytes received through Prometheus interfaces") \
+    M(InterfaceInterserverSendBytes, "Number of bytes sent through interserver interfaces") \
+    M(InterfaceInterserverReceiveBytes, "Number of bytes received through interserver interfaces") \
+    M(InterfaceMySQLSendBytes, "Number of bytes sent through MySQL interfaces") \
+    M(InterfaceMySQLReceiveBytes, "Number of bytes received through MySQL interfaces") \
+    M(InterfacePostgreSQLSendBytes, "Number of bytes sent through PostgreSQL interfaces") \
+    M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces") \
+    \
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas") \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

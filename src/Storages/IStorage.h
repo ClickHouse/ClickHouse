@@ -515,6 +515,7 @@ public:
         bool /*final*/,
         bool /*deduplicate*/,
         const Names & /* deduplicate_by_columns */,
+        bool /*cleanup*/,
         ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
@@ -597,13 +598,6 @@ public:
     std::atomic<bool> is_dropped{false};
     std::atomic<bool> is_detached{false};
     std::atomic<bool> is_being_restarted{false};
-
-    /// Does table support index for IN sections
-    virtual bool supportsIndexForIn() const { return false; }
-
-    /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
-    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
-
 
     /** A list of tasks to check a validity of data.
       * Each IStorage implementation may interpret this task in its own way.
