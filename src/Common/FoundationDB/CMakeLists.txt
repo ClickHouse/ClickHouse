@@ -7,6 +7,7 @@ add_library(clickhouse_common_foundationdb
     ${clickhouse_common_foundationdb_sources}
     ${ClickHouse_SOURCE_DIR}/src/Core/BackgroundSchedulePool.cpp
 )
+target_compile_definitions (clickhouse_common_foundationdb PRIVATE -DZOOKEEPER_LOG)
 target_link_libraries(clickhouse_common_foundationdb
     PUBLIC
         clickhouse_common_io

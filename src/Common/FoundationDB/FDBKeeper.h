@@ -9,10 +9,12 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include "Coordination/KeeperConstants.h"
+#include <Common/FoundationDB/KeeperOperationLogger.h>
 
 namespace DB
 {
 class BackgroundSchedulePool;
+class ZooKeeperLog;
 
 namespace ErrorCodes
 {
@@ -33,7 +35,7 @@ namespace Coordination
 class FDBKeeper : public IKeeper
 {
 public:
-    explicit FDBKeeper(const zkutil::ZooKeeperArgs & args);
+    explicit FDBKeeper(const zkutil::ZooKeeperArgs & args, std::shared_ptr<ZooKeeperLog> zk_log = nullptr);
     ~FDBKeeper() override;
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
@@ -105,6 +107,8 @@ public:
     /// Expire session and finish all pending requests
     void finalize(const String & reason) override;
 
+    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_) override;
+
     // Force clean specific session. Only for test.
     std::future<void> cleanSession(int64_t session_id);
 
@@ -126,6 +130,10 @@ private:
     std::unique_ptr<DB::FoundationDB::KeeperCleaner> cleaner;
 
     FDBTransaction * newTrx();
+    template <typename VarResp, typename Callback>
+    auto handleKeeperCallback(VarResp var_resp, Callback callback, const String & message = "");
+
+    KeeperOperationLogger keeper_logger;
 
     String chroot;
     DB::KeeperFeatureFlags keeper_feature;

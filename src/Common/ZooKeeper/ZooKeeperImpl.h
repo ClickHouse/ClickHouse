@@ -214,7 +214,7 @@ public:
 
     void finalize(const String & reason)  override { finalize(false, false, reason); }
 
-    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_) override;
 
     void setServerCompletelyStarted();
 

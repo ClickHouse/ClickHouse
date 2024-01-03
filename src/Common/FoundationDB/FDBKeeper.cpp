@@ -16,8 +16,6 @@
 #include "internal/KeeperSession.h"
 #include "internal/ZNodeLayer.h"
 
-// #define FDBKEEPER_DEBUG_LOG
-
 namespace DB
 {
 namespace ErrorCodes
@@ -69,25 +67,41 @@ struct keeper_callback_response<std::function<R(Arg, Args...)>>
 template <typename Callable>
 using first_arg_t = typename keeper_callback_response<Callable>::type;
 
-template <typename Callback>
-auto handleKeeperCallback(AsyncTrxBuilder::VarDesc<first_arg_t<Callback>> var_resp, Callback callback, const String & message = "")
+template <typename VarResp, typename Callback>
+auto FDBKeeper::handleKeeperCallback(VarResp var_resp, Callback callback, const String & message)
 {
+    static_assert(std::is_same_v<VarResp, AsyncTrxBuilder::VarDesc<first_arg_t<Callback>>>);
     auto request_time = std::chrono::steady_clock::now();
-    return [var_resp, callback, message, request_time](AsyncTrxBuilder::Context & ctx, std::exception_ptr eptr)
+    return [
+#ifdef ZOOKEEPER_LOG
+               zk_log = this->keeper_logger,
+               request_session_id = session->currentSessionSync(),
+#endif
+               var_resp,
+               callback,
+               message,
+               request_time](AsyncTrxBuilder::Context & ctx, std::exception_ptr eptr)
     {
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - request_time).count();
+
         if (eptr)
         {
             first_arg_t<Callback> resp;
             resp.error = DB::FoundationDB::getKeeperErrorFromException(eptr, message);
             callback(resp);
+#ifdef ZOOKEEPER_LOG
+            zk_log.response(resp, elapsed_ms, request_session_id);
+#endif
         }
         else
         {
             auto & resp = *ctx.getVar(var_resp);
             callback(resp);
+#ifdef ZOOKEEPER_LOG
+            zk_log.response(resp, elapsed_ms, request_session_id);
+#endif
         }
 
-        auto elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - request_time).count();
         ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_ms);
     };
 }
@@ -110,10 +124,11 @@ static String chroot_path(const String & root, const String & path)
     return combined;
 }
 
-FDBKeeper::FDBKeeper(const zkutil::ZooKeeperArgs & args)
+FDBKeeper::FDBKeeper(const zkutil::ZooKeeperArgs & args, std::shared_ptr<ZooKeeperLog> zk_log)
     : log(&Poco::Logger::get("FDBKeeper"))
     , bg_pool(std::make_unique<DB::BackgroundSchedulePool>(
           1, CurrentMetrics::BackgroundCommonPoolTask, CurrentMetrics::BackgroundCommonPoolSize, "FDBKeeper"))
+    , keeper_logger(zk_log)
 {
     const auto cluster_file_path = args.fdb_cluster;
     if (!fs::exists(cluster_file_path))
@@ -209,6 +224,10 @@ void FDBKeeper::create(
     AsyncTrxBuilder trxb;
     auto resp = trxb.var<CreateResponse>();
 
+#ifdef ZOOKEEPER_LOG
+    keeper_logger.createRequest(path, data, is_ephemeral, is_sequential, false, session->currentSessionSync());
+#endif
+
     AsyncTrxBuilder::VarDesc<SessionID> var_session;
     if (is_ephemeral)
     {
@@ -222,10 +241,6 @@ void FDBKeeper::create(
 
     if (is_ephemeral)
         znode.registerEphemeralUnsafe(var_session, resp);
-
-#ifdef FDBKEEPER_DEBUG_LOG
-    LOG_DEBUG(log, "create {} ephe: {} seq: {}", chrooted_path, is_ephemeral, is_sequential);
-#endif
 
     if (!chroot.empty())
         trxb.then(TRX_STEP(resp, local_chroot = chroot)
@@ -248,8 +263,8 @@ void FDBKeeper::remove(const String & path, int32_t version, RemoveCallback call
     ZNodeLayer znode(trxb, chrooted_path, *keys);
     znode.remove(version);
 
-#ifdef FDBKEEPER_DEBUG_LOG
-    LOG_DEBUG(log, "remove {}", chrooted_path);
+#ifdef ZOOKEEPER_LOG
+    keeper_logger.removeRequest(path, version, false, session->currentSessionSync());
 #endif
 
     trxb.commit().exec(newTrx(), handleKeeperCallback(resp, callback, " during remove " + chrooted_path), trx_tracker.newToken());
@@ -277,8 +292,8 @@ void FDBKeeper::exists(const String & path, ExistsCallback callback, WatchCallba
         znode.stat(var_resp);
     }
 
-#ifdef FDBKEEPER_DEBUG_LOG
-    LOG_DEBUG(log, "exists {}", chrooted_path);
+#ifdef ZOOKEEPER_LOG
+    keeper_logger.existsRequest(path, static_cast<bool>(watch), session->currentSessionSync());
 #endif
 
     trxb.exec(newTrx(), handleKeeperCallback(var_resp, callback, " during exists " + chrooted_path), trx_tracker.newToken());
@@ -302,8 +317,8 @@ void FDBKeeper::get(const String & path, GetCallback callback, WatchCallbackPtr 
         trxb.commit();
     }
 
-#ifdef FDBKEEPER_DEBUG_LOG
-    LOG_DEBUG(log, "get {}", chrooted_path);
+#ifdef ZOOKEEPER_LOG
+    keeper_logger.getRequest(path, static_cast<bool>(watch), session->currentSessionSync());
 #endif
 
     trxb.exec(newTrx(), handleKeeperCallback(var_resp, callback, " during get " + chrooted_path), trx_tracker.newToken());
@@ -343,8 +358,8 @@ void FDBKeeper::set(const String & path, const String & data, int32_t version, S
         return nullptr;
     });
 
-#ifdef FDBKEEPER_DEBUG_LOG
-    LOG_DEBUG(log, "set {}", chrooted_path);
+#ifdef ZOOKEEPER_LOG
+    keeper_logger.setRequest(path, data, version, false, session->currentSessionSync());
 #endif
 
     trxb.exec(newTrx(), handleKeeperCallback(var_resp, callback, " during set " + chrooted_path), trx_tracker.newToken());
@@ -368,9 +383,8 @@ void FDBKeeper::list(const String & path, ListRequestType list_request_type, Lis
         trxb.commit();
     }
 
-
-#ifdef FDBKEEPER_DEBUG_LOG
-    LOG_DEBUG(log, "list {}", chrooted_path);
+#ifdef ZOOKEEPER_LOG
+    keeper_logger.listRequest(path, static_cast<bool>(watch), session->currentSessionSync());
 #endif
 
     trxb.exec(newTrx(), handleKeeperCallback(var_resp, callback, " during list " + chrooted_path), trx_tracker.newToken());
@@ -388,8 +402,8 @@ void FDBKeeper::check(const String & path, int32_t version, CheckCallback callba
     auto resp = trxb.var<CheckResponse>();
     znode.check(version);
 
-#ifdef FDBKEEPER_DEBUG_LOG
-    LOG_DEBUG(log, "check {}", chrooted_path);
+#ifdef ZOOKEEPER_LOG
+    keeper_logger.checkRequest(path, version, false, session->currentSessionSync());
 #endif
 
     trxb.exec(newTrx(), handleKeeperCallback(resp, callback, " during check " + chrooted_path), trx_tracker.newToken());
@@ -448,8 +462,9 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
     AsyncTrxBuilder::VarDesc<SessionID> var_session;
     bool session_filled = false;
 
-#ifdef FDBKEEPER_DEBUG_LOG
-    std::string multi_requests_description;
+#ifdef ZOOKEEPER_LOG
+    int64_t session_id = session->currentSessionSync();
+    keeper_logger.multiRequest(requests, false, session_id);
 #endif
 
     for (const auto & request : requests)
@@ -458,11 +473,11 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
 
         if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(request.get()))
         {
-#ifdef FDBKEEPER_DEBUG_LOG
-            multi_requests_description += ", create " + chrooted_path;
-#endif
             assert_is_read(false);
 
+#ifdef ZOOKEEPER_LOG
+            keeper_logger.createRequest(concrete_request_create->path, concrete_request_create->data, concrete_request_create->is_ephemeral, concrete_request_create->is_sequential, false, session_id);
+#endif
             if (concrete_request_create->is_ephemeral && !session_filled)
             {
                 session_filled = true;
@@ -496,11 +511,11 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
         }
         else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(request.get()))
         {
-#ifdef FDBKEEPER_DEBUG_LOG
-            multi_requests_description += ", remove " + chrooted_path;
-#endif
             assert_is_read(false);
 
+#ifdef ZOOKEEPER_LOG
+            keeper_logger.removeRequest(concrete_request_remove->path, concrete_request_remove->version, false, session_id);
+#endif
             ZNodeLayer znode(trxb, chrooted_path, *keys);
             auto resp = trxb.var<RemoveResponse>();
             znode.remove(concrete_request_remove->version);
@@ -514,11 +529,11 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
         }
         else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(request.get()))
         {
-#ifdef FDBKEEPER_DEBUG_LOG
-            multi_requests_description += ", set " + chrooted_path;
-#endif
             assert_is_read(false);
 
+#ifdef ZOOKEEPER_LOG
+            keeper_logger.setRequest(concrete_request_set->path, concrete_request_set->data, concrete_request_set->version, false, session_id);
+#endif
             ZNodeLayer znode(trxb, chrooted_path, *keys);
             auto resp = trxb.var<SetResponse>();
 
@@ -558,11 +573,11 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
         }
         else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(request.get()))
         {
-#ifdef FDBKEEPER_DEBUG_LOG
-            multi_requests_description += ", check " + chrooted_path;
-#endif
             assert_is_read(false);
 
+#ifdef ZOOKEEPER_LOG
+            keeper_logger.checkRequest(concrete_request_check->path, concrete_request_check->version, false, session_id);
+#endif
             ZNodeLayer znode(trxb, chrooted_path, *keys);
             auto resp = trxb.var<CheckResponse>();
             if (concrete_request_check->not_exists)
@@ -581,6 +596,9 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
             auto var_resp = trxb.var<GetResponse>();
             znode.get(var_resp);
 
+#ifdef ZOOKEEPER_LOG
+            keeper_logger.getRequest(concrete_request_get->path, false, session_id);
+#endif
             all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<GetResponse>);
         }
         else if (const auto * concrete_request_exists = dynamic_cast<const ExistsRequest *>(request.get()))
@@ -591,6 +609,9 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
             auto var_resp = trxb.var<ExistsResponse>();
             znode.stat(var_resp, false);
 
+#ifdef ZOOKEEPER_LOG
+            keeper_logger.existsRequest(concrete_request_exists->path, false, session_id);
+#endif
             all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<ExistsResponse>);
         }
         else if (const auto * concrete_request_simple_list = dynamic_cast<const ZooKeeperSimpleListRequest *>(request.get()))
@@ -602,6 +623,10 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
             znode.list(var_resp);
             ListResponse resp;
 
+#ifdef ZOOKEEPER_LOG
+            keeper_logger.simpleListRequest(concrete_request_simple_list->path, false, session_id);
+#endif
+
             all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<ListResponse>);
         }
         else if (const auto * concrete_request_filted_list = dynamic_cast<const ZooKeeperFilteredListRequest *>(request.get()))
@@ -612,6 +637,10 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
             auto var_resp = trxb.var<ListResponse>();
             znode.list(var_resp, concrete_request_filted_list->list_request_type);
             ListResponse resp;
+
+#ifdef ZOOKEEPER_LOG
+            keeper_logger.filteredListRequest(concrete_request_filted_list->path, false, session_id);
+#endif
 
             all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<ListResponse>);
         }
@@ -657,13 +686,17 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
         }
     }
 
-#ifdef FDBKEEPER_DEBUG_LOG
-    LOG_DEBUG(log, "multi{}", multi_requests_description);
-#endif
-
     trxb.exec(
         newTrx(),
-        [curr_request_var, all_responses_var, callback](AsyncTrxBuilder::Context & ctx, std::exception_ptr eptr)
+        [
+#ifdef ZOOKEEPER_LOG
+            session_id,
+            zk_log = keeper_logger,
+            request_time = std::chrono::steady_clock::now(),
+#endif
+            curr_request_var,
+            all_responses_var,
+            callback](AsyncTrxBuilder::Context & ctx, std::exception_ptr eptr)
         {
             MultiResponse multi_resp;
             auto resp_cnt = all_responses_var.size();
@@ -689,6 +722,10 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
                 multi_resp.responses.emplace_back(
                     all_responses_var[i].second(ctx, all_responses_var[i].first, Error::ZRUNTIMEINCONSISTENCY));
 
+#ifdef ZOOKEEPER_LOG
+            auto elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - request_time).count();
+            zk_log.response(multi_resp, elapsed_ms, session_id);
+#endif
             callback(multi_resp);
         },
         trx_tracker.newToken());
@@ -696,6 +733,11 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
     ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 };
+
+void FDBKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+{
+    keeper_logger.setZooKeeperLog(zk_log_);
+}
 
 bool FDBKeeper::isExpired() const
 {
