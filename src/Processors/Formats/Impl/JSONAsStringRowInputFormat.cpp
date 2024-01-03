@@ -31,13 +31,13 @@ JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, std::unique_pt
 void JSONAsRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
     buf = std::make_unique<PeekableReadBuffer>(in_);
-    JSONEachRowRowInputFormat::setReadBuffer(*buf);
+    IRowInputFormat::setReadBuffer(*buf);
 }
 
 void JSONAsRowInputFormat::resetReadBuffer()
 {
     buf.reset();
-    JSONEachRowRowInputFormat::resetReadBuffer();
+    IRowInputFormat::resetReadBuffer();
 }
 
 void JSONAsRowInputFormat::readPrefix()
