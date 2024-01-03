@@ -361,7 +361,7 @@ ReadFromMerge::ReadFromMerge(
 
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    filterTablesAndCreateChildPlans();
+    filterTablesAndCreateChildrenPlans();
 
     if (selected_tables.empty())
     {
@@ -429,7 +429,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     pipeline.addResources(std::move(resources));
 }
 
-void ReadFromMerge::filterTablesAndCreateChildPlans()
+void ReadFromMerge::filterTablesAndCreateChildrenPlans()
 {
     if (child_plans)
         return;
@@ -451,10 +451,10 @@ void ReadFromMerge::filterTablesAndCreateChildPlans()
 
     selected_tables = getSelectedTables(context, has_database_virtual_column, has_table_virtual_column);
 
-    child_plans = createChildPlans(query_info);
+    child_plans = createChildrenPlans(query_info);
 }
 
-std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildPlans(SelectQueryInfo & query_info_) const
+std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQueryInfo & query_info_) const
 {
     if (selected_tables.empty())
         return {};
@@ -1162,13 +1162,13 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
 const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
 {
-    filterTablesAndCreateChildPlans();
+    filterTablesAndCreateChildrenPlans();
     return selected_tables;
 }
 
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
 {
-    filterTablesAndCreateChildPlans();
+    filterTablesAndCreateChildrenPlans();
 
     /// Disable read-in-order optimization for reverse order with final.
     /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
@@ -1211,7 +1211,7 @@ void ReadFromMerge::applyFilters(const QueryPlan & plan) const
 
 void ReadFromMerge::applyFilters()
 {
-    filterTablesAndCreateChildPlans();
+    filterTablesAndCreateChildrenPlans();
 
     for (const auto & child_plan : *child_plans)
         if (child_plan.plan.isInitialized())

@@ -232,9 +232,9 @@ private:
     /// It's needed to guarantee lifetime for child steps to be the same as for this step (mainly for EXPLAIN PIPELINE).
     std::optional<std::vector<ChildPlan>> child_plans;
 
-    std::vector<ChildPlan> createChildPlans(SelectQueryInfo & query_info_) const;
+    std::vector<ChildPlan> createChildrenPlans(SelectQueryInfo & query_info_) const;
 
-    void filterTablesAndCreateChildPlans();
+    void filterTablesAndCreateChildrenPlans();
 
     void applyFilters(const QueryPlan & plan) const;
 
