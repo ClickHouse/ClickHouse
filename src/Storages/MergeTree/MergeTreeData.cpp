@@ -4752,42 +4752,9 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     }
 }
 
-void MergeTreeData::sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * acquired_lock) const
-{
-    const auto & partition_ast = ast->as<ASTPartition &>();
-
-    if (partition_ast.all)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only Support DETACH PARTITION ALL currently");
-
-    if (!partition_ast.value)
-    {
-        MergeTreePartInfo::validatePartitionID(partition_ast.id->clone(), format_version);
-        return;
-    }
-
-    /// Re-parse partition key fields using the information about expected field types.
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
-    size_t fields_count = key_sample_block.columns();
-
-    Row partition_row(fields_count);
-    MergeTreePartition partition(std::move(partition_row));
-    String partition_id = partition.getID(*this);
-
-    {
-        auto data_parts_lock = (acquired_lock) ? DataPartsLock() : lockParts();
-        DataPartPtr existing_part_in_partition = getAnyPartInPartition(partition_id, data_parts_lock);
-        if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
-        {
-            WriteBufferFromOwnString buf;
-            partition.serializeText(*this, buf, FormatSettings{});
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
-                                                       "doesn't match partition value for an existing part with the same partition ID: {}",
-                            buf.str(), existing_part_in_partition->name);
-        }
-    }
-}
-
+/**
+*
+*/
 void MergeTreeData::checkAlterPartitionIsPossible(
     const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr) const
 {
@@ -4818,7 +4785,13 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                 }
                 else
                 {
-                    sanityCheckASTPartition(command.partition);
+                    // The below `getPartitionIDFromQuery` call will not work for attach / replace because it assumes the partition expressions
+                    // are the same and deliberately uses this storage. Later on, `MergeTreeData::replaceFrom` is called, and it makes the right
+                    // call to `getPartitionIDFromQuery` using source storage.
+                    // Note: `PartitionCommand::REPLACE_PARTITION` is used both for `REPLACE PARTITION` and `ATTACH PARTITION FROM` queries.
+                    // But not for `ATTACH PARTITION` queries.
+                    if (command.type != PartitionCommand::REPLACE_PARTITION)
+                        getPartitionIDFromQuery(command.partition, getContext());
                 }
             }
         }

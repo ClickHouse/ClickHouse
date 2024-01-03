@@ -841,8 +841,6 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
-    void sanityCheckASTPartition(const ASTPtr & ast, DataPartsLock * acquired_lock = nullptr) const;
-
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPartOnSameDisk(
         const MergeTreeData::DataPartPtr & src_part,
         const String & tmp_part_prefix,
