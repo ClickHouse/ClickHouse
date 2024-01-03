@@ -540,11 +540,12 @@ StorageURLSink::StorageURLSink(
         Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts, DBMS_DEFAULT_BUFFER_SIZE, proxy_config
     );
 
+    const auto & settings = context->getSettingsRef();
     write_buf = wrapWriteBufferWithCompressionMethod(
         std::move(write_buffer),
         compression_method,
-        3
-    );
+        static_cast<int>(settings.output_format_compression_level),
+        static_cast<int>(settings.output_format_compression_zstd_window_log));
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block, context, format_settings);
 }
 

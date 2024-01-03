@@ -533,7 +533,12 @@ public:
         , format_settings(format_settings_)
     {
         StoredObject object(blob_path);
-        write_buf = wrapWriteBufferWithCompressionMethod(object_storage->writeObject(object, WriteMode::Rewrite), compression_method, 3);
+        const auto & settings = context->getSettingsRef();
+        write_buf = wrapWriteBufferWithCompressionMethod(
+            object_storage->writeObject(object, WriteMode::Rewrite),
+            compression_method,
+            static_cast<int>(settings.output_format_compression_level),
+            static_cast<int>(settings.output_format_compression_zstd_window_log));
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, format_settings);
     }
 
