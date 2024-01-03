@@ -1055,7 +1055,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     for (auto & [_, intermediate, to] : replicated_tables_to_rename)
         rename_table(intermediate, to);
 
-    LOG_DEBUG(log, "Renames completed succesessfully");
+    LOG_DEBUG(log, "Renames completed successfully");
 
     for (const auto & id : dropped_tables)
         DatabaseCatalog::instance().waitTableFinallyDropped(id);
