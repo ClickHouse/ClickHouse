@@ -47,7 +47,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isUnsignedInteger(arguments[1].type))
+        if (!isUInt(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be unsigned integer", getName());
         if (!arguments[1].column)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be constant", getName());

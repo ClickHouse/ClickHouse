@@ -1,22 +1,22 @@
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
 #include <base/map.h>
 #include <base/range.h>
 
-#include "formatString.h"
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -26,7 +26,7 @@ class ConcatWithSeparatorImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    explicit ConcatWithSeparatorImpl(ContextPtr context_) : context(context_) {}
+    explicit ConcatWithSeparatorImpl(ContextPtr context_) : context(context_) { }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<ConcatWithSeparatorImpl>(context); }
 
@@ -113,8 +113,7 @@ public:
             else if (const ColumnConst * const_col = checkAndGetColumnConstStringOrFixedString(column.get()))
                 constant_strings[2 * i] = const_col->getValue<String>();
             else
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of argument of function {}", column->getName(), getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", column->getName(), getName());
         }
 
         String pattern;
@@ -122,7 +121,7 @@ public:
         for (size_t i = 0; i < num_args; ++i)
             pattern += "{}";
 
-        FormatImpl::formatExecute(
+        FormatStringImpl::formatExecute(
             has_column_string,
             has_column_fixed_string,
             std::move(pattern),
@@ -156,14 +155,14 @@ using FunctionConcatWithSeparatorAssumeInjective = ConcatWithSeparatorImpl<NameC
 REGISTER_FUNCTION(ConcatWithSeparator)
 {
     factory.registerFunction<FunctionConcatWithSeparator>(FunctionDocumentation{
-        .description=R"(
+        .description = R"(
 Returns the concatenation strings separated by string separator. Syntax: concatWithSeparator(sep, expr1, expr2, expr3...)
         )",
         .examples{{"concatWithSeparator", "SELECT concatWithSeparator('a', '1', '2', '3')", ""}},
         .categories{"String"}});
 
     factory.registerFunction<FunctionConcatWithSeparatorAssumeInjective>(FunctionDocumentation{
-        .description=R"(
+        .description = R"(
 Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
 
 The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
@@ -171,7 +170,7 @@ The function is named “injective” if it always returns different result for 
         .examples{{"concatWithSeparatorAssumeInjective", "SELECT concatWithSeparatorAssumeInjective('a', '1', '2', '3')", ""}},
         .categories{"String"}});
 
-    /// Compatibility with Spark:
+    /// Compatibility with Spark and MySQL:
     factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::CaseInsensitive);
 }
 

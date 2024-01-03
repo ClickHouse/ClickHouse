@@ -143,7 +143,7 @@ range([start, ] end [, step])
 **Implementation details**
 
 - All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments.
-- An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
+- An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#function_range_max_elements_in_block) setting.
 - Returns Null if any argument has Nullable(Nothing) type. An exception is thrown if any argument has Null value (Nullable(T) type).
 
 **Examples**
@@ -1081,6 +1081,10 @@ Result:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**See also**
+
+- [arrayFold](#arrayfold)
+
 ## arrayReduceInRanges
 
 Applies an aggregate function to array elements in given ranges and returns an array containing the result corresponding to each range. The function will return the same result as multiple `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
@@ -1122,6 +1126,56 @@ Result:
 │ [1234500,234000,34560,4567] │
 └─────────────────────────────┘
 ```
+
+## arrayFold
+
+Applies a lambda function to one or more equally-sized arrays and collects the result in an accumulator.
+
+**Syntax**
+
+``` sql
+arrayFold(lambda_function, arr1, arr2, ..., accumulator)
+```
+
+**Example**
+
+Query:
+
+``` sql
+SELECT arrayFold( acc,x -> acc + x*2,  [1, 2, 3, 4], toInt64(3)) AS res;
+```
+
+Result:
+
+``` text
+┌─res─┐
+│  23 │
+└─────┘
+```
+
+**Example with the Fibonacci sequence**
+
+```sql
+SELECT arrayFold( acc,x -> (acc.2, acc.2 + acc.1), range(number), (1::Int64, 0::Int64)).1 AS fibonacci
+FROM numbers(1,10);
+
+┌─fibonacci─┐
+│         0 │
+│         1 │
+│         1 │
+│         2 │
+│         3 │
+│         5 │
+│         8 │
+│        13 │
+│        21 │
+│        34 │
+└───────────┘
+```
+
+**See also**
+
+- [arrayReduce](#arrayreduce)
 
 ## arrayReverse(arr)
 
@@ -2116,6 +2170,72 @@ Result:
 ┌─res─────────────────┐
 │ [4242,4242,1,2,3,4] │
 └─────────────────────┘
+```
+
+
+## arrayRandomSample
+
+Function `arrayRandomSample` returns a subset with `samples`-many random elements of an input array. If `samples` exceeds the size of the input array, the sample size is limited to the size of the array, i.e. all array elements are returned but their order is not guaranteed. The function can handle both flat arrays and nested arrays.
+
+**Syntax**
+
+```sql
+arrayRandomSample(arr, samples)
+```
+
+**Arguments**
+
+- `arr` — The input array from which to sample elements. ([Array(T)](../data-types/array.md))
+- `samples` — The number of elements to include in the random sample ([UInt*](../data-types/int-uint.md))
+
+**Returned Value**
+
+- An array containing a random sample of elements from the input array.
+
+Type: [Array](../data-types/array.md).
+
+**Examples**
+
+Query:
+
+```sql
+SELECT arrayRandomSample(['apple', 'banana', 'cherry', 'date'], 2) as res;
+```
+
+Result:
+
+```
+┌─res────────────────┐
+│ ['cherry','apple'] │
+└────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT arrayRandomSample([[1, 2], [3, 4], [5, 6]], 2) as res;
+```
+
+Result:
+
+```
+┌─res───────────┐
+│ [[3,4],[5,6]] │
+└───────────────┘
+```
+
+Query:
+
+```sql
+SELECT arrayRandomSample([1, 2, 3], 5) as res;
+```
+
+Result:
+
+```
+┌─res─────┐
+│ [3,1,2] │
+└─────────┘
 ```
 
 ## Distance functions

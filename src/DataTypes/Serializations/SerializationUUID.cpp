@@ -1,7 +1,5 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/Serializations/SerializationUUID.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

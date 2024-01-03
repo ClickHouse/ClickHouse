@@ -126,6 +126,7 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayRandomSample
 arrayReduce
 arrayReduceInRanges
 arrayResize
@@ -432,7 +433,7 @@ materialize
 max2
 metroHash64
 min2
-minSampleSizeContinous
+minSampleSizeContinuous
 minSampleSizeConversion
 minus
 modulo

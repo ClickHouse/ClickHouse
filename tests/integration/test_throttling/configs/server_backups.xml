@@ -3,7 +3,7 @@
         <disks>
             <s3>
                 <type>s3</type>
-                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <endpoint>https://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
             </s3>
@@ -21,7 +21,7 @@
 
     <named_collections>
         <s3>
-            <url>http://minio1:9001/root/data/</url>
+            <url>https://minio1:9001/root/data/</url>
             <access_key_id>minio</access_key_id>
             <secret_access_key>minio123</secret_access_key>
         </s3>

@@ -535,9 +535,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
         if (!args.storage_def->order_by)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
-                            "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY ()");
+        {
+            if (args.getLocalContext()->getSettingsRef().create_table_empty_primary_key_by_default)
+            {
+                args.storage_def->set(args.storage_def->order_by, makeASTFunction("tuple"));
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "You must provide an ORDER BY or PRIMARY KEY expression in the table definition. "
+                                "If you don't want this table to be sorted, use ORDER BY/PRIMARY KEY (). "
+                                "Otherwise, you can use the setting 'create_table_empty_primary_key_by_default' to "
+                                "automatically add an empty primary key to the table definition");
+            }
+        }
 
         /// Get sorting key from engine arguments.
         ///
@@ -570,10 +581,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
 
+        bool allow_suspicious_ttl = args.attach || args.getLocalContext()->getSettingsRef().allow_suspicious_ttl_expressions;
+
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
         }
 
         if (args.query.columns_list && args.query.columns_list->indices)
@@ -587,16 +600,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 metadata.projections.add(std::move(projection));
             }
 
-        auto constraints = metadata.constraints.getConstraints();
-        if (args.query.columns_list && args.query.columns_list->constraints)
-            for (auto & constraint : args.query.columns_list->constraints->children)
-                constraints.push_back(constraint);
-        metadata.constraints = ConstraintsDescription(constraints);
 
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, allow_suspicious_ttl);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
@@ -609,6 +617,30 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
+
+        auto constraints = metadata.constraints.getConstraints();
+        if (args.query.columns_list && args.query.columns_list->constraints)
+            for (auto & constraint : args.query.columns_list->constraints->children)
+                constraints.push_back(constraint);
+        if ((merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
+            merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing) &&
+            storage_settings->add_implicit_sign_column_constraint_for_collapsing_engine)
+        {
+            auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
+            sign_column_check_constraint->name = "check_sign_column";
+            sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
+
+            Array valid_values_array;
+            valid_values_array.emplace_back(-1);
+            valid_values_array.emplace_back(1);
+
+            auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
+            auto sign_column_ast = std::make_unique<ASTIdentifier>(merging_params.sign_column);
+            sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
+
+            constraints.push_back(std::move(sign_column_check_constraint));
+        }
+        metadata.constraints = ConstraintsDescription(constraints);
     }
     else
     {

@@ -98,7 +98,7 @@ bool ValuesBlockInputFormat::skipToNextRow(ReadBuffer * buf, size_t min_chunk_by
     return true;
 }
 
-Chunk ValuesBlockInputFormat::generate()
+Chunk ValuesBlockInputFormat::read()
 {
     if (total_rows == 0)
         readPrefix();
@@ -617,10 +617,12 @@ void ValuesBlockInputFormat::readSuffix()
         skipWhitespaceIfAny(*buf);
         if (buf->hasUnreadData())
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon");
+        if (!format_settings.values.allow_data_after_semicolon && !buf->eof())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read data after semicolon (and input_format_values_allow_data_after_semicolon=0)");
         return;
     }
 
-    if (buf->hasUnreadData())
+    if (buf->hasUnreadData() || !buf->eof())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unread data in PeekableReadBuffer will be lost. Most likely it's a bug.");
 }
 
@@ -640,13 +642,19 @@ void ValuesBlockInputFormat::resetParser()
     IInputFormat::resetParser();
     // I'm not resetting parser modes here.
     // There is a good chance that all messages have the same format.
-    buf->reset();
     total_rows = 0;
 }
 
 void ValuesBlockInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
+}
+
+void ValuesBlockInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    IInputFormat::resetReadBuffer();
 }
 
 ValuesSchemaReader::ValuesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -697,6 +705,11 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
     }
 
     return data_types;
+}
+
+void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatValues(FormatFactory & factory)

@@ -2,6 +2,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/quoteString.h>
+#include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 
 #include <magic_enum.hpp>
@@ -86,66 +87,60 @@ void ASTSystemQuery::setTable(const String & name)
 
 void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SYSTEM ";
-    settings.ostr << typeToString(type) << (settings.hilite ? hilite_none : "");
-
-    auto print_database_table = [&]
+    auto print_identifier = [&](const String & identifier) -> WriteBuffer &
     {
-        settings.ostr << " ";
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
+                      << (settings.hilite ? hilite_none : "");
+        return settings.ostr;
+    };
+
+    auto print_keyword = [&](const auto & keyword) -> WriteBuffer &
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
+        return settings.ostr;
+    };
+
+    auto print_database_table = [&]() -> WriteBuffer &
+    {
         if (database)
         {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getDatabase())
-                          << (settings.hilite ? hilite_none : "") << ".";
+            print_identifier(getDatabase()) << ".";
         }
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getTable())
-                      << (settings.hilite ? hilite_none : "");
+        print_identifier(getTable());
+        return settings.ostr;
     };
 
     auto print_drop_replica = [&]
     {
         settings.ostr << " " << quoteString(replica);
         if (!shard.empty())
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM SHARD "
-                          << (settings.hilite ? hilite_none : "") << quoteString(shard);
-        }
+            print_keyword(" FROM SHARD ") << quoteString(shard);
 
         if (table)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM TABLE"
-                          << (settings.hilite ? hilite_none : "");
+            print_keyword(" FROM TABLE ");
             print_database_table();
         }
         else if (!replica_zk_path.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM ZKPATH "
-                          << (settings.hilite ? hilite_none : "") << quoteString(replica_zk_path);
+            print_keyword(" FROM ZKPATH ") << quoteString(replica_zk_path);
         }
         else if (database)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM DATABASE "
-                          << (settings.hilite ? hilite_none : "");
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getDatabase())
-                          << (settings.hilite ? hilite_none : "");
+            print_keyword(" FROM DATABASE ");
+            print_identifier(getDatabase());
         }
     };
 
     auto print_on_volume = [&]
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ON VOLUME "
-                      << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(storage_policy)
-                      << (settings.hilite ? hilite_none : "")
-                      << "."
-                      << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(volume)
-                      << (settings.hilite ? hilite_none : "");
+        print_keyword(" ON VOLUME ");
+        print_identifier(storage_policy) << ".";
+        print_identifier(volume);
     };
 
-    auto print_identifier = [&](const String & identifier)
-    {
-        settings.ostr << " " << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
-                      << (settings.hilite ? hilite_none : "");
-    };
-
+    print_keyword("SYSTEM") << " ";
+    print_keyword(typeToString(type));
     if (!cluster.empty())
         formatOnCluster(settings);
 
@@ -169,7 +164,10 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         || type == Type::START_CLEANUP)
     {
         if (table)
+        {
+            settings.ostr << ' ';
             print_database_table();
+        }
         else if (!volume.empty())
             print_on_volume();
     }
@@ -181,23 +179,39 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             || type == Type::RELOAD_DICTIONARY
             || type == Type::RELOAD_MODEL
             || type == Type::RELOAD_FUNCTION
-            || type == Type::RESTART_DISK)
+            || type == Type::RESTART_DISK
+            || type == Type::DROP_DISK_METADATA_CACHE)
     {
         if (table)
+        {
+            settings.ostr << ' ';
             print_database_table();
+        }
         else if (!target_model.empty())
+        {
+            settings.ostr << ' ';
             print_identifier(target_model);
+        }
         else if (!target_function.empty())
+        {
+            settings.ostr << ' ';
             print_identifier(target_function);
+        }
         else if (!disk.empty())
+        {
+            settings.ostr << ' ';
             print_identifier(disk);
+        }
 
         if (sync_replica_mode != SyncReplicaMode::DEFAULT)
-            settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << magic_enum::enum_name(sync_replica_mode)
-                          << (settings.hilite ? hilite_none : "");
+        {
+            settings.ostr << ' ';
+            print_keyword(magic_enum::enum_name(sync_replica_mode));
+        }
     }
     else if (type == Type::SYNC_DATABASE_REPLICA)
     {
+        settings.ostr << ' ';
         print_identifier(database->as<ASTIdentifier>()->name());
     }
     else if (type == Type::DROP_REPLICA || type == Type::DROP_DATABASE_REPLICA)
@@ -206,48 +220,61 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     }
     else if (type == Type::SUSPEND)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FOR "
-            << (settings.hilite ? hilite_none : "") << seconds
-            << (settings.hilite ? hilite_keyword : "") << " SECOND"
-            << (settings.hilite ? hilite_none : "");
+        print_keyword(" FOR ") << seconds;
+        print_keyword(" SECOND");
+    }
+    else if (type == Type::DROP_FORMAT_SCHEMA_CACHE)
+    {
+        if (!schema_cache_format.empty())
+        {
+            print_keyword(" FOR ");
+            print_identifier(schema_cache_format);
+        }
     }
     else if (type == Type::DROP_FILESYSTEM_CACHE)
     {
         if (!filesystem_cache_name.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_none : "") << " " << filesystem_cache_name;
+            settings.ostr << ' ';
+            print_identifier(filesystem_cache_name);
             if (!key_to_drop.empty())
             {
-                settings.ostr << (settings.hilite ? hilite_none : "") << " KEY " << key_to_drop;
+                print_keyword(" KEY ");
+                print_identifier(key_to_drop);
                 if (offset_to_drop.has_value())
-                    settings.ostr << (settings.hilite ? hilite_none : "") << " OFFSET " << offset_to_drop.value();
+                {
+                    print_keyword(" OFFSET ");
+                    settings.ostr << offset_to_drop.value();
+                }
             }
+        }
+    }
+    else if (type == Type::DROP_SCHEMA_CACHE)
+    {
+        if (!schema_cache_storage.empty())
+        {
+            print_keyword(" FOR ");
+            print_identifier(schema_cache_storage);
         }
     }
     else if (type == Type::UNFREEZE)
     {
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(backup_name);
-    }
-    else if (type == Type::SYNC_FILE_CACHE)
-    {
-        settings.ostr << (settings.hilite ? hilite_none : "");
+        print_keyword(" WITH NAME ");
+        settings.ostr << quoteString(backup_name);
     }
     else if (type == Type::START_LISTEN || type == Type::STOP_LISTEN)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " "
-            << ServerType::serverTypeToString(server_type.type) << (settings.hilite ? hilite_none : "");
+        settings.ostr << ' ';
+        print_keyword(ServerType::serverTypeToString(server_type.type));
 
         if (server_type.type == ServerType::Type::CUSTOM)
-        {
-            settings.ostr << " " << quoteString(server_type.custom_name);
-        }
+            settings.ostr << ' ' << quoteString(server_type.custom_name);
 
         bool comma = false;
 
         if (!server_type.exclude_types.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "")
-                << " EXCEPT" << (settings.hilite ? hilite_none : "");
+            print_keyword(" EXCEPT");
 
             for (auto cur_type : server_type.exclude_types)
             {
@@ -255,12 +282,12 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                     continue;
 
                 if (comma)
-                    settings.ostr << ",";
+                    settings.ostr << ',';
                 else
                     comma = true;
 
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << " "
-                    << ServerType::serverTypeToString(cur_type) << (settings.hilite ? hilite_none : "");
+                settings.ostr << ' ';
+                print_keyword(ServerType::serverTypeToString(cur_type));
             }
 
             if (server_type.exclude_types.contains(ServerType::Type::CUSTOM))
@@ -268,13 +295,12 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
                 for (const auto & cur_name : server_type.exclude_custom_names)
                 {
                     if (comma)
-                        settings.ostr << ",";
+                        settings.ostr << ',';
                     else
                         comma = true;
 
-                    settings.ostr << (settings.hilite ? hilite_keyword : "") << " "
-                        << ServerType::serverTypeToString(ServerType::Type::CUSTOM) << (settings.hilite ? hilite_none : "");
-
+                    settings.ostr << ' ';
+                    print_keyword(ServerType::serverTypeToString(ServerType::Type::CUSTOM));
                     settings.ostr << " " << quoteString(cur_name);
                 }
             }

@@ -55,20 +55,28 @@ function configure()
 
     function randomize_config_boolean_value {
         value=$(($RANDOM % 2))
-        sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+        sudo cat /etc/clickhouse-server/config.d/$2.xml \
         | sed "s|<$1>[01]</$1>|<$1>$value</$1>|" \
-        > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
-        sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+        > /etc/clickhouse-server/config.d/$2.xml.tmp
+        sudo mv /etc/clickhouse-server/config.d/$2.xml.tmp /etc/clickhouse-server/config.d/$2.xml
     }
 
-    # Randomize all Keeper feature flags
-    randomize_config_boolean_value filtered_list
-    randomize_config_boolean_value multi_read
-    randomize_config_boolean_value check_not_exists
-    randomize_config_boolean_value create_if_not_exists
+    if [[ -n "$RANDOMIZE_KEEPER_FEATURE_FLAGS" ]] && [[ "$RANDOMIZE_KEEPER_FEATURE_FLAGS" -eq 1 ]]; then
+        # Randomize all Keeper feature flags
+        randomize_config_boolean_value filtered_list keeper_port
+        randomize_config_boolean_value multi_read keeper_port
+        randomize_config_boolean_value check_not_exists keeper_port
+        randomize_config_boolean_value create_if_not_exists keeper_port
+    fi
 
     sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
     sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
+
+    if [[ -n "$ZOOKEEPER_FAULT_INJECTION" ]] && [[ "$ZOOKEEPER_FAULT_INJECTION" -eq 1 ]]; then
+        randomize_config_boolean_value use_compression zookeeper_fault_injection
+    else
+        randomize_config_boolean_value use_compression zookeeper
+    fi
 
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
@@ -134,21 +142,6 @@ EOL
 </clickhouse>
 EOL
 
-    # Analyzer is not yet ready for testing
-    cat > /etc/clickhouse-server/users.d/no_analyzer.xml <<EOL
-<clickhouse>
-    <profiles>
-        <default>
-            <constraints>
-                <allow_experimental_analyzer>
-                    <readonly/>
-                </allow_experimental_analyzer>
-            </constraints>
-        </default>
-    </profiles>
-</clickhouse>
-EOL
-
 }
 
 function stop()
@@ -174,6 +167,9 @@ function stop()
       echo -e "Possible deadlock on shutdown (see gdb.log)$FAIL" >> /test_output/test_results.tsv
       echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
       timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+      clickhouse stop --force
+    else
+      echo -e "Warning: server did not stop yet$OK" >> /test_output/test_results.tsv
       clickhouse stop --force
     fi
 }

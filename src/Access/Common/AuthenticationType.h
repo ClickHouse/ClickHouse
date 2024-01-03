@@ -37,6 +37,9 @@ enum class AuthenticationType
     /// The check is performed on server side by decrypting the data and comparing with the original string.
     SSH_KEY,
 
+    /// Authentication through HTTP protocol
+    HTTP,
+
     MAX,
 };
 

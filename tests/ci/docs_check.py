@@ -10,13 +10,12 @@ from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import (
-    NotSet,
     RerunHelper,
     get_commit,
     post_commit_status,
     update_mergeable_check,
 )
-from docker_pull_helper import get_image_with_version
+from docker_images_helper import get_docker_image, pull_image
 from env_helper import TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
@@ -68,12 +67,18 @@ def main():
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
-    atexit.register(update_mergeable_check, gh, pr_info, NAME)
+    atexit.register(update_mergeable_check, commit, pr_info, NAME)
 
     if not pr_info.has_changes_in_documentation() and not args.force:
         logging.info("No changes in documentation")
         post_commit_status(
-            commit, "success", NotSet, "No changes in docs", NAME, pr_info
+            commit,
+            "success",
+            "",
+            "No changes in docs",
+            NAME,
+            pr_info,
+            dump_to_file=True,
         )
         sys.exit(0)
 
@@ -82,7 +87,7 @@ def main():
     elif args.force:
         logging.info("Check the docs because of force flag")
 
-    docker_image = get_image_with_version(temp_path, "clickhouse/docs-builder")
+    docker_image = pull_image(get_docker_image("clickhouse/docs-builder"))
 
     test_output = temp_path / "docs_check_log"
     test_output.mkdir(parents=True, exist_ok=True)
@@ -136,7 +141,9 @@ def main():
         s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME
     )
     print("::notice ::Report url: {report_url}")
-    post_commit_status(commit, status, report_url, description, NAME, pr_info)
+    post_commit_status(
+        commit, status, report_url, description, NAME, pr_info, dump_to_file=True
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

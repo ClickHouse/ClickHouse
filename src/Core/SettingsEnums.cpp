@@ -20,6 +20,7 @@ namespace ErrorCodes
 IMPLEMENT_SETTING_ENUM(LoadBalancing, ErrorCodes::UNKNOWN_LOAD_BALANCING,
     {{"random",           LoadBalancing::RANDOM},
      {"nearest_hostname", LoadBalancing::NEAREST_HOSTNAME},
+     {"hostname_levenshtein_distance", LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE},
      {"in_order",         LoadBalancing::IN_ORDER},
      {"first_or_random",  LoadBalancing::FIRST_OR_RANDOM},
      {"round_robin",      LoadBalancing::ROUND_ROBIN}})
@@ -68,6 +69,12 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"allow",  DistributedProductMode::ALLOW}})
 
 
+IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryCacheNondeterministicFunctionHandling::Throw},
+     {"save",   QueryCacheNondeterministicFunctionHandling::Save},
+     {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
+
+
 IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},
      {"best_effort", FormatSettings::DateTimeInputFormat::BestEffort},
@@ -110,9 +117,9 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
      {"null_status_on_timeout", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT},
      {"never_throw", DistributedDDLOutputMode::NEVER_THROW}})
 
-IMPLEMENT_SETTING_ENUM(HandleKafkaErrorMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"default",      HandleKafkaErrorMode::DEFAULT},
-     {"stream",       HandleKafkaErrorMode::STREAM}})
+IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"default",      StreamingHandleErrorMode::DEFAULT},
+     {"stream",       StreamingHandleErrorMode::STREAM}})
 
 IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
@@ -140,7 +147,7 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql}})
-    // FIXME: do not add 'kusto_auto' to the list. Maybe remove it from code completely?
+
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -189,4 +196,12 @@ IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
      {"log_last", ExternalCommandStderrReaction::LOG_LAST},
      {"throw", ExternalCommandStderrReaction::THROW}})
 
+IMPLEMENT_SETTING_ENUM(SchemaInferenceMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"default", SchemaInferenceMode::DEFAULT},
+     {"union", SchemaInferenceMode::UNION}})
+
+IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
+     {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
+     {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
 }

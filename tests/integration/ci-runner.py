@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from collections import defaultdict
 import csv
 import glob
 import json
@@ -8,13 +7,15 @@ import logging
 import os
 import random
 import re
+import shlex
 import shutil
 import string
 import subprocess
 import time
-import shlex
 import zlib  # for crc32
+from collections import defaultdict
 
+from integration_test_images import IMAGES
 
 MAX_RETRY = 1
 NUM_WORKERS = 5
@@ -301,23 +302,6 @@ class ClickhouseIntegrationTestsRunner:
     def shuffle_test_groups(self):
         return self.shuffle_groups != 0
 
-    @staticmethod
-    def get_images_names():
-        return [
-            "clickhouse/dotnet-client",
-            "clickhouse/integration-helper",
-            "clickhouse/integration-test",
-            "clickhouse/integration-tests-runner",
-            "clickhouse/kerberized-hadoop",
-            "clickhouse/kerberos-kdc",
-            "clickhouse/mysql-golang-client",
-            "clickhouse/mysql-java-client",
-            "clickhouse/mysql-js-client",
-            "clickhouse/mysql-php-client",
-            "clickhouse/nginx-dav",
-            "clickhouse/postgresql-java-client",
-        ]
-
     def _pre_pull_images(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
 
@@ -436,13 +420,15 @@ class ClickhouseIntegrationTestsRunner:
         cmd = (
             f"cd {repo_path}/tests/integration && "
             f"timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
-            f"| tee '{out_file_full}'"
         )
 
-        logging.info("Getting all tests with cmd '%s'", cmd)
-        subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-            cmd, shell=True
+        logging.info(
+            "Getting all tests to the file %s with cmd: \n%s", out_file_full, cmd
         )
+        with open(out_file_full, "wb") as ofd:
+            subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                cmd, shell=True, stdout=ofd, stderr=ofd
+            )
 
         all_tests = set()
         with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:
@@ -492,8 +478,6 @@ class ClickhouseIntegrationTestsRunner:
             if test not in main_counters["PASSED"]:
                 if test in main_counters["FAILED"]:
                     main_counters["FAILED"].remove(test)
-                if test in main_counters["ERROR"]:
-                    main_counters["ERROR"].remove(test)
                 if test in main_counters["BROKEN"]:
                     main_counters["BROKEN"].remove(test)
 
@@ -506,7 +490,6 @@ class ClickhouseIntegrationTestsRunner:
             for test in current_counters[state]:
                 if test in main_counters["PASSED"]:
                     main_counters["PASSED"].remove(test)
-                    continue
                 if test not in broken_tests:
                     if test not in main_counters[state]:
                         main_counters[state].append(test)
@@ -524,7 +507,7 @@ class ClickhouseIntegrationTestsRunner:
             os.path.join(repo_path, "tests/integration", "runner"),
             "--docker-image-version",
         ):
-            for img in self.get_images_names():
+            for img in IMAGES:
                 if img == "clickhouse/integration-tests-runner":
                     runner_version = self.get_image_version(img)
                     logging.info(

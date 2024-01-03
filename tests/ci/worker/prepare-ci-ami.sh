@@ -9,7 +9,7 @@ set -xeuo pipefail
 
 echo "Running prepare script"
 export DEBIAN_FRONTEND=noninteractive
-export RUNNER_VERSION=2.304.0
+export RUNNER_VERSION=2.311.0
 export RUNNER_HOME=/home/ubuntu/actions-runner
 
 deb_arch() {
@@ -56,12 +56,12 @@ apt-get install --yes --no-install-recommends \
     qemu-user-static \
     unzip
 
+# Install docker
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 
 echo "deb [arch=$(deb_arch) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 apt-get update
-
 apt-get install --yes --no-install-recommends docker-ce docker-buildx-plugin docker-ce-cli containerd.io
 
 usermod -aG docker ubuntu
@@ -81,6 +81,14 @@ cat <<EOT > /etc/docker/daemon.json
 }
 EOT
 
+# Install azure-cli
+curl -sLS https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg
+AZ_DIST=$(lsb_release -cs)
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ $AZ_DIST main" | tee /etc/apt/sources.list.d/azure-cli.list
+
+apt-get update
+apt-get install --yes --no-install-recommends azure-cli
+
 # Increase the limit on number of virtual memory mappings to aviod 'Cannot mmap' error
 echo "vm.max_map_count = 2097152" > /etc/sysctl.d/01-increase-map-counts.conf
 
@@ -88,10 +96,12 @@ systemctl restart docker
 
 # buildx builder is user-specific
 sudo -u ubuntu docker buildx version
+sudo -u ubuntu docker buildx rm default-builder || : # if it's the second attempt
 sudo -u ubuntu docker buildx create --use --name default-builder
 
 pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory
 
+rm -rf $RUNNER_HOME  # if it's the second attempt
 mkdir -p $RUNNER_HOME && cd $RUNNER_HOME
 
 RUNNER_ARCHIVE="actions-runner-linux-$(runner_arch)-$RUNNER_VERSION.tar.gz"
@@ -130,3 +140,44 @@ systemctl enable amazon-cloudwatch-agent.service
 
 # The following line is used in aws TOE check.
 touch /var/tmp/clickhouse-ci-ami.success
+# END OF THE SCRIPT
+
+# TOE description
+# name: CIInfrastructurePrepare
+# description: instals the infrastructure for ClickHouse CI runners
+# schemaVersion: 1.0
+#
+# phases:
+#   - name: build
+#     steps:
+#       - name: DownloadRemoteScript
+#         maxAttempts: 3
+#         action: WebDownload
+#         onFailure: Abort
+#         inputs:
+#           - source: https://github.com/ClickHouse/ClickHouse/raw/653da5f00219c088af66d97a8f1ea3e35e798268/tests/ci/worker/prepare-ci-ami.sh
+#             destination: /tmp/prepare-ci-ami.sh
+#       - name: RunScript
+#         maxAttempts: 3
+#         action: ExecuteBash
+#         onFailure: Abort
+#         inputs:
+#           commands:
+#             - bash -x '{{build.DownloadRemoteScript.inputs[0].destination}}'
+#
+#
+#   - name: validate
+#     steps:
+#       - name: RunScript
+#         maxAttempts: 3
+#         action: ExecuteBash
+#         onFailure: Abort
+#         inputs:
+#           commands:
+#             - ls /var/tmp/clickhouse-ci-ami.success
+#       - name: Cleanup
+#         action: DeleteFile
+#         onFailure: Abort
+#         maxAttempts: 3
+#         inputs:
+#           - path: /var/tmp/clickhouse-ci-ami.success

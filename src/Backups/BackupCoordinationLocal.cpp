@@ -97,6 +97,18 @@ Strings BackupCoordinationLocal::getReplicatedSQLObjectsDirs(const String & load
     return replicated_sql_objects.getDirectories(loader_zk_path, object_type, "");
 }
 
+void BackupCoordinationLocal::addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup)
+{
+    std::lock_guard lock(keeper_map_tables_mutex);
+    keeper_map_tables.addTable(table_zookeeper_root_path, table_id, data_path_in_backup);
+}
+
+String BackupCoordinationLocal::getKeeperMapDataPath(const String & table_zookeeper_root_path) const
+{
+    std::lock_guard lock(keeper_map_tables_mutex);
+    return keeper_map_tables.getDataPath(table_zookeeper_root_path);
+}
+
 
 void BackupCoordinationLocal::addFileInfos(BackupFileInfos && file_infos_)
 {

@@ -27,11 +27,13 @@ public:
      * If no configuration is found, returns nullptr.
      * */
     static std::shared_ptr<ProxyConfigurationResolver> getFromOldSettingsFormat(
+        Protocol request_protocol,
         const String & config_prefix,
         const Poco::Util::AbstractConfiguration & configuration
     );
 
 private:
+    template <bool is_new_syntax = true>
     static std::shared_ptr<ProxyConfigurationResolver> getFromSettings(
         Protocol protocol,
         const String & config_prefix,
