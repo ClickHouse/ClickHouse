@@ -1,7 +1,7 @@
 #include "ObjectStorageVFSGCThread.h"
-#include "Compression/CompressedReadBuffer.h"
-#include "Compression/CompressedWriteBuffer.h"
 #include "DiskObjectStorageVFS.h"
+#include "IO/Lz4DeflatingWriteBuffer.h"
+#include "IO/Lz4InflatingReadBuffer.h"
 #include "IO/ReadBufferFromEmptyFile.h"
 #include "IO/ReadHelpers.h"
 
@@ -12,8 +12,9 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-// TODO myrrc we should think about dropping the snapshot for log (at some point we want to remove
-// even the latest snapshot if we e.g. clean the bucket)
+// TODO myrrc should (possibly?) be settings. The batch size must not be too large as we put it in memory
+constexpr size_t batch_min_size = 1, batch_max_size = 5000, snapshot_lz4_compression_level = 8;
+
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool)
     : storage(storage_)
     , log(&Poco::Logger::get(fmt::format("VFSGC({})", storage_.getName())))
@@ -54,8 +55,6 @@ void ObjectStorageVFSGCThread::run() const
     SCOPE_EXIT(if (!successful_run) storage.zookeeper()->remove(lock_path));
 
     Strings log_items_batch = storage.zookeeper()->getChildren(storage.traits.log_base_node);
-    // TODO myrrc should (possibly?) be a setting. The batch size must not be too large as we put it in memory
-    constexpr size_t batch_min_size = 1, batch_max_size = 5000;
     if (log_items_batch.size() < batch_min_size)
         return;
 
@@ -74,21 +73,23 @@ void ObjectStorageVFSGCThread::run() const
 
 void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const
 {
+    auto & object_storage = *storage.object_storage;
     const bool should_have_previous_snapshot = start_logpointer > 0;
 
-    const StoredObject old_snapshot = getSnapshotObject(start_logpointer - 1);
+    StoredObject old_snapshot = getSnapshotObject(start_logpointer - 1);
     auto old_snapshot_uncompressed_buf = should_have_previous_snapshot
-        ? storage.object_storage->readObject(old_snapshot)
+        ? object_storage.readObject(old_snapshot)
         : std::unique_ptr<ReadBufferFromFileBase>(std::make_unique<ReadBufferFromEmptyFile>());
-    CompressedReadBuffer old_snapshot_buf{*old_snapshot_uncompressed_buf};
+    Lz4InflatingReadBuffer old_snapshot_buf{std::move(old_snapshot_uncompressed_buf)};
 
     const StoredObject new_snapshot = getSnapshotObject(end_logpointer);
-    auto new_snapshot_uncompressed_buf = storage.object_storage->writeObject(new_snapshot, WriteMode::Rewrite);
-    CompressedWriteBuffer new_snapshot_buf{*new_snapshot_uncompressed_buf};
+    auto new_snapshot_uncompressed_buf = object_storage.writeObject(new_snapshot, WriteMode::Rewrite);
+    // TODO myrrc research zstd dictionary builder or zstd for compression
+    Lz4DeflatingWriteBuffer new_snapshot_buf{std::move(new_snapshot_uncompressed_buf), snapshot_lz4_compression_level};
 
     auto [obsolete, invalid] = getBatch(start_logpointer, end_logpointer).mergeWithSnapshot(old_snapshot_buf, new_snapshot_buf, log);
     if (should_have_previous_snapshot)
-        obsolete.emplace_back(old_snapshot);
+        obsolete.emplace_back(std::move(old_snapshot));
 
     if (!invalid.empty()) // TODO myrrc remove after testing
     {
@@ -98,10 +99,8 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpoin
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid objects:\n{}", out);
     }
 
-    new_snapshot_buf.finalize(); // We need to write new snapshot to s3 before removing old one
-    new_snapshot_uncompressed_buf->finalize();
-
-    storage.object_storage->removeObjects(obsolete);
+    new_snapshot_buf.finalize();
+    object_storage.removeObjects(obsolete);
 }
 
 VFSLogItem ObjectStorageVFSGCThread::getBatch(size_t start_logpointer, size_t end_logpointer) const

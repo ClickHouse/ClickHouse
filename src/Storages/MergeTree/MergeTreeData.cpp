@@ -22,6 +22,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
+#include "Disks/ObjectStorages/DiskObjectStorageVFS.h"
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
@@ -7787,25 +7788,44 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             }
             else if (disk->isObjectStorageVFS())
             {
-                chassert(!wait_for_move_if_zero_copy);
-
                 // V2: acquire lock only for uploading metadata, upload metadata before uploading part files
                 // V3 upload per-file, load multiple files in parallel
-                // Acquire lock
-                // Check part s3 metadata file, if not present, load part to s3.
-                // If present but not finished, retry
-                // If finished, download and unpack
-                // Remove lock
-                const String path = fs::path(getTableSharedID()) / moving_part.part->name;
-                if (!disk->lock(path, wait_for_move_if_zero_copy)) // Contention on MOVE TTL
+                const String move_lock = fs::path(getTableSharedID()) / moving_part.part->name / "move";
+                // TODO myrrc revisit whether blocking wait on a Zookeeper lock is the best we can imagine
+                if (!disk->lock(move_lock, wait_for_move_if_zero_copy)) // Contention on MOVE TTL
                 {
                     write_part_log({});
+                    LOG_DEBUG(log, "VFS move: contention, rescheduling");
                     return MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy;
                 }
 
-                cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
+                auto & vfs_disk = dynamic_cast<DiskObjectStorageVFS &>(*disk);
+                const bool upload = vfs_disk.shouldUploadMetadata(move_lock);
+                LOG_DEBUG(log, "VFS move: should upload metadata: {}", upload);
+                if (upload)
+                {
+                    cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
+                    vfs_disk.uploadMetadata(move_lock, cloned_part.part->getDataPartStorage().getFullPath());
+                }
+                else
+                {
+                    // TODO myrrc temporary directory lock?
+                    // TODO myrrc remove already existing dir
+                    auto root_dir = fs::path(getRelativeDataPath()) / MOVING_DIR_NAME;
+                    String part_dir = moving_part.part->getDataPartStorage().getPartDirectory();
+
+                    vfs_disk.downloadMetadata(move_lock, root_dir / part_dir);
+
+                    LOG_DEBUG(log, "VFS move: picking metadata from {} {}", root_dir, part_dir);
+                    // TODO myrrc initialize part directly
+                    MergeTreeDataPartBuilder builder(*this, moving_part.part->name,
+                        std::make_shared<SingleDiskVolume>("", disk),
+                        root_dir, part_dir);
+                    cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
+                }
+
                 parts_mover.swapClonedPart(cloned_part);
-                disk->unlock(path);
+                disk->unlock(move_lock);
             }
             else /// Ordinary move as it should be
             {

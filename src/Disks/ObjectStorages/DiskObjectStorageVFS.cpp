@@ -97,36 +97,43 @@ void DiskObjectStorageVFS::unlock(std::string_view path)
     zookeeper()->remove(lock_path_full);
 }
 
-bool DiskObjectStorageVFS::moveOrLoadMetadata(const String & lock_prefix, const String & path)
+bool DiskObjectStorageVFS::shouldUploadMetadata(const String & lock_prefix)
 {
-    auto obj = StoredObject{fmt::format("data/vfs/{}", lock_prefix)};
+    auto obj = StoredObject{ObjectStorageKey::createAsRelative(object_key_prefix, fmt::format("vfs/{}", lock_prefix)).serialize()};
+    return !object_storage->exists(obj);
+}
 
-    if (!object_storage->exists(obj))
-    {
-        // First replica, TODO move object to object storage
-        Strings files;
-        listFiles(path, files);
-        auto buf = object_storage->writeObject(obj, WriteMode::Rewrite);
+void DiskObjectStorageVFS::uploadMetadata(const String & lock_prefix, const String & path)
+{
+    auto obj = StoredObject{ObjectStorageKey::createAsRelative(object_key_prefix, fmt::format("vfs/{}", lock_prefix)).serialize()};
+    Strings files; // TODO myrrc does it iterate subdirs? E.g. projections
+    for (auto it = iterateDirectory(path); it->isValid(); it->next())
+        files.emplace_back(it->path());
+    LOG_DEBUG(log, "VFS move: uploading metadata to {} about {}", obj, fmt::join(files, "\n"));
 
-        for (auto & [filename, metadata] : getSerializedMetadata(files))
-            writeString(filename + "\n" + metadata, *buf);
+    auto buf = object_storage->writeObject(obj, WriteMode::Rewrite);
+    for (auto & [filename, metadata] : getSerializedMetadata(files))
+        writeString(filename + "\n" + metadata, *buf);
+    buf->finalize();
+}
 
-        return true;
-    }
-
+void DiskObjectStorageVFS::downloadMetadata(const String & lock_prefix, const String & path)
+{
+    auto obj = StoredObject{ObjectStorageKey::createAsRelative(object_key_prefix, fmt::format("vfs/{}", lock_prefix)).serialize()};
     auto buf = object_storage->readObject(obj); // Other replica finished loading part to object storage
     while (!buf->eof())
     {
         String filename;
         readString(filename, *buf);
-        DiskObjectStorageMetadata md(metadata_storage->compatible_key_prefix, path + filename);
+        const auto full_path = fs::path(path) / filename;
+        LOG_DEBUG(log, "VFS move: downloading metadata to {} ", full_path);
+        // TODO myrrc this works only for S3
+        DiskObjectStorageMetadata md(object_key_prefix, full_path);
         md.deserialize(*buf); // TODO myrrc just write to local filesystem
         auto tx = metadata_storage->createTransaction();
-        tx->writeStringToFile(fs::path(path) / filename, md.serializeToString());
+        tx->writeStringToFile(full_path, md.serializeToString());
         tx->commit();
     }
-
-    return true;
 }
 
 zkutil::ZooKeeperPtr DiskObjectStorageVFS::zookeeper()

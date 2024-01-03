@@ -4,7 +4,7 @@
 
 namespace DB
 {
-struct VFSTraits
+struct VFSTraits // TODO myrrc implies disk name being consistent across replicas
 {
     explicit VFSTraits(std::string_view disk_name)
         : base_node(fmt::format("/vfs_log/{}", disk_name))

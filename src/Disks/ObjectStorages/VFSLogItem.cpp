@@ -118,6 +118,7 @@ VFSMergeResult VFSLogItem::mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer 
         }
     }
 
+    //TODO myrrc if one side is off, write in blocks rather than in single entry
     while (left)
     {
         auto & [left_remote, left_links] = *left;

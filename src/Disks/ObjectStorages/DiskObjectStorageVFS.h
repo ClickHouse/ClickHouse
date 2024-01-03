@@ -35,8 +35,9 @@ public:
     bool lock(std::string_view path, bool block) override;
     void unlock(std::string_view path) override;
 
-    bool shouldMoveMetadata(const String & lock_prefix);
-    bool moveOrLoadMetadata(const String & lock_prefix, const String & path);
+    bool shouldUploadMetadata(const String & lock_prefix);
+    void uploadMetadata(const String & lock_prefix, const String & path);
+    void downloadMetadata(const String & lock_prefix, const String & path);
 
 private:
     friend struct RemoveRecursiveObjectStorageVFSOperation;
