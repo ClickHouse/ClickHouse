@@ -375,7 +375,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         num_streams = 1;
 
     /// Build rpn of query filters
-    KeyCondition condition(buildFilterDAG(), context, column_names, key_expression, NameSet{});
+    KeyCondition condition(buildFilterDAG(), context, column_names, key_expression);
 
     Pipe pipe;
     Ranges ranges;
