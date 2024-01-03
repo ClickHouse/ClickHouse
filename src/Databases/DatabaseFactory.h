@@ -44,8 +44,6 @@ public:
 
     DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context);
 
-    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context);
-
     using CreatorFn = std::function<DatabasePtr(const Arguments & arguments)>;
 
     using DatabaseEngines = std::unordered_map<std::string, CreatorFn>;
@@ -56,6 +54,8 @@ public:
 
 private:
     DatabaseEngines database_engines;
+
+    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context);
 };
 
 }

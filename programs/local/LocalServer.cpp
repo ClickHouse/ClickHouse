@@ -730,12 +730,7 @@ void LocalServer::processConfig()
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
-    /** Init dummy default DB
-      * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
-      * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
-      *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
-      */
-    std::string default_database = config().getString("default_database", "_local");
+    std::string default_database = config().getString("default_database", "default");
     DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
 

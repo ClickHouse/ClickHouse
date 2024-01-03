@@ -1,54 +1,15 @@
-#include <Databases/DatabaseFactory.h>
-
 #include <filesystem>
+
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
-#include <Storages/NamedCollectionsHelpers.h>
-#include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
-
-#include "config.h"
-
-#if USE_MYSQL
-#    include <Core/MySQL/MySQLClient.h>
-#    include <Databases/MySQL/DatabaseMySQL.h>
-#    include <Databases/MySQL/MaterializedMySQLSettings.h>
-#    include <Storages/MySQL/MySQLHelpers.h>
-#    include <Storages/MySQL/MySQLSettings.h>
-#    include <Storages/StorageMySQL.h>
-#    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
-#    include <mysqlxx/Pool.h>
-#endif
-
-#if USE_MYSQL || USE_LIBPQXX
-#include <Common/parseRemoteDescription.h>
-#include <Common/parseAddress.h>
-#endif
-
-#if USE_LIBPQXX
-#include <Databases/PostgreSQL/DatabasePostgreSQL.h>
-#include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
-#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
-#include <Storages/StoragePostgreSQL.h>
-#endif
-
-#if USE_SQLITE
-#include <Databases/SQLite/DatabaseSQLite.h>
-#endif
-
-#if USE_AWS_S3
-#include <Databases/DatabaseS3.h>
-#endif
-
-#if USE_HDFS
-#include <Databases/DatabaseHDFS.h>
-#endif
+#include <Common/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -131,8 +92,14 @@ void validate(const ASTCreateQuery & create_query)
 
 DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
-    cckMetadataPathForOrdinary(create, metadata_path);
+    /// check if the database engine is a valid one before proceeding
+    if (!database_engines.contains(create.storage->engine->name))
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->engine->name);
+
+    /// if the engine is found (i.e. registered with the factory instance), then validate if the
+    /// supplied engine arguments, settings and table overrides are valid for the engine.
     validate(create);
+    cckMetadataPathForOrdinary(create, metadata_path);
 
     DatabasePtr impl = getImpl(create, metadata_path, context);
 
@@ -167,9 +134,6 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     bool has_engine_args = false;
     if (storage->engine->arguments)
         has_engine_args = true;
-
-    if (!database_engines.contains(engine_name))
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", engine_name);
 
     ASTs empty_engine_args;
     Arguments arguments{
