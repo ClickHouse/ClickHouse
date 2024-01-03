@@ -348,6 +348,8 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
 {
     auto mutable_column = column->assumeMutable();
     ColumnArray & column_array = typeid_cast<ColumnArray &>(*mutable_column);
+    size_t prev_last_offset = column_array.getOffsets().back();
+
     settings.path.push_back(Substream::ArraySizes);
 
     if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
@@ -371,9 +373,9 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
 
     /// Number of values corresponding with `offset_values` must be read.
     size_t last_offset = offset_values.back();
-    if (last_offset < nested_column->size())
+    if (last_offset < prev_last_offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested column is longer than last offset");
-    size_t nested_limit = last_offset - nested_column->size();
+    size_t nested_limit = last_offset - prev_last_offset;
 
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array sizes are too large: {}", nested_limit);
@@ -388,7 +390,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Check consistency between offsets and elements subcolumns.
     /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.
     if (!nested_column->empty() && nested_column->size() != last_offset)
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
             toString(nested_column->size()), toString(last_offset));
 
     column = std::move(mutable_column);
@@ -460,7 +462,7 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
                 else
                 {
                     if constexpr (throw_exception)
-                        throw ParsingException(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT,
+                        throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT,
                             "Cannot read array from text, expected comma or end of array, found '{}'",
                             *istr.position());
                     return on_error_no_throw();

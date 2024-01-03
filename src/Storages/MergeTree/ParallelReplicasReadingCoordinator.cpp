@@ -23,6 +23,11 @@
 #include <fmt/core.h>
 #include <fmt/format.h>
 
+namespace ProfileEvents
+{
+    extern const Event ParallelReplicasUsedCount;
+}
+
 namespace DB
 {
 struct Part
@@ -573,7 +578,15 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         initialize();
     }
 
-    return pimpl->handleRequest(std::move(request));
+    const auto replica_num = request.replica_num;
+    auto response = pimpl->handleRequest(std::move(request));
+    if (!response.finish)
+    {
+        if (replicas_used.insert(replica_num).second)
+            ProfileEvents::increment(ProfileEvents::ParallelReplicasUsedCount);
+    }
+
+    return response;
 }
 
 void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica_number)

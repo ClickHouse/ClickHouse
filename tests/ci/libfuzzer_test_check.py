@@ -118,7 +118,7 @@ def main():
     gh = Github(get_best_robot_token(), per_page=100)
     pr_info = PRInfo()
     commit = get_commit(gh, pr_info.sha)
-    atexit.register(update_mergeable_check, gh, pr_info, check_name)
+    atexit.register(update_mergeable_check, commit, pr_info, check_name)
 
     temp_path.mkdir(parents=True, exist_ok=True)
 

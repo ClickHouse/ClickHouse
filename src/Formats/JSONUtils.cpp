@@ -24,7 +24,6 @@ namespace ErrorCodes
 
 namespace JSONUtils
 {
-
     template <const char opening_bracket, const char closing_bracket>
     static std::pair<bool, size_t>
     fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
@@ -44,7 +43,7 @@ namespace JSONUtils
         {
             const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position());
             if (min_bytes != 0 && current_object_size > 10 * min_bytes)
-                throw ParsingException(ErrorCodes::INCORRECT_DATA,
+                throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. "
                     "Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, "
                     "most likely JSON is malformed", in.count(), min_bytes, current_object_size);
@@ -72,7 +71,7 @@ namespace JSONUtils
             }
             else
             {
-                pos = find_first_symbols<opening_bracket, closing_bracket, '\\', '"'>(pos, in.buffer().end());
+                pos = find_first_symbols<opening_bracket, closing_bracket, '"'>(pos, in.buffer().end());
 
                 if (pos > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
@@ -89,19 +88,13 @@ namespace JSONUtils
                     --balance;
                     ++pos;
                 }
-                else if (*pos == '\\')
-                {
-                    ++pos;
-                    if (loadAtPosition(in, memory, pos))
-                        ++pos;
-                }
                 else if (*pos == '"')
                 {
                     quotes = true;
                     ++pos;
                 }
 
-                if (balance == 0)
+                if (!quotes && balance == 0)
                 {
                     ++number_of_rows;
                     if ((number_of_rows >= min_rows)
@@ -115,13 +108,14 @@ namespace JSONUtils
         return {loadAtPosition(in, memory, pos), number_of_rows};
     }
 
-    std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
+    std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(
+        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
     {
         return fileSegmentationEngineJSONEachRowImpl<'{', '}'>(in, memory, min_bytes, 1, max_rows);
     }
 
-    std::pair<bool, size_t>
-    fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
+    std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(
+        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
     {
         return fileSegmentationEngineJSONEachRowImpl<'[', ']'>(in, memory, min_bytes, min_rows, max_rows);
     }

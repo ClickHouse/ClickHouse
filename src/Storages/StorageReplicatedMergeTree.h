@@ -165,6 +165,7 @@ public:
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -177,6 +178,7 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ContextPtr query_context) override;
 
     void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
@@ -197,8 +199,6 @@ public:
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
-
-    bool supportsIndexForIn() const override { return true; }
 
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
@@ -746,6 +746,7 @@ private:
         const MergeTreeDataPartFormat & merged_part_format,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);
