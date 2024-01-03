@@ -66,17 +66,22 @@ public:
         size_t pos1 = 0, pos2 = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            auto element_length = length_column->getInt(i);
+            auto subarray_length = length_column->getInt(i);
             auto row_size = src_offsets[i] - src_offsets[i - 1];
-            if (element_length > 0 && static_cast<unsigned>(element_length) <= row_size)
+            if (subarray_length > 0 && static_cast<unsigned>(subarray_length) <= row_size)
             {
-                for (size_t j = 0; j < row_size - element_length + 1; ++j)
+                for (size_t j = 0; j < row_size - subarray_length + 1; ++j)
                 {
-                    res_values_column->insertRangeFrom(src_values, src_offsets[i - 1] + j, element_length);
-                    pos1 += element_length;
+                    res_values_column->insertRangeFrom(src_values, src_offsets[i - 1] + j, subarray_length);
+                    pos1 += subarray_length;
                     out_offsets_2.push_back(pos1);
                 }
-                pos2 += row_size - element_length + 1;
+                pos2 += row_size - subarray_length + 1;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} of function {} must be a positive integer which is less than or equal to array length.",
+                                toString(2), getName());
             }
 
             out_offsets_1.push_back(pos2);
