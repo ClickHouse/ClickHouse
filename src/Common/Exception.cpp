@@ -616,48 +616,4 @@ ExecutionStatus ExecutionStatus::fromText(const std::string & data)
     return status;
 }
 
-ParsingException::ParsingException() = default;
-ParsingException::ParsingException(const std::string & msg, int code)
-    : Exception(msg, code)
-{
-}
-
-/// We use additional field formatted_message_ to make this method const.
-std::string ParsingException::displayText() const
-{
-    try
-    {
-        formatted_message = message();
-        bool need_newline = false;
-        if (!file_name.empty())
-        {
-            formatted_message += fmt::format(": (in file/uri {})", file_name);
-            need_newline = true;
-        }
-
-        if (line_number != -1)
-        {
-            formatted_message += fmt::format(": (at row {})", line_number);
-            need_newline = true;
-        }
-
-        if (need_newline)
-            formatted_message += "\n";
-    }
-    catch (...) {} // NOLINT(bugprone-empty-catch)
-
-    if (!formatted_message.empty())
-    {
-        std::string result = name();
-        result.append(": ");
-        result.append(formatted_message);
-        return result;
-    }
-    else
-    {
-        return Exception::displayText();
-    }
-}
-
-
 }
