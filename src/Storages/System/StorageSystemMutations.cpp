@@ -15,7 +15,7 @@ namespace DB
 {
 
 
-ColumnsDescription StorageSystemMutations::getColumnsDescriptions()
+ColumnsDescription StorageSystemMutations::getColumnsDescription()
 {
     return ColumnsDescription
     {

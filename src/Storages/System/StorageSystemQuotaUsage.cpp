@@ -54,7 +54,7 @@ ColumnsDescription StorageSystemQuotaUsage::getColumnsDescriptionImpl(bool add_c
     };
 
     if (add_column_is_current)
-        description.add({"is_current", std::make_shared<DataTypeUInt8>()}, "Quota usage for current user.");
+        description.add({"is_current", std::make_shared<DataTypeUInt8>(), "Quota usage for current user."});
 
     description.add({
         "start_time",

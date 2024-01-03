@@ -5,9 +5,9 @@
 namespace DB
 {
 
-ColumnDescription StorageSystemCollations::getColumnDescription()
+ColumnsDescription StorageSystemCollations::getColumnsDescription()
 {
-    return ColumnDescription
+    return ColumnsDescription
     {
         {"name", std::make_shared<DataTypeString>(), "Name of the collation."},
         {"language", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The language."},

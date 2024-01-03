@@ -15,7 +15,7 @@ protected:
 public:
     std::string getName() const override { return "SystemTableCollations"; }
 
-    static ColumnDescription getColumnDescription();
+    static ColumnsDescription getColumnsDescription();
 };
 
 }

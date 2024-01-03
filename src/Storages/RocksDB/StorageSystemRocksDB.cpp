@@ -32,7 +32,7 @@ ColumnsDescription StorageSystemRocksDB::getColumnsDescription()
     return ColumnsDescription
     {
         {"database", std::make_shared<DataTypeString>(), "Database name."},
-        {"table", std::make_shared<DataTypeString>(), "Name of the table with StorageEmbeddedRocksDB engine.",
+        {"table", std::make_shared<DataTypeString>(), "Name of the table with StorageEmbeddedRocksDB engine."},
         {"name", std::make_shared<DataTypeString>(), "Metric name."},
         {"value", std::make_shared<DataTypeUInt64>(), "Metric value."},
     };

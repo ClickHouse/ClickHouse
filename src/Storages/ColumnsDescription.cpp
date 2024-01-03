@@ -59,7 +59,7 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, String com
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_)
-    : name(std::move(name_)), type(std::move(type_)), comment(comment_), codec(codec_),
+    : name(std::move(name_)), type(std::move(type_)), comment(comment_), codec(codec_)
 {
 }
 

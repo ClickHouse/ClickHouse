@@ -10,7 +10,7 @@ namespace DB
 {
 ColumnsDescription StorageSystemQuotasUsage::getColumnsDescription()
 {
-    return StorageSystemQuotaUsage::getNamesAndTypesImpl(/* add_column_is_current = */ true);
+    return StorageSystemQuotaUsage::getColumnsDescriptionImpl(/* add_column_is_current = */ true);
 }
 
 void StorageSystemQuotasUsage::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
