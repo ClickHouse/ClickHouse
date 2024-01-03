@@ -978,6 +978,8 @@ void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextP
     plan_to_add_cast.addStep(std::move(cast_join_columns_step));
 }
 
+/// Actions to calculate table columns that have a functional representation (ALIASes and subcolumns)
+/// and used in USING clause of JOIN expression.
 struct UsingAliasKeyActions
 {
     UsingAliasKeyActions(
