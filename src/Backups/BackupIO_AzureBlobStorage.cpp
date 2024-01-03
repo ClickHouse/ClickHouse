@@ -134,8 +134,8 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                 fs::path(configuration.blob_path) / path_in_backup,
                 0,
                 file_size,
-                /* dest_bucket= */ blob_path[1],
-                /* dest_key= */ blob_path[0],
+                /* dest_container */ blob_path[1],
+                /* dest_path */ blob_path[0],
                 settings,
                 read_settings,
                 object_attributes,
@@ -178,7 +178,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(const String & path_in_backu
     auto source_data_source_description = src_disk->getDataSourceDescription();
     if (source_data_source_description.sameKind(data_source_description) && (source_data_source_description.is_encrypted == copy_encrypted))
     {
-        /// getBlobPath() can return more than 3 elements if the file is stored as multiple objects in AzureBlobStorage bucket.
+        /// getBlobPath() can return more than 3 elements if the file is stored as multiple objects in AzureBlobStorage container.
         /// In this case we can't use the native copy.
         if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 2)
         {
@@ -200,8 +200,8 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(const String & path_in_backu
             copyAzureBlobStorageFile(
                 src_client,
                 client,
-                /* src_bucket */ blob_path[1],
-                /* src_key= */ blob_path[0],
+                /* src_container */ blob_path[1],
+                /* src_path */ blob_path[0],
                 start_pos,
                 length,
                 configuration.container,
@@ -238,8 +238,8 @@ void BackupWriterAzureBlobStorage::copyFile(const String & destination, const St
        fs::path(configuration.blob_path),
        0,
        size,
-       /* dest_bucket= */ destination,
-       /* dest_key= */ configuration.blob_path,
+       /* dest_container */ destination,
+       /* dest_path */ configuration.blob_path,
        settings,
        read_settings,
        {},
