@@ -24,14 +24,14 @@ ColumnsDescription MetricLogElement::getColumnsDescription()
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
     {
         auto name = fmt::format("ProfileEvent_{}", ProfileEvents::getName(ProfileEvents::Event(i)));
-        auto * comment = ProfileEvents::getDocumentation(ProfileEvents::Event(i));
+        const auto * comment = ProfileEvents::getDocumentation(ProfileEvents::Event(i));
         result.add({std::move(name), std::make_shared<DataTypeUInt64>(), comment});
     }
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
     {
         auto name = fmt::format("CurrentMetric_{}", CurrentMetrics::getName(CurrentMetrics::Metric(i)));
-        auto * comment = CurrentMetrics::getDocumentation(CurrentMetrics::Metric(i));
+        const auto * comment = CurrentMetrics::getDocumentation(CurrentMetrics::Metric(i));
         result.add({std::move(name), std::make_shared<DataTypeInt64>(), comment});
     }
 
