@@ -38,13 +38,14 @@ enum class ErrorHandling
     Null
 };
 
-template <ErrorHandling error_handling>
-class FunctionPunycodeEncode : public IFunction
+
+template <typename Impl>
+class FunctionPunycode : public IFunction
 {
 public:
-    static constexpr auto name = (error_handling == ErrorHandling::Null) ? "punycodeEncodeOrNull" : "punycodeEncode";
+    static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPunycodeEncode>(); }
+    static FunctionPtr create(ContextPtr /*context*/) { return std::make_shared<FunctionPunycode<Impl>>(); }
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -59,7 +60,7 @@ public:
 
         auto return_type = std::make_shared<DataTypeString>();
 
-        if constexpr (error_handling == ErrorHandling::Null)
+        if constexpr (Impl::error_handling == ErrorHandling::Null)
             return makeNullable(return_type);
         else
             return return_type;
@@ -70,18 +71,25 @@ public:
         auto col_res = ColumnString::create();
         ColumnUInt8::MutablePtr col_res_null;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
-            vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), col_res_null);
+            Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), col_res_null);
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 arguments[0].column->getName(), getName());
 
-        if constexpr (error_handling == ErrorHandling::Null)
+        if constexpr (Impl::error_handling == ErrorHandling::Null)
             return ColumnNullable::create(std::move(col_res), std::move(col_res_null));
         else
             return col_res;
     }
+};
 
-private:
+
+template <ErrorHandling error_handling_>
+struct PunycodeEncodeImpl
+{
+    static constexpr auto error_handling = error_handling_;
+    static constexpr auto name = (error_handling == ErrorHandling::Null) ? "punycodeEncodeOrNull" : "punycodeEncode";
+
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -132,51 +140,13 @@ private:
     }
 };
 
-template <ErrorHandling error_handling>
-class FunctionPunycodeDecode : public IFunction
+
+template <ErrorHandling error_handling_>
+struct PunycodeDecodeImpl
 {
-public:
+    static constexpr auto error_handling = error_handling_;
     static constexpr auto name = (error_handling == ErrorHandling::Null) ? "punycodeDecodeOrNull" : "punycodeDecode";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPunycodeDecode>(); }
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        FunctionArgumentDescriptors args{
-            {"str", &isString<IDataType>, nullptr, "String"},
-        };
-        validateFunctionArgumentTypes(*this, arguments, args);
-
-        auto return_type = std::make_shared<DataTypeString>();
-
-        if constexpr (error_handling == ErrorHandling::Null)
-            return makeNullable(return_type);
-        else
-            return return_type;
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
-    {
-        auto col_res = ColumnString::create();
-        ColumnUInt8::MutablePtr col_res_null;
-
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
-            vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), col_res_null);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
-
-        if constexpr (error_handling == ErrorHandling::Null)
-            return ColumnNullable::create(std::move(col_res), std::move(col_res_null));
-        else
-            return col_res;
-    }
-
-private:
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -232,7 +202,7 @@ private:
 
 REGISTER_FUNCTION(Punycode)
 {
-    factory.registerFunction<FunctionPunycodeEncode<ErrorHandling::Throw>>(FunctionDocumentation{
+    factory.registerFunction<FunctionPunycode<PunycodeEncodeImpl<ErrorHandling::Throw>>>(FunctionDocumentation{
         .description=R"(
 Computes a Punycode representation of a string. Throws an exception in case of error.)",
         .syntax="punycodeEncode(str)",
@@ -249,7 +219,7 @@ Computes a Punycode representation of a string. Throws an exception in case of e
             }}
     });
 
-    factory.registerFunction<FunctionPunycodeEncode<ErrorHandling::Null>>(FunctionDocumentation{
+    factory.registerFunction<FunctionPunycode<PunycodeEncodeImpl<ErrorHandling::Null>>>(FunctionDocumentation{
         .description=R"(
 Computes a Punycode representation of a string. Returns NULL in case of error)",
         .syntax="punycodeEncode(str)",
@@ -266,7 +236,7 @@ Computes a Punycode representation of a string. Returns NULL in case of error)",
             }}
     });
 
-    factory.registerFunction<FunctionPunycodeDecode<ErrorHandling::Throw>>(FunctionDocumentation{
+    factory.registerFunction<FunctionPunycode<PunycodeDecodeImpl<ErrorHandling::Throw>>>(FunctionDocumentation{
         .description=R"(
 Computes a Punycode representation of a string. Throws an exception in case of error.)",
         .syntax="punycodeDecode(str)",
@@ -283,7 +253,7 @@ Computes a Punycode representation of a string. Throws an exception in case of e
             }}
     });
 
-    factory.registerFunction<FunctionPunycodeDecode<ErrorHandling::Null>>(FunctionDocumentation{
+    factory.registerFunction<FunctionPunycode<PunycodeDecodeImpl<ErrorHandling::Null>>>(FunctionDocumentation{
         .description=R"(
 Computes a Punycode representation of a string. Returns NULL in case of error)",
         .syntax="punycodeDecode(str)",
