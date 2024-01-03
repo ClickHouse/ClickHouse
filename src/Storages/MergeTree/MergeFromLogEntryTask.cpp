@@ -160,7 +160,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     }
 
     /// Start to make the main work
-    size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts, true);
+    size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
     /// Can throw an exception while reserving space.
     IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -312,6 +312,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             reserved_space,
             entry.deduplicate,
             entry.deduplicate_by_columns,
+            entry.cleanup,
             storage.merging_params,
             NO_TRANSACTION_PTR);
 

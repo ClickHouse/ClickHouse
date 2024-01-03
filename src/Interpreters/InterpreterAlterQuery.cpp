@@ -460,6 +460,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_QUERY, database, table);
             break;
         }
+        case ASTAlterCommand::MODIFY_REFRESH:
+        {
+            required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_REFRESH, database, table);
+            break;
+        }
         case ASTAlterCommand::LIVE_VIEW_REFRESH:
         {
             required_access.emplace_back(AccessType::ALTER_VIEW_REFRESH, database, table);

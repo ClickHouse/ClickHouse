@@ -7,10 +7,12 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
+#include <Processors/Chunk.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
+#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
 
 namespace DB
 {
@@ -167,6 +169,8 @@ Chunk MergeTreeSequentialSource::generate()
 try
 {
     const auto & header = getPort().getHeader();
+    /// Part level is useful for next step for merging non-merge tree table
+    bool add_part_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
     if (!isCancelled() && current_row < data_part->rows_count)
     {
@@ -206,7 +210,7 @@ try
                 ++it;
             }
 
-            return Chunk(std::move(res_columns), rows_read);
+            return Chunk(std::move(res_columns), rows_read, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(data_part->info.level) : nullptr);
         }
     }
     else
@@ -317,12 +321,12 @@ public:
         {
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
             const Names & primary_key_column_names = primary_key.column_names;
-            KeyCondition key_condition(filter, context, primary_key_column_names, primary_key.expression, NameSet{});
+            KeyCondition key_condition(filter, context, primary_key_column_names, primary_key.expression);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())
                 mark_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
-                    data_part, metadata_snapshot, key_condition, context->getSettingsRef(), log);
+                    data_part, metadata_snapshot, key_condition, {}, context->getSettingsRef(), log);
 
             if (mark_ranges && mark_ranges->empty())
             {

@@ -42,7 +42,7 @@ TIMEOUT=55
 
 for i in {1..4}
 do
-    timeout $TIMEOUT bash -c drop_mv $i &
+    timeout $TIMEOUT bash -c "drop_mv $i" &
 done
 
 for i in {1..4}

@@ -4,6 +4,7 @@
 #include <Core/Defines.h>
 #include <Core/BaseSettings.h>
 #include <Core/SettingsEnums.h>
+#include <Common/NamePrompter.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
@@ -78,7 +79,6 @@ struct Settings;
     M(UInt64, number_of_mutations_to_throw, 1000, "If table has at least that many unfinished mutations, throw 'Too many mutations' exception. Disabled if set to 0", 0) \
     M(UInt64, min_delay_to_mutate_ms, 10, "Min delay of mutating MergeTree table in milliseconds, if there are a lot of unfinished mutations", 0) \
     M(UInt64, max_delay_to_mutate_ms, 1000, "Max delay of mutating MergeTree table in milliseconds, if there are a lot of unfinished mutations", 0) \
-    M(Bool, exclude_deleted_rows_for_part_size_in_merge, false, "Use an estimated source part size (excluding lightweight deleted rows) when selecting parts to merge", 0) \
     \
     /** Inserts settings. */ \
     M(UInt64, parts_to_delay_insert, 1000, "If table contains at least that many active parts in single partition, artificially slow down insert into table. Disabled if set to 0", 0) \
@@ -192,6 +192,7 @@ struct Settings;
     M(Bool, remote_fs_zero_copy_path_compatible_mode, false, "Run zero-copy in compatible mode during conversion process.", 0) \
     M(Bool, cache_populated_by_fetch, false, "Only available in ClickHouse Cloud", 0) \
     M(Bool, allow_experimental_block_number_column, false, "Enable persisting column _block_number for each row.", 0) \
+    M(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", 0) \
     \
     /** Compress marks and primary key. */ \
     M(Bool, compress_marks, true, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \
@@ -232,7 +233,7 @@ struct Settings;
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Seconds, replicated_fetches_http_send_timeout, 0) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Seconds, replicated_fetches_http_receive_timeout, 0) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_fetches_for_host, DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT) \
-    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, String, clean_deleted_rows, "") \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, CleanDeletedRows, clean_deleted_rows, CleanDeletedRows::Never) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -249,7 +250,7 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 /** Settings for the MergeTree family of engines.
   * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
   */
-struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
+struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>, public IHints<2>
 {
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
@@ -270,6 +271,8 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks) const;
+
+    std::vector<String> getAllRegisteredNames() const override;
 };
 
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;

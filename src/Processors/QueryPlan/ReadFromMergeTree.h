@@ -151,6 +151,7 @@ public:
         KeyCondition key_condition;
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
+        std::optional<KeyCondition> part_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         std::optional<std::unordered_set<String>> part_values;
@@ -286,6 +287,8 @@ private:
         const Names & column_names,
         ActionsDAGPtr & out_projection,
         const InputOrderInfoPtr & input_order_info);
+
+    bool doNotMergePartsAcrossPartitionsFinal() const;
 
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection);

@@ -1,4 +1,5 @@
 #include <Common/Arena.h>
+#include <Core/Field.h>
 #include <Columns/IColumnDummy.h>
 #include <Columns/ColumnsCommon.h>
 

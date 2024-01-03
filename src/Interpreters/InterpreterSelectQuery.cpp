@@ -864,7 +864,38 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     ASTSelectQuery & query = getSelectQuery();
 
     /// While only_analyze we don't know anything about parts, so any decision about how many parallel replicas to use would be wrong
-    if (!storage || options.only_analyze || !context->canUseParallelReplicasOnInitiator())
+    if (!storage || !context->canUseParallelReplicasOnInitiator())
+        return false;
+
+    /// check if IN operator with subquery is present in the query
+    /// if so, disable parallel replicas
+    if (query_analyzer->getPreparedSets()->hasSubqueries())
+    {
+        bool in_subqueries = false;
+        const auto & sets = query_analyzer->getPreparedSets();
+        const auto subqueries = sets->getSubqueries();
+        for (const auto & subquery : subqueries)
+        {
+            if (subquery->isINSubquery())
+            {
+                in_subqueries = true;
+                break;
+            }
+        }
+
+        if (in_subqueries)
+        {
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
+
+            context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            context->setSetting("max_parallel_replicas", UInt64{0});
+            LOG_DEBUG(log, "Disabling parallel replicas to execute a query with IN with subquery");
+            return true;
+        }
+    }
+
+    if (options.only_analyze)
         return false;
 
     if (getTrivialCount(0).has_value())
@@ -1681,7 +1712,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         return step_raw_ptr;
                     };
 
-                    if (expressions.join->pipelineType() == JoinPipelineType::YShaped)
+                    if (expressions.join->pipelineType() == JoinPipelineType::YShaped && expressions.join->getTableJoin().kind() != JoinKind::Paste)
                     {
                         const auto & table_join = expressions.join->getTableJoin();
                         const auto & join_clause = table_join.getOnlyClause();
@@ -1989,7 +2020,7 @@ static void executeMergeAggregatedImpl(
       *  but it can work more slowly.
       */
 
-    Aggregator::Params params(keys, aggregates, overflow_row, settings.max_threads, settings.max_block_size);
+    Aggregator::Params params(keys, aggregates, overflow_row, settings.max_threads, settings.max_block_size, settings.min_hit_rate_to_use_consecutive_keys_optimization);
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
@@ -2578,6 +2609,7 @@ static Aggregator::Params getAggregatorParams(
         settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
         settings.optimize_group_by_constant_keys,
+        settings.min_hit_rate_to_use_consecutive_keys_optimization,
         stats_collecting_params
     };
 }

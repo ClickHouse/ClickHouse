@@ -165,6 +165,7 @@ public:
         ReservationSharedPtr space_reservation,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         const MergeTreeData::MergingParams & merging_params,
         const MergeTreeTransactionPtr & txn,
         bool need_prefix = true,
@@ -192,7 +193,7 @@ public:
 
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.
-    static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts, const bool & is_merge);
+    static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts);
 
 private:
     /** Select all parts belonging to the same partition.
