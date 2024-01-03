@@ -11,6 +11,10 @@ INSERT INTO t_02947_reverse_order_final SETTINGS optimize_on_insert = 0 VALUES (
 
 SELECT * FROM t_02947_reverse_order_final FINAL ORDER BY x DESC, y DESC LIMIT 1;
 
+INSERT INTO t_02947_reverse_order_final SETTINGS optimize_on_insert = 0 VALUES (0, 0, 0), (0, 0, 1), (0, 0, 2);
+
+SELECT * FROM t_02947_reverse_order_final FINAL ORDER BY x DESC, y DESC LIMIT 1;
+
 TRUNCATE t_02947_reverse_order_final;
 
 INSERT INTO t_02947_reverse_order_final SELECT number, number, number FROM numbers(10000);
@@ -19,7 +23,7 @@ INSERT INTO t_02947_reverse_order_final SELECT number, number * 2, number * 3 FR
 
 SELECT '---';
 SELECT if(explain like '%ReadType: InReverseOrder%', 'Ok', 'Error: ' || explain) FROM (
-    EXPLAIN PIPELINE SELECT * FROM t_02947_reverse_order_final FINAL ORDER BY x DESC, y, z LIMIT 1
+    EXPLAIN PLAN actions = 1 SELECT * FROM t_02947_reverse_order_final FINAL ORDER BY x DESC, y, z LIMIT 1
     SETTINGS max_threads = 1, max_final_threads = 1
 ) WHERE explain like '%ReadType%';
 

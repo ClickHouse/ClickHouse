@@ -21,9 +21,11 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     size_t max_block_size_bytes,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes,
-    bool cleanup_)
+    bool cleanup_,
+    int read_direction_)
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
     , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size_rows, max_block_size_bytes), cleanup(cleanup_)
+    , read_direction(read_direction_)
 {
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_.getPositionByName(is_deleted_column);
@@ -98,13 +100,35 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect data: is_deleted = {} (must be 1 or 0).", toString(is_deleted));
         }
 
-        /// A non-strict comparison, since we select the last row for the same version values.
-        if (version_column_number == -1
-            || selected_row.empty()
-            || current->all_columns[version_column_number]->compareAt(
-                current->getRow(), selected_row.row_num,
-                *(*selected_row.all_columns)[version_column_number],
-                /* nan_direction_hint = */ 1) >= 0)
+        bool replace_with_current_row = false;
+
+        /// 1) First row for this key
+        if (selected_row.empty())
+            replace_with_current_row = true;
+
+        /// 2) There is a version, and the new row has a higher one
+        else if (version_column_number != -1
+                && current->all_columns[version_column_number]->compareAt(
+                    current->getRow(), selected_row.row_num,
+                    *(*selected_row.all_columns)[version_column_number],
+                    /* nan_direction_hint = */ 1) > 0)
+            replace_with_current_row = true;
+
+        /// 3) Read direction is in order so we select the new row if there is no version or the new row has a version that is the same or higher
+        else if (read_direction == 1 && (version_column_number == -1 || current->all_columns[version_column_number]->compareAt(
+                    current->getRow(), selected_row.row_num,
+                    *(*selected_row.all_columns)[version_column_number],
+                    /* nan_direction_hint = */ 1) >= 0))
+            replace_with_current_row = true;
+
+        /// 4) Special case: When reading in reverse, we take the new row only when they are not both from the same level-0 (unmerged) part.
+        ///    If they are from the same unmerged part, we keep the previously read row (the row that's later in the file since we read in reverse).
+        else if (read_direction == -1
+                    && !(selected_row.source_stream_index == current_row.source_stream_index
+                        && sources_origin_merge_tree_part_level[selected_row.source_stream_index] == 0))
+            replace_with_current_row = true;
+
+        if (replace_with_current_row)
         {
             max_pos = current_pos;
             setRowRef(selected_row, current);

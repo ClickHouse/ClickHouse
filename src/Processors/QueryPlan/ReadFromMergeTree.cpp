@@ -1005,6 +1005,7 @@ static void addMergingFinal(
     const SortDescription & sort_description,
     MergeTreeData::MergingParams merging_params,
     Names partition_key_columns,
+    ReadFromMergeTree::ReadType read_type,
     size_t max_block_size_rows)
 {
     const auto & header = pipe.getHeader();
@@ -1033,8 +1034,12 @@ static void addMergingFinal(
                             sort_description, max_block_size_rows, /*max_block_size_bytes=*/0);
 
             case MergeTreeData::MergingParams::Replacing:
+                if (read_type == ReadFromMergeTree::ReadType::InReverseOrder)
+                    return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
+                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), /* read_direction */ -1);
+
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty());
+                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), /* read_direction */ 1);
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
@@ -1249,6 +1254,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 sort_description,
                 data.merging_params,
                 partition_key_columns,
+                read_type,
                 block_size.max_block_size_rows);
 
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
