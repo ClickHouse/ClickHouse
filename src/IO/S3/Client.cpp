@@ -57,38 +57,45 @@ Int64 calculateDelayOnRetries(const Int64 retries, const Int64 scaleFactor)
     return (1ul << std::min(retries, 31l)) * scaleFactor;
 }
 
-Client::RetryStrategy::RetryStrategy(uint32_t maxRetries_, Int64 max_execution_time, uint32_t scaleFactor_, uint32_t maxDelayMs_)
-    : maxRetries(maxRetries_)
-    , scaleFactor(scaleFactor_)
-    , maxDelayMs(maxDelayMs_)
+Int64 calculateNumberOfRequiredRetries(const Int64 executionTime, const Int64 scaleFactor, uint32_t maxDelayMs)
 {
-    /// Calculating number of retries based on the `max_execution_time` and delays between retries
-    if (max_execution_time > 0)
+    Int64 tries = -1;
+    /// Calculating number of retries based on the `executionTime` and delays between retries
+    if (executionTime > 0)
     {
-        Int64 execution_time = max_execution_time / 2; /// Here we put total time/2 knowing that we will do retries
+        Int64 execution_time = executionTime / 2; /// Here we put total time/2 knowing that we will do retries
                                                        /// two times in the doRequest: first time in `getRegionForBucket()`
                                                        /// and the second time in `request_fn()` so that we can follow
-                                                       /// `max_execution_time` correctly.
+                                                       /// `executionTime` correctly.
 
         auto delta = calculateDelayOnRetries(2, scaleFactor) / calculateDelayOnRetries(1, scaleFactor);
         auto min_delay_ms = scaleFactor * delta;
         auto tries_until_max_delay = UInt32(log10(maxDelayMs/min_delay_ms) / log10(delta) + 1);
         auto time_left = execution_time - UInt32(min_delay_ms * (pow(delta, tries_until_max_delay) - 1) / (delta - 1)); // execution time - time until max delay
 
-        UInt32 tries;
         if (time_left > 0) // Case if we reached the max delay
             tries = tries_until_max_delay + UInt32(time_left / maxDelayMs);
         else
             tries = UInt32(log10(execution_time / min_delay_ms) / log10(delta));
-        maxRetries = maxRetries > tries ? tries : maxRetries;
     }
+    return tries;
+}
 
+Client::RetryStrategy::RetryStrategy(uint32_t maxRetries_, Int64 max_execution_time, uint32_t scaleFactor_, uint32_t maxDelayMs_)
+    : maxRetries(maxRetries_)
+    , scaleFactor(scaleFactor_)
+    , maxDelayMs(maxDelayMs_)
+{
+    retriesOnMaxExecutionTime = calculateNumberOfRequiredRetries(max_execution_time, scaleFactor, maxDelayMs);
     chassert(maxDelayMs <= uint64_t(scaleFactor) * (1ul << 31l));
 }
 
 /// NOLINTNEXTLINE(google-runtime-int)
 bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const
 {
+    if (retriesOnMaxExecutionTime > 0 && retriesOnMaxExecutionTime < attemptedRetries)
+        return false;
+
     if (error.GetResponseCode() == Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
         return false;
 

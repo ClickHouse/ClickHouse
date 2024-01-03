@@ -154,7 +154,7 @@ public:
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        RetryStrategy(uint32_t maxRetries_ = 10, Int64 max_execution_time = 0, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 1000);
+        RetryStrategy(uint32_t maxRetries_ = 10, Int64 max_execution_time = 0, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -169,6 +169,7 @@ public:
         uint32_t maxRetries;
         uint32_t scaleFactor;
         uint32_t maxDelayMs;
+        Int64 retriesOnMaxExecutionTime;
     };
 
     /// SSE-KMS headers MUST be signed, so they need to be added before the SDK signs the message
