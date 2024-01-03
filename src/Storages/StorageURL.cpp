@@ -1035,12 +1035,12 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     }
     else
     {
-        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([&, max_addresses, done = false]() mutable
+        iterator_wrapper = std::make_shared<StorageURLSource::IteratorWrapper>([max_addresses, done = false, &uri = storage->uri]() mutable
         {
             if (done)
                 return StorageURLSource::FailoverOptions{};
             done = true;
-            return getFailoverOptions(storage->uri, max_addresses);
+            return getFailoverOptions(uri, max_addresses);
         });
         num_streams = 1;
     }
