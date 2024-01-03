@@ -4752,9 +4752,6 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     }
 }
 
-/**
-*
-*/
 void MergeTreeData::checkAlterPartitionIsPossible(
     const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr) const
 {
