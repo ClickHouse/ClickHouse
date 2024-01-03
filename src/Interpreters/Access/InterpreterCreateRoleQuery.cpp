@@ -130,7 +130,6 @@ void registerInterpreterCreateRoleQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterCreateRoleQuery>(args.query, args.context);
     };
-    
     factory.registerInterpreter("InterpreterCreateRoleQuery", create_fn);
 }
 

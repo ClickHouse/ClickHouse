@@ -98,7 +98,6 @@ void registerInterpreterSetQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterSetQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterSetQuery", create_fn);
 }
 }

@@ -30,7 +30,6 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
-#include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
@@ -50,68 +49,14 @@
 #include <Parsers/Access/ASTShowPrivilegesQuery.h>
 #include <Parsers/ASTDescribeCacheQuery.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/InterpreterBackupQuery.h>
-#include <Interpreters/InterpreterCheckQuery.h>
-#include <Interpreters/InterpreterCreateFunctionQuery.h>
-#include <Interpreters/InterpreterCreateIndexQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/InterpreterCreateNamedCollectionQuery.h>
-#include <Interpreters/InterpreterDropNamedCollectionQuery.h>
-#include <Interpreters/InterpreterAlterNamedCollectionQuery.h>
-#include <Interpreters/InterpreterDeleteQuery.h>
-#include <Interpreters/InterpreterDescribeQuery.h>
-#include <Interpreters/InterpreterDescribeCacheQuery.h>
-#include <Interpreters/InterpreterDropFunctionQuery.h>
-#include <Interpreters/InterpreterDropIndexQuery.h>
-#include <Interpreters/InterpreterDropQuery.h>
-#include <Interpreters/InterpreterUndropQuery.h>
-#include <Interpreters/InterpreterExistsQuery.h>
-#include <Interpreters/InterpreterExplainQuery.h>
-#include <Interpreters/InterpreterExternalDDLQuery.h>
 #include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
-#include <Interpreters/InterpreterKillQueryQuery.h>
-#include <Interpreters/InterpreterOptimizeQuery.h>
-#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/InterpreterShowCreateQuery.h>
-#include <Interpreters/InterpreterShowEngineQuery.h>
-#include <Interpreters/InterpreterShowFunctionsQuery.h>
-#include <Interpreters/InterpreterShowProcesslistQuery.h>
-#include <Interpreters/InterpreterShowTablesQuery.h>
-#include <Interpreters/InterpreterShowColumnsQuery.h>
-#include <Interpreters/InterpreterShowIndexesQuery.h>
-#include <Interpreters/InterpreterShowSettingQuery.h>
-#include <Interpreters/InterpreterSystemQuery.h>
-#include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
-#include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
-#include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
-#include <Interpreters/Access/InterpreterCreateRoleQuery.h>
-#include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
-#include <Interpreters/Access/InterpreterCreateSettingsProfileQuery.h>
-#include <Interpreters/Access/InterpreterCreateUserQuery.h>
-#include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
-#include <Interpreters/Access/InterpreterGrantQuery.h>
-#include <Interpreters/Access/InterpreterMoveAccessEntityQuery.h>
-#include <Interpreters/Access/InterpreterSetRoleQuery.h>
-#include <Interpreters/Access/InterpreterShowAccessEntitiesQuery.h>
-#include <Interpreters/Access/InterpreterShowAccessQuery.h>
-#include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
-#include <Interpreters/Access/InterpreterShowGrantsQuery.h>
-#include <Interpreters/Access/InterpreterShowPrivilegesQuery.h>
-
 #include <Parsers/ASTSystemQuery.h>
-
-#include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Parsers/ASTExternalDDLQuery.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
@@ -131,6 +76,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE_OF_QUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 InterpreterFactory & InterpreterFactory::instance()
@@ -141,7 +87,7 @@ InterpreterFactory & InterpreterFactory::instance()
 
 void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn creator_fn)
 {
-    if(!interpreters.emplace(name, std::move(creator_fn)).second)
+    if (!interpreters.emplace(name, std::move(creator_fn)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "InterpreterFactory: the interpreter name '{}' is not unique", name);
 }
 
@@ -163,14 +109,17 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
         .context = context,
         .options = options
     };
+
     String interpreter_name;
+
     if (query->as<ASTSelectQuery>())
     {
         if (context->getSettingsRef().allow_experimental_analyzer)
             interpreter_name = "InterpreterSelectQueryAnalyzer";
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
-        else interpreter_name = "InterpreterSelectQuery";
+        else
+            interpreter_name = "InterpreterSelectQuery";
     }
     else if (query->as<ASTSelectWithUnionQuery>())
     {
@@ -178,7 +127,8 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
         if (context->getSettingsRef().allow_experimental_analyzer)
             interpreter_name = "InterpreterSelectQueryAnalyzer";
-        else interpreter_name = "InterpreterSelectWithUnionQuery";
+        else
+            interpreter_name = "InterpreterSelectWithUnionQuery";
     }
     else if (query->as<ASTSelectIntersectExceptQuery>())
     {
@@ -389,7 +339,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
         interpreter_name = "InterpreterDeleteQuery";
     }
 
-    if(!interpreters.contains(interpreter_name))
+    if (!interpreters.contains(interpreter_name))
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Unknown type of query: {}", query->getID());
 
     // creator_fn creates and returns a InterpreterPtr with the supplied arguments

@@ -102,7 +102,6 @@ void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterDropAccessEntityQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterDropAccessEntityQuery", create_fn);
 }
 

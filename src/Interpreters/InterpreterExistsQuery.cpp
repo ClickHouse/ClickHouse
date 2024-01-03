@@ -88,7 +88,6 @@ void registerInterpreterExistsQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterExistsQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterExistsQuery", create_fn);
 }
 }

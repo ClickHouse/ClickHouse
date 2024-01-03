@@ -106,7 +106,6 @@ void registerInterpreterCreateIndexQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterCreateIndexQuery>(args.query, args.context);
     };
-    
     factory.registerInterpreter("InterpreterCreateIndexQuery", create_fn);
 }
 

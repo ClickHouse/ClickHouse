@@ -417,7 +417,6 @@ void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterSelectWithUnionQuery>(args.query, args.context, args.options);
     };
-
     factory.registerInterpreter("InterpreterSelectWithUnionQuery", create_fn);
 }
 

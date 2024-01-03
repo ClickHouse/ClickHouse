@@ -22,7 +22,6 @@ void registerInterpreterShowPrivilegesQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowPrivilegesQuery>(args.query, args.context);
     };
-    
     factory.registerInterpreter("InterpreterShowPrivilegesQuery", create_fn);
 }
 

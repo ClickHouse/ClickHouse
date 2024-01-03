@@ -3322,7 +3322,6 @@ void registerInterpreterSelectQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterSelectQuery>(args.query, args.context, args.options);
     };
-
     factory.registerInterpreter("InterpreterSelectQuery", create_fn);
 }
 

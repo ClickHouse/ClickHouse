@@ -50,7 +50,6 @@ void registerInterpreterShowFunctionsQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowFunctionsQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterShowFunctionsQuery", create_fn);
 }
 

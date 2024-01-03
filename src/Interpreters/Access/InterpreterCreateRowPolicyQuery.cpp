@@ -155,7 +155,6 @@ void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterCreateRowPolicyQuery>(args.query, args.context);
     };
-    
     factory.registerInterpreter("InterpreterCreateRowPolicyQuery", create_fn);
 }
 

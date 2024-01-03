@@ -687,7 +687,6 @@ void registerInterpreterInsertQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterInsertQuery>(args.query, args.context, args.allow_materialized);
     };
-
     factory.registerInterpreter("InterpreterInsertQuery", create_fn);
 }
 }

@@ -132,7 +132,6 @@ void registerInterpreterShowAccessEntitiesQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowAccessEntitiesQuery>(args.query, args.context);
     };
-    
     factory.registerInterpreter("InterpreterShowAccessEntitiesQuery", create_fn);
 }
 

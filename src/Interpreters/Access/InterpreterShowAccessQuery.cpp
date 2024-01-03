@@ -87,7 +87,6 @@ void registerInterpreterShowAccessQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowAccessQuery>(args.query, args.context);
     };
-    
     factory.registerInterpreter("InterpreterShowAccessQuery", create_fn);
 }
 

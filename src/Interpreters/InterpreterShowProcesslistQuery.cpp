@@ -22,7 +22,6 @@ void registerInterpreterShowProcesslistQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowProcesslistQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterShowProcesslistQuery", create_fn);
 }
 

@@ -23,7 +23,6 @@ void registerInterpreterUseQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterUseQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterUseQuery", create_fn);
 }
 

@@ -1385,7 +1385,6 @@ void registerInterpreterSystemQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterSystemQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterSystemQuery", create_fn);
 }
 

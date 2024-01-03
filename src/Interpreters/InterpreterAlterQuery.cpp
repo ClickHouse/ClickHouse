@@ -542,7 +542,6 @@ void registerInterpreterAlterQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterAlterQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterAlterQuery", create_fn);
 }
 

@@ -74,7 +74,6 @@ void registerInterpreterExternalDDLQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterExternalDDLQuery>(args.query, args.context);
     };
-    
     factory.registerInterpreter("InterpreterExternalDDLQuery", create_fn);
 }
 

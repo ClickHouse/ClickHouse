@@ -22,7 +22,6 @@ void registerInterpreterShowEnginesQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowEnginesQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterShowEnginesQuery", create_fn);
 }
 

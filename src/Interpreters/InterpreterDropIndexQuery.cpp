@@ -75,7 +75,6 @@ void registerInterpreterDropIndexQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterDropIndexQuery>(args.query, args.context);
     };
-    
     factory.registerInterpreter("InterpreterDropIndexQuery", create_fn);
 }
 

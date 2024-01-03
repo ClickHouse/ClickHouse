@@ -479,7 +479,6 @@ void registerInterpreterCheckQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterCheckQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterCheckQuery", create_fn);
 }
 

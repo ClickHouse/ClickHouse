@@ -36,7 +36,6 @@ void registerInterpreterShowSettingQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowSettingQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterShowSettingQuery", create_fn);
 }
 

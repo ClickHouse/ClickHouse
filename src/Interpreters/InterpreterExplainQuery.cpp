@@ -614,7 +614,6 @@ void registerInterpreterExplainQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterExplainQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterExplainQuery", create_fn);
 }
 

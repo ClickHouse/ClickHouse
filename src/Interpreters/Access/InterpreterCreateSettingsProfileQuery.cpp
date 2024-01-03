@@ -146,7 +146,6 @@ void registerInterpreterCreateSettingsProfileQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterCreateSettingsProfileQuery>(args.query, args.context);
     };
-    
     factory.registerInterpreter("InterpreterCreateSettingsProfileQuery", create_fn);
 }
 

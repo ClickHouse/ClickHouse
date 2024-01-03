@@ -217,7 +217,6 @@ void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterSelectIntersectExceptQuery>(args.query, args.context, args.options);
     };
-
     factory.registerInterpreter("InterpreterSelectIntersectExceptQuery", create_fn);
 }
 

@@ -229,7 +229,6 @@ void registerInterpreterShowTablesQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowTablesQuery>(args.query, args.context);
     };
-
     factory.registerInterpreter("InterpreterShowTablesQuery", create_fn);
 }
 

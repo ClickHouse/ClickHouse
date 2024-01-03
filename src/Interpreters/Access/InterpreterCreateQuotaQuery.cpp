@@ -167,7 +167,6 @@ void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterCreateQuotaQuery>(args.query, args.context);
     };
-    
     factory.registerInterpreter("InterpreterCreateQuotaQuery", create_fn);
 }
 
