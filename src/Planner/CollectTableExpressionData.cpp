@@ -109,7 +109,8 @@ public:
     {
         if (auto * join_node = parent->as<JoinNode>())
         {
-            return join_node->getJoinExpression() != child_node || !join_node->isUsingJoinExpression();
+            if (join_node->getJoinExpression() == child_node && join_node->isUsingJoinExpression())
+                return false;
         }
         auto child_node_type = child_node->getNodeType();
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
