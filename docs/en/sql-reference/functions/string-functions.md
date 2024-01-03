@@ -1386,7 +1386,7 @@ Result:
 ## punycodeEncode
 
 Returns the [Punycode](https://en.wikipedia.org/wiki/Punycode) of a string.
-The string must be UTF8-encoded, otherwise results are undefined.
+The string must be UTF8-encoded, otherwise an exception is thrown.
 
 **Syntax**
 
@@ -1416,9 +1416,14 @@ Result:
 └───────────────────────────┘
 ```
 
+## punycodeEncodeOrNull
+
+Like `punycodeEncode` but returns `NULL` in case of an error instead of throwing an exception.
+
 ## punycodeDecode
 
 Returns the UTF8-encoded plaintext of a [Punycode](https://en.wikipedia.org/wiki/Punycode)-encoded string.
+If no valid Punycode-encoded string is given, an exception is thrown.
 
 **Syntax**
 
@@ -1447,6 +1452,10 @@ Result:
 │ München                      │
 └──────────────────────────────┘
 ```
+
+## punycodeDecodeOrNull
+
+Like `punycodeDecode` but returns `NULL` in case of an error instead of throwing an exception.
 
 ## byteHammingDistance
 

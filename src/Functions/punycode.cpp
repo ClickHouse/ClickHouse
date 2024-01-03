@@ -2,7 +2,9 @@
 
 #if USE_IDNA
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -30,17 +32,17 @@ namespace ErrorCodes
 namespace
 {
 
-enum class ExceptionMode
+enum class ErrorHandling
 {
     Throw,
     Null
 };
 
-template <ExceptionMode exception_mode>
+template <ErrorHandling error_handling>
 class FunctionPunycodeEncode : public IFunction
 {
 public:
-    static constexpr auto name = (exception_mode == ExceptionMode::Null) ? "punycodeEncodeOrNull" : "punycodeEncode";
+    static constexpr auto name = (error_handling == ErrorHandling::Null) ? "punycodeEncodeOrNull" : "punycodeEncode";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPunycodeEncode>(); }
     String getName() const override { return name; }
@@ -57,7 +59,7 @@ public:
 
         auto return_type = std::make_shared<DataTypeString>();
 
-        if constexpr (exception_mode == ExceptionMode::Null)
+        if constexpr (error_handling == ErrorHandling::Null)
             return makeNullable(return_type);
         else
             return return_type;
@@ -65,16 +67,18 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr column = arguments[0].column;
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
-        {
-            auto col_res = ColumnString::create();
-            vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
-            return col_res;
-        }
+        auto col_res = ColumnString::create();
+        ColumnUInt8::MutablePtr col_res_null;
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
+            vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), col_res_null);
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 arguments[0].column->getName(), getName());
+
+        if constexpr (error_handling == ErrorHandling::Null)
+            return ColumnNullable::create(std::move(col_res), std::move(col_res_null));
+        else
+            return col_res;
     }
 
 private:
@@ -82,11 +86,14 @@ private:
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        ColumnUInt8::MutablePtr & col_res_null)
     {
         const size_t rows = offsets.size();
         res_data.reserve(data.size()); /// just a guess, assuming the input is all-ASCII
         res_offsets.reserve(rows);
+        if constexpr (error_handling == ErrorHandling::Null)
+            col_res_null = ColumnUInt8::create(rows, 0);
 
         size_t prev_offset = 0;
         std::u32string value_utf32;
@@ -102,7 +109,17 @@ private:
 
             const bool ok = ada::idna::utf32_to_punycode(value_utf32, value_puny);
             if (!ok)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Internal error during Punycode encoding");
+            {
+                if constexpr (error_handling == ErrorHandling::Throw)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' cannot be converted to Punycode", std::string_view(value, value_length));
+                }
+                else
+                {
+                    value_puny.clear();
+                    col_res_null->getData()[row] = 1;
+                }
+            }
 
             res_data.insert(value_puny.c_str(), value_puny.c_str() + value_puny.size() + 1);
             res_offsets.push_back(res_data.size());
@@ -115,11 +132,11 @@ private:
     }
 };
 
-template <ExceptionMode exception_mode>
+template <ErrorHandling error_handling>
 class FunctionPunycodeDecode : public IFunction
 {
 public:
-    static constexpr auto name = (exception_mode == ExceptionMode::Null) ? "punycodeDecodeOrNull" : "punycodeDecode";
+    static constexpr auto name = (error_handling == ErrorHandling::Null) ? "punycodeDecodeOrNull" : "punycodeDecode";
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPunycodeDecode>(); }
     String getName() const override { return name; }
@@ -136,7 +153,7 @@ public:
 
         auto return_type = std::make_shared<DataTypeString>();
 
-        if constexpr (exception_mode == ExceptionMode::Null)
+        if constexpr (error_handling == ErrorHandling::Null)
             return makeNullable(return_type);
         else
             return return_type;
@@ -144,16 +161,19 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        const ColumnPtr column = arguments[0].column;
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
-        {
-            auto col_res = ColumnString::create();
-            vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
-            return col_res;
-        }
+        auto col_res = ColumnString::create();
+        ColumnUInt8::MutablePtr col_res_null;
+
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
+            vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets(), col_res_null);
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
                 arguments[0].column->getName(), getName());
+
+        if constexpr (error_handling == ErrorHandling::Null)
+            return ColumnNullable::create(std::move(col_res), std::move(col_res_null));
+        else
+            return col_res;
     }
 
 private:
@@ -161,11 +181,14 @@ private:
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        ColumnUInt8::MutablePtr & col_res_null)
     {
         const size_t rows = offsets.size();
         res_data.reserve(data.size()); /// just a guess, assuming the input is all-ASCII
         res_offsets.reserve(rows);
+        if constexpr (error_handling == ErrorHandling::Null)
+            col_res_null = ColumnUInt8::create(rows, 0);
 
         size_t prev_offset = 0;
         std::u32string value_utf32;
@@ -178,7 +201,17 @@ private:
             const std::string_view value_punycode(value, value_length);
             const bool ok = ada::idna::punycode_to_utf32(value_punycode, value_utf32);
             if (!ok)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Internal error during Punycode decoding");
+            {
+                if constexpr (error_handling == ErrorHandling::Throw)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' is not a valid Punycode-encoded string", value_punycode);
+                }
+                else
+                {
+                    value_utf32.clear();
+                    col_res_null->getData()[row] = 1;
+                }
+            }
 
             const size_t utf8_length = ada::idna::utf8_length_from_utf32(value_utf32.data(), value_utf32.size());
             value_utf8.resize(utf8_length);
@@ -199,9 +232,9 @@ private:
 
 REGISTER_FUNCTION(Punycode)
 {
-    factory.registerFunction<FunctionPunycodeEncode<ExceptionMode::Throw>>(FunctionDocumentation{
+    factory.registerFunction<FunctionPunycodeEncode<ErrorHandling::Throw>>(FunctionDocumentation{
         .description=R"(
-Computes a Punycode representation of a string.)",
+Computes a Punycode representation of a string. Throws an exception in case of error.)",
         .syntax="punycodeEncode(str)",
         .arguments={{"str", "Input string"}},
         .returned_value="The punycode representation [String](/docs/en/sql-reference/data-types/string.md).",
@@ -216,15 +249,49 @@ Computes a Punycode representation of a string.)",
             }}
     });
 
-    factory.registerFunction<FunctionPunycodeDecode<ExceptionMode::Throw>>(FunctionDocumentation{
+    factory.registerFunction<FunctionPunycodeEncode<ErrorHandling::Null>>(FunctionDocumentation{
         .description=R"(
-Computes a Punycode representation of a string.)",
+Computes a Punycode representation of a string. Returns NULL in case of error)",
+        .syntax="punycodeEncode(str)",
+        .arguments={{"str", "Input string"}},
+        .returned_value="The punycode representation [String](/docs/en/sql-reference/data-types/string.md).",
+        .examples={
+            {"simple",
+            "SELECT punycodeEncodeOrNull('München') AS puny;",
+            R"(
+┌─puny───────┐
+│ Mnchen-3ya │
+└────────────┘
+            )"
+            }}
+    });
+
+    factory.registerFunction<FunctionPunycodeDecode<ErrorHandling::Throw>>(FunctionDocumentation{
+        .description=R"(
+Computes a Punycode representation of a string. Throws an exception in case of error.)",
         .syntax="punycodeDecode(str)",
         .arguments={{"str", "A Punycode-encoded string"}},
         .returned_value="The plaintext representation [String](/docs/en/sql-reference/data-types/string.md).",
         .examples={
             {"simple",
             "SELECT punycodeDecode('Mnchen-3ya') AS plain;",
+            R"(
+┌─plain───┐
+│ München │
+└─────────┘
+            )"
+            }}
+    });
+
+    factory.registerFunction<FunctionPunycodeDecode<ErrorHandling::Null>>(FunctionDocumentation{
+        .description=R"(
+Computes a Punycode representation of a string. Returns NULL in case of error)",
+        .syntax="punycodeDecode(str)",
+        .arguments={{"str", "A Punycode-encoded string"}},
+        .returned_value="The plaintext representation [String](/docs/en/sql-reference/data-types/string.md).",
+        .examples={
+            {"simple",
+            "SELECT punycodeDecodeOrNull('Mnchen-3ya') AS plain;",
             R"(
 ┌─plain───┐
 │ München │
