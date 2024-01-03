@@ -2,7 +2,6 @@
 
 #include <limits>
 #include <optional>
-#include <regex>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -26,6 +25,15 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>
@@ -530,16 +538,15 @@ void MySQLHandlerSSL::finishHandshakeSSL(
 
 static bool isFederatedServerSetupSetCommand(const String & query)
 {
-    static const std::regex expr{
+    static const re2::RE2 expr(
         "(^(SET NAMES(.*)))"
         "|(^(SET character_set_results(.*)))"
         "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
         "|(^(SET AUTOCOMMIT(.*)))"
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
-        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
-        , std::regex::icase};
-    return 1 == std::regex_match(query, expr);
+        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))");
+    return re2::RE2::FullMatch(query, expr);
 }
 
 /// Replace "[query(such as SHOW VARIABLES...)]" into "".
@@ -598,8 +605,8 @@ static String killConnectionIdReplacementQuery(const String & query)
     if (query.size() > prefix.size())
     {
         String suffix = query.data() + prefix.length();
-        static const std::regex expr{"^[0-9]"};
-        if (std::regex_match(suffix, expr))
+        static const re2::RE2 expr("^[0-9]");
+        if (re2::RE2::FullMatch(suffix, expr))
         {
             String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", suffix);
             return replacement;

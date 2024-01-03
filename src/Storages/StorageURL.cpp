@@ -40,9 +40,18 @@
 #include <algorithm>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <regex>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
+
 
 namespace ProfileEvents
 {
@@ -82,9 +91,9 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
 /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
-static const std::vector<std::regex> optional_regex_keys = {
-    std::regex(R"(headers.header\[[\d]*\].name)"),
-    std::regex(R"(headers.header\[[\d]*\].value)"),
+static const std::vector<re2::RE2> optional_regex_keys = {
+    /// re2::RE2(R"(headers.header\[[\d]*\].name)"),
+    /// re2::RE2(R"(headers.header\[[\d]*\].value)"),
 };
 
 static bool urlWithGlobs(const String & uri)

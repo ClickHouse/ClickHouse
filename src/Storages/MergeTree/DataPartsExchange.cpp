@@ -22,8 +22,16 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>
 #include <iterator>
-#include <regex>
 #include <base/sort.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 
 namespace fs = std::filesystem;
@@ -169,10 +177,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
         String remote_fs_metadata = parse<String>(params.get("remote_fs_metadata", ""));
 
-        std::regex re("\\s*,\\s*");
-        Strings capability(
-            std::sregex_token_iterator(remote_fs_metadata.begin(), remote_fs_metadata.end(), re, -1),
-            std::sregex_token_iterator());
+        Strings capability;
 
         bool send_projections = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION;
 

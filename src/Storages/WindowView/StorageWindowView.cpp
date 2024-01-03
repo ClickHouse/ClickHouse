@@ -1,5 +1,4 @@
 #include <numeric>
-#include <regex>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -62,6 +61,15 @@
 
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -1268,7 +1276,9 @@ ASTPtr StorageWindowView::initInnerQuery(ASTSelectQuery query, ContextPtr contex
     if (is_time_column_func_now)
         window_id_name = func_now_data.window_id_name;
 
-    window_column_name = std::regex_replace(window_id_name, std::regex("windowID"), is_tumble ? "tumble" : "hop");
+    static const re2::RE2 regexp("windowID");
+    assert(regexp.ok());
+    re2::RE2::GlobalReplace(&window_id_name, regexp, is_tumble ? "tumple" : "hop");
 
     /// Parse final query (same as mergeable query but has tumble/hop instead of windowID)
     final_query = mergeable_query->clone();

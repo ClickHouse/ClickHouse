@@ -9,7 +9,15 @@
 #include <Parsers/ParserSetQuery.h>
 #include "Poco/String.h"
 #include <format>
-#include <regex>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace DB
 {
@@ -225,12 +233,13 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
     arg = getArgument(fn_name, pos);
 
     //NULL expr returns NULL not exception
-    static const std::regex expr{"^[0-9]+e[+-]?[0-9]+"};
-    bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL" && !(std::regex_match(arg, expr));
+    static const re2::RE2 expr("^[0-9]+e[+-]?[0-9]+");
+    assert(expr.ok());
+    bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL" && !(re2::RE2::FullMatch(arg, expr));
     if (is_string)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse String as decimal Literal: {}", fn_name);
 
-    if (std::regex_match(arg, expr))
+    if (re2::RE2::FullMatch(arg, expr))
     {
         auto exponential_pos = arg.find('e');
         if (arg[exponential_pos + 1] == '+' || arg[exponential_pos + 1] == '-')

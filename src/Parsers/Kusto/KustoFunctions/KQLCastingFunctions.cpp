@@ -4,8 +4,16 @@
 #include <Parsers/Kusto/KustoFunctions/KQLFunctionFactory.h>
 
 #include <format>
-#include <regex>
 #include <Poco/String.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 
 namespace DB
@@ -135,12 +143,12 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
         res = getConvertedArgument(fn_name, pos);
         precision = 17;
     }
-    static const std::regex expr{"^[0-9]+e[+-]?[0-9]+"};
-    bool is_string = std::any_of(res.begin(), res.end(), ::isalpha) && !(std::regex_match(res, expr));
+    static const re2::RE2 expr("^[0-9]+e[+-]?[0-9]+");
+    bool is_string = std::any_of(res.begin(), res.end(), ::isalpha) && !(re2::RE2::FullMatch(res, expr));
 
     if (is_string)
         out = "NULL";
-    else if (std::regex_match(res, expr))
+    else if (re2::RE2::FullMatch(res, expr))
     {
         auto exponential_pos = res.find('e');
         if (res[exponential_pos + 1] == '+' || res[exponential_pos + 1] == '-')
