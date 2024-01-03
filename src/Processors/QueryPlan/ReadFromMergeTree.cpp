@@ -37,8 +37,8 @@
 #include <Common/JSONBuilder.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
-#include "Storages/MergeTree/MergeTreeIndexAnnoy.h"
-#include "Storages/MergeTree/MergeTreeIndexUSearch.h"
+#include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
+#include <Storages/MergeTree/MergeTreeIndexUSearch.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 
@@ -1421,11 +1421,15 @@ static void buildIndexes(
                 MergeTreeIndexConditionPtr condition;
                 if (index_helper->isVectorSearch())
                 {
+#ifdef ENABLE_ANNOY
                     if (const auto * annoy = typeid_cast<const MergeTreeIndexAnnoy *>(index_helper.get()))
                         condition = annoy->createIndexCondition(*info, context);
-                    else if (const auto * usearch = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
+#endif
+#ifdef ENABLE_USEARCH
+                    if (const auto * usearch = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
                         condition = usearch->createIndexCondition(*info, context);
-                    else
+#endif
+                    if (!condition)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
                 }
                 else
