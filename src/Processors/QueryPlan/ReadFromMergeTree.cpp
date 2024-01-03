@@ -568,6 +568,8 @@ Pipe ReadFromMergeTree::readInOrder(
             pool, std::move(algorithm), data, prewhere_info,
             actions_settings, block_size, reader_settings, virt_column_names);
 
+        processor->addPartLevelToChunk(isQueryWithFinal());
+
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
         if (set_rows_approx)
             source->addTotalRowsApprox(total_rows);
@@ -1025,7 +1027,7 @@ static void addMergingFinal(
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false);
+                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty());
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
@@ -1128,7 +1130,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// can use parallel select on such parts.
         bool no_merging_final = do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-            parts_to_merge_ranges[range_index]->data_part->info.level > 0;
+            parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
+            data.merging_params.is_deleted_column.empty();
 
         if (no_merging_final)
         {
@@ -1160,13 +1163,18 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                         info.use_uncompressed_cache);
                 };
 
+                /// Parts of non-zero level still may contain duplicate PK values to merge on FINAL if there's is_deleted column,
+                /// so we have to process all ranges. It would be more optimal to remove this flag and add an extra filtering step.
+                bool force_process_all_ranges = !data.merging_params.is_deleted_column.empty();
+
                 SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
                     metadata_for_reading->getPrimaryKey(),
                     sorting_expr,
                     std::move(new_parts),
                     num_streams,
                     context,
-                    std::move(in_order_reading_step_getter));
+                    std::move(in_order_reading_step_getter),
+                    force_process_all_ranges);
 
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));
@@ -1333,8 +1341,7 @@ static void buildIndexes(
             filter_actions_dag,
             context,
             primary_key_column_names,
-            primary_key.expression,
-            array_join_name_set}, {}, {}, {}, {}, false, {}});
+            primary_key.expression}, {}, {}, {}, {}, false, {}});
     }
     else
     {
@@ -1351,7 +1358,7 @@ static void buildIndexes(
         auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
 
-        indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions, NameSet());
+        indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions);
         indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);
     }
 
@@ -1838,6 +1845,8 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             }
         }
 
+        if (!data.merging_params.is_deleted_column.empty() && !names.contains(data.merging_params.is_deleted_column))
+            column_names_to_read.push_back(data.merging_params.is_deleted_column);
         if (!data.merging_params.sign_column.empty() && !names.contains(data.merging_params.sign_column))
             column_names_to_read.push_back(data.merging_params.sign_column);
         if (!data.merging_params.version_column.empty() && !names.contains(data.merging_params.version_column))
