@@ -50,3 +50,19 @@ system sync replica rmt1;
 system sync replica rmt2;
 
 select *, _table from merge(currentDatabase(), '') order by _table, (*,);
+
+
+create table rmt3 (n int) engine=ReplicatedMergeTree('/test/02468/{database}3', '1') order by tuple() settings replicated_max_ratio_of_wrong_parts=0, max_suspicious_broken_parts=0, max_suspicious_broken_parts_bytes=0;
+set insert_keeper_fault_injection_probability=0;
+insert into rmt3 values (1);
+insert into rmt3 values (2);
+insert into rmt3 values (3);
+
+system stop cleanup rmt3;
+alter table rmt3 drop part 'all_1_1_0';
+optimize table rmt3 final;
+
+detach table rmt3 sync;
+attach table rmt3;
+
+select * from rmt3 order by n;
