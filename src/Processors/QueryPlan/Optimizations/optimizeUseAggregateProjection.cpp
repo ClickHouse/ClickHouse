@@ -669,8 +669,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
     else
     {
         auto storage_snapshot = reading->getStorageSnapshot();
-        auto proj_snapshot = std::make_shared<StorageSnapshot>(
-            storage_snapshot->storage, storage_snapshot->metadata, storage_snapshot->object_columns);
+        auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->metadata);
         proj_snapshot->addProjection(best_candidate->projection);
 
         auto query_info_copy = query_info;

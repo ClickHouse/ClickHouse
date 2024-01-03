@@ -21,7 +21,10 @@ namespace ErrorCodes
 std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 {
     auto res = std::make_shared<StorageSnapshot>(storage, metadata, object_columns);
+
+    res->projection = projection;
     res->data = std::move(data_);
+
     return res;
 }
 
