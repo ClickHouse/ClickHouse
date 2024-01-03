@@ -66,6 +66,17 @@ public:
     {
         ColumnPtr array_ptr = arguments[0].column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
+        if (!array)
+        {
+            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
+                arguments[0].column.get());
+            if (!const_array)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), getName());
+
+            array_ptr = const_array->convertToFullColumn();
+            array = assert_cast<const ColumnArray *>(array_ptr.get());
+        }
 
         const IColumn & src_data = array->getData();
         const ColumnArray::Offsets & src_offsets = array->getOffsets();
@@ -168,7 +179,7 @@ public:
         size_t len = end - start;
         if (len < 4)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least four data points are needed for function {}", getName());
-        else if (period > (len / 2))
+        else if (period > (len / 2.0))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "The series should have data of at least two period lengths for function {}", getName());
 
