@@ -1271,7 +1271,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         return merging_pipes.empty() ? Pipe::unitePipes(std::move(no_merging_pipes)) : Pipe::unitePipes(std::move(merging_pipes));
 }
 
-MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::trySelectRangesToRead(
+MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::DataPartsVector parts,
     std::vector<AlterConversionsPtr> alter_conversions) const
 {
@@ -1291,17 +1291,6 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::trySelectRangesToRead(
         sample_factor_column_queried,
         log,
         indexes);
-}
-
-ReadFromMergeTree::AnalysisResult ReadFromMergeTree::selectRangesToRead(
-    MergeTreeData::DataPartsVector parts,
-    std::vector<AlterConversionsPtr> alter_conversions) const
-{
-    auto result_ptr = trySelectRangesToRead(std::move(parts), std::move(alter_conversions));
-    if (std::holds_alternative<std::exception_ptr>(result_ptr->result))
-        std::rethrow_exception(std::get<std::exception_ptr>(result_ptr->result));
-
-    return std::get<AnalysisResult>(result_ptr->result);
 }
 
 static ActionsDAGPtr buildFilterDAG(
@@ -1814,7 +1803,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
 
 ReadFromMergeTree::AnalysisResult ReadFromMergeTree::getAnalysisResult() const
 {
-    auto result_ptr = analyzed_result_ptr ? analyzed_result_ptr : trySelectRangesToRead(prepared_parts, alter_conversions_for_parts);
+    auto result_ptr = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead(prepared_parts, alter_conversions_for_parts);
     if (std::holds_alternative<std::exception_ptr>(result_ptr->result))
         std::rethrow_exception(std::get<std::exception_ptr>(result_ptr->result));
 

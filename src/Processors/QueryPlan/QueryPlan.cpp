@@ -562,6 +562,7 @@ QueryPlan::Node & cloneQueryPlanTree(QueryPlan::Node & root, QueryPlan::Nodes & 
     for (const auto & child : root.children)
     {
         auto & new_child = cloneQueryPlanTree(*child, nodes);
+        new_child.step->setStepDescription(child->step->getStepDescription());
         new_root.children.push_back(&new_child);
     }
 

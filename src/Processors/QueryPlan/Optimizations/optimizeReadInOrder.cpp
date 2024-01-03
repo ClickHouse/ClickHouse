@@ -891,10 +891,16 @@ void optimizeAggregationInOrder(AggregatingStep & aggregating, QueryPlan::Node &
         auto & aggregating_no_merge = assert_cast<AggregatingStep &>(*aggregating_node_no_merge.step);
         auto & reading_no_merge = assert_cast<ReadFromMergeTree &>(*reading_node_no_merge->step);
 
-        auto analysis_result = reading->selectRangesToRead(reading->getParts(), reading->getAlterConvertionsForParts());
+        auto analysis_result = reading->getAnalysisResult();
         auto analysis_result_no_merge = analysis_result;
 
-        auto split_result = splitPartsRanges(analysis_result.parts_with_ranges, /*force_process_all_ranges=*/ true);
+        auto split_result = splitPartsRanges(analysis_result.parts_with_ranges, /*min_level=*/ 0);
+
+        LOG_TEST(&Poco::Logger::get("optimizeAggregationInOrder"),
+            "Split {} ranges with {} marks to: {} intersecting ranges with {} marks, {} non-intersecting ranges with {} marks",
+            analysis_result.parts_with_ranges.size(), analysis_result.parts_with_ranges.getMarksCountAllParts(),
+            split_result.intersecting_parts_ranges.size(), split_result.intersecting_parts_ranges.getMarksCountAllParts(),
+            split_result.non_intersecting_parts_ranges.size(), split_result.non_intersecting_parts_ranges.getMarksCountAllParts());
 
         /// TODO: correct other fields.
         analysis_result.parts_with_ranges = std::move(split_result.intersecting_parts_ranges);

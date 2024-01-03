@@ -498,6 +498,9 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
       * 1. If part level is 0, we must process all ranges from this part, because they can contain duplicate primary keys.
       */
 
+    if (ranges_in_data_parts.empty())
+        return {};
+
     IndexAccess index_access(ranges_in_data_parts);
     std::vector<PartsRangesIterator> parts_ranges;
 

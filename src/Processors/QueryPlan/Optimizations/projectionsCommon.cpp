@@ -259,7 +259,7 @@ bool analyzeProjectionCandidate(
     if (!normal_parts.empty())
     {
         /// TODO: We can reuse existing analysis_result by filtering out projection parts
-        auto normal_result_ptr = reading.trySelectRangesToRead(std::move(normal_parts), std::move(alter_conversions));
+        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts), std::move(alter_conversions));
 
         if (normal_result_ptr->error())
             return false;

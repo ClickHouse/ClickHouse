@@ -176,13 +176,11 @@ public:
         Poco::Logger * log,
         std::optional<Indexes> & indexes);
 
-    MergeTreeDataSelectAnalysisResultPtr trySelectRangesToRead(
+    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions) const;
 
-    AnalysisResult selectRangesToRead(
-        MergeTreeData::DataPartsVector parts,
-        std::vector<AlterConversionsPtr> alter_conversions) const;
+    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
 
     ContextPtr getContext() const { return context; }
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
@@ -300,7 +298,6 @@ private:
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection);
 
-    ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
 
     bool is_parallel_reading_from_replicas;

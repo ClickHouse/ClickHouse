@@ -591,7 +591,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
     }
     else if (!candidates.real.empty())
     {
-        auto ordinary_reading_select_result = reading->trySelectRangesToRead(parts, alter_conversions);
+        auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
         size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
 
         /// Nothing to read. Ignore projections.
