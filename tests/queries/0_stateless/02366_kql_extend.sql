@@ -12,16 +12,19 @@
 --     'Costco','Snargaluff',200,'2016-09-10',
 -- ]
 
+
 DROP TABLE IF EXISTS Ledger;
 CREATE TABLE Ledger
-(    
+(
    Supplier Nullable(String),
    Fruit String ,
    Price Float64,
-   Purchase Date 
+   Purchase Date
 ) ENGINE = Memory;
 INSERT INTO Ledger VALUES  ('Aldi','Apple',4,'2016-09-10'), ('Costco','Apple',2,'2016-09-11'), ('Aldi','Apple',6,'2016-09-10'), ('Costco','Snargaluff',100,'2016-09-12'), ('Aldi','Apple',7,'2016-09-12'), ('Aldi','Snargaluff',400,'2016-09-11'),('Costco','Snargaluff',104,'2016-09-12'),('Aldi','Apple',5,'2016-09-12'),('Aldi','Snargaluff',600,'2016-09-11'),('Costco','Snargaluff',200,'2016-09-10');
 
+-- This test requies sorting after some of aggregations but I don't know KQL, sorry
+set max_bytes_before_external_group_by = 0;
 set dialect = 'kusto';
 
 print '-- extend #1 --';

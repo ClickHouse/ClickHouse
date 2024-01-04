@@ -515,6 +515,7 @@ public:
         bool /*final*/,
         bool /*deduplicate*/,
         const Names & /* deduplicate_by_columns */,
+        bool /*cleanup*/,
         ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
@@ -597,13 +598,6 @@ public:
     std::atomic<bool> is_dropped{false};
     std::atomic<bool> is_detached{false};
     std::atomic<bool> is_being_restarted{false};
-
-    /// Does table support index for IN sections
-    virtual bool supportsIndexForIn() const { return false; }
-
-    /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
-    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
-
 
     /** A list of tasks to check a validity of data.
       * Each IStorage implementation may interpret this task in its own way.
@@ -691,6 +685,15 @@ public:
     /// In particular, alloctedBytes() is preferable over bytes()
     /// when considering in-memory blocks.
     virtual std::optional<UInt64> totalBytes(const Settings &) const { return {}; }
+
+    /// If it is possible to quickly determine exact number of uncompressed bytes for the table on storage:
+    /// - disk (uncompressed)
+    ///
+    /// Used for:
+    /// - For total_bytes_uncompressed column in system.tables
+    ///
+    /// Does not take underlying Storage (if any) into account
+    virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
 
     /// Number of rows INSERTed since server start.
     ///

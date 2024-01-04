@@ -29,6 +29,10 @@ Transactionally inconsistent caching is traditionally provided by client tools o
 the same caching logic and configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side.
 This reduces maintenance effort and avoids redundancy.
 
+:::note
+Security consideration: The cached query result is tied to the user executing it. Authorization checks are performed when the query is executed. This means that if there are any alterations to the user's role or permissions between the time the query is cached and when the cache is accessed, the result will not reflect these changes. We recommend using different users to distinguish between different levels of access, instead of actively toggling roles for a single user between queries, as this practice may lead to unexpected query results.
+:::
+
 ## Configuration Settings and Usage
 
 :::note
@@ -103,7 +107,7 @@ It is also possible to limit the cache usage of individual users using [settings
 constraints](settings/constraints-on-settings.md). More specifically, you can restrict the maximum amount of memory (in bytes) a user may
 allocate in the query cache and the maximum number of stored query results. For that, first provide configurations
 [query_cache_max_size_in_bytes](settings/settings.md#query-cache-max-size-in-bytes) and
-[query_cache_max_entries](settings/settings.md#query-cache-size-max-entries) in a user profile in `users.xml`, then make both settings
+[query_cache_max_entries](settings/settings.md#query-cache-max-entries) in a user profile in `users.xml`, then make both settings
 readonly:
 
 ``` xml
@@ -144,7 +148,7 @@ value can be specified at session, profile or query level using setting [query_c
 Entries in the query cache are compressed by default. This reduces the overall memory consumption at the cost of slower writes into / reads
 from the query cache. To disable compression, use setting [query_cache_compress_entries](settings/settings.md#query-cache-compress-entries).
 
-ClickHouse reads table data in blocks of [max_block_size](settings/settings.md#settings-max_block_size) rows. Due to filtering, aggregation,
+ClickHouse reads table data in blocks of [max_block_size](settings/settings.md#setting-max_block_size) rows. Due to filtering, aggregation,
 etc., result blocks are typically much smaller than 'max_block_size' but there are also cases where they are much bigger. Setting
 [query_cache_squash_partial_results](settings/settings.md#query-cache-squash-partial-results) (enabled by default) controls if result blocks
 are squashed (if they are tiny) or split (if they are large) into blocks of 'max_block_size' size before insertion into the query result
