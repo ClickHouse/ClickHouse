@@ -198,6 +198,7 @@ DELETEs
 DESC
 DIEs
 DOGEFI
+Damerau
 DataGrip
 DataLens
 DataTime
@@ -413,6 +414,7 @@ JSONType
 JSONs
 Jaeger
 Jannis
+Jaro
 JavaHash
 Jemalloc
 Jepsen
@@ -701,8 +703,6 @@ PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
-TotalPrimaryKeyBytesInMemory
-TotalPrimaryKeyBytesInMemoryAllocated
 PrivateKeyPassphraseHandler
 ProfileEvents
 Profiler
@@ -924,6 +924,8 @@ Toolset
 TopK
 TotalBytesOfMergeTreeTables
 TotalPartsOfMergeTreeTables
+TotalPrimaryKeyBytesInMemory
+TotalPrimaryKeyBytesInMemoryAllocated
 TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
@@ -976,6 +978,7 @@ Werror
 Wether
 WikiStat
 WindowView
+Winkler
 WithNames
 WithNamesAndTypes
 WordNet
@@ -1338,6 +1341,7 @@ cutToFirstSignificantSubdomainWithWWW
 cutURLParameter
 cutWWW
 cyrus
+damerauLevenshteinDistance
 datacenter
 datacenters
 datafiles
@@ -1695,6 +1699,8 @@ isZeroOrNull
 iteratively
 jaccard
 jaccardIndex
+jaroSimilarity
+jaroWinklerSimilarity
 javaHash
 javaHashUTF
 jbod
@@ -1848,14 +1854,14 @@ metrica
 metroHash
 mfedotov
 minMap
+minSampleSizeContinuous
+minSampleSizeConversion
 mindsdb
 minimalistic
 mininum
 miniselect
 minmap
 minmax
-minSampleSizeContinuous
-minSampleSizeConversion
 mins
 misconfiguration
 mispredictions

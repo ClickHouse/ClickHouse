@@ -335,8 +335,8 @@ struct ByteDamerauLevenshteinDistanceImpl
     }
 };
 
-struct ByteJaroSimilarityImpl {
-
+struct ByteJaroSimilarityImpl
+{
     using ResultType = Float64;
 
     static ResultType process(
@@ -376,7 +376,8 @@ struct ByteJaroSimilarityImpl {
             const int max_index = std::min(i + max_range + 1, s2len);
             for (int j = min_index; j < max_index; j++)
             {
-                if (s2_matching[j] == -1 && haystack[i] == needle[j]) {
+                if (s2_matching[j] == -1 && haystack[i] == needle[j])
+                {
                     s1_matching[i] = i;
                     s2_matching[j] = j;
                     matching_characters++;
@@ -402,15 +403,15 @@ struct ByteJaroSimilarityImpl {
             s2i++;
         }
         double m = static_cast<double>(matching_characters);
-        double jaro_similarity = 1.0 / 3.0  * ( m / static_cast<double>(s1len)
+        double jaro_similarity = 1.0 / 3.0  * (m / static_cast<double>(s1len)
                                             + m / static_cast<double>(s2len)
-                                            + (m - transpositions) / m );
+                                            + (m - transpositions) / m);
         return jaro_similarity;
     }
 };
 
-struct ByteJaroWinklerSimilarityImpl {
-
+struct ByteJaroWinklerSimilarityImpl
+{
     using ResultType = Float64;
 
     static ResultType process(
