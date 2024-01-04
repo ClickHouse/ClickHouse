@@ -23,13 +23,19 @@ def test_heap_profiler(started_cluster):
         pytest.skip("Disabled for sanitizers")
 
     def get_latest_profile_id():
-        return node.query("select profile_id from system.trace_log where trace_type = 'MemoryProfile' group by profile_id order by max(event_time_microseconds) desc limit 1").strip()
+        return node.query(
+            "select profile_id from system.trace_log where trace_type = 'MemoryProfile' group by profile_id order by max(event_time_microseconds) desc limit 1"
+        ).strip()
 
     def find_symbol_in_profile(profile_id, symbol_name):
-        return node.query(f"select weight, query_id from system.trace_log array join trace where trace_type = 'MemoryProfile' and profile_id = '{profile_id}' and demangle(addressToSymbol(trace)) like '%{symbol_name}%' limit 1 settings allow_introspection_functions=1")
+        return node.query(
+            f"select weight, query_id from system.trace_log array join trace where trace_type = 'MemoryProfile' and profile_id = '{profile_id}' and demangle(addressToSymbol(trace)) like '%{symbol_name}%' limit 1 settings allow_introspection_functions=1"
+        )
 
     # Start an infinite query that uses > 8 MB of memory in one allocation.
-    node.get_query_request("select max(number + sleep(2)) from system.numbers settings max_block_size = 2000000, preferred_block_size_bytes = 10000000")
+    node.get_query_request(
+        "select max(number + sleep(2)) from system.numbers settings max_block_size = 2000000, preferred_block_size_bytes = 10000000"
+    )
 
     # Wait to see a heap profile that contains "NumbersRangedSource" in stack trace.
     symbol_name = "NumbersRangedSource"
@@ -37,7 +43,9 @@ def test_heap_profiler(started_cluster):
     for _attempt in range(10):
         time.sleep(1)
 
-        query_id = node.query("select query_id from system.processes where query not like 'select query_id from system.processes%'").strip()
+        query_id = node.query(
+            "select query_id from system.processes where query not like 'select query_id from system.processes%'"
+        ).strip()
         if query_id == "":
             continue
 
@@ -56,14 +64,19 @@ def test_heap_profiler(started_cluster):
         assert profile_query_id == query_id
         break
     else:
-        raise Exception(f"Didn't see a heap profile with the expected function in the stack trace! Found query: {query_id != ''}, found profile: {profile_id != ''}")
+        raise Exception(
+            f"Didn't see a heap profile with the expected function in the stack trace! Found query: {query_id != ''}, found profile: {profile_id != ''}"
+        )
 
     # Disable periodic dumping of heap profiles, check that it stopped.
-    node.replace_config("/etc/clickhouse-server/config.d/dump_period.xml", """
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/dump_period.xml",
+        """
 <clickhouse>
     <heap_profiler_dump_period_seconds>-1</heap_profiler_dump_period_seconds>
 </clickhouse>
-""")
+""",
+    )
     node.query("system reload config")
     for _attempt in range(5):
         time.sleep(2)
@@ -75,7 +88,12 @@ def test_heap_profiler(started_cluster):
 
     # Kill the query, wait for it to die.
     node.query(f"kill query where query_id = '{query_id}'")
-    while node.query(f"select count() from system.processes where query_id = '{query_id}'") != "0\n":
+    while (
+        node.query(
+            f"select count() from system.processes where query_id = '{query_id}'"
+        )
+        != "0\n"
+    ):
         time.sleep(1)
 
     # Trigger a heap profile dump manually, check that it doesn't contain our query anymore.
