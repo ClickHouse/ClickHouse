@@ -8,6 +8,8 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/iota.h>
 
+#include <numeric>
+
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
 #endif
@@ -222,10 +224,11 @@ struct ByteJaccardIndexImpl
     }
 };
 
+static constexpr size_t max_string_size = 1u << 16;
+
 struct ByteEditDistanceImpl
 {
     using ResultType = UInt64;
-    static constexpr size_t max_string_size = 1u << 16;
 
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
@@ -237,8 +240,7 @@ struct ByteEditDistanceImpl
         if (haystack_size > max_string_size || needle_size > max_string_size)
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
-                "The string size is too big for function editDistance, "
-                "should be at most {}", max_string_size);
+                "The string size is too big for function editDistance, should be at most {}", max_string_size);
 
         PaddedPODArray<ResultType> distances0(haystack_size + 1, 0);
         PaddedPODArray<ResultType> distances1(haystack_size + 1, 0);
@@ -271,6 +273,68 @@ struct ByteEditDistanceImpl
     }
 };
 
+struct ByteDamerauLevenshteinDistanceImpl
+{
+    using ResultType = UInt64;
+
+    static ResultType process(
+        const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
+    {
+        /// Safety threshold against DoS, since we use two array to calculate the distance.
+        if (haystack_size > max_string_size || needle_size > max_string_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "The string size is too big for function damerauLevenshteinDistance, should be at most {}", max_string_size);
+
+        /// Shortcuts:
+
+        if (haystack_size == 0)
+            return needle_size;
+
+        if (needle_size == 0)
+            return haystack_size;
+
+        if (haystack_size == needle_size && memcmp(haystack, needle, haystack_size) == 0)
+            return 0;
+
+        /// Implements the algorithm for optimal string alignment distance:
+
+        /// Dynamically allocate memory for the 2D array
+        /// Allocating a 2D array, for convenience starts is an array of pointers to the start of the rows.
+        std::vector<int> rows((needle_size + 1) * (haystack_size + 1));
+        std::vector<int *> starts(haystack_size + 1);
+
+        /// Setting the pointers in starts to the beginning of (needle_size + 1)-long intervals.
+        /// Also initialize the row values based on the mentioned algorithm.
+        for (size_t i = 0; i <= haystack_size; ++i)
+        {
+            starts[i] = rows.data() + (needle_size + 1) * i;
+            starts[i][0] = static_cast<int>(i);
+        }
+
+        for (size_t j = 0; j <= needle_size; ++j)
+        {
+            starts[0][j] = static_cast<int>(j);
+        }
+
+        for (size_t i = 1; i <= haystack_size; ++i)
+        {
+            for (size_t j = 1; j <= needle_size; ++j)
+            {
+                int cost = (haystack[i - 1] == needle[j - 1]) ? 0 : 1;
+                starts[i][j] = std::min(starts[i - 1][j - 1] + cost,    /// substitution
+                                   std::min(starts[i][j - 1] + 1,       /// insertion
+                                            starts[i - 1][j] + 1)       /// deletion
+                               );
+                if (i > 1 && j > 1 && haystack[i - 1] == needle[j - 2] && haystack[i - 2] == needle[j - 1])
+                    starts[i][j] = std::min(starts[i][j], starts[i - 2][j - 2] + 1); /// transposition
+            }
+        }
+
+        return starts[haystack_size][needle_size];
+    }
+};
+
 struct NameByteHammingDistance
 {
     static constexpr auto name = "byteHammingDistance";
@@ -282,6 +346,12 @@ struct NameEditDistance
     static constexpr auto name = "editDistance";
 };
 using FunctionEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl>, NameEditDistance>;
+
+struct NameDamerauLevenshteinDistance
+{
+    static constexpr auto name = "damerauLevenshteinDistance";
+};
+using FunctionDamerauLevenshteinDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteDamerauLevenshteinDistanceImpl>, NameDamerauLevenshteinDistance>;
 
 struct NameJaccardIndex
 {
@@ -304,6 +374,9 @@ REGISTER_FUNCTION(StringDistance)
     factory.registerFunction<FunctionEditDistance>(
         FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)"});
     factory.registerAlias("levenshteinDistance", NameEditDistance::name);
+
+    factory.registerFunction<FunctionDamerauLevenshteinDistance>(
+	    FunctionDocumentation{.description = R"(Calculates the Damerau-Levenshtein distance two between two byte-string.)"});
 
     factory.registerFunction<FunctionStringJaccardIndex>(
         FunctionDocumentation{.description = R"(Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.)"});

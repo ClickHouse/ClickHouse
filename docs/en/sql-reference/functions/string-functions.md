@@ -1463,6 +1463,30 @@ Result:
 
 Alias: levenshteinDistance
 
+## damerauLevenshteinDistance
+
+Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+damerauLevenshteinDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT damerauLevenshteinDistance('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─damerauLevenshteinDistance('clickhouse', 'mouse')─┐
+│                                                 6 │
+└───────────────────────────────────────────────────┘
+```
+
 ## initcap
 
 Convert the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
