@@ -21,9 +21,9 @@ $CLICKHOUSE_CLIENT -nq "
         refresh after 2 second
         engine Memory
         empty
-        as select number as x from numbers(2) union all select rand64() as x"
-$CLICKHOUSE_CLIENT -nq "select '<1: created view>', view, remaining_dependencies, exception, last_refresh_result in ('Unknown', 'Finished') from refreshes";
-$CLICKHOUSE_CLIENT -nq "show create a"
+        as select number as x from numbers(2) union all select rand64() as x;
+    select '<1: created view>', view, remaining_dependencies, exception, last_refresh_result in ('Unknown', 'Finished') from refreshes;
+    show create a;"
 # Wait for any refresh. (xargs trims the string and turns \t and \n into spaces)
 while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" == 'Unknown' ]
 do
@@ -56,16 +56,15 @@ $CLICKHOUSE_CLIENT -nq "
 
 # Create a source table from which views will read.
 $CLICKHOUSE_CLIENT -nq "
-    create table src (x Int8) engine Memory as select 1"
+    create table src (x Int8) engine Memory as select 1;"
 
 # Switch to fake clock, change refresh schedule, change query.
 $CLICKHOUSE_CLIENT -nq "
-    system test view a set fake time '2050-01-01 00:00:01';"
-while [ "`$CLICKHOUSE_CLIENT -nq "select status, last_refresh_time, next_refresh_time from refreshes -- $LINENO" | xargs`" != 'Scheduled 2050-01-01 00:00:01 2050-01-01 00:00:03' ]
-do
-    sleep 0.1
-done
-$CLICKHOUSE_CLIENT -nq "
+    system test view a set fake time '2050-01-01 00:00:01';
+    system wait view a;
+    system refresh view a;
+    system wait view a;
+    select '<4.1: fake clock>', status, last_refresh_time, next_refresh_time from refreshes;
     alter table a modify refresh every 2 year;
     alter table a modify query select x*2 as x from src;
     select '<4.5: altered>', status, last_refresh_result, next_refresh_time from refreshes;
@@ -87,11 +86,9 @@ $CLICKHOUSE_CLIENT -nq "
     create materialized view b refresh every 2 year depends on a (y Int32) engine MergeTree order by y empty as select x*10 as y from a;
     show create b;
     system test view b set fake time '2052-11-11 11:11:11';
-    system refresh view b;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_time from refreshes where view = 'b' -- $LINENO" | xargs`" != '2052-11-11 11:11:11' ]
-do
-    sleep 0.1
-done
+    system refresh view b;
+    system wait view b;
+    select '<7.5: created dependent>', last_refresh_time from refreshes where view = 'b';"
 # Next refresh shouldn't start until the dependency refreshes.
 $CLICKHOUSE_CLIENT -nq "
     select '<8: refreshed>', * from b;
@@ -101,11 +98,20 @@ while [ "`$CLICKHOUSE_CLIENT -nq "select status, next_refresh_time from refreshe
 do
     sleep 0.1
 done
-# Update source table (by dropping and re-creating it - to test that tables are looked up by name
-# rather than uuid), kick off refresh of the dependency.
+
+# Drop the source table, check that refresh fails and doesn't leave a temp table behind.
 $CLICKHOUSE_CLIENT -nq "
-    select '<10: waiting>', view, status, remaining_dependencies, next_refresh_time from refreshes;
+    select '<9.2: dropping>', countIf(name like '%tmp%'), countIf(name like '%.inner%') from system.tables where database = currentDatabase();
     drop table src;
+    system refresh view a;"
+$CLICKHOUSE_CLIENT -nq "system wait view a;" 2>/dev/null && echo "SYSTEM WAIT VIEW failed to fail at $LINENO"
+$CLICKHOUSE_CLIENT -nq "
+    select '<9.4: dropped>', countIf(name like '%tmp%'), countIf(name like '%.inner%') from system.tables where database = currentDatabase();"
+
+# Create the source table again, check that refresh succeeds (in particular that tables are looked
+# up by name rather than uuid).
+$CLICKHOUSE_CLIENT -nq "
+    select '<10: creating>', view, status, remaining_dependencies, next_refresh_time from refreshes;
     create table src (x Int16) engine Memory as select 2;
     system test view a set fake time '2054-01-01 00:00:01';"
 while [ "`$CLICKHOUSE_CLIENT -nq "select status from refreshes where view = 'b' -- $LINENO" | xargs`" != 'Scheduled' ]
@@ -116,7 +122,7 @@ done
 $CLICKHOUSE_CLIENT -nq "
     select '<11: chain-refreshed a>', * from a;
     select '<12: chain-refreshed b>', * from b;
-    select '<13: chain-refreshed>', view, status, remaining_dependencies, last_refresh_result, last_refresh_time, next_refresh_time, exception from refreshes;"
+    select '<13: chain-refreshed>', view, status, remaining_dependencies, last_refresh_result, last_refresh_time, next_refresh_time, exception == '' from refreshes;"
 
 # Make the dependent table run ahead by one refresh cycle, make sure it waits for the dependency to
 # catch up to the same cycle.
@@ -172,7 +178,7 @@ $CLICKHOUSE_CLIENT -nq "
     drop table b;
     create materialized view c refresh every 1 second (x Int64) engine Memory empty as select * from src;
     drop table src;"
-while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Exception' ]
+while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result from refreshes -- $LINENO" | xargs`" != 'Error' ]
 do
     sleep 0.1
 done
@@ -246,7 +252,8 @@ done
 # Drop.
 $CLICKHOUSE_CLIENT -nq "
     drop table f;
-    select '<28: drop during refresh>', view, status from refreshes;"
+    select '<28: drop during refresh>', view, status from refreshes;
+    select '<28: drop during refresh>', countIf(name like '%tmp%'), countIf(name like '%.inner%') from system.tables where database = currentDatabase()"
 
 # Try OFFSET and RANDOMIZE FOR.
 $CLICKHOUSE_CLIENT -nq "
@@ -283,21 +290,74 @@ done
 $CLICKHOUSE_CLIENT -nq "
     select '<31: to existing table>', * from dest;
     drop table dest;
-    drop table src;
     drop table h;"
+
+# Retries.
+$CLICKHOUSE_CLIENT -nq "
+    create materialized view h2 refresh after 1 year settings refresh_retries = 10 (x Int64) engine Memory as select x*10 + throwIf(x % 2 == 0) as x from src;"
+$CLICKHOUSE_CLIENT -nq "system wait view h2;" 2>/dev/null && echo "SYSTEM WAIT VIEW failed to fail at $LINENO"
+$CLICKHOUSE_CLIENT -nq "
+    select '<31.5: will retry>', last_refresh_result, retry > 0 from refreshes;
+    truncate table src;
+    insert into src values (1);"
+while [ "`$CLICKHOUSE_CLIENT -nq "select last_refresh_result, retry from refreshes -- $LINENO" | xargs`" != 'Finished 0' ]
+do
+    sleep 0.1
+done
+$CLICKHOUSE_CLIENT -nq "
+    select '<31.6: did retry>', x from h2;
+    drop table h2"
 
 # EMPTY
 $CLICKHOUSE_CLIENT -nq "
     create materialized view i refresh after 1 year engine Memory empty as select number as x from numbers(2);
-    create materialized view j refresh after 1 year engine Memory as select number as x from numbers(2)"
+    create materialized view j refresh after 1 year engine Memory as select number as x from numbers(2);"
 while [ "`$CLICKHOUSE_CLIENT -nq "select sum(last_success_time is null) from refreshes -- $LINENO" | xargs`" == '2' ]
 do
     sleep 0.1
 done
 $CLICKHOUSE_CLIENT -nq "
-    select '<32: empty>', view, status, last_refresh_result from refreshes order by view;
+    select '<32: empty>', view, status, last_refresh_result, retry from refreshes order by view;
     drop table i;
-    drop table j"
+    drop table j;"
+
+# APPEND
+$CLICKHOUSE_CLIENT -nq "
+    create materialized view k refresh every 10 year append (x Int64) engine Memory empty as select x*10 as x from src;
+    select '<33: append>', * from k;
+    system refresh view k;
+    system wait view k;
+    select '<34: append>', * from k;
+    truncate table src;
+    insert into src values (2), (3);
+    system refresh view k;
+    system wait view k;
+    select '<35: append>', * from k order by x;"
+# ALTER to non-APPEND
+$CLICKHOUSE_CLIENT -nq "
+    alter table k modify refresh every 10 year;
+    system refresh view k;
+    system wait view k;
+    select '<36: not append>', * from k order by x;
+    drop table k;
+    truncate table src;"
+
+# APPEND + TO + regular materialized view reading from it.
+$CLICKHOUSE_CLIENT -nq "
+    create table mid (x Int64) engine MergeTree order by x;
+    create materialized view l refresh every 10 year append to mid empty as select x*10 as x from src;
+    create materialized view m (x Int64) engine Memory as select x*10 as x from mid;
+    insert into src values (1);
+    system refresh view l;
+    system wait view l;
+    select '<37: append chain>', * from m;
+    insert into src values (2);
+    system refresh view l;
+    system wait view l;
+    select '<38: append chain>', * from m order by x;
+    drop table l;
+    drop table m;
+    drop table mid;"
 
 $CLICKHOUSE_CLIENT -nq "
     drop table refreshes;"
