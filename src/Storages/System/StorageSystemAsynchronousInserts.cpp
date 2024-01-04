@@ -19,7 +19,7 @@ ColumnsDescription StorageSystemAsynchronousInserts::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"query", std::make_shared<DataTypeString>(), "Query string."},
+        {"query", std::make_shared<DataTypeString>(), "Query text."},
         {"database", std::make_shared<DataTypeString>(), "The name of the database the table is in."},
         {"table", std::make_shared<DataTypeString>(), "Table name."},
         {"format", std::make_shared<DataTypeString>(), "Format name."},
