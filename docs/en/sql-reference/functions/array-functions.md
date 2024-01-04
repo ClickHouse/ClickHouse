@@ -2238,6 +2238,44 @@ Result:
 └─────────┘
 ```
 
+## shingles
+
+Generates shingles (subarrays) of a specified length from an input array.
+
+**Syntax**
+
+``` sql
+shingles(arr, n)
+```
+
+**Arguments**
+
+- `arr` — [Array](../../sql-reference/data-types/array.md).
+- `n` — The length of each shingle.
+
+**Returned value**
+
+- An array of generated shingles.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT shingles([1,2,3,4], 3) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────────┐
+│ [[1,2,3],[2,3,4]] │
+└───────────────────┘
+```
+
+
 ## Distance functions
 
 All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).
