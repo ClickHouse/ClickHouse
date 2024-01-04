@@ -19,7 +19,7 @@ ColumnsDescription StorageSystemDroppedTables::getColumnsDescription()
     return ColumnsDescription
     {
         {"index", std::make_shared<DataTypeUInt32>(), "Index in marked_dropped_tables queue."},
-        {"database", std::make_shared<DataTypeString>(), "Database."},
+        {"database", std::make_shared<DataTypeString>(), "Database name."},
         {"table", std::make_shared<DataTypeString>(), "Table name."},
         {"uuid", std::make_shared<DataTypeUUID>(), "Table UUID."},
         {"engine", std::make_shared<DataTypeString>(), "Table engine name."},
