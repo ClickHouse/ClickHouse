@@ -40,6 +40,8 @@ namespace CurrentMetrics
     extern const Metric AsynchronousInsertThreads;
     extern const Metric AsynchronousInsertThreadsActive;
     extern const Metric AsynchronousInsertThreadsScheduled;
+    extern const Metric AsynchronousInsertQueueSize;
+    extern const Metric AsynchronousInsertQueueBytes;
 }
 
 namespace ProfileEvents
@@ -339,6 +341,7 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
         size_t entry_data_size = entry->chunk.byteSize();
 
         assert(data);
+        auto size_in_bytes = data->size_in_bytes;
         data->size_in_bytes += entry_data_size;
         data->entries.emplace_back(entry);
         insert_future = entry->getFuture();
@@ -375,6 +378,19 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
         CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
+
+        if (data_to_process)
+        {
+            if (!inserted)
+                CurrentMetrics::sub(CurrentMetrics::AsynchronousInsertQueueSize);
+            CurrentMetrics::sub(CurrentMetrics::AsynchronousInsertQueueBytes, size_in_bytes);
+        }
+        else
+        {
+            if (inserted)
+                CurrentMetrics::add(CurrentMetrics::AsynchronousInsertQueueSize);
+            CurrentMetrics::add(CurrentMetrics::AsynchronousInsertQueueBytes, entry_data_size);
+        }
     }
 
     if (data_to_process)
@@ -559,16 +575,25 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
 
             const auto now = std::chrono::steady_clock::now();
 
+            size_t size_in_bytes = 0;
             while (true)
             {
                 if (shard.queue.empty() || shard.queue.begin()->first > now)
                     break;
 
                 auto it = shard.queue.begin();
+                size_in_bytes += it->second.data->size_in_bytes;
+
                 shard.iterators.erase(it->second.key.hash);
 
                 entries_to_flush.emplace_back(std::move(it->second));
                 shard.queue.erase(it);
+            }
+
+            if (!entries_to_flush.empty())
+            {
+                CurrentMetrics::sub(CurrentMetrics::AsynchronousInsertQueueSize, entries_to_flush.size());
+                CurrentMetrics::sub(CurrentMetrics::AsynchronousInsertQueueBytes, size_in_bytes);
             }
         }
 
