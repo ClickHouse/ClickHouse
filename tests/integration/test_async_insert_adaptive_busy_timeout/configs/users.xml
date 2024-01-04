@@ -1,0 +1,14 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_async_insert_adaptive_busy_timeout>1</allow_experimental_async_insert_adaptive_busy_timeout>
+        </default>
+    </profiles>
+
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>
