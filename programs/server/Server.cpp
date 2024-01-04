@@ -1471,7 +1471,7 @@ try
             global_context->updateQueryCacheConfiguration(*config);
 
             if (TraceCollector * t = global_context->getTraceCollector())
-                t->setHeapProfilerDumpPeriod(server_settings_.heap_profiler_dump_period_seconds);
+                t->setHeapProfilerDumpPeriod(new_server_settings.heap_profiler_dump_period_seconds);
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
