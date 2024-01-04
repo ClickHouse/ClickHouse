@@ -151,6 +151,8 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name
 REFRESH EVERY|AFTER interval [OFFSET interval]
 RANDOMIZE FOR interval
 DEPENDS ON [db.]name [, [db.]name [, ...]]
+SETTINGS name = value [, name = value [, ...]]
+[APPEND]
 [TO[db.]name] [(columns)] [ENGINE = engine] [EMPTY]
 AS SELECT ...
 ```
@@ -159,18 +161,23 @@ where `interval` is a sequence of simple intervals:
 number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 ```
 
-Periodically runs the corresponding query and stores its result in a table, atomically replacing the table's previous contents.
+Periodically runs the corresponding query and stores its result in a table.
+ * If the query says `APPEND`, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular INSERT SELECT.
+ * Otherwise each refresh atomically replaces the table's previous contents.
 
 Differences from regular non-refreshable materialized views:
- * No insert trigger. I.e. when new data is inserted into the table specified in SELECT, it's *not* automatically pushed to the refreshable materialized view. The periodic refresh runs the entire query and replaces the entire table.
+ * No insert trigger. I.e. when new data is inserted into the table specified in SELECT, it's *not* automatically pushed to the refreshable materialized view. The periodic refresh runs the entire query.
  * No restrictions on the SELECT query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed.
+
+:::note
+The settings in the The settings in `REFRESH ... SETTINGS` part of the query are refresh settings (e.g. `refresh_retries`), distinct from regular settings (e.g. `max_threads`). Regular settings can be specified using `SETTINGS` at the end of the query.
+:::
 
 :::note
 Refreshable materialized views are a work in progress. Setting `allow_experimental_refreshable_materialized_view = 1` is required for creating one. Current limitations:
  * not compatible with Replicated database or table engines
  * It is not supported in ClickHouse Cloud
  * require [Atomic database engine](../../../engines/database-engines/atomic.md),
- * no retries for failed refresh - we just skip to the next scheduled refresh time,
  * no limit on number of concurrent refreshes.
 :::
 
@@ -235,15 +242,22 @@ A few more examples:
 `DEPENDS ON` only works between refreshable materialized views. Listing a regular table in the `DEPENDS ON` list will prevent the view from ever refreshing (dependencies can be removed with `ALTER`, see below).
 :::
 
+### Settings
+
+Available refresh settings:
+ * `refresh_retries` - How many times to retry if refresh query fails with an exception. If all retries fail, skip to the next scheduled refresh time. 0 means no retries, -1 means infinite retries. Default: 0.
+ * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
+ * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
+
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 
 To change refresh parameters:
 ```
-ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...]
+ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
 ```
 
 :::note
-This replaces refresh schedule *and* dependencies. If the table had a `DEPENDS ON`, doing a `MODIFY REFRESH` without `DEPENDS ON` will remove the dependencies.
+This replaces *all* refresh parameters at once: schedule, dependencies, settings, and APPEND-ness. E.g. if the table had a `DEPENDS ON`, doing a `MODIFY REFRESH` without `DEPENDS ON` will remove the dependencies.
 :::
 
 ### Other operations
@@ -251,6 +265,10 @@ This replaces refresh schedule *and* dependencies. If the table had a `DEPENDS O
 The status of all refreshable materialized views is available in table [`system.view_refreshes`](../../../operations/system-tables/view_refreshes.md). In particular, it contains refresh progress (if running), last and next refresh time, exception message if a refresh failed.
 
 To manually stop, start, trigger, or cancel refreshes use [`SYSTEM STOP|START|REFRESH|CANCEL VIEW`](../system.md#refreshable-materialized-views).
+
+:::note
+Fun fact: the refresh query is allowed to read from the view that's being refreshed, seeing pre-refresh version of the data. This means you can implement Conway's game of life: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
+:::
 
 ## Window View [Experimental]
 

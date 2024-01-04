@@ -116,7 +116,9 @@ private:
 
     /// Prepare to refresh a refreshable materialized view: create query context, create temporary
     /// table, form the insert-select query.
-    std::tuple<ContextMutablePtr, std::shared_ptr<ASTInsertQuery>> prepareRefresh() const;
+    /// The output arguments may be assigned before throwing an exception, in which case the caller
+    /// must drop the temp table before rethrowing.
+    std::shared_ptr<ASTInsertQuery> prepareRefresh(bool append, ContextMutablePtr & out_context, std::optional<StorageID> & out_temp_table_id) const;
     StorageID exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context);
 
     void setTargetTableId(StorageID id);
