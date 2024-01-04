@@ -148,7 +148,7 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
       object_key_type="${object_key_types_options[$(($RANDOM % ${#object_key_types_options[@]}))]}"
     fi
 
-    case object_key_type in
+    case $object_key_type in
         "generate-full-key")
             ln -sf $SRC_PATH/config.d/storage_metadata_with_full_object_key.xml $DEST_SERVER_PATH/config.d/
             ;;
