@@ -57,9 +57,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        size_t num_args = arguments.size();
         auto col_res = ColumnString::create();
+        col_res->reserve(input_rows_count);
 
+        const size_t num_args = arguments.size();
         std::vector<UInt64> numbers(num_args);
         for (size_t i = 0; i < input_rows_count; ++i)
         {
