@@ -59,7 +59,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"total_rows_approx", std::make_shared<DataTypeUInt64>(), "The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known."},
         {"written_rows", std::make_shared<DataTypeUInt64>()},
         {"written_bytes", std::make_shared<DataTypeUInt64>()},
-        {"memory_usage", std::make_shared<DataTypeInt64>(), "Amount of RAM the request uses. It might not include some types of dedicated memory"},
+        {"memory_usage", std::make_shared<DataTypeInt64>(), "Amount of RAM the query uses. It might not include some types of dedicated memory"},
         {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
         {"query", std::make_shared<DataTypeString>(), "The query text. For INSERT, it does not include the data to insert."},
         {"query_kind", std::make_shared<DataTypeString>()},

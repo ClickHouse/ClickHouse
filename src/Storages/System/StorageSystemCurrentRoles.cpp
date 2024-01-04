@@ -16,8 +16,8 @@ ColumnsDescription StorageSystemCurrentRoles::getColumnsDescription()
     return ColumnsDescription
     {
         {"role_name", std::make_shared<DataTypeString>(), "Role name."},
-        {"with_admin_option", std::make_shared<DataTypeUInt8>(), "Flag that shows whether `current_role` is a role with ADMIN OPTION privilege."},
-        {"is_default", std::make_shared<DataTypeUInt8>(), "Flag that shows whether `current_role` is a default role."},
+        {"with_admin_option", std::make_shared<DataTypeUInt8>(), "1 if the role has ADMIN OPTION privilege."},
+        {"is_default", std::make_shared<DataTypeUInt8>(), "1 if role is set to be a default."},
     };
 }
 

@@ -12,7 +12,7 @@ ColumnsDescription StorageSystemFormats::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "Format name."},
         {"is_input", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the format is suitable for data input."},
-        {"is_output", std::make_shared<DataTypeUInt8>(), "Flag that incicated whether the format is suitable for data output."},
+        {"is_output", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the format is suitable for data output."},
         {"supports_parallel_parsing", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the format supports parallel parsing."},
         {"supports_parallel_formatting", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the format supports parallel formatting."},
     };

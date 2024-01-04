@@ -11,7 +11,7 @@ ColumnsDescription StorageSystemMacros::getColumnsDescription()
     return ColumnsDescription
     {
         {"macro", std::make_shared<DataTypeString>(), "The macro name."},
-        {"substitution", std::make_shared<DataTypeString>(), "The substution string."},
+        {"substitution", std::make_shared<DataTypeString>(), "The substitution string."},
     };
 }
 

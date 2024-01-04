@@ -12,8 +12,8 @@ ColumnsDescription StorageSystemGraphite::getColumnsDescription()
     {
         {"config_name",     std::make_shared<DataTypeString>(), "graphite_rollup parameter name."},
         {"rule_type",       std::make_shared<DataTypeString>(), ""},
-        {"regexp",          std::make_shared<DataTypeString>(), "The name of the aggregating function."},
-        {"function",        std::make_shared<DataTypeString>(), "The minimum age of the data in seconds."},
+        {"regexp",          std::make_shared<DataTypeString>(), "A pattern for the metric name."},
+        {"function",        std::make_shared<DataTypeString>(), "The name of the aggregating function."},
         {"age",             std::make_shared<DataTypeUInt64>(), "The minimum age of the data in seconds."},
         {"precision",       std::make_shared<DataTypeUInt64>(), "How precisely to define the age of the data in seconds."},
         {"priority",        std::make_shared<DataTypeUInt16>(), "Pattern priority."},

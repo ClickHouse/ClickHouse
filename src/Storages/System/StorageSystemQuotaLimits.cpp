@@ -47,7 +47,7 @@ ColumnsDescription StorageSystemQuotaLimits::getColumnsDescription()
         {"quota_name", std::make_shared<DataTypeString>(), "Quota name."},
         {"duration", std::make_shared<DataTypeUInt32>(), "Length of the time interval for calculating resource consumption, in seconds."},
         {"is_randomized_interval", std::make_shared<DataTypeUInt8>(),
-            "Logical value. It shows whether the interval is randomized. "
+            "Boolean value. It shows whether the interval is randomized. "
             "Interval always starts at the same time if it is not randomized. "
             "For example, an interval of 1 minute always starts at an integer number of minutes "
             "(i.e. it can start at 11:20:00, but it never starts at 11:20:01), "

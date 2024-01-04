@@ -12,8 +12,8 @@ ColumnsDescription StorageSystemBuildOptions::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"name", std::make_shared<DataTypeString>(), "Name of the build option, e.g. `USE_ODBC`."},
-        {"value", std::make_shared<DataTypeString>(), "Value of the build option, e.g. `1`."},
+        {"name", std::make_shared<DataTypeString>(), "Name of the build option."},
+        {"value", std::make_shared<DataTypeString>(), "Value of the build option."},
     };
 }
 
