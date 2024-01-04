@@ -147,7 +147,8 @@ public:
         const Names & column_names_,
         StorageSnapshotPtr storage_snapshot_,
         StorageS3 & storage_,
-        SelectQueryInfo query_info_,
+        ReadFromFormatInfo read_from_format_info_,
+        bool need_only_count_,
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
@@ -155,7 +156,8 @@ public:
         , column_names(column_names_)
         , storage_snapshot(std::move(storage_snapshot_))
         , storage(storage_)
-        , query_info(std::move(query_info_))
+        , read_from_format_info(std::move(read_from_format_info_))
+        , need_only_count(need_only_count_)
         , local_context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
@@ -168,7 +170,8 @@ private:
     Names column_names;
     StorageSnapshotPtr storage_snapshot;
     StorageS3 & storage;
-    SelectQueryInfo query_info;
+    ReadFromFormatInfo read_from_format_info;
+    bool need_only_count;
     StorageS3::Configuration query_configuration;
     NamesAndTypesList virtual_columns;
 
@@ -182,77 +185,6 @@ private:
     void createIterator(const ActionsDAG::Node * predicate);
 };
 
-
-static Block getBlockWithVirtuals(const NamesAndTypesList & virtual_columns, const String & bucket, const std::unordered_set<String> & keys)
-{
-    Block virtual_columns_block;
-    fs::path bucket_path(bucket);
-
-    for (const auto & [column_name, column_type] : virtual_columns)
-    {
-        if (column_name == "_path")
-        {
-            auto column = column_type->createColumn();
-            for (const auto & key : keys)
-                column->insert((bucket_path / key).string());
-            virtual_columns_block.insert({std::move(column), column_type, column_name});
-        }
-        else if (column_name == "_file")
-        {
-            auto column = column_type->createColumn();
-            for (const auto & key : keys)
-            {
-                auto pos = key.find_last_of('/');
-                if (pos != std::string::npos)
-                    column->insert(key.substr(pos + 1));
-                else
-                    column->insert(key);
-            }
-            virtual_columns_block.insert({std::move(column), column_type, column_name});
-        }
-        else if (column_name == "_key")
-        {
-            auto column = column_type->createColumn();
-            for (const auto & key : keys)
-                column->insert(key);
-            virtual_columns_block.insert({std::move(column), column_type, column_name});
-        }
-        else
-        {
-            auto column = column_type->createColumn();
-            column->insertManyDefaults(keys.size());
-            virtual_columns_block.insert({std::move(column), column_type, column_name});
-        }
-    }
-
-    /// Column _key is mandatory and may not be in virtual_columns list
-    if (!virtual_columns_block.has("_key"))
-    {
-        auto column_type = std::make_shared<DataTypeString>();
-        auto column = column_type->createColumn(); for (const auto & key : keys)
-            column->insert(key);
-        virtual_columns_block.insert({std::move(column), column_type, "_key"});
-    }
-
-    return virtual_columns_block;
-}
-
-static std::vector<String> filterKeysForPartitionPruning(
-    const std::vector<String> & keys,
-    const String & bucket,
-    const NamesAndTypesList & virtual_columns,
-    const ActionsDAG::Node * predicate,
-    ContextPtr context)
-{
-    std::unordered_set<String> result_keys(keys.begin(), keys.end());
-
-    auto block = getBlockWithVirtuals(virtual_columns, bucket, result_keys);
-    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
-    result_keys = VirtualColumnUtils::extractSingleValueFromBlock<String>(block, "_key");
-
-    LOG_DEBUG(&Poco::Logger::get("StorageS3"), "Applied partition pruning {} from {} keys left", result_keys.size(), keys.size());
-    return std::vector<String>(result_keys.begin(), result_keys.end());
-}
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -305,9 +237,9 @@ public:
                 "Cannot compile regex from glob ({}): {}", globbed_uri.key, matcher->error());
 
         recursive = globbed_uri.key == "/**" ? true : false;
-        fillInternalBufferAssumeLocked();
 
         filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        fillInternalBufferAssumeLocked();
     }
 
     KeyWithInfoPtr next()
@@ -1161,7 +1093,17 @@ static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
     }
     else
     {
-        Strings keys = filterKeysForPartitionPruning(configuration.keys, configuration.url.bucket, virtual_columns, predicate, local_context);
+        Strings keys = configuration.keys;
+        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        if (filter_dag)
+        {
+            std::vector<String> paths;
+            paths.reserve(keys.size());
+            for (const auto & key : keys)
+                paths.push_back(fs::path(configuration.url.bucket) / key);
+            VirtualColumnUtils::filterByPathOrFile(keys, paths, filter_dag, virtual_columns, local_context);
+        }
+
         return std::make_shared<StorageS3Source::KeysIterator>(
             *configuration.client, configuration.url.version_id, keys,
             configuration.url.bucket, configuration.request_settings, read_keys, file_progress_callback);
@@ -1195,12 +1137,16 @@ void StorageS3::read(
 {
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), virtual_columns);
 
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && local_context->getSettingsRef().optimize_count_from_files;
+
     auto reading = std::make_unique<ReadFromStorageS3Step>(
         read_from_format_info.source_header,
         column_names,
         storage_snapshot,
         *this,
-        query_info,
+        std::move(read_from_format_info),
+        need_only_count,
         local_context,
         max_block_size,
         num_streams);
@@ -1235,17 +1181,12 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
 
     createIterator(nullptr);
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, storage.supportsSubsetOfColumns(local_context), virtual_columns);
-
     size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
     if (estimated_keys_count > 1)
         num_streams = std::min(num_streams, estimated_keys_count);
     else
         /// Disclosed glob iterator can underestimate the amount of keys in some cases. We will keep one stream for this particular case.
         num_streams = 1;
-
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-        && local_context->getSettingsRef().optimize_count_from_files;
 
     const size_t max_threads = local_context->getSettingsRef().max_threads;
     const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
