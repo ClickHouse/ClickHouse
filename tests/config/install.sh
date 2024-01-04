@@ -142,10 +142,10 @@ fi
 
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
     object_key_types_options=("generate-suffix" "generate-full-key" "generate-template-key")
-    object_key_type="${object_key_types_options[$((RANDOM % ${#object_key_types_options[0]}))]}"
+    object_key_type="${object_key_types_options[0]}"
 
     if [[ -n "$RANDOMIZE_OBJECT_KEY_TYPE" ]] && [[ "$RANDOMIZE_OBJECT_KEY_TYPE" -eq 1 ]]; then
-      object_key_type="${randomize_options[$((RANDOM % ${#randomize_options[@]}))]}"
+      object_key_type="${object_key_types_options[$(($RANDOM % ${#object_key_types_options[@]}))]}"
     fi
 
     case object_key_type in
