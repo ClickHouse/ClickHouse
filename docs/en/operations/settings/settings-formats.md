@@ -1271,7 +1271,7 @@ Default value: `0`.
 
 ### output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
 
-Allows to use signed integer types instead of unsigned in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
+Use signed integer types instead of unsigned in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
 
 Possible values:
 
@@ -1282,7 +1282,7 @@ Default value: `1`.
 
 ### output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
 
-Allows to always use 64-bit integer type in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
+Use 64-bit integer type in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
 
 Possible values:
 
