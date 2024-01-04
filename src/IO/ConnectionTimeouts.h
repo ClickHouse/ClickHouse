@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <Poco/Timespan.h>
@@ -67,6 +68,10 @@ struct ConnectionTimeouts
     /// Timeouts for the case when we will try many addresses in a loop.
     static ConnectionTimeouts getTCPTimeoutsWithFailover(const Settings & settings);
     static ConnectionTimeouts getHTTPTimeouts(const Settings & settings, Poco::Timespan http_keep_alive_timeout);
+
+    static ConnectionTimeouts getFetchPartHTTPTimeouts(const ServerSettings & server_settings, const Settings & user_settings);
+
+    ConnectionTimeouts getAdaptiveTimeouts(const String & method, bool first_attempt, bool first_byte) const;
 };
 
 }

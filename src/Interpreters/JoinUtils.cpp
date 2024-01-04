@@ -120,19 +120,11 @@ bool canBecomeNullable(const DataTypePtr & type)
     return can_be_inside;
 }
 
-bool isNullable(const DataTypePtr & type)
-{
-    bool is_nullable = type->isNullable();
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-        is_nullable |= low_cardinality_type->getDictionaryType()->isNullable();
-    return is_nullable;
-}
-
 /// Add nullability to type.
 /// Note: LowCardinality(T) transformed to LowCardinality(Nullable(T))
 DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 {
-    if (isNullable(type))
+    if (isNullableOrLowCardinalityNullable(type))
         return type;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
@@ -323,20 +315,6 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     return ptrs;
 }
 
-ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names)
-{
-    ColumnPtrMap ptrs;
-    ptrs.reserve(names.size());
-
-    for (const auto & column_name : names)
-    {
-        ColumnPtr column = block.getByName(column_name).column;
-        ptrs[column_name] = materializeColumn(column);
-    }
-
-    return ptrs;
-}
-
 ColumnPtr materializeColumn(const Block & block, const String & column_name)
 {
     const auto & src_column = block.getByName(column_name).column;
@@ -365,27 +343,6 @@ ColumnRawPtrs getRawPointers(const Columns & columns)
         ptrs.push_back(column.get());
 
     return ptrs;
-}
-
-void convertToFullColumnsInplace(Block & block)
-{
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        auto & col = block.getByPosition(i);
-        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
-        col.type = recursiveRemoveLowCardinality(col.type);
-    }
-}
-
-void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type)
-{
-    for (const String & column_name : names)
-    {
-        auto & col = block.getByName(column_name);
-        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
-        if (change_type)
-            col.type = recursiveRemoveLowCardinality(col.type);
-    }
 }
 
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys)
@@ -517,8 +474,8 @@ void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
 {
-    DataTypePtr left_type_strict = removeNullable(recursiveRemoveLowCardinality(left_type));
-    DataTypePtr right_type_strict = removeNullable(recursiveRemoveLowCardinality(right_type));
+    DataTypePtr left_type_strict = removeNullable(removeLowCardinality(left_type));
+    DataTypePtr right_type_strict = removeNullable(removeLowCardinality(right_type));
     return left_type_strict->equals(*right_type_strict);
 }
 

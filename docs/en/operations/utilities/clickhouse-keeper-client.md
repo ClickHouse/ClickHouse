@@ -12,6 +12,7 @@ A client application to interact with clickhouse-keeper by its native protocol.
 -   `-q QUERY`, `--query=QUERY` — Query to execute. If this parameter is not passed, `clickhouse-keeper-client` will start in interactive mode.
 -   `-h HOST`, `--host=HOST` — Server host. Default value: `localhost`.
 -   `-p N`, `--port=N` — Server port. Default value: 9181
+-   `-c FILE_PATH`, `--config-file=FILE_PATH` — Set path of config file to get the connection string. Default value: `config.xml`.
 -   `--connection-timeout=TIMEOUT` — Set connection timeout in seconds. Default value: 10s.
 -   `--session-timeout=TIMEOUT` — Set session timeout in seconds. Default value: 10s.
 -   `--operation-timeout=TIMEOUT` — Set operation timeout in seconds. Default value: 10s.

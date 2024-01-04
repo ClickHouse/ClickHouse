@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/formatAST.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 
@@ -25,8 +26,10 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
 
+    ClientInfo::Interface client_interface = getContext()->getClientInfo().interface;
+    const bool use_mysql_types = (client_interface == ClientInfo::Interface::MYSQL); // connection made through MySQL wire protocol
+
     const auto & settings = getContext()->getSettingsRef();
-    const bool use_mysql_types = settings.use_mysql_types_in_show_columns;
     const bool remap_string_as_text = settings.mysql_map_string_to_text_in_show_columns;
     const bool remap_fixed_string_as_text = settings.mysql_map_fixed_string_to_text_in_show_columns;
 
@@ -39,7 +42,6 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     if (use_mysql_types)
     {
         /// Cheapskate SQL-based mapping from native types to MySQL types, see https://dev.mysql.com/doc/refman/8.0/en/data-types.html
-        /// Only used with setting 'use_mysql_types_in_show_columns = 1'
         /// Known issues:
         /// - Enums are translated to TEXT
         rewritten_query += fmt::format(
@@ -159,7 +161,7 @@ WHERE
 
 BlockIO InterpreterShowColumnsQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true).second;
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 

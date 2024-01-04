@@ -501,7 +501,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Table function '{}' cannot be used as an expression", name);
 
     /// If function can be converted to literal it will be parsed as literal after formatting.
-    /// In distributed query it may lead to mismathed column names.
+    /// In distributed query it may lead to mismatched column names.
     /// To avoid it we check whether we can convert function to literal.
     if (auto literal = toLiteral())
     {
@@ -538,6 +538,11 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
     writeChar(')', ostr);
 
+    if (nulls_action == NullsAction::RESPECT_NULLS)
+        writeCString(" RESPECT NULLS", ostr);
+    else if (nulls_action == NullsAction::IGNORE_NULLS)
+        writeCString(" IGNORE NULLS", ostr);
+
     if (is_window_function)
     {
         writeCString(" OVER ", ostr);
@@ -559,6 +564,11 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
 void ASTFunction::finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    if (nulls_action == NullsAction::RESPECT_NULLS)
+        settings.ostr << " RESPECT NULLS";
+    else if (nulls_action == NullsAction::IGNORE_NULLS)
+        settings.ostr << " IGNORE NULLS";
+
     if (!is_window_function)
         return;
 
@@ -599,11 +609,20 @@ ASTPtr ASTFunction::clone() const
 }
 
 
-void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
+void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(name.size());
     hash_state.update(name);
-    IAST::updateTreeHashImpl(hash_state);
+    ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
+
+    hash_state.update(nulls_action);
+    if (is_window_function)
+    {
+        hash_state.update(window_name.size());
+        hash_state.update(window_name);
+        if (window_definition)
+            window_definition->updateTreeHashImpl(hash_state, ignore_aliases);
+    }
 }
 
 template <typename Container>

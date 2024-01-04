@@ -461,7 +461,7 @@ void StorageWindowView::alter(
         modifying_query = false;
     });
 
-    shutdown();
+    shutdown(false);
 
     auto inner_query = initInnerQuery(new_select_query->as<ASTSelectQuery &>(), local_context);
 
@@ -1586,7 +1586,7 @@ void StorageWindowView::startup()
         fire_task->schedule();
 }
 
-void StorageWindowView::shutdown()
+void StorageWindowView::shutdown(bool)
 {
     shutdown_called = true;
 

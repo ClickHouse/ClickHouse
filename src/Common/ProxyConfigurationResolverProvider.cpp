@@ -17,8 +17,16 @@ namespace ErrorCodes
 
 namespace
 {
+    bool isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(
+        const Poco::Util::AbstractConfiguration & configuration)
+    {
+        return configuration.getBool("proxy.disable_tunneling_for_https_requests_over_http_proxy", false);
+    }
+
     std::shared_ptr<ProxyConfigurationResolver> getRemoteResolver(
-        const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
+        ProxyConfiguration::Protocol request_protocol,
+        const String & config_prefix,
+        const Poco::Util::AbstractConfiguration & configuration)
     {
         auto resolver_prefix = config_prefix + ".resolver";
         auto endpoint = Poco::URI(configuration.getString(resolver_prefix + ".endpoint"));
@@ -31,7 +39,17 @@ namespace
         LOG_DEBUG(&Poco::Logger::get("ProxyConfigurationResolverProvider"), "Configured remote proxy resolver: {}, Scheme: {}, Port: {}",
                   endpoint.toString(), proxy_scheme, proxy_port);
 
-        return std::make_shared<RemoteProxyConfigurationResolver>(endpoint, proxy_scheme, proxy_port, cache_ttl);
+        auto server_configuration = RemoteProxyConfigurationResolver::RemoteServerConfiguration {
+            endpoint,
+            proxy_scheme,
+            proxy_port,
+            cache_ttl
+        };
+
+        return std::make_shared<RemoteProxyConfigurationResolver>(
+            server_configuration,
+            request_protocol,
+            isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 
     auto extractURIList(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
@@ -61,13 +79,15 @@ namespace
     }
 
     std::shared_ptr<ProxyConfigurationResolver> getListResolver(
+        ProxyConfiguration::Protocol request_protocol,
         const String & config_prefix,
-        const Poco::Util::AbstractConfiguration & configuration
-    )
+        const Poco::Util::AbstractConfiguration & configuration)
     {
         auto uris = extractURIList(config_prefix, configuration);
 
-        return uris.empty() ? nullptr : std::make_shared<ProxyListConfigurationResolver>(uris);
+        return uris.empty()
+            ? nullptr
+            : std::make_shared<ProxyListConfigurationResolver>(uris, request_protocol, isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
     }
 
     bool hasRemoteResolver(const String & config_prefix, const Poco::Util::AbstractConfiguration & configuration)
@@ -119,14 +139,18 @@ namespace
     }
 }
 
-std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(Protocol protocol, const Poco::Util::AbstractConfiguration & configuration)
+std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::get(
+    Protocol request_protocol,
+    const Poco::Util::AbstractConfiguration & configuration)
 {
-    if (auto resolver = getFromSettings(protocol, "proxy", configuration))
+    if (auto resolver = getFromSettings(request_protocol, "proxy", configuration))
     {
         return resolver;
     }
 
-    return std::make_shared<EnvironmentProxyConfigurationResolver>(protocol);
+    return std::make_shared<EnvironmentProxyConfigurationResolver>(
+        request_protocol,
+        isTunnelingDisabledForHTTPSRequestsOverHTTPProxy(configuration));
 }
 
 template <bool is_new_syntax>
@@ -142,16 +166,15 @@ std::shared_ptr<ProxyConfigurationResolver> ProxyConfigurationResolverProvider::
     {
         return nullptr;
     }
-
     auto prefix = *prefix_opt;
 
     if (hasRemoteResolver(prefix, configuration))
     {
-        return getRemoteResolver(prefix, configuration);
+        return getRemoteResolver(request_protocol, prefix, configuration);
     }
     else if (hasListResolver(prefix, configuration))
     {
-        return getListResolver(prefix, configuration);
+        return getListResolver(request_protocol, prefix, configuration);
     }
 
     return nullptr;

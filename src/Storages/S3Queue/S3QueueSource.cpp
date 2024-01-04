@@ -33,11 +33,9 @@ namespace ErrorCodes
 StorageS3QueueSource::S3QueueKeyWithInfo::S3QueueKeyWithInfo(
         const std::string & key_,
         std::optional<S3::ObjectInfo> info_,
-        Metadata::ProcessingNodeHolderPtr processing_holder_,
-        FileStatusPtr file_status_)
+        Metadata::ProcessingNodeHolderPtr processing_holder_)
     : StorageS3Source::KeyWithInfo(key_, info_)
     , processing_holder(processing_holder_)
-    , file_status(file_status_)
 {
 }
 
@@ -57,13 +55,19 @@ StorageS3QueueSource::KeyWithInfoPtr StorageS3QueueSource::FileIterator::next()
     {
         KeyWithInfoPtr val = glob_iterator->next();
 
-        if (!val || shutdown_called)
+        if (!val)
             return {};
 
-        if (auto [processing_holder, processing_file_status] = metadata->trySetFileAsProcessing(val->key);
+        if (shutdown_called)
+        {
+            LOG_TEST(&Poco::Logger::get("StorageS3QueueSource"), "Shutdown was called, stopping file iterator");
+            return {};
+        }
+
+        if (auto processing_holder = metadata->trySetFileAsProcessing(val->key);
             processing_holder && !shutdown_called)
         {
-            return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, processing_holder, processing_file_status);
+            return std::make_shared<S3QueueKeyWithInfo>(val->key, val->info, processing_holder);
         }
     }
     return {};
@@ -84,8 +88,10 @@ StorageS3QueueSource::StorageS3QueueSource(
     const NamesAndTypesList & requested_virtual_columns_,
     ContextPtr context_,
     const std::atomic<bool> & shutdown_called_,
+    const std::atomic<bool> & table_is_being_dropped_,
     std::shared_ptr<S3QueueLog> s3_queue_log_,
-    const StorageID & storage_id_)
+    const StorageID & storage_id_,
+    Poco::Logger * log_)
     : ISource(header_)
     , WithContext(context_)
     , name(std::move(name_))
@@ -94,10 +100,11 @@ StorageS3QueueSource::StorageS3QueueSource(
     , internal_source(std::move(internal_source_))
     , requested_virtual_columns(requested_virtual_columns_)
     , shutdown_called(shutdown_called_)
+    , table_is_being_dropped(table_is_being_dropped_)
     , s3_queue_log(s3_queue_log_)
     , storage_id(storage_id_)
     , remove_file_func(remove_file_func_)
-    , log(&Poco::Logger::get("StorageS3QueueSource"))
+    , log(log_)
 {
 }
 
@@ -132,29 +139,60 @@ Chunk StorageS3QueueSource::generate()
         if (!reader)
             break;
 
+        const auto * key_with_info = dynamic_cast<const S3QueueKeyWithInfo *>(&reader.getKeyWithInfo());
+        auto file_status = key_with_info->processing_holder->getFileStatus();
+
         if (isCancelled())
         {
             reader->cancel();
+
+            if (processed_rows_from_file)
+            {
+                try
+                {
+                    files_metadata->setFileFailed(key_with_info->processing_holder, "Cancelled");
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+
+                appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
+            }
+
             break;
         }
 
         if (shutdown_called)
         {
-            if (processed_rows_from_file)
-            {
-                /// We could delay shutdown until files, which already started processing before the shutdown, finished.
-                /// But if files are big and `s3queue_processing_threads_num` is not small, it can take a significant time.
-                /// Anyway we cannot do anything in case of SIGTERM, so destination table must anyway support deduplication,
-                /// so here we will rely on it here as well.
-                LOG_WARNING(
-                    log, "Shutdown called, {} rows are already processed, but file is not fully processed",
-                    processed_rows_from_file);
-            }
-            break;
-        }
+            if (processed_rows_from_file == 0)
+                break;
 
-        const auto * key_with_info = dynamic_cast<const S3QueueKeyWithInfo *>(&reader.getKeyWithInfo());
-        auto file_status = key_with_info->file_status;
+            if (table_is_being_dropped)
+            {
+                LOG_DEBUG(
+                    log, "Table is being dropped, {} rows are already processed from {}, but file is not fully processed",
+                    processed_rows_from_file, reader.getFile());
+
+                try
+                {
+                    files_metadata->setFileFailed(key_with_info->processing_holder, "Table is dropped");
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
+
+                appendLogElement(reader.getFile(), *file_status, processed_rows_from_file, false);
+
+                /// Leave the file half processed. Table is being dropped, so we do not care.
+                break;
+            }
+
+            LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
+                     "Will process the file fully and then shutdown",
+                     reader.getFile(), processed_rows_from_file);
+        }
 
         auto * prev_scope = CurrentThread::get().attachProfileCountersScope(&file_status->profile_counters);
         SCOPE_EXIT({ CurrentThread::get().attachProfileCountersScope(prev_scope); });
@@ -172,7 +210,7 @@ Chunk StorageS3QueueSource::generate()
                 file_status->processed_rows += chunk.getNumRows();
                 processed_rows_from_file += chunk.getNumRows();
 
-                VirtualColumnUtils::addRequestedPathAndFileVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath());
+                VirtualColumnUtils::addRequestedPathFileAndSizeVirtualsToChunk(chunk, requested_virtual_columns, reader.getPath(), reader.getKeyWithInfo().info->size);
                 return chunk;
             }
         }

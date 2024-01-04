@@ -36,14 +36,7 @@ namespace
 class FunctionWithNumericParamsBase : public IFunction
 {
 public:
-    bool isInjective(const ColumnsWithTypeAndName &) const override
-    {
-        return false; /// invalid argument values and timestamps that are out of supported range are converted into a default value
-    }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    bool useDefaultImplementationForNulls() const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -191,7 +184,6 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
     size_t getNumberOfArguments() const override { return mandatory_argument_names.size(); }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

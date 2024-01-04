@@ -11,7 +11,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-
 struct ProxyConfiguration
 {
     enum class Protocol
@@ -48,6 +47,8 @@ struct ProxyConfiguration
     std::string host;
     Protocol protocol;
     uint16_t port;
+    bool tunneling;
+    Protocol original_request_protocol;
 };
 
 }

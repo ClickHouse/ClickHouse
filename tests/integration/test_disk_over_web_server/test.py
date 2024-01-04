@@ -38,7 +38,7 @@ def cluster():
             stay_alive=True,
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
-            tag="22.8.14.53",
+            tag="22.6",
             allow_analyzer=False,
         )
 

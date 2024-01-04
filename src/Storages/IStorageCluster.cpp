@@ -94,7 +94,7 @@ Pipe IStorageCluster::read(
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
     for (const auto & shard_info : cluster->getShardsInfo())
     {
-        auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
+        auto try_results = shard_info.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY);
         for (auto & try_result : try_results)
         {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(

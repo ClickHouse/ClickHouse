@@ -15,9 +15,14 @@ CLICKHOUSE_CI_LOGS_USER=${CLICKHOUSE_CI_LOGS_USER:-ci}
 # Pre-configured destination cluster, where to export the data
 CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
 
-EXTRA_COLUMNS=${EXTRA_COLUMNS:-"pull_request_number UInt32, commit_sha String, check_start_time DateTime('UTC'), check_name String, instance_type String, instance_id String, "}
-EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:-"CAST(0 AS UInt32) AS pull_request_number, '' AS commit_sha, now() AS check_start_time, '' AS check_name, '' AS instance_type, '' AS instance_id"}
+EXTRA_COLUMNS=${EXTRA_COLUMNS:-"pull_request_number UInt32, commit_sha String, check_start_time DateTime('UTC'), check_name LowCardinality(String), instance_type LowCardinality(String), instance_id String, INDEX ix_pr (pull_request_number) TYPE set(100), INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "}
+EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:-"CAST(0 AS UInt32) AS pull_request_number, '' AS commit_sha, now() AS check_start_time, toLowCardinality('') AS check_name, toLowCardinality('') AS instance_type, '' AS instance_id"}
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name, "}
+
+# trace_log needs more columns for symbolization
+EXTRA_COLUMNS_TRACE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), lines Array(LowCardinality(String)), "
+EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), trace)::Array(LowCardinality(String)) AS symbols, arrayMap(x -> addressToLine(x), trace)::Array(LowCardinality(String)) AS lines"
+
 
 function __set_connection_args
 {
@@ -121,13 +126,32 @@ function setup_logs_replication
     # It's doesn't make sense to try creating tables if SYNC fails
     echo "SYSTEM SYNC DATABASE REPLICA default" | clickhouse-client "${CONNECTION_ARGS[@]}" || return 0
 
+    debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
+    echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
+
     # For each system log table:
     echo 'Create %_log tables'
     clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
     do
+        if [[ "$table" = "trace_log" ]]
+        then
+            EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_TRACE_LOG}"
+            # Do not try to resolve stack traces in case of debug/sanitizers
+            # build, since it is too slow (flushing of trace_log can take ~1min
+            # with such MV attached)
+            if [[ "$debug_or_sanitizer_build" = 1 ]]; then
+                EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
+            else
+                EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_TRACE_LOG}"
+            fi
+        else
+            EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS}"
+            EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
+        fi
+
         # Calculate hash of its structure. Note: 4 is the version of extra columns - increment it if extra columns are changed:
         hash=$(clickhouse-client --query "
-            SELECT sipHash64(4, groupArray((name, type)))
+            SELECT sipHash64(9, groupArray((name, type)))
             FROM (SELECT name, type FROM system.columns
                 WHERE database = 'system' AND table = '$table'
                 ORDER BY position)
@@ -135,7 +159,7 @@ function setup_logs_replication
 
         # Create the destination table with adapted name and structure:
         statement=$(clickhouse-client --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
-            s/^\($/('"$EXTRA_COLUMNS"'/;
+            s/^\($/('"$EXTRA_COLUMNS_FOR_TABLE"'/;
             s/ORDER BY \(/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"'/;
             s/^CREATE TABLE system\.\w+_log$/CREATE TABLE IF NOT EXISTS '"$table"'_'"$hash"'/;
             /^TTL /d
@@ -155,7 +179,7 @@ function setup_logs_replication
             ENGINE = Distributed(${CLICKHOUSE_CI_LOGS_CLUSTER}, default, ${table}_${hash})
             SETTINGS flush_on_detach=0
             EMPTY AS
-            SELECT ${EXTRA_COLUMNS_EXPRESSION}, *
+            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
             FROM system.${table}
         " || continue
 
@@ -163,8 +187,18 @@ function setup_logs_replication
 
         clickhouse-client --query "
             CREATE MATERIALIZED VIEW system.${table}_watcher TO system.${table}_sender AS
-            SELECT ${EXTRA_COLUMNS_EXPRESSION}, *
+            SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
             FROM system.${table}
         " || continue
     done
 )
+
+function stop_logs_replication
+{
+    echo "Detach all logs replication"
+    clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
+        tee /dev/stderr
+    } | {
+        xargs -n1 -r -i clickhouse-client --query "drop table {}"
+    }
+}
