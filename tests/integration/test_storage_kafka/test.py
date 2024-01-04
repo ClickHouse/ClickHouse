@@ -892,12 +892,14 @@ def test_kafka_formats(kafka_cluster):
 """
 
     expected_rows_count = raw_expected.count("\n")
-    instance.query_with_retry(
+    result_checker = lambda res: res.count("\n") == expected_rows_count
+    res = instance.query_with_retry(
         f"SELECT * FROM test.kafka_{list(all_formats.keys())[-1]}_mv;",
         retry_count=30,
         sleep_time=1,
-        check_callback=lambda res: res.count("\n") == expected_rows_count,
+        check_callback=result_checker,
     )
+    assert result_checker(res)
 
     for format_name, format_opts in list(all_formats.items()):
         logging.debug(("Checking {}".format(format_name)))
@@ -3808,12 +3810,14 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
 """
 
     expected_rows_count = raw_expected.count("\n")
-    instance.query_with_retry(
+    result_checker = lambda res: res.count("\n") == expected_rows_count
+    res = instance.query_with_retry(
         f"SELECT * FROM test.kafka_data_{list(all_formats.keys())[-1]}_mv;",
         retry_count=30,
         sleep_time=1,
-        check_callback=lambda res: res.count("\n") == expected_rows_count,
+        check_callback=result_checker,
     )
+    assert result_checker(res)
 
     for format_name, format_opts in list(all_formats.items()):
         logging.debug(f"Checking {format_name}")
