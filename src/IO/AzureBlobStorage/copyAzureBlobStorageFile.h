@@ -21,8 +21,8 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 /// Copies a file from AzureBlobStorage to AzureBlobStorage.
 /// The parameters `src_offset` and `src_size` specify a part in the source to copy.
 void copyAzureBlobStorageFile(
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> src_client,
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> dest_client,
+    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & src_client,
+    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & dest_client,
     const String & src_container,
     const String & src_path,
     size_t src_offset,
@@ -45,7 +45,7 @@ void copyDataToAzureBlobStorageFile(
     const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
     size_t offset,
     size_t size,
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> & client,
+    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & client,
     const String & dest_container,
     const String & dest_bucket,
     std::shared_ptr<AzureObjectStorageSettings> settings,

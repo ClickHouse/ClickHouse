@@ -28,7 +28,7 @@ public:
 
 private:
     const DataSourceDescription data_source_description;
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> client;
+    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     StorageAzureBlob::Configuration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
     std::shared_ptr<AzureObjectStorageSettings> settings;
@@ -57,7 +57,7 @@ private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
     void removeFilesBatch(const Strings & file_names);
     const DataSourceDescription data_source_description;
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> client;
+    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     StorageAzureBlob::Configuration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
     std::shared_ptr<AzureObjectStorageSettings> settings;
