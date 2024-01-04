@@ -232,7 +232,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, Poco::Logger * log, c
             throw Exception(
                 ErrorCodes::DNS_ERROR,
                 "{} is not a local address. Check parameter 'host_name' in the configuration",
-                *config_host_name)
+                *config_host_name);
     }
 
     for (const HostID & host : entry.hosts)

@@ -44,6 +44,9 @@ struct HostID
     explicit HostID(const Cluster::Address & address)
         : host_name(address.host_name), port(address.port) {}
 
+    HostID(const String & host_name_, UInt16 port_)
+        : host_name(host_name_), port(port_) {}
+
     static HostID fromString(const String & host_port_str);
 
     String toString() const
