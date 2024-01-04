@@ -26,7 +26,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
-#include <random>
 #include <map>
 #include <functional>
 #include <magic_enum.hpp>
@@ -65,7 +64,7 @@ private:
     using NodeFunctionPtr = std::shared_ptr<NodeFunction>;
     using NodeFuncs = std::vector<NodeFunctionPtr>;
 
-    static NodeFuncs getFuncs(Children children_, const Generators & generators_)
+    static NodeFuncs getFuncs(const Children & children_, const Generators & generators_)
     {
         NodeFuncs result;
         result.reserve(children_.size());
@@ -83,7 +82,7 @@ private:
     class RegexpConcatFunction : public NodeFunction
     {
     public:
-        RegexpConcatFunction(Children children_, const Generators & generators_)
+        RegexpConcatFunction(const Children & children_, const Generators & generators_)
             : children(getFuncs(children_, generators_))
         {
         }
@@ -119,7 +118,7 @@ private:
     class RegexpAlternateFunction : public NodeFunction
     {
     public:
-        RegexpAlternateFunction(Children children_, const Generators & generators_)
+        RegexpAlternateFunction(const Children & children_, const Generators & generators_)
             : children(getFuncs(children_, generators_))
         {
         }
@@ -198,9 +197,9 @@ private:
             char_count = cc->size();
             char_ranges.reserve(std::distance(cc->begin(), cc->end()));
 
-            for (const auto * it = cc->begin(); it != cc->end(); ++it)
+            for (const auto range: *cc)
             {
-                char_ranges.emplace_back(it->lo, it->hi);
+                char_ranges.emplace_back(range.lo, range.hi);
             }
         }
 
@@ -475,7 +474,7 @@ void RandomStringGeneratorByRegexp::RegexpPtrDeleter::operator() (re2::Regexp * 
     re->Decref();
 }
 
-RandomStringGeneratorByRegexp::RandomStringGeneratorByRegexp(String re_str, bool logging)
+RandomStringGeneratorByRegexp::RandomStringGeneratorByRegexp(const String & re_str, bool logging)
 {
     re2::RE2::Options options;
     options.set_case_sensitive(true);

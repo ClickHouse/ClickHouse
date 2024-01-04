@@ -14,7 +14,7 @@ namespace DB
 class RandomStringGeneratorByRegexp
 {
 public:
-    RandomStringGeneratorByRegexp(String re_str, bool logging);
+    RandomStringGeneratorByRegexp(const String & re_str, bool logging);
     String generate() const;
 
 private:
