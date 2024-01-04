@@ -1,4 +1,6 @@
+#include "Common/logger_useful.h"
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
+#include <sstream>
 
 namespace DB
 {

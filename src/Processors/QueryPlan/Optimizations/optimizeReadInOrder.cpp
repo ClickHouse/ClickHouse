@@ -882,6 +882,34 @@ void optimizeAggregationInOrder(AggregatingStep & aggregating, QueryPlan::Node &
         if (!can_read)
             return;
 
+        aggregating.applyOrder(order_info.sort_description_for_merging, order_info.group_by_sort_description);
+        updateStepsDataStreams(backward_path);
+
+        auto analysis_result = reading->getAnalysisResult();
+        auto split_result = splitPartsRanges(analysis_result.parts_with_ranges, /*min_level=*/ 0);
+
+        LOG_TEST(&Poco::Logger::get("optimizeAggregationInOrder"),
+            "Split {} ranges with {} marks to: {} intersecting ranges with {} marks, {} non-intersecting ranges with {} marks",
+            analysis_result.parts_with_ranges.size(), analysis_result.parts_with_ranges.getMarksCountAllParts(),
+            split_result.intersecting_parts_ranges.size(), split_result.intersecting_parts_ranges.getMarksCountAllParts(),
+            split_result.non_intersecting_parts_ranges.size(), split_result.non_intersecting_parts_ranges.getMarksCountAllParts());
+
+        if (split_result.intersecting_parts_ranges.empty())
+        {
+            aggregating.skipMerging();
+            analysis_result.parts_with_ranges = std::move(split_result.non_intersecting_parts_ranges);
+            LOG_DEBUG(&Poco::Logger::get("KEK"), "read_type: {}", analysis_result.read_type);
+            reading->setAnalyzedResult(std::make_shared<MergeTreeDataSelectAnalysisResult>(std::move(analysis_result)));
+            return;
+        }
+
+        if (split_result.non_intersecting_parts_ranges.empty())
+        {
+            analysis_result.parts_with_ranges = std::move(split_result.intersecting_parts_ranges);
+            reading->setAnalyzedResult(std::make_shared<MergeTreeDataSelectAnalysisResult>(std::move(analysis_result)));
+            return;
+        }
+
         StepStack new_backward_path;
 
         auto & aggregating_node_no_merge = cloneQueryPlanTree(aggregating_node, nodes);
@@ -891,25 +919,14 @@ void optimizeAggregationInOrder(AggregatingStep & aggregating, QueryPlan::Node &
         auto & aggregating_no_merge = assert_cast<AggregatingStep &>(*aggregating_node_no_merge.step);
         auto & reading_no_merge = assert_cast<ReadFromMergeTree &>(*reading_node_no_merge->step);
 
-        auto analysis_result = reading->getAnalysisResult();
         auto analysis_result_no_merge = analysis_result;
 
-        auto split_result = splitPartsRanges(analysis_result.parts_with_ranges, /*min_level=*/ 0);
-
-        LOG_TEST(&Poco::Logger::get("optimizeAggregationInOrder"),
-            "Split {} ranges with {} marks to: {} intersecting ranges with {} marks, {} non-intersecting ranges with {} marks",
-            analysis_result.parts_with_ranges.size(), analysis_result.parts_with_ranges.getMarksCountAllParts(),
-            split_result.intersecting_parts_ranges.size(), split_result.intersecting_parts_ranges.getMarksCountAllParts(),
-            split_result.non_intersecting_parts_ranges.size(), split_result.non_intersecting_parts_ranges.getMarksCountAllParts());
-
-        /// TODO: correct other fields.
         analysis_result.parts_with_ranges = std::move(split_result.intersecting_parts_ranges);
         analysis_result_no_merge.parts_with_ranges = std::move(split_result.non_intersecting_parts_ranges);
 
         reading->setAnalyzedResult(std::make_shared<MergeTreeDataSelectAnalysisResult>(std::move(analysis_result)));
         reading_no_merge.setAnalyzedResult(std::make_shared<MergeTreeDataSelectAnalysisResult>(std::move(analysis_result_no_merge)));
 
-        aggregating.applyOrder(order_info.sort_description_for_merging, order_info.group_by_sort_description);
         aggregating_no_merge.applyOrder(std::move(order_info.sort_description_for_merging), std::move(order_info.group_by_sort_description));
         aggregating_no_merge.skipMerging();
 
@@ -923,7 +940,6 @@ void optimizeAggregationInOrder(AggregatingStep & aggregating, QueryPlan::Node &
         union_node.children.push_back(&aggregating_node_with_merge);
         union_node.children.push_back(&aggregating_node_no_merge);
 
-        updateStepsDataStreams(backward_path);
         updateStepsDataStreams(new_backward_path);
     }
     else if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
