@@ -1,4 +1,3 @@
-SET allow_experimental_analyzer = 1;
 DROP TABLE IF EXISTS tokenbf_tab;
 DROP TABLE IF EXISTS ngrambf_tab;
 
@@ -28,7 +27,7 @@ INSERT INTO ngrambf_tab VALUES (1, 'Hello ClickHouse'), (2, 'Hello World'), (3, 
 SELECT * FROM tokenbf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id;
 SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id;
 
--- Skip 2/6 granules
+-- Read 2/6 granules
 -- Required string: 'Hello '
 -- Alternatives: 'Hello ClickHouse', 'Hello World'
 
@@ -39,7 +38,20 @@ FROM
     SELECT * FROM tokenbf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id
 )
 WHERE
-  explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+  allow_experimental_analyzer = 0;
+
+SELECT *
+FROM
+(
+    EXPLAIN PLAN indexes=1
+    SELECT * FROM tokenbf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id
+)
+WHERE
+    explain LIKE '%Granules: %'
+SETTINGS
+  allow_experimental_analyzer = 1;
 
 SELECT *
 FROM
@@ -48,14 +60,28 @@ FROM
     SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id
 )
 WHERE
-  explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+  allow_experimental_analyzer = 0;
+
+SELECT *
+FROM
+(
+    EXPLAIN PLAN indexes=1
+    SELECT * FROM ngrambf_tab WHERE match(str, 'Hello (ClickHouse|World)') ORDER BY id
+)
+WHERE
+    explain LIKE '%Granules: %'
+SETTINGS
+  allow_experimental_analyzer = 1;
+
 
 SELECT '---';
 
 SELECT * FROM tokenbf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id;
 SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id;
 
--- Skip 3/6 granules
+-- Read 3/6 granules
 -- Required string: -
 -- Alternatives: 'ClickHouse', 'World'
 
@@ -66,7 +92,20 @@ FROM
     SELECT * FROM tokenbf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id
 )
 WHERE
-  explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+  allow_experimental_analyzer = 0;
+
+SELECT *
+FROM
+(
+    EXPLAIN PLAN indexes = 1
+    SELECT * FROM tokenbf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id
+)
+WHERE
+    explain LIKE '%Granules: %'
+SETTINGS
+  allow_experimental_analyzer = 1;
 
 SELECT *
 FROM
@@ -75,18 +114,30 @@ FROM
     SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id
 )
 WHERE
-  explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+  allow_experimental_analyzer = 0;
+
+SELECT *
+FROM
+(
+    EXPLAIN PLAN indexes = 1
+    SELECT * FROM ngrambf_tab WHERE match(str, '.*(ClickHouse|World)') ORDER BY id
+)
+WHERE
+    explain LIKE '%Granules: %'
+SETTINGS
+  allow_experimental_analyzer = 1;
 
 SELECT '---';
 
 SELECT * FROM tokenbf_tab WHERE match(str, 'OLAP.*') ORDER BY id;
 SELECT * FROM ngrambf_tab WHERE match(str, 'OLAP.*') ORDER BY id;
 
--- Skip 5/6 granules
+-- Read 1/6 granules
 -- Required string: 'OLAP'
 -- Alternatives: -
 
-set allow_experimental_analyzer = 1;
 SELECT *
 FROM
 (
@@ -94,7 +145,19 @@ FROM
     SELECT * FROM tokenbf_tab WHERE match(str, 'OLAP (.*?)*') ORDER BY id
 )
 WHERE
-  explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+  allow_experimental_analyzer = 0;
+SELECT *
+FROM
+(
+    EXPLAIN PLAN indexes = 1
+    SELECT * FROM tokenbf_tab WHERE match(str, 'OLAP (.*?)*') ORDER BY id
+)
+WHERE
+    explain LIKE '%Granules: %'
+SETTINGS
+  allow_experimental_analyzer = 1;
 
 SELECT *
 FROM
@@ -103,7 +166,20 @@ FROM
     SELECT * FROM ngrambf_tab WHERE match(str, 'OLAP (.*?)*') ORDER BY id
 )
 WHERE
-  explain LIKE '%Granules: %';
+    explain LIKE '%Granules: %'
+SETTINGS
+  allow_experimental_analyzer = 0;
+
+SELECT *
+FROM
+(
+    EXPLAIN PLAN indexes = 1
+    SELECT * FROM ngrambf_tab WHERE match(str, 'OLAP (.*?)*') ORDER BY id
+)
+WHERE
+    explain LIKE '%Granules: %'
+SETTINGS
+  allow_experimental_analyzer = 1;
 
 DROP TABLE tokenbf_tab;
 DROP TABLE ngrambf_tab;
