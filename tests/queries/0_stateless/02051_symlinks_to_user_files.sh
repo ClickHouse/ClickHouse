@@ -15,7 +15,7 @@ chmod 777 ${FILE_PATH}
 FILE="test_symlink_${CLICKHOUSE_DATABASE}"
 
 symlink_path=${FILE_PATH}/${FILE}
-symlink_path_with_regex=${FILE_PATH}*/${FILE}
+symlink_path_with_regex="${FILE_PATH}*/${FILE}"
 file_path=$CUR_DIR/${FILE}
 
 touch ${file_path}
