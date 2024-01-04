@@ -46,9 +46,12 @@ public:
             for (auto & using_element : using_list)
             {
                 auto & column_node = using_element->as<ColumnNode&>();
+                /// This list contains column nodes from left and right tables.
                 auto & columns_from_subtrees = column_node.getExpressionOrThrow()->as<ListNode&>().getNodes();
 
+                /// Visit left table column node.
                 visitUsingColumn(columns_from_subtrees[0]);
+                /// Visit right table column node.
                 visitUsingColumn(columns_from_subtrees[1]);
             }
             return;
