@@ -59,6 +59,7 @@ insert into rmt3 values (2);
 insert into rmt3 values (3);
 
 system stop cleanup rmt3;
+system sync replica rmt3 pull;
 alter table rmt3 drop part 'all_1_1_0';
 optimize table rmt3 final;
 
