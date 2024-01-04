@@ -229,7 +229,7 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
     {
     }
 
-    chassert(actual_size != 0 || !allocatorSupportsUsableSize());
+    chassert(actual_size != 0 || ptr == nullptr || !allocatorSupportsUsableSize());
 
     return actual_size;
 }
