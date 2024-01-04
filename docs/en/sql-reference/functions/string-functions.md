@@ -1487,6 +1487,54 @@ Result:
 └───────────────────────────────────────────────────┘
 ```
 
+## jaroSimilarity
+
+Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro_similarity) between two byte strings.
+
+**Syntax**
+
+```sql
+jaroSimilarity(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT jaroSimilarity('clickhouse', 'click');
+```
+
+Result:
+
+``` text
+┌─jaroSimilarity('clickhouse', 'click')─┐
+│                    0.8333333333333333 │
+└───────────────────────────────────────┘
+```
+
+## jaroWinklerSimilarity
+
+Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro%E2%80%93Winkler_similarity) between two byte strings.
+
+**Syntax**
+
+```sql
+jaroWinklerSimilarity(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT jaroWinklerSimilarity('clickhouse', 'click');
+```
+
+Result:
+
+``` text
+┌─jaroWinklerSimilarity('clickhouse', 'click')─┐
+│                           0.8999999999999999 │
+└──────────────────────────────────────────────┘
+```
+
 ## initcap
 
 Convert the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.

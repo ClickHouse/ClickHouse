@@ -4,6 +4,8 @@ clickhouse	mouse	6
 clickhouse	mouse	6
 clickhouse	mouse	0.4
 clickhouse	mouse	0.4
+clickhouse	mouse	0
+clickhouse	mouse	0
 -- test aliases
 clickhouse	mouse	10
 clickhouse	mouse	6
@@ -44,6 +46,20 @@ stringJaccardIndexUTF8	abc	ab	0.6666666666666666
 stringJaccardIndexUTF8	abc	abc	1
 stringJaccardIndexUTF8	abc	bc	0.6666666666666666
 stringJaccardIndexUTF8	clickhouse	mouse	0.4
+jaroSimilarity			0
+jaroSimilarity		abc	3
+jaroSimilarity	abc		3
+jaroSimilarity	abc	ab	0.8888888888888888
+jaroSimilarity	abc	abc	1
+jaroSimilarity	abc	bc	0
+jaroSimilarity	clickhouse	mouse	0
+jaroWinklerSimilarity			0
+jaroWinklerSimilarity		abc	3
+jaroWinklerSimilarity	abc		3
+jaroWinklerSimilarity	abc	ab	0.9111111111111111
+jaroWinklerSimilarity	abc	abc	1
+jaroWinklerSimilarity	abc	bc	0
+jaroWinklerSimilarity	clickhouse	mouse	0
 -- Special UTF-8 tests
 0.4
 0
