@@ -21,6 +21,7 @@ namespace ErrorCodes
 
 bool decimalCheckComparisonOverflow(ContextPtr context);
 bool decimalCheckArithmeticOverflow(ContextPtr context);
+bool decimalAllowDivideZero(ContextPtr context);
 
 inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 {

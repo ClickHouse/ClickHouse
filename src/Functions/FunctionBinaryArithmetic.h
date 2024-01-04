@@ -519,9 +519,9 @@ private:
     using ResultContainerType = typename ColumnVectorOrDecimal<ResultType>::Container;
 
 public:
-    template <OpCase op_case, bool is_decimal_a, bool is_decimal_b>
+    template <OpCase op_case, bool is_decimal_a, bool is_decimal_b >
     static void NO_INLINE process(const auto & a, const auto & b, ResultContainerType & c,
-        NativeResultType scale_a, NativeResultType scale_b, const NullMap * right_nullmap = nullptr)
+        NativeResultType scale_a, NativeResultType scale_b, const NullMap * right_nullmap = nullptr, bool allow_divide_zero = false)
     {
         if constexpr (op_case == OpCase::LeftConstant) static_assert(!is_decimal<decltype(a)>);
         if constexpr (op_case == OpCase::RightConstant) static_assert(!is_decimal<decltype(b)>);
@@ -578,10 +578,13 @@ public:
         }
         else if constexpr (is_division && is_decimal_b)
         {
-            processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [&scale_a](const auto & left, const auto & right)
+            processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [&scale_a, allow_divide_zero](const auto & left, const auto & right)
             {
+                if (allow_divide_zero && right == 0)
+                    return NativeResultType();
+
                 return applyScaledDiv<is_decimal_a>(
-                    static_cast<NativeResultType>(left), right, scale_a);
+                        static_cast<NativeResultType>(left), right, scale_a);
             });
             return;
         }
@@ -761,6 +764,7 @@ class FunctionBinaryArithmetic : public IFunction
 
     ContextPtr context;
     bool check_decimal_overflow = true;
+    bool decimal_allow_divide_zero = false;
 
     static bool castType(const IDataType * type, auto && f)
     {
@@ -1314,9 +1318,9 @@ class FunctionBinaryArithmetic : public IFunction
     void helperInvokeEither(const auto& left, const auto& right, auto& vec_res, auto scale_a, auto scale_b, const NullMap * right_nullmap) const
     {
         if (check_decimal_overflow)
-            OpImplCheck::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b, right_nullmap);
+            OpImplCheck::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b, right_nullmap, decimal_allow_divide_zero);
         else
-            OpImpl::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b, right_nullmap);
+            OpImpl::template process<op_case, left_decimal, right_decimal>(left, right, vec_res, scale_a, scale_b, right_nullmap, decimal_allow_divide_zero);
     }
 
     template <class LeftDataType, class RightDataType, class ResultDataType>
@@ -1424,8 +1428,10 @@ public:
 
     explicit FunctionBinaryArithmetic(ContextPtr context_)
     :   context(context_),
-        check_decimal_overflow(decimalCheckArithmeticOverflow(context))
-    {}
+        check_decimal_overflow(decimalCheckArithmeticOverflow(context)),
+        decimal_allow_divide_zero(decimalAllowDivideZero(context))
+    {
+    }
 
     String getName() const override { return name; }
 
