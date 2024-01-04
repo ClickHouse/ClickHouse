@@ -263,6 +263,10 @@ class PRInfo:
         if need_changed_files:
             self.fetch_changed_files()
 
+    @property
+    def is_master(self) -> bool:
+        return self.number == 0 and self.base_ref == "master"
+
     def compare_pr_url(self, pr_object: dict) -> str:
         return self.compare_url(pr_object["base"]["label"], pr_object["head"]["label"])
 

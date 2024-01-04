@@ -11,21 +11,16 @@ from typing import Any, List
 
 import boto3  # type: ignore
 import requests  # type: ignore
-from github import Github
 
 from build_download_helper import get_build_name_for_check
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import RerunHelper, get_commit, post_commit_status
 from compress_files import compress_fast
 from env_helper import REPO_COPY, TEMP_PATH, S3_BUILDS_BUCKET, S3_DOWNLOAD
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
-from report import TestResults, TestResult
-from s3_helper import S3Helper
+from report import JobReport, TestResults, TestResult
 from ssh import SSHKey
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from upload_result_helper import upload_results
 from version_helper import get_version_from_repo
 from build_check import get_release_or_pr
 
@@ -184,15 +179,7 @@ def main():
         logging.info("Not jepsen test label in labels list, skipping")
         sys.exit(0)
 
-    gh = Github(get_best_robot_token(), per_page=100)
-    commit = get_commit(gh, pr_info.sha)
-
     check_name = KEEPER_CHECK_NAME if args.program == "keeper" else SERVER_CHECK_NAME
-
-    rerun_helper = RerunHelper(commit, check_name)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
@@ -281,32 +268,16 @@ def main():
         description = "No Jepsen output log"
         test_result = [TestResult("No Jepsen output log", "FAIL")]
 
-    s3_helper = S3Helper()
-    report_url = upload_results(
-        s3_helper,
-        pr_info.number,
-        pr_info.sha,
-        test_result,
-        [run_log_path] + additional_data,
-        check_name,
-    )
+    JobReport(
+        description=description,
+        test_results=test_result,
+        status=status,
+        start_time=stopwatch.start_time_str,
+        duration=stopwatch.duration_seconds,
+        additional_files=[run_log_path] + additional_data,
+        check_name=check_name,
+    ).dump()
 
-    print(f"::notice ::Report url: {report_url}")
-    post_commit_status(
-        commit, status, report_url, description, check_name, pr_info, dump_to_file=True
-    )
-
-    ch_helper = ClickHouseHelper()
-    prepared_events = prepare_tests_results_for_clickhouse(
-        pr_info,
-        test_result,
-        status,
-        stopwatch.duration_seconds,
-        stopwatch.start_time_str,
-        report_url,
-        check_name,
-    )
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
     clear_autoscaling_group()
 
 
