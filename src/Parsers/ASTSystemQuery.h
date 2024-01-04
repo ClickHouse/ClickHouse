@@ -98,6 +98,7 @@ public:
         START_CLEANUP,
         RESET_COVERAGE,
         REFRESH_VIEW,
+        WAIT_VIEW,
         START_VIEW,
         START_VIEWS,
         STOP_VIEW,

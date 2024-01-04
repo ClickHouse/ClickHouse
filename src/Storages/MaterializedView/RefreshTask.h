@@ -22,15 +22,15 @@ class RefreshTask : public std::enable_shared_from_this<RefreshTask>
 {
 public:
     /// Never call it manually, public for shared_ptr construction only
-    explicit RefreshTask(const ASTRefreshStrategy & strategy);
+    RefreshTask(StorageMaterializedView * view_, const ASTRefreshStrategy & strategy);
 
     /// The only proper way to construct task
     static RefreshTaskHolder create(
-        const StorageMaterializedView & view,
+        StorageMaterializedView * view,
         ContextMutablePtr context,
         const DB::ASTRefreshStrategy & strategy);
 
-    void initializeAndStart(std::shared_ptr<StorageMaterializedView> view);
+    void initializeAndStart();
 
     /// Call when renaming the materialized view.
     void rename(StorageID new_id);
@@ -52,6 +52,11 @@ public:
     /// Cancel task execution
     void cancel();
 
+    /// Waits for the currently running refresh attempt to complete.
+    /// If the refresh fails, throws an exception.
+    /// If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
+    void wait();
+
     /// Permanently disable task scheduling and remove this table from RefreshSet.
     void shutdown();
 
@@ -63,7 +68,7 @@ public:
 
 private:
     LoggerPtr log = nullptr;
-    std::weak_ptr<IStorage> view_to_refresh;
+    StorageMaterializedView * view;
 
     /// Protects interrupt_execution and running_executor.
     /// Can be locked while holding `mutex`.
@@ -80,7 +85,9 @@ private:
     mutable std::mutex mutex;
 
     RefreshSchedule refresh_schedule;
-    RefreshSettings refresh_settings; // TODO: populate, use, update on alter
+    RefreshSettings refresh_settings;
+    bool refresh_append;
+
     RefreshSet::Handle set_handle;
 
     /// StorageIDs of our dependencies that we're waiting for.
@@ -108,7 +115,8 @@ private:
     ///    E.g. for REFRESH EVERY 1 DAY, yesterday's refresh of the dependency shouldn't trigger today's
     ///    refresh of the dependent even if it happened today (e.g. it was slow or had random spread > 1 day).
     std::chrono::sys_seconds next_refresh_prescribed;
-    std::chrono::system_clock::time_point next_refresh_with_spread;
+    std::chrono::system_clock::time_point next_refresh_actual;
+    Int64 num_retries = 0;
 
     /// Calls refreshTask() from background thread.
     BackgroundSchedulePool::TaskHolder refresh_task;
@@ -119,6 +127,7 @@ private:
     /// Just for observability.
     RefreshInfo info;
     Progress progress;
+    std::condition_variable refresh_cv; // notified when info.state changes
 
     /// The main loop of the refresh task. It examines the state, sees what needs to be
     /// done and does it. If there's nothing to do at the moment, returns; it's then scheduled again,
@@ -130,10 +139,13 @@ private:
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
     /// Mutex must be unlocked. Called only from refresh_task.
-    void executeRefreshUnlocked(std::shared_ptr<StorageMaterializedView> view);
+    void executeRefreshUnlocked(bool append);
 
     /// Assigns next_refresh_*
     void advanceNextRefreshTime(std::chrono::system_clock::time_point now);
+
+    /// Either advances next_refresh_actual using exponential backoff or does advanceNextRefreshTime().
+    void scheduleRetryOrSkipToNextRefresh(std::chrono::system_clock::time_point now);
 
     /// Returns true if all dependencies are fulfilled now. Refills remaining_dependencies in this case.
     bool arriveDependency(const StorageID & parent);
@@ -141,8 +153,6 @@ private:
     void populateDependencies();
 
     void interruptExecution();
-
-    std::shared_ptr<StorageMaterializedView> lockView();
 
     std::chrono::system_clock::time_point currentTime() const;
 };

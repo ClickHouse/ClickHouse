@@ -3,6 +3,8 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Interpreters/Context.h>
@@ -10,6 +12,8 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Access/Common/AccessFlags.h>
@@ -114,6 +118,12 @@ StorageMaterializedView::StorageMaterializedView(
     if (point_to_itself_by_uuid || point_to_itself_by_name)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot point to itself", table_id_.getFullTableName());
 
+    if (query.refresh_strategy)
+    {
+        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy);
+        refresh_on_start = !attach_ && !query.is_create_empty;
+    }
+
     if (!has_inner_table)
     {
         target_table_id = query.to_table_id;
@@ -143,15 +153,6 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.execute();
 
         target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->getDatabase(), manual_create_query->getTable()}, getContext())->getStorageID();
-    }
-
-    if (query.refresh_strategy)
-    {
-        refresher = RefreshTask::create(
-            *this,
-            getContext(),
-            *query.refresh_strategy);
-        refresh_on_start = !attach_ && !query.is_create_empty;
     }
 }
 
@@ -295,40 +296,57 @@ bool StorageMaterializedView::optimize(
     return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
 }
 
-std::tuple<ContextMutablePtr, std::shared_ptr<ASTInsertQuery>> StorageMaterializedView::prepareRefresh() const
+std::shared_ptr<ASTInsertQuery> StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr & out_context, std::optional<StorageID> & out_temp_table_id) const
 {
     auto refresh_context = Context::createCopy(getContext());
+    out_context = refresh_context;
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
 
     CurrentThread::QueryScope query_scope(refresh_context);
 
     auto inner_table_id = getTargetTableId();
-    auto new_table_name = ".tmp" + generateInnerTableName(getStorageID());
-
     auto db = DatabaseCatalog::instance().getDatabase(inner_table_id.database_name);
+    StorageID target_table = inner_table_id;
 
-    auto create_table_query = db->getCreateTableQuery(inner_table_id.table_name, getContext());
-    auto & create_query = create_table_query->as<ASTCreateQuery &>();
-    create_query.setTable(new_table_name);
-    create_query.setDatabase(db->getDatabaseName());
-    create_query.create_or_replace = true;
-    create_query.replace_table = true;
-    create_query.uuid = UUIDHelpers::Nil;
+    if (!append)
+    {
+        auto new_table_name = ".tmp" + generateInnerTableName(getStorageID());
 
-    InterpreterCreateQuery create_interpreter(create_table_query, refresh_context);
-    create_interpreter.setInternal(true);
-    create_interpreter.execute();
+        auto create_table_query = db->getCreateTableQuery(inner_table_id.table_name, getContext());
+        auto & create_query = create_table_query->as<ASTCreateQuery &>();
+        create_query.setTable(new_table_name);
+        create_query.setDatabase(db->getDatabaseName());
+        create_query.create_or_replace = true;
+        create_query.replace_table = true;
+        create_query.uuid = UUIDHelpers::Nil;
 
-    StorageID fresh_table = DatabaseCatalog::instance().getTable({create_query.getDatabase(), create_query.getTable()}, getContext())->getStorageID();
+        InterpreterCreateQuery create_interpreter(create_table_query, refresh_context);
+        create_interpreter.setInternal(true);
+        create_interpreter.execute();
+
+        target_table = DatabaseCatalog::instance().getTable({create_query.getDatabase(), create_query.getTable()}, getContext())->getStorageID();
+        out_temp_table_id = target_table;
+    }
 
     auto insert_query = std::make_shared<ASTInsertQuery>();
     insert_query->select = getInMemoryMetadataPtr()->getSelectQuery().select_query;
-    insert_query->setTable(fresh_table.table_name);
-    insert_query->setDatabase(fresh_table.database_name);
-    insert_query->table_id = fresh_table;
+    insert_query->setTable(target_table.table_name);
+    insert_query->setDatabase(target_table.database_name);
+    insert_query->table_id = target_table;
 
-    return {refresh_context, insert_query};
+    Block header;
+    if (refresh_context->getSettingsRef().allow_experimental_analyzer)
+        header = InterpreterSelectQueryAnalyzer::getSampleBlock(insert_query->select, refresh_context);
+    else
+        header = InterpreterSelectWithUnionQuery(insert_query->select, refresh_context, SelectQueryOptions()).getSampleBlock();
+
+    auto columns = std::make_shared<ASTExpressionList>(',');
+    for (const String & name : header.getNames())
+        columns->children.push_back(std::make_shared<ASTIdentifier>(name));
+    insert_query->columns = std::move(columns);
+
+    return insert_query;
 }
 
 StorageID StorageMaterializedView::exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context)
@@ -472,7 +490,7 @@ void StorageMaterializedView::startup()
 
     if (refresher)
     {
-        refresher->initializeAndStart(std::static_pointer_cast<StorageMaterializedView>(shared_from_this()));
+        refresher->initializeAndStart();
 
         if (refresh_on_start)
             refresher->run();

@@ -489,6 +489,10 @@ Trigger an immediate out-of-schedule refresh of a given view.
 SYSTEM REFRESH VIEW [db.]name
 ```
 
+### SYSTEM REFRESH VIEW
+
+Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
+
 ### SYSTEM STOP VIEW, SYSTEM STOP VIEWS
 
 Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too.

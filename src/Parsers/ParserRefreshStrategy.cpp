@@ -7,6 +7,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserTimeInterval.h>
 #include <Parsers/CommonParsers.h>
+#include <Storages/MaterializedView/RefreshSettings.h>
 
 namespace DB
 {
@@ -88,7 +89,15 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!ParserSetQuery{true}.parse(pos, settings, expected))
             return false;
         refresh->set(refresh->settings, settings);
+
+        /// Validate.
+        RefreshSettings parsed_settings;
+        parsed_settings.applyChanges(refresh->settings->changes);
     }
+
+    if (ParserKeyword{"APPEND"}.ignore(pos, expected))
+        refresh->append = true;
+
     node = refresh;
     return true;
 }
