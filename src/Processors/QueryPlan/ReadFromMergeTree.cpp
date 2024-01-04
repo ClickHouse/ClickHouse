@@ -427,7 +427,13 @@ Pipe ReadFromMergeTree::readFromPool(
         && settings.allow_prefetched_read_pool_for_local_filesystem
         && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.local_fs_method);
 
-    if (allow_prefetched_remote || allow_prefetched_local)
+    /** Do not use prefetched read pool if query is trivial limit query.
+      * Because time spend during filling per thread tasks can be greater than whole query
+      * execution for big tables with small limit.
+      */
+    bool use_prefetched_read_pool = query_info.limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
+
+    if (use_prefetched_read_pool)
     {
         pool = std::make_shared<MergeTreePrefetchedReadPool>(
             std::move(parts_with_range),

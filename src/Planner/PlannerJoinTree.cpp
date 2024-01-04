@@ -637,7 +637,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     max_threads_execute_query = 1;
                 }
 
-                if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
+                if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows != 0)
+                {
+                    if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
+                        table_expression_query_info.limit = max_block_size_limited;
+                }
+                else
                 {
                     table_expression_query_info.limit = max_block_size_limited;
                 }
