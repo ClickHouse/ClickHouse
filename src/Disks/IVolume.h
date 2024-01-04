@@ -92,6 +92,8 @@ protected:
     const String name;
 
 public:
+    /// Volume priority. 0 (default) means no explicit priority was set.
+    UInt64 volume_priority = 0;
     /// Max size of reservation, zero means unlimited size
     UInt64 max_data_part_size = 0;
     /// Should a new data part be synchronously moved to a volume according to ttl on insert

@@ -56,6 +56,7 @@ StoragePolicy::StoragePolicy(
         config.keys(volumes_prefix, keys);
     }
 
+    bool has_information_about_priority = false;
     for (const auto & attr_name : keys)
     {
         if (!std::all_of(attr_name.begin(), attr_name.end(), isWordCharASCII))
@@ -63,7 +64,17 @@ StoragePolicy::StoragePolicy(
                             "Volume name can contain only alphanumeric and '_' in storage policy {} ({})",
                             backQuote(name), attr_name);
         volumes.emplace_back(createVolumeFromConfig(attr_name, config, volumes_prefix + "." + attr_name, disks));
+        if (!has_information_about_priority && volumes.back()->volume_priority)
+            has_information_about_priority = true;
     }
+
+    if (has_information_about_priority)
+        std::sort(volumes.begin(), volumes.end(),
+            [](const VolumePtr a, const VolumePtr b)
+            {
+                return a->volume_priority <= b->volume_priority;
+            }
+        );
 
     if (volumes.empty() && name == DEFAULT_STORAGE_POLICY_NAME)
     {
