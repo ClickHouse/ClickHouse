@@ -30,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int AZURE_BLOB_STORAGE_ERROR;
 }
 
 
@@ -358,15 +359,34 @@ void copyAzureBlobStorageFile(
     bool for_disk_azure_blob_storage)
 {
 
-    if (size < max_single_operation_copy_size)
+    if (settings->use_native_copy )
     {
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
         if (for_disk_azure_blob_storage)
             ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
+
         auto block_blob_client_src = src_client.get()->GetBlockBlobClient(src_blob);
         auto block_blob_client_dest = dest_client.get()->GetBlockBlobClient(dest_blob);
-        auto uri = block_blob_client_src.GetUrl();
-        block_blob_client_dest.CopyFromUri(uri);
+        auto source_uri = block_blob_client_src.GetUrl();
+
+        if (size < max_single_operation_copy_size)
+        {
+            block_blob_client_dest.CopyFromUri(source_uri);
+        }
+        else
+        {
+            Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri);
+
+            // Wait for the operation to finish, checking for status every 100 second.
+            auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
+            auto properties_model = copy_response.Value;
+
+            if (properties_model.CopySource.HasValue())
+            {
+                throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy failed");
+            }
+
+        }
     }
     else
     {
