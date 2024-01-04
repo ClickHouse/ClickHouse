@@ -551,6 +551,14 @@ Total amount of bytes (compressed, including data and indices) stored in all tab
 
 Total amount of data parts in all tables of MergeTree family. Numbers larger than 10 000 will negatively affect the server startup time and it may indicate unreasonable choice of the partition key.
 
+### TotalPrimaryKeyBytesInMemory
+
+The total amount of memory (in bytes) used by primary key values (only takes active parts into account).
+
+### TotalPrimaryKeyBytesInMemoryAllocated
+
+The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account).
+
 ### TotalRowsOfMergeTreeTables
 
 Total amount of rows (records) stored in all tables of MergeTree family.

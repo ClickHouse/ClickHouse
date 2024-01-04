@@ -60,7 +60,7 @@ public:
     /// Removes all dependencies of "table_id", returns those dependencies.
     std::vector<StorageID> removeDependencies(const StorageID & table_id, bool remove_isolated_tables = false);
 
-    /// Removes a table from the graph and removes all references to in from the graph (both from its dependencies and dependents).
+    /// Removes a table from the graph and removes all references to it from the graph (both from its dependencies and dependents).
     bool removeTable(const StorageID & table_id);
 
     /// Removes tables from the graph by a specified filter.

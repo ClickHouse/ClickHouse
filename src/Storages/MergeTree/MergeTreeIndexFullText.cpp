@@ -752,11 +752,6 @@ MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
     return std::make_shared<MergeTreeConditionFullText>(query, context, index.sample_block, params, token_extractor.get());
 }
 
-bool MergeTreeIndexFullText::mayBenefitFromIndexForIn(const ASTPtr & node) const
-{
-    return std::find(std::cbegin(index.column_names), std::cend(index.column_names), node->getColumnName()) != std::cend(index.column_names);
-}
-
 MergeTreeIndexPtr bloomFilterIndexCreator(
     const IndexDescription & index)
 {

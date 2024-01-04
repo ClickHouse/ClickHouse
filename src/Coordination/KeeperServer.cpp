@@ -660,6 +660,12 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
         switch (type)
         {
+            case nuraft::cb_func::PreAppendLogLeader:
+            {
+                /// we cannot preprocess anything new as leader because we don't have up-to-date in-memory state
+                /// until we preprocess all stored logs
+                return nuraft::cb_func::ReturnCode::ReturnNull;
+            }
             case nuraft::cb_func::InitialBatchCommited:
             {
                 preprocess_logs();

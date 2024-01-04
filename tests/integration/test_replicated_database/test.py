@@ -507,7 +507,7 @@ def test_alters_from_different_replicas(started_cluster):
 
     settings = {"distributed_ddl_task_timeout": 5}
     assert (
-        "There are 1 unfinished hosts (0 of them are currently active)"
+        "There are 1 unfinished hosts (0 of them are currently executing the task"
         in competing_node.query_and_get_error(
             "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added0 UInt32;",
             settings=settings,

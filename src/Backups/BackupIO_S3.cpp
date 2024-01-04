@@ -68,12 +68,16 @@ namespace
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
         client_configuration.requestTimeoutMs = 60 * 60 * 1000;
-        client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(request_settings.retry_attempts);
+
+        S3::ClientSettings client_settings{
+            .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
+            .disable_checksum = local_settings.s3_disable_checksum,
+            .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
+        };
 
         return S3::ClientFactory::instance().create(
             client_configuration,
-            s3_uri.is_virtual_hosted_style,
-            local_settings.s3_disable_checksum,
+            client_settings,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             settings.auth_settings.server_side_encryption_customer_key_base64,

@@ -168,8 +168,6 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query, ContextPtr context) const override;
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
-
     BloomFilterParameters params;
     /// Function for selecting next token.
     std::unique_ptr<ITokenExtractor> token_extractor;
