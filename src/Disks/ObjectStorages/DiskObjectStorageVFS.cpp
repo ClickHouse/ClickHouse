@@ -121,19 +121,24 @@ void DiskObjectStorageVFS::downloadMetadata(const String & lock_prefix, const St
 {
     auto obj = StoredObject{ObjectStorageKey::createAsRelative(object_key_prefix, fmt::format("vfs/{}", lock_prefix)).serialize()};
     auto buf = object_storage->readObject(obj); // Other replica finished loading part to object storage
+    auto tx = metadata_storage->createTransaction();
+    tx->createDirectoryRecursive(path);
+    LOG_DEBUG(log, "VFS move: created temporary directory {}", path);
     while (!buf->eof())
     {
         String filename;
         readString(filename, *buf);
         const auto full_path = fs::path(path) / filename;
-        LOG_DEBUG(log, "VFS move: downloading metadata to {} ", full_path);
+        tx->createDirectoryRecursive(full_path.parent_path()); // TODO myrrc we shouldn't need this
+        LOG_DEBUG(log, "VFS move: downloading metadata to {}", full_path);
+        assertChar('\n', *buf);
         // TODO myrrc this works only for S3
         DiskObjectStorageMetadata md(object_key_prefix, full_path);
         md.deserialize(*buf); // TODO myrrc just write to local filesystem
-        auto tx = metadata_storage->createTransaction();
+        tx->createEmptyMetadataFile(full_path);
         tx->writeStringToFile(full_path, md.serializeToString());
-        tx->commit();
     }
+    tx->commit();
 }
 
 zkutil::ZooKeeperPtr DiskObjectStorageVFS::zookeeper()

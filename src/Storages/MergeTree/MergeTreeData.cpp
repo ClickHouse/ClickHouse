@@ -7822,6 +7822,12 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                         std::make_shared<SingleDiskVolume>("", disk),
                         root_dir, part_dir);
                     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
+                    cloned_part.part->is_temp = allowRemoveStaleMovingParts();
+                    // TODO myrrc part is broken and needs manual correction
+                    cloned_part.part->loadColumnsChecksumsIndexes(true, true);
+                    cloned_part.part->loadVersionMetadata();
+                    cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
+
                 }
 
                 parts_mover.swapClonedPart(cloned_part);

@@ -301,8 +301,9 @@ Default value: 10800
 
 ### allow_object_storage_vfs
 
-An alternate reference counting mechanism for object storages. Mutually exclusive with
-`allow_remote_fs_zero_copy_replication`. Unlike the 0copy setting, can't be set in runtime,
+This flag activates a feature that integrates elements of a distributed virtual filesystem (VFS) with object storage, primarily focusing on distributed hardlinks and accurate reference counting.
+
+Mutually exclusive with `allow_remote_fs_zero_copy_replication`. Unlike the former, can't be set in runtime,
 a server restart is needed.
 ClickHouse Keeper can not use VFS disk as a storage backend.
 VFS is incompatible with `send_metadata`.
