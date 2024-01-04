@@ -84,7 +84,7 @@ REGISTER_FUNCTION(Sqid)
 {
     factory.registerFunction<FunctionSqid>(FunctionDocumentation{
         .description=R"(
-Transforms numbers into YouTube-like short URL hash called [Sqid](https://sqids.org/).)",
+Transforms numbers into a [Sqid](https://sqids.org/) which is a Youtube-like ID string.)",
         .syntax="sqid(number1, ...)",
         .arguments={{"number1, ...", "Arbitrarily many UInt8, UInt16, UInt32 or UInt64 arguments"}},
         .returned_value="A hash id [String](/docs/en/sql-reference/data-types/string.md).",
