@@ -114,6 +114,21 @@ SELECT toDecimal32(1, 8) < 100
 DB::Exception: Can't compare.
 ```
 
+## Allow divide zero
+
+By default, it will throw an exception when decimal divide zero, by setting `decimal_check_overflow`, it can return null. 
+
+``` sql
+SET decimal_allow_divide_zero = 1;
+SELECT cast(1 AS decimal(12, 5))/cast(0 AS decimal(12, 5))
+```
+
+``` text
+┌──────┬─cast(1 AS decimal(12, 5))/cast(0 AS decimal(12, 5))─┐
+│ 1    │                                                null │
+└──────┴─────────────────────────────────────────────────────┘
+```
+
 **See also**
 - [isDecimalOverflow](../../sql-reference/functions/other-functions.md#is-decimal-overflow)
 - [countDigits](../../sql-reference/functions/other-functions.md#count-digits)
