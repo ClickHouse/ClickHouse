@@ -58,6 +58,7 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
 
     # it contains some new settings, but we can safely remove it
     rm /etc/clickhouse-server/users.d/s3_cache_new.xml
+    rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 fi
 
 # For flaky check we also enable thread fuzzer
@@ -216,11 +217,11 @@ export -f run_tests
 if [ "$NUM_TRIES" -gt "1" ]; then
     # We don't run tests with Ordinary database in PRs, only in master.
     # So run new/changed tests with Ordinary at least once in flaky check.
-    timeout "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
+    timeout_with_logging "$MAX_RUN_TIME" bash -c 'NUM_TRIES=1; USE_DATABASE_ORDINARY=1; run_tests' \
       | sed 's/All tests have finished//' | sed 's/No tests were run//' ||:
 fi
 
-timeout "$MAX_RUN_TIME" bash -c run_tests ||:
+timeout_with_logging "$MAX_RUN_TIME" bash -c run_tests ||:
 
 echo "Files in current directory"
 ls -la ./
@@ -300,9 +301,6 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server2.log ||:
     zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.zst ||:
     zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.zst ||:
-    # FIXME: remove once only github actions will be left
-    rm /var/log/clickhouse-server/clickhouse-server1.log
-    rm /var/log/clickhouse-server/clickhouse-server2.log
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
     tar -chf /test_output/coordination1.tar /var/lib/clickhouse1/coordination ||:

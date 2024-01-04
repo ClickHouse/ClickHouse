@@ -485,7 +485,6 @@
                         <max_data_part_size_bytes></max_data_part_size_bytes>
                         <max_data_part_size_ratio></max_data_part_size_ratio>
                         <perform_ttl_move_on_insert>true</perform_ttl_move_on_insert>
-                        <prefer_not_to_merge>false</prefer_not_to_merge>
                         <load_balancing>round_robin</load_balancing>
                     </main>
                 </volumes>

@@ -89,7 +89,7 @@ void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
     else
         out << " before: " << quote << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
-    throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected {}", out.str());
+    throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected {}", out.str());
 }
 
 
@@ -562,7 +562,7 @@ static ReturnType readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
     if (buf.eof() || *buf.position() != quote)
     {
         if constexpr (throw_exception)
-            throw ParsingException(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
                 "Cannot parse quoted string: expected opening quote '{}', got '{}'",
                 std::string{quote}, buf.eof() ? "EOF" : std::string{*buf.position()});
         else
@@ -608,7 +608,7 @@ static ReturnType readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
     }
 
     if constexpr (throw_exception)
-        throw ParsingException(ErrorCodes::CANNOT_PARSE_QUOTED_STRING, "Cannot parse quoted string: expected closing quote");
+        throw Exception(ErrorCodes::CANNOT_PARSE_QUOTED_STRING, "Cannot parse quoted string: expected closing quote");
     else
         return ReturnType(false);
 }
@@ -958,7 +958,7 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
     auto error = [](FormatStringHelper<> message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw ParsingException(code, std::move(message));
+            throw Exception(code, std::move(message));
         return ReturnType(false);
     };
 
@@ -1009,7 +1009,7 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
     auto error = [](FormatStringHelper<> message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw ParsingException(code, std::move(message));
+            throw Exception(code, std::move(message));
         return ReturnType(false);
     };
 
@@ -1185,7 +1185,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         else
         {
             if constexpr (throw_exception)
-                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
             else
                 return false;
         }
@@ -1212,7 +1212,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             s_pos[size] = 0;
 
             if constexpr (throw_exception)
-                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", s);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", s);
             else
                 return false;
         }
@@ -1235,7 +1235,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
                 s_pos[size] = 0;
 
                 if constexpr (throw_exception)
-                    throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", s);
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", s);
                 else
                     return false;
             }
@@ -1266,7 +1266,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         if (too_short && negative_multiplier != -1)
         {
             if constexpr (throw_exception)
-                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
             else
                 return false;
         }
@@ -1591,7 +1591,7 @@ void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delim
         if (skip_spaces)
             skipWhitespaceIfAny(buf);
 
-        if (checkString(row_between_delimiter, buf))
+        if (buf.eof() || checkString(row_between_delimiter, buf))
             break;
     }
 }

@@ -7,8 +7,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 
 #include <sqids/sqids.hpp>
@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -32,18 +31,8 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        if (!context->getSettingsRef().allow_experimental_hash_functions)
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Hashing function '{}' is experimental. Set `allow_experimental_hash_functions` setting to enable it",
-                name);
-
-        return std::make_shared<FunctionSqid>();
-    }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqid>(); }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -71,7 +60,6 @@ public:
         size_t num_args = arguments.size();
         auto col_res = ColumnString::create();
 
-        sqidscxx::Sqids<> sqids;
         std::vector<UInt64> numbers(num_args);
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -86,12 +74,31 @@ public:
         }
         return col_res;
     }
+
+private:
+    sqidscxx::Sqids<> sqids;
 };
 
 REGISTER_FUNCTION(Sqid)
 {
-    factory.registerFunction<FunctionSqid>();
+    factory.registerFunction<FunctionSqid>(FunctionDocumentation{
+        .description=R"(
+Transforms numbers into YouTube-like short URL hash called [Sqid](https://sqids.org/).)",
+        .syntax="sqid(number1, ...)",
+        .arguments={{"number1, ...", "Arbitrarily many UInt8, UInt16, UInt32 or UInt64 arguments"}},
+        .returned_value="A hash id [String](/docs/en/sql-reference/data-types/string.md).",
+        .examples={
+            {"simple",
+            "SELECT sqid(1, 2, 3, 4, 5);",
+            R"(
+┌─sqid(1, 2, 3, 4, 5)─┐
+│ gXHfJ1C6dN          │
+└─────────────────────┘
+            )"
+            }}
+    });
 }
+
 }
 
 #endif

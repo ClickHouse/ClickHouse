@@ -1229,11 +1229,18 @@ namespace
         {
         }
 
-        std::unique_ptr<ReadBuffer> next() override
+        std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() override
         {
-            auto [key, metadata] = file_iterator->next();
+            /// For default mode check cached columns for currently read keys on first iteration.
+            if (first && getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+            {
+                if (auto cached_columns = tryGetColumnsFromCache(read_keys.begin(), read_keys.end()))
+                    return {nullptr, cached_columns};
+            }
 
-            if (key.empty())
+            current_path_with_metadata = file_iterator->next();
+
+            if (current_path_with_metadata.relative_path.empty())
             {
                 if (first)
                     throw Exception(
@@ -1241,49 +1248,102 @@ namespace
                         "Cannot extract table structure from {} format file, because there are no files with provided path "
                         "in AzureBlobStorage. You must specify table structure manually", configuration.format);
 
-                return nullptr;
+                return {nullptr, std::nullopt};
             }
 
-            current_path = key;
+            first = false;
 
-            ///AzureBlobStorage file iterator could get new keys after new iteration, check them in schema cache.
-            if (getContext()->getSettingsRef().schema_inference_use_cache_for_azure && read_keys.size() > prev_read_keys_size)
+            /// AzureBlobStorage file iterator could get new keys after new iteration, check them in schema cache if schema inference mode is default.
+            if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT && read_keys.size() > prev_read_keys_size)
             {
-                columns_from_cache = StorageAzureBlob::tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), configuration, format_settings, getContext());
+                auto columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end());
                 prev_read_keys_size = read_keys.size();
                 if (columns_from_cache)
-                    return nullptr;
+                    return {nullptr, columns_from_cache};
+            }
+            else if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
+            {
+                RelativePathsWithMetadata paths = {current_path_with_metadata};
+                if (auto columns_from_cache = tryGetColumnsFromCache(paths.begin(), paths.end()))
+                    return {nullptr, columns_from_cache};
             }
 
             first = false;
             int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
-            return wrapReadBufferWithCompressionMethod(
-                object_storage->readObject(StoredObject(key), getContext()->getReadSettings(), {}, metadata.size_bytes),
-                chooseCompressionMethod(key, configuration.compression_method),
-                zstd_window_log_max);
+            return {wrapReadBufferWithCompressionMethod(
+                object_storage->readObject(StoredObject(current_path_with_metadata.relative_path), getContext()->getReadSettings(), {}, current_path_with_metadata.metadata.size_bytes),
+                chooseCompressionMethod(current_path_with_metadata.relative_path, configuration.compression_method),
+                zstd_window_log_max), std::nullopt};
         }
-
-        std::optional<ColumnsDescription> getCachedColumns() override { return columns_from_cache; }
 
         void setNumRowsToLastFile(size_t num_rows) override
         {
-            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_s3)
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_azure)
                 return;
 
-            String source = fs::path(configuration.connection_url) / configuration.container / current_path;
+            String source = fs::path(configuration.connection_url) / configuration.container / current_path_with_metadata.relative_path;
             auto key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
             StorageAzureBlob::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
+        void setSchemaToLastFile(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_azure
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::UNION)
+                return;
+
+            String source = fs::path(configuration.connection_url) / configuration.container / current_path_with_metadata.relative_path;
+            auto key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
+            StorageAzureBlob::getSchemaCache(getContext()).addColumns(key, columns);
+        }
+
+        void setResultingSchema(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_azure
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::DEFAULT)
+                return;
+
+            auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
+            Strings sources;
+            sources.reserve(read_keys.size());
+            std::transform(read_keys.begin(), read_keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket + '/' + elem.relative_path; });
+            auto cache_keys = getKeysForSchemaCache(sources, configuration.format, format_settings, getContext());
+            StorageAzureBlob::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
+        }
+
+        String getLastFileName() const override { return current_path_with_metadata.relative_path; }
+
     private:
+        std::optional<ColumnsDescription> tryGetColumnsFromCache(const RelativePathsWithMetadata::const_iterator & begin, const RelativePathsWithMetadata::const_iterator & end)
+        {
+            auto & schema_cache = StorageAzureBlob::getSchemaCache(getContext());
+            for (auto it = begin; it < end; ++it)
+            {
+                auto get_last_mod_time = [&] -> std::optional<time_t>
+                {
+                    if (it->metadata.last_modified)
+                        return it->metadata.last_modified->epochTime();
+                    return std::nullopt;
+                };
+
+                auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
+                String source = host_and_bucket + '/' + it->relative_path;
+                auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
+                auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
+                if (columns)
+                    return columns;
+            }
+
+            return std::nullopt;
+        }
+
         std::shared_ptr<StorageAzureBlobSource::IIterator> file_iterator;
         AzureObjectStorage * object_storage;
         const StorageAzureBlob::Configuration & configuration;
         const std::optional<FormatSettings> & format_settings;
         const RelativePathsWithMetadata & read_keys;
-        std::optional<ColumnsDescription> columns_from_cache;
         size_t prev_read_keys_size;
-        String current_path;
+        RelativePathWithMetadata current_path_with_metadata;
         bool first = true;
     };
 }
@@ -1313,72 +1373,8 @@ ColumnsDescription StorageAzureBlob::getTableStructureFromData(
             object_storage, configuration.container, configuration.blobs_paths, nullptr, NamesAndTypesList{}, ctx, &read_keys);
     }
 
-    std::optional<ColumnsDescription> columns_from_cache;
-    if (ctx->getSettingsRef().schema_inference_use_cache_for_azure)
-        columns_from_cache = tryGetColumnsFromCache(read_keys.begin(), read_keys.end(), configuration, format_settings, ctx);
-
-    ColumnsDescription columns;
-    if (columns_from_cache)
-    {
-        columns = *columns_from_cache;
-    }
-    else
-    {
-        ReadBufferIterator read_buffer_iterator(file_iterator, object_storage, configuration, format_settings, read_keys, ctx);
-        columns = readSchemaFromFormat(configuration.format, format_settings, read_buffer_iterator, configuration.withGlobs(), ctx);
-    }
-
-    if (ctx->getSettingsRef().schema_inference_use_cache_for_azure)
-        addColumnsToCache(read_keys, columns, configuration, format_settings, configuration.format, ctx);
-
-    return columns;
-
-}
-
-std::optional<ColumnsDescription> StorageAzureBlob::tryGetColumnsFromCache(
-        const RelativePathsWithMetadata::const_iterator & begin,
-        const RelativePathsWithMetadata::const_iterator & end,
-        const StorageAzureBlob::Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & ctx)
-{
-    auto & schema_cache = getSchemaCache(ctx);
-    for (auto it = begin; it < end; ++it)
-    {
-        auto get_last_mod_time = [&] -> std::optional<time_t>
-        {
-            if (it->metadata.last_modified)
-                return it->metadata.last_modified->epochTime();
-            return std::nullopt;
-        };
-
-        auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
-        String source = host_and_bucket + '/' + it->relative_path;
-        auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, ctx);
-        auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
-        if (columns)
-            return columns;
-    }
-
-    return std::nullopt;
-
-}
-
-void StorageAzureBlob::addColumnsToCache(
-    const RelativePathsWithMetadata & keys,
-    const ColumnsDescription & columns,
-    const StorageAzureBlob::Configuration & configuration,
-    const std::optional<FormatSettings> & format_settings,
-    const String & format_name,
-    const ContextPtr & ctx)
-{
-    auto host_and_bucket = configuration.connection_url + '/' + configuration.container;
-    Strings sources;
-    sources.reserve(keys.size());
-    std::transform(keys.begin(), keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket + '/' + elem.relative_path; });
-    auto cache_keys = getKeysForSchemaCache(sources, format_name, format_settings, ctx);
-    auto & schema_cache = getSchemaCache(ctx);
-    schema_cache.addManyColumns(cache_keys, columns);
+    ReadBufferIterator read_buffer_iterator(file_iterator, object_storage, configuration, format_settings, read_keys, ctx);
+    return readSchemaFromFormat(configuration.format, format_settings, read_buffer_iterator, configuration.withGlobs(), ctx);
 }
 
 SchemaCache & StorageAzureBlob::getSchemaCache(const ContextPtr & ctx)

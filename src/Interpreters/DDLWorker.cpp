@@ -614,7 +614,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         {
             /// Connection has been lost and now we are retrying,
             /// but our previous ephemeral node still exists.
-            zookeeper->handleEphemeralNodeExistence(active_node_path, canary_value);
+            zookeeper->deleteEphemeralNodeIfContentMatches(active_node_path, canary_value);
         }
 
         zookeeper->create(active_node_path, canary_value, zkutil::CreateMode::Ephemeral);
