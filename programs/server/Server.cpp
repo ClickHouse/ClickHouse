@@ -1781,7 +1781,8 @@ try
     if (hasPHDRCache())
     {
         global_context->initializeTraceCollector();
-        global_context->getTraceCollector()->setHeapProfilerDumpPeriod(server_settings.heap_profiler_dump_period_seconds);
+        if (auto * trace_collector = global_context->getTraceCollector())
+            trace_collector->setHeapProfilerDumpPeriod(server_settings.heap_profiler_dump_period_seconds);
 
         /// Set up server-wide memory profiler (for total memory tracker).
         if (server_settings.total_memory_profiler_step)
