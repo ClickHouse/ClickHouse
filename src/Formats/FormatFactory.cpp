@@ -143,7 +143,11 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.parquet.write_batch_size = settings.output_format_parquet_batch_size;
     format_settings.parquet.local_read_min_bytes_for_seek = settings.input_format_parquet_local_file_min_bytes_for_seek;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
-    format_settings.pretty.color = settings.output_format_pretty_color;
+    format_settings.pretty.output_format_pretty_color = settings.output_format_pretty_color.toString() == "AUTO" 
+        ? FormatSettings::Pretty::PrettyColor::AUTO 
+	: settings.output_format_pretty_color.toString() == "ON" 
+	? FormatSettings::Pretty::PrettyColor::ON 
+	: FormatSettings::Pretty::PrettyColor::OFF;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_value_width = settings.output_format_pretty_max_value_width;

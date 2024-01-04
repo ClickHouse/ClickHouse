@@ -271,6 +271,13 @@ struct FormatSettings
         UInt64 max_value_width = 10000;
         bool color = true;
 
+	enum class PrettyColor {
+	  ON,
+	  OFF,
+	  AUTO
+	};
+	
+	PrettyColor output_format_pretty_color = PrettyColor::AUTO;
         bool output_format_pretty_row_numbers = false;
 
         enum class Charset
