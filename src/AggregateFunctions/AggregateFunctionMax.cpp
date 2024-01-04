@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/HelpersMinMaxAny.h>
+#include <Common/Concepts.h>
 #include <Common/findExtreme.h>
 
 namespace DB
@@ -74,7 +75,7 @@ void AggregateFunctionsSingleValueMax<Data>::addBatchSinglePlace(
     Arena * arena,
     ssize_t if_argument_pos) const
 {
-    if constexpr (!std::is_same_v<Data, SingleValueDataString> || !std::is_same_v<Data, SingleValueDataGeneric>)
+    if constexpr (!is_any_of<typename Data::Impl, SingleValueDataString, SingleValueDataGeneric>)
     {
         /// Leave other numeric types (large integers, decimals, etc) to keep doing the comparison as it's
         /// faster than doing a permutation
@@ -169,7 +170,7 @@ void AggregateFunctionsSingleValueMax<Data>::addBatchSinglePlaceNotNull(
     Arena * arena,
     ssize_t if_argument_pos) const
 {
-    if constexpr (!std::is_same_v<Data, SingleValueDataString> || !std::is_same_v<Data, SingleValueDataGeneric>)
+    if constexpr (!is_any_of<typename Data::Impl, SingleValueDataString, SingleValueDataGeneric>)
     {
         /// Leave other numeric types (large integers, decimals, etc) to keep doing the comparison as it's
         /// faster than doing a permutation
