@@ -25,7 +25,7 @@ struct FunctionStringDistanceImpl
 {
     using ResultType = typename Op::ResultType;
 
-    static void constantConstant(const std::string & haystack, const std::string & needle, ResultType & res)
+    static void constantConstant(const String & haystack, const String & needle, ResultType & res)
     {
         res = Op::process(haystack.data(), haystack.size(), needle.data(), needle.size());
     }
@@ -51,7 +51,7 @@ struct FunctionStringDistanceImpl
     }
 
     static void constantVector(
-        const std::string & haystack,
+        const String & haystack,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
         PaddedPODArray<ResultType> & res)
@@ -70,7 +70,7 @@ struct FunctionStringDistanceImpl
     static void vectorConstant(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
-        const std::string & needle,
+        const String & needle,
         PaddedPODArray<ResultType> & res)
     {
         constantVector(needle, data, offsets, res);
@@ -81,7 +81,7 @@ struct FunctionStringDistanceImpl
 struct ByteHammingDistanceImpl
 {
     using ResultType = UInt64;
-    static ResultType inline process(
+    static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
         UInt64 res = 0;
@@ -115,7 +115,7 @@ template <bool is_utf8>
 struct ByteJaccardIndexImpl
 {
     using ResultType = Float64;
-    static ResultType inline process(
+    static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
         if (haystack_size == 0 || needle_size == 0)
@@ -227,7 +227,7 @@ struct ByteEditDistanceImpl
     using ResultType = UInt64;
     static constexpr size_t max_string_size = 1u << 16;
 
-    static ResultType inline process(
+    static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
         if (haystack_size == 0 || needle_size == 0)

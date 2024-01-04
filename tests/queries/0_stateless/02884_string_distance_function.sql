@@ -1,34 +1,34 @@
-select 'const arguments byteHammingDistance';
-select byteHammingDistance('abcd', 'abcd');
-select 'const arguments editDistance';
-select editDistance('clickhouse', 'mouse');
+SELECT 'const arguments byteHammingDistance';
+SELECT byteHammingDistance('abcd', 'abcd');
+SELECT 'const arguments editDistance';
+SELECT editDistance('clickhouse', 'mouse');
 
-select 'const arguments stringJaccardIndex';
-select stringJaccardIndex('clickhouse', 'mouse');
+SELECT 'const arguments stringJaccardIndex';
+SELECT stringJaccardIndex('clickhouse', 'mouse');
 
-drop table if exists t;
-create table t
+DROP TABLE if exists t;
+CREATE TABLE t
 (
 	s1 String,
 	s2 String
-) engine = MergeTree order by s1;
+) ENGINE = MergeTree ORDER BY s1;
 
-insert into t values ('abcdefg', 'abcdef') ('abcdefg', 'bcdefg') ('abcdefg', '') ('mouse', 'clickhouse');
-select 'byteHammingDistance';
-select byteHammingDistance(s1, s2) FROM t ORDER BY s1, s2;
-select 'byteHammingDistance(const, non const)';
-select byteHammingDistance('abc', s2) FROM t ORDER BY s1, s2;
-select 'byteHammingDistance(non const, const)';
-select byteHammingDistance(s2, 'def') FROM t ORDER BY s1, s2;
+INSERT INTO t VALUES ('abcdefg', 'abcdef') ('abcdefg', 'bcdefg') ('abcdefg', '') ('mouse', 'clickhouse');
+SELECT 'byteHammingDistance';
+SELECT byteHammingDistance(s1, s2) FROM t ORDER BY s1, s2;
+SELECT 'byteHammingDistance(const, non const)';
+SELECT byteHammingDistance('abc', s2) FROM t ORDER BY s1, s2;
+SELECT 'byteHammingDistance(non const, const)';
+SELECT byteHammingDistance(s2, 'def') FROM t ORDER BY s1, s2;
 
-select 'mismatches(alias)';
-select mismatches(s1, s2) FROM t ORDER BY s1, s2;
-select mismatches('abc', s2) FROM t ORDER BY s1, s2;
-select mismatches(s2, 'def') FROM t ORDER BY s1, s2;
+SELECT 'mismatches(alias)';
+SELECT mismatches(s1, s2) FROM t ORDER BY s1, s2;
+SELECT mismatches('abc', s2) FROM t ORDER BY s1, s2;
+SELECT mismatches(s2, 'def') FROM t ORDER BY s1, s2;
 
-select 'stringJaccardIndex';
-select stringJaccardIndex(s1, s2) FROM t ORDER BY s1, s2;
-select stringJaccardIndexUTF8(s1, s2) FROM t ORDER BY s1, s2;
+SELECT 'stringJaccardIndex';
+SELECT stringJaccardIndex(s1, s2) FROM t ORDER BY s1, s2;
+SELECT stringJaccardIndexUTF8(s1, s2) FROM t ORDER BY s1, s2;
 
 -- we do not perform full UTF8 validation, so sometimes it just returns some result
 SELECT stringJaccardIndexUTF8(materialize('hello'), materialize('\x48\x65\x6C'));
@@ -45,11 +45,11 @@ SELECT stringJaccardIndexUTF8(materialize('hello'), materialize('\xDC\x00')); --
 
 SELECT stringJaccardIndexUTF8('😃🌍', '🙃😃🌑'), stringJaccardIndex('😃🌍', '🙃😃🌑');
 
-select 'editDistance';
-select editDistance(s1, s2) FROM t ORDER BY s1, s2;
-select 'levenshteinDistance';
-select levenshteinDistance(s1, s2) FROM t ORDER BY s1, s2;
+SELECT 'editDistance';
+SELECT editDistance(s1, s2) FROM t ORDER BY s1, s2;
+SELECT 'levenshteinDistance';
+SELECT levenshteinDistance(s1, s2) FROM t ORDER BY s1, s2;
 
 SELECT editDistance(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
 
-drop table t;
+DROP TABLE t;
