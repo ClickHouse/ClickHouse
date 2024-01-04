@@ -2382,17 +2382,19 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
         if (analysis_result.hasPrewhere())
         {
             auto & prewhere_info = analysis_result.prewhere_info;
-            filter_nodes.push_back(prewhere_info->prewhere_actions->tryFindInOutputs(prewhere_info->prewhere_column_name));
+            filter_nodes.push_back(&prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name));
 
             if (prewhere_info->row_level_filter)
-                filter_nodes.push_back(prewhere_info->row_level_filter->tryFindInOutputs(prewhere_info->row_level_column_name));
+                filter_nodes.push_back(&prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name));
         }
         if (analysis_result.hasWhere())
         {
-            filter_nodes.push_back(analysis_result.before_where->tryFindInOutputs(analysis_result.where_column_name));
+            filter_nodes.push_back(&analysis_result.before_where->findInOutputs(analysis_result.where_column_name));
         }
 
         auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes, {}, context);
+        if (!filter_actions_dag)
+            return {};
 
         return storage->totalRowsByPartitionPredicate(filter_actions_dag, context);
     }

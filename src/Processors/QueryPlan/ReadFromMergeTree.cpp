@@ -1363,14 +1363,18 @@ static void buildIndexes(
     if (!indexes->use_skip_indexes)
         return;
 
-    const SelectQueryInfo * info = &query_info;
     std::optional<SelectQueryInfo> info_copy;
-    if (settings.allow_experimental_analyzer)
+    auto get_query_info = [&]() -> const SelectQueryInfo &
     {
-        info_copy.emplace(query_info);
-        info_copy->filter_actions_dag = filter_actions_dag;
-        info = &*info_copy;
-    }
+        if (settings.allow_experimental_analyzer)
+        {
+            info_copy.emplace(query_info);
+            info_copy->filter_actions_dag = filter_actions_dag;
+            return *info_copy;
+        }
+
+        return query_info;
+    };
 
     std::unordered_set<std::string> ignored_index_names;
 
@@ -1411,7 +1415,7 @@ static void buildIndexes(
                 if (inserted)
                 {
                     skip_indexes.merged_indices.emplace_back();
-                    skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(*info, metadata_snapshot);
+                    skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(get_query_info(), metadata_snapshot);
                 }
 
                 skip_indexes.merged_indices[it->second].addIndex(index_helper);
@@ -1423,11 +1427,11 @@ static void buildIndexes(
                 {
 #ifdef ENABLE_ANNOY
                     if (const auto * annoy = typeid_cast<const MergeTreeIndexAnnoy *>(index_helper.get()))
-                        condition = annoy->createIndexCondition(*info, context);
+                        condition = annoy->createIndexCondition(get_query_info(), context);
 #endif
 #ifdef ENABLE_USEARCH
                     if (const auto * usearch = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
-                        condition = usearch->createIndexCondition(*info, context);
+                        condition = usearch->createIndexCondition(get_query_info(), context);
 #endif
                     if (!condition)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
