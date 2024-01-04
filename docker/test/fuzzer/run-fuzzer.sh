@@ -230,7 +230,7 @@ quit
         --query-fuzzer-runs=1000 \
         --create-query-fuzzer-runs=50 \
          $NEW_TESTS_OPT \
-        --client-option receive_timeout=10 receive_data_timeout_ms=1000 smax_memory_usage_in_client=1000000000  tacktrace \
+        --client-option receive_timeout=10 receive_data_timeout_ms=1000 max_memory_usage_in_client=1000000000  tacktrace \
         --global_time_limit=1800 \
         --jobs=16 \
         --order=random \
