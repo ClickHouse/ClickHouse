@@ -480,7 +480,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             auto block = reading.getMergeTreeData().getMinMaxCountProjectionBlock(
                 metadata,
                 candidate.dag->getRequiredColumnsNames(),
-                dag.dag,
+                (dag.filter_node ? dag.dag : nullptr),
                 parts,
                 max_added_blocks.get(),
                 context);
