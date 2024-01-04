@@ -69,11 +69,13 @@ def get_pr_for_commit(sha, ref):
             if pr["head"]["ref"] in ref:
                 return pr
             our_prs.append(pr)
-        print("Cannot find PR with required ref", ref, "returning first one")
+        print(
+            f"Cannot find PR with required ref {ref}, sha {sha} - returning first one"
+        )
         first_pr = our_prs[0]
         return first_pr
     except Exception as ex:
-        print("Cannot fetch PR info from commit", ex)
+        print(f"Cannot fetch PR info from commit {ref}, {sha}", ex)
     return None
 
 
@@ -278,6 +280,9 @@ class PRInfo:
 
         if need_changed_files:
             self.fetch_changed_files()
+
+    def is_master(self) -> bool:
+        return self.number == 0 and self.base_ref == "master"
 
     def is_scheduled(self):
         return self.event_type == EventType.SCHEDULE
