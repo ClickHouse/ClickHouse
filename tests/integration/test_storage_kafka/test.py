@@ -4934,6 +4934,7 @@ def test_formats_errors(kafka_cluster):
         instance.query(f"DROP TABLE test.{table_name}")
         instance.query("DROP TABLE test.view")
 
+
 def test_multiple_read_in_materialized_views(kafka_cluster, max_retries=15):
     admin_client = KafkaAdminClient(
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
@@ -4975,7 +4976,9 @@ def test_multiple_read_in_materialized_views(kafka_cluster, max_retries=15):
         """
     )
 
-    kafka_produce(kafka_cluster, topic, [json.dumps({"id": 42}), json.dumps({"id": 43})])
+    kafka_produce(
+        kafka_cluster, topic, [json.dumps({"id": 42}), json.dumps({"id": 43})]
+    )
 
     expected_result = "42\n43\n"
     res = instance.query_with_retry(
@@ -4988,7 +4991,7 @@ def test_multiple_read_in_materialized_views(kafka_cluster, max_retries=15):
 
     # Verify that the query deduplicates the records as it meant to be
     messages = []
-    for i in range(0,10):
+    for i in range(0, 10):
         messages.append(json.dumps({"id": 42}))
         messages.append(json.dumps({"id": 43}))
 
