@@ -2668,9 +2668,9 @@ def get_additional_client_options(args):
 def get_additional_client_options_url(args):
     if args.client_option:
         options = copy.copy(args.client_option)
-        # max_client_memory_usage option is valid only for clickhouse-client
-        if "max_client_memory_usage" in options:
-            options.remove("max_client_memory_usage")
+        # max_memory_usage_in_client option is valid only for clickhouse-client
+        if "max_memory_usage_in_client" in options:
+            options.remove("max_memory_usage_in_client")
         if "stacktrace" in options:
             options[options.index("stacktrace")] = "stacktrace=1"
         return "&".join(options)
