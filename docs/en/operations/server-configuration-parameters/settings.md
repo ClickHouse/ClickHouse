@@ -2729,7 +2729,7 @@ The intended usage is creating flame graphs, like this:
 
 Possible values:
 
-- Nonnegative integer.
+- Non-negative integer.
 - -1 - allocation sampling is disabled.
 
 Default value: `24`, i.e. 16 MiB.
