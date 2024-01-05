@@ -48,7 +48,7 @@ Suggest::Suggest()
               "GRANT",        "REVOKE",        "OPTION",       "ADMIN",      "EXCEPT",   "REPLACE",     "IDENTIFIED", "HOST",
               "NAME",         "READONLY",      "WRITABLE",     "PERMISSIVE", "FOR",      "RESTRICTIVE", "RANDOMIZED", "INTERVAL",
               "LIMITS",       "ONLY",          "TRACKING",     "IP",         "REGEXP",   "ILIKE",       "CLEANUP",    "APPEND",
-              "IGNORE NULLS", "RESPECT NULLS", "OVER"});
+              "IGNORE NULLS", "RESPECT NULLS", "OVER",         "PASTE"});
 }
 
 static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)
@@ -77,6 +77,7 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     };
 
     add_column("name", "functions", false, {});
+    add_column("name", "database_engines", false, {});
     add_column("name", "table_engines", false, {});
     add_column("name", "formats", false, {});
     add_column("name", "table_functions", false, {});

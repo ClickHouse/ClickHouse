@@ -1,22 +1,23 @@
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
 
 #include <Columns/ColumnArray.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Common/OptimizedRegularExpression.h>
+#include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
-#include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/misc.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Core/Defines.h>
+#include <Parsers/ASTSubquery.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexUtils.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Poco/Logger.h>
 
@@ -201,6 +202,7 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
              || element.function == RPNElement::FUNCTION_IN
              || element.function == RPNElement::FUNCTION_NOT_IN
              || element.function == RPNElement::FUNCTION_MULTI_SEARCH
+             || element.function == RPNElement::FUNCTION_MATCH
              || element.function == RPNElement::FUNCTION_HAS_ANY
              || element.function == RPNElement::ALWAYS_FALSE)
         {
@@ -285,8 +287,27 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
             for (size_t row = 0; row < bloom_filters.size(); ++row)
                 result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
 
-            rpn_stack.emplace_back(
-                    std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+            rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+        }
+        else if (element.function == RPNElement::FUNCTION_MATCH)
+        {
+            if (!element.set_bloom_filters.empty())
+            {
+                /// Alternative substrings
+                std::vector<bool> result(element.set_bloom_filters.back().size(), true);
+
+                const auto & bloom_filters = element.set_bloom_filters[0];
+
+                for (size_t row = 0; row < bloom_filters.size(); ++row)
+                    result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
+
+                rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+            }
+            else if (element.bloom_filter)
+            {
+                /// Required substrings
+                rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
+            }
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
@@ -392,6 +413,7 @@ bool MergeTreeConditionFullText::extractAtomFromTree(const RPNBuilderTreeNode & 
                  function_name == "notEquals" ||
                  function_name == "has" ||
                  function_name == "mapContains" ||
+                 function_name == "match" ||
                  function_name == "like" ||
                  function_name == "notLike" ||
                  function_name.starts_with("hasToken") ||
@@ -513,6 +535,7 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
         token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
+
     else if (function_name == "has")
     {
         out.key_column = *key_index;
@@ -598,6 +621,39 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
             token_extractor->stringToBloomFilter(value.data(), value.size(), bloom_filters.back().back());
         }
         out.set_bloom_filters = std::move(bloom_filters);
+        return true;
+    }
+    else if (function_name == "match")
+    {
+        out.key_column = *key_index;
+        out.function = RPNElement::FUNCTION_MATCH;
+        out.bloom_filter = std::make_unique<BloomFilter>(params);
+
+        auto & value = const_value.get<String>();
+        String required_substring;
+        bool dummy_is_trivial, dummy_required_substring_is_prefix;
+        std::vector<String> alternatives;
+        OptimizedRegularExpression::analyze(value, required_substring, dummy_is_trivial, dummy_required_substring_is_prefix, alternatives);
+
+        if (required_substring.empty() && alternatives.empty())
+            return false;
+
+        /// out.set_bloom_filters means alternatives exist
+        /// out.bloom_filter means required_substring exists
+        if (!alternatives.empty())
+        {
+            std::vector<std::vector<BloomFilter>> bloom_filters;
+            bloom_filters.emplace_back();
+            for (const auto & alternative : alternatives)
+            {
+                bloom_filters.back().emplace_back(params);
+                token_extractor->stringToBloomFilter(alternative.data(), alternative.size(), bloom_filters.back().back());
+            }
+            out.set_bloom_filters = std::move(bloom_filters);
+        }
+        else
+           token_extractor->stringToBloomFilter(required_substring.data(), required_substring.size(), *out.bloom_filter);
+
         return true;
     }
 
@@ -694,11 +750,6 @@ MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
         const SelectQueryInfo & query, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionFullText>(query, context, index.sample_block, params, token_extractor.get());
-}
-
-bool MergeTreeIndexFullText::mayBenefitFromIndexForIn(const ASTPtr & node) const
-{
-    return std::find(std::cbegin(index.column_names), std::cend(index.column_names), node->getColumnName()) != std::cend(index.column_names);
 }
 
 MergeTreeIndexPtr bloomFilterIndexCreator(

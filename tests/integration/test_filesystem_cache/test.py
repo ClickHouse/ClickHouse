@@ -21,6 +21,12 @@ def cluster():
             ],
             stay_alive=True,
         )
+        cluster.add_instance(
+            "node_caches_with_same_path",
+            main_configs=[
+                "config.d/storage_conf_2.xml",
+            ],
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -87,3 +93,104 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     )
     node.query("SELECT * FROM test FORMAT Null")
     assert count == int(node.query("SELECT count() FROM test"))
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_caches_with_the_same_configuration(cluster, node_name):
+    node = cluster.instances[node_name]
+    cache_path = "cache1"
+
+    node.query(f"SYSTEM DROP FILESYSTEM CACHE;")
+    for table in ["test", "test2"]:
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS {table} SYNC;
+
+            CREATE TABLE {table} (key UInt32, value String)
+            Engine=MergeTree()
+            ORDER BY value
+            SETTINGS disk = disk(
+                type = cache,
+                name = {table},
+                path = '{cache_path}',
+                disk = 'hdd_blob',
+                max_file_segment_size = '1Ki',
+                boundary_alignment = '1Ki',
+                cache_on_write_operations=1,
+                max_size = '1Mi');
+
+            SET enable_filesystem_cache_on_write_operations=1;
+            INSERT INTO {table} SELECT * FROM generateRandom('a Int32, b String')
+            LIMIT 1000;
+            """
+        )
+
+    size = int(
+        node.query(
+            "SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize'"
+        )
+    )
+    assert (
+        node.query(
+            "SELECT cache_name, sum(size) FROM system.filesystem_cache GROUP BY cache_name ORDER BY cache_name"
+        ).strip()
+        == f"test\t{size}\ntest2\t{size}"
+    )
+
+    table = "test3"
+    assert (
+        "Found more than one cache configuration with the same path, but with different cache settings"
+        in node.query_and_get_error(
+            f"""
+        DROP TABLE IF EXISTS {table} SYNC;
+
+        CREATE TABLE {table} (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = {table},
+            path = '{cache_path}',
+            disk = 'hdd_blob',
+            max_file_segment_size = '1Ki',
+            boundary_alignment = '1Ki',
+            cache_on_write_operations=0,
+            max_size = '2Mi');
+        """
+        )
+    )
+
+
+@pytest.mark.parametrize("node_name", ["node_caches_with_same_path"])
+def test_caches_with_the_same_configuration_2(cluster, node_name):
+    node = cluster.instances[node_name]
+    cache_path = "cache1"
+
+    node.query(f"SYSTEM DROP FILESYSTEM CACHE;")
+    for table in ["cache1", "cache2"]:
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS {table} SYNC;
+
+            CREATE TABLE {table} (key UInt32, value String)
+            Engine=MergeTree()
+            ORDER BY value
+            SETTINGS disk = '{table}';
+
+            SET enable_filesystem_cache_on_write_operations=1;
+            INSERT INTO {table} SELECT * FROM generateRandom('a Int32, b String')
+            LIMIT 1000;
+            """
+        )
+
+    size = int(
+        node.query(
+            "SELECT value FROM system.metrics WHERE name = 'FilesystemCacheSize'"
+        )
+    )
+    assert (
+        node.query(
+            "SELECT cache_name, sum(size) FROM system.filesystem_cache GROUP BY cache_name ORDER BY cache_name"
+        ).strip()
+        == f"cache1\t{size}\ncache2\t{size}"
+    )
