@@ -700,7 +700,7 @@ struct ToStartOfInterval<IntervalKind::Week>
     {
         return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), weeks);
     }
-    static Int64 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static UInt16 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
         return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
     }
@@ -721,7 +721,7 @@ struct ToStartOfInterval<IntervalKind::Month>
     {
         return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t), months);
     }
-    static Int64 execute(Int64 t, Int64 months, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static UInt16 execute(Int64 t, Int64 months, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
         return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t / scale_multiplier), months);
     }
@@ -742,7 +742,7 @@ struct ToStartOfInterval<IntervalKind::Quarter>
     {
         return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t), quarters);
     }
-    static Int64 execute(Int64 t, Int64 quarters, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static UInt16 execute(Int64 t, Int64 quarters, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
         return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
     }
@@ -763,7 +763,7 @@ struct ToStartOfInterval<IntervalKind::Year>
     {
         return time_zone.toStartOfYearInterval(time_zone.toDayNum(t), years);
     }
-    static Int64 execute(Int64 t, Int64 years, const DateLUTImpl & time_zone, Int64 scale_multiplier)
+    static UInt16 execute(Int64 t, Int64 years, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
         return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
     }
