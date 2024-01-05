@@ -13,10 +13,6 @@ namespace DB
 /// all values in inner vector would have constant stride (default 8192).
 class MergeTreeIndexGranularity
 {
-private:
-    std::vector<size_t> marks_rows_partial_sums;
-    bool initialized = false;
-
 public:
     MergeTreeIndexGranularity() = default;
     explicit MergeTreeIndexGranularity(const std::vector<size_t> & marks_rows_partial_sums_);
@@ -70,6 +66,8 @@ public:
         return getLastMarkRows() == 0;
     }
 
+    const std::vector<size_t> & getMarksRowsPartialSums() const { return marks_rows_partial_sums; }
+
     bool empty() const
     {
         return marks_rows_partial_sums.empty();
@@ -95,6 +93,10 @@ public:
 
     /// Add `size` of marks with `fixed_granularity` rows
     void resizeWithFixedGranularity(size_t size, size_t fixed_granularity);
+
+private:
+    std::vector<size_t> marks_rows_partial_sums;
+    bool initialized = false;
 };
 
 }

@@ -204,6 +204,12 @@ public:
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes);
 
+    /// Apply LIMIT to parts with ranges for LIMIT only queries.
+    /// Example: SELECT id, value FROM test_table LIMIT 10;
+    static RangesInDataParts applyLimitForRangesInDataParts(
+        RangesInDataParts && parts_with_ranges,
+        size_t limit);
+
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.
     /// Also, update key condition with selected sampling range.
