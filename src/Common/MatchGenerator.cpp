@@ -379,7 +379,7 @@ private:
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "ShortVisit should not be called");
     }
 
-    Regexp * PreVisit(Regexp * re, Regexp* parent_arg, bool* /*stop*/) override /*noexcept*/
+    Regexp * PreVisit(Regexp * re, Regexp * parent_arg, bool* /*stop*/) override /*noexcept*/
     {
         if (logger)
             LOG_DEBUG(logger, "GeneratorCombiner PreVisit node {}", magic_enum::enum_name(re->op()));
