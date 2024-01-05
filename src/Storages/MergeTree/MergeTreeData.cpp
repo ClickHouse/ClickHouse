@@ -846,6 +846,10 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 {
     const auto columns = metadata.getColumns().getAllPhysical();
 
+    if (!is_deleted_column.empty() && mode != MergingParams::Replacing)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "is_deleted column for MergeTree cannot be specified in modes except Replacing.");
+
     if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::VersionedCollapsing)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Sign column for MergeTree cannot be specified "
@@ -915,6 +919,41 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Version column {} does not exist in table declaration.", version_column);
     };
 
+    /// Check that if the is_deleted column is needed, it exists and is of type UInt8. If exist, version column must be defined too but version checks are not done here.
+    auto check_is_deleted_column = [this, & columns](bool is_optional, const std::string & storage)
+    {
+        if (is_deleted_column.empty())
+        {
+            if (is_optional)
+                return;
+
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: is_deleted ({}) column for storage {} is empty", is_deleted_column, storage);
+        }
+        else
+        {
+            if (version_column.empty() && !is_optional)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Version column ({}) for storage {} is empty while is_deleted ({}) is not.",
+                                version_column, storage, is_deleted_column);
+
+            bool miss_is_deleted_column = true;
+            for (const auto & column : columns)
+            {
+                if (column.name == is_deleted_column)
+                {
+                    if (!typeid_cast<const DataTypeUInt8 *>(column.type.get()))
+                        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "is_deleted column ({}) for storage {} must have type UInt8. Provided column of type {}.",
+                                        is_deleted_column, storage, column.type->getName());
+                    miss_is_deleted_column = false;
+                    break;
+                }
+            }
+
+            if (miss_is_deleted_column)
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "is_deleted column {} does not exist in table declaration.", is_deleted_column);
+        }
+    };
+
+
     if (mode == MergingParams::Collapsing)
         check_sign_column(false, "CollapsingMergeTree");
 
@@ -951,6 +990,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
     if (mode == MergingParams::Replacing)
     {
+        check_is_deleted_column(true, "ReplacingMergeTree");
         check_version_column(true, "ReplacingMergeTree");
     }
 
@@ -2744,6 +2784,25 @@ void MergeTreeData::dropAllData()
 
     column_sizes.clear();
 
+    auto detached_parts = getDetachedParts();
+    for (const auto & part : detached_parts)
+    {
+        bool is_zero_copy = supportsReplication() && part.disk->supportZeroCopyReplication()
+            && settings_ptr->allow_remote_fs_zero_copy_replication;
+        try
+        {
+            bool keep_shared = removeDetachedPart(part.disk, fs::path(relative_data_path) / "detached" / part.dir_name / "", part.dir_name);
+            LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", part.dir_name, keep_shared);
+        }
+        catch (...)
+        {
+            /// Without zero-copy-replication we will simply remove it recursively, but with zero-copy it will leave garbage on s3
+            if (is_zero_copy && isRetryableException(std::current_exception()))
+                throw;
+            tryLogCurrentException(log);
+        }
+    }
+
     for (const auto & disk : getDisks())
     {
         if (disk->isBroken())
@@ -2761,7 +2820,7 @@ void MergeTreeData::dropAllData()
         disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
 
         if (disk->exists(fs::path(relative_data_path) / DETACHED_DIR_NAME))
-            disk->removeRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME);
+            disk->removeSharedRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME, /*keep_all_shared_data*/ true, {});
 
         if (disk->exists(fs::path(relative_data_path) / MOVING_DIR_NAME))
             disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
