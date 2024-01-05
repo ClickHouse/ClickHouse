@@ -1414,6 +1414,22 @@ private:
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
+        MergeTreeIndexGranularity computed_granularity;
+        bool has_delete = false;
+
+        for (auto & command_for_interpreter : ctx->for_interpreter)
+        {
+            if (command_for_interpreter.type == MutationCommand::DELETE)
+            {
+                has_delete = true;
+                break;
+            }
+        }
+
+        /// Reuse source part granularity if mutation does not change number of rows
+        if (!has_delete && ctx->execute_ttl_type == ExecuteTTLType::NONE)
+            computed_granularity = ctx->source_part->index_granularity;
+
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
             ctx->metadata_snapshot,
@@ -1423,7 +1439,8 @@ private:
             ctx->txn,
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
-            ctx->context->getWriteSettings());
+            ctx->context->getWriteSettings(),
+            computed_granularity);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
