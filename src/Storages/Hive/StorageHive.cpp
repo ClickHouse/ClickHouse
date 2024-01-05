@@ -246,7 +246,7 @@ public:
                                 hdfs_namenode_url,
                                 current_path,
                                 getContext()->getGlobalContext()->getConfigRef(),
-                                getContext()->getReadSettings());;
+                                getContext()->getReadSettings());
                         }
                     };
 
