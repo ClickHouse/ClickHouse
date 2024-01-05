@@ -397,7 +397,7 @@ private:
                 if (origin > static_cast<size_t>(end_time) && origin_scale == scale)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date / date with time");
                 else if (origin_scale > scale)
-                    origin /= static_cast<UInt64>(std::pow(10, origin_scale - scale)); /// If aguments have different scales, we make
+                    origin /= static_cast<UInt64>(std::pow(10, origin_scale - scale)); /// If arguments have different scales, we make
                 else if (origin_scale < scale)                                         /// origin argument to have the same scale as the first argument.
                     origin *= static_cast<UInt64>(std::pow(10, scale - origin_scale));
 
@@ -439,16 +439,16 @@ private:
 
                     if (scale_interval == 1)
                     {
-                        if (isDateTime64(result_type)) /// We need to have the right scale for offset, origin already has the right scale.
+                        if (isDateTime64(result_type)) /// We need to have the right scale for offset, origin already has the correct scale.
                             offset *= scale_endtime;
 
                         /// Interval has default scale, i.e. Year - Second.
 
                         if (scale_endtime % 1000 != 0 && scale_endtime >= 1000)
-                            /// The arguments are DateTime64 with precision like 4,5,7,8. Here offset has right precision and origin doesn't.
+                            /// The arguments are DateTime64 with precision like 4,5,7,8. Here offset has correct precision and origin doesn't.
                             result_data[i] += (origin + offset / scale_endtime) * scale_endtime;
                         else
-                            /// Precision of DateTime64 is 1, 2, 3, 6, 9, e.g. has right precision in offset and origin.
+                            /// Precision of DateTime64 is 1, 2, 3, 6, 9, e.g. has correct precision in offset and origin.
                             result_data[i] += (origin + offset);
                     }
                     else
