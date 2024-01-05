@@ -190,7 +190,7 @@ public:
     /// DiskObjectStorage(S3ObjectStorage)
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
-    String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
+    virtual String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
 
 #ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     /// Add a cache layer.

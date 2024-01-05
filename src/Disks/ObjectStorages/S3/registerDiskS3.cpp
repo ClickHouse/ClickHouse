@@ -227,24 +227,20 @@ void registerDiskS3(DiskFactory & factory,
             }
         }
 
-// TODO myrrc supporting VFS disks inside Keeper may be done in the future but it's not worth that now
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-        // TODO myrrc need to sync default value of setting in MergeTreeSettings and here
-        constexpr auto key = "merge_tree.allow_object_storage_vfs";
-        const bool s3_enable_disk_vfs = allow_vfs && config.getBool(key, false);
-        if (s3_enable_disk_vfs) chassert(type == "s3");
+        const String disk_name_for_log = type == "s3" ? "DiskS3" : "DiskS3Plain";
 
-        /// TODO myrrc this disables zero-copy replication for all disks, not sure whether
-        /// we can preserve any compatibility. One option is to specify vfs option per disk,
-        /// so zero-copy could be enabled globally but for selected disks if would be off due to
-        /// vfs option. Other option is to make a special s3_vfs disk like CH inc did with
-        /// SharedMergeTree (i.e. s3withkeeper) but I believe this could break way more things that it should
-        if (s3_enable_disk_vfs)
+// Keeper requires a disk to start up. A VFS disk requires a running Keeper in order to do an access check.
+// This creates a circular dependency, therefore, VFS disks are prohibited.
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
+        if (allow_vfs && config.getBool(config_prefix + ".allow_vfs", false))
         {
+            if (type != "s3")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain does not support allow_vfs");
+
             auto disk = std::make_shared<DiskObjectStorageVFS>(
                 name,
                 uri.key,
-                "DiskVFS",
+                disk_name_for_log,
                 std::move(metadata_storage),
                 std::move(s3_storage),
                 config,
@@ -258,8 +254,8 @@ void registerDiskS3(DiskFactory & factory,
 
         DiskObjectStoragePtr s3disk = std::make_shared<DiskObjectStorage>(
             name,
-            uri.key, /// might be empty
-            type == "s3" ? "DiskS3" : "DiskS3Plain",
+            uri.key,
+            disk_name_for_log,
             std::move(metadata_storage),
             std::move(s3_storage),
             config,

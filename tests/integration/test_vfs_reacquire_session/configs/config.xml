@@ -1,12 +1,10 @@
 <clickhouse>
-    <logger>
-        <level>test</level>
-    </logger>
     <storage_configuration>
         <disks>
             <s3>
                 <type>s3</type>
-                <object_storage_vfs_gc_period>5000</object_storage_vfs_gc_period>
+                <allow_vfs>true</allow_vfs>
+                <vfs_gc_sleep_ms>5000</vfs_gc_sleep_ms>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
@@ -22,7 +20,4 @@
             </default>
         </policies>
     </storage_configuration>
-    <merge_tree>
-        <allow_object_storage_vfs>1</allow_object_storage_vfs>
-    </merge_tree>
 </clickhouse>

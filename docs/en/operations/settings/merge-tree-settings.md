@@ -299,11 +299,13 @@ Possible values:
 
 Default value: 10800
 
-### allow_object_storage_vfs
+### allow_vfs
 
-This flag activates a feature that integrates elements of a distributed virtual filesystem (VFS) with object storage, primarily focusing on distributed hardlinks and accurate reference counting.
+TODO myrrc move to disks section
 
-Mutually exclusive with `allow_remote_fs_zero_copy_replication`. Unlike the former, can't be set in runtime,
+This disk flag activates a feature that integrates elements of a distributed virtual filesystem (VFS) with object storage, primarily focusing on distributed hardlinks and accurate reference counting.
+
+Disables `allow_remote_fs_zero_copy_replication` for disk. Unlike the former, can't be set in runtime,
 a server restart is needed.
 ClickHouse Keeper can not use VFS disk as a storage backend.
 VFS is incompatible with `send_metadata`.
@@ -314,6 +316,13 @@ When turned on, reuses the following settings:
 
 Possible values: 0, 1
 Default value: 0
+
+
+### vfs_gc_sleep_ms
+
+Garbage collector sleep timeout between iterations for VFS disks
+
+Default value: 10'000
 
 ## try_fetch_recompressed_part_timeout
 

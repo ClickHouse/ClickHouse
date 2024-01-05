@@ -93,7 +93,13 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
     const auto settings = storage.getSettings();
     time_t threshold = settings->execute_merges_on_single_replica_time_threshold.totalSeconds();
     time_t threshold_init = 0;
-    if (settings->allow_remote_fs_zero_copy_replication || settings->allow_object_storage_vfs)
+
+    auto any_disk_is_vfs = [&]
+    {
+        return std::ranges::any_of(storage.getDisks(), [](auto & d) { return d->isObjectStorageVFS(); });
+    };
+
+    if (settings->allow_remote_fs_zero_copy_replication || any_disk_is_vfs())
         threshold_init = settings->remote_fs_execute_merges_on_single_replica_time_threshold.totalSeconds();
 
     if (threshold == 0)

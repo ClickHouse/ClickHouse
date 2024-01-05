@@ -215,6 +215,11 @@ bool DataPartStorageOnDiskBase::supportZeroCopyReplication() const
     return volume->getDisk()->supportZeroCopyReplication();
 }
 
+bool DataPartStorageOnDiskBase::supportVFS() const
+{
+    return volume->getDisk()->isObjectStorageVFS();
+}
+
 bool DataPartStorageOnDiskBase::supportParallelWrite() const
 {
     return volume->getDisk()->supportParallelWrite();

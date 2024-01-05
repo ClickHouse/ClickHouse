@@ -24,10 +24,10 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
         config,
         config_prefix)
     , enable_gc(enable_gc_)
-    // TODO myrrc add to docs
-    , gc_sleep_ms(config.getUInt64(config_prefix + ".object_storage_vfs_gc_period", 10'000))
+    , gc_sleep_ms(config.getUInt64(config_prefix + ".vfs_gc_sleep_ms", 10'000))
     , traits(VFSTraits{name_})
 {
+    log = &Poco::Logger::get(fmt::format("DiskVFS({})", log_name));
     //chassert(!send_metadata); TODO myrrc this fails in integration tests
     zookeeper()->createAncestors(traits.log_item);
 }
@@ -38,7 +38,7 @@ DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
     return std::make_shared<DiskObjectStorageVFS>(
         getName(),
         object_key_prefix,
-        getName(),
+        log->name(),
         metadata_storage,
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),
@@ -138,7 +138,6 @@ void DiskObjectStorageVFS::downloadMetadata(const String & lock_prefix, const St
         // TODO myrrc this works only for S3
         DiskObjectStorageMetadata md(object_key_prefix, full_path);
         md.deserialize(*buf); // TODO myrrc just write to local filesystem
-        tx->createEmptyMetadataFile(full_path);
         tx->writeStringToFile(full_path, md.serializeToString());
     }
     tx->commit();

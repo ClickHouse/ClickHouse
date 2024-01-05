@@ -1,6 +1,7 @@
 <clickhouse>
-    <merge_tree>
-        <allow_remote_fs_zero_copy_replication>0</allow_remote_fs_zero_copy_replication>
-        <allow_object_storage_vfs>1</allow_object_storage_vfs>
-    </merge_tree>
+    <storage_configuration>
+        <disks>
+            <blob_storage_disk> <allow_vfs>true</allow_vfs> </blob_storage_disk>
+        </disks>
+    </storage_configuration>
 </clickhouse>

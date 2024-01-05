@@ -27,10 +27,10 @@ public:
 
     // TODO myrrc support changing disk settings in runtime e.g. GC interval
 
-    bool isObjectStorageVFS() const override { return true; }
-    bool supportZeroCopyReplication() const override { return false; }
+    constexpr bool isObjectStorageVFS() const override { return true; }
+    constexpr bool supportZeroCopyReplication() const override { return false; }
     DiskObjectStoragePtr createDiskObjectStorage() override;
-    String getStructure() const;
+    String getStructure() const override;
 
     bool lock(std::string_view path, bool block) override;
     void unlock(std::string_view path) override;
@@ -48,7 +48,7 @@ private:
 
     std::optional<ObjectStorageVFSGCThread> garbage_collector;
 
-    const bool enable_gc;
+    const bool enable_gc; // In certain conditions we don't want a GC e.g. when running from clickhouse-disks
     const UInt64 gc_sleep_ms;
     const VFSTraits traits;
 

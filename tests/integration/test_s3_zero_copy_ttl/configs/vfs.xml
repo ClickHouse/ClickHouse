@@ -1,6 +1,12 @@
 <clickhouse>
-    <merge_tree>
-        <allow_remote_fs_zero_copy_replication>0</allow_remote_fs_zero_copy_replication>
-        <allow_object_storage_vfs>1</allow_object_storage_vfs>
-    </merge_tree>
+    <storage_configuration>
+        <disks>
+            <s3_disk>
+                <allow_vfs>true</allow_vfs>
+            </s3_disk>
+            <s3_cache_disk>
+                <allow_vfs>true</allow_vfs>
+            </s3_cache_disk>
+        </disks>
+    </storage_configuration>
 </clickhouse>

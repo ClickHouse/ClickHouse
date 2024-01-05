@@ -1,6 +1,14 @@
 <clickhouse>
-    <merge_tree>
-        <allow_remote_fs_zero_copy_replication>0</allow_remote_fs_zero_copy_replication>
-        <allow_object_storage_vfs>1</allow_object_storage_vfs>
-    </merge_tree>
+    <storage_configuration>
+        <disks>
+            <s31>
+                <allow_vfs>true</allow_vfs>
+                <vfs_gc_sleep_ms>2000</vfs_gc_sleep_ms>
+            </s31>
+            <s32>
+                <allow_vfs>true</allow_vfs>
+                <vfs_gc_sleep_ms>2000</vfs_gc_sleep_ms>
+            </s32>
+        </disks>
+    </storage_configuration>
 </clickhouse>

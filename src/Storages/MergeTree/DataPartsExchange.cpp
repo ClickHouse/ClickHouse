@@ -65,10 +65,10 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID = 5;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY = 6;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION = 7;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION = 8;
-constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_OBJECT_STORAGE_VFS = 9;
+// For VFS, data sent over replication protocol doesn't change, only a different cookie may be supplied
 
-constexpr auto OBJECT_STORAGE_VFS = "disk_vfs";
-constexpr auto ZERO_COPY = "remote_fs_metadata";
+constexpr auto DISK_VFS = "disk_vfs";
+constexpr auto DISK_ZERO_COPY = "remote_fs_metadata";
 
 std::string getEndpointId(const std::string & node_id)
 {
@@ -122,7 +122,7 @@ Strings parseCommaDelimited(const String& str)
 
 bool contains(auto && range, auto && value)
 {
-    return std::find(range.begin(), range.end(), value) != range.end();
+    return std::ranges::find(range, value) != range.end();
 }
 
 void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, WriteBuffer & out, HTTPServerResponse & response)
@@ -137,9 +137,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(
-        client_protocol_version,
-        REPLICATION_PROTOCOL_VERSION_WITH_OBJECT_STORAGE_VFS))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION))});
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -194,16 +192,17 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             writeBinary(projections.size(), out);
         }
 
-        const auto& part_storage = part->getDataPartStorage();
+        const auto & part_storage = part->getDataPartStorage();
         const String disk_type = part_storage.getDiskType();
 
-        const Strings desired_zero_copy_disk_types = parseCommaDelimited(params.get(ZERO_COPY, ""));
-        if (data_settings->allow_remote_fs_zero_copy_replication
-            && !isInMemoryPart(part)
-            && client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY
-            && contains(desired_zero_copy_disk_types, disk_type))
+        const Strings desired_zero_copy_disk_types = parseCommaDelimited(params.get(DISK_ZERO_COPY, ""));
+        if (data_settings->allow_remote_fs_zero_copy_replication &&
+            /// In memory data part does not have metadata yet.
+            !isInMemoryPart(part) &&
+            client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY &&
+            contains(desired_zero_copy_disk_types, disk_type))
         {
-            response.addCookie({ZERO_COPY, disk_type});
+            response.addCookie({DISK_ZERO_COPY, disk_type});
             sendPartFromDisk(part, out, client_protocol_version,
                 /* from_disk_with_zero_copy=*/ true,
                 send_projections,
@@ -211,22 +210,20 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             return;
         }
 
-        const Strings desired_vfs_disk_types = parseCommaDelimited(params.get(OBJECT_STORAGE_VFS, ""));
+        const Strings desired_vfs_disk_types = parseCommaDelimited(params.get(DISK_VFS, ""));
         bool verify_checksums = true;
-        if (data_settings->allow_object_storage_vfs
-            && !isInMemoryPart(part)
-            && client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_OBJECT_STORAGE_VFS
-            && contains(desired_vfs_disk_types, disk_type))
+        if (part->getDataPartStorage().supportVFS() &&
+            client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY &&
+            contains(desired_vfs_disk_types, disk_type))
         {
-            response.addCookie({OBJECT_STORAGE_VFS, disk_type});
+            response.addCookie({DISK_VFS, disk_type});
             verify_checksums = false;
         }
 
         if (isInMemoryPart(part))
             sendPartFromMemory(part, out, send_projections);
         else
-            sendPartFromDisk(part, out, client_protocol_version,
-                false, send_projections, verify_checksums);
+            sendPartFromDisk(part, out, client_protocol_version, false, send_projections, verify_checksums);
 
         data.addLastSentPart(part->info);
     }
@@ -441,7 +438,7 @@ Strings getCapableDiskTypes(DiskPtr disk, const Disks& other, Fn<bool(DiskPtr)> 
             if (capability_checker(data_disk))
                 out.emplace_back(toString(data_disk->getDataSourceDescription().type));
 
-        std::sort(out.begin(), out.end());
+        std::ranges::sort(out);
         out.erase(std::unique(out.begin(), out.end()), out.end());
     }
     else if (capability_checker(disk))
@@ -500,7 +497,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         {"endpoint",                endpoint_id},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_OBJECT_STORAGE_VFS)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)},
         {"compress",                "false"}
     });
 
@@ -513,7 +510,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     }
 
     Strings zero_copy_disk_types;
-    if (try_zero_copy && data_settings->allow_remote_fs_zero_copy_replication)
+    const Strings vfs_disk_types = getCapableDiskTypes(disk, data.getDisks(),
+        [](DiskPtr d) { return d->isObjectStorageVFS(); });
+
+    if (!vfs_disk_types.empty())
+        uri.addQueryParameter(DISK_VFS, fmt::format("{}", fmt::join(vfs_disk_types, ", ")));
+    else if (try_zero_copy && data_settings->allow_remote_fs_zero_copy_replication)
     {
         zero_copy_disk_types = getCapableDiskTypes(disk, data.getDisks(),
             [](DiskPtr d) { return d->supportZeroCopyReplication(); });
@@ -524,16 +526,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
             try_zero_copy = false;
         }
         else
-            uri.addQueryParameter(ZERO_COPY, fmt::format("{}", fmt::join(zero_copy_disk_types, ", ")));
-    }
-
-    Strings vfs_disk_types;
-    if (data_settings->allow_object_storage_vfs)
-    {
-        vfs_disk_types = getCapableDiskTypes(disk, data.getDisks(),
-            [](DiskPtr d) { return d->isObjectStorageVFS(); });
-        if (!vfs_disk_types.empty())
-            uri.addQueryParameter(OBJECT_STORAGE_VFS, fmt::format("{}", fmt::join(vfs_disk_types, ", ")));
+            uri.addQueryParameter(DISK_ZERO_COPY, fmt::format("{}", fmt::join(zero_copy_disk_types, ", ")));
     }
 
     Poco::Net::HTTPBasicCredentials creds{};
@@ -553,7 +546,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         context->getCommonFetchesSessionFactory());
 
     int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
-    const String response_disk_type_with_zero_copy = in->getResponseCookie(ZERO_COPY, "");
+    const String response_disk_type_with_zero_copy = in->getResponseCookie(DISK_ZERO_COPY, "");
     DiskPtr preffered_disk = disk;
     if (try_zero_copy
         && !response_disk_type_with_zero_copy.empty()
@@ -569,7 +562,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         }
     }
 
-    const String response_disk_type_with_vfs = in->getResponseCookie(OBJECT_STORAGE_VFS, "");
+    const String response_disk_type_with_vfs = in->getResponseCookie(DISK_VFS, "");
     if (!response_disk_type_with_vfs.empty() && !preffered_disk)
         for (const auto & candidate : data.getDisks())
             if (toString(candidate->getDataSourceDescription().type) == response_disk_type_with_vfs)
@@ -662,22 +655,22 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         if (!try_zero_copy)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected '{}' cookie",
-                ZERO_COPY);
+                DISK_ZERO_COPY);
         if (!contains(zero_copy_disk_types, response_disk_type_with_zero_copy))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Got '{}' cookie {}, expected one from {}",
-                ZERO_COPY,
+                DISK_ZERO_COPY,
                 response_disk_type_with_zero_copy,
                 fmt::join(zero_copy_disk_types, ", "));
         if (server_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Got '{}' cookie with old protocol version {}",
-                ZERO_COPY,
+                DISK_ZERO_COPY,
                 server_protocol_version);
         if (part_type == PartType::InMemory)
             throw Exception(ErrorCodes::INCORRECT_PART_TYPE,
                 "Got '{}' cookie for in-memory part",
-                ZERO_COPY);
+                DISK_ZERO_COPY);
 
         try
         {
@@ -749,18 +742,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         if (!contains(vfs_disk_types, response_disk_type_with_vfs))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Got '{}' cookie {}, expected one from {}",
-                OBJECT_STORAGE_VFS,
+                DISK_VFS,
                 response_disk_type_with_vfs,
                 fmt::join(vfs_disk_types, ", "));
-        if (server_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_OBJECT_STORAGE_VFS)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Got '{}' cookie with old protocol version {}",
-                OBJECT_STORAGE_VFS,
-                server_protocol_version);
         if (part_type == PartType::InMemory)
             throw Exception(ErrorCodes::INCORRECT_PART_TYPE,
                 "Got '{}' cookie for in-memory part",
-                OBJECT_STORAGE_VFS);
+                DISK_VFS);
 
         auto output_buffer_getter = [disk](
             IDataPartStorage & part_storage, const String & file_name, size_t file_size)

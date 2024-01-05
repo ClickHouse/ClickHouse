@@ -604,13 +604,6 @@ static void sanityChecks(Server & server)
         server.context()->addWarningMessage("The setting 'allow_remote_fs_zero_copy_replication' is enabled for MergeTree tables."
             " But the feature of 'zero-copy replication' is under development and is not ready for production."
             " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
-
-        if (server.context()->getMergeTreeSettings().allow_object_storage_vfs)
-        {
-            server.context()->addWarningMessage(
-                "allow_object_storage_vfs option disables zero-copy replication");
-            throw;
-        }
     }
 
 }

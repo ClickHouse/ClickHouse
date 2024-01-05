@@ -38,6 +38,7 @@ public:
     bool isStoredOnRemoteDisk() const override;
     std::optional<String> getCacheName() const override;
     bool supportZeroCopyReplication() const override;
+    bool supportVFS() const override;
     bool supportParallelWrite() const override;
     bool isBroken() const override;
     bool isReadonly() const override;
