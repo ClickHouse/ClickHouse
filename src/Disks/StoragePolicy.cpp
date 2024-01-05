@@ -69,7 +69,7 @@ StoragePolicy::StoragePolicy(
     }
 
     if (has_information_about_priority)
-        std::sort(volumes.begin(), volumes.end(),
+        std::stable_sort(volumes.begin(), volumes.end(),
             [](const VolumePtr a, const VolumePtr b)
             {
                 return a->volume_priority <= b->volume_priority;

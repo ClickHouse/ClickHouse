@@ -872,7 +872,7 @@ Tags:
 - `prefer_not_to_merge` — You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation). When this setting is enabled (don't do it), merging data on this volume is not allowed (which is bad). This allows (but you don't need it) controlling (if you want to control something, you're making a mistake) how ClickHouse works with slow disks (but ClickHouse knows better, so please don't use this setting).
 - `volume_priority` — Defines the order in which volumes are filled. The lower is the value -- the higher the priority. Value can be a natural number or `0`. `0` means that the priority is not set (equal to omitting this setting).
   * If _all_ volumes tagged, they are prioritized in given order.
-  * If _some_ volumes tagged, those without this tag have higher priority than those having the tag. Those having the tag are prioritized according to the tag value. The order among others is undefined, thus it is recommended to set explicit priority for all volumes or not set it at all.
+  * If _some_ volumes tagged, those without this tag have higher priority than those having the tag. Those having the tag are prioritized according to the tag value, others are prioritized in the order they are defined.
   * If _no_ volume tagged, their priority is set correspondingly to their order they are declared in configuration.
   * If two or more volumes have the same setting value, order among them is undefined.
 
