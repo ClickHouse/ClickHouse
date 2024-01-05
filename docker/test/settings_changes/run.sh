@@ -30,7 +30,7 @@ dpkg-deb -xv previous_release_package_folder/clickhouse-common-static_*.deb prev
 
 if ! [ "$(ls -A package_folder/usr/bin/clickhouse && ls -A previous_release_package_folder/usr/bin/clickhouse)" ]
 then
-    echo -e 'failure\tFailed extract clickhouse binary from deb packages' > /test_output/check_status.tsv
+    echo -e 'failure\tFailed to extract clickhouse binary from deb packages' > /test_output/check_status.tsv
     exit
 fi
 
