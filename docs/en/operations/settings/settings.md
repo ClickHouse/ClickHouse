@@ -4774,7 +4774,7 @@ Default: 0
 
 ## output_format_compression_level
 
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when inserting to table fuction `file`, `url`, `hdfs`, `s3`, and `azureBlobStorage`.
+Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
 
 Possible values: from `1` to `22`
 
@@ -4783,7 +4783,7 @@ Default: `3`
 
 ## output_format_compression_zstd_window_log
 
-To be used when `output_format_compression_level` is `zstd`. If greater than `0`, this setting explicitly sets compression window size (expressed as power of `2`) and enable long-range mode for zstd compression. This can help to achive better compression ratio.
+To be used when output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (expressed as power of `2`) and enable long-range mode for zstd compression. This can help to achieve better compression ratio.
 
 Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
 
