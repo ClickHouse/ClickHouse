@@ -226,21 +226,27 @@ public:
                 {
                     auto get_raw_read_buf = [&]() -> std::unique_ptr<ReadBuffer>
                     {
-                        auto buf = std::make_unique<ReadBufferFromHDFS>(
-                            hdfs_namenode_url,
-                            current_path,
-                            getContext()->getGlobalContext()->getConfigRef(),
-                            getContext()->getReadSettings());
-
                         bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
                         if (thread_pool_read)
                         {
+                            auto buf = std::make_unique<ReadBufferFromHDFS>(
+                                hdfs_namenode_url,
+                                current_path,
+                                getContext()->getGlobalContext()->getConfigRef(),
+                                getContext()->getReadSettings(),
+                                /* read_until_position */0,
+                                /* use_external_buffer */true);
+
                             return std::make_unique<AsynchronousReadBufferFromHDFS>(
                                 getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER), read_settings, std::move(buf));
                         }
                         else
                         {
-                            return buf;
+                            return std::make_unique<ReadBufferFromHDFS>(
+                                hdfs_namenode_url,
+                                current_path,
+                                getContext()->getGlobalContext()->getConfigRef(),
+                                getContext()->getReadSettings());;
                         }
                     };
 
