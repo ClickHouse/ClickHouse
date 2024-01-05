@@ -250,19 +250,7 @@ static void makeSets(const ExpressionActionsPtr & actions, const ContextPtr & co
                 if (!future_set->get())
                 {
                     if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
-                    {
-                        auto plan = set_from_subquery->build(context);
-
-                        if (!plan)
-                            continue;
-
-                        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
-                        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-                        pipeline.complete(std::make_shared<EmptySink>(Block()));
-
-                        CompletedPipelineExecutor executor(pipeline);
-                        executor.execute();
-                    }
+                        set_from_subquery->buildSetInplace(context);
                 }
             }
         }
