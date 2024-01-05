@@ -66,7 +66,8 @@ public:
     AzureObjectStorage(
         const String & name_,
         AzureClientPtr && client_,
-        SettingsPtr && settings_);
+        SettingsPtr && settings_,
+        const String & container_);
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
 
@@ -125,7 +126,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    String getObjectsNamespace() const override { return ""; }
+    String getObjectsNamespace() const override { return container ; }
 
     std::unique_ptr<IObjectStorage> cloneObjectStorage(
         const std::string & new_namespace,
@@ -144,6 +145,7 @@ private:
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     MultiVersion<AzureObjectStorageSettings> settings;
+    const String container;
 
     Poco::Logger * log;
 

@@ -314,7 +314,7 @@ void registerStorageAzureBlob(StorageFactory & factory)
 
         return std::make_shared<StorageAzureBlob>(
             std::move(configuration),
-            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings)),
+            std::make_unique<AzureObjectStorage>("AzureBlobStorage", std::move(client), std::move(settings),configuration.container),
             args.getContext(),
             args.table_id,
             args.columns,

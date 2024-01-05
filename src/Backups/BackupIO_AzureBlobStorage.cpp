@@ -41,7 +41,8 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     auto settings_as_unique_ptr = StorageAzureBlob::createSettings(context_);
     object_storage = std::make_unique<AzureObjectStorage>("BackupReaderAzureBlobStorage",
                                                           std::move(client_ptr),
-                                                          std::move(settings_as_unique_ptr));
+                                                          std::move(settings_as_unique_ptr),
+                                                          configuration_.container);
     client = object_storage->getClient();
 }
 
@@ -153,7 +154,8 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     auto settings_as_unique_ptr = StorageAzureBlob::createSettings(context_);
     object_storage = std::make_unique<AzureObjectStorage>("BackupWriterAzureBlobStorage",
                                                           std::move(client_ptr),
-                                                          std::move(settings_as_unique_ptr));
+                                                          std::move(settings_as_unique_ptr),
+                                                          configuration_.container);
     client = object_storage->getClient();
 }
 
