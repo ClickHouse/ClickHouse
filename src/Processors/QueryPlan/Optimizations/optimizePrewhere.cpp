@@ -235,8 +235,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     // replace_old_filter_node = frame.node;
     // remove_filter_node = true;
 
-
-
     // auto & prewhere_filter_actions = optimize_result->prewhere_filter_actions;
 
     // ActionsChain actions_chain;
