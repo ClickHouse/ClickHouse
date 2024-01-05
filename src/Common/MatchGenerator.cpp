@@ -364,7 +364,7 @@ public:
     }
 
 private:
-    Children CopyChildrenArgs(Regexp** children, int nchild)
+    Children CopyChildrenArgs(Regexp ** children, int nchild)
     {
         Children result;
         result.reserve(nchild);
