@@ -89,8 +89,8 @@ export CLICKHOUSE_PORT_KEEPER=${CLICKHOUSE_PORT_KEEPER:="9181"}
 [ -x "${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY} keeper-client --port $CLICKHOUSE_PORT_KEEPER"}
 export CLICKHOUSE_KEEPER_CLIENT=${CLICKHOUSE_KEEPER_CLIENT:="${CLICKHOUSE_BINARY}-keeper-client --port $CLICKHOUSE_PORT_KEEPER"}
 
-CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-if [ -f "${CURDIR}/../config/config.d/fdbkeeper.xml" ]; then
+SHELL_CONFIG_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if [ -f "${SHELL_CONFIG_DIR}/../config/config.d/fdbkeeper.xml" ]; then
     export CLICKHOUSE_KEEPER_CLIENT+=" --fdb --fdb-prefix=fdbkeeper"
 fi
 
