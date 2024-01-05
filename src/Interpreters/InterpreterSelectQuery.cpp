@@ -2493,32 +2493,30 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         /// Create optimizer with prepared actions.
         /// Maybe we will need to calc input_order_info later, e.g. while reading from StorageMerge.
-        if (optimize_read_in_order || optimize_aggregation_in_order)
+        if (optimize_read_in_order)
         {
-            if (optimize_read_in_order)
-            {
-                query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                    query,
-                    analysis_result.order_by_elements_actions,
-                    getSortDescription(query, context),
-                    query_info.syntax_analyzer_result);
-            }
-            else
-            {
-                query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                    query,
-                    analysis_result.group_by_elements_actions,
-                    getSortDescriptionFromGroupBy(query),
-                    query_info.syntax_analyzer_result);
-            }
+            query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+                query,
+                analysis_result.order_by_elements_actions,
+                getSortDescription(query, context),
+                query_info.syntax_analyzer_result);
 
             /// If we don't have filtration, we can pushdown limit to reading stage for optimizations.
-            UInt64 limit = (query.hasFiltration() || query.groupBy()) ? 0 : getLimitForSorting(query, context);
+            UInt64 limit = query.hasFiltration() ? 0 : getLimitForSorting(query, context);
             query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context, limit);
+        }
+        else if (optimize_aggregation_in_order)
+        {
+            query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+                query,
+                analysis_result.group_by_elements_actions,
+                getSortDescriptionFromGroupBy(query),
+                query_info.syntax_analyzer_result);
+
+            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context, /*limit=*/ 0);
         }
 
         query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
-
         query_info.settings_limit_offset_done = options.settings_limit_offset_done;
         storage->read(query_plan, required_columns, storage_snapshot, query_info, context, processing_stage, max_block_size, max_streams);
 
