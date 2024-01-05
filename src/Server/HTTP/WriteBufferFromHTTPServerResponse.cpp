@@ -1,3 +1,4 @@
+#include "Common/StackTrace.h"
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
@@ -153,7 +154,14 @@ void WriteBufferFromHTTPServerResponse::setExceptionCode(int exception_code_)
 
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
-    finalize();
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void WriteBufferFromHTTPServerResponse::finalizeImpl()
