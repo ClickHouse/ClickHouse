@@ -1,17 +1,17 @@
+#include <cmath>
+#include <string>
+#include <type_traits>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
-#include "DataTypes/IDataType.h"
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <base/arithmeticOverflow.h>
@@ -270,6 +270,27 @@ private:
         if (!interval_type)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for 2nd argument of function {}, must be a time interval", getName());
 
+        if (isDate(time_data_type) || isDateTime(time_data_type))
+        {
+            switch (interval_type->getKind()) // NOLINT(bugprone-switch-missing-default-case)
+            {
+                case IntervalKind::Nanosecond:
+                case IntervalKind::Microsecond:
+                case IntervalKind::Millisecond:
+                    if (isDate(time_data_type) || isDateTime(time_data_type))
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal interval kind for argument data type {}", isDate(time_data_type) ? "Date" : "DateTime");
+                    break;
+                case IntervalKind::Second:
+                case IntervalKind::Minute:
+                case IntervalKind::Hour:
+                    if (isDate(time_data_type))
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal interval kind for argument data type Date");
+                    break;
+                default:
+                    break;
+            }
+        }
+
         const auto * interval_column_const_int64 = checkAndGetColumnConst<ColumnInt64>(interval_column.column.get());
         if (!interval_column_const_int64)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for 2nd argument of function {}, must be a const time interval", getName());
@@ -337,94 +358,110 @@ private:
         auto & result_data = col_to->getData();
         result_data.resize(size);
 
-        const Int64 scale_time = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+        const Int64 scale_endtime = DecimalUtils::scaleMultiplier<DateTime64>(scale);
         const Int64 scale_interval = scaleFromInterval<unit>();
 
         /// In case if we have a difference between time arguments and Interval, we need to calculate the difference between them
         /// to get the right precision for the result.
-        const Int64 scale_diff = (scale_interval > scale_time) ? (scale_interval / scale_time) : (scale_time / scale_interval);
+        const Int64 scale_diff = (scale_interval > scale_endtime) ? (scale_interval / scale_endtime) : (scale_endtime / scale_interval);
 
         if (origin_column.column == nullptr)
         {
-            if (scale_time > scale_interval && scale_interval != 1)
+            if (scale_endtime > scale_interval && scale_interval != 1)
             {
                 for (size_t i = 0; i != size; ++i)
                 {
                     /// If we have a time argument that has bigger scale than the interval can contain and interval is not default, we need
                     /// to return a value with bigger precision and thus we should multiply result on the scale difference.
                     result_data[i] = 0;
-                    result_data[i] += static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_time)) * scale_diff;
+                    result_data[i] += static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_endtime)) * scale_diff;
                 }
             }
             else
             {
                 for (size_t i = 0; i != size; ++i)
-                    result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_time));
+                    result_data[i] = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_endtime));
             }
         }
         else
         {
             UInt64 origin = origin_column.column->get64(0);
+            Int64 origin_scale = 1;
+            if (isDateTime64(origin_column.type.get()))
+                origin_scale = assert_cast<const DataTypeDateTime64 &>(*origin_column.type.get()).getScale();
 
             for (size_t i = 0; i != size; ++i)
             {
-                auto t = time_data[i];
-                if (origin > static_cast<size_t>(t))
+                UInt64 end_time = time_data[i];
+
+                if (origin > static_cast<size_t>(end_time) && origin_scale == scale)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date / date with time");
+                else if (origin_scale > scale)
+                    origin /= static_cast<UInt64>(std::pow(10, origin_scale - scale)); /// If aguments have different scales, we make
+                else if (origin_scale < scale)                                         /// origin argument to have the same scale as the first argument.
+                    origin *= static_cast<UInt64>(std::pow(10, scale - origin_scale));
 
                 /// The trick to calculate the interval starting from an offset is to
                 /// 1. subtract the offset,
                 /// 2. perform the calculation, and
                 /// 3. add the offset to the result.
 
-                t -= origin;
-                auto res = static_cast<ResultFieldType>(ToStartOfInterval<unit>::execute(t, num_units, time_zone, scale_time));
-
                 static constexpr size_t SECONDS_PER_DAY = 86'400;
-
                 result_data[i] = 0;
-                if (unit == IntervalKind::Week || unit == IntervalKind::Month || unit == IntervalKind::Quarter || unit == IntervalKind::Year)
+
+                if (isDate(origin_column.type.get())) /// We need to perform calculations on dateTime (dateTime64) values only.
                 {
-                    /// For such intervals, ToStartOfInterval<unit>::execute() returns days
-                    if (isDate(result_type))
-                        result_data[i] += origin + res;
-                    else if (isDateTime(result_type))
-                        result_data[i] += origin + res * SECONDS_PER_DAY;
-                    else if (isDateTime64(result_type))
-                        result_data[i] += origin + (res * SECONDS_PER_DAY * scale_time);
+                    end_time *= SECONDS_PER_DAY;
+                    origin *= SECONDS_PER_DAY;
+                }
+
+                Int64 delta = (end_time - origin) * (isDateTime64(origin_column.type.get()) ? 1 : scale_endtime); /// No need to multiply on scale endtime if we have dateTime64 argument.
+                Int64 offset = 0;
+
+                {
+                    auto origin_data = isDateTime64(result_type) ? origin / scale_endtime : origin;
+                    offset = static_cast<DataTypeDateTime::FieldType>(ToStartOfInterval<unit>::execute(delta, num_units, time_zone, scale_endtime, origin_data));
+                }
+
+
+                if (isDate(result_type)) /// The result should be a date and the calculations were as datetime.
+                    result_data[i] += (origin + offset) / SECONDS_PER_DAY;
+                else if (unit == IntervalKind::Week || unit == IntervalKind::Month || unit == IntervalKind::Quarter || unit == IntervalKind::Year)
+                {
+                    if (isDateTime64(result_type)) /// We need to have the right scale for offset, origin already has the right scale.
+                        offset *= scale_endtime;
+
+                    result_data[i] += origin + offset;
                 }
                 else
                 {
-                    /// ToStartOfInterval<unit>::execute() returns seconds
-
-                    if (isDate(result_type))
-                        res = res / SECONDS_PER_DAY;
+                    /// ToStartOfInterval<unit>::execute() returns seconds.
 
                     if (scale_interval == 1)
                     {
-                        /// Interval has default scale, i.e. Year - Second
+                        if (isDateTime64(result_type)) /// We need to have the right scale for offset, origin already has the right scale.
+                            offset *= scale_endtime;
 
-                        if (scale_time % 1000 != 0 && scale_time >= 1000)
-                            /// The arguments are DateTime64 with precision like 4,5,7,8. Here res has right precision and origin doesn't.
-                            result_data[i] += (origin + res / scale_time) * scale_time;
-                        else if (scale_time == 100)
-                            /// The arguments are DateTime64 with precision 2. Here origin has right precision and res doesn't
-                            result_data[i] += (origin + res * scale_time);
+                        /// Interval has default scale, i.e. Year - Second.
+
+                        if (scale_endtime % 1000 != 0 && scale_endtime >= 1000)
+                            /// The arguments are DateTime64 with precision like 4,5,7,8. Here offset has right precision and origin doesn't.
+                            result_data[i] += (origin + offset / scale_endtime) * scale_endtime;
                         else
-                            /// Precision of DateTime64 is 1, 3, 6, 9, e.g. has right precision in res and origin.
-                            result_data[i] += (origin + res);
+                            /// Precision of DateTime64 is 1, 2, 3, 6, 9, e.g. has right precision in offset and origin.
+                            result_data[i] += (origin + offset);
                     }
                     else
                     {
-                        /// Interval has some specific scale (3,6,9), i.e. Millisecond - Nanosecond
+                        /// Interval has some specific scale (3,6,9), i.e. Millisecond - Nanosecond.
 
-                        if (scale_interval < scale_time)
+                        if (scale_interval < scale_endtime)
                             /// If we have a time argument that has bigger scale than the interval can contain, we need
                             /// to return a value with bigger precision and thus we should multiply result on the scale difference.
-                            result_data[i] += origin + res * scale_diff;
+                            result_data[i] += origin + offset * scale_diff;
                         else
-                            /// The other case: interval has bigger scale than the interval or they have the same scale, so res has the right precision and origin doesn't
-                            result_data[i] += (origin + res / scale_diff) * scale_diff;
+                            /// The other case: interval has bigger scale than the interval or they have the same scale, so offset has the right precision and origin doesn't.
+                            result_data[i] += (origin + offset / scale_diff) * scale_diff;
                     }
                 }
             }
