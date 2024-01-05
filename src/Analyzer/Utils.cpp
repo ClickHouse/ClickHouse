@@ -669,4 +669,20 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
     return out;
 }
 
+QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context)
+{
+    auto enum_literal = std::make_shared<ConstantValue>(result_type->getName(), std::make_shared<DataTypeString>());
+    auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
+
+    auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
+    QueryTreeNodes arguments{ std::move(node), std::move(enum_literal_node) };
+
+    auto function_node = std::make_shared<FunctionNode>("_CAST");
+    function_node->getArguments().getNodes() = std::move(arguments);
+
+    function_node->resolveAsFunction(cast_function->build(function_node->getArgumentColumns()));
+
+    return function_node;
+}
+
 }

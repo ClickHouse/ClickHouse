@@ -36,6 +36,7 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/GraceHashJoin.h>
+#include <Interpreters/PasteJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -776,6 +777,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(JoinAlgorithm algorithm,
     const Block & right_table_expression_header,
     const PlannerContextPtr & planner_context)
 {
+    if (table_join->kind() == JoinKind::Paste)
+        return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
     /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {

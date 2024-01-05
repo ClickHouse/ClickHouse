@@ -123,9 +123,7 @@ class ArtifactsHelper:
                 return fnmatch(key, glob)
             return True
 
-        results = filter(
-            ignore, self.s3_helper.list_prefix(self.s3_prefix, S3_BUILDS_BUCKET)
-        )
+        results = filter(ignore, self.s3_helper.list_prefix(self.s3_prefix))
         return list(results)
 
     @staticmethod

@@ -533,8 +533,8 @@ Result:
 
 ```result
 ┌─concatWithSeparator('a', '1', '2', '3', '4')─┐
-│ 1a2a3a4                           │
-└───────────────────────────────────┘
+│ 1a2a3a4                                      │
+└──────────────────────────────────────────────┘
 ```
 
 ## concatWithSeparatorAssumeInjective
@@ -1251,7 +1251,7 @@ This function also replaces numeric character references with Unicode characters
 **Syntax**
 
 ``` sql
-decodeHTMComponent(x)
+decodeHTMLComponent(x)
 ```
 
 **Arguments**
@@ -1268,7 +1268,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 ``` sql
 SELECT decodeHTMLComponent(''CH');
-SELECT decodeHMLComponent('I&heartsuit;ClickHouse');
+SELECT decodeHTMLComponent('I&heartsuit;ClickHouse');
 ```
 
 Result:

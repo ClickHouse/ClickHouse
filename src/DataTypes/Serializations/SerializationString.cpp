@@ -175,7 +175,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
         offsets.push_back(offset);
 
         if (unlikely(offset > data.size()))
-            data.resize(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
+            data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
 
         if (size)
         {

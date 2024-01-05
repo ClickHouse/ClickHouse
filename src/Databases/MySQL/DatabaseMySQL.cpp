@@ -2,6 +2,7 @@
 
 #if USE_MYSQL
 #    include <string>
+#    include <Databases/DatabaseFactory.h>
 #    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
@@ -14,6 +15,7 @@
 #    include <QueryPipeline/QueryPipelineBuilder.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
+#    include <Interpreters/evaluateConstantExpression.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Parsers/ASTFunction.h>
 #    include <Parsers/ParserCreateQuery.h>
@@ -21,8 +23,11 @@
 #    include <Parsers/queryToString.h>
 #    include <Storages/StorageMySQL.h>
 #    include <Storages/MySQL/MySQLSettings.h>
+#    include <Storages/MySQL/MySQLHelpers.h>
+#    include <Storages/NamedCollectionsHelpers.h>
 #    include <Common/escapeForFileName.h>
 #    include <Common/parseAddress.h>
+#    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
 #    include <filesystem>
 #    include <Common/filesystemHelpers.h>
@@ -41,6 +46,8 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int CANNOT_CREATE_DATABASE;
+    extern const int BAD_ARGUMENTS;
 }
 
 constexpr static const auto suffix = ".remove_flag";
@@ -361,8 +368,10 @@ void DatabaseMySQL::cleanOutdatedTables()
     }
 }
 
-void DatabaseMySQL::attachTableUnlocked(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
+void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
+    std::lock_guard lock{mutex};
+
     if (!local_tables_cache.contains(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot attach table {}.{} because it does not exist.",
             backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
@@ -502,6 +511,77 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     attachTable(local_context, table_name, storage, {});
 }
 
+void registerDatabaseMySQL(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        auto * engine_define = args.create_query.storage;
+        const ASTFunction * engine = engine_define->engine;
+        const String & engine_name = engine_define->engine->name;
+        if (!engine->arguments)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
+
+        StorageMySQL::Configuration configuration;
+        ASTs & arguments = engine->arguments->children;
+        auto mysql_settings = std::make_unique<MySQLSettings>();
+
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, args.context))
+        {
+            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);
+        }
+        else
+        {
+            if (arguments.size() != 4)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
+
+
+            arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], args.context);
+            const auto & host_port = safeGetLiteralValue<String>(arguments[0], engine_name);
+
+            if (engine_name == "MySQL")
+            {
+                size_t max_addresses = args.context->getSettingsRef().glob_expansion_max_elements;
+                configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
+            }
+            else
+            {
+                const auto & [remote_host, remote_port] = parseAddress(host_port, 3306);
+                configuration.host = remote_host;
+                configuration.port = remote_port;
+            }
+
+            configuration.database = safeGetLiteralValue<String>(arguments[1], engine_name);
+            configuration.username = safeGetLiteralValue<String>(arguments[2], engine_name);
+            configuration.password = safeGetLiteralValue<String>(arguments[3], engine_name);
+        }
+        mysql_settings->loadFromQueryContext(args.context, *engine_define);
+        if (engine_define->settings)
+            mysql_settings->loadFromQuery(*engine_define);
+
+        auto mysql_pool = createMySQLPoolWithFailover(configuration, *mysql_settings);
+
+        try
+        {
+            return make_shared<DatabaseMySQL>(
+                args.context,
+                args.database_name,
+                args.metadata_path,
+                engine_define,
+                configuration.database,
+                std::move(mysql_settings),
+                std::move(mysql_pool),
+                args.create_query.attach);
+        }
+        catch (...)
+        {
+            const auto & exception_message = getCurrentExceptionMessage(true);
+            throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
+        }
+    };
+    factory.registerDatabase("MySQL", create_fn);
+}
 }
 
 #endif

@@ -159,6 +159,15 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
     return res;
 }
 
+/// Check if PostgreSQL relation is empty.
+/// postgres_table must be already quoted + schema-qualified.
+template <typename T>
+bool isTableEmpty(T & tx, const String & postgres_table)
+{
+    auto query = fmt::format("SELECT NOT EXISTS (SELECT * FROM {} LIMIT 1);", postgres_table);
+    pqxx::result result{tx.exec(query)};
+    return result[0][0].as<bool>();
+}
 
 template<typename T>
 PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
@@ -198,7 +207,6 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
 
                     columns.push_back(NameAndTypePair(column_name, data_type));
                     auto attgenerated = std::get<6>(row);
-                    LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: attgenerated: {}", attgenerated);
 
                     attributes.emplace(
                         column_name,
@@ -219,12 +227,37 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
         {
             const auto & name_and_type = columns[i];
 
-            /// All rows must contain the same number of dimensions, so limit 1 is ok. If number of dimensions in all rows is not the same -
+            /// If the relation is empty, then array_ndims returns NULL.
+            /// ClickHouse cannot support this use case.
+            if (isTableEmpty(tx, postgres_table))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL relation containing arrays cannot be empty: {}", postgres_table);
+
+            /// All rows must contain the same number of dimensions.
+            /// 1 is ok. If number of dimensions in all rows is not the same -
             /// such arrays are not able to be used as ClickHouse Array at all.
-            pqxx::result result{tx.exec(fmt::format("SELECT array_ndims({}) FROM {} LIMIT 1", name_and_type.name, postgres_table))};
-            // array_ndims() may return null for empty array, but we expect 0:
-            // https://github.com/postgres/postgres/blob/d16a0c1e2e3874cd5adfa9ee968008b6c4b1ae01/src/backend/utils/adt/arrayfuncs.c#L1658
-            auto dimensions = result[0][0].as<std::optional<int>>().value_or(0);
+            ///
+            /// For empty arrays, array_ndims([]) will return NULL.
+            auto postgres_column = doubleQuoteString(name_and_type.name);
+            pqxx::result result{tx.exec(
+                fmt::format("SELECT {} IS NULL, array_ndims({}) FROM {} LIMIT 1;", postgres_column, postgres_column, postgres_table))};
+
+            /// Nullable(Array) is not supported.
+            auto is_null_array = result[0][0].as<bool>();
+            if (is_null_array)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PostgreSQL array cannot be NULL: {}.{}", postgres_table, postgres_column);
+
+            /// Cannot infer dimension of empty arrays.
+            auto is_empty_array = result[0][1].is_null();
+            if (is_empty_array)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "PostgreSQL cannot infer dimensions of an empty array: {}.{}",
+                    postgres_table,
+                    postgres_column);
+            }
+
+            int dimensions = result[0][1].as<int>();
 
             /// It is always 1d array if it is in recheck.
             DataTypePtr type = assert_cast<const DataTypeArray *>(name_and_type.type.get())->getNestedType();
