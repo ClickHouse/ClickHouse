@@ -293,7 +293,7 @@ void FDBKeeper::exists(const String & path, ExistsCallback callback, WatchCallba
     }
 
 #ifdef ZOOKEEPER_LOG
-    keeper_logger.existsRequest(path, static_cast<bool>(watch), session->currentSessionSync());
+    keeper_logger.existsRequest(path, watch != nullptr, session->currentSessionSync());
 #endif
 
     trxb.exec(newTrx(), handleKeeperCallback(var_resp, callback, " during exists " + chrooted_path), trx_tracker.newToken());
@@ -318,7 +318,7 @@ void FDBKeeper::get(const String & path, GetCallback callback, WatchCallbackPtr 
     }
 
 #ifdef ZOOKEEPER_LOG
-    keeper_logger.getRequest(path, static_cast<bool>(watch), session->currentSessionSync());
+    keeper_logger.getRequest(path, watch != nullptr, session->currentSessionSync());
 #endif
 
     trxb.exec(newTrx(), handleKeeperCallback(var_resp, callback, " during get " + chrooted_path), trx_tracker.newToken());
@@ -384,7 +384,7 @@ void FDBKeeper::list(const String & path, ListRequestType list_request_type, Lis
     }
 
 #ifdef ZOOKEEPER_LOG
-    keeper_logger.listRequest(path, static_cast<bool>(watch), session->currentSessionSync());
+    keeper_logger.listRequest(path, watch != nullptr, session->currentSessionSync());
 #endif
 
     trxb.exec(newTrx(), handleKeeperCallback(var_resp, callback, " during list " + chrooted_path), trx_tracker.newToken());

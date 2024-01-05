@@ -9,10 +9,12 @@ namespace Coordination
 {
 
 KeeperOperationLogger::KeeperOperationLogger(std::shared_ptr<ZooKeeperLog> zk_log_)
-    : zk_log(std::move(zk_log_))
-{}
+{
+    std::atomic_store(&zk_log, std::move(zk_log_));
+}
 
-void KeeperOperationLogger::setZooKeeperLog(std::shared_ptr<ZooKeeperLog> zk_log_) {
+void KeeperOperationLogger::setZooKeeperLog(std::shared_ptr<ZooKeeperLog> zk_log_)
+{
     std::atomic_store(&zk_log, std::move(zk_log_));
 }
 
@@ -284,7 +286,6 @@ void KeeperOperationLogger::response(const Response & resp, size_t elapsed_ms, i
     else if (auto * multiResponse = dynamic_cast<const MultiResponse *>(&resp))
     {
         elem.op_num = static_cast<uint32_t>(OpNum::Multi);
-        elem.requests_size = static_cast<uint32_t>(multiResponse->responses.size());
 
         for (const auto & resp_ : multiResponse->responses)
         {

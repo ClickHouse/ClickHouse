@@ -632,10 +632,7 @@ public:
 
     virtual const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const { return nullptr; }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-parameter"
-    virtual void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_) {}
-#pragma clang diagnostic pop
+    virtual void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> /* zk_log_ */) {}
 
     /// A ZooKeeper session can have an optional deadline set on it.
     /// After it has been reached, the session needs to be finalized.
