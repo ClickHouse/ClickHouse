@@ -55,7 +55,7 @@ Header: a2 String
   Header: __table1.a2 String
           __table1.k UInt64
           __table4.d2 String
-    Expression (DROP unused columns after JOIN)
+    Expression ((Actions for left table alias column keys + DROP unused columns after JOIN))
     Header: __table1.a2 String
             __table1.k UInt64
       Join (JOIN FillRightFirst)
