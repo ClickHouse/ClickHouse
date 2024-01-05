@@ -1,5 +1,6 @@
 #include <chrono>
 #include <gtest/gtest.h>
+#include <libnuraft/log_val_type.hxx>
 #include "Common/ZooKeeper/IKeeper.h"
 
 #include "Core/Defines.h"
@@ -330,6 +331,78 @@ void waitDurableLogs(nuraft::log_store & log_store)
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
 }
 
+std::shared_ptr<Coordination::KeeperStorage::RequestForSession> parseRequest(nuraft::buffer & data)
+{
+    DB::ReadBufferFromNuraftBuffer buffer(data);
+    auto request_for_session = std::make_shared<Coordination::KeeperStorage::RequestForSession>();
+    readIntBinary(request_for_session->session_id, buffer);
+
+    int32_t length;
+    Coordination::read(length, buffer);
+
+    int32_t xid;
+    Coordination::read(xid, buffer);
+
+    Coordination::OpNum opnum;
+
+    Coordination::read(opnum, buffer);
+
+    request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+    request_for_session->request->xid = xid;
+    request_for_session->request->readImpl(buffer);
+
+    if (!buffer.eof())
+    {
+        readIntBinary(request_for_session->time, buffer);
+    }
+    else
+        request_for_session->time
+            = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    if (!buffer.eof())
+    {
+        readIntBinary(request_for_session->zxid, buffer);
+
+        chassert(!buffer.eof());
+
+        request_for_session->digest.emplace();
+        readIntBinary(request_for_session->digest->version, buffer);
+        if (request_for_session->digest->version != Coordination::KeeperStorage::DigestVersion::NO_DIGEST || !buffer.eof())
+            readIntBinary(request_for_session->digest->value, buffer);
+    }
+
+    return request_for_session;
+}
+
+}
+
+TEST_F(CoordinationTest, CustomTest)
+{
+    setLogDirectory("/data/logs");
+    DB::KeeperLogStore changelog(
+    DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 100000},
+        DB::FlushSettings(),
+        keeper_context);
+
+    changelog.init(2392707363, 0);
+
+    auto entries = changelog.log_entries(2392707364, 2392707364 + 47435);
+
+    auto log_idx = 2392707364;
+    for (const auto & entry : *entries)
+    {
+        if (entry->get_val_type() == nuraft::conf)
+        {
+            std::cout << fmt::format("log idx {}, got config", log_idx) << std::endl;
+        }
+        else
+        {
+            auto request = parseRequest(entry->get_buf());
+            std::cout << fmt::format("log idx {}, got request, zxid {}, opnum {}", log_idx, request->zxid, static_cast<int32_t>(request->request->getOpNum())) << std::endl;
+        }
+
+        ++log_idx;
+    }
 }
 
 TEST_P(CoordinationTest, ChangelogTestFile)
