@@ -24,17 +24,17 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// encodeSqid(number1, ...)
-class FunctionEncodeSqid : public IFunction
+/// sqidEncode(number1, ...)
+class FunctionSqidEncode : public IFunction
 {
 public:
-    static constexpr auto name = "encodeSqid";
+    static constexpr auto name = "sqidEncode";
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEncodeSqid>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidEncode>(); }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -82,16 +82,16 @@ private:
     sqidscxx::Sqids<> sqids;
 };
 
-/// decodeSqid(number1, ...)
-class FunctionDecodeSqid : public IFunction
+/// sqidDecode(number1, ...)
+class FunctionSqidDecode : public IFunction
 {
 public:
-    static constexpr auto name = "decodeSqid";
+    static constexpr auto name = "sqidDecode";
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDecodeSqid>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidDecode>(); }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -131,35 +131,35 @@ private:
 
 REGISTER_FUNCTION(Sqid)
 {
-    factory.registerFunction<FunctionEncodeSqid>(FunctionDocumentation{
+    factory.registerFunction<FunctionSqidEncode>(FunctionDocumentation{
         .description=R"(
 Transforms numbers into a [Sqid](https://sqids.org/) which is a Youtube-like ID string.)",
-        .syntax="encodeSqid(number1, ...)",
+        .syntax="sqidEncode(number1, ...)",
         .arguments={{"number1, ...", "Arbitrarily many UInt8, UInt16, UInt32 or UInt64 arguments"}},
         .returned_value="A hash id [String](/docs/en/sql-reference/data-types/string.md).",
         .examples={
             {"simple",
-            "SELECT encodeSqid(1, 2, 3, 4, 5);",
+            "SELECT sqidEncode(1, 2, 3, 4, 5);",
             R"(
-┌─encodeSqid(1, 2, 3, 4, 5)─┐
+┌─sqidEncode(1, 2, 3, 4, 5)─┐
 │ gXHfJ1C6dN                │
 └───────────────────────────┘
             )"
             }}
     });
-    factory.registerAlias("sqid", FunctionEncodeSqid::name);
+    factory.registerAlias("sqid", FunctionSqidEncode::name);
 
-    factory.registerFunction<FunctionDecodeSqid>(FunctionDocumentation{
+    factory.registerFunction<FunctionSqidDecode>(FunctionDocumentation{
         .description=R"(
 Transforms a [Sqid](https://sqids.org/) back into a tuple of numbers.)",
-        .syntax="decodeSqid(number1, ...)",
+        .syntax="sqidDecode(number1, ...)",
         .arguments={{"sqid", "A sqid"}},
         .returned_value="A tuple of [UInt64](/docs/en/sql-reference/data-types/int-uint.md).",
         .examples={
             {"simple",
-            "SELECT decodeSqid('gXHfJ1C6dN');",
+            "SELECT sqidDecode('gXHfJ1C6dN');",
             R"(
-┌─decodeSqid('gXHfJ1C6dN')─┐
+┌─sqidDecode('gXHfJ1C6dN')─┐
 │ [1,2,3,4,5]              │
 └──────────────────────────┘
             )"

@@ -701,8 +701,6 @@ PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
-TotalPrimaryKeyBytesInMemory
-TotalPrimaryKeyBytesInMemoryAllocated
 PrivateKeyPassphraseHandler
 ProfileEvents
 Profiler
@@ -924,6 +922,8 @@ Toolset
 TopK
 TotalBytesOfMergeTreeTables
 TotalPartsOfMergeTreeTables
+TotalPrimaryKeyBytesInMemory
+TotalPrimaryKeyBytesInMemoryAllocated
 TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
@@ -1848,14 +1848,14 @@ metrica
 metroHash
 mfedotov
 minMap
+minSampleSizeContinuous
+minSampleSizeConversion
 mindsdb
 minimalistic
 mininum
 miniselect
 minmap
 minmax
-minSampleSizeContinuous
-minSampleSizeConversion
 mins
 misconfiguration
 mispredictions
@@ -2283,6 +2283,8 @@ splitByString
 splitByWhitespace
 splitby
 sqid
+sqidDecode
+sqidEncode
 sql
 sqlalchemy
 sqlinsert
