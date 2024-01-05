@@ -228,8 +228,7 @@ private:
 
             auto [lo, _] = *it;
             Rune r = lo + count_down - 1;
-            int n = re2::runetochar(out, &r);
-            return n;
+            return re2::runetochar(out, &r);
         }
 
         size_t getRequiredSize() override
