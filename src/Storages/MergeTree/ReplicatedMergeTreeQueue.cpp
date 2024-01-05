@@ -2623,7 +2623,7 @@ String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback,
                                         std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode,
-                                        zkutil::ZooKeeperPtr & zookeeper, std::unordered_set<String> src_replicas)
+                                        std::unordered_set<String> src_replicas)
 {
     std::lock_guard<std::mutex> lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);
@@ -2644,9 +2644,8 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
         std::unordered_set<String> existing_replicas;
         if (!src_replicas.empty())
         {
-            Coordination::Stat stat;
             Strings unfiltered_hosts;
-            unfiltered_hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
+            unfiltered_hosts = storage.getZooKeeper()->getChildren(zookeeper_path + "/replicas");
             for (const auto & host : unfiltered_hosts)
                 existing_replicas.insert(host);
         }

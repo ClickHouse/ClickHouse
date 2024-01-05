@@ -208,7 +208,7 @@ public:
 
     /// Wait till replication queue's current last entry is processed or till size becomes 0
     /// If timeout is exceeded returns false
-    bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, zkutil::ZooKeeperPtr & zookeeper, std::unordered_set<String> source_replicas);
+    bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
     void getStatus(ReplicatedTableStatus & res, bool with_zk_fields = true);
