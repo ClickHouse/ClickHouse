@@ -359,7 +359,7 @@ void copyAzureBlobStorageFile(
     bool for_disk_azure_blob_storage)
 {
 
-    if (settings->use_native_copy )
+    if (settings->use_native_copy)
     {
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
         if (for_disk_azure_blob_storage)
