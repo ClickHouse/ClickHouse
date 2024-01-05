@@ -664,26 +664,26 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
     for (size_t i = 0; i < aggregate_functions.size(); ++i)
     {
         const auto * function = aggregate_functions[i];
+        bool function_is_compilable = function->isCompilable();
+        if (!function_is_compilable)
+            continue;
+
         size_t offset_of_aggregate_function = offsets_of_aggregate_states[i];
-
-        if (function->isCompilable())
+        AggregateFunctionWithOffset function_to_compile
         {
-            AggregateFunctionWithOffset function_to_compile
-            {
-                .function = function,
-                .aggregate_data_offset = offset_of_aggregate_function
-            };
+            .function = function,
+            .aggregate_data_offset = offset_of_aggregate_function
+        };
 
-            functions_to_compile.emplace_back(std::move(function_to_compile));
+        functions_to_compile.emplace_back(std::move(function_to_compile));
 
-            functions_description += function->getDescription();
-            functions_description += ' ';
+        functions_description += function->getDescription();
+        functions_description += ' ';
 
-            functions_description += std::to_string(offset_of_aggregate_function);
-            functions_description += ' ';
-        }
+        functions_description += std::to_string(offset_of_aggregate_function);
+        functions_description += ' ';
 
-        is_aggregate_function_compiled[i] = function->isCompilable();
+        is_aggregate_function_compiled[i] = true;
     }
 
     if (functions_to_compile.empty())
@@ -1685,14 +1685,13 @@ bool Aggregator::executeOnBlock(Columns columns,
     /// For the case when there are no keys (all aggregate into one row).
     if (result.type == AggregatedDataVariants::Type::without_key)
     {
-        /// TODO: Enable compilation after investigation
-// #if USE_EMBEDDED_COMPILER
-//         if (compiled_aggregate_functions_holder)
-//         {
-//             executeWithoutKeyImpl<true>(result.without_key, row_begin, row_end, aggregate_functions_instructions.data(), result.aggregates_pool);
-//         }
-//         else
-// #endif
+#if USE_EMBEDDED_COMPILER
+        if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_functions_instructions.data()))
+        {
+            executeWithoutKeyImpl<true>(result.without_key, row_begin, row_end, aggregate_functions_instructions.data(), result.aggregates_pool);
+        }
+        else
+#endif
         {
             executeWithoutKeyImpl<false>(result.without_key, row_begin, row_end, aggregate_functions_instructions.data(), result.aggregates_pool);
         }

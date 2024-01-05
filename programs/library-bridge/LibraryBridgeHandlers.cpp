@@ -2,7 +2,6 @@
 
 #include "CatBoostLibraryHandler.h"
 #include "CatBoostLibraryHandlerFactory.h"
-#include "Common/ProfileEvents.h"
 #include "ExternalDictionaryLibraryHandler.h"
 #include "ExternalDictionaryLibraryHandlerFactory.h"
 
@@ -45,7 +44,7 @@ namespace
         response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
         if (!response.sent())
-            *response.send() << message << '\n';
+            *response.send() << message << std::endl;
 
         LOG_WARNING(&Poco::Logger::get("LibraryBridge"), fmt::runtime(message));
     }
@@ -97,7 +96,7 @@ ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRe
 }
 
 
-void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
     HTMLForm params(getContext()->getSettingsRef(), request);
@@ -385,7 +384,7 @@ ExternalDictionaryLibraryBridgeExistsHandler::ExternalDictionaryLibraryBridgeExi
 }
 
 
-void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
@@ -424,7 +423,7 @@ CatBoostLibraryBridgeRequestHandler::CatBoostLibraryBridgeRequestHandler(
 }
 
 
-void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     LOG_TRACE(log, "Request URI: {}", request.getURI());
     HTMLForm params(getContext()->getSettingsRef(), request);
@@ -622,7 +621,7 @@ CatBoostLibraryBridgeExistsHandler::CatBoostLibraryBridgeExistsHandler(size_t ke
 }
 
 
-void CatBoostLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void CatBoostLibraryBridgeExistsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
