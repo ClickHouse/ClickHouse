@@ -10,7 +10,6 @@
 #include <Coordination/KeeperFeatureFlags.h>
 #include <boost/algorithm/string.hpp>
 
-using namespace std::literals;
 namespace DB
 {
 
@@ -71,14 +70,21 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 
 namespace
 {
+
 bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::string & disk_config_prefix, const std::string &)
 {
     const auto disk_type = config.getString(disk_config_prefix + ".type", "local");
+
+    using namespace std::literals;
+    static constexpr std::array supported_disk_types
+    {
+        "s3"sv,
+        "s3_plain"sv,
+        "local"sv
+    };
+
     const bool allow_vfs = config.getBool(disk_config_prefix + ".allow_vfs", false);
-    const auto supported_disk_types = allow_vfs
-        ? std::vector{"s3_plain"sv, "local"sv}
-        : std::vector{"s3"sv, "s3_plain"sv, "local"sv};
-    if (std::all_of(
+    if (allow_vfs || std::all_of(
             supported_disk_types.begin(),
             supported_disk_types.end(),
             [&](const auto supported_type) { return disk_type != supported_type; }))
@@ -89,6 +95,7 @@ bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::
 
     return true;
 }
+
 }
 
 void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & config)

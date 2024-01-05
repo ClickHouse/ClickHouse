@@ -285,6 +285,7 @@ void DiskObjectStorage::createHardLink(const String & src_path, const String & d
     createHardLink(src_path, dst_path, send_metadata);
 }
 
+
 void DiskObjectStorage::setReadOnly(const String & path)
 {
     /// We should store read only flag inside metadata file (instead of using FS flag),

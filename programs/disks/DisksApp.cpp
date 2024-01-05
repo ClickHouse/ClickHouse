@@ -177,7 +177,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
     }
 
-    registerDisks(/* global_skip_access_check= */ true, /* allow_vfs */ true, /* allow_vfs_gc */ false);
+    registerDisks(/* global_skip_access_check=*/true, /*allow_vfs*/true, /*allow_vfs_gc*/ false);
 
     registerFormats();
 

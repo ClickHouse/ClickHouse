@@ -605,7 +605,6 @@ static void sanityChecks(Server & server)
             " But the feature of 'zero-copy replication' is under development and is not ready for production."
             " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
     }
-
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
