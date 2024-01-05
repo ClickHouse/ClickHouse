@@ -1,12 +1,13 @@
-#include <Common/FoundationDB/KeeperOperationLogger.h>
+#include "KeeperOperationLogger.h"
 
 namespace DB
 {
 class ZooKeeperLog;
-}
 
-namespace Coordination
+namespace FoundationDB
 {
+
+using namespace Coordination;
 
 KeeperOperationLogger::KeeperOperationLogger(std::shared_ptr<ZooKeeperLog> zk_log_)
 {
@@ -18,16 +19,16 @@ void KeeperOperationLogger::setZooKeeperLog(std::shared_ptr<ZooKeeperLog> zk_log
     std::atomic_store(&zk_log, std::move(zk_log_));
 }
 
-void KeeperOperationLogger::createRequest(const String & path, const String & data, bool is_ephemeral, bool is_sequential, bool has_watch, int64_t session_id) const
+void KeeperOperationLogger::createRequest(
+    const String & path, const String & data, bool is_ephemeral, bool is_sequential, bool has_watch, int64_t session_id) const
 {
     auto maybe_zk_log = std::atomic_load(&zk_log);
     if (!maybe_zk_log)
         return;
 
     ZooKeeperLogElement elem;
-    Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                               std::chrono::system_clock::now().time_since_epoch()
-                               ).count();
+    Decimal64 event_time
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     elem.type = ZooKeeperLogElement::REQUEST;
     elem.has_watch = has_watch;
@@ -49,9 +50,8 @@ void KeeperOperationLogger::removeRequest(const String & path, int32_t version, 
         return;
 
     ZooKeeperLogElement elem;
-    Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                               std::chrono::system_clock::now().time_since_epoch()
-                               ).count();
+    Decimal64 event_time
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     elem.type = ZooKeeperLogElement::REQUEST;
     elem.has_watch = has_watch;
@@ -71,9 +71,8 @@ void KeeperOperationLogger::setRequest(const String & path, const String & data,
         return;
 
     ZooKeeperLogElement elem;
-    Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                               std::chrono::system_clock::now().time_since_epoch()
-                               ).count();
+    Decimal64 event_time
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     elem.type = ZooKeeperLogElement::REQUEST;
     elem.has_watch = has_watch;
@@ -94,9 +93,8 @@ void KeeperOperationLogger::getRequest(const String & path, bool has_watch, int6
         return;
 
     ZooKeeperLogElement elem;
-    Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                               std::chrono::system_clock::now().time_since_epoch()
-                               ).count();
+    Decimal64 event_time
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     elem.type = ZooKeeperLogElement::REQUEST;
     elem.has_watch = has_watch;
@@ -115,9 +113,8 @@ void KeeperOperationLogger::existsRequest(const String & path, bool has_watch, i
         return;
 
     ZooKeeperLogElement elem;
-    Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                               std::chrono::system_clock::now().time_since_epoch()
-                               ).count();
+    Decimal64 event_time
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     elem.type = ZooKeeperLogElement::REQUEST;
     elem.has_watch = has_watch;
@@ -136,9 +133,8 @@ void KeeperOperationLogger::listRequest(const String & path, bool has_watch, int
         return;
 
     ZooKeeperLogElement elem;
-    Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                               std::chrono::system_clock::now().time_since_epoch()
-                               ).count();
+    Decimal64 event_time
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     elem.type = ZooKeeperLogElement::REQUEST;
     elem.has_watch = has_watch;
@@ -157,9 +153,8 @@ void KeeperOperationLogger::simpleListRequest(const String & path, bool has_watc
         return;
 
     ZooKeeperLogElement elem;
-    Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                               std::chrono::system_clock::now().time_since_epoch()
-                               ).count();
+    Decimal64 event_time
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     elem.type = ZooKeeperLogElement::REQUEST;
     elem.has_watch = has_watch;
@@ -178,9 +173,8 @@ void KeeperOperationLogger::filteredListRequest(const String & path, bool has_wa
         return;
 
     ZooKeeperLogElement elem;
-    Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                               std::chrono::system_clock::now().time_since_epoch()
-                               ).count();
+    Decimal64 event_time
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     elem.type = ZooKeeperLogElement::REQUEST;
     elem.has_watch = has_watch;
@@ -199,9 +193,8 @@ void KeeperOperationLogger::checkRequest(const String & path, int32_t version, b
         return;
 
     ZooKeeperLogElement elem;
-    Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                               std::chrono::system_clock::now().time_since_epoch()
-                               ).count();
+    Decimal64 event_time
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     elem.type = ZooKeeperLogElement::REQUEST;
     elem.has_watch = has_watch;
@@ -221,9 +214,8 @@ void KeeperOperationLogger::multiRequest(const Requests & requests, bool has_wat
         return;
 
     ZooKeeperLogElement elem;
-    Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                               std::chrono::system_clock::now().time_since_epoch()
-                               ).count();
+    Decimal64 event_time
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     elem.type = ZooKeeperLogElement::REQUEST;
     elem.has_watch = has_watch;
@@ -242,55 +234,54 @@ void KeeperOperationLogger::response(const Response & resp, size_t elapsed_ms, i
         return;
 
     ZooKeeperLogElement elem;
-    Decimal64 event_time = std::chrono::duration_cast<std::chrono::microseconds>(
-                            std::chrono::system_clock::now().time_since_epoch()
-                            ).count();
+    Decimal64 event_time
+        = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-    if (auto * createResponse = dynamic_cast<const CreateResponse *>(&resp))
+    if (const auto * create_response = dynamic_cast<const CreateResponse *>(&resp))
     {
-        elem.path_created = createResponse->path_created;
+        elem.path_created = create_response->path_created;
         elem.op_num = static_cast<uint32_t>(OpNum::Create);
     }
-    else if (auto * existsResponse = dynamic_cast<const ExistsResponse *>(&resp))
+    else if (const auto * exists_response = dynamic_cast<const ExistsResponse *>(&resp))
     {
-        elem.stat = existsResponse->stat;
+        elem.stat = exists_response->stat;
         elem.op_num = static_cast<uint32_t>(OpNum::Exists);
     }
-    else if (auto * getResponse = dynamic_cast<const GetResponse *>(&resp))
+    else if (const auto * get_response = dynamic_cast<const GetResponse *>(&resp))
     {
-        elem.data = getResponse->data;
-        elem.stat = getResponse->stat;
+        elem.data = get_response->data;
+        elem.stat = get_response->stat;
         elem.op_num = static_cast<uint32_t>(OpNum::Get);
     }
-    else if (auto * setResponse = dynamic_cast<const SetResponse *>(&resp))
+    else if (const auto * set_response = dynamic_cast<const SetResponse *>(&resp))
     {
-        elem.stat = setResponse->stat;
+        elem.stat = set_response->stat;
         elem.op_num = static_cast<uint32_t>(OpNum::Set);
     }
-    else if (auto * listResponse = dynamic_cast<const ListResponse *>(&resp))
+    else if (const auto * list_response = dynamic_cast<const ListResponse *>(&resp))
     {
-        elem.stat = listResponse->stat;
-        elem.children = listResponse->names;
+        elem.stat = list_response->stat;
+        elem.children = list_response->names;
         elem.op_num = static_cast<uint32_t>(OpNum::List);
     }
-    else if (auto * watchResponse = dynamic_cast<const WatchResponse *>(&resp))
+    else if (const auto * watch_response = dynamic_cast<const WatchResponse *>(&resp))
     {
-        elem.watch_type = watchResponse->type;
-        elem.watch_state = watchResponse->state;
-        elem.path = watchResponse->path;
+        elem.watch_type = watch_response->type;
+        elem.watch_state = watch_response->state;
+        elem.path = watch_response->path;
     }
-    else if (auto * checkResponse = dynamic_cast<const CheckResponse *>(&resp))
+    else if (const auto * check_response = dynamic_cast<const CheckResponse *>(&resp))
     {
         elem.op_num = static_cast<uint32_t>(OpNum::Check);
     }
-    else if (auto * multiResponse = dynamic_cast<const MultiResponse *>(&resp))
+    else if (const auto * multi_response = dynamic_cast<const MultiResponse *>(&resp))
     {
         elem.op_num = static_cast<uint32_t>(OpNum::Multi);
 
-        for (const auto & resp_ : multiResponse->responses)
+        for (const auto & response : multi_response->responses)
         {
-            auto & res = dynamic_cast<Response &>(*resp_);
-            response(res, elapsed_ms, session_id);
+            auto & res = dynamic_cast<Response &>(*response);
+            this->response(res, elapsed_ms, session_id);
         }
     }
 
@@ -304,4 +295,5 @@ void KeeperOperationLogger::response(const Response & resp, size_t elapsed_ms, i
     maybe_zk_log->add(std::move(elem));
 }
 
+}
 }

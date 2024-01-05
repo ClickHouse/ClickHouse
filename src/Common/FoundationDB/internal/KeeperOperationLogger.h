@@ -1,15 +1,14 @@
 #pragma once
 
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 
 namespace DB
 {
 class ZooKeeperLog;
-}
 
-namespace Coordination
+namespace FoundationDB
 {
 
 class KeeperOperationLogger
@@ -19,7 +18,8 @@ public:
 
     void setZooKeeperLog(std::shared_ptr<ZooKeeperLog> zk_log_);
 
-    void createRequest(const String & path, const String & data, bool is_ephemeral, bool is_sequential, bool has_watch, int64_t session_id) const;
+    void createRequest(
+        const String & path, const String & data, bool is_ephemeral, bool is_sequential, bool has_watch, int64_t session_id) const;
 
     void removeRequest(const String & path, int32_t version, bool has_watch, int64_t session_id) const;
 
@@ -37,12 +37,13 @@ public:
 
     void checkRequest(const String & path, int32_t version, bool has_watch, int64_t session_id) const;
 
-    void multiRequest(const Requests & requests, bool has_watch, int64_t session_id) const;
+    void multiRequest(const Coordination::Requests & requests, bool has_watch, int64_t session_id) const;
 
-    void response(const Response & resp, size_t elapsed_ms, int64_t session_id) const;
+    void response(const Coordination::Response & resp, size_t elapsed_ms, int64_t session_id) const;
 
 private:
     std::shared_ptr<ZooKeeperLog> zk_log;
 };
 
+}
 }

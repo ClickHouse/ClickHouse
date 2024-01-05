@@ -1,5 +1,4 @@
 #pragma once
-#include <exception>
 #include <memory>
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -8,8 +7,6 @@
 #include <Common/FoundationDB/internal/AsyncTrxTracker.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
-#include "Coordination/KeeperConstants.h"
-#include <Common/FoundationDB/KeeperOperationLogger.h>
 
 namespace DB
 {
@@ -28,6 +25,7 @@ namespace DB::FoundationDB
 class KeeperKeys;
 class KeeperSession;
 class KeeperCleaner;
+class KeeperOperationLogger;
 }
 
 namespace Coordination
@@ -128,12 +126,11 @@ private:
     std::unique_ptr<DB::FoundationDB::KeeperKeys> keys;
     std::unique_ptr<DB::FoundationDB::KeeperSession> session;
     std::unique_ptr<DB::FoundationDB::KeeperCleaner> cleaner;
+    std::unique_ptr<DB::FoundationDB::KeeperOperationLogger> keeper_logger;
 
     FDBTransaction * newTrx();
     template <typename VarResp, typename Callback>
     auto handleKeeperCallback(VarResp var_resp, Callback callback, const String & message = "");
-
-    KeeperOperationLogger keeper_logger;
 
     String chroot;
     DB::KeeperFeatureFlags keeper_feature;
