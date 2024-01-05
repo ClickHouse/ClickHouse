@@ -697,7 +697,12 @@ struct ToStartOfInterval<IntervalKind::Week>
         if (origin == 0)
             return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
         else
-            return ToStartOfInterval<IntervalKind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
+        {
+            if (const auto weeks_to_days = weeks * 7; weeks_to_days / 7 == weeks) // Check if multiplication doesn't overflow Int64 value
+                return ToStartOfInterval<IntervalKind::Day>::execute(t, weeks_to_days, time_zone, scale_multiplier, origin);
+            else
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} * 7 is out of bounds for type Int64", weeks);
+        }
     }
 };
 
@@ -728,11 +733,8 @@ struct ToStartOfInterval<IntervalKind::Month>
             months_to_add = days < 0 ? months_to_add - 1 : months_to_add;
             months_to_add += years * 12;
             Int64 month_multiplier = (months_to_add / months) * months;
-            Int64 a = 0;
 
-            a = time_zone.addMonths(time_zone.toDate(origin), month_multiplier);
-            // a += time_zone.toTime(origin);
-            return a - time_zone.toDate(origin);
+            return time_zone.addMonths(time_zone.toDate(origin), month_multiplier) - time_zone.toDate(origin);
         }
     }
 };
@@ -757,7 +759,12 @@ struct ToStartOfInterval<IntervalKind::Quarter>
         if (origin == 0)
             return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
         else
-            return ToStartOfInterval<IntervalKind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
+        {
+            if (const auto quarters_to_months = quarters * 3; quarters_to_months / 3 == quarters) // Check if multiplication doesn't overflow Int64 value
+               return ToStartOfInterval<IntervalKind::Month>::execute(t, quarters_to_months, time_zone, scale_multiplier, origin);
+            else
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} * 3 is out of bounds for type Int64", quarters);
+        }
     }
 };
 
@@ -782,8 +789,10 @@ struct ToStartOfInterval<IntervalKind::Year>
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
         else
         {
-            auto a = ToStartOfInterval<IntervalKind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
-            return a;
+            if (const auto years_to_months = years * 12; years_to_months / 12 == years) // Check if multiplication doesn't overflow Int64 value
+                return ToStartOfInterval<IntervalKind::Month>::execute(t, years_to_months, time_zone, scale_multiplier, origin);
+            else
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} * 12 is out of bounds for type Int64", years);
         }
     }
 };
