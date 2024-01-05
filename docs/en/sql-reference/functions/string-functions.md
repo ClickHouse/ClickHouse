@@ -1386,7 +1386,7 @@ Result:
 ## punycodeEncode
 
 Returns the [Punycode](https://en.wikipedia.org/wiki/Punycode) representation of a string.
-The string must be UTF8-encoded, otherwise an exception is thrown.
+The string must be UTF8-encoded, otherwise the behavior is undefined.
 
 **Syntax**
 
@@ -1416,10 +1416,6 @@ Result:
 └───────────────────────────┘
 ```
 
-## punycodeEncodeOrNull
-
-Like `punycodeEncode` but returns `NULL` in case of an error instead of throwing an exception.
-
 ## punycodeDecode
 
 Returns the UTF8-encoded plaintext of a [Punycode](https://en.wikipedia.org/wiki/Punycode)-encoded string.
@@ -1448,19 +1444,19 @@ select punycodeDecode('Mnchen-3ya');
 Result:
 
 ```result
-┌─punycodeEncode('Mnchen-3ya')─┐
+┌─punycodeDecode('Mnchen-3ya')─┐
 │ München                      │
 └──────────────────────────────┘
 ```
 
-## punycodeDecodeOrNull
+## tryPunycodeDecode
 
-Like `punycodeDecode` but returns `NULL` in case of an error instead of throwing an exception.
+Like `punycodeDecode` but returns an empty string if no valid Punycode-encoded string is given.
 
 ## idnaEncode
 
 Returns the the ASCII representation (ToASCII algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
-The string must be UTF-encoded and translatable to an ASCII string, otherwise an exception is thrown.
+The input string must be UTF-encoded and translatable to an ASCII string, otherwise an exception is thrown.
 Note: No percent decoding or trimming of tabs, spaces or control characters is performed.
 
 **Syntax**
@@ -1491,9 +1487,9 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## idnaEncodeOrNull
+## tryIdnaEncode
 
-Like `idnaEncode` but returns `NULL` in case of an error instead of throwing an exception.
+Like `idnaEncode` but returns an empty string in case of an error instead of throwing an exception.
 
 ## idnaDecode
 
