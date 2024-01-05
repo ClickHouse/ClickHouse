@@ -2514,7 +2514,12 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             max_block_size = std::max<UInt64>(1, max_block_limited);
             max_threads_execute_query = max_streams = 1;
         }
-        if (max_block_limited < local_limits.local_limits.size_limits.max_rows)
+        if (local_limits.local_limits.size_limits.max_rows != 0)
+        {
+            if (max_block_limited < local_limits.local_limits.size_limits.max_rows)
+                query_info.limit = max_block_limited;
+        }
+        else
         {
             query_info.limit = max_block_limited;
         }
