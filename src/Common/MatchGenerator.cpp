@@ -394,7 +394,7 @@ private:
         return re;
     }
 
-    Regexp * PostVisit(Regexp * re, Regexp* /*parent_arg*/, Regexp* pre_arg,
+    Regexp * PostVisit(Regexp * re, Regexp * /*parent_arg*/, Regexp * pre_arg,
                        Regexp ** child_args, int nchild_args) override /*noexcept*/
     {
         if (logger)
