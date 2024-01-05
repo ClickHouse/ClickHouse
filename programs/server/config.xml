@@ -1379,6 +1379,9 @@
 
         <!-- Controls how many tasks could be in the queue -->
         <!-- <max_tasks_in_queue>1000</max_tasks_in_queue> -->
+
+        <!-- Host name of the current node. If specified, will only compare and not resolve hostnames inside the DDL tasks -->
+        <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->

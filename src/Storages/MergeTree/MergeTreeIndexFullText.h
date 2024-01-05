@@ -90,6 +90,7 @@ private:
             FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,
             FUNCTION_IN,
+            FUNCTION_MATCH,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,
             FUNCTION_HAS_ANY,
