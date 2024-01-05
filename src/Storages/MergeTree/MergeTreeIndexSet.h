@@ -87,7 +87,7 @@ public:
         const String & index_name_,
         const Block & index_sample_block,
         size_t max_rows_,
-        const ActionsDAGPtr & filter_actions_dag,
+        const ActionsDAGPtr & filter_dag,
         ContextPtr context);
 
     bool alwaysUnknownOrTrue() const override;
