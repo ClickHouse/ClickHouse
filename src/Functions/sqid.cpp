@@ -117,7 +117,7 @@ public:
             const ColumnWithTypeAndName & arg = arguments[0];
             ColumnPtr current_column = arg.column;
             std::string_view sqid = current_column->getDataAt(i).toView();
-            integers = sqids.decode(std::string(sqid));
+            integers = sqids.decode(sqid);
             res_nested_data.insert(integers.begin(), integers.end());
             res_offsets_data.push_back(integers.size());
         }
