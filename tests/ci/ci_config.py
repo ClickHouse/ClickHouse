@@ -195,6 +195,11 @@ bugfix_validate_check = DigestConfig(
         "clickhouse/stateless-test",
     ],
 )
+settings_changes_check_digest = DigestConfig(
+    include_paths=["./tests/ci/settings_changes_check.py"],
+    exclude_files=[".md"],
+    docker=["clickhouse/settings-changes-check"],
+)
 # common test params
 statless_test_common_params = {
     "digest": statless_check_digest,
@@ -245,6 +250,11 @@ sql_test_params = {
     "digest": sqltest_check_digest,
     "run_command": "sqltest.py",
     "timeout": 10800,
+}
+settings_changes_test_params = {
+    "digest": settings_changes_check_digest,
+    "run_command": "settings_changes_check.py",
+    "timeout": 1800,
 }
 
 
@@ -750,6 +760,9 @@ CI_CONFIG = CiConfig(
         "Upgrade check (debug)": TestConfig(
             "package_debug", job_config=JobConfig(**upgrade_test_common_params)  # type: ignore
         ),
+        "Settings changes check": TestConfig(
+            "package_release", job_config=JobConfig(**settings_changes_test_params)  # type: ignore
+        ),
         "Integration tests (asan)": TestConfig(
             "package_asan",
             job_config=JobConfig(num_batches=4, **integration_test_common_params),  # type: ignore
@@ -1018,6 +1031,12 @@ CHECK_DESCRIPTIONS = [
         "upgrade it to the version from the PR. It checks if the new server can "
         "successfully startup without any errors, crashes or sanitizer asserts",
         lambda x: x.startswith("Upgrade check ("),
+    ),
+    CheckDescription(
+        "Settings changes check",
+        "Compares the list of settings from last release and from the PR and "
+        "checks that all changes are reflected in settings changes history",
+        lambda x: x == "Settings changes check",
     ),
     CheckDescription(
         "ClickBench",

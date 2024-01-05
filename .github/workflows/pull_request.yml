@@ -128,6 +128,14 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
         python3 compatibility_check.py --check-name "Compatibility check (aarch64)" --check-glibc
+  SettingsChangesCheck:
+    needs: [ RunConfig, BuilderDebRelease ]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Settings changes check
+      runner_type: style-checker
+      data: ${{ needs.RunConfig.outputs.data }}
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
@@ -928,6 +936,7 @@ jobs:
       - CompatibilityCheckAarch64
       - SQLancerTestRelease
       - SQLancerTestDebug
+      - SettingsChangesCheck
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code

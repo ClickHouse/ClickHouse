@@ -61,6 +61,10 @@
         "name": "clickhouse/upgrade-check",
         "dependent": []
     },
+    "docker/test/settings_changes": {
+        "name": "clickhouse/settings-changes-check",
+        "dependent": []
+    },
     "docker/test/integration/runner": {
         "only_amd64": true,
         "name": "clickhouse/integration-tests-runner",
