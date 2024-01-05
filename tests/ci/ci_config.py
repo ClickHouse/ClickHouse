@@ -70,6 +70,8 @@ class BuildConfig:
     job_config: JobConfig = JobConfig(
         digest=DigestConfig(
             include_paths=[
+                "./CMakeLists.txt",
+                "./PreLoad.cmake",
                 "./src",
                 "./contrib/*-cmake",
                 "./cmake",
