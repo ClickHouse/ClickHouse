@@ -7811,12 +7811,13 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                 {
                     // TODO myrrc temporary directory lock?
                     // TODO myrrc remove already existing dir
+                    moving_part.part->assertOnDisk();
                     auto root_dir = fs::path(getRelativeDataPath()) / MOVING_DIR_NAME;
                     String part_dir = moving_part.part->getDataPartStorage().getPartDirectory();
 
                     vfs_disk.downloadMetadata(move_lock, root_dir / part_dir);
 
-                    LOG_DEBUG(log, "VFS move: picking metadata from {} {}", root_dir, part_dir);
+                    LOG_DEBUG(log, "VFS move: picking metadata from {}", root_dir / part_dir);
                     // TODO myrrc initialize part directly
                     MergeTreeDataPartBuilder builder(*this, moving_part.part->name,
                         std::make_shared<SingleDiskVolume>("", disk),

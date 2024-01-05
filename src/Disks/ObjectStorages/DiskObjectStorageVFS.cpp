@@ -109,11 +109,15 @@ void DiskObjectStorageVFS::uploadMetadata(const String & lock_prefix, const Stri
     Strings files; // TODO myrrc does it iterate subdirs? E.g. projections
     for (auto it = iterateDirectory(path); it->isValid(); it->next())
         files.emplace_back(it->path());
-    LOG_DEBUG(log, "VFS move: uploading metadata to {} about {}", obj, fmt::join(files, "\n"));
+    LOG_DEBUG(log, "VFS move: uploading metadata to {}", obj);
 
     auto buf = object_storage->writeObject(obj, WriteMode::Rewrite);
     for (auto & [filename, metadata] : getSerializedMetadata(files))
-        writeString(filename + "\n" + metadata, *buf);
+    {
+        String relative_path = fs::path(filename).lexically_relative(path);
+        LOG_DEBUG(log, "VFS move: uploading {}", relative_path);
+        writeString(relative_path + "\n" + metadata, *buf);
+    }
     buf->finalize();
 }
 
@@ -129,8 +133,7 @@ void DiskObjectStorageVFS::downloadMetadata(const String & lock_prefix, const St
         String filename;
         readString(filename, *buf);
         const auto full_path = fs::path(path) / filename;
-        tx->createDirectoryRecursive(full_path.parent_path()); // TODO myrrc we shouldn't need this
-        LOG_DEBUG(log, "VFS move: downloading metadata to {}", full_path);
+        LOG_DEBUG(log, "VFS move: downloading {} metadata to {}", filename, full_path);
         assertChar('\n', *buf);
         // TODO myrrc this works only for S3
         DiskObjectStorageMetadata md(object_key_prefix, full_path);
