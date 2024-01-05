@@ -4,7 +4,7 @@ sidebar_position: 172
 sidebar_label: Time Series
 ---
 
-#Time Series Functions
+# Time Series Functions
 
 Below functions are used for time series analysis.
 
@@ -60,10 +60,7 @@ Result:
 
 ## seriesDecomposeSTL
 
-Decompose time series data based on STL(Seasonal-Trend Decomposition Procedure Based on Loess)
-Returns an array of three arrays where the first array include seasonal components, the second array - trend,
-and the third array - residue component. 
-https://www.wessa.net/download/stl.pdf
+Decomposes a time series using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component. 
 
 **Syntax**
 
@@ -80,7 +77,8 @@ The number of data points in `series` should be at least twice the value of `per
 
 **Returned value**
 
-- Array of arrays
+- An array of three arrays where the first array include seasonal components, the second array - trend,
+and the third array - residue component.
 
 Type: [Array](../../sql-reference/data-types/array.md).
 

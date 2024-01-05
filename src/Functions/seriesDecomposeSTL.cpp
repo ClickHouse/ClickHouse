@@ -1,5 +1,3 @@
-#include "config.h"
-
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wold-style-cast"
@@ -54,8 +52,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"time-series", &isArray<IDataType>, nullptr, "Array"},
-            {"period", &isNativeNumber<IDataType>, nullptr, "Number"},
+            {"time_series", &isArray<IDataType>, nullptr, "Array"},
+            {"period", &isNativeUInt<IDataType>, nullptr, "Unsigned Integer"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -68,8 +66,7 @@ public:
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
-            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
-                arguments[0].column.get());
+            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get());
             if (!const_array)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                     arguments[0].column->getName(), getName());
@@ -81,13 +78,13 @@ public:
         const IColumn & src_data = array->getData();
         const ColumnArray::Offsets & src_offsets = array->getOffsets();
 
-        Float64 period;
+        UInt64 period;
 
-        auto ret = ColumnFloat32::create();
-        auto & res_data = ret->getData();
+        auto res = ColumnFloat32::create();
+        auto & res_data = res->getData();
 
-        ColumnArray::ColumnOffsets::MutablePtr col_offsets = ColumnArray::ColumnOffsets::create();
-        auto & col_offsets_data = col_offsets->getData();
+        ColumnArray::ColumnOffsets::MutablePtr res_col_offsets = ColumnArray::ColumnOffsets::create();
+        auto & res_col_offsets_data = res_col_offsets->getData();
 
         auto root_offsets = ColumnArray::ColumnOffsets::create();
         auto & root_offsets_data = root_offsets->getData();
@@ -97,19 +94,11 @@ public:
         for (size_t i = 0; i < src_offsets.size(); ++i)
         {
             auto period_ptr = arguments[1].column->convertToFullColumnIfConst();
-            if (checkAndGetColumn<ColumnUInt8>(period_ptr.get()) || checkAndGetColumn<ColumnUInt16>(period_ptr.get())
-                || checkAndGetColumn<ColumnUInt32>(period_ptr.get()) || checkAndGetColumn<ColumnUInt64>(period_ptr.get()))
+            if (checkAndGetColumn<ColumnUInt8>(period_ptr.get())
+                || checkAndGetColumn<ColumnUInt16>(period_ptr.get())
+                || checkAndGetColumn<ColumnUInt32>(period_ptr.get())
+                || checkAndGetColumn<ColumnUInt64>(period_ptr.get()))
                 period = period_ptr->getUInt(i);
-            else if (checkAndGetColumn<ColumnFloat32>(period_ptr.get()) || checkAndGetColumn<ColumnFloat64>(period_ptr.get()))
-            {
-                period = period_ptr->getFloat64(i);
-                if (isNaN(period) || !std::isfinite(period) || period < 0)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal value {} for second argument of function {}. Should be a positive number",
-                        period,
-                        getName());
-            }
             else
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
@@ -136,15 +125,15 @@ public:
                 || executeNumber<Float64>(src_data, period, prev_src_offset, curr_offset, seasonal, trend, residue))
             {
                 res_data.insert(res_data.end(), seasonal.begin(), seasonal.end());
-                col_offsets_data.push_back(res_data.size());
+                res_col_offsets_data.push_back(res_data.size());
 
                 res_data.insert(res_data.end(), trend.begin(), trend.end());
-                col_offsets_data.push_back(res_data.size());
+                res_col_offsets_data.push_back(res_data.size());
 
                 res_data.insert(res_data.end(), residue.begin(), residue.end());
-                col_offsets_data.push_back(res_data.size());
+                res_col_offsets_data.push_back(res_data.size());
 
-                root_offsets_data.push_back(col_offsets->size());
+                root_offsets_data.push_back(res_col_offsets->size());
 
                 prev_src_offset = curr_offset;
             }
@@ -155,14 +144,14 @@ public:
                     arguments[0].column->getName(),
                     getName());
         }
-        ColumnArray::MutablePtr nested_array_col = ColumnArray::create(std::move(ret), std::move(col_offsets));
+        ColumnArray::MutablePtr nested_array_col = ColumnArray::create(std::move(res), std::move(res_col_offsets));
         return ColumnArray::create(std::move(nested_array_col), std::move(root_offsets));
     }
 
     template <typename T>
     bool executeNumber(
         const IColumn & src_data,
-        Float64 period,
+        UInt64 period,
         ColumnArray::Offset & start,
         ColumnArray::Offset & end,
         std::vector<Float32> & seasonal,
@@ -179,38 +168,28 @@ public:
         size_t len = end - start;
         if (len < 4)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least four data points are needed for function {}", getName());
-        else if (period > (len / 2.0))
+        if (period > (len / 2))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "The series should have data of at least two period lengths for function {}", getName());
 
-        std::vector<float> src((src_vec.begin() + start), (src_vec.begin() + end));
+        std::vector<float> src(src_vec.begin() + start, src_vec.begin() + end);
 
-        try
-        {
-            auto res = stl::params().fit(src, static_cast<size_t>(std::round(period)));
+        auto res = stl::params().fit(src, static_cast<size_t>(period));
 
-            if (res.seasonal.empty())
-                return false;
-
-            seasonal = res.seasonal;
-            trend = res.trend;
-            residue = res.remainder;
-            return true;
-        }
-        catch (...)
-        {
+        if (res.seasonal.empty())
             return false;
-        }
+
+        seasonal = std::move(res.seasonal);
+        trend = std::move(res.trend);
+        residue = std::move(res.remainder);
+        return true;
     }
 };
 REGISTER_FUNCTION(seriesDecomposeSTL)
 {
     factory.registerFunction<FunctionSeriesDecomposeSTL>(FunctionDocumentation{
         .description = R"(
-Decompose time series data based on STL(Seasonal-Trend Decomposition Procedure Based on Loess)
-Returns an array of three arrays where the first array include seasonal components, the second array - trend,
-and the third array - residue component.
-https://www.wessa.net/download/stl.pdf
+Decomposes a time series using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component.
 
 **Syntax**
 
@@ -227,7 +206,7 @@ The number of data points in `series` should be at least twice the value of `per
 
 **Returned value**
 
-- Array of arrays
+- An array of three arrays where the first array include seasonal components, the second array - trend, and the third array - residue component.
 
 Type: [Array](../../sql-reference/data-types/array.md).
 
