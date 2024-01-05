@@ -129,7 +129,7 @@ jobs:
       run_command: |
         python3 compatibility_check.py --check-name "Compatibility check (aarch64)" --check-glibc
   SettingsChangesCheck:
-    needs: [ RunConfig, BuilderDebRelease ]
+    needs: [RunConfig, BuilderDebRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
