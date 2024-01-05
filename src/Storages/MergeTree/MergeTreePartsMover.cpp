@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/logger_useful.h>
+#include "Disks/ObjectStorages/DiskObjectStorageVFS.h"
+#include "Storages/MergeTree/DataPartStorageOnDiskFull.h"
 
 #include <set>
 #include <boost/algorithm/string/join.hpp>
@@ -210,44 +212,69 @@ bool MergeTreePartsMover::selectPartsForMove(
 
 MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const MergeTreeMoveEntry & moving_part, const ReadSettings & read_settings, const WriteSettings & write_settings) const
 {
-    auto cancellation_hook = [&moves_blocker_ = moves_blocker]()
+    auto cancellation_hook = [&blocker = moves_blocker]()
     {
-        if (moves_blocker_.isCancelled())
+        if (blocker.isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Cancelled moving parts.");
     };
     cancellation_hook();
 
     auto settings = data->getSettings();
     auto part = moving_part.part;
+    const auto & storage = part->getDataPartStorage();
     auto disk = moving_part.reserved_space->getDisk();
-    LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->getDataPartStorage().getDiskName(), disk->getName());
+
+    LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, storage.getDiskName(), disk->getName());
+
     TemporaryClonedPart cloned_part;
     cloned_part.temporary_directory_lock = data->getTemporaryPartDirectoryHolder(part->name);
 
-    MutableDataPartStoragePtr cloned_part_storage;
-    if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
+    const String vfs_move_lock = fs::path(data->getTableSharedID()) / part->name / "move";
+    const bool is_vfs = disk->isObjectStorageVFS();
+    auto * vfs_disk = dynamic_cast<DiskObjectStorageVFS *>(disk.get());
+    const bool vfs_upload = is_vfs && vfs_disk->shouldUploadMetadata(vfs_move_lock);
+
+    const bool is_zero_copy = disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication;
+
+    const auto moving_dir = fs::path(data->getRelativeDataPath()) / MergeTreeData::MOVING_DIR_NAME;
+    const String part_dir = storage.getPartDirectory();
+    const auto result_dir = moving_dir / part_dir;
+
+    if (is_vfs || is_zero_copy)
     {
-        /// Try zero-copy replication and fallback to default copy if it's not possible
-        moving_part.part->assertOnDisk();
-        String path_to_clone = fs::path(data->getRelativeDataPath()) / MergeTreeData::MOVING_DIR_NAME / "";
-        String relative_path = part->getDataPartStorage().getPartDirectory();
-        if (disk->exists(path_to_clone + relative_path))
+        part->assertOnDisk();
+        if (disk->exists(result_dir))
         {
+            const String full_path = fullPath(disk, result_dir);
             // If setting is on, we should've already cleaned moving/ dir on startup
             if (data->allowRemoveStaleMovingParts())
                 throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
                     "Cannot clone part {} from '{}' to '{}': path '{}' already exists",
-                    part->name, part->getDataPartStorage().getDiskName(), disk->getName(),
-                    fullPath(disk, path_to_clone + relative_path));
+                    part->name, storage.getDiskName(), disk->getName(),
+                    full_path);
 
-            LOG_DEBUG(log, "Path {} already exists. Will remove it and clone again",
-                fullPath(disk, path_to_clone + relative_path));
-            disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
+            LOG_DEBUG(log, "Path {} already exists. Will remove it and clone again", full_path);
+            disk->removeRecursive(result_dir);
         }
 
-        disk->createDirectories(path_to_clone);
+        disk->createDirectories(moving_dir);
+    }
 
-        auto zero_copy_part = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
+    MutableDataPartStoragePtr cloned_part_storage;
+
+    if (is_vfs && !vfs_upload)
+    {
+        vfs_disk->downloadMetadata(vfs_move_lock, result_dir);
+
+        LOG_DEBUG(log, "VFS move: picking metadata from {}", result_dir);
+        cloned_part_storage = std::make_shared<DataPartStorageOnDiskFull>(
+            std::make_shared<SingleDiskVolume>(disk->getName(), disk),
+            moving_dir, part_dir);
+    }
+    else if (is_zero_copy)
+    {
+        /// Try zero-copy replication and fallback to default copy if it's not possible
+        auto zero_copy_part = data->tryToFetchIfShared(*part, disk, moving_dir / part->name);
 
         if (zero_copy_part)
         {
@@ -268,12 +295,17 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
 
     MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage);
     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
-    LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
+    const auto & cloned_storage = cloned_part.part->getDataPartStorage();
+    LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_storage.getFullPath());
 
     cloned_part.part->is_temp = data->allowRemoveStaleMovingParts();
     cloned_part.part->loadColumnsChecksumsIndexes(true, true);
     cloned_part.part->loadVersionMetadata();
-    cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
+    cloned_part.part->modification_time = cloned_storage.getLastModified().epochTime();
+
+    if (is_vfs && vfs_upload)
+        vfs_disk->uploadMetadata(vfs_move_lock, cloned_storage.getFullPath());
+
     return cloned_part;
 }
 

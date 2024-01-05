@@ -22,7 +22,6 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
-#include "Disks/ObjectStorages/DiskObjectStorageVFS.h"
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Core/QueryProcessingStage.h>
@@ -7786,58 +7785,26 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                     }
                 }
             }
-            else if (disk->isObjectStorageVFS())
+            else /// Ordinary move as it should be
             {
                 // V2: acquire lock only for uploading metadata, upload metadata before uploading part files
                 // V3 upload per-file, load multiple files in parallel
-                const String move_lock = fs::path(getTableSharedID()) / moving_part.part->name / "move";
                 // TODO myrrc revisit whether blocking wait on a Zookeeper lock is the best we can imagine
-                if (!disk->lock(move_lock, wait_for_move_if_zero_copy)) // Contention on MOVE TTL
+                // If we can remove wait_for_move_if_zero_copy, lock acquisition code can be moved to
+                // MergeTreePartsMover
+                const String move_lock = fs::path(getTableSharedID()) / moving_part.part->name / "move";
+                if (!disk->lock(move_lock, wait_for_move_if_zero_copy))
                 {
                     write_part_log({});
-                    LOG_DEBUG(log, "VFS move: contention, rescheduling");
+                    LOG_DEBUG(log, "Move contention, rescheduling");
+                    // TODO myrrc reschedule time hint regarding part size
                     return MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy;
                 }
 
-                auto & vfs_disk = dynamic_cast<DiskObjectStorageVFS &>(*disk);
-                const bool upload = vfs_disk.shouldUploadMetadata(move_lock);
-                LOG_DEBUG(log, "VFS move: should upload metadata: {}", upload);
-                if (upload)
-                {
-                    cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
-                    vfs_disk.uploadMetadata(move_lock, cloned_part.part->getDataPartStorage().getFullPath());
-                }
-                else
-                {
-                    // TODO myrrc temporary directory lock?
-                    // TODO myrrc remove already existing dir
-                    moving_part.part->assertOnDisk();
-                    auto root_dir = fs::path(getRelativeDataPath()) / MOVING_DIR_NAME;
-                    String part_dir = moving_part.part->getDataPartStorage().getPartDirectory();
-
-                    vfs_disk.downloadMetadata(move_lock, root_dir / part_dir);
-
-                    LOG_DEBUG(log, "VFS move: picking metadata from {}", root_dir / part_dir);
-                    // TODO myrrc initialize part directly
-                    MergeTreeDataPartBuilder builder(*this, moving_part.part->name,
-                        std::make_shared<SingleDiskVolume>("", disk),
-                        root_dir, part_dir);
-                    cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
-                    cloned_part.part->is_temp = allowRemoveStaleMovingParts();
-                    // TODO myrrc part is broken and needs manual correction
-                    cloned_part.part->loadColumnsChecksumsIndexes(true, true);
-                    cloned_part.part->loadVersionMetadata();
-                    cloned_part.part->modification_time = cloned_part.part->getDataPartStorage().getLastModified().epochTime();
-
-                }
-
-                parts_mover.swapClonedPart(cloned_part);
-                disk->unlock(move_lock);
-            }
-            else /// Ordinary move as it should be
-            {
                 cloned_part = parts_mover.clonePart(moving_part, read_settings, write_settings);
                 parts_mover.swapClonedPart(cloned_part);
+
+                disk->unlock(move_lock);
             }
             write_part_log({});
         }

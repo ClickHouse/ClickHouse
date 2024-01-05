@@ -35,9 +35,9 @@ public:
     bool lock(std::string_view path, bool block) override;
     void unlock(std::string_view path) override;
 
-    bool shouldUploadMetadata(const String & lock_prefix);
-    void uploadMetadata(const String & lock_prefix, const String & path);
-    void downloadMetadata(const String & lock_prefix, const String & path);
+    bool shouldUploadMetadata(std::string_view remote) const;
+    void uploadMetadata(std::string_view remote_to, const String & from);
+    void downloadMetadata(std::string_view remote_from, const String & to);
 
 private:
     friend struct RemoveRecursiveObjectStorageVFSOperation;
@@ -57,5 +57,6 @@ private:
 
     DiskTransactionPtr createObjectStorageTransaction() final;
     String lockPathToFullPath(std::string_view path) const;
+    StoredObject getMetadataObject(std::string_view remote) const;
 };
 }
