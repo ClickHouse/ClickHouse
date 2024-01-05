@@ -2673,7 +2673,7 @@ def get_additional_client_options_url(args):
             if option.startswith("max_memory_usage_in_client"):
                 continue
             # clickhouse-client accepts "stacktrace" option without value, but via http it should have value
-            if option = "stacktrace":
+            if option == "stacktrace":
                 option = "stacktrace=1"
             options.append(option)
         return "&".join(options)
