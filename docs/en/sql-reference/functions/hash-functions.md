@@ -1779,7 +1779,9 @@ Result:
 
 ## sqid
 
-Transforms numbers into YouTube-like short URL hash called [Sqid](https://sqids.org/).
+Transforms numbers into a [Sqid](https://sqids.org/) which is a YouTube-like ID string.
+The output alphabet is `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`.
+Do not use this function for hashing - the generated IDs can be decoded back into numbers.
 
 **Syntax**
 
