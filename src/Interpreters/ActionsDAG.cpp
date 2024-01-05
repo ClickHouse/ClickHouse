@@ -1631,7 +1631,7 @@ void ActionsDAG::mergeNodes(ActionsDAG && second)
     }
 }
 
-ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes) const
+ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping) const
 {
     /// Split DAG into two parts.
     /// (first_nodes, first_outputs) is a part which will have split_list in result.
@@ -1830,7 +1830,14 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     second_actions->outputs.swap(second_outputs);
     second_actions->inputs.swap(second_inputs);
 
-    return {std::move(first_actions), std::move(second_actions)};
+    std::unordered_map<const Node *, const Node *> split_nodes_mapping;
+    if (create_split_nodes_mapping)
+    {
+        for (const auto * node : split_nodes)
+            split_nodes_mapping[node] = data[node].to_first;
+    }
+
+    return {std::move(first_actions), std::move(second_actions), std::move(split_nodes_mapping)};
 }
 
 ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & array_joined_columns) const

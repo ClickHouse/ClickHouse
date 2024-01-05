@@ -47,11 +47,11 @@ public:
 
     struct FilterActionsOptimizeResult
     {
-        ActionsDAGPtr filter_actions;
-        ActionsDAGPtr prewhere_filter_actions;
+        std::unordered_set<const ActionsDAG::Node *> prewhere_nodes;
+        bool fully_moved_to_prewhere = false;
     };
 
-    std::optional<FilterActionsOptimizeResult> optimize(const ActionsDAGPtr & filter_dag,
+    FilterActionsOptimizeResult optimize(const ActionsDAGPtr & filter_dag,
         const std::string & filter_column_name,
         const ContextPtr & context,
         bool is_final);
@@ -121,9 +121,6 @@ private:
 
     /// Reconstruct AST from conditions
     static ASTPtr reconstructAST(const Conditions & conditions);
-
-    /// Reconstruct DAG from conditions
-    static ActionsDAGPtr reconstructDAG(const Conditions & conditions);
 
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
