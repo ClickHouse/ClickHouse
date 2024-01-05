@@ -679,7 +679,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DUMP_HEAP_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
-            auto trace_collector = getContext()->getTraceCollector();
+            TraceCollector * trace_collector = getContext()->getTraceCollector();
             if (trace_collector == nullptr)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Trace collector is disabled");
             trace_collector->dumpHeapProfileNow();
