@@ -870,6 +870,11 @@ Tags:
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
 - `least_used_ttl_ms` - Configure timeout (in milliseconds) for the updating available space on all disks (`0` - update always, `-1` - never update, default is `60000`). Note, if the disk can be used by ClickHouse only and is not subject to a online filesystem resize/shrink you can use `-1`, in all other cases it is not recommended, since eventually it will lead to incorrect space distribution.
 - `prefer_not_to_merge` — You should not use this setting. Disables merging of data parts on this volume (this is harmful and leads to performance degradation). When this setting is enabled (don't do it), merging data on this volume is not allowed (which is bad). This allows (but you don't need it) controlling (if you want to control something, you're making a mistake) how ClickHouse works with slow disks (but ClickHouse knows better, so please don't use this setting).
+- `volume_priority` — Defines the order in which volumes are filled. The lower is the value -- the higher the priority. Value can be a natural number or `0`. `0` means that the priority is not set (equal to omitting this setting).
+  * If _all_ volumes tagged, they are prioritized in given order.
+  * If _some_ volumes tagged, those without this tag have higher priority than those having the tag. Those having the tag are prioritized according to the tag value. The order among others is undefined, thus it is recommended to set explicit priority for all volumes or not set it at all.
+  * If _no_ volume tagged, their priority is set correspondingly to their order they are declared in configuration.
+  * If two or more volumes have the same setting value, order among them is undefined.
 
 Configuration examples:
 
@@ -919,7 +924,8 @@ In given example, the `hdd_in_order` policy implements the [round-robin](https:/
 If there are different kinds of disks available in the system, `moving_from_ssd_to_hdd` policy can be used instead. The volume `hot` consists of an SSD disk (`fast_ssd`), and the maximum size of a part that can be stored on this volume is 1GB. All the parts with the size larger than 1GB will be stored directly on the `cold` volume, which contains an HDD disk `disk1`.
 Also, once the disk `fast_ssd` gets filled by more than 80%, data will be transferred to the `disk1` by a background process.
 
-The order of volume enumeration within a storage policy is important. Once a volume is overfilled, data are moved to the next one. The order of disk enumeration is important as well because data are stored on them in turns.
+The order of volume enumeration within a storage policy is important in case at least one of the volumes listed has no explicit `volume_priority` parameter.
+Once a volume is overfilled, data are moved to the next one. The order of disk enumeration is important as well because data are stored on them in turns.
 
 When creating a table, one can apply one of the configured storage policies to it:
 

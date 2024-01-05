@@ -25,9 +25,7 @@ VolumeJBOD::VolumeJBOD(
 
     auto has_volume_priority = config.has(config_prefix + ".volume_priority");
     if (has_volume_priority)
-    {
         volume_priority = config.getUInt64(config_prefix + ".volume_priority", 0);
-    }
 
     auto has_max_bytes = config.has(config_prefix + ".max_data_part_size_bytes");
     auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");
