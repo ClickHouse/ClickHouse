@@ -72,7 +72,7 @@ StoragePolicy::StoragePolicy(
         std::stable_sort(volumes.begin(), volumes.end(),
             [](const VolumePtr a, const VolumePtr b)
             {
-                return a->volume_priority <= b->volume_priority;
+                return a->volume_priority < b->volume_priority;
             }
         );
 
