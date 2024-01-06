@@ -1382,8 +1382,12 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
     }
     else
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol '{}' for key '{}'",
-                        std::string(*buf.position(), 1), name_of_field.toString());
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Cannot read JSON field here: '{}'. Unexpected symbol '{}'{}",
+            String(buf.position(), std::min(buf.available(), size_t(10))),
+            std::string(1, *buf.position()),
+            name_of_field.empty() ? "" : " for key " + name_of_field.toString());
     }
 }
 
@@ -1753,7 +1757,7 @@ void readQuotedField(String & s, ReadBuffer & buf)
 void readJSONField(String & s, ReadBuffer & buf)
 {
     s.clear();
-    auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
+    auto parse_func = [](ReadBuffer & in) { skipJSONField(in, ""); };
     readParsedValueInto(s, buf, parse_func);
 }
 

@@ -1057,7 +1057,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            planner_context->getGlobalPlannerContext());
+            std::make_shared<GlobalPlannerContext>()); //planner_context->getGlobalPlannerContext());
         subquery_planner.buildQueryPlanIfNeeded();
 
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
