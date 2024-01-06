@@ -357,6 +357,7 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr & query_node,
     const ContextPtr & context,
+    //PlannerContext & planner_context,
     ResultReplacementMap * result_replacement_map)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
@@ -405,6 +406,13 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr &
 
         if (result_replacement_map)
             result_replacement_map->emplace(table_expression, dummy_table_node);
+
+        dummy_table_node->setAlias(table_expression->getAlias());
+
+        // auto & src_table_expression_data = planner_context.getOrCreateTableExpressionData(table_expression);
+        // auto & dst_table_expression_data = planner_context.getOrCreateTableExpressionData(dummy_table_node);
+
+        // dst_table_expression_data = src_table_expression_data;
 
         replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
     }

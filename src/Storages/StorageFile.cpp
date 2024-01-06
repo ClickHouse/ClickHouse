@@ -1056,11 +1056,6 @@ StorageFileSource::~StorageFileSource()
     beforeDestroy();
 }
 
-void StorageFileSource::setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_)
-{
-    setKeyConditionImpl(query_info_, context_, block_for_format);
-}
-
 void StorageFileSource::setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_)
 {
     setKeyConditionImpl(nodes, context_, block_for_format);

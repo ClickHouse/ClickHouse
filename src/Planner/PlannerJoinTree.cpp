@@ -817,7 +817,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
-                const auto & table_expression_alias = table_expression->getAlias();
+                const auto & table_expression_alias = table_expression->getOriginalAlias();
                 auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context);
                 add_filter(additional_filters_info, "additional filter");
 
@@ -1055,6 +1055,18 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     auto right_plan = std::move(right_join_tree_query_plan.query_plan);
     auto right_plan_output_columns = right_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+
+    // {
+    //     WriteBufferFromOwnString buf;
+    //     left_plan.explainPlan(buf, {.header = true, .actions = true});
+    //     std::cerr << "left plan \n "<< buf.str() << std::endl;
+    // }
+
+    // {
+    //     WriteBufferFromOwnString buf;
+    //     right_plan.explainPlan(buf, {.header = true, .actions = true});
+    //     std::cerr << "right plan \n "<< buf.str() << std::endl;
+    // }
 
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
