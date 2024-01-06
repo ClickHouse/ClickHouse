@@ -1329,6 +1329,9 @@ public:
 
     ThrottlerPtr getBackupsThrottler() const;
 
+    ThrottlerPtr getMutationsThrottler() const;
+    ThrottlerPtr getMergesThrottler() const;
+
     /// Kitchen sink
     using ContextData::KitchenSink;
     using ContextData::kitchen_sink;

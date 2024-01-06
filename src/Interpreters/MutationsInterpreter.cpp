@@ -1280,6 +1280,7 @@ void MutationsInterpreter::Source::read(
         VirtualColumns virtual_columns(std::move(required_columns), part);
 
         createReadFromPartStep(
+            MergeTreeSequentialSourceType::Mutation,
             plan, *data, storage_snapshot, part,
             std::move(virtual_columns.columns_to_read),
             apply_deleted_mask_, filter, context_,
