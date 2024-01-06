@@ -247,7 +247,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     const String & index_name_,
     const Block & index_sample_block,
     size_t max_rows_,
-    const SelectQueryInfo & query_info,
+    const ActionsDAGPtr & filter_dag,
     ContextPtr context)
     : index_name(index_name_)
     , max_rows(max_rows_)
@@ -256,42 +256,20 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
-    if (context->getSettingsRef().allow_experimental_analyzer)
-    {
-        if (!query_info.filter_actions_dag)
-            return;
+    if (!filter_dag)
+        return;
 
-        if (checkDAGUseless(*query_info.filter_actions_dag->getOutputs().at(0), context))
-            return;
+    if (checkDAGUseless(*filter_dag->getOutputs().at(0), context))
+        return;
 
-        const auto * filter_node = query_info.filter_actions_dag->getOutputs().at(0);
-        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG({filter_node}, {}, context);
-        const auto * filter_actions_dag_node = filter_actions_dag->getOutputs().at(0);
+    auto filter_actions_dag = filter_dag->clone();
+    const auto * filter_actions_dag_node = filter_actions_dag->getOutputs().at(0);
 
-        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
-        filter_actions_dag->getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
+    filter_actions_dag->getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
 
-        filter_actions_dag->removeUnusedActions();
-        actions = std::make_shared<ExpressionActions>(filter_actions_dag);
-    }
-    else
-    {
-        ASTPtr ast_filter_node = buildFilterNode(query_info.query);
-        if (!ast_filter_node)
-            return;
-
-        if (checkASTUseless(ast_filter_node))
-            return;
-
-        auto expression_ast = ast_filter_node->clone();
-
-        /// Replace logical functions with bit functions.
-        /// Working with UInt8: last bit = can be true, previous = can be false (Like src/Storages/MergeTree/BoolMask.h).
-        traverseAST(expression_ast);
-
-        auto syntax_analyzer_result = TreeRewriter(context).analyze(expression_ast, index_sample_block.getNamesAndTypesList());
-        actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
-    }
+    filter_actions_dag->removeUnusedActions();
+    actions = std::make_shared<ExpressionActions>(filter_actions_dag);
 }
 
 bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
@@ -704,9 +682,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const Merge
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
-    const SelectQueryInfo & query, ContextPtr context) const
+    const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, query, context);
+    return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, filter_actions_dag, context);
 }
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
