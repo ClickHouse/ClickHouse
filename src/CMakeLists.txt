@@ -226,6 +226,7 @@ add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/S3Queue)
+add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
 add_object_library(clickhouse_client Client)
 add_object_library(clickhouse_bridge BridgeHelper)
 add_object_library(clickhouse_server Server)
@@ -435,6 +436,10 @@ dbms_target_link_libraries(PUBLIC
 dbms_target_link_libraries(PRIVATE ch_contrib::zstd)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::zstd)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::xz)
+
+if (TARGET ch_contrib::pocketfft)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::pocketfft)
+endif ()
 
 if (TARGET ch_contrib::icu)
     dbms_target_link_libraries (PRIVATE ch_contrib::icu)

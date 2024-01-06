@@ -1458,7 +1458,9 @@ For mode values with a meaning of “with 4 or more days this year,” weeks are
 
 - Otherwise, it is the last week of the previous year, and the next week is week 1.
 
-For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It does not matter how many days in the new year the week contained, even if it contained only one day.
+For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1.
+It does not matter how many days in the new year the week contained, even if it contained only one day.
+I.e. if the last week of December contains January 1 of the next year, it will be week 1 of the next year.
 
 **Syntax**
 
@@ -1783,6 +1785,8 @@ Alias: `dateTrunc`.
     - `month`
     - `quarter`
     - `year`
+
+    `unit` argument is case-insensitive.
 
 - `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).

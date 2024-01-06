@@ -5,6 +5,7 @@
 #include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <Common/ThreadPool.h>
 #include <shared_mutex>
 
 namespace DB
@@ -102,7 +103,9 @@ public:
     using Key = FileCacheKey;
     using IterateFunc = std::function<void(LockedKey &)>;
 
-    explicit CacheMetadata(const std::string & path_, size_t background_download_queue_size_limit_);
+    explicit CacheMetadata(const std::string & path_, size_t background_download_queue_size_limit_, size_t background_download_threads_);
+
+    void startup();
 
     const String & getBaseDirectory() const { return path; }
 
@@ -115,6 +118,7 @@ public:
     static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
 
     void iterate(IterateFunc && func);
+
     bool isEmpty() const;
 
     enum class KeyNotFoundPolicy
@@ -138,21 +142,13 @@ public:
     void removeKey(const Key & key, bool if_exists, bool if_releasable);
     void removeAllKeys(bool if_releasable);
 
-    void cancelCleanup();
+    void shutdown();
 
-    /// Firstly, this cleanup does not delete cache files,
-    /// but only empty keys from cache_metadata_map and key (prefix) directories from fs.
-    /// Secondly, it deletes those only if arose as a result of
-    /// (1) eviction in FileCache::tryReserve();
-    /// (2) removal of cancelled non-downloaded file segments after FileSegment::complete().
-    /// which does not include removal of cache files because of FileCache::removeKey/removeAllKeys,
-    /// triggered by removal of source files from objects storage.
-    /// E.g. number of elements submitted to background cleanup should remain low.
-    void cleanupThreadFunc();
+    bool setBackgroundDownloadThreads(size_t threads_num);
+    size_t getBackgroundDownloadThreads() const { return download_threads.size(); }
+    bool setBackgroundDownloadQueueSizeLimit(size_t size);
 
-    void downloadThreadFunc();
-
-    void cancelDownload();
+    bool isBackgroundDownloadEnabled();
 
 private:
     const std::string path; /// Cache base path
@@ -172,6 +168,16 @@ private:
     static constexpr size_t buckets_num = 1024;
     std::vector<MetadataBucket> metadata_buckets{buckets_num};
 
+    struct DownloadThread
+    {
+        std::unique_ptr<ThreadFromGlobalPool> thread;
+        bool stop_flag{false};
+    };
+    std::vector<std::shared_ptr<DownloadThread>> download_threads;
+    std::atomic<size_t> download_threads_num;
+
+    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
+
     MetadataBucket & getMetadataBucket(const Key & key);
     void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory);
     MetadataBucket::iterator removeEmptyKey(
@@ -179,6 +185,18 @@ private:
         MetadataBucket::iterator it,
         LockedKey &,
         const CacheMetadataGuard::Lock &);
+
+    void downloadThreadFunc(const bool & stop_flag);
+
+    /// Firstly, this cleanup does not delete cache files,
+    /// but only empty keys from cache_metadata_map and key (prefix) directories from fs.
+    /// Secondly, it deletes those only if arose as a result of
+    /// (1) eviction in FileCache::tryReserve();
+    /// (2) removal of cancelled non-downloaded file segments after FileSegment::complete().
+    /// which does not include removal of cache files because of FileCache::removeKey/removeAllKeys,
+    /// triggered by removal of source files from objects storage.
+    /// E.g. number of elements submitted to background cleanup should remain low.
+    void cleanupThreadFunc();
 };
 
 
@@ -243,7 +261,7 @@ struct LockedKey : private boost::noncopyable
 
     void markAsRemoved();
 
-    std::vector<FileSegment::Info> sync(FileCache & cache);
+    std::vector<FileSegment::Info> sync();
 
     std::string toString() const;
 

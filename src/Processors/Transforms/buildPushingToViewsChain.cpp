@@ -39,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
 }
 
 ThreadStatusesHolder::~ThreadStatusesHolder()
@@ -316,7 +317,21 @@ Chain buildPushingToViewsChain(
             type = QueryViewsLogElement::ViewType::MATERIALIZED;
             result_chain.addTableLock(lock);
 
-            StoragePtr inner_table = materialized_view->getTargetTable();
+            StoragePtr inner_table = materialized_view->tryGetTargetTable();
+            /// If target table was dropped, ignore this materialized view.
+            if (!inner_table)
+            {
+                if (context->getSettingsRef().ignore_materialized_views_with_dropped_target_table)
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::UNKNOWN_TABLE,
+                    "Target table '{}' of view '{}' doesn't exists. To ignore this view use setting "
+                    "ignore_materialized_views_with_dropped_target_table",
+                    materialized_view->getTargetTableId().getFullTableName(),
+                    view_id.getFullTableName());
+            }
+
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
 
@@ -341,7 +356,7 @@ Chain buildPushingToViewsChain(
             if (select_context->getSettingsRef().allow_experimental_analyzer)
                 header = InterpreterSelectQueryAnalyzer::getSampleBlock(query, select_context);
             else
-                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze()).getSampleBlock();
+                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions()).getSampleBlock();
 
             /// Insert only columns returned by select.
             Names insert_columns;

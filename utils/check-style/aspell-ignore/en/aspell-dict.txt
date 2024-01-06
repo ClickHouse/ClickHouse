@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2646
+personal_ws-1.1 en 2657 
 AArch
 ACLs
 ALTERs
@@ -502,6 +502,7 @@ Memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
+MemoryResidentMax
 MemorySanitizer
 MemoryShared
 MemoryTracking
@@ -700,6 +701,8 @@ PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
+TotalPrimaryKeyBytesInMemory
+TotalPrimaryKeyBytesInMemoryAllocated
 PrivateKeyPassphraseHandler
 ProfileEvents
 Profiler
@@ -750,6 +753,7 @@ Redash
 Reddit
 Refactorings
 ReferenceKeyed
+Refreshable
 RegexpTree
 RemoteRead
 ReplacingMergeTree
@@ -1851,6 +1855,8 @@ mininum
 miniselect
 minmap
 minmax
+minSampleSizeContinuous
+minSampleSizeConversion
 mins
 misconfiguration
 mispredictions
@@ -2148,6 +2154,7 @@ reddit
 redis
 redisstreams
 refcounter
+refreshable
 regexpExtract
 regexpQuoteMeta
 regionHierarchy
@@ -2192,8 +2199,6 @@ retentions
 rethrow
 retransmit
 retriable
-retuned
-reverseDNSQuery
 reverseUTF
 rightPad
 rightPadUTF
@@ -2234,6 +2239,7 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
 serverUUID

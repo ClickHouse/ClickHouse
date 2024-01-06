@@ -18,32 +18,25 @@ protected:
 
     void setKeyConditionImpl(const SelectQueryInfo & query_info, ContextPtr context, const Block & keys)
     {
-        if (!context->getSettingsRef().allow_experimental_analyzer)
-        {
-            key_condition = std::make_shared<const KeyCondition>(
-                query_info,
-                context,
-                keys.getNames(),
-                std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(keys.getColumnsWithTypeAndName())));
-        }
+        key_condition = std::make_shared<const KeyCondition>(
+            query_info,
+            context,
+            keys.getNames(),
+            std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(keys.getColumnsWithTypeAndName())));
     }
 
     void setKeyConditionImpl(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context, const Block & keys)
     {
-        if (context->getSettingsRef().allow_experimental_analyzer)
-        {
-            std::unordered_map<std::string, DB::ColumnWithTypeAndName> node_name_to_input_column;
-            for (const auto & column : keys.getColumnsWithTypeAndName())
-                node_name_to_input_column.insert({column.name, column});
+        std::unordered_map<std::string, DB::ColumnWithTypeAndName> node_name_to_input_column;
+        for (const auto & column : keys.getColumnsWithTypeAndName())
+            node_name_to_input_column.insert({column.name, column});
 
-            auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_column, context);
-            key_condition = std::make_shared<const KeyCondition>(
-                filter_actions_dag,
-                context,
-                keys.getNames(),
-                std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(keys.getColumnsWithTypeAndName())),
-                NameSet{});
-        }
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(nodes, node_name_to_input_column, context);
+        key_condition = std::make_shared<const KeyCondition>(
+            filter_actions_dag,
+            context,
+            keys.getNames(),
+            std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(keys.getColumnsWithTypeAndName())));
     }
 
 public:

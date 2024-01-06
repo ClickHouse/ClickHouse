@@ -1,5 +1,6 @@
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DDLDependencyVisitor.h>
@@ -33,13 +34,13 @@ DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
 }
 
 void DatabaseMemory::createTable(
-    ContextPtr local_context,
+    ContextPtr /*context*/,
     const String & table_name,
     const StoragePtr & table,
     const ASTPtr & query)
 {
     std::lock_guard lock{mutex};
-    attachTableUnlocked(local_context, table_name, table, /*relative_table_path=*/ {});
+    attachTableUnlocked(table_name, table);
 
     /// Clean the query from temporary flags.
     ASTPtr query_to_store = query;
@@ -56,7 +57,7 @@ void DatabaseMemory::createTable(
 }
 
 void DatabaseMemory::dropTable(
-    ContextPtr local_context,
+    ContextPtr /*context*/,
     const String & table_name,
     bool /*sync*/)
 {
@@ -83,7 +84,7 @@ void DatabaseMemory::dropTable(
     catch (...)
     {
         std::lock_guard lock{mutex};
-        attachTableUnlocked(local_context, table_name, table, /*relative_table_path=*/ {});
+        attachTableUnlocked(table_name, table);
         throw;
     }
 
@@ -207,6 +208,17 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     }
 
     return res;
+}
+
+void registerDatabaseMemory(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        return make_shared<DatabaseMemory>(
+            args.database_name,
+            args.context);
+    };
+    factory.registerDatabase("Memory", create_fn);
 }
 
 }

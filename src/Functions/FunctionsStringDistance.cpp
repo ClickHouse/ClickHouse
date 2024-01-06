@@ -6,6 +6,7 @@
 #include <Functions/FunctionsStringSimilarity.h>
 #include <Common/PODArray.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/iota.h>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -246,8 +247,7 @@ struct ByteEditDistanceImpl
         ResultType insertion = 0;
         ResultType deletion = 0;
 
-        for (size_t i = 0; i <= haystack_size; ++i)
-            distances0[i] = i;
+        iota(distances0.data(), haystack_size + 1, ResultType(0));
 
         for (size_t pos_needle = 0; pos_needle < needle_size; ++pos_needle)
         {
