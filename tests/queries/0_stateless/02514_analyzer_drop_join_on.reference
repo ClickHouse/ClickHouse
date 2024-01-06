@@ -55,35 +55,35 @@ Header: a2 String
   Header: a2_0 String
           k_2 UInt64
           d2_1 String
-    Expression (DROP unused columns after JOIN)
+    Expression ((Actions for left table alias column keys + DROP unused columns after JOIN))
     Header: a2_0 String
             k_2 UInt64
       Join (JOIN FillRightFirst)
       Header: a2_0 String
               k_2 UInt64
-        Expression (DROP unused columns after JOIN)
+        Expression ((Actions for left table alias column keys + DROP unused columns after JOIN))
         Header: a2_0 String
                 k_2 UInt64
           Join (JOIN FillRightFirst)
           Header: a2_0 String
                   k_2 UInt64
-            Expression (Change column names to column identifiers)
+            Expression ((Actions for left table alias column keys + Change column names to column identifiers))
             Header: a2_0 String
                     k_2 UInt64
               ReadFromMemoryStorage
               Header: a2 String
                       k UInt64
-            Expression (Change column names to column identifiers)
-            Header: k_3 UInt64
+            Expression ((Actions for right table alias column keys + Change column names to column identifiers))
+            Header: k_5 UInt64
               ReadFromMemoryStorage
               Header: k UInt64
-        Expression (Change column names to column identifiers)
+        Expression ((Actions for right table alias column keys + Change column names to column identifiers))
         Header: k_4 UInt64
           ReadFromMemoryStorage
           Header: k UInt64
-    Expression (Change column names to column identifiers)
+    Expression ((Actions for right table alias column keys + Change column names to column identifiers))
     Header: d2_1 String
-            k_5 UInt64
+            k_3 UInt64
       ReadFromMemoryStorage
       Header: d2 String
               k UInt64

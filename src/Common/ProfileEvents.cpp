@@ -288,6 +288,18 @@ The server successfully detected this situation and will download merged part fr
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     \
+    M(ParallelReplicasHandleRequestMicroseconds, "Time spent processing requests for marks from replicas") \
+    M(ParallelReplicasHandleAnnouncementMicroseconds, "Time spent processing replicas announcements") \
+    \
+    M(ParallelReplicasReadAssignedMarks, "Sum across all replicas of how many of scheduled marks were assigned by consistent hash") \
+    M(ParallelReplicasReadUnassignedMarks, "Sum across all replicas of how many unassigned marks were scheduled") \
+    M(ParallelReplicasReadAssignedForStealingMarks, "Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash") \
+    \
+    M(ParallelReplicasStealingByHashMicroseconds, "Time spent collecting segments meant for stealing by hash") \
+    M(ParallelReplicasProcessingPartsMicroseconds, "Time spent processing data parts") \
+    M(ParallelReplicasStealingLeftoversMicroseconds, "Time spent collecting orphaned segments") \
+    M(ParallelReplicasCollectingOwnedSegmentsMicroseconds, "Time spent collecting segments meant by hash") \
+    \
     M(PerfCpuCycles, "Total cycles. Be wary of what happens during CPU frequency scaling.")  \
     M(PerfInstructions, "Retired instructions. Be careful, these can be affected by various issues, most notably hardware interrupt counts.") \
     M(PerfCacheReferences, "Cache accesses. Usually, this indicates Last Level Cache accesses, but this may vary depending on your CPU. This may include prefetches and coherency messages; again this depends on the design of your CPU.") \
