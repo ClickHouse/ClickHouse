@@ -3961,8 +3961,15 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
     /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
 
+    /// We can only create a covering part for a blocks range that starts with 0 (otherwise we may get "intersecting parts"
+    /// if we remove a range from the middle when dropping a part).
+    /// Maybe we could do it by incrementing mutation version to get a name for the empty covering part,
+    /// but it's okay to simply avoid creating it for DROP PART (for a part in the middle).
+    /// NOTE: Block numbers in ReplicatedMergeTree start from 0. For MergeTree, is_new_syntax is always false.
+    assert(!create_empty_part || supportsReplication());
+    bool range_in_the_middle = drop_range.min_block;
     bool is_new_syntax = format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
-    if (create_empty_part && !parts_to_remove.empty() && is_new_syntax)
+    if (create_empty_part && !parts_to_remove.empty() && is_new_syntax && !range_in_the_middle)
     {
         /// We are going to remove a lot of parts from zookeeper just after returning from this function.
         /// And we will remove parts from disk later (because some queries may use them).
@@ -3971,12 +3978,9 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         /// We don't need to commit it to zk, and don't even need to activate it.
 
         MergeTreePartInfo empty_info = drop_range;
-        empty_info.level = empty_info.mutation = 0;
-        if (!empty_info.min_block)
-            empty_info.min_block = MergeTreePartInfo::MAX_BLOCK_NUMBER;
+        empty_info.min_block = empty_info.level = empty_info.mutation = 0;
         for (const auto & part : parts_to_remove)
         {
-            empty_info.min_block = std::min(empty_info.min_block, part->info.min_block);
             empty_info.level = std::max(empty_info.level, part->info.level);
             empty_info.mutation = std::max(empty_info.mutation, part->info.mutation);
         }
