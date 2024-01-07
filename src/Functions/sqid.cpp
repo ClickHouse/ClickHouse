@@ -110,14 +110,14 @@ public:
 
         auto col_res_offsets = ColumnArray::ColumnOffsets::create();
         auto & res_offsets_data = col_res_offsets->getData();
+        res_offsets_data.reserve(input_rows_count);
 
-        std::vector<UInt64> integers;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const ColumnWithTypeAndName & arg = arguments[0];
             ColumnPtr current_column = arg.column;
             std::string_view sqid = current_column->getDataAt(i).toView();
-            integers = sqids.decode(sqid);
+            std::vector<UInt64> integers = sqids.decode(sqid);
             res_nested_data.insert(integers.begin(), integers.end());
             res_offsets_data.push_back(integers.size());
         }
@@ -151,10 +151,10 @@ Transforms numbers into a [Sqid](https://sqids.org/) which is a Youtube-like ID 
 
     factory.registerFunction<FunctionSqidDecode>(FunctionDocumentation{
         .description=R"(
-Transforms a [Sqid](https://sqids.org/) back into a tuple of numbers.)",
+Transforms a [Sqid](https://sqids.org/) back into an array of numbers.)",
         .syntax="sqidDecode(number1, ...)",
         .arguments={{"sqid", "A sqid"}},
-        .returned_value="A tuple of [UInt64](/docs/en/sql-reference/data-types/int-uint.md).",
+        .returned_value="An array of [UInt64](/docs/en/sql-reference/data-types/int-uint.md).",
         .examples={
             {"simple",
             "SELECT sqidDecode('gXHfJ1C6dN');",

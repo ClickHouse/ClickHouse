@@ -1781,7 +1781,7 @@ Result:
 
 Encodes numbers as a [Sqid](https://sqids.org/) which is a YouTube-like ID string.
 The output alphabet is `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789`.
-Do not use this function for hashing - the generated IDs can be decoded back into numbers.
+Do not use this function for hashing - the generated IDs can be decoded back into the original numbers.
 
 **Syntax**
 
@@ -1813,7 +1813,8 @@ SELECT sqidEncode(1, 2, 3, 4, 5);
 
 ## sqidDecode
 
-Decodes a [Sqid](https://sqids.org/) into numbers.
+Decodes a [Sqid](https://sqids.org/) back into its original numbers.
+Returns an empty array in case the input string is not a valid sqid.
 
 **Syntax**
 
