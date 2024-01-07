@@ -402,6 +402,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.select = command_ast->select;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_REFRESH)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_REFRESH;
+        command.refresh = command_ast->refresh;
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::RENAME_COLUMN)
     {
         AlterCommand command;
@@ -707,7 +715,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_TTL)
     {
-        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key);
+        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
     }
     else if (type == REMOVE_TTL)
     {
@@ -715,7 +723,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_QUERY)
     {
-        metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, context);
+        metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
         Block as_select_sample;
 
         if (context->getSettingsRef().allow_experimental_analyzer)
@@ -731,6 +739,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         metadata.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+    }
+    else if (type == MODIFY_REFRESH)
+    {
+        metadata.refresh = refresh->clone();
     }
     else if (type == MODIFY_SETTING)
     {
@@ -1136,13 +1148,13 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, metadata_copy.columns, context, metadata_copy.primary_key);
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, metadata_copy.columns, context, metadata_copy.primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
         metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
     }
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
         metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            metadata_copy.table_ttl.definition_ast, metadata_copy.columns, context, metadata_copy.primary_key);
+            metadata_copy.table_ttl.definition_ast, metadata_copy.columns, context, metadata_copy.primary_key, context->getSettingsRef().allow_suspicious_ttl_expressions);
 
     metadata = std::move(metadata_copy);
 }

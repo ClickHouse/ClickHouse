@@ -1414,9 +1414,12 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             set_key = right_in_operand->getTreeHash(/*ignore_aliases=*/ true);
 
         if (auto set = data.prepared_sets->findSubquery(set_key))
+        {
+            set->markAsINSubquery();
             return set;
+        }
 
-        FutureSetPtr external_table_set;
+        FutureSetFromSubqueryPtr external_table_set;
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
@@ -1460,7 +1463,8 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             interpreter->buildQueryPlan(*source);
         }
 
-        return data.prepared_sets->addFromSubquery(set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
+        return data.prepared_sets->addFromSubquery(
+            set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef(), /*in_subquery=*/true);
     }
     else
     {

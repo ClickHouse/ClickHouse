@@ -53,6 +53,7 @@ DataTypePtr getCoordinationErrorCodesEnumType()
                 {"ZCLOSING",                    static_cast<Int8>(Coordination::Error::ZCLOSING)},
                 {"ZNOTHING",                    static_cast<Int8>(Coordination::Error::ZNOTHING)},
                 {"ZSESSIONMOVED",               static_cast<Int8>(Coordination::Error::ZSESSIONMOVED)},
+                {"ZNOTREADONLY",                static_cast<Int8>(Coordination::Error::ZNOTREADONLY)},
             });
 }
 
@@ -115,6 +116,7 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"CONNECTING",              static_cast<Int16>(Coordination::State::CONNECTING)},
                 {"ASSOCIATING",             static_cast<Int16>(Coordination::State::ASSOCIATING)},
                 {"CONNECTED",               static_cast<Int16>(Coordination::State::CONNECTED)},
+                {"READONLY",                static_cast<Int16>(Coordination::State::READONLY)},
                 {"NOTCONNECTED",            static_cast<Int16>(Coordination::State::NOTCONNECTED)},
             });
 

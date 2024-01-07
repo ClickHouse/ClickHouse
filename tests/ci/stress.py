@@ -63,6 +63,9 @@ def get_options(i: int, upgrade_check: bool) -> str:
     if random.random() < 0.1:
         client_options.append("optimize_trivial_approximate_count_query=1")
 
+    if random.random() < 0.3:
+        client_options.append(f"http_make_head_request={random.randint(0, 1)}")
+
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
 

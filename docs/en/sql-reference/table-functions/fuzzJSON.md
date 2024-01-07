@@ -19,6 +19,7 @@ fuzzJSON({ named_collection [option=value [,..]] | json_str[, random_seed] })
  - `json_str` (String) - The source string representing structured data in JSON format.
  - `random_seed` (UInt64) - Manual random seed for producing stable results.
  - `reuse_output` (boolean) - Reuse the output from a fuzzing process as input for the next fuzzer.
+ - `malform_output` (boolean) - Generate a string that cannot be parsed as a JSON object.
  - `max_output_length` (UInt64) - Maximum allowable length of the generated or perturbed JSON string.
  - `probability` (Float64) - The probability to fuzz a JSON field (a key-value pair). Must be within [0, 1] range.
  - `max_nesting_level` (UInt64) - The maximum allowed depth of nested structures within the JSON data.
@@ -83,4 +84,14 @@ SELECT * FROM fuzzJSON('{"id":1}', 1234) LIMIT 3;
 {"id":1, "mxPG0h1R5":"L-YQLv@9hcZbOIGrAn10%GA"}
 {"BRjE":16137826149911306846}
 {"XjKE":15076727133550123563}
+```
+
+``` sql
+SELECT * FROM fuzzJSON(json_nc, json_str='{"name" : "FuzzJSON"}', random_seed=1337, malform_output=true) LIMIT 3;
+```
+
+``` text
+U"name":"FuzzJSON*"SpByjZKtr2VAyHCO"falseh
+{"name"keFuzzJSON, "g6vVO7TCIk":jTt^
+{"DBhz":YFuzzJSON5}
 ```

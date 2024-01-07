@@ -45,6 +45,7 @@
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
+#include <Storages/System/StorageSystemDatabaseEngines.h>
 #include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
@@ -87,6 +88,7 @@
 #include <Storages/System/StorageSystemScheduler.h>
 #include <Storages/System/StorageSystemS3Queue.h>
 #include <Storages/System/StorageSystemDashboards.h>
+#include <Storages/System/StorageSystemViewRefreshes.h>
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 #include <Storages/System/StorageSystemSymbols.h>
@@ -108,7 +110,7 @@
 namespace DB
 {
 
-void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
 {
     attach<StorageSystemOne>(context, system_database, "one");
     attach<StorageSystemNumbers>(context, system_database, "numbers", false);
@@ -131,6 +133,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators");
     attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families");
     attach<StorageSystemCollations>(context, system_database, "collations");
+    attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines");
     attach<StorageSystemContributors>(context, system_database, "contributors");
     attach<StorageSystemUsers>(context, system_database, "users");
@@ -169,11 +172,6 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
 #endif
-}
-
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
-{
-    attachSystemTablesLocal(context, system_database);
 
     attach<StorageSystemParts>(context, system_database, "parts");
     attach<StorageSystemProjectionParts>(context, system_database, "projection_parts");
@@ -204,11 +202,12 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemRemoteDataPaths>(context, system_database, "remote_data_paths");
     attach<StorageSystemCertificates>(context, system_database, "certificates");
     attach<StorageSystemNamedCollections>(context, system_database, "named_collections");
-    attach<StorageSystemAsyncLoader>(context, system_database, "async_loader");
+    attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes");
     attach<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins");
     attach<StorageSystemS3Queue>(context, system_database, "s3queue");
     attach<StorageSystemDashboards>(context, system_database, "dashboards");
+    attach<StorageSystemViewRefreshes>(context, system_database, "view_refreshes");
 
     if (has_zookeeper)
     {

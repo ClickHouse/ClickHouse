@@ -74,6 +74,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.allow_whitespace_or_tab_as_delimiter = settings.input_format_csv_allow_whitespace_or_tab_as_delimiter;
     format_settings.csv.allow_variable_number_of_columns = settings.input_format_csv_allow_variable_number_of_columns;
     format_settings.csv.use_default_on_bad_values = settings.input_format_csv_use_default_on_bad_values;
+    format_settings.csv.try_infer_numbers_from_strings = settings.input_format_csv_try_infer_numbers_from_strings;
     format_settings.hive_text.fields_delimiter = settings.input_format_hive_text_fields_delimiter;
     format_settings.hive_text.collection_items_delimiter = settings.input_format_hive_text_collection_items_delimiter;
     format_settings.hive_text.map_keys_delimiter = settings.input_format_hive_text_map_keys_delimiter;
@@ -110,6 +111,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.json.quote_decimals = settings.output_format_json_quote_decimals;
     format_settings.json.read_bools_as_numbers = settings.input_format_json_read_bools_as_numbers;
+    format_settings.json.read_bools_as_strings = settings.input_format_json_read_bools_as_strings;
     format_settings.json.read_numbers_as_strings = settings.input_format_json_read_numbers_as_strings;
     format_settings.json.read_objects_as_strings = settings.input_format_json_read_objects_as_strings;
     format_settings.json.read_arrays_as_strings = settings.input_format_json_read_arrays_as_strings;
@@ -347,7 +349,13 @@ InputFormatPtr FormatFactory::getInput(
     if (owned_buf)
         format->addBuffer(std::move(owned_buf));
     if (!settings.input_format_record_errors_file_path.toString().empty())
-        format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
+    {
+        if (parallel_parsing)
+            format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
+        else
+            format->setErrorsLogger(std::make_shared<InputFormatErrorsLogger>(context));
+    }
+
 
     /// It's a kludge. Because I cannot remove context from values format.
     /// (Not needed in the parallel_parsing case above because VALUES format doesn't support it.)

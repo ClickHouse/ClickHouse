@@ -1,6 +1,7 @@
 #include <filesystem>
 
 #include <Core/Settings.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
@@ -37,6 +38,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_DATABASE_ENGINE;
 }
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
@@ -138,6 +140,8 @@ void DatabaseOrdinary::loadTableFromMetadata(
 {
     assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & query = ast->as<const ASTCreateQuery &>();
+
+    LOG_TRACE(log, "Loading table {}", name.getFullName());
 
     try
     {
@@ -319,4 +323,19 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     }
 }
 
+void registerDatabaseOrdinary(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        if (!args.create_query.attach && !args.context->getSettingsRef().allow_deprecated_database_ordinary)
+            throw Exception(
+                ErrorCodes::UNKNOWN_DATABASE_ENGINE,
+                "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
+        return make_shared<DatabaseOrdinary>(
+            args.database_name,
+            args.metadata_path,
+            args.context);
+    };
+    factory.registerDatabase("Ordinary", create_fn);
+}
 }
