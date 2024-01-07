@@ -1429,7 +1429,7 @@ bool StorageS3::Configuration::update(ContextPtr context)
     request_settings = s3_settings.request_settings;
     request_settings.updateFromSettings(context->getSettings());
 
-    if (client && (static_configuration || !s3_settings.auth_settings.hasUpdates(auth_settings)))
+    if (client && (static_configuration || !auth_settings.hasUpdates(s3_settings.auth_settings)))
         return false;
 
     auth_settings.updateFrom(s3_settings.auth_settings);
@@ -1652,10 +1652,11 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         if (engine_args_to_idx.contains("session_token"))
             configuration.auth_settings.session_token = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["session_token"]], "session_token");
 
-        configuration.auth_settings.no_sign_request = no_sign_request;
+        if (no_sign_request)
+            configuration.auth_settings.no_sign_request = no_sign_request;
     }
 
-    configuration.static_configuration = !configuration.auth_settings.access_key_id.empty() || configuration.auth_settings.no_sign_request;
+    configuration.static_configuration = !configuration.auth_settings.access_key_id.empty() || configuration.auth_settings.no_sign_request.has_value();
 
     configuration.keys = {configuration.url.key};
 

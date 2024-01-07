@@ -142,7 +142,7 @@ bool AuthSettings::hasUpdates(const AuthSettings & other) const
 {
     AuthSettings copy = *this;
     copy.updateFrom(other);
-    return copy != other;
+    return *this != copy;
 }
 
 void AuthSettings::updateFrom(const AuthSettings & from)
