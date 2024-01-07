@@ -1,21 +1,27 @@
 # Intel® QuickAssist Technology Library (QATlib).
+
 message(STATUS "Intel QATlib ON")
 set(LIBQAT_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/qatlib")
 set(LIBQAT_DIR "${LIBQAT_ROOT_DIR}/quickassist/lookaside/access_layer/src")
 set(LIBOSAL_DIR "${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/src")
 set(OPENSSL_DIR "${ClickHouse_SOURCE_DIR}/contrib/openssl")
 
-# Generate 3 library targets: _qatmgr, _osal, _qatlib, Output ch_contrib::qatlib by linking with these targets.
-#_qatmgr
-SET(LIBQATMGR_Sources ${LIBQAT_DIR}/qat_direct/vfio/qat_mgr_client.c
+# Build 3 libraries: _qatmgr, _osal, _qatlib
+# Produce ch_contrib::qatlib by linking these libraries.
+
+# _qatmgr
+
+SET(LIBQATMGR_sources ${LIBQAT_DIR}/qat_direct/vfio/qat_mgr_client.c
     ${LIBQAT_DIR}/qat_direct/vfio/qat_mgr_lib.c
     ${LIBQAT_DIR}/qat_direct/vfio/qat_log.c
     ${LIBQAT_DIR}/qat_direct/vfio/vfio_lib.c
     ${LIBQAT_DIR}/qat_direct/vfio/adf_pfvf_proto.c
     ${LIBQAT_DIR}/qat_direct/vfio/adf_pfvf_vf_msg.c
     ${LIBQAT_DIR}/qat_direct/vfio/adf_vfio_pf.c)
-add_library(_qatmgr ${LIBQATMGR_Sources})
-target_include_directories(_qatmgr PRIVATE 
+
+add_library(_qatmgr ${LIBQATMGR_sources})
+
+target_include_directories(_qatmgr PRIVATE
     ${LIBQAT_ROOT_DIR}/quickassist/lookaside/access_layer/src/qat_direct/vfio
     ${LIBQAT_ROOT_DIR}/quickassist/lookaside/access_layer/include
     ${LIBQAT_ROOT_DIR}/quickassist/include
@@ -25,11 +31,13 @@ target_include_directories(_qatmgr PRIVATE
     ${LIBQAT_ROOT_DIR}/quickassist/lookaside/access_layer/src/qat_direct/include
     ${LIBQAT_ROOT_DIR}/quickassist/lookaside/access_layer/src/qat_direct/common/include
     ${ClickHouse_SOURCE_DIR}/contrib/sysroot/linux-x86_64-musl/include)
+
 target_compile_definitions(_qatmgr PRIVATE -DUSER_SPACE)
 target_compile_options(_qatmgr PRIVATE -Wno-error=int-conversion)
 
-#_osal
-SET(LIBOSAL_Sources 
+# _osal
+
+SET(LIBOSAL_sources
     ${LIBOSAL_DIR}/linux/user_space/OsalSemaphore.c
     ${LIBOSAL_DIR}/linux/user_space/OsalThread.c
     ${LIBOSAL_DIR}/linux/user_space/OsalMutex.c
@@ -38,7 +46,9 @@ SET(LIBOSAL_Sources
     ${LIBOSAL_DIR}/linux/user_space/OsalServices.c
     ${LIBOSAL_DIR}/linux/user_space/OsalUsrKrnProxy.c
     ${LIBOSAL_DIR}/linux/user_space/OsalCryptoInterface.c)
-add_library(_osal ${LIBOSAL_Sources})
+
+add_library(_osal ${LIBOSAL_sources})
+
 target_include_directories(_osal PRIVATE
     ${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/src/linux/user_space
     ${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/include
@@ -46,10 +56,11 @@ target_include_directories(_osal PRIVATE
     ${OPENSSL_DIR}/include
     ${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/linux_x86_64/include
     ${ClickHouse_SOURCE_DIR}/contrib/qatlib-cmake/include)
+
 target_compile_definitions(_osal PRIVATE -DOSAL_ENSURE_ON -DUSE_OPENSSL)
 
-#_qatlib
-SET(LIBQAT_Sources 
+# _qatlib
+SET(LIBQAT_sources
     ${LIBQAT_DIR}/common/compression/dc_buffers.c
     ${LIBQAT_DIR}/common/compression/dc_chain.c
     ${LIBQAT_DIR}/common/compression/dc_datapath.c
@@ -153,7 +164,8 @@ SET(LIBQAT_Sources
     ${LIBQAT_DIR}/qat_direct/vfio/adf_vfio_user_proxy.c
     ${LIBQAT_DIR}/common/compression/dc_crc_base.c)
 
-add_library(_qatlib ${LIBQAT_Sources})
+add_library(_qatlib ${LIBQAT_sources})
+
 target_include_directories(_qatlib PRIVATE
     ${CMAKE_SYSROOT}/usr/include
     ${LIBQAT_ROOT_DIR}/quickassist/lookaside/access_layer/include
@@ -175,23 +187,27 @@ target_include_directories(_qatlib PRIVATE
     ${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/src/linux/user_space
     ${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/src/linux/user_space/include
     ${ClickHouse_SOURCE_DIR}/contrib/sysroot/linux-x86_64-musl/include)
+
 target_link_libraries(_qatlib PRIVATE _qatmgr _osal OpenSSL::SSL ch_contrib::isal)
 target_compile_definitions(_qatlib PRIVATE -DUSER_SPACE -DLAC_BYTE_ORDER=__LITTLE_ENDIAN -DOSAL_ENSURE_ON)
 target_link_options(_qatlib PRIVATE -pie -z relro -z now -z noexecstack)
 target_compile_options(_qatlib PRIVATE -march=native)
 add_library (ch_contrib::qatlib ALIAS _qatlib)
 
-#_usdm
+# _usdm
+
 set(LIBUSDM_DIR "${ClickHouse_SOURCE_DIR}/contrib/qatlib/quickassist/utilities/libusdm_drv")
-set(LIBUSDM_Sources
+set(LIBUSDM_sources
         ${LIBUSDM_DIR}/user_space/vfio/qae_mem_utils_vfio.c
         ${LIBUSDM_DIR}/user_space/qae_mem_utils_common.c
         ${LIBUSDM_DIR}/user_space/vfio/qae_mem_hugepage_utils_vfio.c)
-add_library(_usdm ${LIBUSDM_Sources})
+
+add_library(_usdm ${LIBUSDM_sources})
 
 target_include_directories(_usdm PRIVATE
     ${ClickHouse_SOURCE_DIR}/contrib/sysroot/linux-x86_64-musl/include
     ${LIBUSDM_DIR}
     ${LIBUSDM_DIR}/include
     ${LIBUSDM_DIR}/user_space)
+
 add_library (ch_contrib::usdm ALIAS _usdm)
