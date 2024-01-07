@@ -31,4 +31,7 @@
         <allowed_disk>default</allowed_disk>
         <allowed_path>/backups/</allowed_path>
     </backups>
+
+    <max_mutations_bandwidth_for_server>1000000</max_mutations_bandwidth_for_server> <!-- 1M -->
+    <max_merges_bandwidth_for_server>1000000</max_merges_bandwidth_for_server> <!-- 1M -->
 </clickhouse>
