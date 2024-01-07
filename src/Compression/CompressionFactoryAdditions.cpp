@@ -165,7 +165,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         " You can enable it with the 'enable_deflate_qpl_codec' setting.",
                         codec_family_name);
 
-                if (!enable_zstd_qat_codec && result_codec->isZSTDQAT())
+                if (!enable_zstd_qat_codec && result_codec->isZstdQat())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is disabled by default."
                         " You can enable it with the 'enable_zstd_qat_codec' setting.",

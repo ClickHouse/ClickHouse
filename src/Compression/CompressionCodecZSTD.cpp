@@ -51,7 +51,7 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
     ZSTD_freeCCtx(cctx);
 
     if (ZSTD_isError(compressed_size))
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: {}", std::string(ZSTD_getErrorName(compressed_size)));
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: {}", ZSTD_getErrorName(compressed_size));
 
     return static_cast<UInt32>(compressed_size);
 }
@@ -65,13 +65,19 @@ void CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_s
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: {}", std::string(ZSTD_getErrorName(res)));
 }
 
-CompressionCodecZSTD::CompressionCodecZSTD(int level_, int window_log_) : level(level_), enable_long_range(true), window_log(window_log_)
+CompressionCodecZSTD::CompressionCodecZSTD(int level_, int window_log_)
+    : level(level_)
+    , enable_long_range(true)
+    , window_log(window_log_)
 {
     setCodecDescription(
         "ZSTD", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level)), std::make_shared<ASTLiteral>(static_cast<UInt64>(window_log))});
 }
 
-CompressionCodecZSTD::CompressionCodecZSTD(int level_) : level(level_), enable_long_range(false), window_log(0)
+CompressionCodecZSTD::CompressionCodecZSTD(int level_)
+    : level(level_)
+    , enable_long_range(false)
+    , window_log(0)
 {
     setCodecDescription("ZSTD", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }

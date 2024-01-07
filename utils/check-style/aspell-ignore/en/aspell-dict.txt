@@ -1001,7 +1001,7 @@ ZooKeeperRequest
 ZooKeeperSession
 ZooKeeperWatch
 ZooKeepers
-ZSTDQAT
+ZSTD_QAT
 aarch
 accurateCast
 accurateCastOrDefault

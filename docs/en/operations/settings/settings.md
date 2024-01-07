@@ -4773,6 +4773,28 @@ Type: Int64
 
 Default: 0
 
+## enable_deflate_qpl_codec {#enable_deflate_qpl_codec}
+
+If turned on, the DEFLATE_QPL codec may be used to compress columns.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Type: Bool
+
+## enable_zstd_qat_codec {#enable_zstd_qat_codec}
+
+If turned on, the ZSTD_QAT codec may be used to compress columns.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Type: Bool
+
 ## rewrite_count_distinct_if_with_count_distinct_implementation
 
 Allows you to rewrite `countDistcintIf` with [count_distinct_implementation](#count_distinct_implementation) setting.

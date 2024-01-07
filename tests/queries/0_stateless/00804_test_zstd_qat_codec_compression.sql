@@ -1,8 +1,6 @@
 --Tags: no-fasttest, no-cpu-aarch64, no-cpu-s390x
--- no-fasttest because ZSTDQAT isn't available in fasttest
--- no-cpu-aarch64 and no-cpu-s390x because ZSTDQAT is x86-only
-
--- A bunch of random DDLs to test the ZSTDQAT codec.
+-- no-fasttest because ZSTD_QAT isn't available in fasttest
+-- no-cpu-aarch64 and no-cpu-s390x because ZSTD_QAT is x86-only
 
 SET enable_zstd_qat_codec = 1;
 
@@ -12,17 +10,21 @@ SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS compression_codec;
 
+-- negative test
+CREATE TABLE compression_codec(id UInt64 CODEC(ZSTD_QAT(0))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_CODEC_PARAMETER }
+CREATE TABLE compression_codec(id UInt64 CODEC(ZSTD_QAT(13))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_CODEC_PARAMETER }
+
 CREATE TABLE compression_codec(
-    id UInt64 CODEC(ZSTDQAT),
-    data String CODEC(ZSTDQAT),
-    ddd Date CODEC(ZSTDQAT),
-    ddd32 Date32 CODEC(ZSTDQAT),
-    somenum Float64 CODEC(ZSTDQAT),
-    somestr FixedString(3) CODEC(ZSTDQAT),
-    othernum Int64 CODEC(ZSTDQAT),
-    somearray Array(UInt8) CODEC(ZSTDQAT),
-    somemap Map(String, UInt32) CODEC(ZSTDQAT),
-    sometuple Tuple(UInt16, UInt64) CODEC(ZSTDQAT),
+    id UInt64 CODEC(ZSTD_QAT),
+    data String CODEC(ZSTD_QAT),
+    ddd Date CODEC(ZSTD_QAT),
+    ddd32 Date32 CODEC(ZSTD_QAT),
+    somenum Float64 CODEC(ZSTD_QAT),
+    somestr FixedString(3) CODEC(ZSTD_QAT),
+    othernum Int64 CODEC(ZSTD_QAT),
+    somearray Array(UInt8) CODEC(ZSTD_QAT),
+    somemap Map(String, UInt32) CODEC(ZSTD_QAT),
+    sometuple Tuple(UInt16, UInt64) CODEC(ZSTD_QAT),
 ) ENGINE = MergeTree() ORDER BY tuple();
 
 SHOW CREATE TABLE compression_codec;

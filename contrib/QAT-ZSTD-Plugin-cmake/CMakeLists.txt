@@ -78,7 +78,7 @@ else () # In-tree build
         ${QAT_USDM_INCLUDE_DIR}
         ${ZSTD_LIBRARY_DIR}
         ${LIBQAT_HEADER_DIR})
-    target_compile_definitions(_qatzstd_plugin PRIVATE -DDEBUGLEVEL=0 PUBLIC -DENABLE_ZSTDQAT_COMPRESSION -DINTREE)
+    target_compile_definitions(_qatzstd_plugin PRIVATE -DDEBUGLEVEL=0 PUBLIC -DENABLE_ZSTD_QAT_CODEC -DINTREE)
     target_include_directories(_qatzstd_plugin SYSTEM PUBLIC $<BUILD_INTERFACE:${QATZSTD_SRC_DIR}> $<INSTALL_INTERFACE:include>)
     add_library (ch_contrib::qatzstd_plugin ALIAS _qatzstd_plugin)
 endif ()

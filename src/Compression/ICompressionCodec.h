@@ -121,8 +121,8 @@ public:
     /// Is this the DEFLATE_QPL codec?
     virtual bool isDeflateQpl() const { return false; }
 
-    /// Is this the ZSTDQAT codec?
-    virtual bool isZSTDQAT() const { return false; }
+    /// Is this the ZSTD_QAT codec?
+    virtual bool isZstdQat() const { return false; }
 
     /// If it does nothing.
     virtual bool isNone() const { return false; }
