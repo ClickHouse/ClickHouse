@@ -1,3 +1,4 @@
+#include <Common/re2.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/IParserBase.h>
@@ -9,15 +10,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include "Poco/String.h"
 #include <format>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace DB
 {
@@ -232,7 +224,7 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
     --pos;
     arg = getArgument(fn_name, pos);
 
-    //NULL expr returns NULL not exception
+    /// NULL expr returns NULL not exception
     static const re2::RE2 expr("^[0-9]+e[+-]?[0-9]+");
     assert(expr.ok());
     bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL" && !(re2::RE2::FullMatch(arg, expr));

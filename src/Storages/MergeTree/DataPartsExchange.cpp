@@ -24,15 +24,6 @@
 #include <iterator>
 #include <base/sort.h>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
-
 
 namespace fs = std::filesystem;
 
@@ -177,7 +168,17 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
         String remote_fs_metadata = parse<String>(params.get("remote_fs_metadata", ""));
 
-        Strings capability;
+        /// Tokenize capabilities from remote_fs_metadata
+        /// E.g. remote_fs_metadata = "local, s3_plain, web" --> capabilities = ["local", "s3_plain", "web"]
+        Strings capabilities;
+        const String delimiter(", ");
+        size_t pos = 0;
+        while ((pos = remote_fs_metadata.find(delimiter)) != String::npos)
+        {
+            String capability = remote_fs_metadata.substr(0, pos);
+            capabilities.push_back(capability);
+            remote_fs_metadata.erase(0, pos + delimiter.size());
+        }
 
         bool send_projections = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION;
 
@@ -193,9 +194,9 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
             auto disk_type = part->getDataPartStorage().getDiskType();
-            if (part->getDataPartStorage().supportZeroCopyReplication() && std::find(capability.begin(), capability.end(), disk_type) != capability.end())
+            if (part->getDataPartStorage().supportZeroCopyReplication() && std::find(capabilities.begin(), capabilities.end(), disk_type) != capabilities.end())
             {
-                /// Send metadata if the receiver's capability covers the source disk type.
+                /// Send metadata if the receiver's capabilities covers the source disk type.
                 response.addCookie({"remote_fs_metadata", disk_type});
                 sendPartFromDisk(part, out, client_protocol_version, true, send_projections);
                 return;

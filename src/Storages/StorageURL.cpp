@@ -34,6 +34,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <Common/re2.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
@@ -42,16 +43,6 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
-
 
 namespace ProfileEvents
 {
@@ -91,9 +82,9 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
 /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
-static const std::vector<re2::RE2> optional_regex_keys = {
-    /// re2::RE2(R"(headers.header\[[\d]*\].name)"),
-    /// re2::RE2(R"(headers.header\[[\d]*\].value)"),
+static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys = {
+    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
+    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
 };
 
 static bool urlWithGlobs(const String & uri)

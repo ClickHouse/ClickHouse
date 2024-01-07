@@ -1,16 +1,8 @@
 #include "PrometheusMetricsWriter.h"
 
 #include <IO/WriteHelpers.h>
+#include <Common/re2.h>
 #include <algorithm>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace
 {
@@ -36,8 +28,6 @@ bool replaceInvalidChars(std::string & metric_name)
     /// dirty solution:
     static const re2::RE2 regexp1("[^a-zA-Z0-9_:]");
     static const re2::RE2 regexp2("^[^a-zA-Z]*");
-    assert(regexp1.ok());
-    assert(regexp2.ok());
     re2::RE2::GlobalReplace(&metric_name, regexp1, "_");
     re2::RE2::GlobalReplace(&metric_name, regexp2, "");
     return !metric_name.empty();

@@ -25,15 +25,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+#include <Common/re2.h>
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>
@@ -538,6 +530,8 @@ void MySQLHandlerSSL::finishHandshakeSSL(
 
 static bool isFederatedServerSetupSetCommand(const String & query)
 {
+    re2::RE2::Options regexp_options;
+    regexp_options.set_case_sensitive(false);
     static const re2::RE2 expr(
         "(^(SET NAMES(.*)))"
         "|(^(SET character_set_results(.*)))"
@@ -545,8 +539,9 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET AUTOCOMMIT(.*)))"
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
-        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))");
-    return re2::RE2::FullMatch(query, expr);
+        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
+    assert(expr.ok());
+    return re2::RE2::PartialMatch(query, expr);
 }
 
 /// Replace "[query(such as SHOW VARIABLES...)]" into "".

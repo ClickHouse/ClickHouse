@@ -6,16 +6,10 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 
+#include <Common/re2.h>
+
 #include <gmock/gmock.h>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 
 namespace
@@ -70,14 +64,14 @@ TEST_P(ParserKQLTest, parseKQLQuery)
                 if (input_text.starts_with("ATTACH"))
                 {
                     auto salt = (dynamic_cast<const ASTCreateUserQuery *>(ast.get())->auth_data)->getSalt().value_or("");
-                    EXPECT_TRUE(re2::RE2::FullMatch(salt, re2::RE2(expected_ast)));
+                    EXPECT_TRUE(re2::RE2::FullMatch(salt, expected_ast));
                 }
                 else
                 {
                     DB::WriteBufferFromOwnString buf;
                     formatAST(*ast->clone(), buf, false, false);
                     String formatted_ast = buf.str();
-                    EXPECT_TRUE(re2::RE2::FullMatch(formatted_ast, re2::RE2(expected_ast)));
+                    EXPECT_TRUE(re2::RE2::FullMatch(formatted_ast, expected_ast));
                 }
             }
         }
