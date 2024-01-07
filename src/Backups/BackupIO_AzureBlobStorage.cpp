@@ -305,21 +305,21 @@ void BackupWriterAzureBlobStorage::removeFile(const String & file_name)
     object_storage->removeObjectIfExists(object);
 }
 
-void BackupWriterAzureBlobStorage::removeFiles(const Strings & keys)
+void BackupWriterAzureBlobStorage::removeFiles(const Strings & file_names)
 {
     StoredObjects objects;
-    for (const auto & key : keys)
-        objects.emplace_back(key);
+    for (const auto & file_name : file_names)
+        objects.emplace_back(file_name);
 
     object_storage->removeObjectsIfExist(objects);
 
 }
 
-void BackupWriterAzureBlobStorage::removeFilesBatch(const Strings & keys)
+void BackupWriterAzureBlobStorage::removeFilesBatch(const Strings & file_names)
 {
     StoredObjects objects;
-    for (const auto & key : keys)
-        objects.emplace_back(key);
+    for (const auto & file_name : file_names)
+        objects.emplace_back(file_name);
 
     object_storage->removeObjectsIfExist(objects);
 }

@@ -65,11 +65,11 @@ namespace
             , schedule(schedule_)
             , for_disk_azure_blob_storage(for_disk_azure_blob_storage_)
             , log(log_)
-            , max_single_part_upload_size(settings_.get()->max_single_part_upload_size)
+            , max_single_part_upload_size(settings_->max_single_part_upload_size)
         {
         }
 
-        ~UploadHelper() {}
+        virtual ~UploadHelper() = default;
 
     protected:
         std::function<std::unique_ptr<SeekableReadBuffer>()> create_read_buffer;
@@ -114,9 +114,9 @@ namespace
             if (!total_size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
 
-            auto max_part_number = settings.get()->max_part_number;
-            auto min_upload_part_size = settings.get()->min_upload_part_size;
-            auto max_upload_part_size = settings.get()->max_upload_part_size;
+            auto max_part_number = settings->max_part_number;
+            auto min_upload_part_size = settings->min_upload_part_size;
+            auto max_upload_part_size = settings->max_upload_part_size;
 
             if (!max_part_number)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_part_number must not be 0");
