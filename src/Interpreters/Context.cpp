@@ -330,6 +330,9 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable ThrottlerPtr backups_server_throttler;          /// A server-wide throttler for BACKUPs
 
+    mutable ThrottlerPtr mutations_throttler;               /// A server-wide throttler for mutations
+    mutable ThrottlerPtr merges_throttler;                  /// A server-wide throttler for merges
+
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
     LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
@@ -738,6 +741,12 @@ struct ContextSharedPart : boost::noncopyable
 
         if (auto bandwidth = server_settings.max_backup_bandwidth_for_server)
             backups_server_throttler = std::make_shared<Throttler>(bandwidth);
+
+        if (auto bandwidth = server_settings.max_mutations_bandwidth_for_server)
+            mutations_throttler = std::make_shared<Throttler>(bandwidth);
+
+        if (auto bandwidth = server_settings.max_merges_bandwidth_for_server)
+            merges_throttler = std::make_shared<Throttler>(bandwidth);
     }
 };
 
@@ -2999,6 +3008,16 @@ ThrottlerPtr Context::getBackupsThrottler() const
         throttler = backups_query_throttler;
     }
     return throttler;
+}
+
+ThrottlerPtr Context::getMutationsThrottler() const
+{
+    return shared->mutations_throttler;
+}
+
+ThrottlerPtr Context::getMergesThrottler() const
+{
+    return shared->merges_throttler;
 }
 
 bool Context::hasDistributedDDL() const
