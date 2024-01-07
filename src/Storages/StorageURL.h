@@ -172,11 +172,6 @@ public:
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override
-    {
-        setKeyConditionImpl(query_info_, context_, block_for_format);
-    }
-
     void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
     {
         setKeyConditionImpl(nodes, context_, block_for_format);

@@ -42,7 +42,7 @@ void filterBlockWithPredicate(const ActionsDAG::Node * predicate, Block & block,
 void filterBlockWithDAG(ActionsDAGPtr dag, Block & block, ContextPtr context);
 
 /// Extract a part of predicate that can be evaluated using only columns from input_names.
-ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block & allowed_inputs);
+ActionsDAGPtr splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>

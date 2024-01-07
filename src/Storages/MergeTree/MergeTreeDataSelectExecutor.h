@@ -172,12 +172,6 @@ public:
     static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
         const MergeTreeData & data,
         const MergeTreeData::DataPartsVector & parts,
-        const ASTPtr & query,
-        ContextPtr context);
-
-    static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
-        const MergeTreeData & data,
-        const MergeTreeData::DataPartsVector & parts,
         const ActionsDAGPtr & filter_dag,
         ContextPtr context);
 
