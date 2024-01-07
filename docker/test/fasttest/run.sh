@@ -235,6 +235,7 @@ function configure
     rm -f "$FASTTEST_DATA/config.d/secure_ports.xml"
     # doesn't support FDBKeeper
     rm -f "$FASTTEST_DATA/config.d/fdbkeeper.xml"
+    rm -f "$FASTTEST_SOURCE/tests/config/config.d/fdbkeeper.xml"
 }
 
 function run_tests
