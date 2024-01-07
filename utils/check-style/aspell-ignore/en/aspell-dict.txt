@@ -701,8 +701,6 @@ PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
-TotalPrimaryKeyBytesInMemory
-TotalPrimaryKeyBytesInMemoryAllocated
 PrivateKeyPassphraseHandler
 ProfileEvents
 Profiler
@@ -716,6 +714,7 @@ ProtobufSingle
 ProxySQL
 PyArrow
 PyCharm
+QATlib
 QEMU
 QTCreator
 Quantile
@@ -925,6 +924,8 @@ Toolset
 TopK
 TotalBytesOfMergeTreeTables
 TotalPartsOfMergeTreeTables
+TotalPrimaryKeyBytesInMemory
+TotalPrimaryKeyBytesInMemoryAllocated
 TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
@@ -993,6 +994,7 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
+ZSTDQAT
 Zabbix
 Zipkin
 ZooKeeper
@@ -1001,7 +1003,6 @@ ZooKeeperRequest
 ZooKeeperSession
 ZooKeeperWatch
 ZooKeepers
-ZSTD_QAT
 aarch
 accurateCast
 accurateCastOrDefault
@@ -1850,14 +1851,14 @@ metrica
 metroHash
 mfedotov
 minMap
+minSampleSizeContinuous
+minSampleSizeConversion
 mindsdb
 minimalistic
 mininum
 miniselect
 minmap
 minmax
-minSampleSizeContinuous
-minSampleSizeConversion
 mins
 misconfiguration
 mispredictions

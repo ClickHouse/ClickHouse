@@ -65,7 +65,7 @@ void registerCodecZSTDQAT(CompressionCodecFactory & factory)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "ZSTD_QAT codec argument must be integer");
 
             level = static_cast<int>(literal->value.safeGet<UInt64>());
-            if (level < CompressionCodecZSTDQAT::ZSTDQAT_SUPPORTED_MIN_LEVEL || level > CompressionCodecZSTDQAT::ZSTDQAT_SUPPORTED_MAX_LEVEL )
+            if (level < CompressionCodecZSTDQAT::ZSTDQAT_SUPPORTED_MIN_LEVEL || level > CompressionCodecZSTDQAT::ZSTDQAT_SUPPORTED_MAX_LEVEL)
                 /// that's a hardware limitation
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
                     "ZSTDQAT codec doesn't support level more than {} and lower than {} , given {}",
