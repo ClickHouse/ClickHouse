@@ -364,7 +364,14 @@
     <background_schedule_pool_size>128</background_schedule_pool_size>
     <background_message_broker_schedule_pool_size>16</background_message_broker_schedule_pool_size>
     <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
+    <tables_loader_foreground_pool_size>0</tables_loader_foreground_pool_size>
+    <tables_loader_background_pool_size>0</tables_loader_background_pool_size>
     -->
+
+    <!-- Enables asynchronous loading of databases and tables to speedup server startup.
+         Queries to not yet loaded entity will be blocked until load is finished.
+      -->
+    <!-- <async_load_databases>true</async_load_databases> -->
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -478,7 +485,6 @@
                         <max_data_part_size_bytes></max_data_part_size_bytes>
                         <max_data_part_size_ratio></max_data_part_size_ratio>
                         <perform_ttl_move_on_insert>true</perform_ttl_move_on_insert>
-                        <prefer_not_to_merge>false</prefer_not_to_merge>
                         <load_balancing>round_robin</load_balancing>
                     </main>
                 </volumes>
@@ -1373,6 +1379,9 @@
 
         <!-- Controls how many tasks could be in the queue -->
         <!-- <max_tasks_in_queue>1000</max_tasks_in_queue> -->
+
+        <!-- Host name of the current node. If specified, will only compare and not resolve hostnames inside the DDL tasks -->
+        <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
@@ -1427,6 +1436,10 @@
          The directory will be created if it doesn't exist.
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+
+    <!-- Directory containing the proto files for the well-known Protobuf types.
+      -->
+    <google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
 
     <!-- Default query masking rules, matching lines would be replaced with something else in the logs
         (both text logs and system.query_log).

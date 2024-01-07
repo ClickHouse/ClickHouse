@@ -357,3 +357,6 @@
 [submodule "contrib/pocketfft"]
 	path = contrib/pocketfft
 	url = https://github.com/mreineck/pocketfft.git
+[submodule "contrib/sqids-cpp"]
+	path = contrib/sqids-cpp
+	url = https://github.com/sqids/sqids-cpp.git

@@ -329,6 +329,20 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.return_method_ = nuraft::raft_params::async_handler;
 
     nuraft::asio_service::options asio_opts{};
+
+    /// If asio worker threads fail in any way, NuRaft will stop to make any progress
+    /// For that reason we need to suppress out of memory exceptions in such threads
+    /// TODO: use `get_active_workers` to detect when we have no active workers to abort
+    asio_opts.worker_start_ = [](uint32_t /*worker_id*/)
+    {
+        LockMemoryExceptionInThread::addUniqueLock(VariableContext::Global);
+    };
+
+    asio_opts.worker_stop_ = [](uint32_t /*worker_id*/)
+    {
+        LockMemoryExceptionInThread::removeUniqueLock();
+    };
+
     if (state_manager->isSecure())
     {
 #if USE_SSL
@@ -646,6 +660,12 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
         switch (type)
         {
+            case nuraft::cb_func::PreAppendLogLeader:
+            {
+                /// we cannot preprocess anything new as leader because we don't have up-to-date in-memory state
+                /// until we preprocess all stored logs
+                return nuraft::cb_func::ReturnCode::ReturnNull;
+            }
             case nuraft::cb_func::InitialBatchCommited:
             {
                 preprocess_logs();
@@ -844,6 +864,10 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 set_initialized();
             initial_batch_committed = true;
             return nuraft::cb_func::ReturnCode::Ok;
+        }
+        case nuraft::cb_func::PreAppendLogLeader:
+        {
+            return nuraft::cb_func::ReturnCode::ReturnNull;
         }
         case nuraft::cb_func::PreAppendLogFollower:
         {

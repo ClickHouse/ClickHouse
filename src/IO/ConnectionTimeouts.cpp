@@ -133,6 +133,22 @@ ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings
         settings.http_receive_timeout);
 }
 
+ConnectionTimeouts ConnectionTimeouts::getFetchPartHTTPTimeouts(const ServerSettings & server_settings, const Settings & user_settings)
+{
+    auto timeouts = getHTTPTimeouts(user_settings, server_settings.keep_alive_timeout);
+
+    if (server_settings.replicated_fetches_http_connection_timeout.changed)
+        timeouts.connection_timeout = server_settings.replicated_fetches_http_connection_timeout;
+
+    if (server_settings.replicated_fetches_http_send_timeout.changed)
+        timeouts.send_timeout = server_settings.replicated_fetches_http_send_timeout;
+
+    if (server_settings.replicated_fetches_http_receive_timeout.changed)
+        timeouts.receive_timeout = server_settings.replicated_fetches_http_receive_timeout;
+
+    return timeouts;
+}
+
 class SendReceiveTimeoutsForFirstAttempt
 {
 private:

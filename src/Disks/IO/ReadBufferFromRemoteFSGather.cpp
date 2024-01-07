@@ -265,4 +265,26 @@ ReadBufferFromRemoteFSGather::~ReadBufferFromRemoteFSGather()
         appendUncachedReadInfo();
 }
 
+bool ReadBufferFromRemoteFSGather::isSeekCheap()
+{
+    return !current_buf || current_buf->isSeekCheap();
+}
+
+bool ReadBufferFromRemoteFSGather::isContentCached(size_t offset, size_t size)
+{
+    if (!current_buf)
+        initialize();
+
+    if (current_buf)
+    {
+        /// offset should be adjusted the same way as we do it in initialize()
+        for (const auto & blob : blobs_to_read)
+            if (offset >= blob.bytes_size)
+                offset -= blob.bytes_size;
+
+        return current_buf->isContentCached(offset, size);
+    }
+
+    return false;
+}
 }

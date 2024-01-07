@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/Distributed/DistributedSettings.h>
 
 
 namespace DB
@@ -30,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int LOGICAL_ERROR;
+    extern const int CLUSTER_DOESNT_EXIST;
 }
 
 namespace ClusterProxy
@@ -40,7 +42,8 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     const Settings & settings,
     const StorageID & main_table,
     ASTPtr additional_filter_ast,
-    Poco::Logger * log)
+    Poco::Logger * log,
+    const DistributedSettings * distributed_settings)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
@@ -100,6 +103,12 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
         }
     }
 
+    if (!settings.skip_unavailable_shards.changed && distributed_settings)
+    {
+        new_settings.skip_unavailable_shards = distributed_settings->skip_unavailable_shards.value;
+        new_settings.skip_unavailable_shards.changed = true;
+    }
+
     if (settings.offset)
     {
         new_settings.offset = 0;
@@ -126,7 +135,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     }
 
     /// disable parallel replicas if cluster contains only shards with 1 replica
-    if (context->canUseParallelReplicas())
+    if (context->canUseTaskBasedParallelReplicas())
     {
         bool disable_parallel_replicas = true;
         for (const auto & shard : cluster.getShardsInfo())
@@ -185,11 +194,15 @@ void executeQuery(
     QueryProcessingStage::Enum processed_stage,
     const StorageID & main_table,
     const ASTPtr & table_func_ptr,
-    SelectStreamFactory & stream_factory, Poco::Logger * log,
-    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
+    SelectStreamFactory & stream_factory,
+    Poco::Logger * log,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
     const ClusterPtr & not_optimized_cluster,
+    const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator)
 {
     const Settings & settings = context->getSettingsRef();
@@ -201,7 +214,8 @@ void executeQuery(
     SelectStreamFactory::Shards remote_shards;
 
     auto cluster = query_info.getCluster();
-    auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log);
+    auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log,
+        &distributed_settings);
     if (context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
         && context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
            != new_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value)
@@ -251,11 +265,17 @@ void executeQuery(
         // decide for each shard if parallel reading from replicas should be enabled
         // according to settings and number of replicas declared per shard
         const auto & addresses = cluster->getShardsAddresses().at(i);
-        bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseParallelReplicas();
+        bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseTaskBasedParallelReplicas();
 
-        stream_factory.createForShard(shard_info,
-            query_ast_for_shard, main_table, table_func_ptr,
-            new_context, plans, remote_shards, static_cast<UInt32>(shards),
+        stream_factory.createForShard(
+            shard_info,
+            query_ast_for_shard,
+            main_table,
+            table_func_ptr,
+            new_context,
+            plans,
+            remote_shards,
+            static_cast<UInt32>(shards),
             parallel_replicas_enabled);
     }
 
@@ -313,11 +333,44 @@ void executeQueryWithParallelReplicas(
     SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits,
-    const ClusterPtr & not_optimized_cluster)
+    std::shared_ptr<const StorageLimitsList> storage_limits)
 {
     const auto & settings = context->getSettingsRef();
+
+    /// check cluster for parallel replicas
+    if (settings.cluster_for_parallel_replicas.value.empty())
+    {
+        throw Exception(
+            ErrorCodes::CLUSTER_DOESNT_EXIST,
+            "Reading in parallel from replicas is enabled but cluster to execute query is not provided. Please set "
+            "'cluster_for_parallel_replicas' setting");
+    }
+    auto not_optimized_cluster = context->getCluster(settings.cluster_for_parallel_replicas);
+
     auto new_context = Context::createCopy(context);
+
+    /// check hedged connections setting
+    if (settings.use_hedged_requests.value)
+    {
+        if (settings.use_hedged_requests.changed)
+        {
+            LOG_WARNING(
+                &Poco::Logger::get("executeQueryWithParallelReplicas"),
+                "Setting 'use_hedged_requests' explicitly with enabled 'allow_experimental_parallel_reading_from_replicas' has no effect. "
+                "Hedged connections are not used for parallel reading from replicas");
+        }
+        else
+        {
+            LOG_INFO(
+                &Poco::Logger::get("executeQueryWithParallelReplicas"),
+                "Disabling 'use_hedged_requests' in favor of 'allow_experimental_parallel_reading_from_replicas'. Hedged connections are "
+                "not used for parallel reading from replicas");
+        }
+
+        /// disable hedged connections -> parallel replicas uses own logic to choose replicas
+        new_context->setSetting("use_hedged_requests", Field{false});
+    }
+
     auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
 
     UInt64 shard_num = 0; /// shard_num is 1-based, so 0 - no shard specified
@@ -329,7 +382,6 @@ void executeQueryWithParallelReplicas(
         shard_num = column->getUInt(0);
     }
 
-    size_t all_replicas_count = 0;
     ClusterPtr new_cluster;
     /// if got valid shard_num from query initiator, then parallel replicas scope is the specified shard
     /// shards are numbered in order of appearance in the cluster config
@@ -353,16 +405,15 @@ void executeQueryWithParallelReplicas(
         // shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
         auto single_shard_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
         // convert cluster to representation expected by parallel replicas
-        new_cluster = single_shard_cluster->getClusterWithReplicasAsShards(settings);
+        new_cluster = single_shard_cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
     }
     else
     {
-        new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings);
+        new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
     }
 
-    all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
-
-    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(all_replicas_count);
+    auto coordinator
+        = std::make_shared<ParallelReplicasReadingCoordinator>(new_cluster->getShardCount(), settings.parallel_replicas_mark_segment_size);
     auto external_tables = new_context->getExternalTables();
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,

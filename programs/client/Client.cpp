@@ -306,6 +306,10 @@ void Client::initialize(Poco::Util::Application & self)
     /// Set path for format schema files
     if (config().has("format_schema_path"))
         global_context->setFormatSchemaPath(fs::weakly_canonical(config().getString("format_schema_path")));
+
+    /// Set the path for google proto files
+    if (config().has("google_protos_path"))
+        global_context->setGoogleProtosPath(fs::weakly_canonical(config().getString("google_protos_path")));
 }
 
 
@@ -489,8 +493,7 @@ void Client::connect()
 
     if (is_interactive)
     {
-        std::cout << "Connected to " << server_name << " server version " << server_version << " revision " << server_revision << "."
-                    << std::endl << std::endl;
+        std::cout << "Connected to " << server_name << " server version " << server_version << "." << std::endl << std::endl;
 
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);

@@ -1,6 +1,4 @@
 #include "config.h"
-#include <Common/ProfileEvents.h>
-#include "Parsers/ASTCreateQuery.h"
 
 #if USE_AWS_S3
 
@@ -16,6 +14,7 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
@@ -42,6 +41,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 
@@ -57,6 +57,7 @@
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -104,6 +105,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "structure",
     "access_key_id",
     "secret_access_key",
+    "session_token",
     "filename",
     "use_environment_credentials",
     "max_single_read_retries",
@@ -145,7 +147,8 @@ public:
         const Names & column_names_,
         StorageSnapshotPtr storage_snapshot_,
         StorageS3 & storage_,
-        SelectQueryInfo query_info_,
+        ReadFromFormatInfo read_from_format_info_,
+        bool need_only_count_,
         ContextPtr context_,
         size_t max_block_size_,
         size_t num_streams_)
@@ -153,105 +156,35 @@ public:
         , column_names(column_names_)
         , storage_snapshot(std::move(storage_snapshot_))
         , storage(storage_)
-        , query_info(std::move(query_info_))
+        , read_from_format_info(std::move(read_from_format_info_))
+        , need_only_count(need_only_count_)
         , local_context(std::move(context_))
         , max_block_size(max_block_size_)
         , num_streams(num_streams_)
     {
+        query_configuration = storage.updateConfigurationAndGetCopy(local_context);
+        virtual_columns = storage.getVirtuals();
     }
 
 private:
     Names column_names;
     StorageSnapshotPtr storage_snapshot;
     StorageS3 & storage;
-    SelectQueryInfo query_info;
+    ReadFromFormatInfo read_from_format_info;
+    bool need_only_count;
+    StorageS3::Configuration query_configuration;
+    NamesAndTypesList virtual_columns;
+
     ContextPtr local_context;
 
     size_t max_block_size;
     size_t num_streams;
+
+    std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper;
+
+    void createIterator(const ActionsDAG::Node * predicate);
 };
 
-
-static Block getBlockWithVirtuals(const NamesAndTypesList & virtual_columns, const String & bucket, const std::unordered_set<String> & keys)
-{
-    Block virtual_columns_block;
-    fs::path bucket_path(bucket);
-
-    for (const auto & [column_name, column_type] : virtual_columns)
-    {
-        if (column_name == "_path")
-        {
-            auto column = column_type->createColumn();
-            for (const auto & key : keys)
-                column->insert((bucket_path / key).string());
-            virtual_columns_block.insert({std::move(column), column_type, column_name});
-        }
-        else if (column_name == "_file")
-        {
-            auto column = column_type->createColumn();
-            for (const auto & key : keys)
-            {
-                auto pos = key.find_last_of('/');
-                if (pos != std::string::npos)
-                    column->insert(key.substr(pos + 1));
-                else
-                    column->insert(key);
-            }
-            virtual_columns_block.insert({std::move(column), column_type, column_name});
-        }
-        else if (column_name == "_key")
-        {
-            auto column = column_type->createColumn();
-            for (const auto & key : keys)
-                column->insert(key);
-            virtual_columns_block.insert({std::move(column), column_type, column_name});
-        }
-        else
-        {
-            auto column = column_type->createColumn();
-            column->insertManyDefaults(keys.size());
-            virtual_columns_block.insert({std::move(column), column_type, column_name});
-        }
-    }
-
-    /// Column _key is mandatory and may not be in virtual_columns list
-    if (!virtual_columns_block.has("_key"))
-    {
-        auto column_type = std::make_shared<DataTypeString>();
-        auto column = column_type->createColumn(); for (const auto & key : keys)
-            column->insert(key);
-        virtual_columns_block.insert({std::move(column), column_type, "_key"});
-    }
-
-    return virtual_columns_block;
-}
-
-static std::vector<String> filterKeysForPartitionPruning(
-    const std::vector<String> & keys,
-    const String & bucket,
-    const NamesAndTypesList & virtual_columns,
-    const std::vector<ActionsDAGPtr> & filter_dags,
-    ContextPtr context)
-{
-    std::unordered_set<String> result_keys(keys.begin(), keys.end());
-    for (const auto & filter_dag : filter_dags)
-    {
-        if (result_keys.empty())
-            break;
-
-        auto block = getBlockWithVirtuals(virtual_columns, bucket, result_keys);
-
-        auto filter_actions = VirtualColumnUtils::splitFilterDagForAllowedInputs(block, filter_dag, context);
-        if (!filter_actions)
-            continue;
-        VirtualColumnUtils::filterBlockWithQuery(filter_actions, block, context);
-
-        result_keys = VirtualColumnUtils::extractSingleValueFromBlock<String>(block, "_key");
-    }
-
-    LOG_DEBUG(&Poco::Logger::get("StorageS3"), "Applied partition pruning {} from {} keys left", result_keys.size(), keys.size());
-    return std::vector<String>(result_keys.begin(), result_keys.end());
-}
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -262,7 +195,7 @@ public:
     Impl(
         const S3::Client & client_,
         const S3::URI & globbed_uri_,
-        ASTPtr & query_,
+        const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns_,
         ContextPtr context_,
         KeysWithInfo * read_keys_,
@@ -271,7 +204,6 @@ public:
         : WithContext(context_)
         , client(client_.clone())
         , globbed_uri(globbed_uri_)
-        , query(query_)
         , virtual_columns(virtual_columns_)
         , read_keys(read_keys_)
         , request_settings(request_settings_)
@@ -305,6 +237,8 @@ public:
                 "Cannot compile regex from glob ({}): {}", globbed_uri.key, matcher->error());
 
         recursive = globbed_uri.key == "/**" ? true : false;
+
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
         fillInternalBufferAssumeLocked();
     }
 
@@ -423,20 +357,14 @@ private:
             return;
         }
 
-        if (!is_initialized)
-        {
-            filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, fs::path(globbed_uri.bucket) / temp_buffer.front()->key, getContext());
-            is_initialized = true;
-        }
-
-        if (filter_ast)
+        if (filter_dag)
         {
             std::vector<String> paths;
             paths.reserve(temp_buffer.size());
             for (const auto & key_with_info : temp_buffer)
                 paths.push_back(fs::path(globbed_uri.bucket) / key_with_info->key);
 
-            VirtualColumnUtils::filterByPathOrFile(temp_buffer, paths, query, virtual_columns, getContext(), filter_ast);
+            VirtualColumnUtils::filterByPathOrFile(temp_buffer, paths, filter_dag, virtual_columns, getContext());
         }
 
         buffer = std::move(temp_buffer);
@@ -478,8 +406,7 @@ private:
     S3::URI globbed_uri;
     ASTPtr query;
     NamesAndTypesList virtual_columns;
-    bool is_initialized{false};
-    ASTPtr filter_ast;
+    ActionsDAGPtr filter_dag;
     std::unique_ptr<re2::RE2> matcher;
     bool recursive{false};
     bool is_finished{false};
@@ -497,13 +424,13 @@ private:
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(
     const S3::Client & client_,
     const S3::URI & globbed_uri_,
-    ASTPtr query,
+    const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns_,
     ContextPtr context,
     KeysWithInfo * read_keys_,
     const S3Settings::RequestSettings & request_settings_,
     std::function<void(FileProgress)> file_progress_callback_)
-    : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_, query, virtual_columns_, context, read_keys_, request_settings_, file_progress_callback_))
+    : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_, predicate, virtual_columns_, context, read_keys_, request_settings_, file_progress_callback_))
 {
 }
 
@@ -645,8 +572,7 @@ StorageS3Source::StorageS3Source(
     const String & url_host_and_port_,
     std::shared_ptr<IIterator> file_iterator_,
     const size_t max_parsing_threads_,
-    bool need_only_count_,
-    std::optional<SelectQueryInfo> query_info_)
+    bool need_only_count_)
     : SourceWithKeyCondition(info.source_header, false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -662,7 +588,6 @@ StorageS3Source::StorageS3Source(
     , client(client_)
     , sample_block(info.format_header)
     , format_settings(format_settings_)
-    , query_info(std::move(query_info_))
     , requested_virtual_columns(info.requested_virtual_columns)
     , file_iterator(file_iterator_)
     , max_parsing_threads(max_parsing_threads_)
@@ -1150,8 +1075,7 @@ static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
     const StorageS3::Configuration & configuration,
     bool distributed_processing,
     ContextPtr local_context,
-    ASTPtr query,
-    const std::vector<ActionsDAGPtr> & filter_dags,
+    const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns,
     StorageS3::KeysWithInfo * read_keys = nullptr,
     std::function<void(FileProgress)> file_progress_callback = {})
@@ -1164,12 +1088,22 @@ static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
     {
         /// Iterate through disclosed globs and make a source for each file
         return std::make_shared<StorageS3Source::DisclosedGlobIterator>(
-            *configuration.client, configuration.url, query, virtual_columns,
+            *configuration.client, configuration.url, predicate, virtual_columns,
             local_context, read_keys, configuration.request_settings, file_progress_callback);
     }
     else
     {
-        Strings keys = filterKeysForPartitionPruning(configuration.keys, configuration.url.bucket, virtual_columns, filter_dags, local_context);
+        Strings keys = configuration.keys;
+        auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+        if (filter_dag)
+        {
+            std::vector<String> paths;
+            paths.reserve(keys.size());
+            for (const auto & key : keys)
+                paths.push_back(fs::path(configuration.url.bucket) / key);
+            VirtualColumnUtils::filterByPathOrFile(keys, paths, filter_dag, virtual_columns, local_context);
+        }
+
         return std::make_shared<StorageS3Source::KeysIterator>(
             *configuration.client, configuration.url.version_id, keys,
             configuration.url.bucket, configuration.request_settings, read_keys, file_progress_callback);
@@ -1203,12 +1137,16 @@ void StorageS3::read(
 {
     auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(local_context), virtual_columns);
 
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && local_context->getSettingsRef().optimize_count_from_files;
+
     auto reading = std::make_unique<ReadFromStorageS3Step>(
         read_from_format_info.source_header,
         column_names,
         storage_snapshot,
         *this,
-        query_info,
+        std::move(read_from_format_info),
+        need_only_count,
         local_context,
         max_block_size,
         num_streams);
@@ -1216,19 +1154,32 @@ void StorageS3::read(
     query_plan.addStep(std::move(reading));
 }
 
+void ReadFromStorageS3Step::applyFilters()
+{
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, local_context);
+    const ActionsDAG::Node * predicate = nullptr;
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
+
+    createIterator(predicate);
+}
+
+void ReadFromStorageS3Step::createIterator(const ActionsDAG::Node * predicate)
+{
+    if (iterator_wrapper)
+        return;
+
+    iterator_wrapper = createFileIterator(
+        query_configuration, storage.distributed_processing, local_context, predicate,
+        virtual_columns, nullptr, local_context->getFileProgressCallback());
+}
+
 void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto query_configuration = storage.updateConfigurationAndGetCopy(local_context);
-
     if (storage.partition_by && query_configuration.withWildcard())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned S3 storage is not implemented yet");
 
-    auto virtual_columns = storage.getVirtuals();
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, storage.supportsSubsetOfColumns(local_context), virtual_columns);
-
-    std::shared_ptr<StorageS3Source::IIterator> iterator_wrapper = createFileIterator(
-        query_configuration, storage.distributed_processing, local_context, query_info.query, filter_dags,
-        virtual_columns, nullptr, local_context->getFileProgressCallback());
+    createIterator(nullptr);
 
     size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
     if (estimated_keys_count > 1)
@@ -1236,9 +1187,6 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
     else
         /// Disclosed glob iterator can underestimate the amount of keys in some cases. We will keep one stream for this particular case.
         num_streams = 1;
-
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-        && local_context->getSettingsRef().optimize_count_from_files;
 
     const size_t max_threads = local_context->getSettingsRef().max_threads;
     const size_t max_parsing_threads = num_streams >= max_threads ? 1 : (max_threads / std::max(num_streams, 1ul));
@@ -1248,7 +1196,7 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
     pipes.reserve(num_streams);
     for (size_t i = 0; i < num_streams; ++i)
     {
-        pipes.emplace_back(std::make_shared<StorageS3Source>(
+        auto source = std::make_shared<StorageS3Source>(
             read_from_format_info,
             query_configuration.format,
             storage.getName(),
@@ -1263,17 +1211,20 @@ void ReadFromStorageS3Step::initializePipeline(QueryPipelineBuilder & pipeline, 
             query_configuration.url.uri.getHost() + std::to_string(query_configuration.url.uri.getPort()),
             iterator_wrapper,
             max_parsing_threads,
-            need_only_count,
-            query_info));
+            need_only_count);
+
+        source->setKeyCondition(filter_nodes.nodes, local_context);
+        pipes.emplace_back(std::move(source));
     }
 
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
-}
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    if (pipe.empty())
+        pipe = Pipe(std::make_shared<NullSource>(read_from_format_info.source_header));
 
+    for (const auto & processor : pipe.getProcessors())
+        processors.emplace_back(processor);
 
-void ReadFromStorageS3Step::applyFilters()
-{
-    /// We will use filter_dags in filterKeysForPartitionPruning called from initializePipeline, nothing to do here
+    pipeline.init(std::move(pipe));
 }
 
 SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
@@ -1437,12 +1388,15 @@ bool StorageS3::Configuration::update(ContextPtr context)
 
 void StorageS3::Configuration::connect(ContextPtr context)
 {
+    const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
+    const Settings & local_settings = context->getSettingsRef();
+
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
         auth_settings.region,
         context->getRemoteHostFilter(),
-        static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_max_redirects),
-        static_cast<unsigned>(context->getGlobalContext()->getSettingsRef().s3_retry_attempts),
-        context->getGlobalContext()->getSettingsRef().enable_s3_requests_logging,
+        static_cast<unsigned>(global_settings.s3_max_redirects),
+        static_cast<unsigned>(global_settings.s3_retry_attempts),
+        global_settings.enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         request_settings.get_request_throttler,
         request_settings.put_request_throttler,
@@ -1450,17 +1404,23 @@ void StorageS3::Configuration::connect(ContextPtr context)
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.maxConnections = static_cast<unsigned>(request_settings.max_connections);
-    client_configuration.http_connection_pool_size = context->getGlobalContext()->getSettingsRef().s3_http_connection_pool_size;
+    client_configuration.http_connection_pool_size = global_settings.s3_http_connection_pool_size;
     auto headers = auth_settings.headers;
     if (!headers_from_ast.empty())
         headers.insert(headers.end(), headers_from_ast.begin(), headers_from_ast.end());
 
     client_configuration.requestTimeoutMs = request_settings.request_timeout_ms;
 
-    auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key);
+    S3::ClientSettings client_settings{
+        .use_virtual_addressing = url.is_virtual_hosted_style,
+        .disable_checksum = local_settings.s3_disable_checksum,
+        .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
+    };
+
+    auto credentials = Aws::Auth::AWSCredentials(auth_settings.access_key_id, auth_settings.secret_access_key, auth_settings.session_token);
     client = S3::ClientFactory::instance().create(
         client_configuration,
-        url.is_virtual_hosted_style,
+        client_settings,
         credentials.GetAWSAccessKeyId(),
         credentials.GetAWSSecretKey(),
         auth_settings.server_side_encryption_customer_key_base64,
@@ -1517,11 +1477,14 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         /// S3('url', NOSIGN, 'format')
         /// S3('url', NOSIGN, 'format', 'compression')
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key')
+        /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'session_token')
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
+        /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'session_token', 'format')
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
+        /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'session_token', 'format', 'compression')
         /// with optional headers() function
 
-        if (engine_args.empty() || engine_args.size() > 5)
+        if (engine_args.empty() || engine_args.size() > 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage S3 requires 1 to 5 arguments: "
                             "url, [NOSIGN | access_key_id, secret_access_key], name of used format and [compression_method]");
@@ -1537,7 +1500,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         static std::unordered_map<size_t, std::unordered_map<std::string_view, size_t>> size_to_engine_args
         {
             {1, {{}}},
-            {5, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"compression_method", 4}}}
+            {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}}}
         };
 
         std::unordered_map<std::string_view, size_t> engine_args_to_idx;
@@ -1573,7 +1536,8 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
             else
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
         }
-        /// For 4 arguments we support 2 possible variants:
+        /// For 4 arguments we support 3 possible variants:
+        /// - s3(source, access_key_id, secret_access_key, session_token)
         /// - s3(source, access_key_id, secret_access_key, format)
         /// - s3(source, NOSIGN, format, compression_method)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN or not.
@@ -1586,7 +1550,32 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
                 engine_args_to_idx = {{"format", 2}, {"compression_method", 3}};
             }
             else
-                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
+            {
+                auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
+                if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+                {
+                    engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
+                }
+                else
+                {
+                    engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}};
+                }
+            }
+        }
+        /// For 5 arguments we support 2 possible variants:
+        /// - s3(source, access_key_id, secret_access_key, session_token, format)
+        /// - s3(source, access_key_id, secret_access_key, format, compression)
+        else if (engine_args.size() == 5)
+        {
+            auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
+            if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
+            {
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"compression", 4}};
+            }
+            else
+            {
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}};
+            }
         }
         else
         {
@@ -1607,6 +1596,10 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
 
         if (engine_args_to_idx.contains("secret_access_key"))
             configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["secret_access_key"]], "secret_access_key");
+
+        if (engine_args_to_idx.contains("session_token"))
+            configuration.auth_settings.session_token = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["session_token"]], "session_token");
+
 
         configuration.auth_settings.no_sign_request = no_sign_request;
     }
@@ -1649,8 +1642,15 @@ namespace
         {
         }
 
-        std::unique_ptr<ReadBuffer> next() override
+        std::pair<std::unique_ptr<ReadBuffer>, std::optional<ColumnsDescription>> next() override
         {
+            /// For default mode check cached columns for currently read keys on first iteration.
+            if (first && getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+            {
+                if (auto cached_columns = tryGetColumnsFromCache(read_keys.begin(), read_keys.end()))
+                    return {nullptr, cached_columns};
+            }
+
             while (true)
             {
                 current_key_with_info = (*file_iterator)();
@@ -1664,34 +1664,40 @@ namespace
                             "in S3 or all files are empty. You must specify table structure manually",
                             configuration.format);
 
-                    return nullptr;
+                    return {nullptr, std::nullopt};
                 }
 
-                /// S3 file iterator could get new keys after new iteration, check them in schema cache.
-                if (getContext()->getSettingsRef().schema_inference_use_cache_for_s3 && read_keys.size() > prev_read_keys_size)
+                /// S3 file iterator could get new keys after new iteration, check them in schema cache if schema inference mode is default.
+                if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT && read_keys.size() > prev_read_keys_size)
                 {
-                    columns_from_cache = StorageS3::tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end(), configuration, format_settings, getContext());
+                    auto columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end());
                     prev_read_keys_size = read_keys.size();
                     if (columns_from_cache)
-                        return nullptr;
+                        return {nullptr, columns_from_cache};
                 }
 
                 if (getContext()->getSettingsRef().s3_skip_empty_files && current_key_with_info->info && current_key_with_info->info->size == 0)
                     continue;
+
+                /// In union mode, check cached columns only for current key.
+                if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
+                {
+                    StorageS3::KeysWithInfo keys = {current_key_with_info};
+                    if (auto columns_from_cache = tryGetColumnsFromCache(keys.begin(), keys.end()))
+                    {
+                        first = false;
+                        return {nullptr, columns_from_cache};
+                    }
+                }
 
                 int zstd_window_log_max = static_cast<int>(getContext()->getSettingsRef().zstd_window_log_max);
                 auto impl = std::make_unique<ReadBufferFromS3>(configuration.client, configuration.url.bucket, current_key_with_info->key, configuration.url.version_id, configuration.request_settings, getContext()->getReadSettings());
                 if (!getContext()->getSettingsRef().s3_skip_empty_files || !impl->eof())
                 {
                     first = false;
-                    return wrapReadBufferWithCompressionMethod(std::move(impl), chooseCompressionMethod(current_key_with_info->key, configuration.compression_method), zstd_window_log_max);
+                    return {wrapReadBufferWithCompressionMethod(std::move(impl), chooseCompressionMethod(current_key_with_info->key, configuration.compression_method), zstd_window_log_max), std::nullopt};
                 }
             }
-        }
-
-        std::optional<ColumnsDescription> getCachedColumns() override
-        {
-            return columns_from_cache;
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -1704,12 +1710,90 @@ namespace
             StorageS3::getSchemaCache(getContext()).addNumRows(key, num_rows);
         }
 
+        void setSchemaToLastFile(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_s3
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::UNION)
+                return;
+
+            String source = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / configuration.url.bucket / current_key_with_info->key;
+            auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
+            StorageS3::getSchemaCache(getContext()).addColumns(cache_key, columns);
+        }
+
+        void setResultingSchema(const ColumnsDescription & columns) override
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_s3
+                || getContext()->getSettingsRef().schema_inference_mode != SchemaInferenceMode::DEFAULT)
+                return;
+
+            auto host_and_bucket = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / configuration.url.bucket;
+            Strings sources;
+            sources.reserve(read_keys.size());
+            std::transform(read_keys.begin(), read_keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket / elem->key; });
+            auto cache_keys = getKeysForSchemaCache(sources, configuration.format, format_settings, getContext());
+            StorageS3::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
+        }
+
+        String getLastFileName() const override
+        {
+            if (current_key_with_info)
+                return current_key_with_info->key;
+            return "";
+        }
+
     private:
+        std::optional<ColumnsDescription> tryGetColumnsFromCache(
+            const StorageS3::KeysWithInfo::const_iterator & begin,
+            const StorageS3::KeysWithInfo::const_iterator & end)
+        {
+            if (!getContext()->getSettingsRef().schema_inference_use_cache_for_s3)
+                return std::nullopt;
+
+            auto & schema_cache = StorageS3::getSchemaCache(getContext());
+            for (auto it = begin; it < end; ++it)
+            {
+                auto get_last_mod_time = [&]
+                {
+                    time_t last_modification_time = 0;
+                    if ((*it)->info)
+                    {
+                        last_modification_time = (*it)->info->last_modification_time;
+                    }
+                    else
+                    {
+                        /// Note that in case of exception in getObjectInfo returned info will be empty,
+                        /// but schema cache will handle this case and won't return columns from cache
+                        /// because we can't say that it's valid without last modification time.
+                        last_modification_time = S3::getObjectInfo(
+                             *configuration.client,
+                             configuration.url.bucket,
+                             (*it)->key,
+                             configuration.url.version_id,
+                             configuration.request_settings,
+                             /*with_metadata=*/ false,
+                             /*for_disk_s3=*/ false,
+                             /*throw_on_error= */ false).last_modification_time;
+                    }
+
+                    return last_modification_time ? std::make_optional(last_modification_time) : std::nullopt;
+                };
+
+                String path = fs::path(configuration.url.bucket) / (*it)->key;
+                String source = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / path;
+                auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, getContext());
+                auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
+                if (columns)
+                    return columns;
+            }
+
+            return std::nullopt;
+        }
+
         std::shared_ptr<StorageS3Source::IIterator> file_iterator;
         const StorageS3Source::KeysWithInfo & read_keys;
         const StorageS3::Configuration & configuration;
         const std::optional<FormatSettings> & format_settings;
-        std::optional<ColumnsDescription> columns_from_cache;
         StorageS3Source::KeyWithInfoPtr current_key_with_info;
         size_t prev_read_keys_size;
         bool first = true;
@@ -1724,29 +1808,11 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
 {
     KeysWithInfo read_keys;
 
-    auto file_iterator = createFileIterator(configuration, false, ctx, {}, {}, {}, &read_keys);
+    auto file_iterator = createFileIterator(configuration, false, ctx, {}, {}, &read_keys);
 
-    std::optional<ColumnsDescription> columns_from_cache;
-    if (ctx->getSettingsRef().schema_inference_use_cache_for_s3)
-        columns_from_cache = tryGetColumnsFromCache(read_keys.begin(), read_keys.end(), configuration, format_settings, ctx);
-
-    ColumnsDescription columns;
-    if (columns_from_cache)
-    {
-        columns = *columns_from_cache;
-    }
-    else
-    {
-        ReadBufferIterator read_buffer_iterator(file_iterator, read_keys, configuration, format_settings, ctx);
-        columns = readSchemaFromFormat(configuration.format, format_settings, read_buffer_iterator, configuration.withGlobs(), ctx);
-    }
-
-    if (ctx->getSettingsRef().schema_inference_use_cache_for_s3)
-        addColumnsToCache(read_keys, configuration, columns, configuration.format, format_settings, ctx);
-
-    return columns;
+    ReadBufferIterator read_buffer_iterator(file_iterator, read_keys, configuration, format_settings, ctx);
+    return readSchemaFromFormat(configuration.format, format_settings, read_buffer_iterator, configuration.withGlobs(), ctx);
 }
-
 
 void registerStorageS3Impl(const String & name, StorageFactory & factory)
 {
@@ -1826,6 +1892,11 @@ NamesAndTypesList StorageS3::getVirtuals() const
     return virtual_columns;
 }
 
+Names StorageS3::getVirtualColumnNames()
+{
+    return VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage({}).getNames();
+}
+
 bool StorageS3::supportsPartitionBy() const
 {
     return true;
@@ -1835,70 +1906,6 @@ SchemaCache & StorageS3::getSchemaCache(const ContextPtr & ctx)
 {
     static SchemaCache schema_cache(ctx->getConfigRef().getUInt("schema_inference_cache_max_elements_for_s3", DEFAULT_SCHEMA_CACHE_ELEMENTS));
     return schema_cache;
-}
-
-std::optional<ColumnsDescription> StorageS3::tryGetColumnsFromCache(
-    const KeysWithInfo::const_iterator & begin,
-    const KeysWithInfo::const_iterator & end,
-    const Configuration & configuration,
-    const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & ctx)
-{
-    auto & schema_cache = getSchemaCache(ctx);
-    for (auto it = begin; it < end; ++it)
-    {
-        auto get_last_mod_time = [&]
-        {
-            time_t last_modification_time = 0;
-            if ((*it)->info)
-            {
-                last_modification_time = (*it)->info->last_modification_time;
-            }
-            else
-            {
-                /// Note that in case of exception in getObjectInfo returned info will be empty,
-                /// but schema cache will handle this case and won't return columns from cache
-                /// because we can't say that it's valid without last modification time.
-                last_modification_time = S3::getObjectInfo(
-                    *configuration.client,
-                    configuration.url.bucket,
-                    (*it)->key,
-                    configuration.url.version_id,
-                    configuration.request_settings,
-                    /*with_metadata=*/ false,
-                    /*for_disk_s3=*/ false,
-                    /*throw_on_error= */ false).last_modification_time;
-            }
-
-            return last_modification_time ? std::make_optional(last_modification_time) : std::nullopt;
-        };
-
-        String path = fs::path(configuration.url.bucket) / (*it)->key;
-        String source = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / path;
-        auto cache_key = getKeyForSchemaCache(source, configuration.format, format_settings, ctx);
-        auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time);
-        if (columns)
-            return columns;
-    }
-
-    return std::nullopt;
-}
-
-void StorageS3::addColumnsToCache(
-    const KeysWithInfo & keys,
-    const Configuration & configuration,
-    const ColumnsDescription & columns,
-    const String & format_name,
-    const std::optional<FormatSettings> & format_settings,
-    const ContextPtr & ctx)
-{
-    auto host_and_bucket = fs::path(configuration.url.uri.getHost() + std::to_string(configuration.url.uri.getPort())) / configuration.url.bucket;
-    Strings sources;
-    sources.reserve(keys.size());
-    std::transform(keys.begin(), keys.end(), std::back_inserter(sources), [&](const auto & elem){ return host_and_bucket / elem->key; });
-    auto cache_keys = getKeysForSchemaCache(sources, format_name, format_settings, ctx);
-    auto & schema_cache = getSchemaCache(ctx);
-    schema_cache.addManyColumns(cache_keys, columns);
 }
 
 }

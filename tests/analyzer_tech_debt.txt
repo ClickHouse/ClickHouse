@@ -2,7 +2,6 @@
 00717_merge_and_distributed
 00725_memory_tracking
 01062_pm_all_join_with_block_continuation
-01064_incremental_streaming_from_2_src_with_feedback
 01083_expressions_in_engine_arguments
 01155_rename_move_materialized_view
 01214_test_storage_merge_aliases_with_where
@@ -20,9 +19,7 @@
 01761_cast_to_enum_nullable
 01925_join_materialized_columns
 01925_test_storage_merge_aliases
-01947_mv_subquery
 01952_optimize_distributed_group_by_sharding_key
-02139_MV_with_scalar_subquery
 02174_cte_scalar_cache_mv
 02352_grouby_shadows_arg
 02354_annoy
@@ -36,7 +33,9 @@
 02404_memory_bound_merging
 02725_agg_projection_resprect_PK
 02763_row_policy_storage_merge_alias
-02765_parallel_replicas_final_modifier
 02784_parallel_replicas_automatic_decision_join
 02818_parameterized_view_with_cte_multiple_usage
 02815_range_dict_no_direct_join
+# Flaky. Please don't delete them without fixing them:
+01600_parts_states_metrics_long
+01287_max_execution_speed

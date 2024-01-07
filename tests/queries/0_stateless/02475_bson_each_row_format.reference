@@ -166,7 +166,7 @@ Tuple
 ('Hello',4)
 OK
 OK
-tuple	Tuple(x Nullable(Int64), s Nullable(String))					
+tuple	Tuple(\n    x Nullable(Int64),\n    s Nullable(String))					
 (0,'Hello')
 (1,'Hello')
 (2,'Hello')
@@ -214,7 +214,7 @@ Nested types
 [[0,1,2],[0,1,2,3]]	((3,'Hello'),'Hello')	{'a':{'a.a':3,'a.b':4},'b':{'b.a':3,'b.b':4}}
 [[0,1,2,3],[0,1,2,3,4]]	((4,'Hello'),'Hello')	{'a':{'a.a':4,'a.b':5},'b':{'b.a':4,'b.b':5}}
 nested1	Array(Array(Nullable(Int64)))					
-nested2	Tuple(Tuple(x Nullable(Int64), s Nullable(String)), Nullable(String))					
+nested2	Tuple(Tuple(\n    x Nullable(Int64),\n    s Nullable(String)), Nullable(String))					
 nested3	Map(String, Map(String, Nullable(Int64)))					
 [[],[0]]	((0,'Hello'),'Hello')	{'a':{'a.a':0,'a.b':1},'b':{'b.a':0,'b.b':1}}
 [[0],[0,1]]	((1,'Hello'),'Hello')	{'a':{'a.a':1,'a.b':2},'b':{'b.a':1,'b.b':2}}

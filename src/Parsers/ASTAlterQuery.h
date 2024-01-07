@@ -40,6 +40,7 @@ public:
         MODIFY_SETTING,
         RESET_SETTING,
         MODIFY_QUERY,
+        MODIFY_REFRESH,
         REMOVE_TTL,
         REMOVE_SAMPLE_BY,
 
@@ -54,6 +55,10 @@ public:
         DROP_PROJECTION,
         MATERIALIZE_PROJECTION,
 
+        ADD_STATISTIC,
+        DROP_STATISTIC,
+        MATERIALIZE_STATISTIC,
+
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
         ATTACH_PARTITION,
@@ -67,6 +72,7 @@ public:
 
         DELETE,
         UPDATE,
+        APPLY_DELETED_MASK,
 
         NO_TYPE,
 
@@ -129,6 +135,8 @@ public:
      */
     ASTPtr projection;
 
+    ASTPtr statistic_decl;
+
     /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
@@ -159,6 +167,9 @@ public:
      */
     ASTPtr values;
 
+    /// For MODIFY REFRESH
+    ASTPtr refresh;
+
     bool detach = false;        /// true for DETACH PARTITION
 
     bool part = false;          /// true for ATTACH PART, DROP DETACHED PART and MOVE
@@ -166,6 +177,8 @@ public:
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
     bool clear_index = false;   /// for CLEAR INDEX (do not drop index from metadata)
+
+    bool clear_statistic = false;   /// for CLEAR STATISTIC (do not drop statistic from metadata)
 
     bool clear_projection = false;   /// for CLEAR PROJECTION (do not drop projection from metadata)
 
