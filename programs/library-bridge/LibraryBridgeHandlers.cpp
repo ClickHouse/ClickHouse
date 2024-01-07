@@ -464,6 +464,9 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
     {
         if (method == "catboost_list")
         {
+            auto & read_buf = request.getStream();
+            params.read(read_buf);
+
             ExternalModelInfos model_infos = CatBoostLibraryHandlerFactory::instance().getModelInfos();
 
             writeIntBinary(static_cast<UInt64>(model_infos.size()), out);
@@ -501,6 +504,9 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
         }
         else if (method == "catboost_removeAllModels")
         {
+            auto & read_buf = request.getStream();
+            params.read(read_buf);
+
             CatBoostLibraryHandlerFactory::instance().removeAllModels();
 
             String res = "1";
