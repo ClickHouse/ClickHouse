@@ -13,7 +13,7 @@
 
 namespace DB
 {
-void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
+void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
@@ -27,7 +27,7 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
 
-        WriteBufferFromHTTPServerResponse wb(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout, write_event);
+        WriteBufferFromHTTPServerResponse wb(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try
         {
             metrics_writer.write(wb);

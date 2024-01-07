@@ -763,92 +763,6 @@ void KeyCondition::getAllSpaceFillingCurves()
 }
 
 KeyCondition::KeyCondition(
-    const ASTPtr & query,
-    const ASTs & additional_filter_asts,
-    Block block_with_constants,
-    PreparedSetsPtr prepared_sets,
-    ContextPtr context,
-    const Names & key_column_names,
-    const ExpressionActionsPtr & key_expr_,
-    NameSet array_joined_column_names_,
-    bool single_point_,
-    bool strict_)
-    : key_expr(key_expr_)
-    , key_subexpr_names(getAllSubexpressionNames(*key_expr))
-    , array_joined_column_names(std::move(array_joined_column_names_))
-    , single_point(single_point_)
-    , strict(strict_)
-{
-    size_t key_index = 0;
-    for (const auto & name : key_column_names)
-    {
-        if (!key_columns.contains(name))
-        {
-            key_columns[name] = key_columns.size();
-            key_indices.push_back(key_index);
-        }
-        ++key_index;
-    }
-
-    if (context->getSettingsRef().analyze_index_with_space_filling_curves)
-        getAllSpaceFillingCurves();
-
-    ASTPtr filter_node;
-    if (query)
-        filter_node = buildFilterNode(query, additional_filter_asts);
-
-    if (!filter_node)
-    {
-        has_filter = false;
-        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
-        return;
-    }
-
-    has_filter = true;
-
-    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
-      * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
-      * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
-      * when parsing the AST into internal RPN representation.
-      * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
-      * are pushed down and applied (when possible) to leaf nodes.
-      */
-    auto inverted_filter_node = DB::cloneASTWithInversionPushDown(filter_node);
-
-    RPNBuilder<RPNElement> builder(
-        inverted_filter_node,
-        std::move(context),
-        std::move(block_with_constants),
-        std::move(prepared_sets),
-        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
-
-    rpn = std::move(builder).extractRPN();
-
-    findHyperrectanglesForArgumentsOfSpaceFillingCurves();
-}
-
-KeyCondition::KeyCondition(
-    const SelectQueryInfo & query_info,
-    ContextPtr context,
-    const Names & key_column_names,
-    const ExpressionActionsPtr & key_expr_,
-    bool single_point_,
-    bool strict_)
-    : KeyCondition(
-        query_info.query,
-        query_info.filter_asts,
-        KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context),
-        query_info.prepared_sets,
-        context,
-        key_column_names,
-        key_expr_,
-        query_info.syntax_analyzer_result ? query_info.syntax_analyzer_result->getArrayJoinSourceNameSet() : NameSet{},
-        single_point_,
-        strict_)
-{
-}
-
-KeyCondition::KeyCondition(
     ActionsDAGPtr filter_dag,
     ContextPtr context,
     const Names & key_column_names,
@@ -883,6 +797,13 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
+    /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
+      * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
+      * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict
+      * when parsing the AST into internal RPN representation.
+      * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
+      * are pushed down and applied (when possible) to leaf nodes.
+      */
     auto inverted_dag = cloneASTWithInversionPushDown({filter_dag->getOutputs().at(0)}, context);
     assert(inverted_dag->getOutputs().size() == 1);
 

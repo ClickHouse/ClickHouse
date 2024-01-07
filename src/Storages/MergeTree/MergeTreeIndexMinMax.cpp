@@ -156,20 +156,17 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 namespace
 {
 
-KeyCondition buildCondition(const IndexDescription & index, const SelectQueryInfo & query_info, ContextPtr context)
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGPtr & filter_actions_dag, ContextPtr context)
 {
-    if (context->getSettingsRef().allow_experimental_analyzer)
-        return KeyCondition{query_info.filter_actions_dag, context, index.column_names, index.expression};
-
-    return KeyCondition{query_info, context, index.column_names, index.expression};
+    return KeyCondition{filter_actions_dag, context, index.column_names, index.expression};
 }
 
 }
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const IndexDescription & index, const SelectQueryInfo & query_info, ContextPtr context)
+    const IndexDescription & index, const ActionsDAGPtr & filter_actions_dag, ContextPtr context)
     : index_data_types(index.data_types)
-    , condition(buildCondition(index, query_info, context))
+    , condition(buildCondition(index, filter_actions_dag, context))
 {
 }
 
@@ -200,9 +197,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator(const Me
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
-    const SelectQueryInfo & query, ContextPtr context) const
+    const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionMinMax>(index, query, context);
+    return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_actions_dag, context);
 }
 
 MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const

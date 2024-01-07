@@ -70,17 +70,13 @@ MySQLHandler::MySQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, uint32_t connection_id_,
-    const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_)
+    bool ssl_enabled, uint32_t connection_id_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(&Poco::Logger::get("MySQLHandler"))
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
-    , read_event(read_event_)
-    , write_event(write_event_)
 {
     server_capabilities = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
     if (ssl_enabled)
@@ -102,8 +98,8 @@ void MySQLHandler::run()
 
     session->setClientConnectionId(connection_id);
 
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
+    in = std::make_shared<ReadBufferFromPocoSocket>(socket());
+    out = std::make_shared<WriteBufferFromPocoSocket>(socket());
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
     try
@@ -493,10 +489,8 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     bool ssl_enabled,
     uint32_t connection_id_,
     RSA & public_key_,
-    RSA & private_key_,
-    const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_, read_event_, write_event_)
+    RSA & private_key_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_)
     , public_key(public_key_)
     , private_key(private_key_)
 {}

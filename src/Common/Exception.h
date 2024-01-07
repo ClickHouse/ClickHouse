@@ -235,43 +235,6 @@ private:
     const char * className() const noexcept override { return "DB::ErrnoException"; }
 };
 
-
-/// Special class of exceptions, used mostly in ParallelParsingInputFormat for
-/// more convenient calculation of problem line number.
-class ParsingException : public Exception
-{
-    ParsingException(const std::string & msg, int code);
-public:
-    ParsingException();
-
-    // Format message with fmt::format, like the logging functions.
-    template <typename... Args>
-    ParsingException(int code, FormatStringHelper<Args...> fmt, Args &&... args) : Exception(fmt::format(fmt.fmt_str, std::forward<Args>(args)...), code)
-    {
-        message_format_string = fmt.message_format_string;
-    }
-
-    std::string displayText() const override;
-
-    ssize_t getLineNumber() const { return line_number; }
-    void setLineNumber(int line_number_) { line_number = line_number_;}
-
-    String getFileName() const { return file_name; }
-    void setFileName(const String & file_name_) { file_name = file_name_; }
-
-    Exception * clone() const override { return new ParsingException(*this); }
-    void rethrow() const override { throw *this; } // NOLINT
-
-private:
-    ssize_t line_number{-1};
-    String file_name;
-    mutable std::string formatted_message;
-
-    const char * name() const noexcept override { return "DB::ParsingException"; }
-    const char * className() const noexcept override { return "DB::ParsingException"; }
-};
-
-
 using Exceptions = std::vector<std::exception_ptr>;
 
 /** Try to write an exception to the log (and forget about it).
