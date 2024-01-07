@@ -1657,7 +1657,6 @@ icudata
 idempotency
 idnaDecode
 idnaEncode
-idnaEncodeOrNull
 ifNotFinite
 ifNull
 iframe
@@ -2083,9 +2082,7 @@ pseudorandomize
 psql
 ptrs
 punycodeDecode
-punycodeDecodeOrNull
 punycodeEncode
-punycodeEncodeOrNull
 pushdown
 pwrite
 py
@@ -2532,6 +2529,8 @@ trimRight
 trunc
 tryBase
 tryDecrypt
+tryIdnaEncode
+tryPunycodeDecode
 tskv
 tsv
 tui

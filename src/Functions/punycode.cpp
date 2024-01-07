@@ -37,7 +37,7 @@ enum class ErrorHandling
 
 struct PunycodeEncode
 {
-    /// Encoding-as-punycode can only fail if the input isn't valid UTF8. In that case, returnn undefined output, i.e. garbage-in, garbage-out.
+    /// Encoding-as-punycode can only fail if the input isn't valid UTF8. In that case, return undefined output, i.e. garbage-in, garbage-out.
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -60,7 +60,7 @@ struct PunycodeEncode
             value_utf32.resize(value_utf32_length);
             const size_t codepoints = ada::idna::utf8_to_utf32(value, value_length, value_utf32.data());
             if (codepoints == 0)
-                value_utf32.clear(); /// input was empty or it is not valid UTF-8
+                value_utf32.clear(); /// input was empty or no valid UTF-8
 
             const bool ok = ada::idna::utf32_to_punycode(value_utf32, value_puny);
             if (!ok)

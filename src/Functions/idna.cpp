@@ -30,7 +30,6 @@ namespace ErrorCodes
 /// - idnaEncode(), tryIdnaEncode() and idnaDecode(), see https://en.wikipedia.org/wiki/Internationalized_domain_name#ToASCII_and_ToUnicode
 ///   and [3] https://www.unicode.org/reports/tr46/#ToUnicode
 
-
 enum class ErrorHandling
 {
     Throw,  /// Throw exception
@@ -71,7 +70,7 @@ struct IdnaEncode
                 {
                     if constexpr (error_handling == ErrorHandling::Throw)
                     {
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' cannot be converted to Punycode", std::string_view(value, value_length));
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' cannot be converted to ASCII", value_view);
                     }
                     else
                     {
@@ -96,6 +95,7 @@ struct IdnaEncode
     }
 };
 
+/// Translates an ASII-encoded IDNA string back to its UTF-8 representation.
 struct IdnaDecode
 {
     /// As per the specification, invalid inputs are returned as is, i.e. there is no special error handling.
@@ -113,11 +113,11 @@ struct IdnaDecode
         std::string unicode;
         for (size_t row = 0; row < rows; ++row)
         {
-            const char * value = reinterpret_cast<const char *>(&data[prev_offset]);
-            const size_t value_length = offsets[row] - prev_offset - 1;
-            std::string_view value_view(value, value_length);
+            const char * ascii = reinterpret_cast<const char *>(&data[prev_offset]);
+            const size_t ascii_length = offsets[row] - prev_offset - 1;
+            std::string_view ascii_view(ascii, ascii_length);
 
-            unicode = ada::idna::to_unicode(value_view);
+            unicode = ada::idna::to_unicode(ascii_view);
 
             res_data.insert(unicode.c_str(), unicode.c_str() + unicode.size() + 1);
             res_offsets.push_back(res_data.size());
@@ -149,7 +149,7 @@ REGISTER_FUNCTION(Idna)
 Computes an ASCII representation of an Internationalized Domain Name. Throws an exception in case of error.)",
         .syntax="idnaEncode(str)",
         .arguments={{"str", "Input string"}},
-        .returned_value="An Unicode-encoded domain name [String](/docs/en/sql-reference/data-types/string.md).",
+        .returned_value="An ASCII-encoded domain name [String](/docs/en/sql-reference/data-types/string.md).",
         .examples={
             {"simple",
             "SELECT idnaEncode('straße.münchen.de') AS ascii;",
@@ -166,7 +166,7 @@ Computes an ASCII representation of an Internationalized Domain Name. Throws an 
 Computes a ASCII representation of an Internationalized Domain Name. Returns an empty string in case of error)",
         .syntax="punycodeEncode(str)",
         .arguments={{"str", "Input string"}},
-        .returned_value="An Unicode-encoded domain name [String](/docs/en/sql-reference/data-types/string.md).",
+        .returned_value="An ASCII-encoded domain name [String](/docs/en/sql-reference/data-types/string.md).",
         .examples={
             {"simple",
             "SELECT idnaEncodeOrNull('München') AS ascii;",
@@ -180,7 +180,7 @@ Computes a ASCII representation of an Internationalized Domain Name. Returns an 
 
     factory.registerFunction<FunctionIdnaDecode>(FunctionDocumentation{
         .description=R"(
-Computes a Unicode representation of an Internationalized Domain Name.)",
+Computes the Unicode representation of ASCII-encoded Internationalized Domain Name.)",
         .syntax="idnaDecode(str)",
         .arguments={{"str", "Input string"}},
         .returned_value="An Unicode-encoded domain name [String](/docs/en/sql-reference/data-types/string.md).",
