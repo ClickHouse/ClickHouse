@@ -15,6 +15,8 @@ SELECT 'clickhouse' AS s1, 'mouse' AS s2, levenshteinDistance(s1, s2);
 SELECT '-- Deny DoS using too large inputs';
 SELECT editDistance(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
 SELECT damerauLevenshteinDistance(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
+SELECT jaroSimilarity(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
+SELECT jaroWinklerSimilarity(randomString(power(2, 17)), 'abc'); -- { serverError TOO_LARGE_STRING_SIZE}
 
 DROP TABLE IF EXISTS t;
 CREATE TABLE t
