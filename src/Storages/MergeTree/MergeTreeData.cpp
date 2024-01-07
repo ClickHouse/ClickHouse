@@ -3978,9 +3978,13 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         /// We don't need to commit it to zk, and don't even need to activate it.
 
         MergeTreePartInfo empty_info = drop_range;
-        empty_info.min_block = empty_info.level = empty_info.mutation = 0;
+        empty_info.level = empty_info.mutation = 0;
+        empty_info.min_block = MergeTreePartInfo::MAX_BLOCK_NUMBER;
         for (const auto & part : parts_to_remove)
         {
+            /// We still have to take min_block into account to avoid creating multiple covering ranges
+            /// that intersect each other
+            empty_info.min_block = std::min(empty_info.min_block, part->info.min_block);
             empty_info.level = std::max(empty_info.level, part->info.level);
             empty_info.mutation = std::max(empty_info.mutation, part->info.mutation);
         }
