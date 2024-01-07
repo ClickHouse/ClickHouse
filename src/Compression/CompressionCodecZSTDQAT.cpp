@@ -50,7 +50,8 @@ UInt32 CompressionCodecZSTDQAT::doCompressData(const char * source, UInt32 sourc
 
 void registerCodecZSTDQAT(CompressionCodecFactory & factory)
 {
-    factory.registerCompressionCodec("ZSTD_QAT", {}, [&](const ASTPtr & arguments) -> CompressionCodecPtr
+    UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::ZSTD_QPL);
+    factory.registerCompressionCodec("ZSTD_QAT", method_code, [&](const ASTPtr & arguments) -> CompressionCodecPtr
     {
         int level = CompressionCodecZSTD::ZSTD_DEFAULT_LEVEL;
         if (arguments && !arguments->children.empty())
