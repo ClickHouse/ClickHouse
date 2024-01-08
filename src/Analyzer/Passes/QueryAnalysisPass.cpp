@@ -5333,6 +5333,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         AggregateFunctionProperties properties;
         auto aggregate_function
             = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, parameters, properties);
+        /** After resolving aggregate function, set of parameters can be changed.
+          * For example, `count(NULL)` is transformed into `nothing('UInt64')(NULL)`, so we have one extra parameter.
+          * Thus, we need to update parameters_nodes with new values
+          */
         parameters_nodes.clear();
         for (const auto & param : aggregate_function->getParameters())
             parameters_nodes.push_back(std::make_shared<ConstantNode>(param));

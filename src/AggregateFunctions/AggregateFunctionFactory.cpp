@@ -255,19 +255,28 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 combinator_name);
         }
 
+        /** Last `combinator_parameters_number` parameters are combinator parameters.
+          * For example:
+          * SELECT quantileResample(0.95, 1, 10, 3)(number, number)
+          * Combinator -Resample has 3 parameters: 1, 10, 3
+          * Aggregate function quantile has 1 parameter: 0.95
+          */
         size_t combinator_parameters_number = combinator->getNumberOfParameters();
         if (parameters.size() < combinator_parameters_number)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Incorrect number of parameters for aggregate with '{}' combinator: expected {}, got {}",
                     combinator->getName(), combinator_parameters_number, parameters.size());
 
+        /// First parameters are parameters of nested aggregate function.
+        /// For example above it is 0.95 passed to `quantile` function.
         Array nested_parameters(parameters.begin(), parameters.end() - combinator_parameters_number);
         DataTypes nested_types = combinator->transformArguments(argument_types);
+        /// We pass only parameters of nested aggregate function to get() method.
         AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties);
-        /// Parameters may be changed after function resolving, pass new set of parameters to combinator
+        /// Parameters may be changed after function resolving, get new set of parameters ...
         nested_parameters = nested_function->getParameters();
+        /// ... and add combinator parameters to them.
         nested_parameters.insert(nested_parameters.end(), parameters.end() - combinator_parameters_number, parameters.end());
-
         return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, nested_parameters);
     }
 

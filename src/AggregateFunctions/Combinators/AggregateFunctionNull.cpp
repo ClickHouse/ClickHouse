@@ -111,9 +111,11 @@ public:
               * To address this, we handle `nothing` in a special way in `FunctionNode::toASTImpl`.
               */
 
-            DataTypePtr result_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+            DataTypePtr result_type;
             if (properties.returns_default_when_only_null)
                 result_type = std::make_shared<DataTypeUInt64>();
+            else
+                result_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
 
             Array new_params(params);
             new_params.insert(new_params.begin(), result_type->getName());
