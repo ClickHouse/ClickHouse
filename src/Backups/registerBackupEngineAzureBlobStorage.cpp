@@ -10,13 +10,11 @@
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <filesystem>
 #endif
 
 
 namespace DB
 {
-namespace fs = std::filesystem;
 
 namespace ErrorCodes
 {
@@ -24,23 +22,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
-#if USE_AZURE_BLOB_STORAGE
-namespace
-{
-    String removeFileNameFromURL(String & url)
-    {
-        Poco::URI url2{url};
-        String path = url2.getPath();
-        size_t slash_pos = path.find_last_of('/');
-        String file_name = path.substr(slash_pos + 1);
-        path.resize(slash_pos + 1);
-        url2.setPath(path);
-        url = url2.toString();
-        return file_name;
-    }
-}
-#endif
 
 
 void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
