@@ -603,10 +603,8 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
             memcpy(buf, istr.position(), bytes_to_copy);
             buf[bytes_to_copy] = 0;
 
-            /// Consume leading zeroes - we don't want any funny octal business
-            auto* non_zero_buf = buf;
-            while (*non_zero_buf == '0')
-                ++non_zero_buf;
+            /// Skip leading zeroes - we don't want any funny octal business
+            auto* non_zero_buf = find_first_not_symbols<'0'>(buf, buf + bytes_to_copy);
 
             char * pos_double = non_zero_buf;
             errno = 0;
