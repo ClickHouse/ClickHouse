@@ -36,7 +36,7 @@ DirectoryWatcherBase::DirectoryWatcherBase(
 
     fd = inotify_init();
     if (fd == -1)
-        throwFromErrno("Cannot initialize inotify", ErrorCodes::IO_SETUP_ERROR);
+        throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot initialize inotify");
 
     watch_task = getContext()->getSchedulePool().createTask("directory_watch", [this] { watchFunc(); });
     start();
@@ -60,7 +60,7 @@ void DirectoryWatcherBase::watchFunc()
     if (wd == -1)
     {
         owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "Watch directory {} failed", path));
-        throwFromErrnoWithPath("Watch directory {} failed", path, ErrorCodes::IO_SETUP_ERROR);
+        ErrnoException::throwFromPath(ErrorCodes::IO_SETUP_ERROR, path, "Watch directory {} failed", path);
     }
 
     std::string buffer;

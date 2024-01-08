@@ -472,6 +472,39 @@ The value 0 means that you can delete all tables without any restrictions.
 ``` xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
+  
+
+## max\_database\_num\_to\_warn {#max-database-num-to-warn}  
+If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.    
+Default value: 1000
+
+**Example**
+
+``` xml
+<max_database_num_to_warn>50</max_database_num_to_warn>
+```
+  
+## max\_table\_num\_to\_warn {#max-table-num-to-warn}   
+If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
+Default value: 5000    
+
+**Example**
+
+``` xml
+<max_table_num_to_warn>400</max_table_num_to_warn>
+```
+
+
+## max\_part\_num\_to\_warn {#max-part-num-to-warn}  
+If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
+Default value: 100000  
+
+**Example**
+
+``` xml
+<max_part_num_to_warn>400</max_part_num_to_warn>
+```
+
 
 ## max_temporary_data_on_disk_size
 
@@ -1646,6 +1679,45 @@ Default value: `0.5`.
 
 
 
+## async_load_databases {#async_load_databases}
+
+Asynchronous loading of databases and tables.
+
+If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up.
+
+If `false`, all databases are loaded when the server starts.
+
+The default is `false`.
+
+**Example**
+
+``` xml
+<async_load_databases>true</async_load_databases>
+```
+
+## tables_loader_foreground_pool_size {#tables_loader_foreground_pool_size}
+
+Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
+
+Possible values:
+
+-   Any positive integer.
+-   Zero. Use all available CPUs.
+
+Default value: 0.
+
+
+## tables_loader_background_pool_size {#tables_loader_background_pool_size}
+
+Sets the number of threads performing asynchronous load jobs in background pool. The background pool is used for loading tables asynchronously after server start in case there are no queries waiting for the table. It could be beneficial to keep low number of threads in background pool if there are a lot of tables. It will reserve CPU resources for concurrent query execution.
+
+Possible values:
+
+-   Any positive integer.
+-   Zero. Use all available CPUs.
+
+Default value: 0.
+
 
 ## merge_tree {#merge_tree}
 
@@ -1835,9 +1907,10 @@ Settings:
 
 - `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
 - `port` – Port for `endpoint`.
-- `metrics` – Flag that sets to expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
-- `events` – Flag that sets to expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
-- `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
+- `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
 
 **Example**
 
@@ -1853,6 +1926,7 @@ Settings:
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
     </prometheus>
     <!-- highlight-end -->
 </clickhouse>
@@ -1935,7 +2009,7 @@ Data for the query cache is allocated in DRAM. If memory is scarce, make sure to
 
 ## query_thread_log {#query_thread_log}
 
-Setting for logging threads of queries received with the [log_query_threads=1](../../operations/settings/settings.md#settings-log-query-threads) setting.
+Setting for logging threads of queries received with the [log_query_threads=1](../../operations/settings/settings.md#log-query-threads) setting.
 
 Queries are logged in the [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -1977,7 +2051,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 ## query_views_log {#query_views_log}
 
-Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views) setting.
+Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#log-query-views) setting.
 
 Queries are logged in the [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -2257,7 +2331,7 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 
 **See Also**
 
-- [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
+- [skip_unavailable_shards](../../operations/settings/settings.md#skip_unavailable_shards)
 - [Cluster Discovery](../../operations/cluster-discovery.md)
 - [Replicated database engine](../../engines/database-engines/replicated.md)
 
@@ -2350,7 +2424,7 @@ Path on the local filesystem to store temporary data for processing large querie
 
 ## user_files_path {#user_files_path}
 
-The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md).
+The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md), [fileCluster()](../../sql-reference/table-functions/fileCluster.md).
 
 **Example**
 

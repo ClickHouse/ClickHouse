@@ -13,6 +13,7 @@
 #include <Columns/ColumnMap.h>
 #include <IO/WriteHelpers.h>
 #include <Common/config_version.h>
+#include <Common/formatReadable.h>
 
 #if USE_SNAPPY
 #include <snappy.h>

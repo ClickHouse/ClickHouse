@@ -108,7 +108,7 @@
             filter: blur(1px);
         }
 
-        .chart div { position: absolute; }
+        .chart > div { position: absolute; }
 
         .inputs {
             height: auto;
@@ -214,8 +214,6 @@
             background-color: var(--input-background);
             color: var(--text-color);
         }
-
-        .u-legend th { display: none; }
 
         .themes {
             float: right;
@@ -433,6 +431,16 @@
             display: none;
         }
 
+        .u-series {
+            line-height: 0.8;
+        }
+
+        .u-series.footer {
+            font-size: 8px;
+            padding-top: 0;
+            margin-top: 0;
+        }
+
         /* Source: https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.min.css
          * It is copy-pasted to lower the number of requests.
          */
@@ -447,6 +455,7 @@
             <div id="username-password">
                 <input spellcheck="false" id="user" type="text" value="" placeholder="user" />
                 <input spellcheck="false" id="password" type="password" placeholder="password" />
+                <input id="hidden-submit" type="submit" hidden="true"/>
             </div>
         </div>
         <div id="button-options">
@@ -478,7 +487,6 @@
   * - compress the state for URL's #hash;
   * - footer with "about" or a link to source code;
   * - allow to configure a table on a server to save the dashboards;
-  * - multiple lines on chart;
   * - if a query returned one value, display this value instead of a diagram;
   * - if a query returned something unusual, display the table;
   */
@@ -520,9 +528,53 @@ let queries = [];
 /// Query parameters with predefined default values.
 /// All other parameters will be automatically found in the queries.
 let params = {
-    "rounding": "60",
-    "seconds": "86400"
+    'rounding': '60',
+    'seconds': '86400'
 };
+
+/// Palette generation for charts
+function generatePalette(baseColor, numColors) {
+    const baseHSL = hexToHsl(baseColor);
+    const hueStep = 360 / numColors;
+    const palette = [];
+    for (let i = 0; i < numColors; i++) {
+        const hue = Math.round((baseHSL.h + i * hueStep) % 360);
+        const color = `hsl(${hue}, ${baseHSL.s}%, ${baseHSL.l}%)`;
+        palette.push(color);
+    }
+    return palette;
+}
+
+/// Helper function to convert hex color to HSL
+function hexToHsl(hex) {
+    hex = hex.replace(/^#/, '');
+    const bigint = parseInt(hex, 16);
+    const r = (bigint >> 16) & 255;
+    const g = (bigint >> 8) & 255;
+    const b = bigint & 255;
+    const r_norm = r / 255;
+    const g_norm = g / 255;
+    const b_norm = b / 255;
+    const max = Math.max(r_norm, g_norm, b_norm);
+    const min = Math.min(r_norm, g_norm, b_norm);
+    const l = (max + min) / 2;
+    let s = 0;
+    if (max !== min) {
+        s = l > 0.5 ? (max - min) / (2 - max - min) : (max - min) / (max + min);
+    }
+    let h = 0;
+    if (max !== min) {
+        if (max === r_norm) {
+            h = (g_norm - b_norm) / (max - min) + (g_norm < b_norm ? 6 : 0);
+        } else if (max === g_norm) {
+            h = (b_norm - r_norm) / (max - min) + 2;
+        } else {
+            h = (r_norm - g_norm) / (max - min) + 4;
+        }
+    }
+    h = Math.round(h * 60);
+    return { h, s: Math.round(s * 100), l: Math.round(l * 100) };
+}
 
 let theme = 'light';
 
@@ -669,7 +721,7 @@ function insertChart(i) {
     query_editor_confirm.addEventListener('click', editConfirm);
 
     /// Ctrl+Enter (or Cmd+Enter on Mac) will also confirm editing.
-    query_editor.addEventListener('keydown', e => {
+    query_editor.addEventListener('keydown', event => {
         if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
             editConfirm();
         }
@@ -844,7 +896,7 @@ document.getElementById('add').addEventListener('click', e => {
 });
 
 document.getElementById('reload').addEventListener('click', e => {
-    reloadAll(false);
+    reloadAll(queries.length == 0);
 });
 
 document.getElementById('search').addEventListener('click', e => {
@@ -913,10 +965,10 @@ document.getElementById('mass-editor-textarea').addEventListener('input', e => {
 
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
     let legendEl;
+    let multiline;
 
     function init(u, opts) {
         legendEl = u.root.querySelector(".u-legend");
-
         legendEl.classList.remove("u-inline");
         className && legendEl.classList.add(className);
 
@@ -932,13 +984,29 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
             ...style
         });
 
-        // hide series color markers
-        const idents = legendEl.querySelectorAll(".u-marker");
+        const nodes = legendEl.querySelectorAll("th");
+        for (let i = 0; i < nodes.length; i++)
+            nodes[i]._order = i;
 
-        for (let i = 0; i < idents.length; i++)
-            idents[i].style.display = "none";
+        if (opts.series.length == 2) {
+            multiline = false;
+            for (let i = 0; i < nodes.length; i++)
+                nodes[i].style.display = "none";
+        } else {
+            multiline = true;
+            legendEl.querySelector("th").remove();
+            legendEl.querySelector("td").setAttribute('colspan', '2');
+            legendEl.querySelector("td").style.textAlign = 'center';
+            let footer = legendEl.insertRow().insertCell();
+            footer.setAttribute('colspan', '2');
+            footer.style.textAlign = 'center';
+            footer.classList.add('u-value');
+            footer.parentNode.classList.add('u-series','footer');
+            footer.textContent = ". . .";
+        }
 
         const overEl = u.over;
+        overEl.style.overflow = "visible";
 
         overEl.appendChild(legendEl);
 
@@ -946,11 +1014,30 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
         overEl.addEventListener("mouseleave", () => {legendEl.style.display = "none";});
     }
 
+    function nodeListToArray(nodeList) {
+        return Array.prototype.slice.call(nodeList);
+    }
+
     function update(u) {
         let { left, top } = u.cursor;
         left -= legendEl.clientWidth / 2;
         top -= legendEl.clientHeight / 2;
         legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
+
+        if (multiline) {
+            let nodes = nodeListToArray(legendEl.querySelectorAll("tr"));
+            let header = nodes.shift();
+            let footer = nodes.pop();
+            let showLimit = Math.floor(u.height / 30);
+            nodes.forEach(function (node) { node._sort_key = nodes.length > showLimit ? +node.querySelector("td").textContent.replace(/,/g,'') : node._order; });
+            nodes.sort((a, b) => b._sort_key - a._sort_key);
+            nodes.forEach(function (node) { node.parentNode.appendChild(node); });
+            for (let i = 0; i < nodes.length; i++) {
+                nodes[i].style.display = i < showLimit ? null : "none";
+            }
+            footer.parentNode.appendChild(footer);
+            footer.style.display = nodes.length > showLimit ? null : "none";
+        }
     }
 
     return {
@@ -961,12 +1048,13 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
     };
 }
 
+
 async function doFetch(query, url_params = '') {
     host = document.getElementById('url').value || host;
     user = document.getElementById('user').value;
     password = document.getElementById('password').value;
 
-    let url = `${host}?default_format=JSONCompactColumns&enable_http_compression=1`
+    let url = `${host}?default_format=JSONColumnsWithMetadata&enable_http_compression=1`
 
     if (add_http_cors_header) {
         // For debug purposes, you may set add_http_cors_header from a browser console
@@ -980,14 +1068,17 @@ async function doFetch(query, url_params = '') {
         url += `&password=${encodeURIComponent(password)}`;
     }
 
-    let response, data, error;
+    let response, reply, error;
     try {
         response = await fetch(url + url_params, { method: "POST", body: query });
-        data = await response.text();
+        reply = await response.text();
         if (response.ok) {
-            data = JSON.parse(data);
+            reply = JSON.parse(reply);
+            if (reply.exception) {
+                error = reply.exception;
+            }
         } else {
-            error = data;
+            error = reply;
         }
     } catch (e) {
         console.log(e);
@@ -1006,7 +1097,7 @@ async function doFetch(query, url_params = '') {
         }
     }
 
-    return {data, error};
+    return {reply, error};
 }
 
 async function draw(idx, chart, url_params, query) {
@@ -1015,17 +1106,76 @@ async function draw(idx, chart, url_params, query) {
         plots[idx] = null;
     }
 
-    let {data, error} = await doFetch(query, url_params);
+    let {reply, error} = await doFetch(query, url_params);
+    if (!error) {
+        if (reply.rows.length == 0) {
+            error = "Query returned empty result.";
+        } else if (reply.meta.length < 2) {
+            error = "Query should return at least two columns: unix timestamp and value.";
+        } else {
+            for (let i = 0; i < reply.meta.length; i++) {
+                let label = reply.meta[i].name;
+                let column = reply.data[label];
+                if (!Array.isArray(column) || column.length != reply.data[reply.meta[0].name].length) {
+                    error = "Wrong data format of the query.";
+                    break;
+                }
+            }
+        }
+    }
+
+    // Transform string-labeled data to multi-column data
+    function transformToColumns() {
+        const x = reply.meta[0].name; // time; must be ordered
+        const l = reply.meta[1].name; // string label column to distinguish series; must be ordered
+        const y = reply.meta[2].name; // values; must have single value for (x, l) pair
+        const labels = [...new Set(reply.data[l])].sort((a, b) => a - b);
+        if (labels.includes('__time__')) {
+            error = "The second column is not allowed to contain '__time__' values.";
+            return;
+        }
+        const times = [...new Set(reply.data[x])].sort((a, b) => a - b);
+        let new_meta = [{ name: '__time__', type: reply.meta[0].type }];
+        let new_data = { __time__: [] };
+        for (let label of labels) {
+            new_meta.push({ name: label, type: reply.meta[2].type });
+            new_data[label] = [];
+        }
+        let new_rows = 0;
+        function row_done(row_time) {
+            new_rows++;
+            new_data.__time__.push(row_time);
+            for (let label of labels) {
+                if (new_data[label].length < new_rows) {
+                    new_data[label].push(null);
+                }
+            }
+        }
+        let prev_time = reply.data[x][0];
+        const old_rows = reply.data[x].length;
+        for (let i = 0; i < old_rows; i++) {
+            const time = reply.data[x][i];
+            const label = reply.data[l][i];
+            const value = reply.data[y][i];
+            if (prev_time != time) {
+                row_done(prev_time);
+                prev_time = time;
+            }
+            new_data[label].push(value);
+        }
+        row_done(prev_time);
+        reply.meta = new_meta;
+        reply.data = new_data;
+        reply.rows = new_rows;
+    }
+
+    function isStringColumn(type) {
+        return type === 'String' || type === 'LowCardinality(String)';
+    }
 
     if (!error) {
-        if (!Array.isArray(data)) {
-            error = "Query should return an array.";
-        } else if (data.length == 0) {
-            error = "Query returned empty result.";
-        } else if (data.length != 2) {
-            error = "Query should return exactly two columns: unix timestamp and value.";
-        } else if (!Array.isArray(data[0]) || !Array.isArray(data[1]) || data[0].length != data[1].length) {
-            error = "Wrong data format of the query.";
+        if (reply.meta.length == 3 && isStringColumn(reply.meta[1].type)) {
+            transformToColumns();
         }
     }
 
@@ -1043,24 +1193,38 @@ async function draw(idx, chart, url_params, query) {
     }
 
     const [line_color, fill_color, grid_color, axes_color] = theme != 'dark'
-        ? ["#F88", "#FEE", "#EED", "#2c3235"]
-        : ["#864", "#045", "#2c3235", "#c7d0d9"];
+        ? ["#ff8888", "#ffeeee", "#eeeedd", "#2c3235"]
+        : ["#886644", "#004455", "#2c3235", "#c7d0d9"];
 
     let sync = uPlot.sync("sync");
 
-    const max_value = Math.max(...data[1]);
+    let axis = {
+        stroke: axes_color,
+        grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+        ticks: { width: 1 / devicePixelRatio, stroke: grid_color }
+    };
+
+    let axes = [axis, axis];
+    let series = [{ label: "x" }];
+    let data = [reply.data[reply.meta[0].name]];
+
+    // Treat every column as series
+    const series_count = reply.meta.length;
+    const fill = series_count == 2 ? fill_color : undefined;
+    const palette = generatePalette(line_color, series_count);
+    let max_value = Number.NEGATIVE_INFINITY;
+    for (let i = 1; i < series_count; i++) {
+        let label = reply.meta[i].name;
+        series.push({ label, stroke: palette[i - 1], fill });
+        data.push(reply.data[label]);
+        max_value = Math.max(max_value, ...reply.data[label]);
+    }
 
     const opts = {
         width: chart.clientWidth,
         height: chart.clientHeight,
-        axes: [ { stroke: axes_color,
-                  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
-                { stroke: axes_color,
-                  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
-        series: [ { label: "x" },
-                  { label: "y", stroke: line_color, fill: fill_color } ],
+        axes,
+        series,
         padding: [ null, null, null, (Math.round(max_value * 100) / 100).toString().length * 6 - 10 ],
         plugins: [ legendAsTooltipPlugin() ],
         cursor: {
@@ -1129,6 +1293,7 @@ async function drawAll() {
             document.getElementById('add').style.display = 'inline-block';
             document.getElementById('edit').style.display = 'inline-block';
             document.getElementById('search-span').style.display = '';
+            hideError();
         }
         else {
             const charts = document.getElementById('charts')
@@ -1155,9 +1320,11 @@ function disableButtons() {
     reloadButton.classList.add('disabled');
 
     const runButton = document.getElementById('run');
-    runButton.value = 'Reloading…';
-    runButton.disabled = true;
-    runButton.classList.add('disabled');
+    if (runButton) {
+        runButton.value = 'Reloading…';
+        runButton.disabled = true;
+        runButton.classList.add('disabled');
+    }
 
     const searchButton = document.getElementById('search');
     searchButton.value = '…';
@@ -1172,9 +1339,11 @@ function enableButtons() {
     reloadButton.classList.remove('disabled');
 
     const runButton = document.getElementById('run');
-    runButton.value = 'Ok';
-    runButton.disabled = false;
-    runButton.classList.remove('disabled');
+    if (runButton) {
+        runButton.value = 'Ok';
+        runButton.disabled = false;
+        runButton.classList.remove('disabled');
+    }
 
     const searchButton = document.getElementById('search');
     searchButton.value = '🔎';
@@ -1197,14 +1366,17 @@ async function reloadAll(do_search) {
         }
         await drawAll();
     } catch (e) {
-        showError(e.toString());
+        showError(e.message);
     }
     enableButtons();
 }
 
 document.getElementById('params').onsubmit = function(event) {
-    let do_search = document.activeElement === document.getElementById('search-query');
-    reloadAll(do_search);
+    if (document.activeElement === document.getElementById('search-query')) {
+        reloadAll(true);
+    } else {
+        reloadAll(queries.length == 0);
+    }
     event.preventDefault();
 }
 
@@ -1216,22 +1388,21 @@ function saveState() {
 }
 
 async function searchQueries() {
-    let {data, error} = await doFetch(search_query);
+    let {reply, error} = await doFetch(search_query);
     if (error) {
         throw new Error(error);
     }
-    if (!Array.isArray(data)) {
-        throw new Error("Search query should return an array.");
-    } else if (data.length == 0) {
+    let data = reply.data;
+    if (reply.rows == 0) {
         throw new Error("Search query returned empty result.");
-    } else if (data.length != 2) {
+    } else if (reply.meta.length != 2 || reply.meta[0].name != "title" || reply.meta[1].name != "query") {
         throw new Error("Search query should return exactly two columns: title and query.");
-    } else if (!Array.isArray(data[0]) || !Array.isArray(data[1]) || data[0].length != data[1].length) {
+    } else if (!Array.isArray(data.title) || !Array.isArray(data.query) || data.title.length != data.query.length) {
         throw new Error("Wrong data format of the search query.");
     }
 
-    for (let i = 0; i < data[0].length; i++) {
-        queries.push({title: data[0][i], query: data[1][i]});
+    for (let i = 0; i < data.title.length; i++) {
+        queries.push({title: data.title[i], query: data.query[i]});
     }
 
     regenerate();
@@ -1244,13 +1415,15 @@ function refreshCustomized(value) {
     document.getElementById('search-span').style.opacity = customized ? 0.5 : 1.0;
 }
 
-function regenerate() {
+function updateFromState() {
     document.getElementById('url').value = host;
     document.getElementById('user').value = user;
     document.getElementById('password').value = password;
     document.getElementById('search-query').value = search_query;
     refreshCustomized();
+}
 
+function regenerate() {
     findParamsInQueries();
     buildParams();
 
@@ -1269,7 +1442,7 @@ function regenerate() {
 window.onpopstate = function(event) {
     if (!event.state) { return; }
     ({host, user, queries, params, search_query, customized} = event.state);
-
+    updateFromState();
     regenerate();
     drawAll();
 };
@@ -1286,6 +1459,7 @@ if (window.location.hash) {
 
 async function start() {
     try {
+        updateFromState();
         if (queries.length == 0) {
             await searchQueries();
         } else {
@@ -1299,7 +1473,7 @@ async function start() {
             drawAll();
         }
     } catch (e) {
-        showError(e.toString());
+        showError(e.message);
     }
 }
 

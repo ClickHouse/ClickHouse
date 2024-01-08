@@ -19,6 +19,9 @@ namespace DB::S3
 {
 
 inline static constexpr uint64_t DEFAULT_EXPIRATION_WINDOW_SECONDS = 120;
+inline static constexpr uint64_t DEFAULT_CONNECT_TIMEOUT_MS = 1000;
+inline static constexpr uint64_t DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+inline static constexpr uint64_t DEFAULT_MAX_CONNECTIONS = 100;
 
 /// In GCP metadata service can be accessed via DNS regardless of IPv4 or IPv6.
 static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.google.internal";

@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
-
 JSONRowInputFormat::JSONRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
     : JSONRowInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
 {
@@ -30,37 +25,23 @@ void JSONRowInputFormat::readPrefix()
     NamesAndTypesList names_and_types_from_metadata;
 
     /// Try to parse metadata, if failed, try to parse data as JSONEachRow format.
-    try
+    if (JSONUtils::checkAndSkipObjectStart(*peekable_buf)
+        && JSONUtils::tryReadMetadata(*peekable_buf, names_and_types_from_metadata)
+        && JSONUtils::checkAndSkipComma(*peekable_buf)
+        && JSONUtils::skipUntilFieldInObject(*peekable_buf, "data")
+        && JSONUtils::checkAndSkipArrayStart(*peekable_buf))
     {
-        JSONUtils::skipObjectStart(*peekable_buf);
-        names_and_types_from_metadata = JSONUtils::readMetadata(*peekable_buf);
-        JSONUtils::skipComma(*peekable_buf);
-        if (!JSONUtils::skipUntilFieldInObject(*peekable_buf, "data"))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Expected field \"data\" with table content");
-
-        JSONUtils::skipArrayStart(*peekable_buf);
         data_in_square_brackets = true;
+        if (validate_types_from_metadata)
+        {
+            JSONUtils::validateMetadataByHeader(names_and_types_from_metadata, getPort().getHeader());
+        }
     }
-    catch (const ParsingException &)
+    else
     {
         parse_as_json_each_row = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() != ErrorCodes::INCORRECT_DATA)
-            throw;
-
-        parse_as_json_each_row = true;
-    }
-
-    if (parse_as_json_each_row)
-    {
         peekable_buf->rollbackToCheckpoint();
         JSONEachRowRowInputFormat::readPrefix();
-    }
-    else if (validate_types_from_metadata)
-    {
-        JSONUtils::validateMetadataByHeader(names_and_types_from_metadata, getPort().getHeader());
     }
 }
 
@@ -79,13 +60,14 @@ void JSONRowInputFormat::readSuffix()
 
 void JSONRowInputFormat::setReadBuffer(DB::ReadBuffer & in_)
 {
-    peekable_buf->setSubBuffer(in_);
+    peekable_buf = std::make_unique<PeekableReadBuffer>(in_);
+    JSONEachRowRowInputFormat::setReadBuffer(*peekable_buf);
 }
 
-void JSONRowInputFormat::resetParser()
+void JSONRowInputFormat::resetReadBuffer()
 {
-    JSONEachRowRowInputFormat::resetParser();
-    peekable_buf->reset();
+    peekable_buf.reset();
+    JSONEachRowRowInputFormat::resetReadBuffer();
 }
 
 JSONRowSchemaReader::JSONRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -103,16 +85,12 @@ NamesAndTypesList JSONRowSchemaReader::readSchema()
     skipBOMIfExists(*peekable_buf);
     PeekableReadBufferCheckpoint checkpoint(*peekable_buf);
     /// Try to parse metadata, if failed, try to parse data as JSONEachRow format
-    try
-    {
-        JSONUtils::skipObjectStart(*peekable_buf);
-        return JSONUtils::readMetadata(*peekable_buf);
-    }
-    catch (...)
-    {
-        peekable_buf->rollbackToCheckpoint(true);
-        return JSONEachRowSchemaReader::readSchema();
-    }
+    NamesAndTypesList names_and_types;
+    if (JSONUtils::checkAndSkipObjectStart(*peekable_buf) && JSONUtils::tryReadMetadata(*peekable_buf, names_and_types))
+        return names_and_types;
+
+    peekable_buf->rollbackToCheckpoint(true);
+    return JSONEachRowSchemaReader::readSchema();
 }
 
 void registerInputFormatJSON(FormatFactory & factory)
