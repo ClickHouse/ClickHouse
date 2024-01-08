@@ -113,6 +113,7 @@ private:
     {
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name,
+            NullsAction::EMPTY,
             { argument->getResultType() },
             {},
             properties);
