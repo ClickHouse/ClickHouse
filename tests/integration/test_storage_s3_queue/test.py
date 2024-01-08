@@ -21,9 +21,7 @@ def prepare_public_s3_bucket(started_cluster):
 
         client.make_bucket(bucket_name)
 
-        client.set_bucket_policy(
-            bucket_name, json.dumps(policy)
-        )
+        client.set_bucket_policy(bucket_name, json.dumps(policy))
 
     def get_policy_with_public_access(bucket_name):
         return {
@@ -72,9 +70,7 @@ def s3_queue_setup_teardown(started_cluster):
     instance_2.query("DROP DATABASE IF EXISTS test; CREATE DATABASE test;")
 
     minio = started_cluster.minio_client
-    objects = list(
-        minio.list_objects(started_cluster.minio_bucket, recursive=True)
-    )
+    objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
     for obj in objects:
         minio.remove_object(started_cluster.minio_bucket, obj.object_name)
     yield  # run test
@@ -124,7 +120,13 @@ def run_query(instance, query, stdin=None, settings=None):
 
 
 def generate_random_files(
-    started_cluster, files_path, count, column_num=3, row_num=10, start_ind=0, bucket=None
+    started_cluster,
+    files_path,
+    count,
+    column_num=3,
+    row_num=10,
+    start_ind=0,
+    bucket=None,
 ):
     files = [
         (f"{files_path}/test_{i}.csv", i) for i in range(start_ind, start_ind + count)
@@ -149,9 +151,7 @@ def generate_random_files(
 def put_s3_file_content(started_cluster, filename, data, bucket=None):
     bucket = started_cluster.minio_bucket if bucket is None else bucket
     buf = io.BytesIO(data)
-    started_cluster.minio_client.put_object(
-        bucket, filename, buf, len(data)
-    )
+    started_cluster.minio_client.put_object(bucket, filename, buf, len(data))
 
 
 def create_table(
@@ -903,9 +903,10 @@ def test_s3_client_reused(started_cluster):
     row_num = 10
 
     def get_created_s3_clients_count():
-        value = node.query(f"SELECT value FROM system.events WHERE event='S3Clients'").strip()
-        return int(value) if value != '' else 0
-
+        value = node.query(
+            f"SELECT value FROM system.events WHERE event='S3Clients'"
+        ).strip()
+        return int(value) if value != "" else 0
 
     def wait_all_processed(files_num):
         expected_count = files_num * row_num
@@ -915,7 +916,9 @@ def test_s3_client_reused(started_cluster):
             if count == expected_count:
                 break
             time.sleep(1)
-        assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == expected_count
+        assert (
+            int(node.query(f"SELECT count() FROM {dst_table_name}")) == expected_count
+        )
 
     prepare_public_s3_bucket(started_cluster)
 
@@ -944,10 +947,15 @@ def test_s3_client_reused(started_cluster):
         s3_clients_before = get_created_s3_clients_count()
 
         generate_random_files(
-            started_cluster, files_path, count=1, start_ind=i, row_num=row_num, bucket=started_cluster.minio_public_bucket
+            started_cluster,
+            files_path,
+            count=1,
+            start_ind=i,
+            row_num=row_num,
+            bucket=started_cluster.minio_public_bucket,
         )
 
-        wait_all_processed(i+1)
+        wait_all_processed(i + 1)
 
         s3_clients_after = get_created_s3_clients_count()
 
