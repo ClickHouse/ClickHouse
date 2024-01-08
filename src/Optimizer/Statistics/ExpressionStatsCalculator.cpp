@@ -66,7 +66,9 @@ Stats ExpressionStatsCalculator::calculateStatistics(const ActionsDAGPtr & expre
     }
 
     auto & output_nodes = expressions->getOutputs();
-    chassert(output_nodes.size() > 0);
+
+    /// There may be no output nodes, for example:
+    /// select count(*) from hits as t1 join hits as t2 on t1.WatchID = t2.WatchID * 2 where t2.WatchID > 1
 
     /// 2. calculate output nodes statistics
     for (auto output_node : output_nodes)
