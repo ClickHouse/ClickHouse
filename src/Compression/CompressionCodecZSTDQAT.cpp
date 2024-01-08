@@ -86,17 +86,21 @@ CompressionCodecZSTDQAT::CompressionCodecZSTDQAT(int level_)
     cctx = ZSTD_createCCtx();
 
     int res = QZSTD_startQatDevice();
-    LOG_DEBUG(log, "Initialization of ZSTD_QAT codec, status: {} ", res);
 
-    sequenceProducerState = QZSTD_createSeqProdState();
+    if(res == QZSTD_OK)
+    {
+        sequenceProducerState = QZSTD_createSeqProdState();
+        ZSTD_registerSequenceProducer(
+            cctx,
+            sequenceProducerState,
+            qatSequenceProducer
+        );
+        ZSTD_CCtx_setParameter(cctx, ZSTD_c_enableSeqProducerFallback, 1);
+        LOG_DEBUG(log, "Hardware-assisted ZSTD_QAT codec is ready!");
+    }
+    else
+        LOG_DEBUG(log, "Initialization of hardware-assisted ZSTD_QAT codec failed, status: {} - please refer to QZSTD_Status_e in ./contrib/QAT-ZSTD-Plugin/src/qatseqprod.h", res);
 
-    ZSTD_registerSequenceProducer(
-        cctx,
-        sequenceProducerState,
-        qatSequenceProducer
-    );
-
-    ZSTD_CCtx_setParameter(cctx, ZSTD_c_enableSeqProducerFallback, 1);
     ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
 }
 

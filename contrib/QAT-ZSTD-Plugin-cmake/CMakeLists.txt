@@ -27,7 +27,7 @@ if (ENABLE_QAT_OUT_OF_TREE_BUILD)
                 ${QAT_AL_INCLUDE_DIR}
                 ${QAT_USDM_INCLUDE_DIR}
                 ${ZSTD_LIBRARY_DIR})
-    target_compile_definitions(_qatzstd_plugin PRIVATE -DDEBUGLEVEL=0 PUBLIC -DENABLE_QATZSTD_COMPRESSION)
+    target_compile_definitions(_qatzstd_plugin PRIVATE -DDEBUGLEVEL=0 PUBLIC -DENABLE_ZSTD_QAT_CODEC)
     add_library (ch_contrib::qatzstd_plugin ALIAS _qatzstd_plugin)
 else () # In-tree build
     message(STATUS "Intel QATZSTD in-tree build")
