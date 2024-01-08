@@ -11,7 +11,6 @@
 #pragma clang diagnostic pop
 #endif
 
-#include <cmath>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
@@ -20,7 +19,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Common/NaNUtils.h>
 
 
 namespace DB
@@ -31,9 +29,7 @@ extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
 }
 
-/*
-Decompose time series data based on STL(Seasonal-Trend Decomposition Procedure Based on Loess)
-*/
+// Decompose time series data based on STL(Seasonal-Trend Decomposition Procedure Based on Loess)
 class FunctionSeriesDecomposeSTL : public IFunction
 {
 public:
@@ -78,8 +74,6 @@ public:
         const IColumn & src_data = array->getData();
         const ColumnArray::Offsets & src_offsets = array->getOffsets();
 
-        UInt64 period;
-
         auto res = ColumnFloat32::create();
         auto & res_data = res->getData();
 
@@ -93,6 +87,7 @@ public:
 
         for (size_t i = 0; i < src_offsets.size(); ++i)
         {
+            UInt64 period;
             auto period_ptr = arguments[1].column->convertToFullColumnIfConst();
             if (checkAndGetColumn<ColumnUInt8>(period_ptr.get())
                 || checkAndGetColumn<ColumnUInt16>(period_ptr.get())
@@ -124,13 +119,13 @@ public:
                 || executeNumber<Float32>(src_data, period, prev_src_offset, curr_offset, seasonal, trend, residue)
                 || executeNumber<Float64>(src_data, period, prev_src_offset, curr_offset, seasonal, trend, residue))
             {
-                res_data.insert(res_data.end(), seasonal.begin(), seasonal.end());
+                res_data.insert(seasonal.begin(), seasonal.end());
                 res_col_offsets_data.push_back(res_data.size());
 
-                res_data.insert(res_data.end(), trend.begin(), trend.end());
+                res_data.insert(trend.begin(), trend.end());
                 res_col_offsets_data.push_back(res_data.size());
 
-                res_data.insert(res_data.end(), residue.begin(), residue.end());
+                res_data.insert(residue.begin(), residue.end());
                 res_col_offsets_data.push_back(res_data.size());
 
                 root_offsets_data.push_back(res_col_offsets->size());
@@ -152,8 +147,8 @@ public:
     bool executeNumber(
         const IColumn & src_data,
         UInt64 period,
-        ColumnArray::Offset & start,
-        ColumnArray::Offset & end,
+        ColumnArray::Offset start,
+        ColumnArray::Offset end,
         std::vector<Float32> & seasonal,
         std::vector<Float32> & trend,
         std::vector<Float32> & residue) const
@@ -174,7 +169,7 @@ public:
 
         std::vector<float> src(src_vec.begin() + start, src_vec.begin() + end);
 
-        auto res = stl::params().fit(src, static_cast<size_t>(period));
+        auto res = stl::params().fit(src, period);
 
         if (res.seasonal.empty())
             return false;
