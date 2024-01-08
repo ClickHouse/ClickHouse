@@ -272,11 +272,11 @@ struct FormatSettings
         bool color = true;
 
 		enum class PrettyColor {
-			0,
-	  		1,
-	  		auto
+			Off,
+			On,
+	  		Auto,
 		};	
-		PrettyColor output_format_pretty_color = PrettyColor::auto;
+		PrettyColor output_format_pretty_color = PrettyColor::Auto;
 
         bool output_format_pretty_row_numbers = false;
 
