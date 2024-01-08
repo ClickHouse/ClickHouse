@@ -172,7 +172,7 @@ WHERE (new_settings.value != old_settings.value) AND (name NOT IN (
 ))
 SETTINGS join_use_nulls = 1
 INTO OUTFILE 'changed_settings.txt'
-FORMAT Pretty;
+FORMAT PrettyCompact;
 
 SELECT name
 FROM new_settings
@@ -185,7 +185,7 @@ WHERE (name NOT IN (
     WHERE version = extract(version(), '^(?:\\d+\\.\\d+)')
 ))
 INTO OUTFILE 'new_settings.txt'
-FORMAT Pretty;
+FORMAT PrettyCompact;
 "
 
 if [ -s changed_settings.txt ]
@@ -309,7 +309,8 @@ clickhouse-local --structure "test String, res String, time Nullable(Float32), d
 (test like '%Fatal message%') DESC,
 (test like '%Error message%') DESC,
 (test like '%previous release%') DESC,
-(test like '%settings changes%') DESC,
+(test like '%Changed settings%') DESC,
+(test like '%New settings%') DESC,
 rowNumberInAllBlocks()
 LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
