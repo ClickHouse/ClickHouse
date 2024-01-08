@@ -965,12 +965,10 @@ document.getElementById('mass-editor-textarea').addEventListener('input', e => {
 
 function legendAsTooltipPlugin({ className, style = { background: "var(--legend-background)" } } = {}) {
     let legendEl;
-    let showTop = false;
-    const showLimit = 5;
+    let multiline;
 
     function init(u, opts) {
         legendEl = u.root.querySelector(".u-legend");
-
         legendEl.classList.remove("u-inline");
         className && legendEl.classList.add(className);
 
@@ -986,18 +984,19 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
             ...style
         });
 
+        const nodes = legendEl.querySelectorAll("th");
+        for (let i = 0; i < nodes.length; i++)
+            nodes[i]._order = i;
+
         if (opts.series.length == 2) {
-            const nodes = legendEl.querySelectorAll("th");
+            multiline = false;
             for (let i = 0; i < nodes.length; i++)
                 nodes[i].style.display = "none";
         } else {
+            multiline = true;
             legendEl.querySelector("th").remove();
             legendEl.querySelector("td").setAttribute('colspan', '2');
             legendEl.querySelector("td").style.textAlign = 'center';
-        }
-
-        if (opts.series.length - 1 > showLimit) {
-            showTop = true;
             let footer = legendEl.insertRow().insertCell();
             footer.setAttribute('colspan', '2');
             footer.style.textAlign = 'center';
@@ -1024,18 +1023,20 @@ function legendAsTooltipPlugin({ className, style = { background: "var(--legend-
         left -= legendEl.clientWidth / 2;
         top -= legendEl.clientHeight / 2;
         legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
-        if (showTop) {
+
+        if (multiline) {
             let nodes = nodeListToArray(legendEl.querySelectorAll("tr"));
             let header = nodes.shift();
             let footer = nodes.pop();
-            nodes.forEach(function (node) { node._sort_key = +node.querySelector("td").textContent; });
-            nodes.sort((a, b) => +b._sort_key - +a._sort_key);
+            let showLimit = Math.floor(u.height / 30);
+            nodes.forEach(function (node) { node._sort_key = nodes.length > showLimit ? +node.querySelector("td").textContent.replace(/,/g,'') : node._order; });
+            nodes.sort((a, b) => b._sort_key - a._sort_key);
             nodes.forEach(function (node) { node.parentNode.appendChild(node); });
             for (let i = 0; i < nodes.length; i++) {
                 nodes[i].style.display = i < showLimit ? null : "none";
-                delete nodes[i]._sort_key;
             }
             footer.parentNode.appendChild(footer);
+            footer.style.display = nodes.length > showLimit ? null : "none";
         }
     }
 

@@ -229,13 +229,6 @@ public:
 
     size_t rows_count = 0;
 
-    /// Existing rows count (excluding lightweight deleted rows)
-    /// UINT64_MAX -> uninitialized
-    /// 0 -> all rows were deleted
-    /// if reading failed, it will be set to rows_count
-    mutable size_t existing_rows_count = UINT64_MAX;
-    mutable std::mutex existing_rows_count_mutex;
-
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
@@ -381,10 +374,6 @@ public:
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
     void setBytesUncompressedOnDisk(UInt64 bytes_uncompressed_on_disk_) { bytes_uncompressed_on_disk = bytes_uncompressed_on_disk_; }
 
-    /// Returns estimated size of existing rows if setting exclude_deleted_rows_for_part_size_in_merge is true
-    /// Otherwise returns bytes_on_disk
-    UInt64 getExistingBytesOnDisk() const;
-
     size_t getFileSizeOrZero(const String & file_name) const;
     auto getFilesChecksums() const { return checksums.files; }
 
@@ -510,9 +499,6 @@ public:
 
     /// True if here is lightweight deleted mask file in part.
     bool hasLightweightDelete() const { return columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
-
-    /// Read existing rows count from _row_exists column
-    void readExistingRowsCount() const;
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 

@@ -382,7 +382,6 @@ void executeQueryWithParallelReplicas(
         shard_num = column->getUInt(0);
     }
 
-    size_t all_replicas_count = 0;
     ClusterPtr new_cluster;
     /// if got valid shard_num from query initiator, then parallel replicas scope is the specified shard
     /// shards are numbered in order of appearance in the cluster config
@@ -406,16 +405,15 @@ void executeQueryWithParallelReplicas(
         // shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
         auto single_shard_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
         // convert cluster to representation expected by parallel replicas
-        new_cluster = single_shard_cluster->getClusterWithReplicasAsShards(settings);
+        new_cluster = single_shard_cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
     }
     else
     {
-        new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings);
+        new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
     }
 
-    all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
-
-    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(all_replicas_count);
+    auto coordinator
+        = std::make_shared<ParallelReplicasReadingCoordinator>(new_cluster->getShardCount(), settings.parallel_replicas_mark_segment_size);
     auto external_tables = new_context->getExternalTables();
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,

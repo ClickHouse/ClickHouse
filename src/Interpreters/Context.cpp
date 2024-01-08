@@ -15,6 +15,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Coordination/KeeperDispatcher.h>
@@ -32,6 +33,7 @@
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <IO/SynchronousReader.h>
@@ -43,6 +45,7 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
+#include <Interpreters/PreparedSets.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -95,6 +98,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/MaterializedView/RefreshSet.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
@@ -289,6 +293,7 @@ struct ContextSharedPart : boost::noncopyable
     MergeList merge_list;                                       /// The list of executable merge (for (Replicated)?MergeTree)
     MovesList moves_list;                                       /// The list of executing moves (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
+    RefreshSet refresh_set;                                 /// The list of active refreshes (for MaterializedView)
     ConfigurationPtr users_config TSA_GUARDED_BY(mutex);                              /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;                /// Handler for interserver communication.
 
@@ -324,6 +329,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr local_write_throttler;             /// A server-wide throttler for local IO writes
 
     mutable ThrottlerPtr backups_server_throttler;          /// A server-wide throttler for BACKUPs
+
+    mutable ThrottlerPtr mutations_throttler;               /// A server-wide throttler for mutations
+    mutable ThrottlerPtr merges_throttler;                  /// A server-wide throttler for merges
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
@@ -733,6 +741,12 @@ struct ContextSharedPart : boost::noncopyable
 
         if (auto bandwidth = server_settings.max_backup_bandwidth_for_server)
             backups_server_throttler = std::make_shared<Throttler>(bandwidth);
+
+        if (auto bandwidth = server_settings.max_mutations_bandwidth_for_server)
+            mutations_throttler = std::make_shared<Throttler>(bandwidth);
+
+        if (auto bandwidth = server_settings.max_merges_bandwidth_for_server)
+            merges_throttler = std::make_shared<Throttler>(bandwidth);
     }
 };
 
@@ -825,6 +839,8 @@ MovesList & Context::getMovesList() { return shared->moves_list; }
 const MovesList & Context::getMovesList() const { return shared->moves_list; }
 ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
 const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
+RefreshSet & Context::getRefreshSet() { return shared->refresh_set; }
+const RefreshSet & Context::getRefreshSet() const { return shared->refresh_set; }
 
 String Context::resolveDatabase(const String & database_name) const
 {
@@ -2994,6 +3010,16 @@ ThrottlerPtr Context::getBackupsThrottler() const
     return throttler;
 }
 
+ThrottlerPtr Context::getMutationsThrottler() const
+{
+    return shared->mutations_throttler;
+}
+
+ThrottlerPtr Context::getMergesThrottler() const
+{
+    return shared->merges_throttler;
+}
+
 bool Context::hasDistributedDDL() const
 {
     return getConfigRef().has("distributed_ddl");
@@ -4539,7 +4565,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (!storage_id)
     {
         if (exception)
-            exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty");
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty"));
         return storage_id;
     }
 
@@ -4600,7 +4626,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         if (current_database.empty())
         {
             if (exception)
-                exception->emplace(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
+                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected"));
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;

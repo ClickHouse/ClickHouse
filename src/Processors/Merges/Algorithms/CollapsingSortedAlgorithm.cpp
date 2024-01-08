@@ -144,7 +144,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
         if (last_row.empty())
             setRowRef(last_row, current);
 
-        bool key_differs = !last_row.hasEqualSortColumnsWith(current_row);
+        bool key_differs = rowsHaveDifferentSortColumns(last_row, current_row);
         if (key_differs)
         {
             /// if there are enough rows and the last one is calculated completely
