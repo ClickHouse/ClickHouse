@@ -262,8 +262,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         {
                             str_buf.write(' ');
                             copyData(*insert_query_payload, str_buf);
-                            if (multiple)
-                                str_buf.write('\n');
                         }
 
                         String res_string = str_buf.str();
@@ -291,6 +289,10 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                             else
                                 std::cout << "\n;\n";
                         }
+                        else if (multiple && insert_query_payload)
+                            /// Do not need to add ; because it's already in the insert_query_payload
+                            std::cout << "\n";
+
                         std::cout << std::endl;
                     }
                     /// add additional '\' at the end of each line;
