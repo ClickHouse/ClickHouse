@@ -2,7 +2,10 @@
 
 #include <optional>
 
+#include <Poco/Logger.h>
+
 #include <Processors/ISource.h>
+
 #include <QueryPipeline/Pipe.h>
 
 #include <Storages/Streaming/Subscription.h>
@@ -22,16 +25,22 @@ public:
     Status prepare() override;
     int schedule() override;
 
+    /// Stop reading from subscription if output port was finished.
+    void onUpdatePorts() override;
+
+    /// Stop reading from subscription if query was cancelled.
+    void onCancel() override;
+
 protected:
     std::optional<Chunk> tryGenerate() override;
-
-    void onCancel() override;
 
 private:
     StreamSubscriptionPtr subscription;
     std::optional<int> fd;
 
     std::list<Chunk> subscriber_chunks;
+
+    Poco::Logger * log = &Poco::Logger::get("SubscriptionSource");
 };
 
 }

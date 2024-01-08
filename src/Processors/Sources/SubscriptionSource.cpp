@@ -14,16 +14,14 @@ SubscriptionSource::SubscriptionSource(Block storage_sample_, StreamSubscription
 
 IProcessor::Status SubscriptionSource::prepare()
 {
-    if (isCancelled())
-    {
-        getPort().finish();
-        return Status::Finished;
-    }
+    Status base_status = ISource::prepare();
 
-    if (!has_input && subscriber_chunks.empty() && fd.has_value())
+    // if needs to generate new chunk and we have not any cached data
+    // fallback to Async to wait on subscription if possible
+    if (base_status == Status::Ready && subscriber_chunks.empty() && fd.has_value())
         return Status::Async;
 
-    return ISource::prepare();
+    return base_status;
 }
 
 std::optional<Chunk> SubscriptionSource::tryGenerate()
@@ -33,12 +31,12 @@ std::optional<Chunk> SubscriptionSource::tryGenerate()
 
     if (subscriber_chunks.empty())
     {
-        LOG_DEBUG(&Poco::Logger::get("SubscriptionSource"), "extracting new chunk batch");
+        LOG_DEBUG(log, "extracting new chunk batch");
         auto new_chunks = subscription->extractAll();
         subscriber_chunks.splice(subscriber_chunks.end(), new_chunks);
     }
 
-    LOG_DEBUG(&Poco::Logger::get("SubscriptionSource"), "cached chunks size: {}", subscriber_chunks.size());
+    LOG_DEBUG(log, "cached chunks size: {}", subscriber_chunks.size());
 
     if (!subscriber_chunks.empty())
     {
@@ -53,13 +51,22 @@ std::optional<Chunk> SubscriptionSource::tryGenerate()
 int SubscriptionSource::schedule()
 {
     chassert(fd.has_value());
-    LOG_DEBUG(&Poco::Logger::get("SubscriptionSource"), "waiting on descriptor: {}", fd.value());
+    LOG_DEBUG(log, "waiting on descriptor: {}", fd.value());
     return fd.value();
+}
+
+void SubscriptionSource::onUpdatePorts()
+{
+    if (getPort().isFinished())
+    {
+        LOG_DEBUG(log, "output port is finished, disabling subscription");
+        subscription->cancel();
+    }
 }
 
 void SubscriptionSource::onCancel()
 {
-    LOG_DEBUG(&Poco::Logger::get("SubscriptionSource"), "cancelling subscription");
+    LOG_DEBUG(log, "query is cancelled, disabling subscription");
     subscription->cancel();
 }
 

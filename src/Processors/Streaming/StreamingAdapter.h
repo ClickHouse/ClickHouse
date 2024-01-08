@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Poco/Logger.h>
+
 #include <Processors/IProcessor.h>
 
 namespace DB
@@ -22,8 +24,6 @@ private:
         Finished,
     };
 
-    static std::string StateToString(StreamingState state);
-
     Status preparePair(InputPort * input, OutputPort * output);
 
     StreamingState state = StreamingState::ReadingFromStorage;
@@ -31,6 +31,8 @@ private:
     InputPort * input_storage_port = nullptr;
     InputPort * input_subscription_port = nullptr;
     OutputPort * output_port = nullptr;
+
+    Poco::Logger * log = &Poco::Logger::get("StreamingAdapter");
 };
 
 }

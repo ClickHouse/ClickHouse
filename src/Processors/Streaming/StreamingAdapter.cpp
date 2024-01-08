@@ -1,3 +1,5 @@
+#include <magic_enum.hpp>
+
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -18,7 +20,7 @@ StreamingAdapter::StreamingAdapter(const Block & header_) : IProcessor(InputPort
 
 IProcessor::Status StreamingAdapter::prepare()
 {
-    LOG_DEBUG(&Poco::Logger::get("StreamingAdapter"), "current state: {}", StateToString(state));
+    LOG_DEBUG(log, "current state: {}", magic_enum::enum_name(state));
 
     if (isCancelled())
         return Status::Finished;
@@ -28,7 +30,7 @@ IProcessor::Status StreamingAdapter::prepare()
 
     if (state == StreamingState::ReadingFromStorage)
     {
-        LOG_DEBUG(&Poco::Logger::get("StreamingAdapter"), "reading from storage source");
+        LOG_DEBUG(log, "reading from storage source");
 
         Status status = preparePair(input_storage_port, output_port);
 
@@ -47,7 +49,7 @@ IProcessor::Status StreamingAdapter::prepare()
 
     chassert(state == StreamingState::ReadingFromSubscription);
 
-    LOG_DEBUG(&Poco::Logger::get("StreamingAdapter"), "reading from subscription source");
+    LOG_DEBUG(log, "reading from subscription source");
 
     return preparePair(input_subscription_port, output_port);
 }
@@ -95,19 +97,6 @@ IProcessor::Status StreamingAdapter::preparePair(InputPort * input, OutputPort *
     /// Now, we pulled from input. It must be empty.
 
     return Status::NeedData;
-}
-
-std::string StreamingAdapter::StateToString(StreamingState state)
-{
-    switch (state)
-    {
-        case StreamingState::ReadingFromStorage:
-            return "ReadingFromStorage";
-        case StreamingState::ReadingFromSubscription:
-            return "ReadingFromSubscription";
-        case StreamingState::Finished:
-            return "Finished";
-    }
 }
 
 }
