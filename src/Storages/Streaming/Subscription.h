@@ -22,22 +22,22 @@ public:
     // otherwise returns nullopt
     std::optional<int> fd() const;
 
-    // cancels waiting for new data
-    void cancel();
+    // disables subscription
+    void disable();
 
 private:
     // data
     std::mutex mutex;
     std::list<Chunk> ready_chunks;
 
+    // synchronization
+    std::atomic<bool> is_disabled{false};
+
 #if defined(OS_LINUX)
     EventFD new_chunks_event;
 #else
-    bool cancelled = false;
     std::condition_variable empty_chunks;
 #endif
 };
-
-using StreamSubscriptionPtr = std::shared_ptr<StreamSubscription>;
 
 }

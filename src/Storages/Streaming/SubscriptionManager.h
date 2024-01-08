@@ -8,11 +8,10 @@
 
 #include <Processors/Chunk.h>
 
+#include <Storages/Streaming/Subscription_fwd.h>
+
 namespace DB
 {
-
-class StreamSubscription;
-using StreamSubscriptionPtr = std::shared_ptr<StreamSubscription>;
 
 // Structure for managing the subscriptions,
 // necessary for streaming requests to work

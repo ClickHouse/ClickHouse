@@ -4,6 +4,8 @@
 
 #include <Processors/Sources/SubscriptionSource.h>
 
+#include <Storages/Streaming/Subscription.h>
+
 namespace DB
 {
 
@@ -60,14 +62,14 @@ void SubscriptionSource::onUpdatePorts()
     if (getPort().isFinished())
     {
         LOG_DEBUG(log, "output port is finished, disabling subscription");
-        subscription->cancel();
+        subscription->disable();
     }
 }
 
 void SubscriptionSource::onCancel()
 {
     LOG_DEBUG(log, "query is cancelled, disabling subscription");
-    subscription->cancel();
+    subscription->disable();
 }
 
 }

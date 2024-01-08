@@ -8,7 +8,7 @@
 
 #include <QueryPipeline/Pipe.h>
 
-#include <Storages/Streaming/Subscription.h>
+#include <Storages/Streaming/Subscription_fwd.h>
 
 namespace DB
 {
