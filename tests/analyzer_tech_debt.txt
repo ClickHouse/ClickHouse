@@ -33,5 +33,3 @@
 # Flaky. Please don't delete them without fixing them:
 02003_WithMergeableStateAfterAggregationAndLimit_LIMIT_BY_LIMIT_OFFSET
 02479_race_condition_between_insert_and_droppin_mv
-01600_parts_states_metrics_long
-01287_max_execution_speed
