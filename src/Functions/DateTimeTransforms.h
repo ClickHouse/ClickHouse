@@ -20,6 +20,7 @@
 namespace DB
 {
 
+static Int64 Int64_max_value = std::numeric_limits<Int64>::max();
 static constexpr auto microsecond_multiplier = 1000000;
 static constexpr auto millisecond_multiplier = 1000;
 
@@ -698,8 +699,8 @@ struct ToStartOfInterval<IntervalKind::Week>
             return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
         else
         {
-            if (const auto weeks_to_days = weeks * 7; weeks_to_days / 7 == weeks) // Check if multiplication doesn't overflow Int64 value
-                return ToStartOfInterval<IntervalKind::Day>::execute(t, weeks_to_days, time_zone, scale_multiplier, origin);
+            if (weeks < Int64_max_value / 7) // Check if multiplication doesn't overflow Int64 value
+                return ToStartOfInterval<IntervalKind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
             else
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} * 7 is out of bounds for type Int64", weeks);
         }
@@ -760,8 +761,8 @@ struct ToStartOfInterval<IntervalKind::Quarter>
             return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
         else
         {
-            if (const auto quarters_to_months = quarters * 3; quarters_to_months / 3 == quarters) // Check if multiplication doesn't overflow Int64 value
-               return ToStartOfInterval<IntervalKind::Month>::execute(t, quarters_to_months, time_zone, scale_multiplier, origin);
+            if (quarters < Int64_max_value / 3) // Check if multiplication doesn't overflow Int64 value
+               return ToStartOfInterval<IntervalKind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
             else
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} * 3 is out of bounds for type Int64", quarters);
         }
@@ -789,8 +790,8 @@ struct ToStartOfInterval<IntervalKind::Year>
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
         else
         {
-            if (const auto years_to_months = years * 12; years_to_months / 12 == years) // Check if multiplication doesn't overflow Int64 value
-                return ToStartOfInterval<IntervalKind::Month>::execute(t, years_to_months, time_zone, scale_multiplier, origin);
+            if (years < Int64_max_value / 12) // Check if multiplication doesn't overflow Int64 value
+                return ToStartOfInterval<IntervalKind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
             else
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} * 12 is out of bounds for type Int64", years);
         }
