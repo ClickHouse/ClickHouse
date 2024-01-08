@@ -358,7 +358,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
     if ((left->getNumStreams() != 1 || right->getNumStreams() != 1) && join->getTableJoin().kind() == JoinKind::Paste)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Paste JOIN requires sorted tables only");
+    {
+        left->pipe.resize(1, true);
+        right->pipe.resize(1, true);
+    }
     else if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is supported only for pipelines with one output port");
 
