@@ -116,26 +116,16 @@ def set_convert_flags():
             [
                 "bash",
                 "-c",
-                f"mkdir /var/lib/clickhouse/data/{database_name}/{table}/flags",
-            ]
-        )
-        ch1.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"touch /var/lib/clickhouse/data/{database_name}/{table}/flags/convert_to_replicated",
+                f"touch /var/lib/clickhouse/data/{database_name}/{table}/convert_to_replicated",
             ]
         )
 
     # Set flag to not MergeTree table to check that nothing happens
     ch1.exec_in_container(
-        ["bash", "-c", f"mkdir /var/lib/clickhouse/data/{database_name}/log/flags"]
-    )
-    ch1.exec_in_container(
         [
             "bash",
             "-c",
-            f"touch /var/lib/clickhouse/data/{database_name}/log/flags/convert_to_replicated",
+            f"touch /var/lib/clickhouse/data/{database_name}/log/convert_to_replicated",
         ]
     )
 

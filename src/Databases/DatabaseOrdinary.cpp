@@ -94,7 +94,7 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
 
 static fs::path getConvertToReplicatedFlagPath(ContextPtr context, const QualifiedTableName & name)
 {
-    return fs::path(context->getPath()) / "data" / name.database / name.table / "flags" / CONVERT_TO_REPLICATED_FLAG_NAME;
+    return fs::path(context->getPath()) / "data" / name.database / name.table / CONVERT_TO_REPLICATED_FLAG_NAME;
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)

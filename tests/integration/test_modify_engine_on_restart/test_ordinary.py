@@ -62,14 +62,7 @@ def set_convert_flags():
         [
             "bash",
             "-c",
-            f"mkdir /var/lib/clickhouse/data/{database_name}/mt/flags",
-        ]
-    )
-    ch1.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"touch /var/lib/clickhouse/data/{database_name}/mt/flags/convert_to_replicated",
+            f"touch /var/lib/clickhouse/data/{database_name}/mt/convert_to_replicated",
         ]
     )
 
@@ -79,7 +72,7 @@ def remove_convert_flags():
         [
             "bash",
             "-c",
-            f"rm -rf /var/lib/clickhouse/data/{database_name}/mt/flags",
+            f"rm /var/lib/clickhouse/data/{database_name}/mt/convert_to_replicated",
         ]
     )
 
