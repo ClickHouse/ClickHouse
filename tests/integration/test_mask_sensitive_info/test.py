@@ -132,7 +132,7 @@ def test_backup_table():
 
     setup_queries = [
         "CREATE TABLE backup_test (x int) ENGINE = MergeTree ORDER BY x",
-        "INSERT INTO backup_test SELECT * FROM numbers(10)"
+        "INSERT INTO backup_test SELECT * FROM numbers(10)",
     ]
 
     endpoints_with_credentials = [
@@ -150,10 +150,12 @@ def test_backup_table():
         # Run ASYNC so it returns the backup id
         return (
             f"BACKUP TABLE backup_test TO {endpoint_specs[0]} ASYNC",
-            f"BACKUP TABLE backup_test TO {endpoint_specs[1]} SETTINGS async=1, base_backup={endpoint_specs[0]}"
+            f"BACKUP TABLE backup_test TO {endpoint_specs[1]} SETTINGS async=1, base_backup={endpoint_specs[0]}",
         )
 
-    test_cases = [make_test_case(endpoint_spec) for endpoint_spec in endpoints_with_credentials]
+    test_cases = [
+        make_test_case(endpoint_spec) for endpoint_spec in endpoints_with_credentials
+    ]
     for base_query, inc_query in test_cases:
         node.query_and_get_answer_with_error(base_query)[0]
 
@@ -167,6 +169,7 @@ def test_backup_table():
 
         assert password not in base_backup_name
         assert password not in name
+
 
 def test_create_table():
     password = new_password()
