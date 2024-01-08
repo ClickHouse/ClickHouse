@@ -93,7 +93,8 @@ inline bool cpuid(UInt32 op, UInt32 * res) noexcept /// NOLINT
     OP(CLFLUSHOPT)           \
     OP(CLWB)                 \
     OP(XSAVE)                \
-    OP(OSXSAVE)
+    OP(OSXSAVE)              \
+    OP(AMX)
 
 union CpuInfo
 {
@@ -311,6 +312,15 @@ bool haveAVX512VBMI2() noexcept
 bool haveRDRAND() noexcept
 {
     return CpuInfo(0x0).registers.eax >= 0x7 && ((CpuInfo(0x1).registers.ecx >> 30) & 1u);
+}
+
+bool haveAMX() noexcept
+{
+#if defined(__x86_64__) || defined(__i386__)
+    return (CpuInfo(0x1).registers.ecx >> 22) & 1u;
+#else
+    return false;
+#endif
 }
 
 struct CpuFlagsCache
