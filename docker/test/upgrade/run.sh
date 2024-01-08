@@ -153,55 +153,61 @@ install_packages package_folder
 export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
-# Check that all new/changed setting were added in settings changes history
-clickhouse-local -q "select * from system.settings format Native" > new_settings.native
-clickhouse-local -nmq "
-CREATE TABLE old_settings AS file('old_settings.native');
-CREATE TABLE new_settings AS file('new_settings.native');
-
-SELECT
-    name,
-    new_settings.value AS new_value,
-    old_settings.value AS old_value
-FROM new_settings
-LEFT JOIN old_settings ON new_settings.name = old_settings.name
-WHERE (new_settings.value != old_settings.value) AND (name NOT IN (
-    SELECT arrayJoin(tupleElement(changes, 'name'))
-    FROM system.settings_changes
-    WHERE version = extract(version(), '^(?:\\d+\\.\\d+)')
-))
-SETTINGS join_use_nulls = 1
-INTO OUTFILE 'changed_settings.txt'
-FORMAT PrettyCompact;
-
-SELECT name
-FROM new_settings
-WHERE (name NOT IN (
-    SELECT name
-    FROM old_settings
-)) AND (name NOT IN (
-    SELECT arrayJoin(tupleElement(changes, 'name'))
-    FROM system.settings_changes
-    WHERE version = extract(version(), '^(?:\\d+\\.\\d+)')
-))
-INTO OUTFILE 'new_settings.txt'
-FORMAT PrettyCompact;
-"
-
-if [ -s changed_settings.txt ]
+# Check that all new/changed setting were added in settings changes history.
+# Some settings can be different for builds with sanitizers, so we check
+# settings changes only for non-sanitizer builds.
+IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
+if [ "${IS_SANITIZED}" -eq "0" ]
 then
-    mv changed_settings.txt /test_output/
-    echo -e "Changed settings are not reflected in settings changes history (see changed_settings.txt)$FAIL$(head_escaped /test_output/changed_settings.txt)" >> /test_output/test_results.tsv
-else
-    echo -e "There are no changed settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
-fi
+  clickhouse-local -q "select * from system.settings format Native" > new_settings.native
+  clickhouse-local -nmq "
+  CREATE TABLE old_settings AS file('old_settings.native');
+  CREATE TABLE new_settings AS file('new_settings.native');
 
-if [ -s new_settings.txt ]
-then
-    mv new_settings.txt /test_output/
-    echo -e "New settings are not reflected in settings changes history (see new_settings.txt)$FAIL$(head_escaped /test_output/new_settings.txt)" >> /test_output/test_results.tsv
-else
-    echo -e "There are no new settings or they are reflected in settings changes history\tOK" >> /test_output/test_results.tsv
+  SELECT
+      name,
+      new_settings.value AS new_value,
+      old_settings.value AS old_value
+  FROM new_settings
+  LEFT JOIN old_settings ON new_settings.name = old_settings.name
+  WHERE (new_settings.value != old_settings.value) AND (name NOT IN (
+      SELECT arrayJoin(tupleElement(changes, 'name'))
+      FROM system.settings_changes
+      WHERE version = extract(version(), '^(?:\\d+\\.\\d+)')
+  ))
+  SETTINGS join_use_nulls = 1
+  INTO OUTFILE 'changed_settings.txt'
+  FORMAT PrettyCompactNoEscapes;
+
+  SELECT name
+  FROM new_settings
+  WHERE (name NOT IN (
+      SELECT name
+      FROM old_settings
+  )) AND (name NOT IN (
+      SELECT arrayJoin(tupleElement(changes, 'name'))
+      FROM system.settings_changes
+      WHERE version = extract(version(), '^(?:\\d+\\.\\d+)')
+  ))
+  INTO OUTFILE 'new_settings.txt'
+  FORMAT PrettyCompactNoEscapes;
+  "
+
+  if [ -s changed_settings.txt ]
+  then
+      mv changed_settings.txt /test_output/
+      echo -e "Changed settings are not reflected in settings changes history (see changed_settings.txt)$FAIL$(head_escaped /test_output/changed_settings.txt)" >> /test_output/test_results.tsv
+  else
+      echo -e "There are no changed settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
+  fi
+
+  if [ -s new_settings.txt ]
+  then
+      mv new_settings.txt /test_output/
+      echo -e "New settings are not reflected in settings changes history (see new_settings.txt)$FAIL$(head_escaped /test_output/new_settings.txt)" >> /test_output/test_results.tsv
+  else
+      echo -e "There are no new settings or they are reflected in settings changes history\tOK" >> /test_output/test_results.tsv
+  fi
 fi
 
 # Just in case previous version left some garbage in zk
