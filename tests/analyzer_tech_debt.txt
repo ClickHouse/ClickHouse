@@ -30,6 +30,7 @@
 02784_parallel_replicas_automatic_decision_join
 02818_parameterized_view_with_cte_multiple_usage
 # Flaky. Please don't delete them without fixing them:
+01287_max_execution_speed
 02003_WithMergeableStateAfterAggregationAndLimit_LIMIT_BY_LIMIT_OFFSET
 02404_memory_bound_merging
 02479_race_condition_between_insert_and_droppin_mv
