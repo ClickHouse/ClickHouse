@@ -1211,7 +1211,7 @@ try
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
-    if (server_settings.ebable_background_statistics)
+    if (server_settings.enable_background_statistics)
     {
         global_context->initializeStatisticsStorage(server_settings.background_statistics_refresh_period_sec);
         LOG_INFO(log, "Statistics storage initialized");

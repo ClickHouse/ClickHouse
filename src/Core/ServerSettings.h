@@ -107,7 +107,7 @@ namespace DB
     M(Bool, validate_tcp_client_information, false, "Validate client_information in the query packet over the native TCP protocol.", 0) \
     M(Bool, storage_metadata_write_full_object_key, false, "Write disk metadata files with VERSION_FULL_OBJECT_KEY format", 0) \
     \
-    M(Bool, ebable_background_statistics, true, "Enable background table statistics collecting and refreshing.", 0) \
+    M(Bool, enable_background_statistics, true, "Enable background table statistics collecting and refreshing.", 0) \
     M(UInt64, background_statistics_refresh_period_sec, 6 * 3600, "Background table statistics refreshing period in second.", 0) \
     M(UInt64, background_statistics_collect_period_sec, 24 * 3600, "Background table statistics collecting period in second.", 0)
 
