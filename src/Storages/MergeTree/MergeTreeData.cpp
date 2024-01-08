@@ -846,6 +846,10 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 {
     const auto columns = metadata.getColumns().getAllPhysical();
 
+    if (!is_deleted_column.empty() && mode != MergingParams::Replacing)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "is_deleted column for MergeTree cannot be specified in modes except Replacing.");
+
     if (!sign_column.empty() && mode != MergingParams::Collapsing && mode != MergingParams::VersionedCollapsing)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Sign column for MergeTree cannot be specified "
@@ -915,6 +919,41 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Version column {} does not exist in table declaration.", version_column);
     };
 
+    /// Check that if the is_deleted column is needed, it exists and is of type UInt8. If exist, version column must be defined too but version checks are not done here.
+    auto check_is_deleted_column = [this, & columns](bool is_optional, const std::string & storage)
+    {
+        if (is_deleted_column.empty())
+        {
+            if (is_optional)
+                return;
+
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: is_deleted ({}) column for storage {} is empty", is_deleted_column, storage);
+        }
+        else
+        {
+            if (version_column.empty() && !is_optional)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: Version column ({}) for storage {} is empty while is_deleted ({}) is not.",
+                                version_column, storage, is_deleted_column);
+
+            bool miss_is_deleted_column = true;
+            for (const auto & column : columns)
+            {
+                if (column.name == is_deleted_column)
+                {
+                    if (!typeid_cast<const DataTypeUInt8 *>(column.type.get()))
+                        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "is_deleted column ({}) for storage {} must have type UInt8. Provided column of type {}.",
+                                        is_deleted_column, storage, column.type->getName());
+                    miss_is_deleted_column = false;
+                    break;
+                }
+            }
+
+            if (miss_is_deleted_column)
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "is_deleted column {} does not exist in table declaration.", is_deleted_column);
+        }
+    };
+
+
     if (mode == MergingParams::Collapsing)
         check_sign_column(false, "CollapsingMergeTree");
 
@@ -951,6 +990,7 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
     if (mode == MergingParams::Replacing)
     {
+        check_is_deleted_column(true, "ReplacingMergeTree");
         check_version_column(true, "ReplacingMergeTree");
     }
 
@@ -1035,26 +1075,30 @@ Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPar
 
 
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
-    const SelectQueryInfo & query_info, ContextPtr local_context, const DataPartsVector & parts) const
+    const ActionsDAGPtr & filter_actions_dag, ContextPtr local_context, const DataPartsVector & parts) const
 {
     if (parts.empty())
         return 0u;
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    ASTPtr expression_ast;
     Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
-    // Generate valid expressions for filtering
-    bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, local_context, virtual_columns_block, expression_ast);
+    auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), nullptr);
 
-    PartitionPruner partition_pruner(metadata_snapshot, query_info, local_context, true /* strict */);
+    // Generate valid expressions for filtering
+    bool valid = true;
+    for (const auto * input : filter_dag->getInputs())
+        if (!virtual_columns_block.has(input->result_name))
+            valid = false;
+
+    PartitionPruner partition_pruner(metadata_snapshot, filter_dag, local_context, true /* strict */);
     if (partition_pruner.isUseless() && !valid)
         return {};
 
     std::unordered_set<String> part_values;
-    if (valid && expression_ast)
+    if (valid)
     {
         virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */);
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, local_context, expression_ast);
+        VirtualColumnUtils::filterBlockWithDAG(filter_dag, virtual_columns_block, local_context);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
             return 0;
@@ -2744,6 +2788,25 @@ void MergeTreeData::dropAllData()
 
     column_sizes.clear();
 
+    auto detached_parts = getDetachedParts();
+    for (const auto & part : detached_parts)
+    {
+        bool is_zero_copy = supportsReplication() && part.disk->supportZeroCopyReplication()
+            && settings_ptr->allow_remote_fs_zero_copy_replication;
+        try
+        {
+            bool keep_shared = removeDetachedPart(part.disk, fs::path(relative_data_path) / "detached" / part.dir_name / "", part.dir_name);
+            LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", part.dir_name, keep_shared);
+        }
+        catch (...)
+        {
+            /// Without zero-copy-replication we will simply remove it recursively, but with zero-copy it will leave garbage on s3
+            if (is_zero_copy && isRetryableException(std::current_exception()))
+                throw;
+            tryLogCurrentException(log);
+        }
+    }
+
     for (const auto & disk : getDisks())
     {
         if (disk->isBroken())
@@ -2761,7 +2824,7 @@ void MergeTreeData::dropAllData()
         disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
 
         if (disk->exists(fs::path(relative_data_path) / DETACHED_DIR_NAME))
-            disk->removeRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME);
+            disk->removeSharedRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME, /*keep_all_shared_data*/ true, {});
 
         if (disk->exists(fs::path(relative_data_path) / MOVING_DIR_NAME))
             disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
@@ -3044,6 +3107,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         if (command.type == AlterCommand::MODIFY_QUERY)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                             "ALTER MODIFY QUERY is not supported by MergeTree engines family");
+        if (command.type == AlterCommand::MODIFY_REFRESH)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "ALTER MODIFY REFRESH is not supported by MergeTree engines family");
 
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
         {
@@ -3923,8 +3989,15 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
     /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
     removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
 
+    /// We can only create a covering part for a blocks range that starts with 0 (otherwise we may get "intersecting parts"
+    /// if we remove a range from the middle when dropping a part).
+    /// Maybe we could do it by incrementing mutation version to get a name for the empty covering part,
+    /// but it's okay to simply avoid creating it for DROP PART (for a part in the middle).
+    /// NOTE: Block numbers in ReplicatedMergeTree start from 0. For MergeTree, is_new_syntax is always false.
+    assert(!create_empty_part || supportsReplication());
+    bool range_in_the_middle = drop_range.min_block;
     bool is_new_syntax = format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
-    if (create_empty_part && !parts_to_remove.empty() && is_new_syntax)
+    if (create_empty_part && !parts_to_remove.empty() && is_new_syntax && !range_in_the_middle)
     {
         /// We are going to remove a lot of parts from zookeeper just after returning from this function.
         /// And we will remove parts from disk later (because some queries may use them).
@@ -3934,10 +4007,11 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
 
         MergeTreePartInfo empty_info = drop_range;
         empty_info.level = empty_info.mutation = 0;
-        if (!empty_info.min_block)
-            empty_info.min_block = MergeTreePartInfo::MAX_BLOCK_NUMBER;
+        empty_info.min_block = MergeTreePartInfo::MAX_BLOCK_NUMBER;
         for (const auto & part : parts_to_remove)
         {
+            /// We still have to take min_block into account to avoid creating multiple covering ranges
+            /// that intersect each other
             empty_info.min_block = std::min(empty_info.min_block, part->info.min_block);
             empty_info.level = std::max(empty_info.level, part->info.level);
             empty_info.mutation = std::max(empty_info.mutation, part->info.mutation);
@@ -6555,8 +6629,7 @@ using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
-    bool has_filter,
-    const SelectQueryInfo & query_info,
+    const ActionsDAGPtr & filter_dag,
     const DataPartsVector & parts,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context) const
@@ -6606,7 +6679,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     Block virtual_columns_block;
     auto virtual_block = getSampleBlockWithVirtualColumns();
     bool has_virtual_column = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
-    if (has_virtual_column || has_filter)
+    if (has_virtual_column || filter_dag)
     {
         virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */, true /* ignore_empty */);
         if (virtual_columns_block.rows() == 0)
@@ -6618,7 +6691,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     std::optional<PartitionPruner> partition_pruner;
     std::optional<KeyCondition> minmax_idx_condition;
     DataTypes minmax_columns_types;
-    if (has_filter)
+    if (filter_dag)
     {
         if (metadata_snapshot->hasPartitionKey())
         {
@@ -6627,16 +6700,15 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             minmax_columns_types = getMinMaxColumnsTypes(partition_key);
 
             minmax_idx_condition.emplace(
-                query_info, query_context, minmax_columns_names,
+                filter_dag, query_context, minmax_columns_names,
                 getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(query_context)));
-            partition_pruner.emplace(metadata_snapshot, query_info, query_context, false /* strict */);
+            partition_pruner.emplace(metadata_snapshot, filter_dag, query_context, false /* strict */);
         }
 
+        const auto * predicate = filter_dag->getOutputs().at(0);
+
         // Generate valid expressions for filtering
-        ASTPtr expression_ast;
-        VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, query_context, virtual_columns_block, expression_ast);
-        if (expression_ast)
-            VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, query_context, expression_ast);
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, virtual_columns_block, query_context);
 
         rows = virtual_columns_block.rows();
         part_name_column = virtual_columns_block.getByName("_part").column;
