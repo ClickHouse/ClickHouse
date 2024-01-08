@@ -905,7 +905,7 @@ bool NativeORCBlockInputFormat::prepareStripeReader()
     return true;
 }
 
-Chunk NativeORCBlockInputFormat::generate()
+Chunk NativeORCBlockInputFormat::read()
 {
     block_missing_values.clear();
 

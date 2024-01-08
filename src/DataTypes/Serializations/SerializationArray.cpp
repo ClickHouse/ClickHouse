@@ -390,7 +390,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Check consistency between offsets and elements subcolumns.
     /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.
     if (!nested_column->empty() && nested_column->size() != last_offset)
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
             toString(nested_column->size()), toString(last_offset));
 
     column = std::move(mutable_column);
@@ -445,7 +445,7 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
                 if (*istr.position() == ',')
                     ++istr.position();
                 else
-                    throw ParsingException(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT,
+                    throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT,
                         "Cannot read array from text, expected comma or end of array, found '{}'",
                         *istr.position());
             }

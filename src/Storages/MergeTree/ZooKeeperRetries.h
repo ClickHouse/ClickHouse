@@ -112,7 +112,7 @@ public:
         return false;
     }
 
-    void setUserError(std::exception_ptr exception, int code, std::string message)
+    void setUserError(std::exception_ptr exception, int code, const std::string & message)
     {
         if (logger)
             LOG_TRACE(logger, "ZooKeeperRetriesControl: {}: setUserError: error={} message={}", name, code, message);
@@ -127,21 +127,9 @@ public:
         keeper_error = KeeperError{};
     }
 
-    template <typename... Args>
-    void setUserError(std::exception_ptr exception, int code, fmt::format_string<Args...> fmt, Args &&... args)
+    void setUserError(const Exception & exception)
     {
-        setUserError(exception, code, fmt::format(fmt, std::forward<Args>(args)...));
-    }
-
-    void setUserError(int code, std::string message)
-    {
-        setUserError(std::make_exception_ptr(Exception::createDeprecated(message, code)), code, message);
-    }
-
-    template <typename... Args>
-    void setUserError(int code, fmt::format_string<Args...> fmt, Args &&... args)
-    {
-        setUserError(code, fmt::format(fmt, std::forward<Args>(args)...));
+        setUserError(std::make_exception_ptr(exception), exception.code(), exception.message());
     }
 
     void setKeeperError(std::exception_ptr exception, Coordination::Error code, std::string message)
@@ -157,23 +145,6 @@ public:
         keeper_error.message = std::move(message);
         keeper_error.exception = exception;
         user_error = UserError{};
-    }
-
-    template <typename... Args>
-    void setKeeperError(std::exception_ptr exception, Coordination::Error code, fmt::format_string<Args...> fmt, Args &&... args)
-    {
-        setKeeperError(exception, code, fmt::format(fmt, std::forward<Args>(args)...));
-    }
-
-    void setKeeperError(Coordination::Error code, std::string message)
-    {
-        setKeeperError(std::make_exception_ptr(zkutil::KeeperException::createDeprecated(message, code)), code, message);
-    }
-
-    template <typename... Args>
-    void setKeeperError(Coordination::Error code, fmt::format_string<Args...> fmt, Args &&... args)
-    {
-        setKeeperError(code, fmt::format(fmt, std::forward<Args>(args)...));
     }
 
     void stopRetries() { stop_retries = true; }

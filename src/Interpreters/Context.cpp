@@ -15,6 +15,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/callOnce.h>
 #include <Common/SharedLockGuard.h>
 #include <Coordination/KeeperDispatcher.h>
@@ -32,6 +33,7 @@
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <IO/SynchronousReader.h>
@@ -43,6 +45,7 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
+#include <Interpreters/PreparedSets.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -326,6 +329,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr local_write_throttler;             /// A server-wide throttler for local IO writes
 
     mutable ThrottlerPtr backups_server_throttler;          /// A server-wide throttler for BACKUPs
+
+    mutable ThrottlerPtr mutations_throttler;               /// A server-wide throttler for mutations
+    mutable ThrottlerPtr merges_throttler;                  /// A server-wide throttler for merges
 
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
@@ -735,6 +741,12 @@ struct ContextSharedPart : boost::noncopyable
 
         if (auto bandwidth = server_settings.max_backup_bandwidth_for_server)
             backups_server_throttler = std::make_shared<Throttler>(bandwidth);
+
+        if (auto bandwidth = server_settings.max_mutations_bandwidth_for_server)
+            mutations_throttler = std::make_shared<Throttler>(bandwidth);
+
+        if (auto bandwidth = server_settings.max_merges_bandwidth_for_server)
+            merges_throttler = std::make_shared<Throttler>(bandwidth);
     }
 };
 
@@ -2996,6 +3008,16 @@ ThrottlerPtr Context::getBackupsThrottler() const
         throttler = backups_query_throttler;
     }
     return throttler;
+}
+
+ThrottlerPtr Context::getMutationsThrottler() const
+{
+    return shared->mutations_throttler;
+}
+
+ThrottlerPtr Context::getMergesThrottler() const
+{
+    return shared->merges_throttler;
 }
 
 bool Context::hasDistributedDDL() const
