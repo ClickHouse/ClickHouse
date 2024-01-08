@@ -182,7 +182,7 @@ WHERE (name NOT IN (
 )) AND (name NOT IN (
     SELECT arrayJoin(tupleElement(changes, 'name'))
     FROM system.settings_changes
-    WHERE version = '23.9'
+    WHERE version = extract(version(), '^(?:\\d+\\.\\d+)')
 ))
 INTO OUTFILE 'new_settings.txt'
 FORMAT Pretty;
