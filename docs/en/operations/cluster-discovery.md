@@ -71,6 +71,8 @@ With Cluster Discovery, rather than defining each node explicitly, you simply sp
             <!-- ## Authentication credentials to access all other nodes in cluster: -->
             <!-- <user>user1</user> -->
             <!-- <password>pass123</password> -->
+            <!-- ### Alternatively to password, interserver secret may be used: -->
+            <!-- <secret>secret123</secret> -->
 
             <!-- ## Shard for current node (see below): -->
             <!-- <shard>1</shard> -->

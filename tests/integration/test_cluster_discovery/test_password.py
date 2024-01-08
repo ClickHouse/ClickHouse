@@ -9,14 +9,14 @@ cluster = ClickHouseCluster(__file__)
 nodes = {
     "node0": cluster.add_instance(
         "node0",
-        main_configs=["config/config_with_pwd.xml"],
+        main_configs=["config/config_with_pwd.xml", "config/config_with_secret1.xml"],
         user_configs=["config/users.d/users_with_pwd.xml"],
         stay_alive=True,
         with_zookeeper=True,
     ),
     "node1": cluster.add_instance(
         "node1",
-        main_configs=["config/config_with_pwd.xml"],
+        main_configs=["config/config_with_pwd.xml", "config/config_with_secret2.xml"],
         user_configs=["config/users.d/users_with_pwd.xml"],
         stay_alive=True,
         with_zookeeper=True,
@@ -54,3 +54,16 @@ def test_connect_with_password(start_cluster):
         password="passwordAbc",
     )
     assert "Authentication failed" in result, result
+
+    result = nodes["node0"].query(
+        "SELECT sum(number) FROM clusterAllReplicas('test_auto_cluster_with_secret', numbers(3)) GROUP BY hostname()",
+        password="passwordAbc",
+    )
+    assert result == "3\n3\n", result
+
+    result = nodes["node0"].query_and_get_error(
+        "SELECT sum(number) FROM clusterAllReplicas('test_auto_cluster_with_wrong_secret', numbers(3)) GROUP BY hostname()",
+        password="passwordAbc",
+    )
+    # With incorrect secret, we receive "Connection reset by peer" error instead of "Authentication failed"
+    assert "Connection reset by peer" in result, result

@@ -85,12 +85,14 @@ private:
         bool is_secure_connection = false;
         String username;
         String password;
+        String cluster_secret;
 
         ClusterInfo(const String & name_,
                     const String & zk_root_,
                     const String & host_name,
                     const String & username_,
                     const String & password_,
+                    const String & cluster_secret_,
                     UInt16 port,
                     bool secure,
                     size_t shard_id,
@@ -104,6 +106,7 @@ private:
             , is_secure_connection(secure)
             , username(username_)
             , password(password_)
+            , cluster_secret(cluster_secret_)
         {
         }
     };

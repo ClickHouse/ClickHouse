@@ -133,6 +133,11 @@ ClusterDiscovery::ClusterDiscovery(
         if (zk_root.empty())
             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "ZooKeeper path for cluster '{}' is empty", key);
 
+        const auto & password = config.getString(cluster_config_prefix + ".password", "");
+        const auto & cluster_secret = config.getString(cluster_config_prefix + ".secret", "");
+        if (!password.empty() && !cluster_secret.empty())
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Mutually exclusive options 'password' and 'secret' are specified for cluster '{}'", key);
+
         clusters_info.emplace(
             key,
             ClusterInfo(
@@ -140,7 +145,8 @@ ClusterDiscovery::ClusterDiscovery(
                 /* zk_root_= */ zk_root,
                 /* host_name= */ config.getString(cluster_config_prefix + ".my_hostname", getFQDNOrHostName()),
                 /* username= */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
-                /* password= */ config.getString(cluster_config_prefix + ".password", ""),
+                /* password= */ password,
+                /* cluster_secret= */ cluster_secret,
                 /* port= */ context->getTCPPort(),
                 /* secure= */ config.getBool(cluster_config_prefix + ".secure", false),
                 /* shard_id= */ config.getUInt(cluster_config_prefix + ".shard", 0),
@@ -262,8 +268,8 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure,
         /* priority= */ Priority{1},
-        /* cluster_name= */ "",
-        /* cluster_secret= */ ""};
+        /* cluster_name= */ cluster_info.name,
+        /* cluster_secret= */ cluster_info.cluster_secret};
     auto cluster = std::make_shared<Cluster>(
         context->getSettingsRef(),
         shards,
