@@ -1402,7 +1402,7 @@ NO_INLINE size_t joinRightColumns(
     {
         if constexpr (join_features.need_replication)
         {
-            if (unlikely(current_offset > max_joined_block_rows))
+            if (unlikely(current_offset >= max_joined_block_rows))
             {
                 added_columns.offsets_to_replicate->resize_assume_reserved(i);
                 added_columns.filter.resize_assume_reserved(i);
