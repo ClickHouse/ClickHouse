@@ -2543,7 +2543,6 @@ def main(args):
                 sys.exit(0)
             raise
 
-
     if server_died.is_set() and not args.fuzz:
         exit_code.value = 1
 
