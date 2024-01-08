@@ -2536,9 +2536,15 @@ def main(args):
         if test_suite is None:
             continue
 
-        total_tests_run += do_run_tests(args.jobs, test_suite, args.parallel)
+        try:
+            total_tests_run += do_run_tests(args.jobs, test_suite, args.parallel)
+        except Terminated:
+            if args.fuzz:
+                sys.exit(0)
+            raise
 
-    if server_died.is_set():
+
+    if server_died.is_set() and not args.fuzz:
         exit_code.value = 1
 
     if args.hung_check:
