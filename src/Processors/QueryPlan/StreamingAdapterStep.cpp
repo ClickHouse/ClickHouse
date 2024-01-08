@@ -3,8 +3,8 @@
 #include <Interpreters/ActionsDAG.h>
 
 #include <Processors/QueryPlan/StreamingAdapterStep.h>
-#include <Processors/Streaming/StreamingAdapter.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/StreamingAdapter.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 

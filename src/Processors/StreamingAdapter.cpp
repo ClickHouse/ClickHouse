@@ -6,7 +6,7 @@
 #include <Common/logger_useful.h>
 
 #include <Processors/IProcessor.h>
-#include <Processors/Streaming/StreamingAdapter.h>
+#include <Processors/StreamingAdapter.h>
 
 namespace DB
 {
