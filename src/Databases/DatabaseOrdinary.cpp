@@ -45,6 +45,8 @@ namespace ErrorCodes
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
+static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
+
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context_)
     : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
 {
@@ -90,6 +92,11 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     create_query->storage->set(create_query->storage->engine, engine->clone());
 }
 
+static fs::path getConvertToReplicatedFlagPath(ContextPtr context, const QualifiedTableName & name)
+{
+    return fs::path(context->getPath()) / "data" / name.database / name.table / "flags" / CONVERT_TO_REPLICATED_FLAG_NAME;
+}
+
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
 {
     fs::path path(getMetadataPath());
@@ -101,9 +108,9 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     if (!create_query->storage || !create_query->storage->engine->name.ends_with("MergeTree") || create_query->storage->engine->name.starts_with("Replicated"))
         return;
 
-    auto convert_to_replicated_flag_path = fs::path(getContext()->getPath()) / "data" / qualified_name.database / qualified_name.table / "flags" / "convert_to_replicated";
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(getContext(), qualified_name);
 
-    LOG_DEBUG(log, "Searching for convert_to_replicated flag at {}.", backQuote(convert_to_replicated_flag_path.string()));
+    LOG_DEBUG(log, "Searching for {} flag at {}.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(convert_to_replicated_flag_path.string()));
 
     if (!fs::exists(convert_to_replicated_flag_path))
         return;
@@ -112,7 +119,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion to replicated is supported only for Atomic databases. Convert your database engine to Atomic first.");
 
-    LOG_INFO(log, "Found convert_to_replicated flag for table {}. Will try to change it's engine in metadata to replicated.", backQuote(qualified_name.getFullName()));
+    LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
     setReplicatedEngine(create_query, getContext());
 
@@ -132,8 +139,9 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     LOG_INFO(
         log,
-        "Engine of table {} is set to replicated in metadata. Not removing convert_to_replicated flag until table is loaded and metadata in zookeeper is restored.",
-        backQuote(qualified_name.getFullName())
+        "Engine of table {} is set to replicated in metadata. Not removing {} flag until table is loaded and metadata in zookeeper is restored.",
+        backQuote(qualified_name.getFullName()),
+        CONVERT_TO_REPLICATED_FLAG_NAME
     );
 }
 
@@ -264,6 +272,56 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
     return load_table[name.table] = makeLoadTask(async_loader, {job});
 }
 
+void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
+{
+    if (auto * rmt = table->as<StorageReplicatedMergeTree>())
+    {
+        auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(getContext(), name);
+        if (!fs::exists(convert_to_replicated_flag_path))
+            return;
+
+        auto has_metadata = rmt->hasMetadataInZooKeeper();
+        if (has_metadata.has_value())
+        {
+            if (*has_metadata)
+            {
+                LOG_INFO
+                (
+                    log,
+                    "Table {} already has metatada in ZooKeeper.",
+                    backQuote(name.getFullName())
+                );
+            }
+            else
+            {
+                rmt->restoreMetadataInZooKeeper();
+                LOG_INFO
+                (
+                    log,
+                    "Metadata in ZooKeeper for {} is restored.",
+                    backQuote(name.getFullName())
+                );
+            }
+        }
+        else
+        {
+            LOG_INFO
+            (
+                log,
+                "No connection to ZooKeeper, can't restore metadata for {} in ZooKeeper after conversion. Run SYSTEM RESTORE REPLICA while connected to ZooKeeper.",
+                backQuote(name.getFullName())
+            );
+        }
+        fs::remove(convert_to_replicated_flag_path);
+        LOG_INFO
+        (
+            log,
+            "Removing convert to replicated flag for {}.",
+            backQuote(name.getFullName())
+        );
+    }
+}
+
 LoadTaskPtr DatabaseOrdinary::startupTableAsync(
     AsyncLoader & async_loader,
     LoadJobSet startup_after,
@@ -294,33 +352,8 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
 
                 /// If table is ReplicatedMergeTree after conversion from MergeTree,
                 /// it is in readonly mode due to metadata in zookeeper missing.
-                if (auto * rmt = table->as<StorageReplicatedMergeTree>())
-                {
-                    auto convert_to_replicated_flag_path = fs::path(getContext()->getPath()) / "data" / name.database / name.table / "flags" / "convert_to_replicated";
-                    if (fs::exists(convert_to_replicated_flag_path))
-                    {
-                        if (rmt->isTableReadOnly())
-                        {
-                            rmt->restoreMetadataInZooKeeper();
-                            LOG_INFO
-                            (
-                                log,
-                                "Metadata in zookeeper for {} is restored. Removing convert_to_replicated flag.",
-                                backQuote(name.getFullName())
-                            );
-                        }
-                        else
-                        {
-                            LOG_INFO
-                            (
-                                log,
-                                "Table {} is not in readonly mode but convert_to_replicated flag is set. Removing flag.",
-                                backQuote(name.getFullName())
-                            );
-                        }
-                        fs::remove(convert_to_replicated_flag_path);
-                    }
-                }
+                restoreMetadataAfterConvertingToReplicated(table, name);
+
                 logAboutProgress(log, ++tables_started, total_tables_to_startup, startup_watch);
             }
             else

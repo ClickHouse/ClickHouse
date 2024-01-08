@@ -364,6 +364,8 @@ public:
 
     bool isTableReadOnly () { return is_readonly; }
 
+    std::optional<bool> hasMetadataInZooKeeper () { return has_metadata_in_zookeeper; }
+
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
 
