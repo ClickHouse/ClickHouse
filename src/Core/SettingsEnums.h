@@ -173,6 +173,8 @@ enum class DistributedDDLOutputMode
     THROW,
     NULL_STATUS_ON_TIMEOUT,
     NEVER_THROW,
+    THROW_ONLY_ACTIVE,
+    NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE,
 };
 
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
