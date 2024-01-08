@@ -65,6 +65,11 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         query->replace(ast_create_query.select, metadata.select.select_query);
     }
 
+    if (metadata.refresh)
+    {
+        query->replace(ast_create_query.refresh_strategy, metadata.refresh);
+    }
+
     /// MaterializedView, Dictionary are types of CREATE query without storage.
     if (ast_create_query.storage)
     {

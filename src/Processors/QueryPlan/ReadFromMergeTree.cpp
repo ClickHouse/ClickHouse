@@ -23,6 +23,8 @@
 #include <Processors/Transforms/ReverseTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeIndexAnnoy.h>
+#include <Storages/MergeTree/MergeTreeIndexUSearch.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
@@ -418,7 +420,13 @@ Pipe ReadFromMergeTree::readFromPool(
         && settings.allow_prefetched_read_pool_for_local_filesystem
         && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.local_fs_method);
 
-    if (allow_prefetched_remote || allow_prefetched_local)
+    /** Do not use prefetched read pool if query is trivial limit query.
+      * Because time spend during filling per thread tasks can be greater than whole query
+      * execution for big tables with small limit.
+      */
+    bool use_prefetched_read_pool = query_info.limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
+
+    if (use_prefetched_read_pool)
     {
         pool = std::make_shared<MergeTreePrefetchedReadPool>(
             std::move(parts_with_range),
@@ -567,6 +575,8 @@ Pipe ReadFromMergeTree::readInOrder(
         auto processor = std::make_unique<MergeTreeSelectProcessor>(
             pool, std::move(algorithm), data, prewhere_info,
             actions_settings, block_size, reader_settings, virt_column_names);
+
+        processor->addPartLevelToChunk(isQueryWithFinal());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor));
         if (set_rows_approx)
@@ -1025,7 +1035,7 @@ static void addMergingFinal(
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false);
+                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty());
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
@@ -1128,7 +1138,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// can use parallel select on such parts.
         bool no_merging_final = do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-            parts_to_merge_ranges[range_index]->data_part->info.level > 0;
+            parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
+            data.merging_params.is_deleted_column.empty();
 
         if (no_merging_final)
         {
@@ -1160,13 +1171,18 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                         info.use_uncompressed_cache);
                 };
 
+                /// Parts of non-zero level still may contain duplicate PK values to merge on FINAL if there's is_deleted column,
+                /// so we have to process all ranges. It would be more optimal to remove this flag and add an extra filtering step.
+                bool force_process_all_ranges = !data.merging_params.is_deleted_column.empty();
+
                 SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
                     metadata_for_reading->getPrimaryKey(),
                     sorting_expr,
                     std::move(new_parts),
                     num_streams,
                     context,
-                    std::move(in_order_reading_step_getter));
+                    std::move(in_order_reading_step_getter),
+                    force_process_all_ranges);
 
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));
@@ -1323,27 +1339,12 @@ static void buildIndexes(
     const Names & primary_key_column_names = primary_key.column_names;
 
     const auto & settings = context->getSettingsRef();
-    if (settings.query_plan_optimize_primary_key)
-    {
-        NameSet array_join_name_set;
-        if (query_info.syntax_analyzer_result)
-            array_join_name_set = query_info.syntax_analyzer_result->getArrayJoinSourceNameSet();
 
-        indexes.emplace(ReadFromMergeTree::Indexes{{
-            filter_actions_dag,
-            context,
-            primary_key_column_names,
-            primary_key.expression,
-            array_join_name_set}, {}, {}, {}, {}, false, {}});
-    }
-    else
-    {
-        indexes.emplace(ReadFromMergeTree::Indexes{{
-            query_info,
-            context,
-            primary_key_column_names,
-            primary_key.expression}, {}, {}, {}, {}, false, {}});
-    }
+    indexes.emplace(ReadFromMergeTree::Indexes{{
+        filter_actions_dag,
+        context,
+        primary_key_column_names,
+        primary_key.expression}, {}, {}, {}, {}, false, {}});
 
     if (metadata_snapshot->hasPartitionKey())
     {
@@ -1351,16 +1352,12 @@ static void buildIndexes(
         auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
 
-        indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions, NameSet());
+        indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions);
         indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);
     }
 
     /// TODO Support row_policy_filter and additional_filters
-    if (settings.allow_experimental_analyzer)
-        indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, filter_actions_dag, context);
-    else
-        indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, query_info.query, context);
-
+    indexes->part_values = MergeTreeDataSelectExecutor::filterPartsByVirtualColumns(data, parts, filter_actions_dag, context);
     MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(indexes->part_offset_condition, filter_actions_dag, context);
 
     indexes->use_skip_indexes = settings.use_skip_indexes;
@@ -1372,14 +1369,18 @@ static void buildIndexes(
     if (!indexes->use_skip_indexes)
         return;
 
-    const SelectQueryInfo * info = &query_info;
     std::optional<SelectQueryInfo> info_copy;
-    if (settings.allow_experimental_analyzer)
+    auto get_query_info = [&]() -> const SelectQueryInfo &
     {
-        info_copy.emplace(query_info);
-        info_copy->filter_actions_dag = filter_actions_dag;
-        info = &*info_copy;
-    }
+        if (settings.allow_experimental_analyzer)
+        {
+            info_copy.emplace(query_info);
+            info_copy->filter_actions_dag = filter_actions_dag;
+            return *info_copy;
+        }
+
+        return query_info;
+    };
 
     std::unordered_set<std::string> ignored_index_names;
 
@@ -1420,14 +1421,30 @@ static void buildIndexes(
                 if (inserted)
                 {
                     skip_indexes.merged_indices.emplace_back();
-                    skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(*info, metadata_snapshot);
+                    skip_indexes.merged_indices.back().condition = index_helper->createIndexMergedCondition(get_query_info(), metadata_snapshot);
                 }
 
                 skip_indexes.merged_indices[it->second].addIndex(index_helper);
             }
             else
             {
-                auto condition = index_helper->createIndexCondition(*info, context);
+                MergeTreeIndexConditionPtr condition;
+                if (index_helper->isVectorSearch())
+                {
+#ifdef ENABLE_ANNOY
+                    if (const auto * annoy = typeid_cast<const MergeTreeIndexAnnoy *>(index_helper.get()))
+                        condition = annoy->createIndexCondition(get_query_info(), context);
+#endif
+#ifdef ENABLE_USEARCH
+                    if (const auto * usearch = typeid_cast<const MergeTreeIndexUSearch *>(index_helper.get()))
+                        condition = usearch->createIndexCondition(get_query_info(), context);
+#endif
+                    if (!condition)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown vector search index {}", index_helper->index.name);
+                }
+                else
+                    condition = index_helper->createIndexCondition(filter_actions_dag, context);
+
                 if (!condition->alwaysUnknownOrTrue())
                     skip_indexes.useful_indices.emplace_back(index_helper, condition);
             }
@@ -1460,34 +1477,15 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     Poco::Logger * log,
     std::optional<Indexes> & indexes)
 {
-    const auto & settings = context->getSettingsRef();
-    if (settings.allow_experimental_analyzer || settings.query_plan_optimize_primary_key)
-    {
-        auto updated_query_info_with_filter_dag = query_info;
-        updated_query_info_with_filter_dag.filter_actions_dag = buildFilterDAG(context, prewhere_info, added_filter_nodes, query_info);
-
-        return selectRangesToReadImpl(
-            std::move(parts),
-            std::move(alter_conversions),
-            metadata_snapshot_base,
-            metadata_snapshot,
-            updated_query_info_with_filter_dag,
-            context,
-            num_streams,
-            max_block_numbers_to_read,
-            data,
-            real_column_names,
-            sample_factor_column_queried,
-            log,
-            indexes);
-    }
+    auto updated_query_info_with_filter_dag = query_info;
+    updated_query_info_with_filter_dag.filter_actions_dag = buildFilterDAG(context, prewhere_info, added_filter_nodes, query_info);
 
     return selectRangesToReadImpl(
         std::move(parts),
         std::move(alter_conversions),
         metadata_snapshot_base,
         metadata_snapshot,
-        query_info,
+        updated_query_info_with_filter_dag,
         context,
         num_streams,
         max_block_numbers_to_read,
@@ -1838,6 +1836,8 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             }
         }
 
+        if (!data.merging_params.is_deleted_column.empty() && !names.contains(data.merging_params.is_deleted_column))
+            column_names_to_read.push_back(data.merging_params.is_deleted_column);
         if (!data.merging_params.sign_column.empty() && !names.contains(data.merging_params.sign_column))
             column_names_to_read.push_back(data.merging_params.sign_column);
         if (!data.merging_params.version_column.empty() && !names.contains(data.merging_params.version_column))

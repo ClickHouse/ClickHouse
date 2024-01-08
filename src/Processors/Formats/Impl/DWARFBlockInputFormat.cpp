@@ -888,7 +888,7 @@ void DWARFBlockInputFormat::parseRanges(
     }
 }
 
-Chunk DWARFBlockInputFormat::generate()
+Chunk DWARFBlockInputFormat::read()
 {
     initializeIfNeeded();
 

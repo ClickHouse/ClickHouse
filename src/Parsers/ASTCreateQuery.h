@@ -5,6 +5,7 @@
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTTableOverrides.h>
+#include <Parsers/ASTRefreshStrategy.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
@@ -116,6 +117,7 @@ public:
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
 
+    ASTRefreshStrategy * refresh_strategy = nullptr; // For CREATE MATERIALIZED VIEW ... REFRESH ...
     std::optional<UInt64> live_view_periodic_refresh;    /// For CREATE LIVE VIEW ... WITH [PERIODIC] REFRESH ...
 
     bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW

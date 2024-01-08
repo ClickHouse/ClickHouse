@@ -52,6 +52,7 @@
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
+#include <Analyzer/createUniqueTableAliases.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/AggregationUtils.h>
@@ -1198,7 +1199,7 @@ private:
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
-    static void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
+    void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
 
     static void convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);
 
@@ -2180,7 +2181,12 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
                 projection_nodes.size(),
                 scope.scope_node->formatASTForErrorMessage());
 
-        *node_to_replace = projection_nodes[--pos];
+        --pos;
+        *node_to_replace = projection_nodes[pos]->clone();
+        if (auto it = resolved_expressions.find(projection_nodes[pos]); it != resolved_expressions.end())
+        {
+            resolved_expressions[*node_to_replace] = it->second;
+        }
     }
 }
 
@@ -7378,6 +7384,7 @@ void QueryAnalysisPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context
 {
     QueryAnalyzer analyzer;
     analyzer.resolve(query_tree_node, table_expression, context);
+    createUniqueTableAliases(query_tree_node, table_expression, context);
 }
 
 }
