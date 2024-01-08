@@ -9,10 +9,7 @@ namespace
 
 KeyCondition buildKeyCondition(const KeyDescription & partition_key, const SelectQueryInfo & query_info, ContextPtr context, bool strict)
 {
-    if (context->getSettingsRef().allow_experimental_analyzer)
-        return {query_info.filter_actions_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */, strict};
-
-    return {query_info, context, partition_key.column_names, partition_key.expression, true /* single_point */, strict};
+    return {query_info.filter_actions_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */, strict};
 }
 
 }
