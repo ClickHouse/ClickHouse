@@ -118,8 +118,12 @@ void listFilesWithRegexpMatchingImpl(
     {
         try
         {
-            fs::path path = fs::canonical(path_for_ls + for_match);
-            result.push_back(path.string());
+            /// We use fs::canonical to resolve the canonical path and check if the file does exists
+            /// but the result path will be fs::absolute.
+            /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+            fs::canonical(path_for_ls + for_match);
+            fs::path absolute_path = fs::absolute(path_for_ls + for_match);
+            result.push_back(absolute_path.string());
         }
         catch (const std::exception &) // NOLINT
         {
@@ -1054,11 +1058,6 @@ void StorageFileSource::beforeDestroy()
 StorageFileSource::~StorageFileSource()
 {
     beforeDestroy();
-}
-
-void StorageFileSource::setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_)
-{
-    setKeyConditionImpl(query_info_, context_, block_for_format);
 }
 
 void StorageFileSource::setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_)
