@@ -121,16 +121,15 @@ public:
     }
 
     bool optimize(
-            const ASTPtr & query,
-            const StorageMetadataPtr & metadata_snapshot,
-            const ASTPtr & partition,
-            bool final,
-            bool deduplicate,
-            const Names & deduplicate_by_columns,
-            bool cleanup,
-            ContextPtr context) override
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ASTPtr & partition,
+        bool final,
+        bool deduplicate,
+        const Names & deduplicate_by_columns,
+        ContextPtr context) override
     {
-        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, context);
+        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, context);
     }
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
@@ -138,7 +137,7 @@ public:
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 
     void startup() override { getNested()->startup(); }
-    void shutdown() override { getNested()->shutdown(); }
+    void shutdown(bool is_drop) override { getNested()->shutdown(is_drop); }
     void flushAndPrepareForShutdown() override { getNested()->flushAndPrepareForShutdown(); }
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }

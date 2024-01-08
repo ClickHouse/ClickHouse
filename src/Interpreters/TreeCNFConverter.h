@@ -20,15 +20,15 @@ public:
         /// for set
         bool operator<(const AtomicFormula & rhs) const
         {
-            return ast->getTreeHash() == rhs.ast->getTreeHash()
+            return ast->getTreeHash(/*ignore_aliases=*/ true) == rhs.ast->getTreeHash(/*ignore_aliases=*/ true)
                 ? negative < rhs.negative
-                : ast->getTreeHash() < rhs.ast->getTreeHash();
+                : ast->getTreeHash(/*ignore_aliases=*/ true) < rhs.ast->getTreeHash(/*ignore_aliases=*/ true);
         }
 
         bool operator==(const AtomicFormula & rhs) const
         {
             return negative == rhs.negative &&
-                ast->getTreeHash() == rhs.ast->getTreeHash() &&
+                ast->getTreeHash(/*ignore_aliases=*/ true) == rhs.ast->getTreeHash(/*ignore_aliases=*/ true) &&
                 ast->getColumnName() == rhs.ast->getColumnName();
         }
     };

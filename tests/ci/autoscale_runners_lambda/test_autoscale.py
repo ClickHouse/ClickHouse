@@ -68,14 +68,16 @@ class TestSetCapacity(unittest.TestCase):
         test_cases = (
             # Do not change capacity
             TestCase("noqueue", 1, 13, 20, [Queue("in_progress", 155, "noqueue")], -1),
-            TestCase("w/reserve", 1, 13, 20, [Queue("queued", 17, "w/reserve")], -1),
-            # Increase capacity
-            TestCase("increase", 1, 13, 20, [Queue("queued", 23, "increase")], 15),
             TestCase(
-                "style-checker", 1, 13, 20, [Queue("queued", 33, "style-checker")], 16
+                "w/reserve-1", 1, 13, 20, [Queue("queued", 15, "w/reserve-1")], 14
             ),
-            TestCase("increase", 1, 13, 20, [Queue("queued", 18, "increase")], 14),
-            TestCase("increase", 1, 13, 20, [Queue("queued", 183, "increase")], 20),
+            # Increase capacity
+            TestCase("increase-1", 1, 13, 20, [Queue("queued", 23, "increase-1")], 17),
+            TestCase(
+                "style-checker", 1, 13, 20, [Queue("queued", 33, "style-checker")], 20
+            ),
+            TestCase("increase-2", 1, 13, 20, [Queue("queued", 18, "increase-2")], 15),
+            TestCase("increase-3", 1, 13, 20, [Queue("queued", 183, "increase-3")], 20),
             TestCase(
                 "increase-w/o reserve",
                 1,
@@ -85,16 +87,16 @@ class TestSetCapacity(unittest.TestCase):
                     Queue("in_progress", 11, "increase-w/o reserve"),
                     Queue("queued", 12, "increase-w/o reserve"),
                 ],
-                15,
+                17,
             ),
             TestCase("lower-min", 10, 5, 20, [Queue("queued", 5, "lower-min")], 10),
             # Decrease capacity
-            TestCase("w/reserve", 1, 13, 20, [Queue("queued", 5, "w/reserve")], 9),
+            TestCase("w/reserve", 1, 13, 20, [Queue("queued", 5, "w/reserve")], 5),
             TestCase(
                 "style-checker", 1, 13, 20, [Queue("queued", 5, "style-checker")], 5
             ),
-            TestCase("w/reserve", 1, 23, 20, [Queue("queued", 17, "w/reserve")], 20),
-            TestCase("decrease", 1, 13, 20, [Queue("in_progress", 3, "decrease")], 8),
+            TestCase("w/reserve", 1, 23, 20, [Queue("queued", 17, "w/reserve")], 17),
+            TestCase("decrease", 1, 13, 20, [Queue("in_progress", 3, "decrease")], 3),
             TestCase(
                 "style-checker",
                 1,

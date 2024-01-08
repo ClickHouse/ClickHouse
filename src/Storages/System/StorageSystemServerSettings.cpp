@@ -46,16 +46,19 @@ void StorageSystemServerSettings::fillData(MutableColumns & res_columns, Context
         {"max_concurrent_insert_queries", std::to_string(context->getProcessList().getMaxInsertQueriesAmount())},
         {"max_concurrent_select_queries", std::to_string(context->getProcessList().getMaxSelectQueriesAmount())},
 
-        {"background_pool_size", std::to_string(context->getMergeMutateExecutor()->getMaxThreads())},
-        {"background_move_pool_size", std::to_string(context->getMovesExecutor()->getMaxThreads())},
-        {"background_fetches_pool_size", std::to_string(context->getFetchesExecutor()->getMaxThreads())},
-        {"background_common_pool_size", std::to_string(context->getCommonExecutor()->getMaxThreads())},
-
         {"background_buffer_flush_schedule_pool_size", std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundBufferFlushSchedulePoolSize))},
         {"background_schedule_pool_size", std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundSchedulePoolSize))},
         {"background_message_broker_schedule_pool_size", std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize))},
         {"background_distributed_schedule_pool_size", std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundDistributedSchedulePoolSize))}
     };
+
+    if (context->areBackgroundExecutorsInitialized())
+    {
+        updated.insert({"background_pool_size", std::to_string(context->getMergeMutateExecutor()->getMaxThreads())});
+        updated.insert({"background_move_pool_size", std::to_string(context->getMovesExecutor()->getMaxThreads())});
+        updated.insert({"background_fetches_pool_size", std::to_string(context->getFetchesExecutor()->getMaxThreads())});
+        updated.insert({"background_common_pool_size", std::to_string(context->getCommonExecutor()->getMaxThreads())});
+    }
 
     const auto & config = context->getConfigRef();
     ServerSettings settings;

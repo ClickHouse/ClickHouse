@@ -612,7 +612,8 @@ Pipe ReadFromMergeTree::read(
     if (read_type == ReadType::ParallelReplicas)
         return readFromPoolParallelReplicas(std::move(parts_with_range), std::move(required_columns), std::move(pool_settings));
 
-    if (read_type == ReadType::Default && max_streams > 1)
+    /// Reading from default thread pool is beneficial for remote storage because of new prefetches.
+    if (read_type == ReadType::Default && (max_streams > 1 || checkAllPartsOnRemoteFS(parts_with_range)))
         return readFromPool(std::move(parts_with_range), std::move(required_columns), std::move(pool_settings));
 
     auto pipe = readInOrder(parts_with_range, required_columns, pool_settings, read_type, /*limit=*/ 0);
@@ -1024,7 +1025,7 @@ static void addMergingFinal(
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty());
+                            sort_description, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false);
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
@@ -1098,8 +1099,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// can use parallel select on such parts.
         bool no_merging_final = settings.do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-            parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
-            data.merging_params.is_deleted_column.empty();
+            parts_to_merge_ranges[range_index]->data_part->info.level > 0;
         Pipes pipes;
         {
             RangesInDataParts new_parts;
@@ -1824,7 +1824,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         chassert(!is_parallel_reading_from_replicas);
 
         if (output_each_partition_through_separate_port)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimisation isn't supposed to be used for queries with final");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimization isn't supposed to be used for queries with final");
 
         /// Add columns needed to calculate the sorting expression and the sign.
         for (const auto & column : metadata_for_reading->getColumnsRequiredForSortingKey())
@@ -1836,8 +1836,6 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             }
         }
 
-        if (!data.merging_params.is_deleted_column.empty() && !names.contains(data.merging_params.is_deleted_column))
-            column_names_to_read.push_back(data.merging_params.is_deleted_column);
         if (!data.merging_params.sign_column.empty() && !names.contains(data.merging_params.sign_column))
             column_names_to_read.push_back(data.merging_params.sign_column);
         if (!data.merging_params.version_column.empty() && !names.contains(data.merging_params.version_column))
@@ -2258,10 +2256,7 @@ size_t MergeTreeDataSelectAnalysisResult::marks() const
     if (std::holds_alternative<std::exception_ptr>(result))
         std::rethrow_exception(std::get<std::exception_ptr>(result));
 
-    const auto & index_stats = std::get<ReadFromMergeTree::AnalysisResult>(result).index_stats;
-    if (index_stats.empty())
-        return 0;
-    return index_stats.back().num_granules_after;
+    return std::get<ReadFromMergeTree::AnalysisResult>(result).selected_marks;
 }
 
 UInt64 MergeTreeDataSelectAnalysisResult::rows() const
@@ -2269,9 +2264,15 @@ UInt64 MergeTreeDataSelectAnalysisResult::rows() const
     if (std::holds_alternative<std::exception_ptr>(result))
         std::rethrow_exception(std::get<std::exception_ptr>(result));
 
-    const auto & index_stats = std::get<ReadFromMergeTree::AnalysisResult>(result).index_stats;
-    if (index_stats.empty())
-        return 0;
     return std::get<ReadFromMergeTree::AnalysisResult>(result).selected_rows;
 }
+
+const RangesInDataParts & MergeTreeDataSelectAnalysisResult::partsWithRanges() const
+{
+    if (std::holds_alternative<std::exception_ptr>(result))
+        std::rethrow_exception(std::get<std::exception_ptr>(result));
+
+    return std::get<ReadFromMergeTree::AnalysisResult>(result).parts_with_ranges;
+}
+
 }

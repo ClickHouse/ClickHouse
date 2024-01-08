@@ -26,9 +26,8 @@ String InterpreterShowSettingQuery::getRewrittenQuery()
 
 BlockIO InterpreterShowSettingQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true).second;
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 
 }
-

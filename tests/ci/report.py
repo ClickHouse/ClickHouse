@@ -10,8 +10,8 @@ import json
 import logging
 import os
 
+from build_download_helper import get_gh_api
 from ci_config import BuildConfig, CI_CONFIG
-from env_helper import get_job_id_url
 
 
 logger = logging.getLogger(__name__)
@@ -298,8 +298,10 @@ class BuildResult:
     version: str
     status: StatusType
     elapsed_seconds: int
-    job_name: str
-    _job_link: Optional[str] = None
+    job_api_url: str
+    _job_name: Optional[str] = None
+    _job_html_url: Optional[str] = None
+    _job_html_link: Optional[str] = None
     _grouped_urls: Optional[List[List[str]]] = None
 
     @property
@@ -387,11 +389,42 @@ class BuildResult:
 
     @property
     def job_link(self) -> str:
-        if self._job_link is not None:
-            return self._job_link
-        _, job_url = get_job_id_url(self.job_name)
-        self._job_link = f'<a href="{job_url}">{self.job_name}</a>'
-        return self._job_link
+        if self._job_html_link is not None:
+            return self._job_html_link
+        self._job_html_link = f'<a href="{self.job_html_url}">{self.job_name}</a>'
+        return self._job_html_link
+
+    @property
+    def job_html_url(self) -> str:
+        if self._job_html_url is not None:
+            return self._job_html_url
+        self._set_properties()
+        return self._job_html_url or ""
+
+    @property
+    def job_name(self) -> str:
+        if self._job_name is not None:
+            return self._job_name
+        self._set_properties()
+        return self._job_name or ""
+
+    @job_name.setter
+    def job_name(self, job_name: str) -> None:
+        self._job_name = job_name
+
+    def _set_properties(self) -> None:
+        if all(p is not None for p in (self._job_name, self._job_html_url)):
+            return
+        job_data = {}
+        # quick check @self.job_api_url is valid url before request. it's set to "missing" for dummy BuildResult
+        if "http" in self.job_api_url:
+            try:
+                job_data = get_gh_api(self.job_api_url).json()
+            except Exception:
+                pass
+        # job_name can be set manually
+        self._job_name = self._job_name or job_data.get("name", "unknown")
+        self._job_html_url = job_data.get("html_url", "")
 
     @staticmethod
     def get_report_name(name: str) -> Path:
@@ -416,7 +449,7 @@ class BuildResult:
             data.get("version", ""),
             data.get("status", ERROR),
             data.get("elapsed_seconds", 0),
-            data.get("job_name", ""),
+            data.get("job_api_url", ""),
         )
 
     @staticmethod
@@ -434,7 +467,7 @@ class BuildResult:
                     "version": self.version,
                     "status": self.status,
                     "elapsed_seconds": self.elapsed_seconds,
-                    "job_name": self.job_name,
+                    "job_api_url": self.job_api_url,
                 }
             ),
             encoding="utf-8",
@@ -706,7 +739,13 @@ def create_build_html_report(
                     )
             row.append(f"<td>{link_separator.join(links)}</td>")
 
-            row.append(f"<td>{build_result.comment}</td>")
+            comment = build_result.comment
+            if (
+                build_result.build_config is not None
+                and build_result.build_config.sparse_checkout
+            ):
+                comment += " (note: sparse checkout is used)"
+            row.append(f"<td>{comment}</td>")
 
             row.append("</tr>")
             rows.append("".join(row))

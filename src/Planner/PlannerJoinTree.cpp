@@ -126,8 +126,8 @@ bool shouldIgnoreQuotaAndLimits(const TableNode & table_node)
         return false;
     if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
     {
-        static const boost::container::flat_set<String> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
-        if (tables_ignoring_quota.count(storage_id.table_name))
+        static const boost::container::flat_set<std::string_view> tables_ignoring_quota{"quotas", "quota_limits", "quota_usage", "quotas_usage", "one"};
+        if (tables_ignoring_quota.contains(storage_id.table_name))
             return true;
     }
     return false;
@@ -441,7 +441,8 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
 
 FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
-    PlannerContextPtr & planner_context)
+    PlannerContextPtr & planner_context,
+    std::set<std::string> & used_row_policies)
 {
     auto storage_id = storage->getStorageID();
     const auto & query_context = planner_context->getQueryContext();
@@ -449,6 +450,12 @@ FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     if (!row_policy_filter || row_policy_filter->empty())
         return {};
+
+    for (const auto & row_policy : row_policy_filter->policies)
+    {
+        auto name = row_policy->getFullName().toString();
+        used_row_policies.emplace(std::move(name));
+    }
 
     return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context);
 }
@@ -478,7 +485,7 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
             settings.parallel_replica_offset,
             std::move(custom_key_ast),
             settings.parallel_replicas_custom_key_filter_type,
-            *storage,
+            storage->getInMemoryMetadataPtr()->columns,
             query_context);
 
     return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
@@ -586,6 +593,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     auto * union_node = table_expression->as<UnionNode>();
 
     QueryPlan query_plan;
+    std::set<std::string> used_row_policies;
 
     if (table_node || table_function_node)
     {
@@ -781,7 +789,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 };
 
-                auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context);
+                auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
                 add_filter(row_policy_filter_info, "Row-level security filter");
                 if (row_policy_filter_info.actions)
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info.actions);
@@ -940,7 +948,34 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
     }
 
-    return {std::move(query_plan), from_stage};
+    return JoinTreeQueryPlan{
+        .query_plan = std::move(query_plan),
+        .from_stage = from_stage,
+        .used_row_policies = std::move(used_row_policies),
+    };
+}
+
+void joinCastPlanColumnsToNullable(QueryPlan & plan_to_add_cast, PlannerContextPtr & planner_context, const FunctionOverloadResolverPtr & to_nullable_function)
+{
+    auto cast_actions_dag = std::make_shared<ActionsDAG>(plan_to_add_cast.getCurrentDataStream().header.getColumnsWithTypeAndName());
+
+    for (auto & output_node : cast_actions_dag->getOutputs())
+    {
+        if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output_node->result_name))
+        {
+            DataTypePtr type_to_check = output_node->result_type;
+            if (const auto * type_to_check_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type_to_check.get()))
+                type_to_check = type_to_check_low_cardinality->getDictionaryType();
+
+            if (type_to_check->canBeInsideNullable())
+                output_node = &cast_actions_dag->addFunction(to_nullable_function, {output_node}, output_node->result_name);
+        }
+    }
+
+    cast_actions_dag->projectInput();
+    auto cast_join_columns_step = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
+    cast_join_columns_step->setStepDescription("Cast JOIN columns to Nullable");
+    plan_to_add_cast.addStep(std::move(cast_join_columns_step));
 }
 
 JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_expression,
@@ -973,21 +1008,10 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     std::optional<bool> join_constant;
 
-    if (join_strictness == JoinStrictness::All)
+    if (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Semi  || join_strictness == JoinStrictness::Anti)
         join_constant = tryExtractConstantFromJoinNode(join_table_expression);
 
-    if (join_constant)
-    {
-        /** If there is JOIN with always true constant, we transform it to cross.
-          * If there is JOIN with always false constant, we do not process JOIN keys.
-          * It is expected by join algorithm to handle such case.
-          *
-          * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1;
-          */
-        if (*join_constant)
-            join_kind = JoinKind::Cross;
-    }
-    else if (join_node.isOnJoinExpression())
+    if (!join_constant && join_node.isOnJoinExpression())
     {
         join_clauses_and_actions = buildJoinClausesAndActions(left_plan_output_columns,
             right_plan_output_columns,
@@ -1067,51 +1091,38 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    bool join_use_nulls = settings.join_use_nulls;
-    auto to_nullable_function = FunctionFactory::instance().get("toNullable", query_context);
-
-    auto join_cast_plan_columns_to_nullable = [&](QueryPlan & plan_to_add_cast)
+    if (settings.join_use_nulls)
     {
-        auto cast_actions_dag = std::make_shared<ActionsDAG>(plan_to_add_cast.getCurrentDataStream().header.getColumnsWithTypeAndName());
-
-        for (auto & output_node : cast_actions_dag->getOutputs())
-        {
-            if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output_node->result_name))
-            {
-                DataTypePtr type_to_check = output_node->result_type;
-                if (const auto * type_to_check_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type_to_check.get()))
-                    type_to_check = type_to_check_low_cardinality->getDictionaryType();
-
-                if (type_to_check->canBeInsideNullable())
-                    output_node = &cast_actions_dag->addFunction(to_nullable_function, {output_node}, output_node->result_name);
-            }
-        }
-
-        cast_actions_dag->projectInput();
-        auto cast_join_columns_step = std::make_unique<ExpressionStep>(plan_to_add_cast.getCurrentDataStream(), std::move(cast_actions_dag));
-        cast_join_columns_step->setStepDescription("Cast JOIN columns to Nullable");
-        plan_to_add_cast.addStep(std::move(cast_join_columns_step));
-    };
-
-    if (join_use_nulls)
-    {
+        auto to_nullable_function = FunctionFactory::instance().get("toNullable", query_context);
         if (isFull(join_kind))
         {
-            join_cast_plan_columns_to_nullable(left_plan);
-            join_cast_plan_columns_to_nullable(right_plan);
+            joinCastPlanColumnsToNullable(left_plan, planner_context, to_nullable_function);
+            joinCastPlanColumnsToNullable(right_plan, planner_context, to_nullable_function);
         }
         else if (isLeft(join_kind))
         {
-            join_cast_plan_columns_to_nullable(right_plan);
+            joinCastPlanColumnsToNullable(right_plan, planner_context, to_nullable_function);
         }
         else if (isRight(join_kind))
         {
-            join_cast_plan_columns_to_nullable(left_plan);
+            joinCastPlanColumnsToNullable(left_plan, planner_context, to_nullable_function);
         }
     }
 
     auto table_join = std::make_shared<TableJoin>(settings, query_context->getGlobalTemporaryVolume());
     table_join->getTableJoin() = join_node.toASTTableJoin()->as<ASTTableJoin &>();
+
+    if (join_constant)
+    {
+        /** If there is JOIN with always true constant, we transform it to cross.
+          * If there is JOIN with always false constant, we do not process JOIN keys.
+          * It is expected by join algorithm to handle such case.
+          *
+          * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1;
+          */
+        if (*join_constant)
+            join_kind = JoinKind::Cross;
+    }
     table_join->getTableJoin().kind = join_kind;
 
     if (join_kind == JoinKind::Comma)
@@ -1300,7 +1311,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             return step_raw_ptr;
         };
 
-        if (join_algorithm->pipelineType() == JoinPipelineType::YShaped)
+        if (join_algorithm->pipelineType() == JoinPipelineType::YShaped && join_kind != JoinKind::Paste)
         {
             const auto & join_clause = table_join->getOnlyClause();
 
@@ -1399,7 +1410,23 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
     drop_unused_columns_after_join_transform_step->setStepDescription("DROP unused columns after JOIN");
     result_plan.addStep(std::move(drop_unused_columns_after_join_transform_step));
 
-    return {std::move(result_plan), QueryProcessingStage::FetchColumns};
+    for (const auto & right_join_tree_query_plan_row_policy : right_join_tree_query_plan.used_row_policies)
+        left_join_tree_query_plan.used_row_policies.insert(right_join_tree_query_plan_row_policy);
+
+    /// Collect all required actions dags in `left_join_tree_query_plan.actions_dags`
+    for (auto && action_dag : right_join_tree_query_plan.actions_dags)
+        left_join_tree_query_plan.actions_dags.emplace_back(action_dag);
+    if (join_clauses_and_actions.left_join_expressions_actions)
+        left_join_tree_query_plan.actions_dags.emplace_back(std::move(join_clauses_and_actions.left_join_expressions_actions));
+    if (join_clauses_and_actions.right_join_expressions_actions)
+        left_join_tree_query_plan.actions_dags.emplace_back(std::move(join_clauses_and_actions.right_join_expressions_actions));
+
+    return JoinTreeQueryPlan{
+        .query_plan = std::move(result_plan),
+        .from_stage = QueryProcessingStage::FetchColumns,
+        .used_row_policies = std::move(left_join_tree_query_plan.used_row_policies),
+        .actions_dags = std::move(left_join_tree_query_plan.actions_dags),
+    };
 }
 
 JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_join_table_expression,
@@ -1439,6 +1466,9 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     }
 
     array_join_action_dag->projectInput();
+
+    join_tree_query_plan.actions_dags.push_back(array_join_action_dag);
+
     auto array_join_actions = std::make_unique<ExpressionStep>(plan.getCurrentDataStream(), array_join_action_dag);
     array_join_actions->setStepDescription("ARRAY JOIN actions");
     plan.addStep(std::move(array_join_actions));
@@ -1477,7 +1507,12 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     array_join_step->setStepDescription("ARRAY JOIN");
     plan.addStep(std::move(array_join_step));
 
-    return {std::move(plan), QueryProcessingStage::FetchColumns};
+    return JoinTreeQueryPlan{
+        .query_plan = std::move(plan),
+        .from_stage = QueryProcessingStage::FetchColumns,
+        .used_row_policies = std::move(join_tree_query_plan.used_row_policies),
+        .actions_dags = std::move(join_tree_query_plan.actions_dags),
+    };
 }
 
 }

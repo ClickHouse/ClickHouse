@@ -39,6 +39,7 @@ namespace CurrentMetrics
     extern const Metric PendingAsyncInsert;
     extern const Metric AsynchronousInsertThreads;
     extern const Metric AsynchronousInsertThreadsActive;
+    extern const Metric AsynchronousInsertThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -85,7 +86,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     SipHash siphash;
 
     siphash.update(data_kind);
-    query->updateTreeHash(siphash);
+    query->updateTreeHash(siphash, /*ignore_aliases=*/ true);
 
     if (user_id)
     {
@@ -175,7 +176,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
     , pool_size(pool_size_)
     , flush_on_shutdown(flush_on_shutdown_)
     , queue_shards(pool_size)
-    , pool(CurrentMetrics::AsynchronousInsertThreads, CurrentMetrics::AsynchronousInsertThreadsActive, pool_size)
+    , pool(CurrentMetrics::AsynchronousInsertThreads, CurrentMetrics::AsynchronousInsertThreadsActive, CurrentMetrics::AsynchronousInsertThreadsScheduled, pool_size)
 {
     if (!pool_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "pool_size cannot be zero");

@@ -101,7 +101,7 @@ ORDER BY index_type, expression, column_name, seq_in_index;)", database, table, 
 
 BlockIO InterpreterShowIndexesQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true).second;
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 

@@ -4,7 +4,6 @@
 #include "config.h"
 
 #include <chrono>
-#include <filesystem>
 #include <string>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
@@ -330,6 +329,20 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.return_method_ = nuraft::raft_params::async_handler;
 
     nuraft::asio_service::options asio_opts{};
+
+    /// If asio worker threads fail in any way, NuRaft will stop to make any progress
+    /// For that reason we need to suppress out of memory exceptions in such threads
+    /// TODO: use `get_active_workers` to detect when we have no active workers to abort
+    asio_opts.worker_start_ = [](uint32_t /*worker_id*/)
+    {
+        LockMemoryExceptionInThread::addUniqueLock(VariableContext::Global);
+    };
+
+    asio_opts.worker_stop_ = [](uint32_t /*worker_id*/)
+    {
+        LockMemoryExceptionInThread::removeUniqueLock();
+    };
+
     if (state_manager->isSecure())
     {
 #if USE_SSL
@@ -617,6 +630,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     {
         const auto preprocess_logs = [&]
         {
+            keeper_context->local_logs_preprocessed = true;
             auto log_store = state_manager->load_log_store();
             if (last_log_idx_on_disk > 0 && last_log_idx_on_disk > state_machine->last_commit_index())
             {
@@ -642,7 +656,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             {
                 LOG_INFO(log, "All local log entries preprocessed");
             }
-            keeper_context->local_logs_preprocessed = true;
         };
 
         switch (type)
@@ -846,6 +859,10 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             initial_batch_committed = true;
             return nuraft::cb_func::ReturnCode::Ok;
         }
+        case nuraft::cb_func::PreAppendLogLeader:
+        {
+            return nuraft::cb_func::ReturnCode::ReturnNull;
+        }
         case nuraft::cb_func::PreAppendLogFollower:
         {
             const auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
@@ -870,36 +887,50 @@ std::vector<int64_t> KeeperServer::getDeadSessions()
     return state_machine->getDeadSessions();
 }
 
-bool KeeperServer::applyConfigUpdate(const ClusterUpdateAction & action)
+KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
+    const ClusterUpdateAction & action, bool last_command_was_leader_change)
 {
+    using enum ConfigUpdateState;
     std::lock_guard _{server_write_mutex};
 
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
         if (raft_instance->get_srv_config(add->id) != nullptr)
-            return true;
+            return Accepted;
 
         auto resp = raft_instance->add_srv(static_cast<nuraft::srv_config>(*add));
         resp->get();
-        return resp->get_accepted();
+        return resp->get_accepted() ? Accepted : Declined;
     }
     else if (const auto * remove = std::get_if<RemoveRaftServer>(&action))
     {
+        // This corner case is the most problematic. Issue follows: if we agree on a number
+        // of commands but don't commit them on leader, and then issue a leadership change via
+        // yield/request, leader can pause writes before all commits, therefore commands will be lost
+        // (leadership change is not synchronized with committing in NuRaft).
+        // However, waiting till some commands get _committed_ instead of _agreed_ is a hard task
+        // regarding current library design, and this brings lots of levels of complexity
+        // (see https://github.com/ClickHouse/ClickHouse/pull/53481 history). So, a compromise here
+        // is a timeout before issuing a leadership change with an ability to change if user knows they
+        // have a particularly slow network.
         if (remove->id == raft_instance->get_leader())
         {
+            if (!last_command_was_leader_change)
+                return WaitBeforeChangingLeader;
+
             if (isLeader())
                 raft_instance->yield_leadership();
             else
                 raft_instance->request_leadership();
-            return false;
+            return Declined;
         }
 
         if (raft_instance->get_srv_config(remove->id) == nullptr)
-            return true;
+            return Accepted;
 
         auto resp = raft_instance->remove_srv(remove->id);
         resp->get();
-        return resp->get_accepted();
+        return resp->get_accepted() ? Accepted : Declined;
     }
     else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
     {
@@ -908,10 +939,10 @@ bool KeeperServer::applyConfigUpdate(const ClusterUpdateAction & action)
                 "Attempt to apply {} but server is not present in Raft",
                 action);
         else if (ptr->get_priority() == update->priority)
-            return true;
+            return Accepted;
 
         raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
-        return true;
+        return Accepted;
     }
     UNREACHABLE();
 }

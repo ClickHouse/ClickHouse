@@ -3,6 +3,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/NullsAction.h>
 
 
 namespace DB
@@ -43,11 +44,13 @@ public:
     String window_name;
     ASTPtr window_definition;
 
+    NullsAction nulls_action = NullsAction::EMPTY;
+
     /// do not print empty parentheses if there are no args - compatibility with new AST for data types and engine names.
     bool no_empty_args = false;
 
     /// Specifies where this function-like expression is used.
-    enum class Kind
+    enum class Kind : UInt8
     {
         ORDINARY_FUNCTION,
         WINDOW_FUNCTION,
@@ -63,7 +66,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     ASTSelectWithUnionQuery * tryGetQueryArgument() const;
 

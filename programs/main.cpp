@@ -2,15 +2,12 @@
 #include <csetjmp>
 #include <unistd.h>
 
-#ifdef OS_LINUX
-#include <sys/mman.h>
-#endif
-
 #include <new>
 #include <iostream>
 #include <vector>
 #include <string>
 #include <tuple>
+#include <string_view>
 #include <utility> /// pair
 
 #include <fmt/format.h>
@@ -22,7 +19,6 @@
 #include <Common/IO.h>
 
 #include <base/phdr_cache.h>
-#include <base/scope_guard.h>
 
 
 /// Universal executable for various clickhouse applications
@@ -98,7 +94,7 @@ using MainFunc = int (*)(int, char**);
 #if !defined(FUZZING_MODE)
 
 /// Add an item here to register new application
-std::pair<const char *, MainFunc> clickhouse_applications[] =
+std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
 #if ENABLE_CLICKHOUSE_LOCAL
     {"local", mainEntryClickHouseLocal},
@@ -155,6 +151,18 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"hash-binary", mainEntryClickHouseHashBinary},
 #if ENABLE_CLICKHOUSE_DISKS
     {"disks", mainEntryClickHouseDisks},
+#endif
+};
+
+/// Add an item here to register a new short name
+std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
+{
+#if ENABLE_CLICKHOUSE_LOCAL
+    {"ch", "local"},
+    {"chl", "local"},
+#endif
+#if ENABLE_CLICKHOUSE_CLIENT
+    {"chc", "client"},
 #endif
 };
 
@@ -387,15 +395,21 @@ void checkHarmfulEnvironmentVariables(char ** argv)
 
 }
 
-bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
+bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
+    for (const auto & [alias, name] : clickhouse_short_names)
+        if (app_suffix == name
+            && !argv.empty() && (alias == argv[0] || endsWith(argv[0], "/" + std::string(alias))))
+            return true;
+
     /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
     if (argv.size() >= 2)
     {
         auto first_arg = argv.begin() + 1;
 
         /// 'clickhouse --client ...' and 'clickhouse client ...' are Ok
-        if (*first_arg == "--" + app_suffix || *first_arg == app_suffix)
+        if (*first_arg == app_suffix
+            || (std::string_view(*first_arg).starts_with("--") && std::string_view(*first_arg).substr(2) == app_suffix))
         {
             argv.erase(first_arg);
             return true;
@@ -403,7 +417,7 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
     }
 
     /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
-    std::string app_name = "clickhouse-" + app_suffix;
+    std::string app_name = "clickhouse-" + std::string(app_suffix);
     return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
 }
 

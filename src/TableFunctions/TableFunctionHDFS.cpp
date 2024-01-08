@@ -39,6 +39,12 @@ ColumnsDescription TableFunctionHDFS::getActualTableStructure(ContextPtr context
     return parseColumnsListFromString(structure, context);
 }
 
+std::unordered_set<String> TableFunctionHDFS::getVirtualsToCheckBeforeUsingStructureHint() const
+{
+    auto virtual_column_names = StorageHDFS::getVirtualColumnNames();
+    return {virtual_column_names.begin(), virtual_column_names.end()};
+}
+
 void registerTableFunctionHDFS(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionHDFS>();

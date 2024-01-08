@@ -53,6 +53,7 @@ namespace CurrentMetrics
 {
     extern const Metric MergeTreeDataSelectExecutorThreads;
     extern const Metric MergeTreeDataSelectExecutorThreadsActive;
+    extern const Metric MergeTreeDataSelectExecutorThreadsScheduled;
 }
 
 namespace DB
@@ -777,25 +778,13 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 {
     if (!filter_dag)
         return {};
-
     auto sample = data.getSampleBlockWithVirtualColumns();
-    std::unordered_set<const ActionsDAG::Node *> allowed_inputs;
-    for (const auto * input : filter_dag->getInputs())
-        if (sample.has(input->result_name))
-            allowed_inputs.insert(input);
-
-    if (allowed_inputs.empty())
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_dag->getOutputs().at(0), sample);
+    if (!dag)
         return {};
-
-    auto atoms = filter_dag->extractConjunctionAtoms(filter_dag->getOutputs().at(0));
-    atoms = ActionsDAG::filterNodesByAllowedInputs(std::move(atoms), allowed_inputs);
-    if (atoms.empty())
-        return {};
-
-    auto dag = ActionsDAG::buildFilterActionsDAG(atoms, {}, context);
 
     auto virtual_columns_block = data.getBlockWithVirtualPartColumns(parts, false /* one_part */);
-    VirtualColumnUtils::filterBlockWithQuery(dag, virtual_columns_block, context);
+    VirtualColumnUtils::filterBlockWithDAG(dag, virtual_columns_block, context);
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
 
@@ -828,8 +817,8 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
 }
 
 void MergeTreeDataSelectExecutor::filterPartsByPartition(
-    std::optional<PartitionPruner> & partition_pruner,
-    std::optional<KeyCondition> & minmax_idx_condition,
+    const std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<KeyCondition> & minmax_idx_condition,
     MergeTreeData::DataPartsVector & parts,
     std::vector<AlterConversionsPtr> & alter_conversions,
     const std::optional<std::unordered_set<String>> & part_values,
@@ -1075,6 +1064,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             ThreadPool pool(
                 CurrentMetrics::MergeTreeDataSelectExecutorThreads,
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsActive,
+                CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
                 num_threads);
 
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
@@ -1288,6 +1278,8 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     selectColumnNames(column_names_to_return, data, real_column_names, virt_column_names, sample_factor_column_queried);
 
     std::optional<ReadFromMergeTree::Indexes> indexes;
+    /// NOTE: We don't need alter_conversions because the returned analysis_result is only used for:
+    /// 1. estimate the number of rows to read; 2. projection reading, which doesn't have alter_conversions.
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         /*alter_conversions=*/ {},
@@ -1824,7 +1816,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     const std::optional<std::unordered_set<String>> & part_values,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
-    std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     PartFilterCounters & counters)
 {
@@ -1886,7 +1878,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
-    std::optional<PartitionPruner> & partition_pruner,
+    const std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context,
     PartFilterCounters & counters,

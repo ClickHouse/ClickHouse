@@ -1,20 +1,14 @@
 #include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/DateTimeTransforms.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <Functions/DateTimeTransforms.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
 #include <Common/DateLUT.h>
-#include <Common/typeid_cast.h>
 
 #include <array>
 #include <cmath>
@@ -23,7 +17,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -44,7 +39,6 @@ struct DateTraits32
 template <typename Traits>
 class FunctionFromDaysSinceYearZero : public IFunction
 {
-
 public:
     static constexpr auto name = Traits::name;
     using RawReturnType = typename Traits::ReturnDataType::FieldType;
@@ -58,9 +52,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{
-            {"days", &isNativeUInt<IDataType>, nullptr, "UInt*"}
-        };
+        FunctionArgumentDescriptors args{{"days", &isNativeInteger<IDataType>, nullptr, "Integer"}};
 
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -84,7 +76,8 @@ public:
             return false;
         };
 
-        const bool success = try_type(UInt8{}) || try_type(UInt16{}) || try_type(UInt32{}) || try_type(UInt64{});
+        const bool success = try_type(UInt8{}) || try_type(UInt16{}) || try_type(UInt32{}) || try_type(UInt64{})
+                                || try_type(Int8{}) || try_type(Int16{}) || try_type(Int32{}) || try_type(Int64{});
 
         if (!success)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
@@ -99,13 +92,14 @@ public:
         auto & dst_data = result_column.getData();
         dst_data.resize(rows_count);
 
-        using equivalent_integer = typename std::conditional_t<sizeof(T) == 4, UInt32, UInt64>;
-
         for (size_t i = 0; i < rows_count; ++i)
         {
-            auto raw_value = src_data[i];
-            auto value = static_cast<equivalent_integer>(raw_value);
-            dst_data[i] = static_cast<RawReturnType>(value - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
+            auto value = src_data[i];
+            if (value < 0)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected a non-negative integer, got: {}", std::to_string(value));
+            /// prevent potential signed integer overflows (aka. undefined behavior) with Date32 results
+            auto value_uint64 = static_cast<UInt64>(value); /// NOLINT(bugprone-signed-char-misuse,cert-str34-c)
+            dst_data[i] = static_cast<RawReturnType>(value_uint64 - ToDaysSinceYearZeroImpl::DAYS_BETWEEN_YEARS_0_AND_1970);
         }
     }
 };

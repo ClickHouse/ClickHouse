@@ -801,7 +801,7 @@ void StorageRabbitMQ::startup()
 }
 
 
-void StorageRabbitMQ::shutdown()
+void StorageRabbitMQ::shutdown(bool)
 {
     shutdown_called = true;
 

@@ -40,13 +40,15 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     {
         path = user_files_path / path;
     }
-    else if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
+
+    path = fs::absolute(path).lexically_normal();
+
+    if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Path must be inside user-files path: {}", user_files_path.string());
     }
 
-    path = fs::absolute(path).lexically_normal();
     if (!fs::exists(path))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
 }

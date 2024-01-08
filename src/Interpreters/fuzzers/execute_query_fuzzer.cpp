@@ -42,7 +42,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         static bool initialized = initialize();
         (void) initialized;
 
-        auto io = DB::executeQuery(input, context, true, QueryProcessingStage::Complete).second;
+        auto io = DB::executeQuery(input, context, QueryFlags{ .internal = true }, QueryProcessingStage::Complete).second;
 
         PullingPipelineExecutor executor(io.pipeline);
         Block res;

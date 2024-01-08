@@ -9,6 +9,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/logger_useful.h>
+#include <Parsers/formatAST.h>
 
 
 namespace DB

@@ -25,6 +25,7 @@ private:
         explicit Metadata(std::shared_ptr<S3QueueFilesMetadata> metadata_) : metadata(metadata_), ref_count(1) {}
 
         std::shared_ptr<S3QueueFilesMetadata> metadata;
+        /// TODO: the ref count should be kept in keeper, because of the case with distributed processing.
         size_t ref_count = 0;
     };
     using MetadataByPath = std::unordered_map<std::string, Metadata>;

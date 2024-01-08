@@ -1381,7 +1381,7 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:15:00
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 ```
 
-## toStartOfInterval(time_or_data, INTERVAL x unit \[, time_zone\])
+## toStartOfInterval(date_or_date_with_time, INTERVAL x unit \[, time_zone\])
 
 This function generalizes other `toStartOf*()` functions. For example,
 - `toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,
@@ -1808,6 +1808,8 @@ Alias: `dateTrunc`.
     - `month`
     - `quarter`
     - `year`
+
+    `unit` argument is case-insensitive.
 
 - `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). If not specified, the function uses the timezone of the `value` parameter. [String](../../sql-reference/data-types/string.md).
@@ -2533,13 +2535,14 @@ formatDateTime(Time, Format[, Timezone])
 Returns time and date values according to the determined format.
 
 **Replacement fields**
+
 Using replacement fields, you can define a pattern for the resulting string. “Example” column shows formatting result for `2018-01-02 22:33:44`.
 
-| Placeholder | Description                                             | Example    |
+| Placeholder | Description                                          | Example    |
 |----------|---------------------------------------------------------|------------|
 | %a       | abbreviated weekday name (Mon-Sun)                      | Mon        |
 | %b       | abbreviated month name (Jan-Dec)                        | Jan        |
-| %c       | month as an integer number (01-12)                      | 01         |
+| %c       | month as an integer number (01-12), see 'Note 3' below  | 01         |
 | %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
@@ -2553,8 +2556,8 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %i       | minute (00-59)                                          | 33         |
 | %I       | hour in 12h format (01-12)                              | 10         |
 | %j       | day of the year (001-366)                               | 002        |
-| %k       | hour in 24h format (00-23)                              | 22         |
-| %l       | hour in 12h format (01-12)                              | 09         |
+| %k       | hour in 24h format (00-23), see 'Note 3' below          | 14         |
+| %l       | hour in 12h format (01-12), see 'Note 3' below          | 09         |
 | %m       | month as an integer number (01-12)                      | 01         |
 | %M       | full month name (January-December), see 'Note 2' below  | January    |
 | %n       | new-line character (‘’)                                 |            |
@@ -2578,6 +2581,8 @@ Using replacement fields, you can define a pattern for the resulting string. “
 Note 1: In ClickHouse versions earlier than v23.4, `%f` prints a single zero (0) if the formatted value is a Date, Date32 or DateTime (which have no fractional seconds) or a DateTime64 with a precision of 0. The previous behavior can be restored using setting `formatdatetime_f_prints_single_zero = 1`.
 
 Note 2: In ClickHouse versions earlier than v23.4, `%M` prints the minute (00-59) instead of the full month name (January-December). The previous behavior can be restored using setting `formatdatetime_parsedatetime_m_is_month_name = 0`.
+
+Note 3: In ClickHouse versions earlier than v23.11, function `parseDateTime()` required leading zeros for formatters `%c` (month) and `%l`/`%k` (hour), e.g. `07`. In later versions, the leading zero may be omitted, e.g. `7`. The previous behavior can be restored using setting `parsedatetime_parse_without_leading_zeros = 0`. Note that function `formatDateTime()` by default still prints leading zeros for `%c` and `%l`/`%k` to not break existing use cases. This behavior can be changed by setting `formatdatetime_format_without_leading_zeros = 1`.
 
 **Example**
 
@@ -2766,9 +2771,11 @@ Result:
 
 ## fromUnixTimestamp
 
-Function converts Unix timestamp to a calendar date and a time of a day. When there is only a single argument of [Integer](../../sql-reference/data-types/int-uint.md) type, it acts in the same way as [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime) and return [DateTime](../../sql-reference/data-types/datetime.md) type.
+This function converts a Unix timestamp to a calendar date and a time of a day. 
 
-fromUnixTimestamp uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
+It can be called in two ways:
+
+When given a single argument of type [Integer](../../sql-reference/data-types/int-uint.md), it returns a value of type [DateTime](../../sql-reference/data-types/datetime.md), i.e. behaves like [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime).
 
 Alias: `FROM_UNIXTIME`.
 
@@ -2786,13 +2793,15 @@ Result:
 └──────────────────────────────┘
 ```
 
-When there are two or three arguments, the first an [Integer](../../sql-reference/data-types/int-uint.md), [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md), the second a constant format string and the third an optional constant time zone string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
+When given two or three arguments where the first argument is a value of type [Integer](../../sql-reference/data-types/int-uint.md), [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [String](../../sql-reference/data-types/string.md#string), i.e. it behaves like [formatDateTime](#formatdatetime). In this case, [MySQL's datetime format style](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format) is used.
 
-For example:
+**Example:**
 
 ```sql
 SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 ```
+
+Result:
 
 ```text
 ┌─DateTime────────────┐
@@ -2806,19 +2815,20 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 
 ## fromUnixTimestampInJodaSyntax
 
-Similar to fromUnixTimestamp, except that it formats time in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
+Same as [fromUnixTimestamp](#fromUnixTimestamp) but when called in the second way (two or three arguments), the formatting is performed using [Joda style](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL style.
 
 **Example:**
 
 ``` sql
-SELECT fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC');
+SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') AS DateTime;
 ```
 
 Result:
+
 ```
-┌─fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC')────┐
-│ 2022-11-30 10:41:12                                                        │
-└────────────────────────────────────────────────────────────────────────────┘
+┌─DateTime────────────┐
+│ 2009-02-11 06:42:23 │
+└─────────────────────┘
 ```
 
 ## toModifiedJulianDay
