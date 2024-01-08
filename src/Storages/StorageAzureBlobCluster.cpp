@@ -69,11 +69,11 @@ void StorageAzureBlobCluster::addColumnsStructureToQuery(ASTPtr & query, const S
     TableFunctionAzureBlobStorageCluster::addColumnsStructureToArguments(expression_list->children, structure, context);
 }
 
-RemoteQueryExecutor::Extension StorageAzureBlobCluster::getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const
+RemoteQueryExecutor::Extension StorageAzureBlobCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
     auto iterator = std::make_shared<StorageAzureBlobSource::GlobIterator>(
         object_storage.get(), configuration.container, configuration.blob_path,
-        query, virtual_columns, context, nullptr);
+        predicate, virtual_columns, context, nullptr);
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String{ return iterator->next().relative_path; });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
