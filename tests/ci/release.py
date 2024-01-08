@@ -17,12 +17,11 @@ import json
 import logging
 import subprocess
 
-from git_helper import commit, release_branch
+from git_helper import Git, commit, release_branch
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     GENERATED_CONTRIBUTORS,
     ClickHouseVersion,
-    Git,
     VersionType,
     get_abs_path,
     get_version_from_repo,
