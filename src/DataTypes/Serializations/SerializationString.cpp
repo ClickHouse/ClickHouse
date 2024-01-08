@@ -381,7 +381,7 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
             str_value = "false";
         }
 
-        read(column, [&](ColumnString::Chars & data) { data.insert(str_value.begin(), str_value.end()); });
+        read<void>(column, [&](ColumnString::Chars & data) { data.insert(str_value.begin(), str_value.end()); });
     }
     else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
@@ -405,6 +405,26 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
 
     if (settings.json.read_arrays_as_strings && !istr.eof() && *istr.position() == '[')
         return read<bool>(column, [&](ColumnString::Chars & data) { return readJSONArrayInto<ColumnString::Chars, bool>(data, istr); });
+
+    if (settings.json.read_bools_as_strings && !istr.eof() && (*istr.position() == 't' || *istr.position() == 'f'))
+    {
+        String str_value;
+        if (*istr.position() == 't')
+        {
+            if (!checkString("true", istr))
+                return false;
+            str_value = "true";
+        }
+        else if (*istr.position() == 'f')
+        {
+            if (!checkString("false", istr))
+                return false;
+            str_value = "false";
+        }
+
+        read<void>(column, [&](ColumnString::Chars & data) { data.insert(str_value.begin(), str_value.end()); });
+        return true;
+    }
 
     if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
