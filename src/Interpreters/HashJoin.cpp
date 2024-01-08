@@ -243,6 +243,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
     , right_sample_block(right_sample_block_)
+    , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(&Poco::Logger::get("HashJoin"))
 {
@@ -1690,7 +1691,7 @@ Block HashJoin::joinBlockImpl(
 
     bool has_required_right_keys = (required_right_keys.columns() != 0);
     added_columns.need_filter = join_features.need_filter || has_required_right_keys;
-    added_columns.max_joined_block_rows = table_join->maxJoinedBlockRows();
+    added_columns.max_joined_block_rows = max_joined_block_rows;
     if (!added_columns.max_joined_block_rows)
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
     else
@@ -1771,7 +1772,6 @@ Block HashJoin::joinBlockImpl(
 
 void HashJoin::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const
 {
-    size_t max_joined_block_rows = table_join->maxJoinedBlockRows();
     size_t start_left_row = 0;
     size_t start_right_block = 0;
     if (not_processed)
