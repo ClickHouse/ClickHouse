@@ -9,7 +9,6 @@
 #include <fmt/format.h>
 
 
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;

@@ -7,7 +7,6 @@
 #include <Common/re2.h>
 
 
-
 namespace DB
 {
 
