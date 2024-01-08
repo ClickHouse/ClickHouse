@@ -166,8 +166,10 @@ void ReplaceDistributedTableNameVisitor::enter(ASTTableIdentifier & table_ident,
     if (auto * distributed_table = dynamic_cast<StorageDistributed *>(table.get()))
     {
         /// 1. Initialize scope
+
+        /// For example self join
         if (std::find(scope->tables.begin(), scope->tables.end(), table_ident.getTableId()) != scope->tables.end())
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "duplicated table {}", table_ident.shortName());
+            return;
 
         scope->tables.push_back(table_ident.getTableId());
         auto database_name = distributed_table->getRemoteDatabaseName();
