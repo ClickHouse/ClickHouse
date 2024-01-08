@@ -197,7 +197,7 @@ class Release:
         if self.release_type == self.NEW:
             with self._checkout(self.release_commit, True):
                 # Checkout to the commit, it will provide the correct current version
-                with self.testing():
+                with self.new_release():
                     with self.create_release_branch():
                         logging.info(
                             "Publishing release %s from commit %s is done",
@@ -207,7 +207,7 @@ class Release:
 
         elif self.release_type == self.PATCH:
             with self._checkout(self.release_commit, True):
-                with self.stable():
+                with self.patch_release():
                     logging.info(
                         "Publishing release %s from commit %s is done",
                         self.release_version.describe,
@@ -325,7 +325,7 @@ class Release:
                     yield
 
     @contextmanager
-    def stable(self):
+    def patch_release(self):
         self.check_no_tags_after()
         self.read_version()
         version_type = self.get_stable_release_type()
@@ -351,14 +351,14 @@ class Release:
                     yield
 
     @contextmanager
-    def testing(self):
+    def new_release(self):
         # Create branch for a version bump
         self.read_version()
         self.version = self.version.update(self.bump_part)
         helper_branch = f"{self.version.major}.{self.version.minor}-prepare"
         with self._create_branch(helper_branch, self.release_commit):
             with self._checkout(helper_branch, True):
-                with self._bump_testing_version(helper_branch):
+                with self._bump_version_in_master(helper_branch):
                     yield
 
     @property
@@ -428,7 +428,7 @@ class Release:
                         yield
 
     @contextmanager
-    def _bump_testing_version(self, helper_branch: str) -> Iterator[None]:
+    def _bump_version_in_master(self, helper_branch: str) -> Iterator[None]:
         self.read_version()
         self.version = self.version.update(self.bump_part)
         self.version.with_description(VersionType.TESTING)
@@ -443,7 +443,7 @@ class Release:
                 "--label 'do not test' --assignee @me",
                 dry_run=self.dry_run,
             )
-            # Here the testing part is done
+            # Here the new release part is done
             yield
 
     @contextmanager
