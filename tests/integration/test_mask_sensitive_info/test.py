@@ -127,6 +127,47 @@ def check_secrets_for_tables(test_cases, password):
             )
 
 
+def test_backup_table():
+    password = new_password()
+
+    setup_queries = [
+        "CREATE TABLE backup_test (x int) ENGINE = MergeTree ORDER BY x",
+        "INSERT INTO backup_test SELECT * FROM numbers(10)"
+    ]
+
+    endpoints_with_credentials = [
+        (
+            f"S3('http://minio1:9001/root/data/backup_test_base', 'minio', '{password}')",
+            f"S3('http://minio1:9001/root/data/backup_test_incremental', 'minio', '{password}')",
+        )
+    ]
+
+    for query in setup_queries:
+        node.query_and_get_answer_with_error(query)
+
+    # Actually need to make two backups to have base_backup
+    def make_test_case(endpoint_specs):
+        # Run ASYNC so it returns the backup id
+        return (
+            f"BACKUP TABLE backup_test TO {endpoint_specs[0]} ASYNC",
+            f"BACKUP TABLE backup_test TO {endpoint_specs[1]} SETTINGS async=1, base_backup={endpoint_specs[0]}"
+        )
+
+    test_cases = [make_test_case(endpoint_spec) for endpoint_spec in endpoints_with_credentials]
+    for base_query, inc_query in test_cases:
+        node.query_and_get_answer_with_error(base_query)[0]
+
+        inc_backup_query_output = node.query_and_get_answer_with_error(inc_query)[0]
+        inc_backup_id = TSV.toMat(inc_backup_query_output)[0][0]
+        names_in_system_backups_output, _ = node.query_and_get_answer_with_error(
+            f"SELECT base_backup_name, name FROM system.backups where id = '{inc_backup_id}'"
+        )
+
+        base_backup_name, name = TSV.toMat(names_in_system_backups_output)[0]
+
+        assert password not in base_backup_name
+        assert password not in name
+
 def test_create_table():
     password = new_password()
 
