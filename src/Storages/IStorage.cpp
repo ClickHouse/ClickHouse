@@ -16,7 +16,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Streaming/SubscribersNotifierProcessor.h>
+#include <Processors/Sinks/SinkToSubscribers.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/Estimator.h>
 #include <Backups/RestorerFromBackup.h>
@@ -235,10 +235,8 @@ Chain IStorage::write(const ASTPtr & query, const StorageMetadataPtr & metadata_
 
     if (!chain.empty() && context && context->getSettingsRef().allow_experimental_streaming)
     {
-        auto subscribers_notifier
-            = std::make_shared<SubscribersNotifierProcessor>(chain.getOutputHeader(), subscription_manager);
-
-        chain.addSink(std::move(subscribers_notifier));
+        auto sink_to_subscribers = std::make_shared<SinkToSubscribers>(chain.getOutputHeader(), subscription_manager);
+        chain.addSink(std::move(sink_to_subscribers));
     }
 
     return chain;
