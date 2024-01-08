@@ -419,9 +419,9 @@ find $ROOT_PATH/tests/queries/1_stateful -name '*.sql' -or -name '*.sh' | grep -
 
 # Check for bad punctuation: whitespace before comma.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number '\w ,' | grep -v 'bad punctuation is ok here' && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
-#
-# Disallow usage of std::regex (too bloated and slow). Please use re2 instead.
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number 'std::regex' || echo "^ std::regex must not be used, use re2 instead."
+
+# Check usage of std::regex which is too bloated and slow.
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number 'std::regex' | grep -P '.' && echo "^ Please use re2 instead of std::regex"
 
 # Cyrillic characters hiding inside Latin.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number '[a-zA-Z][а-яА-ЯёЁ]|[а-яА-ЯёЁ][a-zA-Z]' && echo "^ Cyrillic characters found in unexpected place."
