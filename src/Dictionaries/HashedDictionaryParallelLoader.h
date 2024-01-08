@@ -2,6 +2,7 @@
 
 #include <Dictionaries/IDictionary.h>
 #include <Common/CurrentThread.h>
+#include <Common/iota.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
@@ -53,7 +54,7 @@ public:
         LOG_TRACE(dictionary.log, "Will load the dictionary using {} threads (with {} backlog)", shards, backlog);
 
         shards_slots.resize(shards);
-        std::iota(shards_slots.begin(), shards_slots.end(), 0);
+        iota(shards_slots.data(), shards_slots.size(), UInt64(0));
 
         for (size_t shard = 0; shard < shards; ++shard)
         {

@@ -99,21 +99,38 @@ std::string DataTypeTuple::doGetPrettyName(size_t indent) const
 {
     size_t size = elems.size();
     WriteBufferFromOwnString s;
-    s << "Tuple(\n";
 
-    for (size_t i = 0; i != size; ++i)
+    /// If the Tuple is named, we will output it in multiple lines with indentation.
+    if (have_explicit_names)
     {
-        if (i != 0)
-            s << ",\n";
+        s << "Tuple(\n";
 
-        s << fourSpaceIndent(indent + 1);
-        if (have_explicit_names)
-            s << backQuoteIfNeed(names[i]) << ' ';
+        for (size_t i = 0; i != size; ++i)
+        {
+            if (i != 0)
+                s << ",\n";
 
-        s << elems[i]->getPrettyName(indent + 1);
+            s << fourSpaceIndent(indent + 1)
+                << backQuoteIfNeed(names[i]) << ' '
+                << elems[i]->getPrettyName(indent + 1);
+        }
+
+        s << ')';
+    }
+    else
+    {
+        s << "Tuple(";
+
+        for (size_t i = 0; i != size; ++i)
+        {
+            if (i != 0)
+                s << ", ";
+            s << elems[i]->getPrettyName(indent);
+        }
+
+        s << ')';
     }
 
-    s << '\n' << fourSpaceIndent(indent) << ')';
     return s.str();
 }
 

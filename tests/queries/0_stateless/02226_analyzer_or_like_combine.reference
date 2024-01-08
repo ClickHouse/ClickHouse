@@ -11,7 +11,7 @@ QUERY id: 0
           LIST id: 3, nodes: 1
             CONSTANT id: 4, constant_value: \'Привет, World\', constant_value_type: String
   JOIN TREE
-    TABLE id: 5, table_name: system.one
+    TABLE id: 5, alias: __table1, table_name: system.one
   WHERE
     FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
       ARGUMENTS
@@ -54,7 +54,7 @@ QUERY id: 0
           LIST id: 3, nodes: 1
             CONSTANT id: 4, constant_value: \'Привет, World\', constant_value_type: String
   JOIN TREE
-    TABLE id: 5, table_name: system.one
+    TABLE id: 5, alias: __table1, table_name: system.one
   WHERE
     FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
       ARGUMENTS

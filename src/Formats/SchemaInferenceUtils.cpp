@@ -377,6 +377,22 @@ namespace
         type_indexes.erase(TypeIndex::UInt8);
     }
 
+    /// If we have Bool and String types convert all numbers to String.
+    /// It's applied only when setting input_format_json_read_bools_as_strings is enabled.
+    void transformJSONBoolsAndStringsToString(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    {
+        if (!type_indexes.contains(TypeIndex::String) || !type_indexes.contains(TypeIndex::UInt8))
+            return;
+
+        for (auto & type : data_types)
+        {
+            if (isBool(type))
+                type = std::make_shared<DataTypeString>();
+        }
+
+        type_indexes.erase(TypeIndex::UInt8);
+    }
+
     /// If we have type Nothing/Nullable(Nothing) and some other non Nothing types,
     /// convert all Nothing/Nullable(Nothing) types to the first non Nothing.
     /// For example, when we have [Nothing, Array(Int64)] it will convert it to [Array(Int64), Array(Int64)]
@@ -627,6 +643,10 @@ namespace
             /// Convert Bool to number (Int64/Float64) if needed.
             if (settings.json.read_bools_as_numbers)
                 transformBoolsAndNumbersToNumbers(data_types, type_indexes);
+
+            /// Convert Bool to String if needed.
+            if (settings.json.read_bools_as_strings)
+                transformJSONBoolsAndStringsToString(data_types, type_indexes);
 
             if (settings.json.try_infer_objects_as_tuples)
                 mergeJSONPaths(data_types, type_indexes, settings, json_info);
