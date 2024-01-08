@@ -42,3 +42,15 @@ def test_connect_with_password(start_cluster):
         msg="Wrong nodes count in cluster",
         query_params={"password": "passwordAbc"},
     )
+
+    result = nodes["node0"].query(
+        "SELECT sum(number) FROM clusterAllReplicas('test_auto_cluster_with_pwd', numbers(3)) GROUP BY hostname()",
+        password="passwordAbc",
+    )
+    assert result == "3\n3\n", result
+
+    result = nodes["node0"].query_and_get_error(
+        "SELECT sum(number) FROM clusterAllReplicas('test_auto_cluster_with_wrong_pwd', numbers(3)) GROUP BY hostname()",
+        password="passwordAbc",
+    )
+    assert "Authentication failed" in result, result

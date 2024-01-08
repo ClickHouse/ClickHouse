@@ -9,6 +9,13 @@
                 <password>password123</password>
             </discovery>
         </test_auto_cluster_with_pwd>
+        <test_auto_cluster_with_wrong_pwd>
+            <discovery>
+                <path>/clickhouse/discovery/test_auto_cluster_with_wrong_pwd</path>
+                <user>user1</user>
+                <password>wrongpass1234</password>
+            </discovery>
+        </test_auto_cluster_with_wrong_pwd>
     </remote_servers>
 
 </clickhouse>
