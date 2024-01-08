@@ -17,6 +17,8 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(ASTPtr & ast, const Data & 
  * `sum(column)` and `literal * count(column)`.
  *  sum(column + literal)  ->  sum(column) + literal * count(column)
  *  sum(literal + column)  ->  sum(column) + literal * count(column)
+ *  sum(column - literal)  ->  sum(column) - literal * count(column)
+ *  sum(literal - column)  ->  sum(column) - literal * count(column)
  */
 void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & function, ASTPtr & ast, const Data & data)
 {
@@ -30,14 +32,16 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
 
     const auto * nested_func = function.arguments->children[0]->as<ASTFunction>();
 
-    if (!nested_func || !nested_func_supported.contains(Poco::toLower(nested_func->name))|| nested_func->arguments->children.size() != 2)
+    if (!nested_func || !nested_func_supported.contains(Poco::toLower(nested_func->name)) || nested_func->arguments->children.size() != 2)
         return;
 
     size_t column_id = nested_func->arguments->children.size();
 
     for (size_t i = 0; i < nested_func->arguments->children.size(); i++)
+    {
         if (nested_func->arguments->children[i]->as<ASTIdentifier>())
             column_id = i;
+    }
 
     if (column_id == nested_func->arguments->children.size())
         return;

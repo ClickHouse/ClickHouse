@@ -754,10 +754,11 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
                 tables_with_columns, result.storage_snapshot->metadata, result.storage);
     }
 
+    /// Rewrite sum(column +/- literal) function with sum(column) +/- literal * count(column).
+    rewriteSumFunctionWithSumAndCount(query, tables_with_columns);
+
     /// Rewrite date filters to avoid the calls of converters such as toYear, toYYYYMM, etc.
     optimizeDateFilters(select_query, tables_with_columns, context);
-
-    rewriteSumFunctionWithSumAndCount(query, tables_with_columns);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);
