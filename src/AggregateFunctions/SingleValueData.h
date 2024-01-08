@@ -8,7 +8,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNullable.h> /// TODO: Remove
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <base/StringRef.h>
@@ -81,7 +81,7 @@ struct SingleValueDataBase
 
 /// For numeric values.
 template <typename T>
-struct SingleValueDataFixed final : public SingleValueDataBase
+struct SingleValueDataFixed : public SingleValueDataBase
 {
     using Self = SingleValueDataFixed;
     using ColVecType = ColumnVectorOrDecimal<T>;
@@ -296,6 +296,7 @@ public:
     bool isEqualTo(const IColumn & column, size_t row_num) const override;
     bool isEqualTo(const Self & to) const;
     void set(const IColumn & column, size_t row_num, Arena * arena) override;
+    void set(const Self & to, Arena * arena);
 
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfSmaller(const Self & to, Arena * arena);
@@ -353,6 +354,8 @@ public:
     bool isEqualTo(const Self & to) const { return has() && to.value == value; }
 
     void set(const IColumn & column, size_t row_num, Arena *) override { column.get(row_num, value); }
+
+    void set(const Self & to, Arena *) { value = to.value; }
 
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override
     {
@@ -425,76 +428,6 @@ public:
     static bool allocatesMemoryInArena() { return false; }
 };
 
-
-/** The aggregate function 'singleValueOrNull' is used to implement subquery operators,
-  * such as x = ALL (SELECT ...)
-  * It checks if there is only one unique non-NULL value in the data.
-  * If there is only one unique value - returns it.
-  * If there are zero or at least two distinct values - returns NULL.
-  */
-template <typename Data>
-struct AggregateFunctionSingleValueOrNullData : Data
-{
-    using Self = AggregateFunctionSingleValueOrNullData;
-
-    static constexpr bool result_is_nullable = true;
-
-    bool first_value = true;
-    bool is_null = false;
-
-    void changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
-    {
-        if (first_value)
-        {
-            first_value = false;
-            this->change(column, row_num, arena);
-        }
-        else if (!this->isEqualTo(column, row_num))
-        {
-            is_null = true;
-        }
-    }
-
-    void changeIfBetter(const Self & to, Arena * arena)
-    {
-        if (!to.has())
-            return;
-
-        if (first_value && !to.first_value)
-        {
-            first_value = false;
-            this->change(to, arena);
-        }
-        else if (!this->isEqualTo(to))
-        {
-            is_null = true;
-        }
-    }
-
-    void addManyDefaults(const IColumn & column, size_t /*length*/, Arena * arena) { this->changeIfBetter(column, 0, arena); }
-
-    void insertResultInto(IColumn & to) const
-    {
-        if (is_null || first_value)
-        {
-            to.insertDefault();
-        }
-        else
-        {
-            ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
-            col.getNullMapColumn().insertDefault();
-            this->Data::insertResultInto(col.getNestedColumn());
-        }
-    }
-
-    static const char * name() { return "singleValueOrNull"; }
-
-#if USE_EMBEDDED_COMPILER
-
-    static constexpr bool is_compilable = false;
-
-#endif
-};
 
 /** Implement 'heavy hitters' algorithm.
   * Selects most frequent value if its frequency is more than 50% in each thread of execution.

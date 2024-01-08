@@ -39,6 +39,33 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
     return new AggregateFunctionTemplate<SingleValueDataGeneric>(argument_type);
 }
 
+/// Functions that inherit from SingleValueData*
+/// singleValueOrNull
+template <template <typename> class AggregateFunctionTemplate, template <typename> class ChildType>
+static IAggregateFunction *
+createAggregateFunctionSingleValueDerived(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+{
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
+
+    const DataTypePtr & argument_type = argument_types[0];
+    WhichDataType which(argument_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) \
+        return new AggregateFunctionTemplate<ChildType<SingleValueDataFixed<TYPE>>>(argument_type); /// NOLINT
+    FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+
+    if (which.idx == TypeIndex::Date)
+        return new AggregateFunctionTemplate<ChildType<SingleValueDataFixed<DataTypeDate::FieldType>>>(argument_type);
+    if (which.idx == TypeIndex::DateTime)
+        return new AggregateFunctionTemplate<ChildType<SingleValueDataFixed<DataTypeDateTime::FieldType>>>(argument_type);
+    if (which.idx == TypeIndex::String)
+        return new AggregateFunctionTemplate<ChildType<SingleValueDataString>>(argument_type);
+
+    return new AggregateFunctionTemplate<ChildType<SingleValueDataGeneric>>(argument_type);
+}
+
 ///// argMin, argMax
 //template <template <typename> class MinMaxData, typename ResData>
 //static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const DataTypePtr & res_type, const DataTypePtr & val_type)

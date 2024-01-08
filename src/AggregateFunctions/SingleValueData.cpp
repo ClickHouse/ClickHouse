@@ -425,6 +425,12 @@ void SingleValueDataString::set(const IColumn & column, size_t row_num, Arena * 
     changeImpl(StringValueCompatibility::getDataAtWithTerminatingZero(assert_cast<const ColumnString &>(column), row_num), arena);
 }
 
+void SingleValueDataString::set(const Self & to, Arena * arena)
+{
+    changeImpl(to.getStringRef(), arena);
+}
+
+
 bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
 {
     if (!has()
