@@ -1308,6 +1308,9 @@ class TestCase:
         client = args.testcase_client
         start_time = args.testcase_start_time
         database = args.testcase_database
+        timeout = args.timeout
+        if fuzz and stop_time is not None:
+            timeout = min(timeout, stop_time - start_time.timestamp())
 
         # This is for .sh tests
         os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
@@ -1362,7 +1365,7 @@ class TestCase:
 
         while (
             datetime.now() - start_time
-        ).total_seconds() < args.timeout and proc.poll() is None:
+        ).total_seconds() < timeout and proc.poll() is None:
             sleep(0.01)
 
         debug_log = ""
