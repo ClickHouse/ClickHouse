@@ -71,17 +71,17 @@ std::string DataTypeVariant::doGetPrettyName(size_t indent) const
 {
     size_t size = variants.size();
     WriteBufferFromOwnString s;
-    s << "Variant(\n";
+    s << "Variant(";
 
     for (size_t i = 0; i != size; ++i)
     {
         if (i != 0)
-            s << ",\n";
+            s << ", ";
 
-        s << fourSpaceIndent(indent + 1) << variants[i]->getPrettyName(indent + 1);
+        s << variants[i]->getPrettyName(indent);
     }
 
-    s << '\n' << fourSpaceIndent(indent) << ')';
+    s << ')';
     return s.str();
 }
 
