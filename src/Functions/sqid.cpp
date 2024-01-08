@@ -5,6 +5,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -91,6 +92,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSqidDecode>(); }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -112,15 +114,21 @@ public:
         auto & res_offsets_data = col_res_offsets->getData();
         res_offsets_data.reserve(input_rows_count);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        const auto & src = arguments[0];
+        const auto & src_column = *src.column;
+
+        if (const auto * col_non_const = typeid_cast<const ColumnString *>(&src_column))
         {
-            const ColumnWithTypeAndName & arg = arguments[0];
-            ColumnPtr current_column = arg.column;
-            std::string_view sqid = current_column->getDataAt(i).toView();
-            std::vector<UInt64> integers = sqids.decode(sqid);
-            res_nested_data.insert(integers.begin(), integers.end());
-            res_offsets_data.push_back(integers.size());
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                std::string_view sqid = col_non_const->getDataAt(i).toView();
+                std::vector<UInt64> integers = sqids.decode(sqid);
+                res_nested_data.insert(integers.begin(), integers.end());
+                res_offsets_data.push_back(integers.size());
+            }
         }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal argument for function {}", name);
 
         return ColumnArray::create(std::move(col_res_nested), std::move(col_res_offsets));
     }
