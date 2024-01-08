@@ -11,7 +11,7 @@ class GeneratorWithTemplate : public DB::IObjectStorageKeysGenerator
 public:
     explicit GeneratorWithTemplate(String key_template_)
     : key_template(std::move(key_template_))
-    , re_gen(key_template, /*logging*/ false)
+    , re_gen(key_template)
     {
     }
     DB::ObjectStorageKey generate(const String &) const override

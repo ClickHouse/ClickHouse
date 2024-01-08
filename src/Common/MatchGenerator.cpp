@@ -24,7 +24,6 @@
 #include "MatchGenerator.h"
 
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 #include <map>
 #include <functional>
@@ -330,13 +329,6 @@ private:
 
 
 public:
-    explicit RandomStringPrepareWalker(bool logging)
-        : logger(logging ? &Poco::Logger::get("GeneratorCombiner") : nullptr)
-    {
-        if (logger)
-            LOG_DEBUG(logger, "GeneratorCombiner");
-    }
-
     std::function<String()> getGenerator()
     {
         if (root == nullptr)
@@ -374,16 +366,11 @@ private:
 
     Regexp * ShortVisit(Regexp* /*re*/, Regexp * /*parent_arg*/) override
     {
-        if (logger)
-            LOG_DEBUG(logger, "ShortVisit");
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "ShortVisit should not be called");
     }
 
     Regexp * PreVisit(Regexp * re, Regexp * parent_arg, bool* /*stop*/) override /*noexcept*/
     {
-        if (logger)
-            LOG_DEBUG(logger, "GeneratorCombiner PreVisit node {}", magic_enum::enum_name(re->op()));
-
         if (parent_arg == nullptr)
         {
             chassert(root == nullptr);
@@ -397,10 +384,6 @@ private:
     Regexp * PostVisit(Regexp * re, Regexp * /*parent_arg*/, Regexp * pre_arg,
                        Regexp ** child_args, int nchild_args) override /*noexcept*/
     {
-        if (logger)
-            LOG_DEBUG(logger, "GeneratorCombiner PostVisit node {}",
-                      magic_enum::enum_name(re->op()));
-
         switch (re->op())
         {
             case kRegexpConcat: // Matches concatenation of sub_[0..nsub-1].
@@ -456,8 +439,6 @@ private:
         return pre_arg;
     }
 
-    Poco::Logger * logger = nullptr;
-
     Regexp * root = nullptr;
     Generators generators;
 };
@@ -473,7 +454,7 @@ void RandomStringGeneratorByRegexp::RegexpPtrDeleter::operator() (re2::Regexp * 
     re->Decref();
 }
 
-RandomStringGeneratorByRegexp::RandomStringGeneratorByRegexp(const String & re_str, bool logging)
+RandomStringGeneratorByRegexp::RandomStringGeneratorByRegexp(const String & re_str)
 {
     re2::RE2::Options options;
     options.set_case_sensitive(true);
@@ -490,7 +471,7 @@ RandomStringGeneratorByRegexp::RandomStringGeneratorByRegexp(const String & re_s
 
     regexp.reset(regexp->Simplify());
 
-    auto walker = re2::RandomStringPrepareWalker(logging);
+    auto walker = re2::RandomStringPrepareWalker();
     walker.Walk(regexp.get(), {});
     generatorFunc = walker.getGenerator();
 
