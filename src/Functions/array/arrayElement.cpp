@@ -361,12 +361,9 @@ struct ArrayElementArrayNumImpl
 
                 ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[j-1];
                 ColumnArray::Offset nested_array_pos = nested_offsets[j-1];
-                for (size_t k = 0; k < nested_array_size; ++k)
-                {
-                    result_data[current_offset + k] = data[nested_array_pos + k];
-                    if constexpr (nullable_number)
-                        (*result_number_null_map)[current_offset + k] = (*number_null_map)[nested_array_pos + k];
-                }
+                memcpy(&result_data[current_offset], &data[nested_array_pos], nested_array_size * sizeof(T));
+                if constexpr (nullable_number)
+                    memcpy(&(*result_number_null_map)[current_offset], &(*number_null_map)[nested_array_pos], nested_array_size);
 
                 current_offset += nested_array_size;
             }
@@ -437,12 +434,9 @@ struct ArrayElementArrayNumImpl
 
                 ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[j-1];
                 ColumnArray::Offset nested_array_pos = nested_offsets[j-1];
-                for (size_t k = 0; k < nested_array_size; ++k)
-                {
-                    result_data[current_offset + k] = data[nested_array_pos + k];
-                    if constexpr (nullable_number)
-                        (*result_number_null_map)[current_offset + k] = (*number_null_map)[nested_array_pos + k];
-                }
+                memcpy(&result_data[current_offset], &data[nested_array_pos], nested_array_size * sizeof(T));
+                if constexpr (nullable_number)
+                    memcpy(&(*result_number_null_map)[current_offset], &(*number_null_map)[nested_array_pos], nested_array_size);
 
                 current_offset += nested_array_size;
             }
@@ -454,12 +448,9 @@ struct ArrayElementArrayNumImpl
 
                 ColumnArray::Offset nested_array_size = nested_offsets[j] - nested_offsets[j - 1];
                 ColumnArray::Offset nested_array_pos = nested_offsets[j-1];
-                for (size_t k = 0; k < nested_array_size; ++k)
-                {
-                    result_data[current_offset + k] = data[nested_array_pos + k];
-                    if constexpr (nullable_number)
-                        (*result_number_null_map)[current_offset + k] = (*number_null_map)[nested_array_pos + k];
-                }
+                memcpy(&result_data[current_offset], &data[nested_array_pos], nested_array_size * sizeof(T));
+                if constexpr (nullable_number)
+                    memcpy(&(*result_number_null_map)[current_offset], &(*number_null_map)[nested_array_pos], nested_array_size);
 
                 current_offset += nested_array_size;
             }
