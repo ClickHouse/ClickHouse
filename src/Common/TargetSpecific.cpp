@@ -23,6 +23,12 @@ UInt32 getSupportedArchs()
         result |= static_cast<UInt32>(TargetArch::AVX512VBMI);
     if (Cpu::CpuFlagsCache::have_AVX512VBMI2)
         result |= static_cast<UInt32>(TargetArch::AVX512VBMI2);
+    if (Cpu::CpuFlagsCache::have_AMXBF16)
+        result |= static_cast<UInt32>(TargetArch::AMXBF16);
+    if (Cpu::CpuFlagsCache::have_AMXTILE)
+        result |= static_cast<UInt32>(TargetArch::AMXTILE);
+    if (Cpu::CpuFlagsCache::have_AMXINT8)
+        result |= static_cast<UInt32>(TargetArch::AMXINT8);
     return result;
 }
 
