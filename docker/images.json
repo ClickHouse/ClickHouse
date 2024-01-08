@@ -126,7 +126,7 @@
             "docker/test/sqllogic",
             "docker/test/sqltest",
             "docker/test/clickbench",
-            "docker/test/stateless",
+            "docker/test/stateless"
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
