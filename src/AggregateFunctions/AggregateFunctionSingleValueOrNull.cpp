@@ -19,10 +19,12 @@ namespace
   */
 
 template <typename Data>
-struct AggregateFunctionSingleValueOrNullData : public Data
+struct AggregateFunctionSingleValueOrNullData
 {
     using Self = AggregateFunctionSingleValueOrNullData;
+    using Data_t = Data;
 
+    Data data;
     bool first_value = true;
     bool is_null = false;
 
@@ -31,9 +33,9 @@ struct AggregateFunctionSingleValueOrNullData : public Data
         if (first_value)
         {
             first_value = false;
-            Data::set(column, row_num, arena);
+            data.set(column, row_num, arena);
         }
-        else if (!Data::isEqualTo(column, row_num))
+        else if (!data.isEqualTo(column, row_num))
         {
             is_null = true;
         }
@@ -41,21 +43,27 @@ struct AggregateFunctionSingleValueOrNullData : public Data
 
     void add(const Self & to, Arena * arena)
     {
-        if (!to.Data::has())
+        if (!to.data.has())
             return;
 
         if (first_value && !to.first_value)
         {
             first_value = false;
-            Data::set(to, arena);
+            data.set(to.data, arena);
         }
-        else if (!Data::isEqualTo(to))
+        else if (!data.isEqualTo(to.data))
         {
             is_null = true;
         }
     }
 
-    void insertResult(IColumn & to) const
+    /// TODO: Methods write and read lose data (first_value and is_null)
+    /// Fixing it requires a breaking change (but it's probably necessary)
+    void write(WriteBuffer & buf, const ISerialization & serialization) const { data.write(buf, serialization); }
+
+    void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena) { data.read(buf, serialization, arena); }
+
+    void insertResultInto(IColumn & to) const
     {
         if (is_null || first_value)
         {
@@ -65,11 +73,9 @@ struct AggregateFunctionSingleValueOrNullData : public Data
         {
             ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
             col.getNullMapColumn().insertDefault();
-            Data::insertResultInto(col.getNestedColumn());
+            data.insertResultInto(col.getNestedColumn());
         }
     }
-
-    static const char * name() { return "singleValueOrNull"; }
 };
 
 
@@ -142,9 +148,12 @@ public:
         this->data(place).read(buf, *serialization, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
+    bool allocatesMemoryInArena() const override { return Data::Data_t::allocatesMemoryInArena(); }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override { this->data(place).insertResult(to); }
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        this->data(place).insertResultInto(to);
+    }
 };
 
 AggregateFunctionPtr createAggregateFunctionSingleValueOrNull(

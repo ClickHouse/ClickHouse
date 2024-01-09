@@ -81,7 +81,7 @@ struct SingleValueDataBase
 
 /// For numeric values.
 template <typename T>
-struct SingleValueDataFixed : public SingleValueDataBase
+struct SingleValueDataFixed final : public SingleValueDataBase
 {
     using Self = SingleValueDataFixed;
     using ColVecType = ColumnVectorOrDecimal<T>;
@@ -216,7 +216,7 @@ FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
 //  */
-struct SingleValueDataString : public SingleValueDataBase
+struct SingleValueDataString final : public SingleValueDataBase
 {
     using Self = SingleValueDataString;
 
@@ -312,7 +312,7 @@ static_assert(
 
 
 /// For any other value types.
-struct SingleValueDataGeneric : public SingleValueDataBase
+struct SingleValueDataGeneric final : public SingleValueDataBase
 {
 private:
     using Self = SingleValueDataGeneric;
