@@ -1,9 +1,18 @@
 <clickhouse>
     <storage_configuration>
         <disks>
-            <s31> <allow_vfs>true</allow_vfs> </s31>
-            <s31_again> <allow_vfs>true</allow_vfs> </s31_again>
-            <s32> <allow_vfs>true</allow_vfs> </s32>
+            <s31>
+                <allow_vfs>true</allow_vfs>
+                <send_metadata>false</send_metadata>
+            </s31>
+            <s31_again>
+                <allow_vfs>true</allow_vfs>
+                <send_metadata>false</send_metadata>
+            </s31_again>
+            <s32>
+                <allow_vfs>true</allow_vfs>
+                <send_metadata>false</send_metadata>
+            </s32>
         </disks>
     </storage_configuration>
 </clickhouse>

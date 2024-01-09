@@ -51,7 +51,6 @@ private:
     const UInt64 gc_sleep_ms;
     const VFSTraits traits;
 
-    zkutil::ZooKeeperPtr cached_zookeeper;
     zkutil::ZooKeeperPtr zookeeper();
 
     DiskTransactionPtr createObjectStorageTransaction() final;

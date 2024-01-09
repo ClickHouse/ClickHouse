@@ -7,6 +7,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
 DiskObjectStorageVFS::DiskObjectStorageVFS(
     const String & name_,
     const String & object_storage_root_path_,
@@ -28,8 +33,9 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     , gc_sleep_ms(config.getUInt64(config_prefix + ".vfs_gc_sleep_ms", 10'000))
     , traits(VFSTraits{name_})
 {
+    if (send_metadata)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS doesn't support send_metadata");
     log = &Poco::Logger::get(fmt::format("DiskVFS({})", log_name));
-    //chassert(!send_metadata); TODO myrrc this fails in integration tests
     zookeeper()->createAncestors(traits.log_item);
 }
 
@@ -156,9 +162,9 @@ void DiskObjectStorageVFS::uploadMetadata(std::string_view remote_to, const Stri
 zkutil::ZooKeeperPtr DiskObjectStorageVFS::zookeeper()
 {
     // TODO myrrc support remote_fs_zero_copy_zookeeper_path
-    if (!cached_zookeeper || cached_zookeeper->expired()) [[unlikely]]
-        cached_zookeeper = Context::getGlobalContextInstance()->getZooKeeper();
-    return cached_zookeeper;
+    // TODO myrrc this is incredibly slow, however, we can't cache zookeeper ptr on init
+    //  as we need to change it on expiration, and a data race occurs
+    return Context::getGlobalContextInstance()->getZooKeeper();
 }
 
 DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()
