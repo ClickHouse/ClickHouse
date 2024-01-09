@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Interpreters/JoinedTables.h>
 
 #include <Core/SettingsEnums.h>
@@ -257,6 +258,20 @@ bool JoinedTables::resolveTables()
                                 "While processing '{}'", table_expressions[i]->formatForErrorMessage());
             }
         }
+    }
+    else if (tables_with_columns.size() > 1)
+    {
+        Names column_names = {};
+        for (const auto & t : tables_with_columns)
+            for (auto & name : t.columns.getNames())
+                column_names.push_back(name);
+
+        std::sort(column_names.begin(), column_names.end());
+        for (size_t i = 0; i < column_names.size() - 1; i++) // Check if there is not any duplicates because it will lead to broken result
+            if (column_names[i] == column_names[i+1])
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Name of columns and aliases should be unique for this query (you can add alias that will be different)"
+                                "While processing '{}'", table_expressions[i]->formatForErrorMessage());
     }
 
     return !tables_with_columns.empty();
