@@ -22,6 +22,7 @@
 
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -2037,7 +2038,7 @@ static void executeMergeAggregatedImpl(
       *  but it can work more slowly.
       */
 
-    Aggregator::Params params(keys, aggregates, overflow_row, settings.max_threads, settings.max_block_size);
+    Aggregator::Params params(keys, aggregates, overflow_row, settings.max_threads, settings.max_block_size, settings.min_hit_rate_to_use_consecutive_keys_optimization);
 
     auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
         query_plan.getCurrentDataStream(),
@@ -2378,12 +2379,25 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 max_paralle
     else
     {
         // It's possible to optimize count() given only partition predicates
-        SelectQueryInfo temp_query_info;
-        temp_query_info.query = query_ptr;
-        temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
-        temp_query_info.prepared_sets = query_analyzer->getPreparedSets();
+        ActionsDAG::NodeRawConstPtrs filter_nodes;
+        if (analysis_result.hasPrewhere())
+        {
+            auto & prewhere_info = analysis_result.prewhere_info;
+            filter_nodes.push_back(&prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name));
 
-        return storage->totalRowsByPartitionPredicate(temp_query_info, context);
+            if (prewhere_info->row_level_filter)
+                filter_nodes.push_back(&prewhere_info->row_level_filter->findInOutputs(prewhere_info->row_level_column_name));
+        }
+        if (analysis_result.hasWhere())
+        {
+            filter_nodes.push_back(&analysis_result.before_where->findInOutputs(analysis_result.where_column_name));
+        }
+
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes, {}, context);
+        if (!filter_actions_dag)
+            return {};
+
+        return storage->totalRowsByPartitionPredicate(filter_actions_dag, context);
     }
 }
 
@@ -2501,7 +2515,12 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             max_block_size = std::max<UInt64>(1, max_block_limited);
             max_threads_execute_query = max_streams = 1;
         }
-        if (max_block_limited < local_limits.local_limits.size_limits.max_rows)
+        if (local_limits.local_limits.size_limits.max_rows != 0)
+        {
+            if (max_block_limited < local_limits.local_limits.size_limits.max_rows)
+                query_info.limit = max_block_limited;
+        }
+        else
         {
             query_info.limit = max_block_limited;
         }
@@ -2703,6 +2722,7 @@ static Aggregator::Params getAggregatorParams(
         settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
         settings.optimize_group_by_constant_keys,
+        settings.min_hit_rate_to_use_consecutive_keys_optimization,
         stats_collecting_params
     };
 }
@@ -3314,5 +3334,13 @@ bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
     return result;
 }
 
+void registerInterpreterSelectQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterSelectQuery>(args.query, args.context, args.options);
+    };
+    factory.registerInterpreter("InterpreterSelectQuery", create_fn);
+}
 
 }

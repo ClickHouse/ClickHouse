@@ -515,6 +515,7 @@ public:
         bool /*final*/,
         bool /*deduplicate*/,
         const Names & /* deduplicate_by_columns */,
+        bool /*cleanup*/,
         ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
@@ -598,13 +599,6 @@ public:
     std::atomic<bool> is_detached{false};
     std::atomic<bool> is_being_restarted{false};
 
-    /// Does table support index for IN sections
-    virtual bool supportsIndexForIn() const { return false; }
-
-    /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
-    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, ContextPtr /* query_context */, const StorageMetadataPtr & /* metadata_snapshot */) const { return false; }
-
-
     /** A list of tasks to check a validity of data.
       * Each IStorage implementation may interpret this task in its own way.
       * E.g. for some storages it's a list of files in filesystem, for others it can be a list of parts.
@@ -675,7 +669,7 @@ public:
     virtual std::optional<UInt64> totalRows(const Settings &) const { return {}; }
 
     /// Same as above but also take partition predicate into account.
-    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const { return {}; }
+    virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr &, ContextPtr) const { return {}; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

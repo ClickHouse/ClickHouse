@@ -7,6 +7,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ActionBlocker.h>
+#include <Processors/Transforms/CheckSortedTransform.h>
 #include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
@@ -41,6 +42,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -68,7 +70,10 @@ static void extractMergingAndGatheringColumns(
 
     /// Force version column for Replacing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
+    {
+        key_columns.emplace(merging_params.is_deleted_column);
         key_columns.emplace(merging_params.version_column);
+    }
 
     /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
     if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
@@ -505,13 +510,12 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     /// In special case, when there is only one source part, and no rows were skipped, we may have
     /// skipped writing rows_sources file. Otherwise rows_sources_count must be equal to the total
     /// number of input rows.
-    if ((rows_sources_count > 0 || global_ctx->future_part->parts.size() > 1)
-        && sum_input_rows_exact != rows_sources_count + input_rows_filtered)
+    if ((rows_sources_count > 0 || global_ctx->future_part->parts.size() > 1) && sum_input_rows_exact != rows_sources_count + input_rows_filtered)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Number of rows in source parts ({}) excluding filtered rows ({}) differs from number "
-            "of bytes written to rows_sources file ({}). It is a bug.",
-            sum_input_rows_exact, input_rows_filtered, rows_sources_count);
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Number of rows in source parts ({}) excluding filtered rows ({}) differs from number "
+                        "of bytes written to rows_sources file ({}). It is a bug.",
+                        sum_input_rows_exact, input_rows_filtered, rows_sources_count);
 
     /// TemporaryDataOnDisk::createRawStream returns WriteBufferFromFile implementing IReadableWriteBuffer
     /// and we expect to get ReadBufferFromFile here.
@@ -566,6 +570,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         Pipe pipe = createMergeTreeSequentialSource(
+            MergeTreeSequentialSourceType::Merge,
             *global_ctx->data,
             global_ctx->storage_snapshot,
             global_ctx->future_part->parts[part_num],
@@ -755,6 +760,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->space_reservation,
             global_ctx->deduplicate,
             global_ctx->deduplicate_by_columns,
+            global_ctx->cleanup,
             projection_merging_params,
             global_ctx->need_prefix,
             global_ctx->new_data_part.get(),
@@ -920,6 +926,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     for (const auto & part : global_ctx->future_part->parts)
     {
         Pipe pipe = createMergeTreeSequentialSource(
+            MergeTreeSequentialSourceType::Merge,
             *global_ctx->data,
             global_ctx->storage_snapshot,
             part,
@@ -956,6 +963,22 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     Block header = pipes.at(0).getHeader();
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(sort_columns[i], 1, 1);
+
+#ifndef NDEBUG
+    if (!sort_description.empty())
+    {
+        for (size_t i = 0; i < pipes.size(); ++i)
+        {
+            auto & pipe = pipes[i];
+            pipe.addSimpleTransform([&](const Block & header_)
+            {
+                auto transform = std::make_shared<CheckSortedTransform>(header_, sort_description);
+                transform->setDescription(global_ctx->future_part->parts[i]->name);
+                return transform;
+            });
+        }
+    }
+#endif
 
     /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
     /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
@@ -1002,9 +1025,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
             break;
 
         case MergeTreeData::MergingParams::Replacing:
+            if (global_ctx->cleanup && !data_settings->allow_experimental_replacing_merge_with_cleanup)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
+
             merged_transform = std::make_shared<ReplacingSortedTransform>(
-                header, pipes.size(), sort_description, ctx->merging_params.version_column,
-                merge_block_size_rows, merge_block_size_bytes, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size);
+                header, pipes.size(), sort_description, ctx->merging_params.is_deleted_column, ctx->merging_params.version_column,
+                merge_block_size_rows, merge_block_size_bytes, ctx->rows_sources_write_buf.get(), ctx->blocks_are_granules_size,
+                global_ctx->cleanup);
             break;
 
         case MergeTreeData::MergingParams::Graphite:
@@ -1022,6 +1049,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
 
     auto res_pipe = Pipe::unitePipes(std::move(pipes));
     res_pipe.addTransform(std::move(merged_transform));
+
+#ifndef NDEBUG
+    if (!sort_description.empty())
+    {
+        res_pipe.addSimpleTransform([&](const Block & header_)
+        {
+            auto transform = std::make_shared<CheckSortedTransform>(header_, sort_description);
+            return transform;
+        });
+    }
+#endif
 
     if (global_ctx->deduplicate)
     {
@@ -1081,6 +1119,8 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
     if (global_ctx->future_part->part_format.part_type != MergeTreeDataPartType::Wide)
         return MergeAlgorithm::Horizontal;
     if (global_ctx->future_part->part_format.storage_type != MergeTreeDataPartStorageType::Full)
+        return MergeAlgorithm::Horizontal;
+    if (global_ctx->cleanup)
         return MergeAlgorithm::Horizontal;
 
     if (!data_settings->allow_vertical_merges_from_compact_to_wide_parts)

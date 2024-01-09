@@ -71,6 +71,8 @@ struct IntervalKind
     /// Returns false if the conversion did not succeed.
     /// For example, `IntervalKind::tryParseString('second', result)` returns `result` equals `IntervalKind::Kind::Second`.
     static bool tryParseString(const std::string & kind, IntervalKind::Kind & result);
+
+    auto operator<=>(const IntervalKind & other) const { return kind <=> other.kind; }
 };
 
 /// NOLINTNEXTLINE

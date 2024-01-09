@@ -140,6 +140,14 @@ enum class DefaultTableEngine
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
+enum class CleanDeletedRows
+{
+    Never = 0, /// Disable.
+    Always,
+};
+
+DECLARE_SETTING_ENUM(CleanDeletedRows)
+
 enum class MySQLDataTypesSupport
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
@@ -165,6 +173,8 @@ enum class DistributedDDLOutputMode
     THROW,
     NULL_STATUS_ON_TIMEOUT,
     NEVER_THROW,
+    THROW_ONLY_ACTIVE,
+    NULL_STATUS_ON_TIMEOUT_ONLY_ACTIVE,
 };
 
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
