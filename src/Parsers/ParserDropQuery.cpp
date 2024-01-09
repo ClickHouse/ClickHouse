@@ -2,7 +2,7 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDropQuery.h>
-
+#include <Parsers/ParserCreateQuery.h>
 
 namespace DB
 {
@@ -18,15 +18,17 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     ParserKeyword s_view("VIEW");
     ParserKeyword s_database("DATABASE");
     ParserToken s_dot(TokenType::Dot);
+    ParserToken s_comma(TokenType::Comma);
     ParserKeyword s_if_exists("IF EXISTS");
     ParserKeyword s_if_empty("IF EMPTY");
     ParserIdentifier name_p(true);
     ParserKeyword s_permanently("PERMANENTLY");
     ParserKeyword s_no_delay("NO DELAY");
     ParserKeyword s_sync("SYNC");
+    ParserNameList tables_p;
 
     ASTPtr database;
-    ASTPtr table;
+    ASTPtr database_and_tables;
     String cluster_str;
     bool if_exists = false;
     bool if_empty = false;
@@ -68,15 +70,8 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
         if (s_if_empty.ignore(pos, expected))
             if_empty = true;
 
-        if (!name_p.parse(pos, table, expected))
+        if (!tables_p.parse(pos, database_and_tables, expected))
             return false;
-
-        if (s_dot.ignore(pos, expected))
-        {
-            database = table;
-            if (!name_p.parse(pos, table, expected))
-                return false;
-        }
     }
 
     /// common for tables / dictionaries / databases
@@ -105,13 +100,13 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->sync = sync;
     query->permanently = permanently;
     query->database = database;
-    query->table = table;
+    query->database_and_tables = database_and_tables;
 
     if (database)
         query->children.push_back(database);
 
-    if (table)
-        query->children.push_back(table);
+    if (database_and_tables)
+        query->children.push_back(database_and_tables);
 
     query->cluster = cluster_str;
 

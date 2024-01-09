@@ -300,9 +300,20 @@ TEST(ParserDictionaryDDL, ParseDropQuery)
     ASTPtr ast1 = parseQuery(parser, input1.data(), input1.data() + input1.size(), "", 0, 0);
     ASTDropQuery * drop1 = ast1->as<ASTDropQuery>();
 
+    auto get_database_and_table = [](const ASTDropQuery & drop) -> std::pair<String, String>
+    {
+        auto & database_and_tables = drop.database_and_tables->as<ASTExpressionList &>();
+        auto database_and_table = dynamic_pointer_cast<ASTIdentifier>(database_and_tables.children[0]);
+        if (database_and_table->name_parts.size() == 2)
+            return {database_and_table->name_parts[0], database_and_table->name_parts[1]};
+        else
+            return {"", database_and_table->name_parts[0]};
+    };
+
     EXPECT_TRUE(drop1->is_dictionary);
-    EXPECT_EQ(drop1->getDatabase(), "test");
-    EXPECT_EQ(drop1->getTable(), "dict1");
+    auto [database1, table1] = get_database_and_table(*drop1);
+    EXPECT_EQ(database1, "test");
+    EXPECT_EQ(table1, "dict1");
     auto str1 = serializeAST(*drop1);
     EXPECT_EQ(input1, str1);
 
@@ -312,8 +323,9 @@ TEST(ParserDictionaryDDL, ParseDropQuery)
     ASTDropQuery * drop2 = ast2->as<ASTDropQuery>();
 
     EXPECT_TRUE(drop2->is_dictionary);
-    EXPECT_EQ(drop2->getDatabase(), "");
-    EXPECT_EQ(drop2->getTable(), "dict2");
+    auto [database2, table2] = get_database_and_table(*drop2);
+    EXPECT_EQ(database2, "");
+    EXPECT_EQ(table2, "dict2");
     auto str2 = serializeAST(*drop2);
     EXPECT_EQ(input2, str2);
 }

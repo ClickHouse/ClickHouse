@@ -29,10 +29,14 @@ public:
 
     bool supportsTransactions() const override;
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
+
 private:
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     ASTPtr query_ptr;
+    ASTPtr current_query_ptr;
 
+    BlockIO executeSingleDropQuery(const ASTPtr & drop_query_ptr);
     BlockIO executeToDatabase(const ASTDropQuery & query);
     BlockIO executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait);
 

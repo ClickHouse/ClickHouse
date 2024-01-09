@@ -1,4 +1,6 @@
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -48,7 +50,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
         settings.ostr << "TEMPORARY ";
 
 
-    if (!table && database)
+    if (!table && !database_and_tables && database)
         settings.ostr << "DATABASE ";
     else if (is_dictionary)
         settings.ostr << "DICTIONARY ";
@@ -65,8 +67,22 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 
     settings.ostr << (settings.hilite ? hilite_none : "");
 
-    if (!table && database)
+    if (!table && !database_and_tables && database)
         settings.ostr << backQuoteIfNeed(getDatabase());
+    else if (database_and_tables)
+    {
+        auto & list = database_and_tables->as<ASTExpressionList &>();
+        for (auto it = list.children.begin(); it != list.children.end(); ++it)
+        {
+            if (it != list.children.begin())
+                settings.ostr << ", ";
+
+            auto identifier = dynamic_pointer_cast<ASTIdentifier>(*it);
+            settings.ostr << (identifier->name_parts.size() == 2
+                    ? backQuoteIfNeed(identifier->name_parts[0]) + "." + backQuoteIfNeed(identifier->name_parts[1])
+                    : backQuoteIfNeed(identifier->name_parts[0]));
+        }
+    }
     else
         settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
