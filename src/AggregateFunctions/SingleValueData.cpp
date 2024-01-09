@@ -280,17 +280,61 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
     }
 }
 
-//template <typename T>
-//std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *)
-//{
-//    return std::nullopt;
-//}
-//
-//template <typename T>
-//std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *)
-//{
-//    return std::nullopt;
-//}
+template <typename T>
+std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end)
+{
+    if (row_begin == row_end)
+        return std::nullopt;
+
+    const auto & vec = assert_cast<const ColVecType &>(column);
+    if constexpr (has_find_extreme_implementation<T>)
+    {
+        /// TODO: Implement findExtremeMinIndex
+        std::optional<T> opt = findExtremeMin(vec.getData().data(), row_begin, row_end);
+        if (!opt)
+            return std::nullopt;
+        for (size_t i = row_begin; i < row_end; i++)
+            if (vec.getData()[i] == *opt)
+                return i;
+        return row_end;
+    }
+    else
+    {
+        size_t index = row_begin;
+        for (size_t i = index + 1; i < row_end; i++)
+            if (vec.getData()[i] < vec.getData()[index])
+                index = i;
+        return index;
+    }
+}
+
+template <typename T>
+std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end)
+{
+    if (row_begin == row_end)
+        return std::nullopt;
+
+    const auto & vec = assert_cast<const ColVecType &>(column);
+    if constexpr (has_find_extreme_implementation<T>)
+    {
+        /// TODO: Implement findExtremeMaxIndex
+        std::optional<T> opt = findExtremeMax(vec.getData().data(), row_begin, row_end);
+        if (!opt)
+            return std::nullopt;
+        for (size_t i = row_begin; i < row_end; i++)
+            if (vec.getData()[i] == *opt)
+                return i;
+        return row_end;
+    }
+    else
+    {
+        size_t index = row_begin;
+        for (size_t i = index + 1; i < row_end; i++)
+            if (vec.getData()[i] > vec.getData()[index])
+                index = i;
+        return index;
+    }
+}
 
 
 #define DISPATCH(TYPE) template struct SingleValueDataFixed<TYPE>;

@@ -42,8 +42,8 @@ struct SingleValueDataBase
     virtual bool setIfGreater(const IColumn &, size_t row_num, Arena *) = 0;
     virtual bool setIfGreater(const SingleValueDataBase &, Arena *) = 0;
 
-    static std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end);
-    static std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end);
+    virtual std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end);
+    virtual std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end);
     static std::optional<size_t> getSmallestIndexNotNullIf(
         const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end);
     static std::optional<size_t> getGreatestIndexNotNullIf(
@@ -197,12 +197,8 @@ struct SingleValueDataFixed final : public SingleValueDataBase
         size_t row_end,
         Arena *) override;
 
-    //    static std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) override;
-    //    static std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end);
-    //    static std::optional<size_t> getSmallestIndexNotNullIf(
-    //            const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end);
-    //    static std::optional<size_t> getGreatestIndexNotNullIf(
-    //            const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end);
+    std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) override;
+    std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) override;
 
     static bool allocatesMemoryInArena() { return false; }
 };
