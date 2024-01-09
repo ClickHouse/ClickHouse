@@ -204,10 +204,13 @@ ColumnVariant::ColumnVariant(DB::MutableColumnPtr local_discriminators_, DB::Mut
     }
 }
 
-ColumnVariant::Ptr ColumnVariant::create(const Columns & variants, const std::vector<Discriminator> & local_to_global_discriminators)
+namespace
+{
+
+MutableColumns getVariantsAssumeMutable(const Columns & variants)
 {
     MutableColumns mutable_variants;
-    mutable_variants.reserve(variants.size());
+
     for (const auto & variant : variants)
     {
         if (isColumnConst(*variant))
@@ -215,35 +218,24 @@ ColumnVariant::Ptr ColumnVariant::create(const Columns & variants, const std::ve
         mutable_variants.emplace_back(variant->assumeMutable());
     }
 
-    return ColumnVariant::create(std::move(mutable_variants), local_to_global_discriminators);
+    return mutable_variants;
+}
+
+}
+
+ColumnVariant::Ptr ColumnVariant::create(const Columns & variants, const std::vector<Discriminator> & local_to_global_discriminators)
+{
+    return ColumnVariant::create(getVariantsAssumeMutable(variants), local_to_global_discriminators);
 }
 
 ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::Columns & variants, const std::vector<Discriminator> & local_to_global_discriminators)
 {
-    MutableColumns mutable_variants;
-    mutable_variants.reserve(variants.size());
-    for (const auto & variant : variants)
-    {
-        if (isColumnConst(*variant))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnVariant cannot have ColumnConst as its element");
-        mutable_variants.emplace_back(variant->assumeMutable());
-    }
-
-    return ColumnVariant::create(local_discriminators->assumeMutable(), std::move(mutable_variants), local_to_global_discriminators);
+    return ColumnVariant::create(local_discriminators->assumeMutable(), getVariantsAssumeMutable(variants), local_to_global_discriminators);
 }
 
 ColumnVariant::Ptr ColumnVariant::create(const DB::ColumnPtr & local_discriminators, const DB::ColumnPtr & offsets, const DB::Columns & variants, const std::vector<Discriminator> & local_to_global_discriminators)
 {
-    MutableColumns mutable_variants;
-    mutable_variants.reserve(variants.size());
-    for (const auto & variant : variants)
-    {
-        if (isColumnConst(*variant))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnVariant cannot have ColumnConst as its element");
-        mutable_variants.emplace_back(variant->assumeMutable());
-    }
-
-    return ColumnVariant::create(local_discriminators->assumeMutable(), offsets->assumeMutable(), std::move(mutable_variants), local_to_global_discriminators);
+    return ColumnVariant::create(local_discriminators->assumeMutable(), offsets->assumeMutable(), getVariantsAssumeMutable(variants), local_to_global_discriminators);
 }
 
 MutableColumnPtr ColumnVariant::cloneEmpty() const
@@ -309,103 +301,87 @@ MutableColumnPtr ColumnVariant::cloneResized(size_t new_size) const
     const auto & local_discriminators_data = getLocalDiscriminators();
     const auto & offsets_data = getOffsets();
 
-    /// We can find all variants sizes by scanning all new_size local_discriminators and calculating
-    /// sizes for all new variants. This code is below and commented.
-
-//    std::vector<size_t> new_nested_sizes(num_variants, 0);
-//    for (size_t i = 0; i != new_size; ++i)
-//    {
-//        Discriminator discr = local_discriminators_data[i];
-//        if (discr != NULL_DISCRIMINATOR)
-//            ++new_nested_sizes[discr];
-//    }
-//
-//    MutableColumns new_variants;
-//    new_variants.reserve(num_variants);
-//    for (size_t i = 0; i != num_variants; ++i)
-//    {
-//        if (new_nested_sizes[i])
-//            new_variants.emplace_back(variants[i]->cloneResized(new_nested_sizes[i]));
-//        else
-//            new_variants.emplace_back(variants[i]->cloneEmpty());
-//    }
-//
-//    return ColumnVariant::create(local_discriminators->cloneResized(new_size), offsets->cloneResized(new_size), std::move(new_variants), local_to_global_discriminators);
-
+    /// We can find all variants sizes by scanning all new_size local_discriminators and calculating sizes for all new variants.
     /// But instead we are trying to optimize it using offsets column:
     /// For all non-empty variants we are trying to find last occurrence of its discriminator in local_discriminators[:new_size] or
-    /// first occurrence in local_discriminators[new_size:]. The same row in offsets column will contain the desired size (or size - 1) of variant.
+    /// first occurrence in local_discriminators[new_size:] depending on what range is smaller. The same row in offsets column will
+    /// contain the desired size (or size - 1) of variant.
     /// All empty variants will remain empty.
-    /// Not sure how good this optimization is, feel free to remove it and use simpler version above.
+    /// Not sure how good this optimization is, feel free to remove it and use simpler version without using offsets.
 
     MutableColumns new_variants(num_variants);
-    std::unordered_set<Discriminator> seen_variants;
+    std::vector<UInt8> seen_variants(num_variants, 0);
+    size_t number_of_seen_variants = 0;
     /// First, check which variants are empty. They will remain empty.
     for (Discriminator i = 0; i != num_variants; ++i)
     {
         if (variants[i]->empty())
         {
-            seen_variants.insert(i);
+            seen_variants[i] = 1;
+            ++number_of_seen_variants;
             new_variants[i] = variants[i]->cloneEmpty();
         }
     }
 
-    /// Now, iterate through local discriminators using two pointers.
-    /// First will go from new_size - 1 to 0, second from new_size to size.
-    /// Finish when we find all variants or hit lower or upper bound.
-    ssize_t i = new_size - 1;
-    size_t j = new_size;
-    while (i != -1 && j != size)
+    /// Now, choose what range is smaller and use it.
+    /// [0, new_size)
+    if (2 * new_size <= size)
     {
-        Discriminator i_discr = local_discriminators_data[i];
-        if (i_discr != NULL_DISCRIMINATOR)
+        for (ssize_t i = new_size - 1; i > -1; --i)
         {
-            auto [_, inserted] = seen_variants.insert(i_discr);
-            /// If this is the first occurrence of this discriminator,
-            /// we can get new size for this variant.
-            if (inserted)
+            Discriminator discr = local_discriminators_data[i];
+            if (discr != NULL_DISCRIMINATOR)
             {
-                new_variants[i_discr] = variants[i_discr]->cloneResized(offsets_data[i] + 1);
-                if (seen_variants.size() == num_variants)
-                    break;
+                /// If this is the first occurrence of this discriminator,
+                /// we can get new size for this variant.
+                if (!seen_variants[discr])
+                {
+                    seen_variants[discr] = 1;
+                    ++number_of_seen_variants;
+                    new_variants[discr] = variants[discr]->cloneResized(offsets_data[i] + 1);
+                    /// Break if we found sizes for all variants.
+                    if (number_of_seen_variants == num_variants)
+                        break;
+                }
             }
         }
 
-        Discriminator j_discr = local_discriminators_data[j];
-        if (j_discr != NULL_DISCRIMINATOR)
+        /// All variants that weren't found in range [0, new_size] will be empty in the result column.
+        if (number_of_seen_variants != num_variants)
         {
-            auto [_, inserted] = seen_variants.insert(j_discr);
-            /// If this is the first occurrence of this discriminator,
-            /// we can get new size for this variant.
-            if (inserted)
-            {
-                new_variants[j_discr] = variants[j_discr]->cloneResized(offsets_data[j]);
-                if (seen_variants.size() == num_variants)
-                    break;
-            }
-        }
-
-        --i;
-        ++j;
-    }
-
-    /// We can finish in 3 cases:
-    ///   1) seen_variants.size() == num_variants - we found local_discriminators of all variants, nothing to do.
-    ///   2) i == -1 - we scanned all values in local_discriminators[:new_size]. Not found variants doesn't have
-    /// values in local_discriminators[:new_size], so they should be empty in the resized version.
-    ///   3) j == size - we scanned all values in local_discriminators[new_size:]. Not found variants doesn't have
-    /// values in local_discriminators[new_size:], so, we should use the full variant in the resized version.
-    if (seen_variants.size() != num_variants)
-    {
-        for (size_t discr = 0; discr != num_variants; ++discr)
-        {
-            if (!seen_variants.contains(discr))
-            {
-                if (i == -1)
+            for (size_t discr = 0; discr != num_variants; ++discr)
+                if (!seen_variants[discr])
                     new_variants[discr] = variants[discr]->cloneEmpty();
-                else
-                    new_variants[discr] = IColumn::mutate(variants[discr]);
+        }
+    }
+    /// [new_size, size)
+    else
+    {
+        for (size_t i = new_size; i < size; ++i)
+        {
+            Discriminator discr = local_discriminators_data[i];
+            if (discr != NULL_DISCRIMINATOR)
+            {
+                /// If this is the first occurrence of this discriminator,
+                /// we can get new size for this variant.
+                if (!seen_variants[discr])
+                {
+                    seen_variants[discr] = 1;
+                    ++number_of_seen_variants;
+                    new_variants[discr] = variants[discr]->cloneResized(offsets_data[i]);
+                    /// Break if we found sizes for all variants.
+                    if (number_of_seen_variants == num_variants)
+                        break;
+                }
             }
+        }
+
+        if (number_of_seen_variants != num_variants)
+        {
+            /// All variants that weren't found in range [new_size, size) will not change their sizes.
+            for (size_t discr = 0; discr != num_variants; ++discr)
+                if (!seen_variants[discr])
+                    new_variants[discr] = IColumn::mutate(variants[discr]);
         }
     }
 
@@ -1261,7 +1237,7 @@ std::optional<ColumnVariant::Discriminator> ColumnVariant::getLocalDiscriminator
         if (variants[i]->size() == local_discriminators->size())
             return i;
         if (!variants[i]->empty())
-            return std::nullopt
+            return std::nullopt;
     }
 
     return std::nullopt;
