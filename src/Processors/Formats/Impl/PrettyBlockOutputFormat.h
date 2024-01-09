@@ -73,21 +73,21 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
             const Block & sample,
             const FormatSettings & format_settings)
         {
-	    FormatSettings changed_settings = format_settings;
-	    using PrettyColor = FormatSettings::Pretty::PrettyColor;
-	    switch(format_settings.pretty.output_format_pretty_color) 
-	    {
-	    	case PrettyColor::Off:
-		    changed_settings.pretty.color = false;
-		    break;
-		case PrettyColor::On:
-	            changed_settings.pretty.color = no_escapes ? false : true;
-		    break;
-		case PrettyColor::Auto:
-		    changed_settings.pretty.color = (isatty(STDOUT_FILENO) && no_escapes) ? false : true;
-		    break;
-	    }
-            if (format_settings.pretty.color != changed_settings.pretty.color)
+            FormatSettings changed_settings = format_settings;
+            using PrettyColor = FormatSettings::Pretty::PrettyColor;
+            switch (format_settings.pretty.output_format_pretty_color)
+            {
+                case PrettyColor::Off:
+                    changed_settings.pretty.color = false;
+                    break;
+                case PrettyColor::On:
+                    changed_settings.pretty.color = no_escapes ? false : true; 
+                    break;
+                case PrettyColor::Auto:
+                    changed_settings.pretty.color = isatty(STDOUT_FILENO) && no_escapes ? false : true; 
+                    break;
+            } 
+            if (!changed_settings.pretty.color)
             {
                 return std::make_shared<OutputFormat>(buf, sample, changed_settings, mono_block);
             }
