@@ -33,8 +33,6 @@ public:
         size_t /*num_streams*/) override;
 
     bool isSystemStorage() const override { return true; }
-    bool supportsIndexForIn() const override { return true; }
-    bool mayBenefitFromIndexForIn(const ASTPtr & node, ContextPtr, const StorageMetadataPtr &) const override;
 };
 
 }

@@ -11,6 +11,7 @@
 #include <memory>
 #include <thread>
 
+#include <Common/iota.h>
 #include <Common/randomSeed.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
@@ -788,7 +789,7 @@ TEST_F(FileCacheTest, writeBuffer)
 
         /// get random permutation of indexes
         std::vector<size_t> indexes(data.size());
-        std::iota(indexes.begin(), indexes.end(), 0);
+        iota(indexes.data(), indexes.size(), size_t(0));
         std::shuffle(indexes.begin(), indexes.end(), rng);
 
         for (auto i : indexes)

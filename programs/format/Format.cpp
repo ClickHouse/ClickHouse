@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <Interpreters/registerInterpreters.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
@@ -17,6 +18,7 @@
 
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
+#include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -24,6 +26,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/registerStorages.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
@@ -31,6 +34,9 @@
 
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
+
+extern const char * auto_time_zones[];
+
 
 namespace DB
 {
@@ -123,9 +129,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 hash_func.update(options["seed"].as<std::string>());
             }
 
+            registerInterpreters();
             registerFunctions();
             registerAggregateFunctions();
             registerTableFunctions();
+            registerDatabases();
             registerStorages();
             registerFormats();
 
@@ -133,9 +141,25 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
             auto all_known_storage_names = StorageFactory::instance().getAllRegisteredNames();
             auto all_known_data_type_names = DataTypeFactory::instance().getAllRegisteredNames();
+            auto all_known_settings = Settings().getAllRegisteredNames();
+            auto all_known_merge_tree_settings = MergeTreeSettings().getAllRegisteredNames();
 
             additional_names.insert(all_known_storage_names.begin(), all_known_storage_names.end());
             additional_names.insert(all_known_data_type_names.begin(), all_known_data_type_names.end());
+            additional_names.insert(all_known_settings.begin(), all_known_settings.end());
+            additional_names.insert(all_known_merge_tree_settings.begin(), all_known_merge_tree_settings.end());
+
+            for (auto * it = auto_time_zones; *it; ++it)
+            {
+                String time_zone_name = *it;
+
+                /// Example: Europe/Amsterdam
+                Strings split;
+                boost::split(split, time_zone_name, [](char c){ return c == '/'; });
+                for (const auto & word : split)
+                    if (!word.empty())
+                        additional_names.insert(word);
+            }
 
             KnownIdentifierFunc is_known_identifier = [&](std::string_view name)
             {

@@ -185,8 +185,9 @@ class IColumn;
     M(Float, parallel_replicas_single_task_marks_count_multiplier, 2, "A multiplier which will be added during calculation for minimal number of marks to retrieve from coordinator. This will be applied only for remote replicas.", 0) \
     M(Bool, parallel_replicas_for_non_replicated_merge_tree, false, "If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables", 0) \
     M(UInt64, parallel_replicas_min_number_of_rows_per_replica, 0, "Limit the number of replicas used in a query to (estimated rows to read / min_number_of_rows_per_replica). The max is still limited by 'max_parallel_replicas'", 0) \
+    M(UInt64, parallel_replicas_mark_segment_size, 128, "Parts virtually divided into segments to be distributed between replicas for parallel reading. This setting controls the size of these segments. Not recommended to change until you're absolutely sure in what you're doing", 0) \
     \
-    M(Bool, skip_unavailable_shards, false, "If true, ClickHouse silently skips unavailable shards and nodes unresolvable through DNS. Shard is marked as unavailable when none of the replicas can be reached.", 0) \
+    M(Bool, skip_unavailable_shards, false, "If true, ClickHouse silently skips unavailable shards. Shard is marked as unavailable when: 1) The shard cannot be reached due to a connection failure. 2) Shard is unresolvable through DNS. 3) Table does not exist on the shard.", 0) \
     \
     M(UInt64, parallel_distributed_insert_select, 0, "Process distributed INSERT SELECT query in the same cluster on local tables on every shard; if set to 1 - SELECT is executed on each shard; if set to 2 - SELECT and INSERT are executed on each shard", 0) \
     M(UInt64, distributed_group_by_no_merge, 0, "If 1, Do not merge aggregation states from different servers for distributed queries (shards will process query up to the Complete stage, initiator just proxies the data from the shards). If 2 the initiator will apply ORDER BY and LIMIT stages (it is not in case when shard process query up to the Complete stage)", 0) \
@@ -220,6 +221,7 @@ class IColumn;
     M(Bool, mysql_map_fixed_string_to_text_in_show_columns, false, "If enabled, FixedString type will be mapped to TEXT in SHOW [FULL] COLUMNS, BLOB otherwise.", 0) \
     \
     M(UInt64, optimize_min_equality_disjunction_chain_length, 3, "The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization ", 0) \
+    M(UInt64, optimize_min_inequality_conjunction_chain_length, 3, "The minimum length of the expression `expr <> x1 AND ... expr <> xN` for optimization ", 0) \
     \
     M(UInt64, min_bytes_to_use_direct_io, 0, "The minimum number of bytes for reading the data with O_DIRECT option during SELECT queries execution. 0 - disabled.", 0) \
     M(UInt64, min_bytes_to_use_mmap_io, 0, "The minimum number of bytes for reading the data with mmap option during SELECT queries execution. 0 - disabled.", 0) \
@@ -339,6 +341,7 @@ class IColumn;
     M(UInt64, http_max_field_value_size, 128 * 1024, "Maximum length of field value in HTTP header", 0) \
     M(UInt64, http_max_chunk_size, 100_GiB, "Maximum value of a chunk size in HTTP chunked transfer encoding", 0) \
     M(Bool, http_skip_not_found_url_for_globs, true, "Skip url's for globs with HTTP_NOT_FOUND error", 0) \
+    M(Bool, http_make_head_request, true, "Allows the execution of a `HEAD` request while reading data from HTTP to retrieve information about the file to be read, such as its size", 0) \
     M(Bool, optimize_throw_if_noop, false, "If setting is enabled and OPTIMIZE query didn't actually assign a merge then an explanatory exception is thrown", 0) \
     M(Bool, use_index_for_in_with_subqueries, true, "Try using an index if there is a subquery or a table expression on the right side of the IN operator.", 0) \
     M(UInt64, use_index_for_in_with_subqueries_max_values, 0, "The maximum size of set in the right hand side of the IN operator to use table index for filtering. It allows to avoid performance degradation and higher memory usage due to preparation of additional data structures for large queries. Zero means no limit.", 0) \
@@ -834,9 +837,14 @@ class IColumn;
     M(Timezone, session_timezone, "", "This setting can be removed in the future due to potential caveats. It is experimental and is not suitable for production usage. The default timezone for current session or query. The server default timezone if empty.", 0) \
     M(Bool, allow_create_index_without_type, false, "Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.", 0) \
     M(Bool, create_index_ignore_unique, false, "Ignore UNIQUE keyword in CREATE UNIQUE INDEX. Made for SQL compatibility tests.", 0) \
-    M(Bool, print_pretty_type_names, false, "Print pretty type names in DESCRIBE query and toTypeName() function", 0) \
+    M(Bool, print_pretty_type_names, true, "Print pretty type names in DESCRIBE query and toTypeName() function", 0) \
     M(Bool, create_table_empty_primary_key_by_default, false, "Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMARY KEY not specified", 0) \
     M(Bool, allow_named_collection_override_by_default, true, "Allow named collections' fields override by default.", 0)\
+    M(Bool, allow_experimental_shared_merge_tree, false, "Only available in ClickHouse Cloud", 0) \
+    M(UInt64, cache_warmer_threads, 4, "Only available in ClickHouse Cloud", 0) \
+    M(Int64, ignore_cold_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
+    M(Int64, prefer_warmed_unmerged_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
+    M(Bool, enable_order_by_all, true, "Enable sorting expression ORDER BY ALL.", 0)\
     \
     /** CBO Optimizer */ \
     M(CBOStepExecutionMode, cbo_aggregating_mode, CBOStepExecutionMode::DETERMINED_BY_OPTIMIZER, "Aggregating step execution mode", 0) \
@@ -850,7 +858,7 @@ class IColumn;
     M(Float, statistics_agg_unknown_column_rest_key_coefficient, 0.1f, "To calculate row count of aggregating result, we use the coefficient to calculate the ndv of the rest keys.", 0) \
     M(Float, statistics_agg_full_cardinality_coefficient, 0.1f, "When calculating statistics for preliminary aggregating, first we assume data is evenly distributed into shards and all shards has full cardinality of data set. But in practice a shard may have only partial of cardinality, so we multiply a coefficient.", 0) \
     M(Float, cost_pre_sorting_operation_weight, 0.1f, "Weight of one row calculation of preliminary sorting step.", 0) \
-    M(Float, cost_merge_agg_uniq_calculation_weight, 1.0f, "Weight of uniq and uniqExact agg function in merging stage. Uniq and uniqExact function in merging stage takes long time than one stage agg in some data quantities. So here we add a coefficient to use one stage aggregating.", 0) \
+    M(Float, cost_merge_agg_uniq_calculation_weight, 1.0f, "Weight of uniq and uniqExact agg function in merging stage. Uniq and uniqExact function in merging stage takes long time than one stage agg in some data quantities. So here we add a coefficient to use one stage aggregating.", 0)
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.

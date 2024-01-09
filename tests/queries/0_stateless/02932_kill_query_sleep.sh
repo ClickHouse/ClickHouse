@@ -8,17 +8,31 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function wait_query_started()
 {
     local query_id="$1"
-    while [[ $($CLICKHOUSE_CLIENT --query="SELECT count() FROM system.query_log WHERE query_id='$query_id' AND current_database = currentDatabase()") == 0 ]]; do
-        sleep 0.1;
-        $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS;"
+    timeout=60
+    start=$EPOCHSECONDS
+    while [[ $($CLICKHOUSE_CLIENT --query="SELECT count() FROM system.processes WHERE query_id='$query_id'") == 0 ]]; do
+          if ((EPOCHSECONDS-start > timeout )); then
+             echo "Timeout while waiting for query $query_id to start"
+             exit 1
+          fi
+          sleep 0.1
     done
 }
+
 
 function kill_query()
 {
     local query_id="$1"
     $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id='$query_id'" >/dev/null
-    while [[ $($CLICKHOUSE_CLIENT --query="SELECT count() FROM system.processes WHERE query_id='$query_id'") != 0 ]]; do sleep 0.1; done
+    timeout=60
+    start=$EPOCHSECONDS
+    while [[ $($CLICKHOUSE_CLIENT --query="SELECT count() FROM system.processes WHERE query_id='$query_id'") != 0 ]]; do
+          if ((EPOCHSECONDS-start > timeout )); then
+             echo "Timeout while waiting for query $query_id to cancel"
+             exit 1
+          fi
+          sleep 0.1
+    done
 }
 
 

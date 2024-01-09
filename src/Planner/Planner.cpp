@@ -1088,6 +1088,74 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     query_plan.addStep(std::move(offsets_step));
 }
 
+void collectSetsFromActionsDAG(const ActionsDAGPtr & dag, std::unordered_set<const FutureSet *> & useful_sets)
+{
+    for (const auto & node : dag->getNodes())
+    {
+        if (node.column)
+        {
+            const IColumn * column = node.column.get();
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                column = &column_const->getDataColumn();
+
+            if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
+                useful_sets.insert(column_set->getData().get());
+        }
+
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "indexHint")
+        {
+            ActionsDAG::NodeRawConstPtrs children;
+            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
+            {
+                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
+                {
+                    collectSetsFromActionsDAG(index_hint->getActions(), useful_sets);
+                }
+            }
+        }
+    }
+}
+
+void addBuildSubqueriesForSetsStepIfNeeded(
+    QueryPlan & query_plan,
+    const SelectQueryOptions & select_query_options,
+    const PlannerContextPtr & planner_context,
+    const std::vector<ActionsDAGPtr> & result_actions_to_execute)
+{
+    auto subqueries = planner_context->getPreparedSets().getSubqueries();
+    std::unordered_set<const FutureSet *> useful_sets;
+
+    for (const auto & actions_to_execute : result_actions_to_execute)
+        collectSetsFromActionsDAG(actions_to_execute, useful_sets);
+
+    auto predicate = [&useful_sets](const auto & set) { return !useful_sets.contains(set.get()); };
+    auto it = std::remove_if(subqueries.begin(), subqueries.end(), std::move(predicate));
+    subqueries.erase(it, subqueries.end());
+
+    for (auto & subquery : subqueries)
+    {
+        auto query_tree = subquery->detachQueryTree();
+        auto subquery_options = select_query_options.subquery();
+        Planner subquery_planner(
+            query_tree,
+            subquery_options,
+            std::make_shared<GlobalPlannerContext>()); //planner_context->getGlobalPlannerContext());
+        subquery_planner.buildQueryPlanIfNeeded();
+
+        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
+    }
+
+    if (!subqueries.empty())
+    {
+        auto step = std::make_unique<DelayedCreatingSetsStep>(
+            query_plan.getCurrentDataStream(),
+            std::move(subqueries),
+            planner_context->getQueryContext());
+
+        query_plan.addStep(std::move(step));
+    }
+}
+
 /// Support for `additional_result_filter` setting
 void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     const QueryNode & query_node,
@@ -1349,34 +1417,72 @@ void Planner::buildPlanForQueryNode()
     }
 
     collectSets(query_tree, *planner_context);
+
+    const auto & settings = query_context->getSettingsRef();
+    if (query_context->canUseTaskBasedParallelReplicas())
+    {
+        if (planner_context->getPreparedSets().hasSubqueries())
+        {
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "IN with subquery is not supported with parallel replicas");
+
+            auto & mutable_context = planner_context->getMutableQueryContext();
+            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+            LOG_DEBUG(&Poco::Logger::get("Planner"), "Disabling parallel replicas to execute a query with IN with subquery");
+        }
+    }
+
     collectTableExpressionData(query_tree, planner_context);
     checkStoragesSupportTransactions(planner_context);
 
     if (!select_query_options.only_analyze)
         collectFiltersForAnalysis(query_tree, planner_context);
 
-    const auto & settings = query_context->getSettingsRef();
-
-    /// Check support for JOIN for parallel replicas with custom key
-    if (planner_context->getTableExpressionNodeToData().size() > 1)
+    if (query_context->canUseTaskBasedParallelReplicas())
     {
-        if (settings.allow_experimental_parallel_reading_from_replicas == 1 || !settings.parallel_replicas_custom_key.value.empty())
+        const auto & table_expression_nodes = planner_context->getTableExpressionNodeToData();
+        for (const auto & it : table_expression_nodes)
         {
-            LOG_DEBUG(
-                &Poco::Logger::get("Planner"),
-                "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+            auto * table_node = it.first->as<TableNode>();
+            if (!table_node)
+                continue;
 
-            auto & mutable_context = planner_context->getMutableQueryContext();
-            mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-            mutable_context->setSetting("parallel_replicas_custom_key", String{""});
-        }
-        else if (settings.allow_experimental_parallel_reading_from_replicas == 2)
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+            const auto & modifiers = table_node->getTableExpressionModifiers();
+            if (modifiers.has_value() && modifiers->hasFinal())
+            {
+                if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FINAL modifier is not supported with parallel replicas");
+                else
+                {
+                    LOG_DEBUG(
+                        &Poco::Logger::get("Planner"),
+                        "FINAL modifier is not supported with parallel replicas. Query will be executed without using them.");
+                    auto & mutable_context = planner_context->getMutableQueryContext();
+                    mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                }
+            }
         }
     }
 
-    /// TODO: Also disable parallel replicas in case of FINAL
+    if (query_context->canUseTaskBasedParallelReplicas() || !settings.parallel_replicas_custom_key.value.empty())
+    {
+        /// Check support for JOIN for parallel replicas with custom key
+        if (planner_context->getTableExpressionNodeToData().size() > 1)
+        {
+            if (settings.allow_experimental_parallel_reading_from_replicas == 2)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JOINs are not supported with parallel replicas");
+            else
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("Planner"),
+                    "JOINs are not supported with parallel replicas. Query will be executed without using them.");
+
+                auto & mutable_context = planner_context->getMutableQueryContext();
+                mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                mutable_context->setSetting("parallel_replicas_custom_key", String{""});
+            }
+        }
+    }
 
     auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
     auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,

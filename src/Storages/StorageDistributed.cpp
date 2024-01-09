@@ -91,6 +91,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sinks/EmptySink.h>
@@ -922,6 +923,7 @@ void StorageDistributed::read(
         sharding_key_expr,
         sharding_key_column_name,
         query_info.cluster,
+        distributed_settings,
         additional_shard_filter_generator);
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
@@ -1068,15 +1070,67 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     return pipeline;
 }
 
+static ActionsDAGPtr getFilterFromQuery(const ASTPtr & ast, ContextPtr context)
+{
+    QueryPlan plan;
+    SelectQueryOptions options;
+    options.only_analyze = true;
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        InterpreterSelectQueryAnalyzer interpreter(ast, context, options);
+        plan = std::move(interpreter).extractQueryPlan();
+    }
+    else
+    {
+        InterpreterSelectWithUnionQuery interpreter(ast, context, options);
+        interpreter.buildQueryPlan(plan);
+    }
+
+    plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+
+    std::stack<QueryPlan::Node *> nodes;
+    nodes.push(plan.getRootNode());
+
+    SourceStepWithFilter * source = nullptr;
+
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+
+        if (auto * with_filter = dynamic_cast<SourceStepWithFilter *>(node->step.get()))
+        {
+            if (source)
+            {
+                WriteBufferFromOwnString buf;
+                plan.explainPlan(buf, {});
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Found multiple source steps for query\n{}\nPlan\n{}",
+                    queryToString(ast), buf.str());
+            }
+
+            source = with_filter;
+        }
+    }
+
+    if (!source)
+        return nullptr;
+
+    return ActionsDAG::buildFilterActionsDAG(source->getFilterNodes().nodes, {}, context);
+}
+
 
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
-    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
+
+    auto filter = getFilterFromQuery(query.select, local_context);
+    const ActionsDAG::Node * predicate = nullptr;
+    if (filter)
+        predicate = filter->getOutputs().at(0);
+
     /// Select query is needed for pruining on virtual columns
-    auto extension = src_storage_cluster.getTaskIteratorExtension(
-        select.list_of_selects->children.at(0)->as<ASTSelectQuery>()->clone(),
-        local_context);
+    auto extension = src_storage_cluster.getTaskIteratorExtension(predicate, local_context);
 
     auto dst_cluster = getCluster();
 
@@ -1300,8 +1354,6 @@ void StorageDistributed::drop()
 
         disk->removeRecursive(relative_data_path);
     }
-
-    LOG_DEBUG(log, "Removed");
 }
 
 Strings StorageDistributed::getDataPaths() const
@@ -1328,8 +1380,6 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, Co
         it->second.directory_queue->shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
-
-    LOG_DEBUG(log, "Removed");
 }
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const

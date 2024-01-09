@@ -160,9 +160,6 @@ struct IMergeTreeIndex
         return {0 /*unknown*/, ""};
     }
 
-    /// Checks whether the column is in data skipping index.
-    virtual bool mayBenefitFromIndexForIn(const ASTPtr & node) const = 0;
-
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
@@ -173,7 +170,9 @@ struct IMergeTreeIndex
     }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query_info, ContextPtr context) const = 0;
+        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const = 0;
+
+    virtual bool isVectorSearch() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const

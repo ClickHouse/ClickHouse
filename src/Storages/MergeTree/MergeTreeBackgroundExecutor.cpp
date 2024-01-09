@@ -186,7 +186,8 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         try
         {
             /// An exception context is needed to proper delete write buffers without finalization
-            throw Exception(ErrorCodes::ABORTED, "Storage is about to be deleted. Done pending task as if it was aborted.");
+            /// See WriteBuffer::~WriteBuffer for more context
+            throw std::runtime_error("Storage is about to be deleted. Done pending task as if it was aborted.");
         }
         catch (...)
         {

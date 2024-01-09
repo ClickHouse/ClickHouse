@@ -54,14 +54,13 @@ public:
     void createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
     void dropTable(ContextPtr, const String & table_name, bool sync) override;
 
+    void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void drop(ContextPtr /*context*/) override;
     void shutdown() override;
 
 protected:
-    void attachTableUnlocked(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) TSA_REQUIRES(mutex) override;
-
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
 private:

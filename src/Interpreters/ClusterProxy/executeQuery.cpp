@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/Distributed/DistributedSettings.h>
 
 
 namespace DB
@@ -41,7 +42,8 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     const Settings & settings,
     const StorageID & main_table,
     ASTPtr additional_filter_ast,
-    Poco::Logger * log)
+    Poco::Logger * log,
+    const DistributedSettings * distributed_settings)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
@@ -101,6 +103,12 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
         }
     }
 
+    if (!settings.skip_unavailable_shards.changed && distributed_settings)
+    {
+        new_settings.skip_unavailable_shards = distributed_settings->skip_unavailable_shards.value;
+        new_settings.skip_unavailable_shards.changed = true;
+    }
+
     if (settings.offset)
     {
         new_settings.offset = 0;
@@ -127,7 +135,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
     }
 
     /// disable parallel replicas if cluster contains only shards with 1 replica
-    if (context->canUseParallelReplicas())
+    if (context->canUseTaskBasedParallelReplicas())
     {
         bool disable_parallel_replicas = true;
         for (const auto & shard : cluster.getShardsInfo())
@@ -194,6 +202,7 @@ void executeQuery(
     const ExpressionActionsPtr & sharding_key_expr,
     const std::string & sharding_key_column_name,
     const ClusterPtr & not_optimized_cluster,
+    const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator)
 {
     const Settings & settings = context->getSettingsRef();
@@ -205,7 +214,8 @@ void executeQuery(
     SelectStreamFactory::Shards remote_shards;
 
     auto cluster = query_info.getCluster();
-    auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log);
+    auto new_context = updateSettingsForCluster(*cluster, context, settings, main_table, query_info.additional_filter_ast, log,
+        &distributed_settings);
     if (context->getSettingsRef().allow_experimental_parallel_reading_from_replicas
         && context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value
            != new_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas.value)
@@ -255,7 +265,7 @@ void executeQuery(
         // decide for each shard if parallel reading from replicas should be enabled
         // according to settings and number of replicas declared per shard
         const auto & addresses = cluster->getShardsAddresses().at(i);
-        bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseParallelReplicas();
+        bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseTaskBasedParallelReplicas();
 
         stream_factory.createForShard(
             shard_info,
@@ -372,7 +382,6 @@ void executeQueryWithParallelReplicas(
         shard_num = column->getUInt(0);
     }
 
-    size_t all_replicas_count = 0;
     ClusterPtr new_cluster;
     /// if got valid shard_num from query initiator, then parallel replicas scope is the specified shard
     /// shards are numbered in order of appearance in the cluster config
@@ -396,16 +405,15 @@ void executeQueryWithParallelReplicas(
         // shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
         auto single_shard_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
         // convert cluster to representation expected by parallel replicas
-        new_cluster = single_shard_cluster->getClusterWithReplicasAsShards(settings);
+        new_cluster = single_shard_cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
     }
     else
     {
-        new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings);
+        new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
     }
 
-    all_replicas_count = std::min(static_cast<size_t>(settings.max_parallel_replicas), new_cluster->getShardCount());
-
-    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(all_replicas_count);
+    auto coordinator
+        = std::make_shared<ParallelReplicasReadingCoordinator>(new_cluster->getShardCount(), settings.parallel_replicas_mark_segment_size);
     auto external_tables = new_context->getExternalTables();
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,

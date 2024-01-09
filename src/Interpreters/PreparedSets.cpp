@@ -97,11 +97,13 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     String key,
     std::unique_ptr<QueryPlan> source_,
     StoragePtr external_table_,
-    FutureSetPtr external_table_set_,
-    const Settings & settings)
+    std::shared_ptr<FutureSetFromSubquery> external_table_set_,
+    const Settings & settings,
+    bool in_subquery_)
     : external_table(std::move(external_table_))
     , external_table_set(std::move(external_table_set_))
     , source(std::move(source_))
+    , in_subquery(in_subquery_)
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = std::move(key);
@@ -174,6 +176,24 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & conte
     return plan;
 }
 
+void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
+{
+    if (external_table_set)
+        external_table_set->buildSetInplace(context);
+
+    auto plan = build(context);
+
+    if (!plan)
+        return;
+
+    auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+    pipeline.complete(std::make_shared<EmptySink>(Block()));
+
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
+}
+
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 {
     if (!context->getSettingsRef().use_index_for_in_with_subqueries)
@@ -239,7 +259,7 @@ String PreparedSets::toString(const PreparedSets::Hash & key, const DataTypes & 
     return buf.str();
 }
 
-FutureSetPtr PreparedSets::addFromTuple(const Hash & key, Block block, const Settings & settings)
+FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, Block block, const Settings & settings)
 {
     auto from_tuple = std::make_shared<FutureSetFromTuple>(std::move(block), settings);
     const auto & set_types = from_tuple->getTypes();
@@ -253,7 +273,7 @@ FutureSetPtr PreparedSets::addFromTuple(const Hash & key, Block block, const Set
     return from_tuple;
 }
 
-FutureSetPtr PreparedSets::addFromStorage(const Hash & key, SetPtr set_)
+FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, SetPtr set_)
 {
     auto from_storage = std::make_shared<FutureSetFromStorage>(std::move(set_));
     auto [it, inserted] = sets_from_storage.emplace(key, from_storage);
@@ -264,19 +284,21 @@ FutureSetPtr PreparedSets::addFromStorage(const Hash & key, SetPtr set_)
     return from_storage;
 }
 
-FutureSetPtr PreparedSets::addFromSubquery(
+FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     const Hash & key,
     std::unique_ptr<QueryPlan> source,
     StoragePtr external_table,
-    FutureSetPtr external_table_set,
-    const Settings & settings)
+    FutureSetFromSubqueryPtr external_table_set,
+    const Settings & settings,
+    bool in_subquery)
 {
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
         toString(key, {}),
         std::move(source),
         std::move(external_table),
         std::move(external_table_set),
-        settings);
+        settings,
+        in_subquery);
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
 
@@ -286,7 +308,7 @@ FutureSetPtr PreparedSets::addFromSubquery(
     return from_subquery;
 }
 
-FutureSetPtr PreparedSets::addFromSubquery(
+FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     const Hash & key,
     QueryTreeNodePtr query_tree,
     const Settings & settings)
@@ -304,7 +326,7 @@ FutureSetPtr PreparedSets::addFromSubquery(
     return from_subquery;
 }
 
-FutureSetPtr PreparedSets::findTuple(const Hash & key, const DataTypes & types) const
+FutureSetFromTuplePtr PreparedSets::findTuple(const Hash & key, const DataTypes & types) const
 {
     auto it = sets_from_tuple.find(key);
     if (it == sets_from_tuple.end())
@@ -326,6 +348,15 @@ std::shared_ptr<FutureSetFromSubquery> PreparedSets::findSubquery(const Hash & k
     return it->second;
 }
 
+void PreparedSets::markAsINSubquery(const Hash & key)
+{
+    auto it = sets_from_subqueries.find(key);
+    if (it == sets_from_subqueries.end())
+        return;
+
+    it->second->markAsINSubquery();
+}
+
 std::shared_ptr<FutureSetFromStorage> PreparedSets::findStorage(const Hash & key) const
 {
     auto it = sets_from_storage.find(key);
@@ -335,11 +366,11 @@ std::shared_ptr<FutureSetFromStorage> PreparedSets::findStorage(const Hash & key
     return it->second;
 }
 
-PreparedSets::Subqueries PreparedSets::getSubqueries()
+PreparedSets::Subqueries PreparedSets::getSubqueries() const
 {
     PreparedSets::Subqueries res;
     res.reserve(sets_from_subqueries.size());
-    for (auto & [_, set] : sets_from_subqueries)
+    for (const auto & [_, set] : sets_from_subqueries)
         res.push_back(set);
 
     return res;
