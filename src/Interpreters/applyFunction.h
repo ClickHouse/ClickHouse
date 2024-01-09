@@ -4,13 +4,13 @@
 
 namespace DB
 {
-    struct FieldRef;
+struct FieldRef;
 
-    class IFunctionBase;
-    class IDataType;
+class IFunctionBase;
+class IDataType;
 
-    using DataTypePtr = std::shared_ptr<const IDataType>;
-    using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
-    FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field);
+FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field);
 }

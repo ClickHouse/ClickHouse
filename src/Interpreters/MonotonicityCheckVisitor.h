@@ -1,11 +1,13 @@
 #pragma once
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Core/Range.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/applyFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -13,8 +15,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/FieldToDataType.h>
-#include <Core/Range.h>
 
 namespace DB
 {
@@ -109,7 +109,7 @@ public:
             return;
         }
 
-        auto arguments_size =  ast_function.arguments->children.size();
+        auto arguments_size = ast_function.arguments->children.size();
 
         if (arguments_size == 0 || arguments_size > 2)
         {
@@ -119,8 +119,7 @@ public:
         else if (arguments_size == 2)
         {
             /// If the function has two arguments, then one of them must be a constant.
-            if (!ast_function.arguments->children[0]->as<ASTLiteral>()
-                && !ast_function.arguments->children[1]->as<ASTLiteral>())
+            if (!ast_function.arguments->children[0]->as<ASTLiteral>() && !ast_function.arguments->children[1]->as<ASTLiteral>())
             {
                 data.reject();
                 return;

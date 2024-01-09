@@ -25,16 +25,13 @@
 
 #include <base/sort.h>
 
-#include <Storages/buildQueryTreeForShard.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Freeze.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/MergeTree/extractZkPathFromCreateQuery.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LeaderElection.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
@@ -42,6 +39,7 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
@@ -53,9 +51,11 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Storages/MergeTree/extractZkPathFromCreateQuery.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/buildQueryTreeForShard.h>
 
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
@@ -7831,19 +7831,14 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     if (attach_empty_partition)
         return;
 
-    auto query_to_string = [] (const ASTPtr & ast)
-    {
-        return ast ? queryToString(ast) : "";
-    };
+    auto query_to_string = [](const ASTPtr & ast) { return ast ? queryToString(ast) : ""; };
 
     const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
     const auto is_partition_exp_different = query_to_string(my_partition_expression) != query_to_string(src_partition_expression);
 
     if (is_partition_exp_different && !src_all_parts.empty())
-    {
         MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_all_parts);
-    }
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
@@ -7943,18 +7938,16 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
                 MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
 
-                auto [dst_part, part_lock] =
-                    cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
-                        src_part,
-                        TMP_PREFIX,
-                        dst_part_info,
-                        metadata_snapshot,
-                        new_partition,
-                        min_max_index,
-                        clone_params,
-                        query_context->getReadSettings(),
-                        query_context->getWriteSettings()
-                    );
+                auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+                    src_part,
+                    TMP_PREFIX,
+                    dst_part_info,
+                    metadata_snapshot,
+                    new_partition,
+                    min_max_index,
+                    clone_params,
+                    query_context->getReadSettings(),
+                    query_context->getWriteSettings());
 
                 dst_parts.emplace_back(dst_part);
                 dst_parts_locks.emplace_back(std::move(part_lock));

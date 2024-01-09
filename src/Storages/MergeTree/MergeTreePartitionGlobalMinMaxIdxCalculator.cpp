@@ -3,10 +3,8 @@
 namespace DB
 {
 
-IMergeTreeDataPart::MinMaxIndex MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(
-    const DataPartsVector & parts,
-    const MergeTreeData & storage
-)
+IMergeTreeDataPart::MinMaxIndex
+MergeTreePartitionGlobalMinMaxIdxCalculator::calculate(const DataPartsVector & parts, const MergeTreeData & storage)
 {
     IMergeTreeDataPart::MinMaxIndex global_min_max_indexes;
 

@@ -467,7 +467,8 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
     }
 }
 
-void MergeTreePartition::createAndValidateMinMaxPartitionIds(const StorageMetadataPtr & metadata_snapshot, Block block_with_min_max_partition_ids, ContextPtr context)
+void MergeTreePartition::createAndValidateMinMaxPartitionIds(
+    const StorageMetadataPtr & metadata_snapshot, Block block_with_min_max_partition_ids, ContextPtr context)
 {
     if (!metadata_snapshot->hasPartitionKey())
         return;
@@ -496,7 +497,9 @@ void MergeTreePartition::createAndValidateMinMaxPartitionIds(const StorageMetada
 
         if (extracted_min_partition_id_field != extracted_max_partition_id_field)
         {
-            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Can not create the partition. A partition can not contain values that have different partition ids");
+            throw Exception(
+                ErrorCodes::INVALID_PARTITION_VALUE,
+                "Can not create the partition. A partition can not contain values that have different partition ids");
         }
 
         partition_column.column->get(0u, value[i++]);

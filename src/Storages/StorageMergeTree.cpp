@@ -5,22 +5,16 @@
 #include <optional>
 #include <ranges>
 
-#include <base/sort.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Databases/IDatabase.h>
-#include <Common/MemoryTracker.h>
-#include <Common/escapeForFileName.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/typeid_cast.h>
-#include <Common/ThreadPool.h>
-#include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/TransactionLog.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <IO/copyData.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/PartLog.h>
+#include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -38,13 +32,19 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
+#include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
+#include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
-#include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
-#include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
+#include <base/sort.h>
 #include <fmt/core.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -2028,19 +2028,14 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     static const String TMP_PREFIX = "tmp_replace_from_";
 
-    auto query_to_string = [] (const ASTPtr & ast)
-    {
-        return ast ? queryToString(ast) : "";
-    };
+    auto query_to_string = [](const ASTPtr & ast) { return ast ? queryToString(ast) : ""; };
 
     const auto my_partition_expression = my_metadata_snapshot->getPartitionKeyAST();
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
     const auto is_partition_exp_different = query_to_string(my_partition_expression) != query_to_string(src_partition_expression);
 
     if (is_partition_exp_different && !src_parts.empty())
-    {
         MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_parts);
-    }
 
     for (DataPartPtr & src_part : src_parts)
     {
@@ -2069,18 +2064,16 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
             MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
-            auto [dst_part, part_lock] =
-                cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
-                    src_part,
-                    TMP_PREFIX,
-                    dst_part_info,
-                    my_metadata_snapshot,
-                    new_partition,
-                    min_max_index,
-                    clone_params,
-                    local_context->getReadSettings(),
-                    local_context->getWriteSettings()
-                );
+            auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+                src_part,
+                TMP_PREFIX,
+                dst_part_info,
+                my_metadata_snapshot,
+                new_partition,
+                min_max_index,
+                clone_params,
+                local_context->getReadSettings(),
+                local_context->getWriteSettings());
 
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));
@@ -2098,8 +2091,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 my_metadata_snapshot,
                 clone_params,
                 local_context->getReadSettings(),
-                local_context->getWriteSettings()
-            );
+                local_context->getWriteSettings());
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));
         }

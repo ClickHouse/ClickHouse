@@ -107,9 +107,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Par
 Block IMergeTreeDataPart::MinMaxIndex::getBlock(const MergeTreeData & data) const
 {
     if (!initialized)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Attempt to get block from uninitialized MinMax index.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to get block from uninitialized MinMax index.");
 
     Block block;
 

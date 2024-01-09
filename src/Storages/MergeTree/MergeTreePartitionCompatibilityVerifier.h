@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Core/Field.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -23,11 +23,8 @@ public:
     using DataPartPtr = std::shared_ptr<const DataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
-    static void verify(
-        const MergeTreeData & source_storage,
-        const MergeTreeData & destination_storage,
-        const DataPartsVector & source_parts);
-
+    static void
+    verify(const MergeTreeData & source_storage, const MergeTreeData & destination_storage, const DataPartsVector & source_parts);
 };
 
 }
