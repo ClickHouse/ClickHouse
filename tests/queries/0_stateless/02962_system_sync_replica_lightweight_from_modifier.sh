@@ -24,9 +24,19 @@ function insert_thread() {
 }
 
 function sync_and_drop_replicas() {
-    for i in $(seq $REPLICAS_TO_DROP); do
-        $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA LIGHTWEIGHT test_table_$i FROM '$i'"
-        $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_table_$i"
+    while true; do
+        for i in $(seq $REPLICAS_TO_DROP); do
+            local stable_replica_id=$((i + 1))
+            $CLICKHOUSE_CLIENT --query "ALTER TABLE test_table_$i MODIFY SETTING parts_to_throw_insert = 0"
+            sleep 1
+            $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA LIGHTWEIGHT test_table_$stable_replica_id FROM '$i'"
+            $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_table_$i"
+        done
+
+        for i in $(seq $REPLICAS_TO_DROP); do
+            $CLICKHOUSE_CLIENT --query "CREATE TABLE test_table_$i (key UInt64, value UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_table', '$i') ORDER BY key"
+            $CLICKHOUSE_CLIENT --query "ALTER TABLE test_table_$i MODIFY SETTING parts_to_throw_insert = 300"
+        done
     done
 }
 
@@ -52,7 +62,7 @@ export -f sync_and_drop_replicas
 export -f optimize_thread
 export -f mutations_thread
 
-TIMEOUT=30
+TIMEOUT=60
 
 timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 timeout $TIMEOUT bash -c sync_and_drop_replicas 2> /dev/null &
@@ -60,6 +70,8 @@ timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
 timeout $TIMEOUT bash -c mutations_thread 2> /dev/null &
 
 wait
+
+check_replication_consistency "test_table_" "count(), sum(key), sum(value)"
 
 echo "Test completed"
 
