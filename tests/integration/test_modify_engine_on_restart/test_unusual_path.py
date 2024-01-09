@@ -1,4 +1,5 @@
 import pytest
+from test_modify_engine_on_restart.common import check_flags_deleted, set_convert_flags
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -77,24 +78,15 @@ def check_tables():
     )
 
 
-def set_convert_flags():
-    for table in ["replacing_ver", "collapsing_ver"]:
-        ch1.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"touch /var/lib/clickhouse/data/{database_name}/{table}/convert_to_replicated",
-            ]
-        )
-
-
 def test_modify_engine_on_restart_with_unusual_path(started_cluster):
     ch1.query("CREATE DATABASE " + database_name)
 
     create_tables()
 
-    set_convert_flags()
+    set_convert_flags(ch1, database_name, ["replacing_ver", "collapsing_ver"])
 
     ch1.restart_clickhouse()
+
+    check_flags_deleted(ch1, database_name, ["replacing_ver", "collapsing_ver"])
 
     check_tables()

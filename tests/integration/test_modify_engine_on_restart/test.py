@@ -1,4 +1,5 @@
 import pytest
+from test_modify_engine_on_restart.common import check_flags_deleted, set_convert_flags
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -109,27 +110,6 @@ def check_tables(converted):
         )
 
 
-def set_convert_flags():
-    # Set convert flag on actually convertable tables
-    for table in ["rmt", "replacing"]:
-        ch1.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"touch /var/lib/clickhouse/data/{database_name}/{table}/convert_to_replicated",
-            ]
-        )
-
-    # Set flag to not MergeTree table to check that nothing happens
-    ch1.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"touch /var/lib/clickhouse/data/{database_name}/log/convert_to_replicated",
-        ]
-    )
-
-
 def check_replica_added():
     # Add replica to check if zookeeper path is correct and consistent with table uuid
 
@@ -166,9 +146,11 @@ def test_modify_engine_on_restart(started_cluster):
 
     check_tables(False)
 
-    set_convert_flags()
+    set_convert_flags(ch1, database_name, ["rmt", "replacing", "log"])
 
     ch1.restart_clickhouse()
+
+    check_flags_deleted(ch1, database_name, ["rmt", "replacing"])
 
     check_tables(True)
 

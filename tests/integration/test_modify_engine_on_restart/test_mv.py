@@ -1,4 +1,5 @@
 import pytest
+from test_modify_engine_on_restart.common import check_flags_deleted, set_convert_flags
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -115,17 +116,6 @@ def check_tables(converted):
         assert q(ch1, "SELECT count() FROM hourly_data").strip() == "8"
 
 
-def set_convert_flags():
-    for table in ["hourly_data", "monthly_aggregated_data"]:
-        ch1.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"touch /var/lib/clickhouse/data/{database_name}/{table}/convert_to_replicated",
-            ]
-        )
-
-
 def test_modify_engine_on_restart_with_materialized_view(started_cluster):
     ch1.query(f"CREATE DATABASE {database_name}")
 
@@ -133,8 +123,10 @@ def test_modify_engine_on_restart_with_materialized_view(started_cluster):
 
     check_tables(False)
 
-    set_convert_flags()
+    set_convert_flags(ch1, database_name, ["hourly_data", "monthly_aggregated_data"])
 
     ch1.restart_clickhouse()
+
+    check_flags_deleted(ch1, database_name, ["hourly_data", "monthly_aggregated_data"])
 
     check_tables(True)
