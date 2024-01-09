@@ -375,9 +375,9 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
              * So we need to know changed types in result tables before further analysis (e.g. analyzeAggregation)
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
-             * Also for using we set `require_strict_keys_match = true` because we want to have Nullable(T) in result table in case of any table has NULLs.
              */
-            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), /* require_strict_keys_match = */ true);
+            bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), require_strict_keys_match);
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
             {
