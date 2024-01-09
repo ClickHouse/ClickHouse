@@ -34,8 +34,8 @@ protected:
 
 private:
     const int level;
-    ZSTD_CCtx * cctx;
-    void * sequenceProducerState;
+    ZSTD_CCtx * cctx = nullptr;
+    void * sequenceProducerState = nullptr;
     Poco::Logger * log;
     static int qat_state;
 };
@@ -93,19 +93,15 @@ CompressionCodecZSTDQAT::CompressionCodecZSTDQAT(int level_)
     {
         qat_state = QZSTD_startQatDevice();
         if(qat_state == QZSTD_OK)
-            LOG_DEBUG(log, "Hardware-assisted ZSTD_QAT codec is ready!");
+            LOG_DEBUG(log, "Initialization of hardware-assissted ZSTD_QAT codec successful");
         else
             LOG_WARNING(log, "Initialization of hardware-assisted ZSTD_QAT codec failed, falling back to software ZSTD codec -> status: {}", qat_state);
     }
 
-    if(qat_state == QZSTD_OK)
+    if (qat_state == QZSTD_OK)
     {
         sequenceProducerState = QZSTD_createSeqProdState();
-        ZSTD_registerSequenceProducer(
-            cctx,
-            sequenceProducerState,
-            qatSequenceProducer
-        );
+        ZSTD_registerSequenceProducer(cctx, sequenceProducerState, qatSequenceProducer);
         ZSTD_CCtx_setParameter(cctx, ZSTD_c_enableSeqProducerFallback, 1);
     }
     else
@@ -122,13 +118,8 @@ CompressionCodecZSTDQAT::~CompressionCodecZSTDQAT()
         sequenceProducerState = nullptr;
     }
 
-    if (cctx != nullptr)
-    {
-        size_t status = ZSTD_freeCCtx(cctx);
-        if (status != 0)
-            LOG_WARNING(log, "ZSTD_freeCCtx failed with status: {} ", status);
-        cctx = nullptr;
-    }
+    ZSTD_freeCCtx(cctx);
+    cctx = nullptr;
 }
 
 }
