@@ -271,7 +271,7 @@ void KeeperStorage<Container>::initializeSystemNodes()
 
         // update root and the digest based on it
         auto current_root_it = container.find("/");
-        assert(current_root_it != container.end());
+        assert(current_root_it);
         removeDigest(current_root_it->value, "/");
         auto updated_root_it = container.updateValue(
             "/",
