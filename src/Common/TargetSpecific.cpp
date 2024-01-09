@@ -50,6 +50,9 @@ String toString(TargetArch arch)
         case TargetArch::AVX512BW:    return "avx512bw";
         case TargetArch::AVX512VBMI:  return "avx512vbmi";
         case TargetArch::AVX512VBMI2: return "avx512vbmi2";
+        case TargetArch::AMXBF16: return "amxbf16";
+        case TargetArch::AMXTILE: return "amxtile";
+        case TargetArch::AMXINT8: return "amxint8";
     }
 
     UNREACHABLE();
