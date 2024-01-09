@@ -228,7 +228,8 @@ private:
         else
         {
             UInt32 new_length = getNewLength(new_min_key, new_max_key);
-            if (new_length > bins.capacity()) {
+            if (new_length > bins.capacity())
+            {
                 bins.reserve(new_length);
             }
             std::size_t old_size = bins.size();
