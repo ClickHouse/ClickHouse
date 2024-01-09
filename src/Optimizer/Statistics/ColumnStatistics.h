@@ -46,7 +46,6 @@ public:
     }
 
     ColumnStatistics() : ColumnStatistics(0.0, 0.0, 1.0, 1.0, {}, false, {}) { }
-
     ColumnStatistics(Float64 value) : ColumnStatistics(value, value, 1.0, 1.0, {}, false, {}) { }
 
     ColumnStatistics(Float64 min_value_, Float64 max_value_, Float64 ndv_, Float64 avg_row_size_)

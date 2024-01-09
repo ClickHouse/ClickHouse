@@ -167,14 +167,22 @@ Stats DeriveStatistics::visit(AggregatingStep & step)
     const auto & input = input_statistics.front();
 
     /// 1. initialize statistics
-    if (step.isGroupingSets())
-        statistics.addColumnStatistics(output_names[0], ColumnStatistics::unknown());
 
-    for (size_t i = 0; i < input_names.size(); i++)
+    /// The first column of grouping set aggregation is "__grouping_set"
+    if (step.isGroupingSets())
+        statistics.addColumnStatistics(output_names[0], ColumnStatistics::create(1.0));
+
+    /// keys
+    for (const String & key : step.getParams().keys)
     {
-        /// The input name and output name are one-to-one correspondences.
-        auto column_stats = input.getColumnStatistics(input_names[i]);
-        statistics.addColumnStatistics(output_names[step.isGroupingSets() ? i + 1 : i], column_stats->clone());
+        auto column_stats = input.getColumnStatistics(key);
+        statistics.addColumnStatistics(key, column_stats->clone());
+    }
+
+    /// aggregates
+    for (const auto & aggregate : step.getParams().aggregates)
+    {
+        statistics.addColumnStatistics(aggregate.column_name, ColumnStatistics::create(1.0));
     }
 
     /// 2. calculate selectivity
