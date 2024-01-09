@@ -226,8 +226,8 @@ void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory & factor
     factory.registerAlias("last_value_respect_nulls", "anyLast_respect_nulls", AggregateFunctionFactory::CaseInsensitive);
 
     /// Must happen after registering any and anyLast
-    //    factory.registerNullsActionTransformation("any", "any_respect_nulls");
-    //    factory.registerNullsActionTransformation("anyLast", "anyLast_respect_nulls");
+    factory.registerNullsActionTransformation("any", "any_respect_nulls");
+    factory.registerNullsActionTransformation("anyLast", "anyLast_respect_nulls");
 }
 
 }

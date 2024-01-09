@@ -1,5 +1,5 @@
 #include <AggregateFunctions/SingleValueData.h>
-
+#include <Columns/ColumnString.h>
 #include <Common/findExtreme.h>
 
 namespace DB
