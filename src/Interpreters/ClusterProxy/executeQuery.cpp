@@ -412,7 +412,8 @@ void executeQueryWithParallelReplicas(
         new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
     }
 
-    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(new_cluster->getShardCount());
+    auto coordinator
+        = std::make_shared<ParallelReplicasReadingCoordinator>(new_cluster->getShardCount(), settings.parallel_replicas_mark_segment_size);
     auto external_tables = new_context->getExternalTables();
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,
