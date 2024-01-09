@@ -26,13 +26,13 @@ namespace
 
         auto table_identifier = std::make_shared<ASTIdentifier>(destination_storage.getStorageID().getTableName());
         auto table_with_columns = TableWithColumnNamesAndTypes {
-            DatabaseAndTableWithAlias(table_identifier, {}),
+            DatabaseAndTableWithAlias(table_identifier),
             destination_table_metadata->getColumns().getOrdinary()
         };
 
         auto expression_list = extractKeyExpressionList(definition_ast);
 
-        MonotonicityCheckVisitor::Data data {{table_with_columns}, destination_storage.getContext(), {}};
+        MonotonicityCheckVisitor::Data data {{table_with_columns}, destination_storage.getContext(), /*group_by_function_hashes*/ {}};
 
         for (auto i = 0u; i < expression_list->children.size(); i++)
         {
