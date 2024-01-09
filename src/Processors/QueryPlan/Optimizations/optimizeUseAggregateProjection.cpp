@@ -615,7 +615,6 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
                 reader,
                 required_column_names,
                 parts_with_ranges,
-                metadata,
                 query_info,
                 context,
                 max_added_blocks,
