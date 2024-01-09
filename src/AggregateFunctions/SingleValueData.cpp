@@ -8,7 +8,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
