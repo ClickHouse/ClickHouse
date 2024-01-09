@@ -38,6 +38,7 @@ void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory &);
 void registerAggregateFunctionRate(AggregateFunctionFactory &);
 void registerAggregateFunctionMin(AggregateFunctionFactory &);
 void registerAggregateFunctionMax(AggregateFunctionFactory &);
+void registerAggregateFunctionArgMin(AggregateFunctionFactory &);
 void registerAggregateFunctionArgMax(AggregateFunctionFactory &);
 void registerAggregateFunctionsAny(AggregateFunctionFactory &);
 void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory &);
@@ -137,6 +138,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionRate(factory);
         registerAggregateFunctionMin(factory);
         registerAggregateFunctionMax(factory);
+        registerAggregateFunctionArgMin(factory);
         registerAggregateFunctionArgMax(factory);
         registerAggregateFunctionsAny(factory);
         registerAggregateFunctionAnyHeavy(factory);

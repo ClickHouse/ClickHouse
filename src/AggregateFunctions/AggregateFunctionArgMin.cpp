@@ -17,9 +17,9 @@ extern const int CORRUPTED_DATA;
 namespace
 {
 
-/// Returns the first arg value found for the maximum value. Example: argMax(arg, value).
+/// Returns the first arg value found for the minimum value. Example: argMin(arg, value).
 template <typename Data>
-class AggregateFunctionArgMax final : public IAggregateFunctionDataHelper<Data, AggregateFunctionArgMax<Data>>
+class AggregateFunctionArgMin final : public IAggregateFunctionDataHelper<Data, AggregateFunctionArgMin<Data>>
 {
 private:
     const DataTypePtr & type_val;
@@ -29,10 +29,10 @@ private:
     const TypeIndex result_type;
     const TypeIndex value_type;
 
-    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionArgMax<Data>>;
+    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionArgMin<Data>>;
 
 public:
-    AggregateFunctionArgMax(const DataTypePtr & type_res_, const DataTypePtr & type_val_)
+    AggregateFunctionArgMin(const DataTypePtr & type_res_, const DataTypePtr & type_val_)
         : Base({type_res_, type_val_}, {}, type_res_)
         , type_val(this->argument_types[1])
         , serialization_res(type_res_->getDefaultSerialization())
@@ -50,11 +50,11 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override { new (place) Data(result_type, value_type); }
 
-    String getName() const override { return "argMax"; }
+    String getName() const override { return "argMin"; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (this->data(place).value->setIfGreater(*columns[1], row_num, arena))
+        if (this->data(place).value->setIfSmaller(*columns[1], row_num, arena))
             this->data(place).result->set(*columns[0], row_num, arena);
     }
 
@@ -70,14 +70,14 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & if_map = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            idx = this->data(place).value->getGreatestIndexNotNullIf(*columns[1], nullptr, if_map.data(), row_begin, row_end);
+            idx = this->data(place).value->getSmallestIndexNotNullIf(*columns[1], nullptr, if_map.data(), row_begin, row_end);
         }
         else
         {
-            idx = this->data(place).value->getGreatestIndex(*columns[1], row_begin, row_end);
+            idx = this->data(place).value->getSmallestIndex(*columns[1], row_begin, row_end);
         }
 
-        if (idx && this->data(place).value->setIfGreater(*columns[1], *idx, arena))
+        if (idx && this->data(place).value->setIfSmaller(*columns[1], *idx, arena))
             this->data(place).result->set(*columns[0], *idx, arena);
     }
 
@@ -94,20 +94,20 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & if_map = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            idx = this->data(place).value->getGreatestIndexNotNullIf(*columns[1], null_map, if_map.data(), row_begin, row_end);
+            idx = this->data(place).value->getSmallestIndexNotNullIf(*columns[1], null_map, if_map.data(), row_begin, row_end);
         }
         else
         {
-            idx = this->data(place).value->getGreatestIndexNotNullIf(*columns[1], null_map, nullptr, row_begin, row_end);
+            idx = this->data(place).value->getSmallestIndexNotNullIf(*columns[1], null_map, nullptr, row_begin, row_end);
         }
 
-        if (idx && this->data(place).value->setIfGreater(*columns[1], *idx, arena))
+        if (idx && this->data(place).value->setIfSmaller(*columns[1], *idx, arena))
             this->data(place).result->set(*columns[0], *idx, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        if (this->data(place).value->setIfGreater(*this->data(rhs).value, arena))
+        if (this->data(place).value->setIfSmaller(*this->data(rhs).value, arena))
             this->data(place).result->set(*this->data(rhs).result, arena);
     }
 
@@ -142,14 +142,15 @@ public:
 AggregateFunctionPtr createAggregateFunctionArgMax(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    return AggregateFunctionPtr(createAggregateFunctionArgMinMax<AggregateFunctionArgMax>(name, argument_types, parameters, settings));
+    return AggregateFunctionPtr(createAggregateFunctionArgMinMax<AggregateFunctionArgMin>(name, argument_types, parameters, settings));
 }
 
 }
 
-void registerAggregateFunctionArgMax(AggregateFunctionFactory & factory)
+void registerAggregateFunctionArgMin(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
-    factory.registerFunction("argMax", {createAggregateFunctionArgMax, properties});
+    factory.registerFunction("argMin", {createAggregateFunctionArgMax, properties});
 }
+
 }

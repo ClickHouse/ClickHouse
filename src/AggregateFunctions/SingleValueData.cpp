@@ -290,9 +290,11 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
     if constexpr (has_find_extreme_implementation<T>)
     {
         /// TODO: Implement findExtremeMinIndex
+        ///
         std::optional<T> opt = findExtremeMin(vec.getData().data(), row_begin, row_end);
         if (!opt)
             return std::nullopt;
+        /// TODO: What if we don't search if it's not smaller than the stored value???
         for (size_t i = row_begin; i < row_end; i++)
             if (vec.getData()[i] == *opt)
                 return i;

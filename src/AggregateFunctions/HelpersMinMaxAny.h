@@ -1,6 +1,5 @@
 #pragma once
 
-#include <AggregateFunctions/AggregateFunctionArgMinMax.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/SingleValueData.h>
