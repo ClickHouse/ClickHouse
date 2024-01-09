@@ -129,13 +129,12 @@ String queryStringFromAST(ASTPtr ast)
 QueryCache::Key::Key(
     ASTPtr ast_,
     Block header_,
-    const String & user_name_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+    std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
     : ast(removeQueryCacheSettings(ast_))
     , header(header_)
-    , user_name(user_name_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
     , is_shared(is_shared_)
@@ -145,8 +144,8 @@ QueryCache::Key::Key(
 {
 }
 
-QueryCache::Key::Key(ASTPtr ast_, const String & user_name_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, {}, user_name_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST or user name
+QueryCache::Key::Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_)
+    : QueryCache::Key(ast_, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false) /// dummy values for everything != AST or user name
 {
 }
 
@@ -404,10 +403,9 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
     const auto & entry_key = entry->key;
     const auto & entry_mapped = entry->mapped;
 
-    const bool is_same_user_name = (entry_key.user_name == key.user_name);
     const bool is_same_user_id = ((!entry_key.user_id.has_value() && !key.user_id.has_value()) || (entry_key.user_id.has_value() && key.user_id.has_value() && *entry_key.user_id == *key.user_id));
     const bool is_same_current_user_roles = (entry_key.current_user_roles == key.current_user_roles);
-    if (!entry_key.is_shared && (!is_same_user_name || !is_same_user_id || !is_same_current_user_roles))
+    if (!entry_key.is_shared && (!is_same_user_id || !is_same_current_user_roles))
     {
         LOG_TRACE(logger, "Inaccessible query result found for query {}", doubleQuoteString(key.query_string));
         return;
@@ -509,7 +507,7 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
     /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
     /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
     /// users.xml change.
-    cache.setQuotaForUser(key.user_name, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota);
+    cache.setQuotaForUser(key.user_id, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota);
 
     std::lock_guard lock(mutex);
     return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);

@@ -43,10 +43,9 @@ void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr 
     for (const auto & [key, query_result] : content)
     {
         /// Showing other user's queries is considered a security risk
-        const bool is_same_user_name = (key.user_name == user_name);
         const bool is_same_user_id = ((!key.user_id.has_value() && !user_id.has_value()) || (key.user_id.has_value() && user_id.has_value() && *key.user_id == *user_id));
         const bool is_same_current_user_roles = (key.current_user_roles == current_user_roles);
-        if (!key.is_shared && (!is_same_user_name || !is_same_user_id || !is_same_current_user_roles))
+        if (!key.is_shared && (!is_same_user_id || !is_same_current_user_roles))
             continue;
 
         res_columns[0]->insert(key.query_string); /// approximates the original query string

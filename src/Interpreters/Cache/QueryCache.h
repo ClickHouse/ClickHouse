@@ -4,9 +4,12 @@
 #include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Chunk.h>
+#include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
+#include <base/UUID.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -51,14 +54,13 @@ public:
         /// Result metadata for constructing the pipe.
         const Block header;
 
-        /// The name, id and current roles of the user who executed the query.
+        /// The id and current roles of the user who executed the query.
         /// These members are necessary to ensure that a (non-shared, see below) entry can only be written and read by the same user with
         /// the same roles. Example attack scenarios:
         /// - after DROP USER, it must not be possible to create a new user with with the dropped user name and access the dropped user's
         ///   query cache entries
         /// - different roles of the same user may be tied to different row-level policies. It must not be possible to switch role and
         ///   access another role's cache entries
-        const String user_name;
         std::optional<UUID> user_id;
         std::vector<UUID> current_user_roles;
 
@@ -82,13 +84,13 @@ public:
         /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
             Block header_,
-            const String & user_name_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed);
 
         /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
-        Key(ASTPtr ast_, const String & user_name_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+        Key(ASTPtr ast_, std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
 
         bool operator==(const Key & other) const;
     };
