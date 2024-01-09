@@ -19,7 +19,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     size_t replica_num,
     ASTPtr custom_key_ast,
     ParallelReplicasCustomKeyFilterType filter_type,
-    const IStorage & storage,
+    const ColumnsDescription & columns,
     const ContextPtr & context);
 
 ASTPtr parseCustomKeyForTable(const String & custom_keys, const Context & context);

@@ -47,6 +47,12 @@ SELECT * FROM test_table;
 └──────┴───────┘
 ```
 
+## Virtual columns {#virtual-columns}
+
+- `_path` — Path to the file. Type: `LowCardinalty(String)`.
+- `_file` — Name of the file. Type: `LowCardinalty(String)`.
+- `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+
 ## See also
 
 [Azure Blob Storage Table Function](/docs/en/sql-reference/table-functions/azureBlobStorage)

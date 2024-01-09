@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -209,7 +210,7 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & qu
 {
     auto select_query_options_copy = select_query_options;
     select_query_options_copy.only_analyze = true;
-    InterpreterSelectQueryAnalyzer interpreter(query_tree, context, select_query_options);
+    InterpreterSelectQueryAnalyzer interpreter(query_tree, context, select_query_options_copy);
 
     return interpreter.getSampleBlock();
 }
@@ -265,6 +266,15 @@ void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & el
 {
     for (const auto & used_row_policy : planner.getUsedRowPolicies())
         elem.used_row_policies.emplace(used_row_policy);
+}
+
+void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterSelectQueryAnalyzer>(args.query, args.context, args.options);
+    };
+    factory.registerInterpreter("InterpreterSelectQueryAnalyzer", create_fn);
 }
 
 }

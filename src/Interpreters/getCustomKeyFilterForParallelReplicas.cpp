@@ -31,7 +31,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     size_t replica_num,
     ASTPtr custom_key_ast,
     ParallelReplicasCustomKeyFilterType filter_type,
-    const IStorage & storage,
+    const ColumnsDescription & columns,
     const ContextPtr & context)
 {
     assert(replicas_count > 1);
@@ -49,7 +49,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     assert(filter_type == ParallelReplicasCustomKeyFilterType::RANGE);
 
     KeyDescription custom_key_description
-        = KeyDescription::getKeyFromAST(custom_key_ast, storage.getInMemoryMetadataPtr()->columns, context);
+        = KeyDescription::getKeyFromAST(custom_key_ast, columns, context);
 
     using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 

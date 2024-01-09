@@ -158,7 +158,9 @@ private:
             auto const & aggregates = parent_aggr->getParams().aggregates;
             for (const auto & aggregate : aggregates)
             {
-                auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName());
+                auto action = NullsAction::EMPTY;
+                auto aggregate_function_properties
+                    = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName(), action);
                 if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
                     return false;
 

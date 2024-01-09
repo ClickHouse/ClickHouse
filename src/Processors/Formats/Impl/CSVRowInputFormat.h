@@ -27,7 +27,7 @@ public:
     String getName() const override { return "CSVRowInputFormat"; }
 
     void setReadBuffer(ReadBuffer & in_) override;
-    void resetParser() override;
+    void resetReadBuffer() override;
 
 protected:
     CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,
@@ -116,6 +116,6 @@ private:
     DataTypes buffered_types;
 };
 
-std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows);
+std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, const FormatSettings & settings);
 
 }
