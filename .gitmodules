@@ -369,3 +369,6 @@
 [submodule "contrib/idna"]
 	path = contrib/idna
 	url = https://github.com/ada-url/idna.git
+[submodule "contrib/fsst"]
+	path = contrib/fsst
+	url = https://github.com/cwida/fsst
