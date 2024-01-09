@@ -4,7 +4,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST.h>
-
+#include <Poco/Logger.h>
 #include <qatseqprod.h>
 #include <zstd.h>
 
@@ -23,6 +23,7 @@ class CompressionCodecZSTDQAT : public CompressionCodecZSTD
 public:
     static constexpr auto ZSTDQAT_SUPPORTED_MIN_LEVEL = 1;
     static constexpr auto ZSTDQAT_SUPPORTED_MAX_LEVEL = 12;
+    static constexpr int ZSTDQAT_DEVICE_UNINITIALIZED = 0XFFFF;
 
     explicit CompressionCodecZSTDQAT(int level_);
     ~CompressionCodecZSTDQAT() override;
@@ -36,7 +37,10 @@ private:
     ZSTD_CCtx * cctx;
     void * sequenceProducerState;
     Poco::Logger * log;
+    static int qat_state;
 };
+
+int CompressionCodecZSTDQAT::qat_state = ZSTDQAT_DEVICE_UNINITIALIZED;
 
 UInt32 CompressionCodecZSTDQAT::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
@@ -85,9 +89,16 @@ CompressionCodecZSTDQAT::CompressionCodecZSTDQAT(int level_)
 
     cctx = ZSTD_createCCtx();
 
-    int res = QZSTD_startQatDevice();
+    if(qat_state == ZSTDQAT_DEVICE_UNINITIALIZED)
+    {
+        qat_state = QZSTD_startQatDevice();
+        if(qat_state == QZSTD_OK)
+            LOG_DEBUG(log, "Hardware-assisted ZSTD_QAT codec is ready!");
+        else
+            LOG_WARNING(log, "Initialization of hardware-assisted ZSTD_QAT codec failed, falling back to software ZSTD codec -> status: {}", qat_state);
+    }
 
-    if(res == QZSTD_OK)
+    if(qat_state == QZSTD_OK)
     {
         sequenceProducerState = QZSTD_createSeqProdState();
         ZSTD_registerSequenceProducer(
@@ -96,10 +107,9 @@ CompressionCodecZSTDQAT::CompressionCodecZSTDQAT(int level_)
             qatSequenceProducer
         );
         ZSTD_CCtx_setParameter(cctx, ZSTD_c_enableSeqProducerFallback, 1);
-        LOG_DEBUG(log, "Hardware-assisted ZSTD_QAT codec is ready!");
     }
     else
-        LOG_DEBUG(log, "Initialization of hardware-assisted ZSTD_QAT codec failed, status: {} - please refer to QZSTD_Status_e in ./contrib/QAT-ZSTD-Plugin/src/qatseqprod.h", res);
+        sequenceProducerState = nullptr;
 
     ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
 }
