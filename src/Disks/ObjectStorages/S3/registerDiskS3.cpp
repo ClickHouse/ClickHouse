@@ -175,6 +175,8 @@ void registerDiskS3(DiskFactory & factory,
         String type = config.getString(config_prefix + ".type");
         chassert(type == "s3" || type == "s3_plain");
 
+        auto [object_key_compatibility_prefix, object_key_generator] = getPrefixAndKeyGenerator(type, uri, config, config_prefix);
+
         // TODO myrrc need to sync default value of setting in MergeTreeSettings and here
         constexpr auto key = "merge_tree.allow_object_storage_vfs";
         const bool s3_enable_disk_vfs = config.getBool(key, false);
@@ -254,7 +256,7 @@ void registerDiskS3(DiskFactory & factory,
 
         DiskObjectStoragePtr s3disk = std::make_shared<DiskObjectStorage>(
             name,
-            uri.key,
+            uri.key, /// might be empty
             disk_name_for_log,
             std::move(metadata_storage),
             std::move(s3_storage),
