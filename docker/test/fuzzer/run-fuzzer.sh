@@ -225,8 +225,8 @@ quit
 
     setup_logs_replication
 
-    set +e
-    $repo_dir/tests/clickhouse-test --fuzz \
+    timeout -s TERM --preserve-status 40m $repo_dir/tests/clickhouse-test \
+        --fuzz \
         --query-fuzzer-runs=1000 \
         --create-query-fuzzer-runs=50 \
          $NEW_TESTS_OPT \
@@ -234,13 +234,20 @@ quit
         --global_time_limit=1800 \
         --jobs=8 \
         --order=random \
-        > >(tail -n 100000 > fuzzer.log) 2>&1
+        > >(tail -n 100000 > fuzzer.log) \
+        2>&1 &
 
-    fuzzer_exit_code=$?
+    fuzzer_pid=$!
+    echo "Fuzzer pid is $fuzzer_pid"
+
+    # Wait for the fuzzer to complete.
+    # Note that the 'wait || ...' thing is required so that the script doesn't
+    # exit because of 'set -e' when 'wait' returns nonzero code.
+    fuzzer_exit_code=0
+    wait "$fuzzer_pid" || fuzzer_exit_code=$?
     echo "Fuzzer exit code is $fuzzer_exit_code"
-    set -e
 
-# If the server dies, most often the fuzzer returns Code 210: Connetion
+    # If the server dies, most often the fuzzer returns Code 210: Connetion
     # refused, and sometimes also code 32: attempt to read after eof. For
     # simplicity, check again whether the server is accepting connections using
     # clickhouse-client. We don't check for the existence of the server process, because
