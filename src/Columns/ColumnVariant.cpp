@@ -631,9 +631,9 @@ void ColumnVariant::popBack(size_t n)
     size_t size = local_discriminators_data.size();
     const size_t num_variants = variants.size();
     std::vector<size_t> nested_n(num_variants, 0);
-    for (size_t i = 0; i != n; ++i)
+    for (size_t i = size - n; i < size; ++i)
     {
-        Discriminator discr = local_discriminators_data[size - i - 1];
+        Discriminator discr = local_discriminators_data[i];
         if (discr != NULL_DISCRIMINATOR)
             ++nested_n[discr];
     }
@@ -966,7 +966,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
         {
             new_offsets_data.reserve(new_size);
             for (size_t i = old_size; i < new_size; ++i)
-                new_offsets_data.push_back(new_offsets_data[i - 1] + 1);
+                new_offsets_data.push_back(i);
         }
         else
         {
@@ -1260,6 +1260,8 @@ std::optional<ColumnVariant::Discriminator> ColumnVariant::getLocalDiscriminator
     {
         if (variants[i]->size() == local_discriminators->size())
             return i;
+        if (!variants[i]->empty())
+            return std::nullopt
     }
 
     return std::nullopt;

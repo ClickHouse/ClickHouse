@@ -928,7 +928,7 @@ ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column)
         return assert_cast<const ColumnLowCardinality &>(*column).cloneNullable();
 
     if (column->canBeInsideNullable())
-        return makeNullableSafe(column);
+        return makeNullable(column);
 
     return column;
 }

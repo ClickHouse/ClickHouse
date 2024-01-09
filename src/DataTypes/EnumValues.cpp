@@ -85,9 +85,7 @@ bool EnumValues<T>::tryGetValue(T & x, StringRef field_name, bool try_treat_as_i
         if (try_treat_as_id)
         {
             ReadBufferFromMemory tmp_buf(field_name.data, field_name.size);
-            if (!tryReadText(x, tmp_buf) || !tmp_buf.eof() || !value_to_name_map.contains(x))
-                return false;
-            return true;
+            return tryReadText(x, tmp_buf) && tmp_buf.eof() && value_to_name_map.contains(x);
         }
         return false;
     }
