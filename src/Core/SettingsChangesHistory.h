@@ -77,14 +77,19 @@ namespace SettingsChangesHistory
 
 /// History of settings changes that controls some backward incompatible changes
 /// across all ClickHouse versions. It maps ClickHouse version to settings changes that were done
-/// in this version. Settings changes is a vector of structs {setting_name, previous_value, new_value}
+/// in this version. This history contains both changes to existing settings and newly added settings.
+/// Settings changes is a vector of structs {setting_name, previous_value, new_value}.
+/// For newly added setting choose the most appropriate previous_value (for example, if new setting
+/// controls new feature and it's 'true' by default, use 'false' as previous_value).
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
     {"23.12", {{"allow_suspicious_ttl_expressions", true, false, "It is a new setting, and in previous versions the behavior was equivalent to allowing."},
               {"input_format_parquet_allow_missing_columns", false, true, "Allow missing columns in Parquet files by default"},
               {"input_format_orc_allow_missing_columns", false, true, "Allow missing columns in ORC files by default"},
-              {"input_format_arrow_allow_missing_columns", false, true, "Allow missing columns in Arrow files by default"}}},
+              {"input_format_arrow_allow_missing_columns", false, true, "Allow missing columns in Arrow files by default"},
+              {"parallel_replicas_mark_segment_size", 128, 128, "Add new setting to control segment size in new parallel replicas coordinator implementation"},
+              {"ignore_materialized_views_with_dropped_target_table", false, false, "Add new setting to allow to ignore materialized views with dropped target table"}}},
     {"23.9", {{"optimize_group_by_constant_keys", false, true, "Optimize group by constant keys by default"},
               {"input_format_json_try_infer_named_tuples_from_objects", false, true, "Try to infer named Tuples from JSON objects by default"},
               {"input_format_json_read_numbers_as_strings", false, true, "Allow to read numbers as strings in JSON formats by default"},
