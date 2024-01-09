@@ -744,11 +744,17 @@ public:
         const IColumn ** columns,
         Arena * arena) const override
     {
+        if constexpr (sizeof(Data) > 16 || !std::is_trivially_constructible_v<Data>)
+        {
+            IAggregateFunctionHelper<Derived>::addBatchLookupTable8(row_begin, row_end, map, place_offset, init, key, columns, arena);
+            return;
+        }
+
         const Derived & func = *static_cast<const Derived *>(this);
 
         /// If the function is complex or too large, use more generic algorithm.
 
-        if (func.allocatesMemoryInArena() || sizeof(Data) > 16 || func.sizeOfData() != sizeof(Data))
+        if (func.allocatesMemoryInArena() || func.sizeOfData() != sizeof(Data))
         {
             IAggregateFunctionHelper<Derived>::addBatchLookupTable8(row_begin, row_end, map, place_offset, init, key, columns, arena);
             return;
@@ -759,7 +765,7 @@ public:
         static constexpr size_t UNROLL_COUNT = 4;
 
         std::unique_ptr<Data[]> places{new Data[256 * UNROLL_COUNT]};
-        bool has_data[256 * UNROLL_COUNT]{}; /// Separate flags array to avoid heavy initialization.
+        std::unique_ptr<bool[]> has_data{new bool[256 * UNROLL_COUNT]}; /// Separate flags array to avoid heavy initialization.
 
         size_t i = row_begin;
 

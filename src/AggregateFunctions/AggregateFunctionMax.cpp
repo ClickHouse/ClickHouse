@@ -41,7 +41,6 @@ public:
         this->data(place).setIfGreater(*columns[0], 0, arena);
     }
 
-    /// Specializations for native numeric types
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
@@ -111,16 +110,8 @@ createAggregateFunctionMax(const std::string & name, const DataTypes & argument_
 {
     return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionMax>(name, argument_types, parameters, settings));
 }
-//
-//AggregateFunctionPtr createAggregateFunctionArgMax(
-//    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
-//{
-//    return AggregateFunctionPtr(createAggregateFunctionArgMinMax<AggregateFunctionMaxData>(name, argument_types, parameters, settings));
-//}
-//
-//}
-//
-void registerAggregateFunctionsMax(AggregateFunctionFactory & factory)
+
+void registerAggregateFunctionMax(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("max", createAggregateFunctionMax, AggregateFunctionFactory::CaseInsensitive);
     //

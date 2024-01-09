@@ -135,7 +135,7 @@ AggregateFunctionPtr createAggregateFunctionAnyHeavy(
 
 }
 
-void registerAggregateFunctionsAnyHeavy(AggregateFunctionFactory & factory)
+void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
     factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, default_properties});

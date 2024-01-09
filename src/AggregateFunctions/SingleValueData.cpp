@@ -425,11 +425,11 @@ void SingleValueDataString::set(const IColumn & column, size_t row_num, Arena * 
     changeImpl(StringValueCompatibility::getDataAtWithTerminatingZero(assert_cast<const ColumnString &>(column), row_num), arena);
 }
 
-void SingleValueDataString::set(const Self & to, Arena * arena)
+void SingleValueDataString::set(const SingleValueDataBase & other, Arena * arena)
 {
+    auto const & to = assert_cast<const Self &>(other);
     changeImpl(to.getStringRef(), arena);
 }
-
 
 bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
 {
@@ -443,8 +443,9 @@ bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num,
         return false;
 }
 
-bool SingleValueDataString::setIfSmaller(const Self & to, Arena * arena)
+bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Arena * arena)
 {
+    auto const & to = assert_cast<const Self &>(other);
     if (!has() || to.getStringRef() < getStringRef())
     {
         changeImpl(to.getStringRef(), arena);
@@ -467,8 +468,9 @@ bool SingleValueDataString::setIfGreater(const IColumn & column, size_t row_num,
         return false;
 }
 
-bool SingleValueDataString::setIfGreater(const Self & to, Arena * arena)
+bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Arena * arena)
 {
+    auto const & to = assert_cast<const Self &>(other);
     if (!has() || to.getStringRef() > getStringRef())
     {
         changeImpl(to.getStringRef(), arena);

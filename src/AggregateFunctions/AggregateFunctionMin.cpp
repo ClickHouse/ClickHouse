@@ -117,7 +117,7 @@ createAggregateFunctionMin(const std::string & name, const DataTypes & argument_
 //}
 }
 
-void registerAggregateFunctionsMin(AggregateFunctionFactory & factory)
+void registerAggregateFunctionMin(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("min", createAggregateFunctionMin, AggregateFunctionFactory::CaseInsensitive);
 

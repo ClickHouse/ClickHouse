@@ -36,8 +36,11 @@ struct SingleValueDataBase
     virtual bool isEqualTo(const IColumn & column, size_t row_num) const = 0;
 
     virtual void set(const IColumn &, size_t row_num, Arena *) = 0;
+    virtual void set(const SingleValueDataBase &, Arena *) = 0;
     virtual bool setIfSmaller(const IColumn &, size_t row_num, Arena *) = 0;
+    virtual bool setIfSmaller(const SingleValueDataBase &, Arena *) = 0;
     virtual bool setIfGreater(const IColumn &, size_t row_num, Arena *) = 0;
+    virtual bool setIfGreater(const SingleValueDataBase &, Arena *) = 0;
 
     static std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end);
     static std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end);
@@ -71,7 +74,8 @@ struct SingleValueDataBase
     M(Decimal32) \
     M(Decimal64) \
     M(Decimal128) \
-    M(Decimal256)
+    M(Decimal256) \
+    M(DateTime64)
 
 /// For numeric values.
 template <typename T>
@@ -122,10 +126,10 @@ struct SingleValueDataFixed final : public SingleValueDataBase
         value = assert_cast<const ColVecType &>(column).getData()[row_num];
     }
 
-    void set(const Self & to, Arena *)
+    void set(const SingleValueDataBase & to, Arena *) override
     {
         has_value = true;
-        value = to.value;
+        value = assert_cast<const Self &>(to).value;
     }
 
     bool setIfSmaller(const T & to)
@@ -150,20 +154,22 @@ struct SingleValueDataFixed final : public SingleValueDataBase
         return false;
     }
 
-    bool setIfSmaller(const Self & to, Arena * arena)
+    bool setIfSmaller(const SingleValueDataBase & to, Arena * arena) override
     {
-        if (to.has() && (!has() || to.value < value))
+        auto const & other = assert_cast<const Self &>(to);
+        if (other.has() && (!has() || other.value < value))
         {
-            set(to, arena);
+            set(other, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool setIfGreater(const Self & to, Arena * arena)
+    bool setIfGreater(const SingleValueDataBase & to, Arena * arena) override
     {
-        if (to.has() && (!has() || to.value > value))
+        auto const & other = assert_cast<const Self &>(to);
+        if (other.has() && (!has() || other.value > value))
         {
             set(to, arena);
             return true;
@@ -290,13 +296,13 @@ public:
     bool isEqualTo(const IColumn & column, size_t row_num) const override;
     bool isEqualTo(const Self & to) const;
     void set(const IColumn & column, size_t row_num, Arena * arena) override;
-    void set(const Self & to, Arena * arena);
+    void set(const SingleValueDataBase & to, Arena * arena) override;
 
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
-    bool setIfSmaller(const Self & to, Arena * arena);
+    bool setIfSmaller(const SingleValueDataBase & to, Arena * arena) override;
 
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
-    bool setIfGreater(const Self & to, Arena * arena);
+    bool setIfGreater(const SingleValueDataBase & to, Arena * arena) override;
 
     static bool allocatesMemoryInArena() { return true; }
 };
@@ -349,7 +355,11 @@ public:
 
     void set(const IColumn & column, size_t row_num, Arena *) override { column.get(row_num, value); }
 
-    void set(const Self & to, Arena *) { value = to.value; }
+    void set(const SingleValueDataBase & other, Arena *) override
+    {
+        auto const & to = assert_cast<const Self &>(other);
+        value = to.value;
+    }
 
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override
     {
@@ -372,8 +382,9 @@ public:
         }
     }
 
-    bool setIfSmaller(const Self & to, Arena *)
+    bool setIfSmaller(const SingleValueDataBase & other, Arena *) override
     {
+        auto const & to = assert_cast<const Self &>(other);
         if (!to.has())
             return false;
         if (!has() || to.value < value)
@@ -406,8 +417,9 @@ public:
         }
     }
 
-    bool setIfGreater(const Self & to, Arena *)
+    bool setIfGreater(const SingleValueDataBase & other, Arena *) override
     {
+        auto const & to = assert_cast<const Self &>(other);
         if (!to.has())
             return false;
         if (!has() || to.value > value)
