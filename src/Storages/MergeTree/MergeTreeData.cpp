@@ -6888,7 +6888,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     ContextPtr query_context,
     QueryProcessingStage::Enum to_stage,
     const StorageSnapshotPtr &,
-    SelectQueryInfo & query_info) const
+    SelectQueryInfo &) const
 {
     if (query_context->getClientInfo().collaborate_with_initiator)
         return QueryProcessingStage::Enum::FetchColumns;
@@ -6903,11 +6903,6 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
         /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
         if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
             return QueryProcessingStage::Enum::WithMergeableState;
-    }
-
-    if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
-    {
-        query_info.projection = std::nullopt;
     }
 
     return QueryProcessingStage::Enum::FetchColumns;

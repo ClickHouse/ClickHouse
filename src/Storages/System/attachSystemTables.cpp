@@ -83,6 +83,7 @@
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/System/StorageSystemDroppedTables.h>
+#include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemScheduler.h>
@@ -159,6 +160,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemBackups>(context, system_database, "backups");
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
     attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables");
+    attach<StorageSystemDroppedTablesParts>(context, system_database, "dropped_tables_parts");
     attach<StorageSystemScheduler>(context, system_database, "scheduler");
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     attach<StorageSystemSymbols>(context, system_database, "symbols");
