@@ -1796,6 +1796,7 @@ llvm
 loadDefaultCAFile
 localhost
 localread
+loess
 logTrace
 logagent
 loghouse
@@ -2247,6 +2248,7 @@ sequenceCount
 sequenceMatch
 sequenceNextNode
 seriesPeriodDetectFFT
+seriesDecomposeSTL
 serverTimeZone
 serverTimezone
 serverUUID
