@@ -296,7 +296,7 @@ PASTE JOIN
 │ 1 │    0 │
 └───┴──────┘
 ```
-Note: In this case result can be nondeterministic if the reading is paralel. Example:
+Note: In this case result can be nondeterministic if the reading is parallel. Example:
 ```SQL
 SELECT *
 FROM
