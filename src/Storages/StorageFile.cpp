@@ -1397,7 +1397,7 @@ void StorageFile::read(
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", p->at(0));
 
             auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-            InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
+            InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
             return;
         }
     }
