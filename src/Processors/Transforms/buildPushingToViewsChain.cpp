@@ -467,6 +467,20 @@ Chain buildPushingToViewsChain(
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
+
+        if (context->getSettingsRef().allow_experimental_streaming)
+        {
+            auto to_subscribers_chain = storage->toSubscribersWrite(metadata_snapshot, context);
+
+            if (!blocksHaveEqualStructure(result_chain.getOutputHeader(), to_subscribers_chain.getInputHeader()))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Headers for write and toSubscribersWrite does not match, write header: {}, toSubscribersWrite header: {}",
+                    result_chain.getOutputHeader().dumpStructure(),
+                    to_subscribers_chain.getInputHeader().dumpStructure());
+
+            result_chain.appendChain(std::move(to_subscribers_chain));
+        }
     }
 
     /// TODO: add pushing to live view

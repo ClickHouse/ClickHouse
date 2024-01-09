@@ -446,6 +446,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
     }
 
+    virtual Chain toSubscribersWrite(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/);
+
     /** Writes the data to a table in distributed manner.
       * It is supposed that implementation looks into SELECT part of the query and executes distributed
       * INSERT SELECT if it is possible with current storage as a receiver and query SELECT part as a producer.

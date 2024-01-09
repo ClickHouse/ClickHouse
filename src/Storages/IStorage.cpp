@@ -229,6 +229,12 @@ void IStorage::streamingRead(
     query_plan.unitePlans(std::move(streaming_adapter_step), std::move(plans));
 }
 
+Chain IStorage::toSubscribersWrite(const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
+{
+    auto sink_to_subscribers = std::make_shared<SinkToSubscribers>(metadata_snapshot->getSampleBlock(), subscription_manager);
+    return Chain(std::move(sink_to_subscribers));
+}
+
 std::optional<QueryPipeline> IStorage::distributedWrite(
     const ASTInsertQuery & /*query*/,
     ContextPtr /*context*/)
