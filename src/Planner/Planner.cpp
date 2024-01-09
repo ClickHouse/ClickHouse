@@ -357,7 +357,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            planner_context->getGlobalPlannerContext());
+            std::make_shared<GlobalPlannerContext>()); //planner_context->getGlobalPlannerContext());
         subquery_planner.buildQueryPlanIfNeeded();
 
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
@@ -454,6 +454,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings.enable_software_prefetch_in_aggregation,
         /* only_merge */ false,
         settings.optimize_group_by_constant_keys,
+        settings.min_hit_rate_to_use_consecutive_keys_optimization,
         stats_collecting_params);
 
     return aggregator_params;
@@ -556,7 +557,8 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
         settings.max_threads,
-        settings.max_block_size);
+        settings.max_block_size,
+        settings.min_hit_rate_to_use_consecutive_keys_optimization);
 
     bool is_remote_storage = false;
     bool parallel_replicas_from_merge_tree = false;
@@ -1000,6 +1002,7 @@ void addWindowSteps(QueryPlan & query_plan,
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 window_description.full_sort_description,
+                window_description.partition_by,
                 0 /*limit*/,
                 sort_settings,
                 settings.optimize_sorting_by_input_stream_properties);
@@ -1086,74 +1089,6 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     UInt64 limit_offset = query_analysis_result.limit_offset;
     auto offsets_step = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), limit_offset);
     query_plan.addStep(std::move(offsets_step));
-}
-
-void collectSetsFromActionsDAG(const ActionsDAGPtr & dag, std::unordered_set<const FutureSet *> & useful_sets)
-{
-    for (const auto & node : dag->getNodes())
-    {
-        if (node.column)
-        {
-            const IColumn * column = node.column.get();
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-                column = &column_const->getDataColumn();
-
-            if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
-                useful_sets.insert(column_set->getData().get());
-        }
-
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->getName() == "indexHint")
-        {
-            ActionsDAG::NodeRawConstPtrs children;
-            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
-            {
-                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
-                {
-                    collectSetsFromActionsDAG(index_hint->getActions(), useful_sets);
-                }
-            }
-        }
-    }
-}
-
-void addBuildSubqueriesForSetsStepIfNeeded(
-    QueryPlan & query_plan,
-    const SelectQueryOptions & select_query_options,
-    const PlannerContextPtr & planner_context,
-    const std::vector<ActionsDAGPtr> & result_actions_to_execute)
-{
-    auto subqueries = planner_context->getPreparedSets().getSubqueries();
-    std::unordered_set<const FutureSet *> useful_sets;
-
-    for (const auto & actions_to_execute : result_actions_to_execute)
-        collectSetsFromActionsDAG(actions_to_execute, useful_sets);
-
-    auto predicate = [&useful_sets](const auto & set) { return !useful_sets.contains(set.get()); };
-    auto it = std::remove_if(subqueries.begin(), subqueries.end(), std::move(predicate));
-    subqueries.erase(it, subqueries.end());
-
-    for (auto & subquery : subqueries)
-    {
-        auto query_tree = subquery->detachQueryTree();
-        auto subquery_options = select_query_options.subquery();
-        Planner subquery_planner(
-            query_tree,
-            subquery_options,
-            std::make_shared<GlobalPlannerContext>()); //planner_context->getGlobalPlannerContext());
-        subquery_planner.buildQueryPlanIfNeeded();
-
-        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
-    }
-
-    if (!subqueries.empty())
-    {
-        auto step = std::make_unique<DelayedCreatingSetsStep>(
-            query_plan.getCurrentDataStream(),
-            std::move(subqueries),
-            planner_context->getQueryContext());
-
-        query_plan.addStep(std::move(step));
-    }
 }
 
 /// Support for `additional_result_filter` setting
@@ -1554,7 +1489,7 @@ void Planner::buildPlanForQueryNode()
             const auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
             if (aggregation_analysis_result.before_aggregation_actions)
                 addExpressionStep(query_plan, aggregation_analysis_result.before_aggregation_actions, "Before GROUP BY", result_actions_to_execute, select_query_options, planner_context);
-            LOG_INFO(&Poco::Logger::get("Planner"), "addAggregationStep");
+
             addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
         }
 
@@ -1624,7 +1559,6 @@ void Planner::buildPlanForQueryNode()
 
             if (!query_processing_info.isFirstStage())
             {
-                LOG_INFO(&Poco::Logger::get("Planner"), "addMergingAggregatedStep");
                 addMergingAggregatedStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
             }
 

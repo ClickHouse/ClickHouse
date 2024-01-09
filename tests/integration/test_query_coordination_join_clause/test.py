@@ -77,7 +77,7 @@ def exec_query_compare_result(query_text):
 
 def test_self_join(started_cluster):
     exec_query_compare_result(
-        "SELECT name, text FROM table_1 as t1 INNER JOIN table_1 as t2 ON ti.id = t2.id AND startsWith(t1.text, '123') ORDER BY name, text")
+        "SELECT name, text FROM table_1 as t1 INNER JOIN table_1 as t2 ON t1.id = t2.id AND startsWith(t1.text, '123') ORDER BY name, text")
 
 
 def test_inner_join(started_cluster):

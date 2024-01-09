@@ -5,6 +5,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectQueryCoordination.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ReplaceDistributedTableNameVisitor.h>
 #include <Optimizer/CostBasedOptimizer.h>
@@ -341,6 +342,16 @@ BlockIO InterpreterSelectQueryCoordination::execute()
     }
 
     return res;
+}
+
+
+void registerInterpreterSelectQueryCoordination(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterSelectQueryCoordination>(args.query, args.context, args.options);
+    };
+    factory.registerInterpreter("InterpreterSelectQueryCoordination", create_fn);
 }
 
 }

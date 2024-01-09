@@ -5,6 +5,7 @@
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTAnalyzeQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -30,8 +31,6 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
-#include <Parsers/ASTAnalyzeQuery.h>
-#include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
@@ -55,7 +54,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectQueryCoordination.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
@@ -118,9 +116,8 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     if (query->as<ASTSelectQuery>())
     {
         if (context->getSettingsRef().allow_experimental_query_coordination)
-            return std::make_unique<InterpreterSelectQueryCoordination>(query, context, options);
-
-        if (context->getSettingsRef().allow_experimental_analyzer)
+            interpreter_name = "InterpreterSelectQueryCoordination";
+        else if (context->getSettingsRef().allow_experimental_analyzer)
             interpreter_name = "InterpreterSelectQueryAnalyzer";
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
@@ -132,9 +129,8 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
         ProfileEvents::increment(ProfileEvents::SelectQuery);
 
         if (context->getSettingsRef().allow_experimental_query_coordination)
-            return std::make_unique<InterpreterSelectQueryCoordination>(query, context, options);
-
-        if (context->getSettingsRef().allow_experimental_analyzer)
+            interpreter_name = "InterpreterSelectQueryCoordination";
+        else if (context->getSettingsRef().allow_experimental_analyzer)
             interpreter_name = "InterpreterSelectQueryAnalyzer";
         else
             interpreter_name = "InterpreterSelectWithUnionQuery";
@@ -343,13 +339,13 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterBackupQuery";
     }
-    else if (query->as<ASTAnalyzeQuery>())
-    {
-        return std::make_unique<InterpreterAnalyzeQuery>(query, context);
-    }
     else if (query->as<ASTDeleteQuery>())
     {
         interpreter_name = "InterpreterDeleteQuery";
+    }
+    else if (query->as<ASTAnalyzeQuery>())
+    {
+        interpreter_name = "InterpreterAnalyzeQuery";
     }
 
     if (!interpreters.contains(interpreter_name))

@@ -13,6 +13,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
@@ -21,7 +22,6 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
 
 namespace DB
 {
@@ -607,7 +607,13 @@ std::shared_ptr<MergingAggregatedStep> AggregatingStep::makeMergingAggregatedSte
       *  but it can work more slowly.
       */
 
-    Aggregator::Params params_(keys, params.aggregates, params.overflow_row, settings.max_threads, settings.max_block_size);
+    Aggregator::Params params_(
+        keys,
+        params.aggregates,
+        params.overflow_row,
+        settings.max_threads,
+        settings.max_block_size,
+        settings.min_hit_rate_to_use_consecutive_keys_optimization);
 
     std::shared_ptr<MergingAggregatedStep> merging_step = std::make_shared<MergingAggregatedStep>(
         input_stream_,

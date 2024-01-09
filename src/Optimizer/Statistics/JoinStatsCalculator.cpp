@@ -45,6 +45,7 @@ Stats JoinStatsCalculator::Impl::calculate()
     {
         case JoinKind::Cross:
         case JoinKind::Comma:
+        case JoinKind::Paste:
             calculateCrossJoin(statistics);
             break;
         case JoinKind::Inner:

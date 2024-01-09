@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAnalyzeQuery.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Optimizer/Statistics/IStatisticsStorage.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -102,6 +103,15 @@ BlockIO InterpreterAnalyzeQuery::executeAnalyzeTable()
 BlockIO InterpreterAnalyzeQuery::execute()
 {
     return executeAnalyzeTable();
+}
+
+void registerInterpreterAnalyzeQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterAnalyzeQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterAnalyzeQuery", create_fn);
 }
 
 }
