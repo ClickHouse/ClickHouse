@@ -184,22 +184,17 @@ bool haveOSXSAVE() noexcept
     return (CpuInfo(0x1).registers.ecx >> 27) & 1u;
 }
 
-inline bool haveSIMDExtension(UInt32 code) noexcept
+bool haveAVX() noexcept
 {
 #if defined(__x86_64__) || defined(__i386__)
     // http://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-optimization-manual.pdf
     // https://bugs.chromium.org/p/chromium/issues/detail?id=375968
     return haveOSXSAVE()                           // implies haveXSAVE()
            && (our_xgetbv(0) & 6u) == 6u              // XMM state and YMM state are enabled by OS
-           && ((CpuInfo(0x1).registers.ecx >> code) & 1u); // Extension bit
+           && ((CpuInfo(0x1).registers.ecx >> 28) & 1u); // AVX bit
 #else
     return false;
 #endif
-}
-
-bool haveAVX() noexcept
-{
-    return haveSIMDExtension(28); // AVX bit
 }
 
 bool haveFMA() noexcept
@@ -321,19 +316,33 @@ bool haveRDRAND() noexcept
     return CpuInfo(0x0).registers.eax >= 0x7 && ((CpuInfo(0x1).registers.ecx >> 30) & 1u);
 }
 
+inline bool haveAMX() noexcept
+{
+#if defined(__x86_64__) || defined(__i386__)
+    // http://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-optimization-manual.pdf
+    return haveOSXSAVE()                           // implies haveXSAVE()
+           && ((our_xgetbv(0) >> 17) & 0x3) == 0x3;        // AMX state are enabled by OS
+#else
+    return false;
+#endif
+}
+
 bool haveAMXBF16() noexcept
 {
-    return haveSIMDExtension(22);  // AMX-BF16 bit
+    return haveAMX()
+            && ((CpuInfo(0x7, 0).registers.edx >> 22) & 1u);  // AMX-BF16 bit
 }
 
 bool haveAMXTILE() noexcept
 {
-    return haveSIMDExtension(24);  // AMX-TILE bit
+    return haveAMX()
+            && ((CpuInfo(0x7, 0).registers.edx >> 24) & 1u);  // AMX-TILE bit
 }
 
 bool haveAMXINT8() noexcept
 {
-    return haveSIMDExtension(25);  // AMX-INT8 bit
+    return haveAMX()
+            && ((CpuInfo(0x7, 0).registers.edx >> 25) & 1u);  // AMX-INT8 bit
 }
 
 struct CpuFlagsCache
