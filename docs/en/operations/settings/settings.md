@@ -4783,9 +4783,9 @@ Default: `3`
 
 ## output_format_compression_zstd_window_log
 
-To be used when output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (expressed as power of `2`) and enable long-range mode for zstd compression. This can help to achieve better compression ratio.
+Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
 
-Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
+Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
 
 Default: `0`
 
