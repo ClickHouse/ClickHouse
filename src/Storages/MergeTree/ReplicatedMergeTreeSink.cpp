@@ -776,7 +776,7 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             if (!writing_existing_part)
             {
                 retries_ctl.setUserError(
-                    ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
+                    Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path));
                 return CommitRetryContext::LOCK_AND_COMMIT;
             }
         }
@@ -1075,10 +1075,10 @@ std::pair<std::vector<String>, bool> ReplicatedMergeTreeSinkImpl<async_insert>::
             new_retry_controller.actionAfterLastFailedRetry([&]
             {
                 /// We do not know whether or not data has been inserted in other replicas
-                new_retry_controller.setUserError(
+                new_retry_controller.setUserError(Exception(
                     ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
                     "Unknown quorum status. The data was inserted in the local replica but we could not verify quorum. Reason: {}",
-                    new_retry_controller.getLastKeeperErrorMessage());
+                    new_retry_controller.getLastKeeperErrorMessage()));
             });
 
             new_retry_controller.retryLoop([&]()

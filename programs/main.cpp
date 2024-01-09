@@ -158,7 +158,6 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 {
 #if ENABLE_CLICKHOUSE_LOCAL
-    {"ch", "local"},
     {"chl", "local"},
 #endif
 #if ENABLE_CLICKHOUSE_CLIENT
@@ -501,6 +500,17 @@ int main(int argc_, char ** argv_)
             break;
         }
     }
+
+    /// Interpret binary without argument or with arguments starts with dash
+    /// ('-') as clickhouse-local for better usability:
+    ///
+    ///     clickhouse # dumps help
+    ///     clickhouse -q 'select 1' # use local
+    ///     clickhouse # spawn local
+    ///     clickhouse local # spawn local
+    ///
+    if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'))
+        main_func = mainEntryClickHouseLocal;
 
     return main_func(static_cast<int>(argv.size()), argv.data());
 }

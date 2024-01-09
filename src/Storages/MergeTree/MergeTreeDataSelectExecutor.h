@@ -34,7 +34,6 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
-        QueryProcessingStage::Enum processed_stage,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
         bool enable_parallel_reading = false) const;
 
@@ -169,12 +168,6 @@ public:
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
     /// If expression found, return a set with allowed part names (std::nullopt otherwise).
-    static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
-        const MergeTreeData & data,
-        const MergeTreeData::DataPartsVector & parts,
-        const ASTPtr & query,
-        ContextPtr context);
-
     static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
         const MergeTreeData & data,
         const MergeTreeData::DataPartsVector & parts,

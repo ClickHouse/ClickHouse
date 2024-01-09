@@ -226,9 +226,8 @@ private:
 
     int getSortDirection() const
     {
-        const InputOrderInfoPtr & order_info = query_info.getInputOrderInfo();
-        if (order_info)
-            return order_info->direction;
+        if (query_info.input_order_info)
+            return query_info.input_order_info->direction;
 
         return 1;
     }

@@ -1043,7 +1043,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     }
                 }
 
-                interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+                interpreter = InterpreterFactory::instance().get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
                 const auto & query_settings = context->getSettingsRef();
                 if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
