@@ -590,7 +590,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
     else if (!candidates.real.empty())
     {
         auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
-        size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
+        size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
 
         /// Nothing to read. Ignore projections.
         if (ordinary_reading_marks == 0)
@@ -599,7 +599,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
             return false;
         }
 
-        const auto & parts_with_ranges = ordinary_reading_select_result->partsWithRanges();
+        const auto & parts_with_ranges = ordinary_reading_select_result->parts_with_ranges;
 
         /// Selecting best candidate.
         for (auto & candidate : candidates.real)
