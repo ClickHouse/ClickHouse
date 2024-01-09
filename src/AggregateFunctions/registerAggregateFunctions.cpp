@@ -39,6 +39,7 @@ void registerAggregateFunctionRate(AggregateFunctionFactory &);
 void registerAggregateFunctionsMin(AggregateFunctionFactory &);
 void registerAggregateFunctionsMax(AggregateFunctionFactory &);
 void registerAggregateFunctionsAny(AggregateFunctionFactory &);
+void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsSecondMoment(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsThirdMoment(AggregateFunctionFactory &);
@@ -135,6 +136,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsMin(factory);
         registerAggregateFunctionsMax(factory);
         registerAggregateFunctionsAny(factory);
+        registerAggregateFunctionsAnyRespectNulls(factory);
         registerAggregateFunctionsStatisticsStable(factory);
         registerAggregateFunctionsStatisticsSecondMoment(factory);
         registerAggregateFunctionsStatisticsThirdMoment(factory);
