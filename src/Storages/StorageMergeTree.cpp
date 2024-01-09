@@ -20,12 +20,8 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -51,11 +47,6 @@
 #include <Storages/PartitionCommands.h>
 #include <base/sort.h>
 #include <fmt/core.h>
-#include <Common/MemoryTracker.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/ThreadPool.h>
-#include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
