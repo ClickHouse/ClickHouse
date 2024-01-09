@@ -196,11 +196,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     global_ctx->all_column_names = global_ctx->metadata_snapshot->getColumns().getNamesOfPhysical();
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
 
-    if (supportsBlockNumberColumn(global_ctx) && !global_ctx->storage_columns.contains(BlockNumberColumn::name))
-    {
-        global_ctx->storage_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
-        global_ctx->all_column_names.emplace_back(BlockNumberColumn::name);
-    }
+//    if (supportsBlockNumberColumn(global_ctx) && !global_ctx->storage_columns.contains(BlockNumberColumn::name))
+//    {
+//        global_ctx->storage_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
+//        global_ctx->all_column_names.emplace_back(BlockNumberColumn::name);
+//    }
 
     auto object_columns = MergeTreeData::getConcreteObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
 
@@ -227,6 +227,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
+
+    if (supportsBlockNumberColumn(global_ctx) && !global_ctx->storage_columns.contains(BlockNumberColumn::name))
+    {
+        global_ctx->storage_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
+        global_ctx->all_column_names.emplace_back(BlockNumberColumn::name);
+        global_ctx->gathering_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
+        global_ctx->gathering_column_names.emplace_back(BlockNumberColumn::name);
+    }
 
     SerializationInfo::Settings info_settings =
     {
