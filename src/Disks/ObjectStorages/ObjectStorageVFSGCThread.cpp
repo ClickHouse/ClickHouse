@@ -58,8 +58,7 @@ void ObjectStorageVFSGCThread::run() const
     if (log_items_batch.size() < batch_min_size)
         return;
 
-    // ZK should return children in lexicographical order. If it were true, we could
-    // get minmax by (begin(), rbegin()), but it's not the case so we have to traverse all range
+    // TODO myrrc handle counter overflow by checking (max - min) != batch_size
     const auto [start_str, end_str] = std::ranges::minmax(std::move(log_items_batch));
     const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4)); // log- is a prefix
     const size_t end_logpointer = std::min(parseFromString<size_t>(end_str.substr(4)), start_logpointer + batch_max_size);
@@ -142,7 +141,6 @@ String ObjectStorageVFSGCThread::getNode(size_t id) const
 
 StoredObject ObjectStorageVFSGCThread::getSnapshotObject(size_t logpointer) const
 {
-    /// TODO myrrc this works only for S3ObjectStorage. Must also recheck encrypted disk replication
-    return StoredObject{ObjectStorageKey::createAsRelative(storage.object_key_prefix, fmt::format("vfs/_{}", logpointer)).serialize()};
+    return storage.getMetadataObject(fmt::format("{}", logpointer));
 }
 }

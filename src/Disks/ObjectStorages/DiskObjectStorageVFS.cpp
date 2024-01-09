@@ -181,7 +181,9 @@ String DiskObjectStorageVFS::lockPathToFullPath(std::string_view path) const
 
 StoredObject DiskObjectStorageVFS::getMetadataObject(std::string_view remote) const
 {
-    // TODO myrrc this works only for s3
-    return StoredObject{ObjectStorageKey::createAsRelative(object_key_prefix, fmt::format("vfs/{}", remote)).serialize()};
+    // TODO myrrc this works only for S3. Must also recheck encrypted disk replication
+    // We must include disk name as two disks with different names might use same object storage bucket
+    String remote_key = fmt::format("vfs/_{}_{}", name, remote);
+    return StoredObject{ObjectStorageKey::createAsRelative(object_key_prefix, std::move(remote_key)).serialize()};
 }
 }

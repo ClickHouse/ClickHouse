@@ -301,8 +301,6 @@ Default value: 10800
 
 ### allow_vfs
 
-TODO myrrc move to disks section
-
 This disk flag activates a feature that integrates elements of a distributed virtual filesystem (VFS) with object storage, primarily focusing on distributed hardlinks and accurate reference counting.
 
 Disables `allow_remote_fs_zero_copy_replication` for disk. Unlike the former, can't be set in runtime,
