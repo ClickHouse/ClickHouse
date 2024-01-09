@@ -20,7 +20,7 @@ public:
 
     static NamesAndTypesList getNamesAndTypes();
 
-    Chain writeImpl(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/) override;
+    SinkToStoragePtr write(const ASTPtr & /*query*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, bool /*async_insert*/) override;
 
     void read(
         QueryPlan & query_plan,

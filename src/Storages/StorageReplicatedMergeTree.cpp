@@ -5477,7 +5477,7 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 }
 
 
-Chain StorageReplicatedMergeTree::writeImpl(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
+SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
 {
     if (!initialization_done)
         throw Exception(ErrorCodes::NOT_INITIALIZED, "Table is not initialized yet");
@@ -5496,7 +5496,7 @@ Chain StorageReplicatedMergeTree::writeImpl(const ASTPtr & /*query*/, const Stor
     bool deduplicate = storage_settings_ptr->replicated_deduplication_window != 0 && query_settings.insert_deduplicate;
     bool async_deduplicate = async_insert && query_settings.async_insert_deduplicate && storage_settings_ptr->replicated_deduplication_window_for_async_inserts != 0 && query_settings.insert_deduplicate;
     if (async_deduplicate)
-        return Chain::fromSink<ReplicatedMergeTreeSinkWithAsyncDeduplicate>(
+        return std::make_shared<ReplicatedMergeTreeSinkWithAsyncDeduplicate>(
             *this, metadata_snapshot, query_settings.insert_quorum.valueOr(0),
             query_settings.insert_quorum_timeout.totalMilliseconds(),
             query_settings.max_partitions_per_insert_block,
@@ -5506,7 +5506,7 @@ Chain StorageReplicatedMergeTree::writeImpl(const ASTPtr & /*query*/, const Stor
             local_context);
 
     // TODO: should we also somehow pass list of columns to deduplicate on to the ReplicatedMergeTreeSink?
-    return Chain::fromSink<ReplicatedMergeTreeSink>(
+    return std::make_shared<ReplicatedMergeTreeSink>(
         *this, metadata_snapshot, query_settings.insert_quorum.valueOr(0),
         query_settings.insert_quorum_timeout.totalMilliseconds(),
         query_settings.max_partitions_per_insert_block,

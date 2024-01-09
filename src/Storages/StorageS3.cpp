@@ -1277,7 +1277,7 @@ void ReadFromStorageS3Step::applyFilters()
     /// We will use filter_dags in filterKeysForPartitionPruning called from initializePipeline, nothing to do here
 }
 
-Chain StorageS3::writeImpl(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto query_configuration = updateConfigurationAndGetCopy(local_context);
 
@@ -1290,7 +1290,7 @@ Chain StorageS3::writeImpl(const ASTPtr & query, const StorageMetadataPtr & meta
 
     if (is_partitioned_implementation)
     {
-        return Chain::fromSink<PartitionedStorageS3Sink>(
+        return std::make_shared<PartitionedStorageS3Sink>(
             partition_by_ast,
             query_configuration.format,
             sample_block,
@@ -1338,7 +1338,7 @@ Chain StorageS3::writeImpl(const ASTPtr & query, const StorageMetadataPtr & meta
             }
         }
 
-        return Chain::fromSink<StorageS3Sink>(
+        return std::make_shared<StorageS3Sink>(
             query_configuration.format,
             sample_block,
             local_context,

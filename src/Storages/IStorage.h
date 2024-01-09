@@ -19,7 +19,6 @@
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
 
-#include <mutex>
 #include <optional>
 
 
@@ -392,15 +391,6 @@ private:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
-    virtual Chain writeImpl(
-        const ASTPtr & /*query*/,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr /*context*/,
-        bool /*async_insert*/)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
-    }
-
     /// Should we process blocks of data returned by the storage in parallel
     /// even when the storage returned only one stream of data for reading?
     /// It is beneficial, for example, when you read from a file quickly,
@@ -447,11 +437,14 @@ public:
       *
       * async_insert - set to true if the write is part of async insert flushing
       */
-    virtual Chain write(
+    virtual SinkToStoragePtr write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/,
-        bool /*async_insert*/);
+        bool /*async_insert*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
+    }
 
     /** Writes the data to a table in distributed manner.
       * It is supposed that implementation looks into SELECT part of the query and executes distributed

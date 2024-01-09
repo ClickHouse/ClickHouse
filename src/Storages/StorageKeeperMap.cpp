@@ -541,10 +541,10 @@ Pipe StorageKeeperMap::read(
     return process_keys(std::move(filtered_keys));
 }
 
-Chain StorageKeeperMap::writeImpl(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     checkTable<true>();
-    return Chain::fromSink<StorageKeeperMapSink>(*this, metadata_snapshot->getSampleBlock(), local_context);
+    return std::make_shared<StorageKeeperMapSink>(*this, metadata_snapshot->getSampleBlock(), local_context);
 }
 
 void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)

@@ -106,10 +106,10 @@ void SetOrJoinSink::onFinish()
 }
 
 
-Chain StorageSetOrJoinBase::writeImpl(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
+SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     UInt64 id = ++increment;
-    return Chain::fromSink<SetOrJoinSink>(
+    return std::make_shared<SetOrJoinSink>(
         context, *this, metadata_snapshot, path, fs::path(path) / "tmp/", toString(id) + ".bin", persistent);
 }
 

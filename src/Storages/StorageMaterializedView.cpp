@@ -212,16 +212,16 @@ void StorageMaterializedView::read(
     }
 }
 
-Chain StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context, bool async_insert)
+SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context, bool async_insert)
 {
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-    auto chain = storage->write(query, metadata_snapshot, local_context, async_insert);
+    auto sink = storage->write(query, metadata_snapshot, local_context, async_insert);
 
-    chain.addTableLock(lock);
-    return chain;
+    sink->addTableLock(lock);
+    return sink;
 }
 
 

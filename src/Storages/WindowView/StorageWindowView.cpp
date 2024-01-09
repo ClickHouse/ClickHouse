@@ -1549,13 +1549,13 @@ void StorageWindowView::writeIntoWindowView(
         local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = inner_table->getInMemoryMetadataPtr();
     auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context, /*async_insert=*/false);
-    output.addTableLock(lock);
+    output->addTableLock(lock);
 
-    if (!blocksHaveEqualStructure(builder.getHeader(), output.getInputHeader()))
+    if (!blocksHaveEqualStructure(builder.getHeader(), output->getHeader()))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             builder.getHeader().getColumnsWithTypeAndName(),
-            output.getInputHeader().getColumnsWithTypeAndName(),
+            output->getHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(
             convert_actions_dag, ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
@@ -1563,7 +1563,7 @@ void StorageWindowView::writeIntoWindowView(
         builder.addSimpleTransform([&](const Block & header) { return std::make_shared<ExpressionTransform>(header, convert_actions); });
     }
 
-    builder.addChain(std::move(output));
+    builder.addChain(Chain(std::move(output)));
     builder.setSinks([&](const Block & cur_header, Pipe::StreamType)
     {
         return std::make_shared<EmptySink>(cur_header);

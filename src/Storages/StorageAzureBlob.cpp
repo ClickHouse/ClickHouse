@@ -725,7 +725,7 @@ Pipe StorageAzureBlob::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-Chain StorageAzureBlob::writeImpl(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageAzureBlob::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(configuration.blobs_paths.back(), configuration.compression_method);
@@ -736,7 +736,7 @@ Chain StorageAzureBlob::writeImpl(const ASTPtr & query, const StorageMetadataPtr
 
     if (is_partitioned_implementation)
     {
-        return Chain::fromSink<PartitionedStorageAzureBlobSink>(
+        return std::make_shared<PartitionedStorageAzureBlobSink>(
             partition_by_ast,
             configuration.format,
             sample_block,
@@ -784,7 +784,7 @@ Chain StorageAzureBlob::writeImpl(const ASTPtr & query, const StorageMetadataPtr
             }
         }
 
-        return Chain::fromSink<StorageAzureBlobSink>(
+        return std::make_shared<StorageAzureBlobSink>(
             configuration.format,
             sample_block,
             local_context,

@@ -170,11 +170,11 @@ private:
 };
 
 
-Chain StorageSQLite::writeImpl(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
+SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
-    return Chain::fromSink<SQLiteSink>(*this, metadata_snapshot, sqlite_db, remote_table_name);
+    return std::make_shared<SQLiteSink>(*this, metadata_snapshot, sqlite_db, remote_table_name);
 }
 
 

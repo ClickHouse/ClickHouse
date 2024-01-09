@@ -358,7 +358,7 @@ void StorageNATS::read(
 }
 
 
-Chain StorageNATS::writeImpl(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     auto modified_context = addSettings(local_context);
     std::string subject = modified_context->getSettingsRef().stream_like_engine_insert_queue.changed
@@ -391,7 +391,7 @@ Chain StorageNATS::writeImpl(const ASTPtr &, const StorageMetadataPtr & metadata
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef().output_format_avro_rows_in_file.changed)
         max_rows = local_context->getSettingsRef().output_format_avro_rows_in_file.value;
-    return Chain::fromSink<MessageQueueSink>(
+    return std::make_shared<MessageQueueSink>(
         metadata_snapshot->getSampleBlockNonMaterialized(), getFormatName(), max_rows, std::move(producer), getName(), modified_context);}
 
 

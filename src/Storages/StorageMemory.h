@@ -64,7 +64,7 @@ public:
 
     bool hasEvenlyDistributedRead() const override { return true; }
 
-    Chain writeImpl(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
     void drop() override;
 

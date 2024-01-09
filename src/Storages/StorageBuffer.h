@@ -88,7 +88,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    Chain writeImpl(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.

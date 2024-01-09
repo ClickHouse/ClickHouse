@@ -229,19 +229,6 @@ void IStorage::streamingRead(
     query_plan.unitePlans(std::move(streaming_adapter_step), std::move(plans));
 }
 
-Chain IStorage::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert)
-{
-    Chain chain = writeImpl(query, metadata_snapshot, context, async_insert);
-
-    if (!chain.empty() && context && context->getSettingsRef().allow_experimental_streaming)
-    {
-        auto sink_to_subscribers = std::make_shared<SinkToSubscribers>(chain.getOutputHeader(), subscription_manager);
-        chain.addSink(std::move(sink_to_subscribers));
-    }
-
-    return chain;
-}
-
 std::optional<QueryPipeline> IStorage::distributedWrite(
     const ASTInsertQuery & /*query*/,
     ContextPtr /*context*/)

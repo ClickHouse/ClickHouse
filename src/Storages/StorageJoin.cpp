@@ -90,10 +90,10 @@ RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const
     return lock->getLock(type, query_id, acquire_timeout, false);
 }
 
-Chain StorageJoin::writeImpl(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
+SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     std::lock_guard mutate_lock(mutate_mutex);
-    return StorageSetOrJoinBase::writeImpl(query, metadata_snapshot, context, /*async_insert=*/false);
+    return StorageSetOrJoinBase::write(query, metadata_snapshot, context, /*async_insert=*/false);
 }
 
 void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)

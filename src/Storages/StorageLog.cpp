@@ -868,13 +868,13 @@ Pipe StorageLog::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-Chain StorageLog::writeImpl(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    return Chain::fromSink<LogSink>(*this, metadata_snapshot, std::move(lock));
+    return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
 IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(

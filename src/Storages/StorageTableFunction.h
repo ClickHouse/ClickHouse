@@ -127,7 +127,7 @@ public:
         }
     }
 
-    Chain write(
+    SinkToStoragePtr write(
             const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
             ContextPtr context,

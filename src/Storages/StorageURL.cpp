@@ -1019,7 +1019,7 @@ Pipe StorageURLWithFailover::read(
 }
 
 
-Chain IStorageURLBase::writeImpl(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
+SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool /*async_insert*/)
 {
     if (http_method.empty())
         http_method = Poco::Net::HTTPRequest::HTTP_POST;
@@ -1031,7 +1031,7 @@ Chain IStorageURLBase::writeImpl(const ASTPtr & query, const StorageMetadataPtr 
 
     if (is_partitioned_implementation)
     {
-        return Chain::fromSink<PartitionedStorageURLSink>(
+        return std::make_shared<PartitionedStorageURLSink>(
             partition_by_ast,
             uri,
             format_name,
@@ -1045,7 +1045,7 @@ Chain IStorageURLBase::writeImpl(const ASTPtr & query, const StorageMetadataPtr 
     }
     else
     {
-        return Chain::fromSink<StorageURLSink>(
+        return std::make_shared<StorageURLSink>(
             uri,
             format_name,
             format_settings,

@@ -117,7 +117,7 @@ Pipe StorageXDBC::read(
     return IStorageURLBase::read(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
 
-Chain StorageXDBC::writeImpl(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     bridge_helper->startBridgeSync();
 
@@ -134,7 +134,7 @@ Chain StorageXDBC::writeImpl(const ASTPtr & /* query */, const StorageMetadataPt
     request_uri.addQueryParameter("sample_block", metadata_snapshot->getSampleBlock().getNamesAndTypesList().toString());
 
 
-    return Chain::fromSink<StorageURLSink>(
+    return std::make_shared<StorageURLSink>(
         request_uri.toString(),
         format_name,
         getFormatSettings(local_context),

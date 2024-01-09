@@ -1103,7 +1103,7 @@ namespace
                 {
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                    auto chain = storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false);
+                    auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false);
 
                     std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
                     buf = wrapReadBufferWithCompressionMethod(std::move(buf), chooseCompressionMethod("", external_table.compression_type()));
@@ -1129,7 +1129,7 @@ namespace
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
-                    cur_pipeline.addChain(std::move(chain));
+                    cur_pipeline.addTransform(std::move(sink));
                     cur_pipeline.setSinks([&](const Block & header, Pipe::StreamType)
                     {
                         return std::make_shared<EmptySink>(header);

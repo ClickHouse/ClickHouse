@@ -34,7 +34,7 @@ public:
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
 
-    Chain write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     void drop() override;
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;

@@ -70,7 +70,7 @@ public:
     std::optional<UInt64> totalBytes(const Settings &) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
 
-    Chain writeImpl(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     /** Perform the next step in combining the parts.
       */

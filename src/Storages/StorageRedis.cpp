@@ -464,13 +464,13 @@ Block StorageRedis::getSampleBlock(const Names &) const
     return getInMemoryMetadataPtr()->getSampleBlock();
 }
 
-Chain StorageRedis::writeImpl(
+SinkToStoragePtr StorageRedis::write(
     const ASTPtr & /*query*/,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr /*context*/,
     bool /*async_insert*/)
 {
-    return Chain::fromSink<RedisSink>(*this, metadata_snapshot);
+    return std::make_shared<RedisSink>(*this, metadata_snapshot);
 }
 
 void StorageRedis::truncate(const ASTPtr & query, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)

@@ -585,10 +585,10 @@ void ReadFromEmbeddedRocksDB::applyFilters()
     std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_nodes, context);
 }
 
-Chain StorageEmbeddedRocksDB::writeImpl(
+SinkToStoragePtr StorageEmbeddedRocksDB::write(
     const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
 {
-    return Chain::fromSink<EmbeddedRocksDBSink>(*this, metadata_snapshot);
+    return std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 }
 
 static StoragePtr create(const StorageFactory::Arguments & args)

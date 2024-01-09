@@ -48,9 +48,9 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    Chain writeImpl(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool) override
+    SinkToStoragePtr write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool) override
     {
-        return Chain::fromSink<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
+        return std::make_shared<NullSinkToStorage>(metadata_snapshot->getSampleBlock());
     }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;

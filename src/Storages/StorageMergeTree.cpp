@@ -282,10 +282,11 @@ std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &)
     return res;
 }
 
-Chain StorageMergeTree::writeImpl(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr
+StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     const auto & settings = local_context->getSettingsRef();
-    return Chain::fromSink<MergeTreeSink>(
+    return std::make_shared<MergeTreeSink>(
         *this, metadata_snapshot, settings.max_partitions_per_insert_block, local_context);
 }
 

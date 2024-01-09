@@ -451,10 +451,10 @@ private:
 };
 
 
-Chain StoragePostgreSQL::writeImpl(
+SinkToStoragePtr StoragePostgreSQL::write(
         const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */, bool /*async_insert*/)
 {
-    return Chain::fromSink<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
+    return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
 }
 
 StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table)
