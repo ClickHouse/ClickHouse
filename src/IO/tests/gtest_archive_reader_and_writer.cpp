@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "config.h"
 
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
@@ -19,11 +20,52 @@
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_UNPACK_ARCHIVE;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace fs = std::filesystem;
 using namespace DB;
 
+enum class ArchiveType : uint8_t
+{
+    Tar,
+    SevenZip
+};
+
+template <ArchiveType archive_type>
+bool createArchiveWithFiles(const std::string & archivename, const std::map<std::string, std::string> & files)
+{
+    struct archive * a;
+    struct archive_entry * entry;
+
+    a = archive_write_new();
+
+    if constexpr (archive_type == ArchiveType::Tar)
+        archive_write_set_format_pax_restricted(a);
+    else if constexpr (archive_type == ArchiveType::SevenZip)
+        archive_write_set_format_7zip(a);
+    else
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Invalid archive type requested: {}", static_cast<size_t>(archive_type));
+
+    archive_write_open_filename(a, archivename.c_str());
+
+    for (const auto & [filename, content] : files) {
+        entry = archive_entry_new();
+        archive_entry_set_pathname(entry, filename.c_str());
+        archive_entry_set_size(entry, content.size());
+        archive_entry_set_mode(entry, S_IFREG | 0644); // regular file with rw-r--r-- permissions
+        archive_entry_set_mtime(entry, time(nullptr), 0);
+        archive_write_header(a, entry);
+        archive_write_data(a, content.c_str(), content.size());
+        archive_entry_free(entry);
+    }
+    
+    archive_write_close(a);
+    archive_write_free(a);
+
+    return true;
+
+}
 
 class ArchiveReaderAndWriterTest : public ::testing::TestWithParam<const char *>
 {
@@ -60,7 +102,8 @@ TEST_P(ArchiveReaderAndWriterTest, EmptyArchive)
 {
     /// Make an archive.
     {
-        createArchiveWriter(getPathToArchive());
+        auto writer = createArchiveWriter(getPathToArchive());
+        writer->finalize();
     }
 
     /// The created archive can be found in the local filesystem.
@@ -71,11 +114,11 @@ TEST_P(ArchiveReaderAndWriterTest, EmptyArchive)
 
     EXPECT_FALSE(reader->fileExists("nofile.txt"));
 
-    expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "File 'nofile.txt' not found",
+    expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "File 'nofile.txt' was not found in archive",
                     [&]{ reader->getFileInfo("nofile.txt"); });
 
-    expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "File 'nofile.txt' not found",
-                    [&]{ reader->readFile("nofile.txt"); });
+    expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "File 'nofile.txt' was not found in archive",
+                    [&]{ reader->readFile("nofile.txt", /*throw_on_not_found=*/true); });
 
     EXPECT_EQ(reader->firstFile(), nullptr);
 }
@@ -90,7 +133,9 @@ TEST_P(ArchiveReaderAndWriterTest, SingleFileInArchive)
         {
             auto out = writer->writeFile("a.txt");
             writeString(contents, *out);
+            out->finalize();
         }
+        writer->finalize();
     }
 
     /// Read the archive.
@@ -103,7 +148,7 @@ TEST_P(ArchiveReaderAndWriterTest, SingleFileInArchive)
     EXPECT_GT(file_info.compressed_size, 0);
 
     {
-        auto in = reader->readFile("a.txt");
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, contents);
@@ -156,11 +201,14 @@ TEST_P(ArchiveReaderAndWriterTest, TwoFilesInArchive)
         {
             auto out = writer->writeFile("a.txt");
             writeString(a_contents, *out);
+            out->finalize();
         }
         {
             auto out = writer->writeFile("b/c.txt");
             writeString(c_contents, *out);
+            out->finalize();
         }
+        writer->finalize();
     }
 
     /// Read the archive.
@@ -173,14 +221,14 @@ TEST_P(ArchiveReaderAndWriterTest, TwoFilesInArchive)
     EXPECT_EQ(reader->getFileInfo("b/c.txt").uncompressed_size, c_contents.size());
 
     {
-        auto in = reader->readFile("a.txt");
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, a_contents);
     }
 
     {
-        auto in = reader->readFile("b/c.txt");
+        auto in = reader->readFile("b/c.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, c_contents);
@@ -188,7 +236,7 @@ TEST_P(ArchiveReaderAndWriterTest, TwoFilesInArchive)
 
     {
         /// Read a.txt again.
-        auto in = reader->readFile("a.txt");
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, a_contents);
@@ -239,11 +287,14 @@ TEST_P(ArchiveReaderAndWriterTest, InMemory)
         {
             auto out = writer->writeFile("a.txt");
             writeString(a_contents, *out);
+            out->finalize();
         }
         {
             auto out = writer->writeFile("b.txt");
             writeString(b_contents, *out);
+            out->finalize();
         }
+        writer->finalize();
     }
 
     /// The created archive is really in memory.
@@ -260,14 +311,14 @@ TEST_P(ArchiveReaderAndWriterTest, InMemory)
     EXPECT_EQ(reader->getFileInfo("b.txt").uncompressed_size, b_contents.size());
 
     {
-        auto in = reader->readFile("a.txt");
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, a_contents);
     }
 
     {
-        auto in = reader->readFile("b.txt");
+        auto in = reader->readFile("b.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, b_contents);
@@ -275,7 +326,7 @@ TEST_P(ArchiveReaderAndWriterTest, InMemory)
 
     {
         /// Read a.txt again.
-        auto in = reader->readFile("a.txt");
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, a_contents);
@@ -293,7 +344,9 @@ TEST_P(ArchiveReaderAndWriterTest, Password)
         {
             auto out = writer->writeFile("a.txt");
             writeString(contents, *out);
+            out->finalize();
         }
+        writer->finalize();
     }
 
     /// Read the archive.
@@ -301,19 +354,19 @@ TEST_P(ArchiveReaderAndWriterTest, Password)
 
     /// Try to read without a password.
     expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Password is required",
-                    [&]{ reader->readFile("a.txt"); });
+                    [&]{ reader->readFile("a.txt", /*throw_on_not_found=*/true); });
 
     {
         /// Try to read with a wrong password.
         reader->setPassword("123Qwe");
         expectException(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Wrong password",
-                        [&]{ reader->readFile("a.txt"); });
+                        [&]{ reader->readFile("a.txt", /*throw_on_not_found=*/true); });
     }
 
     {
         /// Reading with the right password is successful.
         reader->setPassword("Qwe123");
-        auto in = reader->readFile("a.txt");
+        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
         String str;
         readStringUntilEOF(str, *in);
         EXPECT_EQ(str, contents);
@@ -327,6 +380,127 @@ TEST_P(ArchiveReaderAndWriterTest, ArchiveNotExist)
                     [&]{ createArchiveReader(getPathToArchive()); });
 }
 
+TEST(TarArchiveReaderTest, FileExists) {
+    String archive_path = "archive.tar";
+    String filename = "file.txt";
+    String contents = "test";
+    bool created = createArchiveWithFiles<ArchiveType::Tar>(archive_path, {{filename, contents}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    EXPECT_EQ(reader->fileExists(filename), true);
+    fs::remove(archive_path);
+}
+
+TEST(TarArchiveReaderTest, ReadFile) {
+    String archive_path = "archive.tar";
+    String filename = "file.txt";
+    String contents = "test";
+    bool created = createArchiveWithFiles<ArchiveType::Tar>(archive_path, {{filename, contents}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    auto in = reader->readFile(filename, /*throw_on_not_found=*/true);
+    String str;
+    readStringUntilEOF(str, *in);
+    EXPECT_EQ(str, contents);
+    fs::remove(archive_path);
+}
+
+TEST(TarArchiveReaderTest, ReadTwoFiles) {
+    String archive_path = "archive.tar";
+    String file1 = "file1.txt";
+    String contents1 = "test1";
+    String file2 = "file2.txt";
+    String contents2 = "test2";
+    bool created = createArchiveWithFiles<ArchiveType::Tar>(archive_path, {{file1, contents1}, {file2, contents2}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    EXPECT_EQ(reader->fileExists(file1), true);
+    EXPECT_EQ(reader->fileExists(file2), true);
+    auto in = reader->readFile(file1, /*throw_on_not_found=*/true);
+    String str;
+    readStringUntilEOF(str, *in);
+    EXPECT_EQ(str, contents1);
+    in = reader->readFile(file2, /*throw_on_not_found=*/true);
+    
+    readStringUntilEOF(str, *in);
+    EXPECT_EQ(str, contents2);
+    fs::remove(archive_path);
+}
+
+
+TEST(TarArchiveReaderTest, CheckFileInfo) {
+    String archive_path = "archive.tar";
+    String filename = "file.txt";
+    String contents = "test";
+    bool created = createArchiveWithFiles<ArchiveType::Tar>(archive_path, {{filename, contents}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    auto info = reader->getFileInfo(filename);
+    EXPECT_EQ(info.uncompressed_size, contents.size());
+    EXPECT_GT(info.compressed_size, 0);
+    fs::remove(archive_path);
+}
+
+TEST(SevenZipArchiveReaderTest, FileExists) {
+    String archive_path = "archive.7z";
+    String filename = "file.txt";
+    String contents = "test";
+    bool created = createArchiveWithFiles<ArchiveType::SevenZip>(archive_path, {{filename, contents}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    EXPECT_EQ(reader->fileExists(filename), true);
+    fs::remove(archive_path);
+}
+
+TEST(SevenZipArchiveReaderTest, ReadFile) {
+    String archive_path = "archive.7z";
+    String filename = "file.txt";
+    String contents = "test";
+    bool created = createArchiveWithFiles<ArchiveType::SevenZip>(archive_path, {{filename, contents}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    auto in = reader->readFile(filename, /*throw_on_not_found=*/true);
+    String str;
+    readStringUntilEOF(str, *in);
+    EXPECT_EQ(str, contents);
+    fs::remove(archive_path);
+}
+
+TEST(SevenZipArchiveReaderTest, CheckFileInfo) {
+    String archive_path = "archive.7z";
+    String filename = "file.txt";
+    String contents = "test";
+    bool created = createArchiveWithFiles<ArchiveType::SevenZip>(archive_path, {{filename, contents}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    auto info = reader->getFileInfo(filename);
+    EXPECT_EQ(info.uncompressed_size, contents.size());
+    EXPECT_GT(info.compressed_size, 0);
+    fs::remove(archive_path);
+}
+
+TEST(SevenZipArchiveReaderTest, ReadTwoFiles) {
+    String archive_path = "archive.7z";
+    String file1 = "file1.txt";
+    String contents1 = "test1";
+    String file2 = "file2.txt";
+    String contents2 = "test2";
+    bool created = createArchiveWithFiles<ArchiveType::SevenZip>(archive_path, {{file1, contents1}, {file2, contents2}});
+    EXPECT_EQ(created, true);
+    auto reader = createArchiveReader(archive_path);
+    EXPECT_EQ(reader->fileExists(file1), true);
+    EXPECT_EQ(reader->fileExists(file2), true);
+    auto in = reader->readFile(file1, /*throw_on_not_found=*/true);
+    String str;
+    readStringUntilEOF(str, *in);
+    EXPECT_EQ(str, contents1);
+    in = reader->readFile(file2, /*throw_on_not_found=*/true);
+    
+    readStringUntilEOF(str, *in);
+    EXPECT_EQ(str, contents2);
+    fs::remove(archive_path);
+}
+
 
 #if USE_MINIZIP
 
@@ -334,7 +508,7 @@ namespace
 {
     const char * supported_archive_file_exts[] =
     {
-        ".zip",
+        ".zip"
     };
 }
 

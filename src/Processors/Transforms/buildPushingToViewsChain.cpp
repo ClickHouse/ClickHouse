@@ -39,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
 }
 
 ThreadStatusesHolder::~ThreadStatusesHolder()
@@ -72,7 +73,7 @@ struct ViewsData
     std::atomic_bool has_exception = false;
     std::exception_ptr first_exception;
 
-    ViewsData(ThreadStatusesHolderPtr thread_status_holder_, ContextPtr context_, StorageID source_storage_id_, StorageMetadataPtr source_metadata_snapshot_ , StoragePtr source_storage_)
+    ViewsData(ThreadStatusesHolderPtr thread_status_holder_, ContextPtr context_, StorageID source_storage_id_, StorageMetadataPtr source_metadata_snapshot_, StoragePtr source_storage_)
         : thread_status_holder(std::move(thread_status_holder_))
         , context(std::move(context_))
         , source_storage_id(std::move(source_storage_id_))
@@ -281,7 +282,7 @@ Chain buildPushingToViewsChain(
         /// and switch back to the original thread_status.
         auto * original_thread = current_thread;
         SCOPE_EXIT({ current_thread = original_thread; });
-
+        current_thread = nullptr;
         std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>(/*check_current_thread_on_destruction=*/ false);
         /// Copy of a ThreadStatus should be internal.
         view_thread_status_ptr->setInternalThread();
@@ -316,10 +317,37 @@ Chain buildPushingToViewsChain(
             type = QueryViewsLogElement::ViewType::MATERIALIZED;
             result_chain.addTableLock(lock);
 
-            StoragePtr inner_table = materialized_view->getTargetTable();
+            StoragePtr inner_table = materialized_view->tryGetTargetTable();
+            /// If target table was dropped, ignore this materialized view.
+            if (!inner_table)
+            {
+                if (context->getSettingsRef().ignore_materialized_views_with_dropped_target_table)
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::UNKNOWN_TABLE,
+                    "Target table '{}' of view '{}' doesn't exists. To ignore this view use setting "
+                    "ignore_materialized_views_with_dropped_target_table",
+                    materialized_view->getTargetTableId().getFullTableName(),
+                    view_id.getFullTableName());
+            }
+
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
-            query = view_metadata_snapshot->getSelectQuery().inner_query;
+
+            const auto & select_query = view_metadata_snapshot->getSelectQuery();
+            if (select_query.select_table_id != table_id)
+            {
+                /// It may happen if materialize view query was changed and it doesn't depend on this source table anymore.
+                /// See setting `allow_experimental_alter_materialized_view_structure`
+                LOG_DEBUG(
+                    &Poco::Logger::get("PushingToViews"), "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
+                        select_query.select_table_id.getFullTableName(), view_id.getFullTableName(), table_id);
+                continue;
+            }
+
+            query = select_query.inner_query;
+
             target_name = inner_table_id.getFullTableName();
 
             Block header;
@@ -328,7 +356,7 @@ Chain buildPushingToViewsChain(
             if (select_context->getSettingsRef().allow_experimental_analyzer)
                 header = InterpreterSelectQueryAnalyzer::getSampleBlock(query, select_context);
             else
-                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze()).getSampleBlock();
+                header = InterpreterSelectQuery(query, select_context, SelectQueryOptions()).getSampleBlock();
 
             /// Insert only columns returned by select.
             Names insert_columns;
@@ -336,7 +364,7 @@ Chain buildPushingToViewsChain(
             for (const auto & column : header)
             {
                 /// But skip columns which storage doesn't have.
-                if (inner_table_columns.hasPhysical(column.name))
+                if (inner_table_columns.hasNotAlias(column.name))
                     insert_columns.emplace_back(column.name);
             }
 
@@ -432,6 +460,7 @@ Chain buildPushingToViewsChain(
         processors.emplace_back(std::move(finalizing_views));
         result_chain = Chain(std::move(processors));
         result_chain.setNumThreads(std::min(views_data->max_threads, max_parallel_streams));
+        result_chain.setConcurrencyControl(settings.use_concurrency_control);
     }
 
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
@@ -492,7 +521,8 @@ static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsDat
         pipeline = interpreter.buildQueryPipeline();
     }
     else
-    {   InterpreterSelectQuery interpreter(view.query, local_context, SelectQueryOptions());
+    {
+        InterpreterSelectQuery interpreter(view.query, local_context, SelectQueryOptions());
         pipeline = interpreter.buildQueryPipeline();
     }
 

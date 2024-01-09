@@ -1,6 +1,7 @@
 #include <amqpcpp.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -240,7 +241,11 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
-    modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
+    if (rabbitmq_settings->rabbitmq_handle_error_mode == StreamingHandleErrorMode::DEFAULT)
+        modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
+    else
+        modified_context->setSetting("input_format_allow_errors_num", Field(0));
+
     /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
     modified_context->setSetting("max_analyze_depth", Field{0});
 
@@ -730,7 +735,7 @@ void StorageRabbitMQ::read(
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, modified_context, column_names, 1,
-            max_execution_time_ms, rabbitmq_settings->rabbitmq_commit_on_select);
+            max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, rabbitmq_settings->rabbitmq_commit_on_select);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -757,7 +762,7 @@ void StorageRabbitMQ::read(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info.storage_limits);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info, local_context);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }
@@ -796,7 +801,7 @@ void StorageRabbitMQ::startup()
 }
 
 
-void StorageRabbitMQ::shutdown()
+void StorageRabbitMQ::shutdown(bool)
 {
     shutdown_called = true;
 
@@ -959,70 +964,88 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
 
 void StorageRabbitMQ::streamingToViewsFunc()
 {
-    chassert(initialized);
-    if (initialized)
+    try
     {
-        try
-        {
-            auto table_id = getStorageID();
-
-            // Check if at least one direct dependency is attached
-            size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
-            bool rabbit_connected = connection->isConnected() || connection->reconnect();
-
-            if (num_views && rabbit_connected)
-            {
-                auto start_time = std::chrono::steady_clock::now();
-
-                mv_attached.store(true);
-
-                // Keep streaming as long as there are attached views and streaming is not cancelled
-                while (!shutdown_called && num_created_consumers > 0)
-                {
-                    if (!hasDependencies(table_id))
-                        break;
-
-                    LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
-
-                    bool continue_reading = tryStreamToViews();
-                    if (!continue_reading)
-                        break;
-
-                    auto end_time = std::chrono::steady_clock::now();
-                    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-                    if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
-                    {
-                        LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
-                        break;
-                    }
-
-                    milliseconds_to_wait = rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms;
-                }
-            }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        streamToViewsImpl();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     mv_attached.store(false);
 
-    /// If there is no running select, stop the loop which was
-    /// activated by previous select.
-    if (connection->getHandler().loopRunning())
-        stopLoopIfNoReaders();
+    try
+    {
+        /// If there is no running select, stop the loop which was
+        /// activated by previous select.
+        if (connection->getHandler().loopRunning())
+            stopLoopIfNoReaders();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
-    if (!shutdown_called)
+    if (shutdown_called)
+    {
+        LOG_DEBUG(log, "Shutdown called, stopping background streaming process");
+    }
+    else
     {
         /// Reschedule with backoff.
         if (milliseconds_to_wait < rabbitmq_settings->rabbitmq_empty_queue_backoff_end_ms)
             milliseconds_to_wait += rabbitmq_settings->rabbitmq_empty_queue_backoff_step_ms;
 
+        LOG_DEBUG(log, "Rescheduling background streaming process in {}", milliseconds_to_wait);
         streaming_task->scheduleAfter(milliseconds_to_wait);
     }
 }
 
+void StorageRabbitMQ::streamToViewsImpl()
+{
+    if (!initialized)
+    {
+        chassert(false);
+        return;
+    }
+
+    auto table_id = getStorageID();
+
+    // Check if at least one direct dependency is attached
+    size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+    bool rabbit_connected = connection->isConnected() || connection->reconnect();
+
+    if (num_views && rabbit_connected)
+    {
+        auto start_time = std::chrono::steady_clock::now();
+
+        mv_attached.store(true);
+
+        // Keep streaming as long as there are attached views and streaming is not cancelled
+        while (!shutdown_called && num_created_consumers > 0)
+        {
+            if (!hasDependencies(table_id))
+                break;
+
+            LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+
+            bool continue_reading = tryStreamToViews();
+            if (!continue_reading)
+                break;
+
+            auto end_time = std::chrono::steady_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+            if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+            {
+                LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
+                break;
+            }
+
+            milliseconds_to_wait = rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms;
+        }
+    }
+}
 
 bool StorageRabbitMQ::tryStreamToViews()
 {
@@ -1058,7 +1081,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, rabbitmq_context, column_names, block_size, max_execution_time_ms, false);
+            *this, storage_snapshot, rabbitmq_context, column_names, block_size, max_execution_time_ms, rabbitmq_settings->rabbitmq_handle_error_mode, false);
 
         sources.emplace_back(source);
         pipes.emplace_back(source);
@@ -1194,7 +1217,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
 NamesAndTypesList StorageRabbitMQ::getVirtuals() const
 {
-    return NamesAndTypesList{
+    auto virtuals = NamesAndTypesList{
             {"_exchange_name", std::make_shared<DataTypeString>()},
             {"_channel_id", std::make_shared<DataTypeString>()},
             {"_delivery_tag", std::make_shared<DataTypeUInt64>()},
@@ -1202,6 +1225,14 @@ NamesAndTypesList StorageRabbitMQ::getVirtuals() const
             {"_message_id", std::make_shared<DataTypeString>()},
             {"_timestamp", std::make_shared<DataTypeUInt64>()}
     };
+
+    if (rabbitmq_settings->rabbitmq_handle_error_mode == StreamingHandleErrorMode::STREAM)
+    {
+        virtuals.push_back({"_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+    }
+
+    return virtuals;
 }
 
 }

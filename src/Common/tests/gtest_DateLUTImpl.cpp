@@ -548,4 +548,3 @@ INSTANTIATE_TEST_SUITE_P(AllTimezones_Year1970,
 //            {0, 0 + 11 * 3600 * 24 + 12, 11},
         }))
 );
-

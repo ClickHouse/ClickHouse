@@ -25,9 +25,10 @@ static Block getSampleBlock()
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "current_size"},
         ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "current_elements"},
         ColumnWithTypeAndName{std::make_shared<DataTypeString>(), "path"},
-        ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt64>>(), "delayed_cleanup_interval_ms"},
         ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt64>>(), "background_download_threads"},
+        ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt64>>(), "background_download_queue_size_limit"},
         ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt64>>(), "enable_bypass_cache_with_threshold"},
+        ColumnWithTypeAndName{std::make_shared<DataTypeNumber<UInt64>>(), "load_metadata_threads"},
     };
     return Block(columns);
 }
@@ -41,8 +42,8 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     auto cache_data = FileCacheFactory::instance().getByName(ast.cache_name);
-    const auto & settings = cache_data.settings;
-    const auto & cache = cache_data.cache;
+    auto settings = cache_data->getSettings();
+    const auto & cache = cache_data->cache;
 
     size_t i = 0;
     res_columns[i++]->insert(settings.max_size);
@@ -54,9 +55,10 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     res_columns[i++]->insert(cache->getUsedCacheSize());
     res_columns[i++]->insert(cache->getFileSegmentsNum());
     res_columns[i++]->insert(cache->getBasePath());
-    res_columns[i++]->insert(settings.delayed_cleanup_interval_ms);
     res_columns[i++]->insert(settings.background_download_threads);
-    res_columns[i++]->insert(settings.enable_bypass_cache_with_threashold);
+    res_columns[i++]->insert(settings.background_download_queue_size_limit);
+    res_columns[i++]->insert(settings.enable_bypass_cache_with_threshold);
+    res_columns[i++]->insert(settings.load_metadata_threads);
 
     BlockIO res;
     size_t num_rows = res_columns[0]->size();

@@ -13,6 +13,7 @@ class IBackupEntry;
 using BackupPtr = std::shared_ptr<const IBackup>;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
+struct ReadSettings;
 
 
 /// Information about a file stored in a backup.
@@ -37,6 +38,14 @@ struct BackupFileInfo
 
     /// Whether this file is encrypted by an encrypted disk.
     bool encrypted_by_disk = false;
+
+    /// Set if this file is just a reference to another file
+    String reference_target;
+
+    /// (While writing a backup) if this list is not empty then after writing
+    /// `data_file_name` it should be copied to this list of destinations too.
+    /// This is used for plain backups.
+    Strings data_file_copies;
 
     struct LessByFileName
     {
@@ -66,9 +75,9 @@ struct BackupFileInfo
 using BackupFileInfos = std::vector<BackupFileInfo>;
 
 /// Builds a BackupFileInfo for a specified backup entry.
-BackupFileInfo buildFileInfoForBackupEntry(const String & file_name, const BackupEntryPtr & backup_entry, const BackupPtr & base_backup, Poco::Logger * log);
+BackupFileInfo buildFileInfoForBackupEntry(const String & file_name, const BackupEntryPtr & backup_entry, const BackupPtr & base_backup, const ReadSettings & read_settings, Poco::Logger * log);
 
 /// Builds a vector of BackupFileInfos for specified backup entries.
-BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, ThreadPool & thread_pool);
+BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool);
 
 }

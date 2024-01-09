@@ -25,10 +25,11 @@ namespace Poco
 namespace DB
 {
 class ContextAccess;
-struct ContextAccessParams;
+class ContextAccessParams;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 class EnabledRoles;
+struct EnabledRolesInfo;
 class RoleCache;
 class EnabledRowPolicies;
 class RowPolicyCache;
@@ -117,7 +118,7 @@ public:
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
-    UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
+    AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
 
     /// Makes a backup of access entities.
     void restoreFromBackup(RestorerFromBackup & restorer) override;
@@ -181,17 +182,13 @@ public:
     void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
     bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
 
-    std::shared_ptr<const ContextAccess> getContextAccess(
-        const UUID & user_id,
-        const std::vector<UUID> & current_roles,
-        bool use_default_roles,
-        const Settings & settings,
-        const String & current_database,
-        const ClientInfo & client_info) const;
-
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
+        const std::vector<UUID> & current_roles,
+        const std::vector<UUID> & current_roles_with_admin_option) const;
+
+    std::shared_ptr<const EnabledRolesInfo> getEnabledRolesInfo(
         const std::vector<UUID> & current_roles,
         const std::vector<UUID> & current_roles_with_admin_option) const;
 
@@ -217,6 +214,12 @@ public:
         const boost::container::flat_set<UUID> & enabled_roles,
         const SettingsProfileElements & settings_from_enabled_roles) const;
 
+    std::shared_ptr<const SettingsProfilesInfo> getEnabledSettingsInfo(
+        const UUID & user_id,
+        const SettingsProfileElements & settings_from_user,
+        const boost::container::flat_set<UUID> & enabled_roles,
+        const SettingsProfileElements & settings_from_enabled_roles) const;
+
     std::shared_ptr<const SettingsProfilesInfo> getSettingsProfileInfo(const UUID & profile_id);
 
     const ExternalAuthenticators & getExternalAuthenticators() const;
@@ -229,7 +232,7 @@ private:
     class CustomSettingsPrefixes;
     class PasswordComplexityRules;
 
-    std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 

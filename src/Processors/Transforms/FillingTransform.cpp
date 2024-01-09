@@ -1,5 +1,6 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/IDataType.h>
@@ -54,13 +55,14 @@ template <typename T>
 static FillColumnDescription::StepFunction getStepFunction(
     IntervalKind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
 {
-    switch (kind)
+    static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+    switch (kind) // NOLINT(bugprone-switch-missing-default-case)
     {
 #define DECLARE_CASE(NAME) \
         case IntervalKind::NAME: \
             return [step, scale, &date_lut](Field & field) { \
                 field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.get<T>()), static_cast<Int32>(step), date_lut, scale); };
+                    field.get<T>()), static_cast<Int32>(step), date_lut, utc_time_zone, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
@@ -154,15 +156,16 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
         {
             const auto & step_dec = descr.fill_step.get<const DecimalField<Decimal64> &>();
             Int64 step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
+            static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
 
-            switch (*descr.step_kind)
+            switch (*descr.step_kind) // NOLINT(bugprone-switch-missing-default-case)
             {
 #define DECLARE_CASE(NAME) \
                 case IntervalKind::NAME: \
                     descr.step_func = [step, &time_zone = date_time64->getTimeZone()](Field & field) \
                     { \
                         auto field_decimal = field.get<DecimalField<DateTime64>>(); \
-                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), step, time_zone, field_decimal.getScale()); \
+                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), step, time_zone, utc_time_zone, field_decimal.getScale()); \
                         field = DecimalField(res, field_decimal.getScale()); \
                     }; \
                     break;
@@ -224,7 +227,7 @@ FillingTransform::FillingTransform(
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "Incompatible types of WITH FILL expression values with column type {}", type->getName());
 
-        if (isUnsignedInteger(type) &&
+        if (isUInt(type) &&
             ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
              (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
         {

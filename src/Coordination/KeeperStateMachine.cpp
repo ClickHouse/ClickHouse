@@ -1,25 +1,27 @@
 #include <cerrno>
-#include <future>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
+#include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <base/defines.h>
 #include <base/errnoToString.h>
+#include <base/move_extend.h>
 #include <sys/mman.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
-#include "Coordination/KeeperStorage.h"
-
 #include <Disks/DiskLocal.h>
 
 
 namespace ProfileEvents
 {
     extern const Event KeeperCommits;
+    extern const Event KeeperReconfigRequest;
     extern const Event KeeperCommitsFailed;
     extern const Event KeeperSnapshotCreations;
     extern const Event KeeperSnapshotCreationsFailed;
@@ -146,7 +148,7 @@ void assertDigest(
             "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest - {} (digest "
             "{}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
-            Coordination::toString(request.getOpNum()),
+            request.getOpNum(),
             first.value,
             second.value,
             first.version,
@@ -159,12 +161,23 @@ void assertDigest(
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
+    auto result = nuraft::buffer::alloc(sizeof(log_idx));
+    nuraft::buffer_serializer ss(result);
+    ss.put_u64(log_idx);
+
+    /// Don't preprocess anything until the first commit when we will manually pre_commit and commit
+    /// all needed logs
+    if (!keeper_context->local_logs_preprocessed)
+        return result;
+
     auto request_for_session = parseRequest(data, /*final=*/false);
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
 
+    request_for_session->log_idx = log_idx;
+
     preprocess(*request_for_session);
-    return nullptr;
+    return result;
 }
 
 std::shared_ptr<KeeperStorage::RequestForSession> KeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version)
@@ -261,7 +274,8 @@ std::shared_ptr<KeeperStorage::RequestForSession> KeeperStateMachine::parseReque
 
 bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & request_for_session)
 {
-    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
+    const auto op_num = request_for_session.request->getOpNum();
+    if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
         return true;
 
     std::lock_guard lock(storage_and_responses_lock);
@@ -277,7 +291,8 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
             request_for_session.time,
             request_for_session.zxid,
             true /* check_acl */,
-            request_for_session.digest);
+            request_for_session.digest,
+            request_for_session.log_idx);
     }
     catch (...)
     {
@@ -291,14 +306,110 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
     return true;
 }
 
+void KeeperStateMachine::reconfigure(const KeeperStorage::RequestForSession& request_for_session)
+{
+    std::lock_guard _(storage_and_responses_lock);
+    KeeperStorage::ResponseForSession response = processReconfiguration(request_for_session);
+    if (!responses_queue.push(response))
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
+        LOG_WARNING(log,
+            "Failed to push response with session id {} to the queue, probably because of shutdown",
+            response.session_id);
+    }
+}
+
+KeeperStorage::ResponseForSession KeeperStateMachine::processReconfiguration(
+    const KeeperStorage::RequestForSession & request_for_session)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperReconfigRequest);
+
+    const auto & request = static_cast<const Coordination::ZooKeeperReconfigRequest&>(*request_for_session.request);
+    const int64_t session_id = request_for_session.session_id;
+    const int64_t zxid = request_for_session.zxid;
+
+    using enum Coordination::Error;
+    auto bad_request = [&](Coordination::Error code = ZBADARGUMENTS) -> KeeperStorage::ResponseForSession
+    {
+        auto res = std::make_shared<Coordination::ZooKeeperReconfigResponse>();
+        res->xid = request.xid;
+        res->zxid = zxid;
+        res->error = code;
+        return { session_id, std::move(res) };
+    };
+
+    if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, true))
+        return bad_request(ZNOAUTH);
+
+    KeeperDispatcher& dispatcher = *keeper_context->getDispatcher();
+    if (!dispatcher.reconfigEnabled())
+        return bad_request(ZUNIMPLEMENTED);
+    if (request.version != -1)
+        return bad_request(ZBADVERSION);
+
+    const bool has_new_members = !request.new_members.empty();
+    const bool has_joining = !request.joining.empty();
+    const bool has_leaving = !request.leaving.empty();
+    const bool incremental_reconfig = (has_joining || has_leaving) && !has_new_members;
+    if (!incremental_reconfig)
+        return bad_request();
+
+    const ClusterConfigPtr config = getClusterConfig();
+    if (!config) // Server can be uninitialized yet
+        return bad_request();
+
+    ClusterUpdateActions updates;
+
+    if (has_joining)
+    {
+        if (auto join_updates = joiningToClusterUpdates(config, request.joining); !join_updates.empty())
+            moveExtend(updates, std::move(join_updates));
+        else
+            return bad_request();
+    }
+
+    if (has_leaving)
+    {
+        if (auto leave_updates = leavingToClusterUpdates(config, request.leaving); !leave_updates.empty())
+            moveExtend(updates, std::move(leave_updates));
+        else
+            return bad_request();
+    }
+
+    auto response = std::make_shared<Coordination::ZooKeeperReconfigResponse>();
+    response->xid = request.xid;
+    response->zxid = zxid;
+    response->error = Coordination::Error::ZOK;
+    response->value = serializeClusterConfig(config, updates);
+
+    dispatcher.pushClusterUpdates(std::move(updates));
+    return { session_id, std::move(response) };
+}
+
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     auto request_for_session = parseRequest(data, true);
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
 
-    /// Special processing of session_id request
-    if (request_for_session->request->getOpNum() == Coordination::OpNum::SessionID)
+    request_for_session->log_idx = log_idx;
+
+    if (!keeper_context->local_logs_preprocessed)
+        preprocess(*request_for_session);
+
+    auto try_push = [this](const KeeperStorage::ResponseForSession& response)
+    {
+        if (!responses_queue.push(response))
+        {
+            ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
+            LOG_WARNING(log,
+                "Failed to push response with session id {} to the queue, probably because of shutdown",
+                response.session_id);
+        }
+    };
+
+    const auto op_num = request_for_session->request->getOpNum();
+    if (op_num == Coordination::OpNum::SessionID)
     {
         const Coordination::ZooKeeperSessionIDRequest & session_id_request
             = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session->request);
@@ -309,21 +420,16 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         KeeperStorage::ResponseForSession response_for_session;
         response_for_session.session_id = -1;
         response_for_session.response = response;
-        {
-            std::lock_guard lock(storage_and_responses_lock);
-            session_id = storage->getSessionID(session_id_request.session_timeout_ms);
-            LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
-            response->session_id = session_id;
-            if (!responses_queue.push(response_for_session))
-            {
-                ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", session_id);
-            }
-        }
+
+        std::lock_guard lock(storage_and_responses_lock);
+        session_id = storage->getSessionID(session_id_request.session_timeout_ms);
+        LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
+        response->session_id = session_id;
+        try_push(response_for_session);
     }
     else
     {
-        if (request_for_session->request->getOpNum() == Coordination::OpNum::Close)
+        if (op_num == Coordination::OpNum::Close)
         {
             std::lock_guard lock(request_cache_mutex);
             parsed_request_cache.erase(request_for_session->session_id);
@@ -333,14 +439,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         KeeperStorage::ResponsesForSessions responses_for_sessions
             = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
         for (auto & response_for_session : responses_for_sessions)
-            if (!responses_queue.push(response_for_session))
-            {
-                ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-                LOG_WARNING(
-                    log,
-                    "Failed to push response with session id {} to the queue, probably because of shutdown",
-                    response_for_session.session_id);
-            }
+            try_push(response_for_session);
 
         if (keeper_context->digestEnabled() && request_for_session->digest)
             assertDigest(*request_for_session->digest, storage->getNodesDigest(true), *request_for_session->request, true);
@@ -350,7 +449,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     last_committed_idx = log_idx;
 
     if (commit_callback)
-        commit_callback(*request_for_session);
+        commit_callback(log_idx, *request_for_session);
     return nullptr;
 }
 
@@ -390,7 +489,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
         /// maybe some logs were preprocessed with log idx larger than the snapshot idx
         /// we have to apply them to the new storage
-        storage->applyUncommittedState(*snapshot_deserialization_result.storage, s.get_last_log_idx());
+        storage->applyUncommittedState(*snapshot_deserialization_result.storage, snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
         storage = std::move(snapshot_deserialization_result.storage);
         latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
         cluster_config = snapshot_deserialization_result.cluster_config;
@@ -402,15 +501,20 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 }
 
 
-void KeeperStateMachine::commit_config(const uint64_t /* log_idx */, nuraft::ptr<nuraft::cluster_config> & new_conf)
+void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf)
 {
     std::lock_guard lock(cluster_config_lock);
     auto tmp = new_conf->serialize();
     cluster_config = ClusterConfig::deserialize(*tmp);
+    last_committed_idx = log_idx;
 }
 
 void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
+    /// Don't rollback anything until the first commit because nothing was preprocessed
+    if (!keeper_context->local_logs_preprocessed)
+        return;
+
     auto request_for_session = parseRequest(data, true);
     // If we received a log from an older node, use the log_idx as the zxid
     // log_idx will always be larger or equal to the zxid so we can safely do this
@@ -782,5 +886,4 @@ void KeeperStateMachine::recalculateStorageStats()
     storage->recalculateStats();
     LOG_INFO(log, "Done recalculating storage stats");
 }
-
 }

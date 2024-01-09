@@ -19,6 +19,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageURL.h>
 #include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <TableFunctions/TableFunctionURLCluster.h>
 
@@ -48,6 +49,7 @@ StorageURLCluster::StorageURLCluster(
     , uri(uri_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    context_->getHTTPHeaderFilter().checkHeaders(configuration_.headers);
 
     StorageInMemoryMetadata storage_metadata;
 
@@ -66,6 +68,8 @@ StorageURLCluster::StorageURLCluster(
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
+
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 void StorageURLCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context)
@@ -77,18 +81,11 @@ void StorageURLCluster::addColumnsStructureToQuery(ASTPtr & query, const String 
     TableFunctionURLCluster::addColumnsStructureToArguments(expression_list->children, structure, context);
 }
 
-RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(ASTPtr, const ContextPtr & context) const
+RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
-    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, context->getSettingsRef().glob_expansion_max_elements);
+    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, context->getSettingsRef().glob_expansion_max_elements, predicate, virtual_columns, context);
     auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
-}
-
-NamesAndTypesList StorageURLCluster::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
 }
 
 }

@@ -77,16 +77,16 @@ set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")
 set(FLATBUFFERS_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/flatbuffers")
 set(FLATBUFFERS_INCLUDE_DIR "${FLATBUFFERS_SRC_DIR}/include")
 
-# set flatbuffers CMake options
-set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "Enable the build of the flatbuffers library")
-set(FLATBUFFERS_BUILD_SHAREDLIB OFF CACHE BOOL "Disable the build of the flatbuffers shared library")
-set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "Skip flatbuffers tests")
+set(FLATBUFFERS_SRCS
+  ${FLATBUFFERS_SRC_DIR}/src/idl_parser.cpp
+  ${FLATBUFFERS_SRC_DIR}/src/idl_gen_text.cpp
+  ${FLATBUFFERS_SRC_DIR}/src/reflection.cpp
+  ${FLATBUFFERS_SRC_DIR}/src/util.cpp)
 
-add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
+add_library(_flatbuffers STATIC ${FLATBUFFERS_SRCS})
+target_include_directories(_flatbuffers PUBLIC ${FLATBUFFERS_INCLUDE_DIR})
+target_compile_definitions(_flatbuffers PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
 
-add_library(_flatbuffers INTERFACE)
-target_link_libraries(_flatbuffers INTERFACE flatbuffers)
-target_include_directories(_flatbuffers INTERFACE ${FLATBUFFERS_INCLUDE_DIR})
 
 # ===  hdfs
 # NOTE: cannot use ch_contrib::hdfs since it's INCLUDE_DIRECTORIES does not includes trailing "hdfs/"
@@ -109,7 +109,6 @@ set (ORC_CXX_HAS_CSTDINT 1)
 set (ORC_CXX_HAS_THREAD_LOCAL 1)
 
 include(orc_check.cmake)
-configure_file("${ORC_INCLUDE_DIR}/orc/orc-config.hh.in" "${ORC_BUILD_INCLUDE_DIR}/orc/orc-config.hh")
 configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/Adaptor.hh")
 
 
@@ -128,7 +127,6 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/BpackingDefault.hh"
         "${ORC_SOURCE_SRC_DIR}/ByteRLE.cc"
         "${ORC_SOURCE_SRC_DIR}/ByteRLE.hh"
-        "${ORC_SOURCE_SRC_DIR}/CMakeLists.txt"
         "${ORC_SOURCE_SRC_DIR}/ColumnPrinter.cc"
         "${ORC_SOURCE_SRC_DIR}/ColumnReader.cc"
         "${ORC_SOURCE_SRC_DIR}/ColumnReader.hh"
@@ -198,7 +196,9 @@ target_link_libraries(_orc PRIVATE
     ch_contrib::snappy
     ch_contrib::zlib
     ch_contrib::zstd)
-target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR})
+target_include_directories(_orc SYSTEM BEFORE PUBLIC
+    ${ORC_INCLUDE_DIR}
+    "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src/orc/c++/include")
 target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_BUILD_INCLUDE_DIR})
 target_include_directories(_orc SYSTEM PRIVATE
     ${ORC_SOURCE_SRC_DIR}
@@ -211,8 +211,6 @@ target_include_directories(_orc SYSTEM PRIVATE
 # === arrow
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow")
-
-configure_file("${LIBRARY_DIR}/util/config.h.cmake" "${CMAKE_CURRENT_BINARY_DIR}/cpp/src/arrow/util/config.h")
 
 # arrow/cpp/src/arrow/CMakeLists.txt (ARROW_SRCS + ARROW_COMPUTE + ARROW_IPC)
 set(ARROW_SRCS
@@ -230,6 +228,8 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/array/builder_nested.cc"
         "${LIBRARY_DIR}/array/builder_primitive.cc"
         "${LIBRARY_DIR}/array/builder_union.cc"
+        "${LIBRARY_DIR}/array/builder_run_end.cc"
+        "${LIBRARY_DIR}/array/array_run_end.cc"
         "${LIBRARY_DIR}/array/concatenate.cc"
         "${LIBRARY_DIR}/array/data.cc"
         "${LIBRARY_DIR}/array/diff.cc"
@@ -309,9 +309,12 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/util/debug.cc"
         "${LIBRARY_DIR}/util/tracing.cc"
         "${LIBRARY_DIR}/util/atfork_internal.cc"
+        "${LIBRARY_DIR}/util/crc32.cc"
+        "${LIBRARY_DIR}/util/hashing.cc"
+        "${LIBRARY_DIR}/util/ree_util.cc"
+        "${LIBRARY_DIR}/util/union_util.cc"
         "${LIBRARY_DIR}/vendored/base64.cpp"
         "${LIBRARY_DIR}/vendored/datetime/tz.cpp"
-
         "${LIBRARY_DIR}/vendored/musl/strptime.c"
         "${LIBRARY_DIR}/vendored/uriparser/UriCommon.c"
         "${LIBRARY_DIR}/vendored/uriparser/UriCompare.c"
@@ -328,26 +331,23 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/vendored/uriparser/UriRecompose.c"
         "${LIBRARY_DIR}/vendored/uriparser/UriResolve.c"
         "${LIBRARY_DIR}/vendored/uriparser/UriShorten.c"
+        "${LIBRARY_DIR}/vendored/double-conversion/bignum.cc"
+        "${LIBRARY_DIR}/vendored/double-conversion/bignum-dtoa.cc"
+        "${LIBRARY_DIR}/vendored/double-conversion/cached-powers.cc"
+        "${LIBRARY_DIR}/vendored/double-conversion/double-to-string.cc"
+        "${LIBRARY_DIR}/vendored/double-conversion/fast-dtoa.cc"
+        "${LIBRARY_DIR}/vendored/double-conversion/fixed-dtoa.cc"
+        "${LIBRARY_DIR}/vendored/double-conversion/string-to-double.cc"
+        "${LIBRARY_DIR}/vendored/double-conversion/strtod.cc"
 
         "${LIBRARY_DIR}/compute/api_aggregate.cc"
         "${LIBRARY_DIR}/compute/api_scalar.cc"
         "${LIBRARY_DIR}/compute/api_vector.cc"
         "${LIBRARY_DIR}/compute/cast.cc"
         "${LIBRARY_DIR}/compute/exec.cc"
-        "${LIBRARY_DIR}/compute/exec/aggregate_node.cc"
-        "${LIBRARY_DIR}/compute/exec/exec_plan.cc"
-        "${LIBRARY_DIR}/compute/exec/expression.cc"
-        "${LIBRARY_DIR}/compute/exec/filter_node.cc"
-        "${LIBRARY_DIR}/compute/exec/project_node.cc"
-        "${LIBRARY_DIR}/compute/exec/source_node.cc"
-        "${LIBRARY_DIR}/compute/exec/sink_node.cc"
-        "${LIBRARY_DIR}/compute/exec/order_by_impl.cc"
-        "${LIBRARY_DIR}/compute/exec/partition_util.cc"
         "${LIBRARY_DIR}/compute/function.cc"
         "${LIBRARY_DIR}/compute/function_internal.cc"
         "${LIBRARY_DIR}/compute/kernel.cc"
-        "${LIBRARY_DIR}/compute/light_array.cc"
-        "${LIBRARY_DIR}/compute/registry.cc"
         "${LIBRARY_DIR}/compute/kernels/aggregate_basic.cc"
         "${LIBRARY_DIR}/compute/kernels/aggregate_mode.cc"
         "${LIBRARY_DIR}/compute/kernels/aggregate_quantile.cc"
@@ -355,49 +355,48 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/kernels/aggregate_var_std.cc"
         "${LIBRARY_DIR}/compute/kernels/codegen_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/hash_aggregate.cc"
+        "${LIBRARY_DIR}/compute/kernels/row_encoder.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_arithmetic.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_boolean.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_boolean.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_dictionary.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_cast_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_extension.cc"
+        "${LIBRARY_DIR}/compute/kernels/scalar_cast_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_nested.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_numeric.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_string.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_temporal.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_compare.cc"
+        "${LIBRARY_DIR}/compute/kernels/scalar_if_else.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_nested.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_random.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_round.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_set_lookup.cc"
+        "${LIBRARY_DIR}/compute/kernels/scalar_string_ascii.cc"
+        "${LIBRARY_DIR}/compute/kernels/scalar_string_utf8.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_temporal_binary.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_temporal_unary.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_validity.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_if_else.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_string_ascii.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_string_utf8.cc"
         "${LIBRARY_DIR}/compute/kernels/util_internal.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_array_sort.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_cumulative_ops.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_hash.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_rank.cc"
-        "${LIBRARY_DIR}/compute/kernels/vector_select_k.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_nested.cc"
+        "${LIBRARY_DIR}/compute/kernels/vector_rank.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_replace.cc"
+        "${LIBRARY_DIR}/compute/kernels/vector_select_k.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_selection.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_sort.cc"
-        "${LIBRARY_DIR}/compute/kernels/row_encoder.cc"
-        "${LIBRARY_DIR}/compute/exec/union_node.cc"
-        "${LIBRARY_DIR}/compute/exec/key_hash.cc"
-        "${LIBRARY_DIR}/compute/exec/key_map.cc"
-        "${LIBRARY_DIR}/compute/exec/util.cc"
-        "${LIBRARY_DIR}/compute/exec/hash_join_dict.cc"
-        "${LIBRARY_DIR}/compute/exec/hash_join.cc"
-        "${LIBRARY_DIR}/compute/exec/hash_join_node.cc"
-        "${LIBRARY_DIR}/compute/exec/task_util.cc"
+        "${LIBRARY_DIR}/compute/kernels/vector_selection_internal.cc"
+        "${LIBRARY_DIR}/compute/kernels/vector_selection_filter_internal.cc"
+        "${LIBRARY_DIR}/compute/kernels/vector_selection_take_internal.cc"
+        "${LIBRARY_DIR}/compute/light_array.cc"
+        "${LIBRARY_DIR}/compute/registry.cc"
+        "${LIBRARY_DIR}/compute/expression.cc"
+        "${LIBRARY_DIR}/compute/ordering.cc"
+        "${LIBRARY_DIR}/compute/row/compare_internal.cc"
         "${LIBRARY_DIR}/compute/row/encode_internal.cc"
         "${LIBRARY_DIR}/compute/row/grouper.cc"
-        "${LIBRARY_DIR}/compute/row/compare_internal.cc"
         "${LIBRARY_DIR}/compute/row/row_internal.cc"
 
         "${LIBRARY_DIR}/ipc/dictionary.cc"
@@ -449,7 +448,7 @@ target_link_libraries(_arrow PUBLIC _orc)
 add_dependencies(_arrow protoc)
 
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
-target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/cpp/src")
+target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
 
 target_include_directories(_arrow SYSTEM PRIVATE ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
@@ -478,10 +477,10 @@ set(PARQUET_SRCS
         "${LIBRARY_DIR}/exception.cc"
         "${LIBRARY_DIR}/file_reader.cc"
         "${LIBRARY_DIR}/file_writer.cc"
+        "${LIBRARY_DIR}/page_index.cc"
         "${LIBRARY_DIR}/level_conversion.cc"
         "${LIBRARY_DIR}/level_comparison.cc"
         "${LIBRARY_DIR}/metadata.cc"
-        "${LIBRARY_DIR}/murmur3.cc"
         "${LIBRARY_DIR}/platform.cc"
         "${LIBRARY_DIR}/printer.cc"
         "${LIBRARY_DIR}/properties.cc"
@@ -490,6 +489,8 @@ set(PARQUET_SRCS
         "${LIBRARY_DIR}/stream_reader.cc"
         "${LIBRARY_DIR}/stream_writer.cc"
         "${LIBRARY_DIR}/types.cc"
+        "${LIBRARY_DIR}/bloom_filter_reader.cc"
+        "${LIBRARY_DIR}/xxhasher.cc"
 
         "${GEN_LIBRARY_DIR}/parquet_constants.cpp"
         "${GEN_LIBRARY_DIR}/parquet_types.cpp"
@@ -502,9 +503,10 @@ target_include_directories(_parquet SYSTEM BEFORE
         "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src")
 target_link_libraries(_parquet
-    PUBLIC _arrow
-    PRIVATE
+    PUBLIC
+        _arrow
         ch_contrib::thrift
+    PRIVATE
         boost::headers_only
         boost::regex
         OpenSSL::Crypto OpenSSL::SSL)

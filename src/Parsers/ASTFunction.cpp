@@ -20,6 +20,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Core/QualifiedTableName.h>
 
+#include <boost/algorithm/string.hpp>
+
 
 using namespace std::literals;
 
@@ -80,6 +82,8 @@ namespace
 
         void markSecretArgument(size_t index, bool argument_is_named = false)
         {
+            if (index >= arguments->size())
+                return;
             if (!result.count)
             {
                 result.start = index;
@@ -100,7 +104,8 @@ namespace
                 /// mongodb('host:port', 'database', 'collection', 'user', 'password', ...)
                 findMySQLFunctionSecretArguments();
             }
-            else if ((function.name == "s3") || (function.name == "cosn") || (function.name == "oss"))
+            else if ((function.name == "s3") || (function.name == "cosn") || (function.name == "oss") ||
+                     (function.name == "deltaLake") || (function.name == "hudi") || (function.name == "iceberg"))
             {
                 /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
                 findS3FunctionSecretArguments(/* is_cluster_function= */ false);
@@ -150,41 +155,26 @@ namespace
                 return;
             }
 
-            /// We're going to replace 'aws_secret_access_key' with '[HIDDEN'] for the following signatures:
+            /// We should check other arguments first because we don't need to do any replacement in case of
+            /// s3('url', NOSIGN, 'format' [, 'compression'])
+            /// s3('url', 'format', 'structure' [, 'compression'])
+            if ((url_arg_idx + 3 <= arguments->size()) && (arguments->size() <= url_arg_idx + 4))
+            {
+                String second_arg;
+                if (tryGetStringFromArgument(url_arg_idx + 1, &second_arg))
+                {
+                    if (boost::iequals(second_arg, "NOSIGN"))
+                        return; /// The argument after 'url' is "NOSIGN".
+
+                    if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
+                        return; /// The argument after 'url' is a format: s3('url', 'format', ...)
+                }
+            }
+
+            /// We're going to replace 'aws_secret_access_key' with '[HIDDEN]' for the following signatures:
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
-
-            /// But we should check the number of arguments first because we don't need to do any replacements in case of
-            /// s3('url' [, 'format']) or s3Cluster('cluster_name', 'url' [, 'format'])
-            if (arguments->size() < url_arg_idx + 3)
-                return;
-
-            if (arguments->size() >= url_arg_idx + 5)
-            {
-                /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'structure', ...)
-                markSecretArgument(url_arg_idx + 2);
-            }
-            else
-            {
-                /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
-                /// We need to distinguish that from s3('url', 'format', 'structure' [, 'compression_method']).
-                /// So we will check whether the argument after 'url' is a format.
-                String format;
-                if (!tryGetStringFromArgument(url_arg_idx + 1, &format, /* allow_identifier= */ false))
-                {
-                    /// We couldn't evaluate the argument after 'url' so we don't know whether it is a format or `aws_access_key_id`.
-                    /// So it's safer to wipe the next argument just in case.
-                    markSecretArgument(url_arg_idx + 2); /// Wipe either `aws_secret_access_key` or `structure`.
-                    return;
-                }
-
-                if (KnownFormatNames::instance().exists(format))
-                    return; /// The argument after 'url' is a format: s3('url', 'format', ...)
-
-                /// The argument after 'url' is not a format so we do our replacement:
-                /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...) -> s3('url', 'aws_access_key_id', '[HIDDEN]', ...)
-                markSecretArgument(url_arg_idx + 2);
-            }
+            markSecretArgument(url_arg_idx + 2);
         }
 
         bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const
@@ -351,7 +341,8 @@ namespace
                 /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
                 findMySQLFunctionSecretArguments();
             }
-            else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS"))
+            else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") ||
+                     (engine_name == "DeltaLake") || (engine_name == "Hudi") || (engine_name == "Iceberg"))
             {
                 /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
                 findS3TableEngineSecretArguments();
@@ -381,15 +372,29 @@ namespace
                 return;
             }
 
+            /// We should check other arguments first because we don't need to do any replacement in case of
+            /// S3('url', NOSIGN, 'format' [, 'compression'])
+            /// S3('url', 'format', 'compression')
+            if ((3 <= arguments->size()) && (arguments->size() <= 4))
+            {
+                String second_arg;
+                if (tryGetStringFromArgument(1, &second_arg))
+                {
+                    if (boost::iequals(second_arg, "NOSIGN"))
+                        return; /// The argument after 'url' is "NOSIGN".
+
+                    if (arguments->size() == 3)
+                    {
+                        if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
+                            return; /// The argument after 'url' is a format: S3('url', 'format', ...)
+                    }
+                }
+            }
+
             /// We replace 'aws_secret_access_key' with '[HIDDEN'] for the following signatures:
+            /// S3('url', 'aws_access_key_id', 'aws_secret_access_key')
             /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
             /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
-
-            /// But we should check the number of arguments first because we don't need to do that replacements in case of
-            /// S3('url' [, 'format' [, 'compression']])
-            if (arguments->size() < 4)
-                return;
-
             markSecretArgument(2);
         }
 
@@ -404,6 +409,11 @@ namespace
                 /// PostgreSQL('host:port', 'database', 'user', 'password')
                 findMySQLDatabaseSecretArguments();
             }
+            else if (engine_name == "S3")
+            {
+                /// S3('url', 'access_key_id', 'secret_access_key')
+                findS3DatabaseSecretArguments();
+            }
         }
 
         void findMySQLDatabaseSecretArguments()
@@ -417,6 +427,20 @@ namespace
             {
                 /// MySQL('host:port', 'database', 'user', 'password')
                 markSecretArgument(3);
+            }
+        }
+
+        void findS3DatabaseSecretArguments()
+        {
+            if (isNamedCollectionName(0))
+            {
+                /// S3(named_collection, ..., secret_access_key = 'password', ...)
+                findSecretNamedArgument("secret_access_key", 1);
+            }
+            else
+            {
+                /// S3('url', 'access_key_id', 'secret_access_key')
+                markSecretArgument(2);
             }
         }
 
@@ -477,7 +501,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Table function '{}' cannot be used as an expression", name);
 
     /// If function can be converted to literal it will be parsed as literal after formatting.
-    /// In distributed query it may lead to mismathed column names.
+    /// In distributed query it may lead to mismatched column names.
     /// To avoid it we check whether we can convert function to literal.
     if (auto literal = toLiteral())
     {
@@ -514,6 +538,11 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
     writeChar(')', ostr);
 
+    if (nulls_action == NullsAction::RESPECT_NULLS)
+        writeCString(" RESPECT NULLS", ostr);
+    else if (nulls_action == NullsAction::IGNORE_NULLS)
+        writeCString(" IGNORE NULLS", ostr);
+
     if (is_window_function)
     {
         writeCString(" OVER ", ostr);
@@ -535,6 +564,11 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
 void ASTFunction::finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    if (nulls_action == NullsAction::RESPECT_NULLS)
+        settings.ostr << " RESPECT NULLS";
+    else if (nulls_action == NullsAction::IGNORE_NULLS)
+        settings.ostr << " IGNORE NULLS";
+
     if (!is_window_function)
         return;
 
@@ -575,11 +609,20 @@ ASTPtr ASTFunction::clone() const
 }
 
 
-void ASTFunction::updateTreeHashImpl(SipHash & hash_state) const
+void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(name.size());
     hash_state.update(name);
-    IAST::updateTreeHashImpl(hash_state);
+    ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
+
+    hash_state.update(nulls_action);
+    if (is_window_function)
+    {
+        hash_state.update(window_name.size());
+        hash_state.update(window_name);
+        if (window_definition)
+            window_definition->updateTreeHashImpl(hash_state, ignore_aliases);
+    }
 }
 
 template <typename Container>

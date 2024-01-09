@@ -344,7 +344,7 @@ def test_granular_access_create_alter_drop_query(cluster):
     )
 
     assert (
-        "DB::Exception: kek: Not enough privileges. To execute this query it's necessary to have grant CREATE NAMED COLLECTION"
+        "DB::Exception: kek: Not enough privileges. To execute this query, it's necessary to have the grant CREATE NAMED COLLECTION"
         in node.query_and_get_error(
             "CREATE NAMED COLLECTION collection2 AS key1=1, key2='value2'", user="kek"
         )
@@ -370,7 +370,7 @@ def test_granular_access_create_alter_drop_query(cluster):
     )
 
     assert (
-        "DB::Exception: kek: Not enough privileges. To execute this query it's necessary to have grant ALTER NAMED COLLECTION"
+        "DB::Exception: kek: Not enough privileges. To execute this query, it's necessary to have the grant ALTER NAMED COLLECTION"
         in node.query_and_get_error(
             "ALTER NAMED COLLECTION collection2 SET key1=2", user="kek"
         )
@@ -385,14 +385,14 @@ def test_granular_access_create_alter_drop_query(cluster):
     )
     node.query("REVOKE alter named collection ON collection2 FROM kek")
     assert (
-        "DB::Exception: kek: Not enough privileges. To execute this query it's necessary to have grant ALTER NAMED COLLECTION"
+        "DB::Exception: kek: Not enough privileges. To execute this query, it's necessary to have the grant ALTER NAMED COLLECTION"
         in node.query_and_get_error(
             "ALTER NAMED COLLECTION collection2 SET key1=3", user="kek"
         )
     )
 
     assert (
-        "DB::Exception: kek: Not enough privileges. To execute this query it's necessary to have grant DROP NAMED COLLECTION"
+        "DB::Exception: kek: Not enough privileges. To execute this query, it's necessary to have the grant DROP NAMED COLLECTION"
         in node.query_and_get_error("DROP NAMED COLLECTION collection2", user="kek")
     )
     node.query("GRANT drop named collection ON collection2 TO kek")

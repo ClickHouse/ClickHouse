@@ -87,8 +87,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         response.setChunkedTransferEncoding(true);
 
     Output used_output;
-    const auto & config = server.config();
-    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
+    const auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 

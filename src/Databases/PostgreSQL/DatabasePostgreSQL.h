@@ -44,7 +44,7 @@ public:
 
     bool empty() const override;
 
-    void loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/) override;
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 

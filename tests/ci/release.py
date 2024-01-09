@@ -3,7 +3,7 @@
 """
 script to create releases for ClickHouse
 
-The `gh` CLI prefered over the PyGithub to have an easy way to rollback bad
+The `gh` CLI preferred over the PyGithub to have an easy way to rollback bad
 release in command line by simple execution giving rollback commands
 
 On another hand, PyGithub is used for convenient getting commit's status from API
@@ -197,11 +197,11 @@ class Release:
         if self.release_type in self.BIG:
             if self._version.minor >= 12 and self.release_type != "major":
                 raise ValueError(
-                    "The relese type must be 'major' for minor versions>=12"
+                    "The release type must be 'major' for minor versions>=12"
                 )
             if self._version.minor < 12 and self.release_type == "major":
                 raise ValueError(
-                    "The relese type must be 'minor' for minor versions<12"
+                    "The release type must be 'minor' for minor versions<12"
                 )
 
             with self._checkout(self.release_commit, True):
@@ -250,7 +250,7 @@ class Release:
         elif self.release_type not in self.SMALL:
             raise (
                 ValueError(
-                    f"release_type {self.release_type} neiter in {self.BIG} nor "
+                    f"release_type {self.release_type} neither in {self.BIG} nor "
                     f"in {self.SMALL}"
                 )
             )
@@ -338,7 +338,7 @@ class Release:
             self.version = self.version.update(self.release_type)
             self.version.with_description(version_type)
             self._update_cmake_contributors(self.version)
-            # Checkouting the commit of the branch and not the branch itself,
+            # Checking out the commit of the branch and not the branch itself,
             # then we are able to skip rollback
             with self._checkout(f"{self.release_branch}^0", False):
                 current_commit = self.run("git rev-parse HEAD")
@@ -399,7 +399,7 @@ class Release:
 
     @contextmanager
     def _bump_release_branch(self):
-        # Update only git, origal version stays the same
+        # Update only git, original version stays the same
         self._git.update()
         new_version = self.version.patch_update()
         version_type = self.get_stable_release_type()
@@ -610,7 +610,7 @@ def parse_args() -> argparse.Namespace:
         dest="check_dirty",
         action="store_false",
         default=argparse.SUPPRESS,
-        help="(dangerous) if set, skip check repository for uncommited changes",
+        help="(dangerous) if set, skip check repository for uncommitted changes",
     )
     parser.add_argument("--check-run-from-master", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
@@ -627,7 +627,7 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         default=argparse.SUPPRESS,
         help="(debug or development only, dangerous) if set, skip the branch check for "
-        "a run. By default, 'major' and 'minor' types workonly for master, and 'patch' "
+        "a run. By default, 'major' and 'minor' types work only for master, and 'patch' "
         "works only for a release branches, that name "
         "should be the same as '$MAJOR.$MINOR' version, e.g. 22.2",
     )

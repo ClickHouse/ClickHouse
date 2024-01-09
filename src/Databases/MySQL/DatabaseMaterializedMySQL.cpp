@@ -2,14 +2,22 @@
 
 #if USE_MYSQL
 
+#    include <Common/parseAddress.h>
+#    include <Common/parseRemoteDescription.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 
-#    include <Interpreters/Context.h>
+#    include <Interpreters/evaluateConstantExpression.h>
+#    include <Databases/DatabaseFactory.h>
 #    include <Databases/MySQL/DatabaseMaterializedTablesIterator.h>
 #    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #    include <Parsers/ASTCreateQuery.h>
+#    include <Parsers/ASTFunction.h>
+#    include <Parsers/queryToString.h>
+#    include <Storages/StorageMySQL.h>
 #    include <Storages/StorageMaterializedMySQL.h>
+#    include <Storages/NamedCollectionsHelpers.h>
 #    include <Common/setThreadName.h>
+#    include <Common/PoolId.h>
 #    include <filesystem>
 
 namespace fs = std::filesystem;
@@ -20,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 DatabaseMaterializedMySQL::DatabaseMaterializedMySQL(
@@ -63,15 +72,29 @@ void DatabaseMaterializedMySQL::setException(const std::exception_ptr & exceptio
     exception = exception_;
 }
 
-void DatabaseMaterializedMySQL::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode)
+LoadTaskPtr DatabaseMaterializedMySQL::startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode)
 {
-    DatabaseAtomic::startupTables(thread_pool, mode);
+    auto base = DatabaseAtomic::startupDatabaseAsync(async_loader, std::move(startup_after), mode);
+    auto job = makeLoadJob(
+        base->goals(),
+        TablesLoaderBackgroundStartupPoolId,
+        fmt::format("startup MaterializedMySQL database {}", getDatabaseName()),
+        [this, mode] (AsyncLoader &, const LoadJobPtr &)
+        {
+            LOG_TRACE(log, "Starting MaterializeMySQL database");
+            if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
+                materialize_thread.assertMySQLAvailable();
 
-    if (mode < LoadingStrictnessLevel::FORCE_ATTACH)
-        materialize_thread.assertMySQLAvailable();
+            materialize_thread.startSynchronization();
+            started_up = true;
+        });
+    return startup_mysql_database_task = makeLoadTask(async_loader, {job});
+}
 
-    materialize_thread.startSynchronization();
-    started_up = true;
+void DatabaseMaterializedMySQL::waitDatabaseStarted(bool no_throw) const
+{
+    if (startup_mysql_database_task)
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_mysql_database_task, no_throw);
 }
 
 void DatabaseMaterializedMySQL::createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query)
@@ -122,6 +145,7 @@ void DatabaseMaterializedMySQL::alterTable(ContextPtr context_, const StorageID 
 
 void DatabaseMaterializedMySQL::drop(ContextPtr context_)
 {
+    LOG_TRACE(log, "Dropping MaterializeMySQL database");
     /// Remove metadata info
     fs::path metadata(getMetadataPath() + "/.metadata");
 
@@ -158,8 +182,89 @@ void DatabaseMaterializedMySQL::checkIsInternalQuery(ContextPtr context_, const 
 
 void DatabaseMaterializedMySQL::stopReplication()
 {
+    waitDatabaseStarted(/* no_throw = */ true);
     materialize_thread.stopSynchronization();
     started_up = false;
+}
+
+void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        auto * engine_define = args.create_query.storage;
+        const ASTFunction * engine = engine_define->engine;
+        const String & engine_name = engine_define->engine->name;
+
+        if (!engine->arguments)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
+        StorageMySQL::Configuration configuration;
+        ASTs & arguments = engine->arguments->children;
+        auto mysql_settings = std::make_unique<MySQLSettings>();
+
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, args.context))
+        {
+            configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);
+        }
+        else
+        {
+            if (arguments.size() != 4)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
+
+
+            arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], args.context);
+            const auto & host_port = safeGetLiteralValue<String>(arguments[0], engine_name);
+
+            if (engine_name == "MySQL")
+            {
+                size_t max_addresses = args.context->getSettingsRef().glob_expansion_max_elements;
+                configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
+            }
+            else
+            {
+                const auto & [remote_host, remote_port] = parseAddress(host_port, 3306);
+                configuration.host = remote_host;
+                configuration.port = remote_port;
+            }
+
+            configuration.database = safeGetLiteralValue<String>(arguments[1], engine_name);
+            configuration.username = safeGetLiteralValue<String>(arguments[2], engine_name);
+            configuration.password = safeGetLiteralValue<String>(arguments[3], engine_name);
+        }
+        MySQLClient client(configuration.host, configuration.port, configuration.username, configuration.password);
+        auto mysql_pool
+            = mysqlxx::Pool(configuration.database, configuration.host, configuration.username, configuration.password, configuration.port);
+
+        auto materialize_mode_settings = std::make_unique<MaterializedMySQLSettings>();
+
+        if (engine_define->settings)
+            materialize_mode_settings->loadFromQuery(*engine_define);
+
+        if (args.uuid == UUIDHelpers::Nil)
+        {
+            auto print_create_ast = args.create_query.clone();
+            print_create_ast->as<ASTCreateQuery>()->attach = false;
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The MaterializedMySQL database engine no longer supports Ordinary databases. To re-create the database, delete "
+                "the old one by executing \"rm -rf {}{{,.sql}}\", then re-create the database with the following query: {}",
+                args.metadata_path,
+                queryToString(print_create_ast));
+        }
+
+        return make_shared<DatabaseMaterializedMySQL>(
+            args.context,
+            args.database_name,
+            args.metadata_path,
+            args.uuid,
+            configuration.database,
+            std::move(mysql_pool),
+            std::move(client),
+            std::move(materialize_mode_settings));
+    };
+    factory.registerDatabase("MaterializeMySQL", create_fn);
+    factory.registerDatabase("MaterializedMySQL", create_fn);
 }
 
 }

@@ -11,81 +11,85 @@ results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
 The supported formats are:
 
 | Format                                                                                    | Input | Output |
-|-------------------------------------------------------------------------------------------|------|--------|
-| [TabSeparated](#tabseparated)                                                             | ✔    | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔    | ✔      |
-| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔    | ✔      |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔    | ✔      |
-| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔    | ✔      |
-| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔    | ✔      |
-| [Template](#format-template)                                                              | ✔    | ✔      |
-| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔    | ✗      |
-| [CSV](#csv)                                                                               | ✔    | ✔      |
-| [CSVWithNames](#csvwithnames)                                                             | ✔    | ✔      |
-| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔    | ✔      |
-| [CustomSeparated](#format-customseparated)                                                | ✔    | ✔      |
-| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔    | ✔      |
-| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔    | ✔      |
-| [SQLInsert](#sqlinsert)                                                                   | ✗    | ✔      |
-| [Values](#data-format-values)                                                             | ✔    | ✔      |
-| [Vertical](#vertical)                                                                     | ✗    | ✔      |
-| [JSON](#json)                                                                             | ✔    | ✔      |
-| [JSONAsString](#jsonasstring)                                                             | ✔    | ✗      |
-| [JSONStrings](#jsonstrings)                                                               | ✔    | ✔      |
-| [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔      |
-| [JSONColumnsWithMetadata](#jsoncolumnsmonoblock))                                         | ✔    | ✔      |
-| [JSONCompact](#jsoncompact)                                                               | ✔    | ✔      |
-| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔      |
-| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔      |
-| [JSONEachRow](#jsoneachrow)                                                               | ✔    | ✔      |
-| [PrettyJSONEachRow](#prettyjsoneachrow)                                                   | ✗    | ✔      |
-| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗    | ✔      |
-| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔    | ✔      |
-| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗    | ✔      |
-| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔    | ✔      |
-| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔    | ✔      |
-| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔    | ✔      |
-| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔    | ✔      |
-| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔    | ✔      |
-| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔    | ✔      |
-| [JSONObjectEachRow](#jsonobjecteachrow)                                                   | ✔    | ✔      |
-| [BSONEachRow](#bsoneachrow)                                                               | ✔    | ✔      |
-| [TSKV](#tskv)                                                                             | ✔    | ✔      |
-| [Pretty](#pretty)                                                                         | ✗    | ✔      |
-| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗    | ✔      |
-| [PrettyMonoBlock](#prettymonoblock)                                                       | ✗    | ✔      |
-| [PrettyNoEscapesMonoBlock](#prettynoescapesmonoblock)                                     | ✗    | ✔      |
-| [PrettyCompact](#prettycompact)                                                           | ✗    | ✔      |
-| [PrettyCompactNoEscapes](#prettycompactnoescapes)                                         | ✗    | ✔      |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗    | ✔      |
-| [PrettyCompactNoEscapesMonoBlock](#prettycompactnoescapesmonoblock)                       | ✗    | ✔      |
-| [PrettySpace](#prettyspace)                                                               | ✗    | ✔      |
-| [PrettySpaceNoEscapes](#prettyspacenoescapes)                                             | ✗    | ✔      |
-| [PrettySpaceMonoBlock](#prettyspacemonoblock)                                             | ✗    | ✔      |
-| [PrettySpaceNoEscapesMonoBlock](#prettyspacenoescapesmonoblock)                           | ✗    | ✔      |
-| [Prometheus](#prometheus)                                                                 | ✗    | ✔      |
-| [Protobuf](#protobuf)                                                                     | ✔    | ✔      |
-| [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔      |
-| [Avro](#data-format-avro)                                                                 | ✔    | ✔      |
-| [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗      |
-| [Parquet](#data-format-parquet)                                                           | ✔    | ✔      |
-| [ParquetMetadata](#data-format-parquet-metadata)                                          | ✔    | ✗      |
-| [Arrow](#data-format-arrow)                                                               | ✔    | ✔      |
-| [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔      |
-| [ORC](#data-format-orc)                                                                   | ✔    | ✔      |
-| [RowBinary](#rowbinary)                                                                   | ✔    | ✔      |
-| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔      |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔      |
-| [Native](#native)                                                                         | ✔    | ✔      |
-| [Null](#null)                                                                             | ✗    | ✔      |
-| [XML](#xml)                                                                               | ✗    | ✔      |
-| [CapnProto](#capnproto)                                                                   | ✔    | ✔      |
-| [LineAsString](#lineasstring)                                                             | ✔    | ✔      |
-| [Regexp](#data-format-regexp)                                                             | ✔    | ✗      |
-| [RawBLOB](#rawblob)                                                                       | ✔    | ✔      |
-| [MsgPack](#msgpack)                                                                       | ✔    | ✔      |
-| [MySQLDump](#mysqldump)                                                                   | ✔    | ✗      |
-| [Markdown](#markdown)                                                                     | ✗    | ✔      |
+|-------------------------------------------------------------------------------------------|------|-------|
+| [TabSeparated](#tabseparated)                                                             | ✔    | ✔     |
+| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔    | ✔     |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔    | ✔     |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔    | ✔     |
+| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔    | ✔     |
+| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔    | ✔     |
+| [Template](#format-template)                                                              | ✔    | ✔     |
+| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔    | ✗     |
+| [CSV](#csv)                                                                               | ✔    | ✔     |
+| [CSVWithNames](#csvwithnames)                                                             | ✔    | ✔     |
+| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔    | ✔     |
+| [CustomSeparated](#format-customseparated)                                                | ✔    | ✔     |
+| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔    | ✔     |
+| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔    | ✔     |
+| [SQLInsert](#sqlinsert)                                                                   | ✗    | ✔     |
+| [Values](#data-format-values)                                                             | ✔    | ✔     |
+| [Vertical](#vertical)                                                                     | ✗    | ✔     |
+| [JSON](#json)                                                                             | ✔    | ✔     |
+| [JSONAsString](#jsonasstring)                                                             | ✔    | ✗     |
+| [JSONStrings](#jsonstrings)                                                               | ✔    | ✔     |
+| [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔     |
+| [JSONColumnsWithMetadata](#jsoncolumnsmonoblock))                                         | ✔    | ✔     |
+| [JSONCompact](#jsoncompact)                                                               | ✔    | ✔     |
+| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔     |
+| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔     |
+| [JSONEachRow](#jsoneachrow)                                                               | ✔    | ✔     |
+| [PrettyJSONEachRow](#prettyjsoneachrow)                                                   | ✗    | ✔     |
+| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗    | ✔     |
+| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔    | ✔     |
+| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗    | ✔     |
+| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔    | ✔     |
+| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔    | ✔     |
+| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔    | ✔     |
+| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔    | ✔     |
+| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔    | ✔     |
+| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔    | ✔     |
+| [JSONObjectEachRow](#jsonobjecteachrow)                                                   | ✔    | ✔     |
+| [BSONEachRow](#bsoneachrow)                                                               | ✔    | ✔     |
+| [TSKV](#tskv)                                                                             | ✔    | ✔     |
+| [Pretty](#pretty)                                                                         | ✗    | ✔     |
+| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗    | ✔     |
+| [PrettyMonoBlock](#prettymonoblock)                                                       | ✗    | ✔     |
+| [PrettyNoEscapesMonoBlock](#prettynoescapesmonoblock)                                     | ✗    | ✔     |
+| [PrettyCompact](#prettycompact)                                                           | ✗    | ✔     |
+| [PrettyCompactNoEscapes](#prettycompactnoescapes)                                         | ✗    | ✔     |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗    | ✔     |
+| [PrettyCompactNoEscapesMonoBlock](#prettycompactnoescapesmonoblock)                       | ✗    | ✔     |
+| [PrettySpace](#prettyspace)                                                               | ✗    | ✔     |
+| [PrettySpaceNoEscapes](#prettyspacenoescapes)                                             | ✗    | ✔     |
+| [PrettySpaceMonoBlock](#prettyspacemonoblock)                                             | ✗    | ✔     |
+| [PrettySpaceNoEscapesMonoBlock](#prettyspacenoescapesmonoblock)                           | ✗    | ✔     |
+| [Prometheus](#prometheus)                                                                 | ✗    | ✔     |
+| [Protobuf](#protobuf)                                                                     | ✔    | ✔     |
+| [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔     |
+| [Avro](#data-format-avro)                                                                 | ✔    | ✔     |
+| [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗     |
+| [Parquet](#data-format-parquet)                                                           | ✔    | ✔     |
+| [ParquetMetadata](#data-format-parquet-metadata)                                          | ✔    | ✗     |
+| [Arrow](#data-format-arrow)                                                               | ✔    | ✔     |
+| [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔     |
+| [ORC](#data-format-orc)                                                                   | ✔    | ✔     |
+| [One](#data-format-one)                                                                   | ✔    | ✗     |
+| [Npy](#data-format-npy)                                                                   | ✔    | ✗     |
+| [RowBinary](#rowbinary)                                                                   | ✔    | ✔     |
+| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔     |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔     |
+| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔    | ✔     |
+| [Native](#native)                                                                         | ✔    | ✔     |
+| [Null](#null)                                                                             | ✗    | ✔     |
+| [XML](#xml)                                                                               | ✗    | ✔     |
+| [CapnProto](#capnproto)                                                                   | ✔    | ✔     |
+| [LineAsString](#lineasstring)                                                             | ✔    | ✔     |
+| [Regexp](#data-format-regexp)                                                             | ✔    | ✗     |
+| [RawBLOB](#rawblob)                                                                       | ✔    | ✔     |
+| [MsgPack](#msgpack)                                                                       | ✔    | ✔     |
+| [MySQLDump](#mysqldump)                                                                   | ✔    | ✗     |
+| [DWARF](#dwarf)                                                                           | ✔    | ✗     |
+| [Markdown](#markdown)                                                                     | ✗    | ✔     |
 
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/docs/en/operations/settings/settings-formats.md) section.
@@ -194,6 +198,7 @@ SELECT * FROM nestedt FORMAT TSV
 - [input_format_tsv_skip_first_lines](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_skip_first_lines) - skip specified number of lines at the beginning of data. Default value - `0`.
 - [input_format_tsv_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_detect_header) - automatically detect header with names and types in TSV format. Default value - `true`.
 - [input_format_tsv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
+- [input_format_tsv_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_allow_variable_number_of_columns) - allow variable number of columns in TSV format, ignore extra columns and use default values on missing columns. Default value - `false`.
 
 ## TabSeparatedRaw {#tabseparatedraw}
 
@@ -471,7 +476,9 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 - [input_format_csv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_csv_skip_trailing_empty_lines) - skip trailing empty lines at the end of data. Default value - `false`.
 - [input_format_csv_trim_whitespaces](/docs/en/operations/settings/settings-formats.md/#input_format_csv_trim_whitespaces) - trim spaces and tabs in non-quoted CSV strings. Default value - `true`.
 - [input_format_csv_allow_whitespace_or_tab_as_delimiter](/docs/en/operations/settings/settings-formats.md/# input_format_csv_allow_whitespace_or_tab_as_delimiter) - Allow to use whitespace or tab as field delimiter in CSV strings. Default value - `false`.
-- [input_format_csv_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_csv_allow_variable_number_of_columns) - ignore extra columns in CSV input (if file has more columns than expected) and treat missing fields in CSV input as default values. Default value - `false`.
+- [input_format_csv_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_csv_allow_variable_number_of_columns) - allow variable number of columns in CSV format, ignore extra columns and use default values on missing columns. Default value - `false`.
+- [input_format_csv_use_default_on_bad_values](/docs/en/operations/settings/settings-formats.md/#input_format_csv_use_default_on_bad_values) - Allow to set default value to column when CSV field deserialization failed on bad value. Default value - `false`.
+- [input_format_csv_try_infer_numbers_from_strings](/docs/en/operations/settings/settings-formats.md/#input_format_csv_try_infer_numbers_from_strings) - Try to infer numbers from string fields while schema inference. Default value - `false`.
 
 ## CSVWithNames {#csvwithnames}
 
@@ -499,9 +506,10 @@ the types from input data will be compared with the types of the corresponding c
 
 Similar to [Template](#format-template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](/docs/en/operations/settings/settings-formats.md/#format_custom_escaping_rule) setting and delimiters from [format_custom_field_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_field_delimiter), [format_custom_row_before_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_before_delimiter), [format_custom_row_after_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_after_delimiter), [format_custom_row_between_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_row_between_delimiter), [format_custom_result_before_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_result_before_delimiter) and [format_custom_result_after_delimiter](/docs/en/operations/settings/settings-formats.md/#format_custom_result_after_delimiter) settings, not from format strings.
 
-If setting [input_format_custom_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_custom_detect_header) is enabled, ClickHouse will automatically detect header with names and types if any.
-
-If setting [input_format_tsv_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_custom_detect_header) is enabled, trailing empty lines at the end of file will be skipped.
+Additional settings:
+- [input_format_custom_detect_header](/docs/en/operations/settings/settings-formats.md/#input_format_custom_detect_header) - enables automatic detection of header with names and types if any. Default value - `true`.
+- [input_format_custom_skip_trailing_empty_lines](/docs/en/operations/settings/settings-formats.md/#input_format_custom_skip_trailing_empty_lines) - skip trailing empty lines at the end of file . Default value - `false`.
+- [input_format_custom_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_custom_allow_variable_number_of_columns) - allow variable number of columns in CustomSeparated format, ignore extra columns and use default values on missing columns. Default value - `false`.
 
 There is also `CustomSeparatedIgnoreSpaces` format, which is similar to [TemplateIgnoreSpaces](#templateignorespaces).
 
@@ -1254,11 +1262,17 @@ SELECT * FROM json_each_row_nested
 
 - [input_format_import_nested_json](/docs/en/operations/settings/settings-formats.md/#input_format_import_nested_json) - map nested JSON data to nested tables (it works for JSONEachRow format). Default value - `false`.
 - [input_format_json_read_bools_as_numbers](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_bools_as_numbers) - allow to parse bools as numbers in JSON input formats. Default value - `true`.
-- [input_format_json_read_numbers_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_numbers_as_strings) - allow to parse numbers as strings in JSON input formats. Default value - `false`.
-- [input_format_json_read_objects_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_objects_as_strings) - allow to parse JSON objects as strings in JSON input formats. Default value - `false`.
+- [input_format_json_read_bools_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_bools_as_strings) - allow to parse bools as strings in JSON input formats. Default value - `true`.
+- [input_format_json_read_numbers_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_numbers_as_strings) - allow to parse numbers as strings in JSON input formats. Default value - `true`.
+- [input_format_json_read_arrays_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_arrays_as_strings) - allow to parse JSON arrays as strings in JSON input formats. Default value - `true`.
+- [input_format_json_read_objects_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_read_objects_as_strings) - allow to parse JSON objects as strings in JSON input formats. Default value - `true`.
 - [input_format_json_named_tuples_as_objects](/docs/en/operations/settings/settings-formats.md/#input_format_json_named_tuples_as_objects) - parse named tuple columns as JSON objects. Default value - `true`.
+- [input_format_json_try_infer_numbers_from_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_try_infer_numbers_from_strings) - Try to infer numbers from string fields while schema inference. Default value - `false`.
+- [input_format_json_try_infer_named_tuples_from_objects](/docs/en/operations/settings/settings-formats.md/#input_format_json_try_infer_named_tuples_from_objects) - try to infer named tuple from JSON objects during schema inference. Default value - `true`.
+- [input_format_json_infer_incomplete_types_as_strings](/docs/en/operations/settings/settings-formats.md/#input_format_json_infer_incomplete_types_as_strings) - use type String for keys that contains only Nulls or empty objects/arrays during schema inference in JSON input formats. Default value - `true`.
 - [input_format_json_defaults_for_missing_elements_in_named_tuple](/docs/en/operations/settings/settings-formats.md/#input_format_json_defaults_for_missing_elements_in_named_tuple) - insert default values for missing elements in JSON object while parsing named tuple. Default value - `true`.
 - [input_format_json_ignore_unknown_keys_in_named_tuple](/docs/en/operations/settings/settings-formats.md/#input_format_json_ignore_unknown_keys_in_named_tuple) - Ignore unknown keys in json object for named tuples. Default value - `false`.
+- [input_format_json_compact_allow_variable_number_of_columns](/docs/en/operations/settings/settings-formats.md/#input_format_json_compact_allow_variable_number_of_columns) - allow variable number of columns in JSONCompact/JSONCompactEachRow format, ignore extra columns and use default values on missing columns. Default value - `false`.
 - [output_format_json_quote_64bit_integers](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_64bit_integers) - controls quoting of 64-bit integers in JSON output format. Default value - `true`.
 - [output_format_json_quote_64bit_floats](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_64bit_floats) - controls quoting of 64-bit floats in JSON output format. Default value - `false`.
 - [output_format_json_quote_denormals](/docs/en/operations/settings/settings-formats.md/#output_format_json_quote_denormals) - enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format. Default value - `false`.
@@ -1515,6 +1529,23 @@ If setting [input_format_with_types_use_header](/docs/en/operations/settings/set
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
 :::
 
+## RowBinaryWithDefaults {#rowbinarywithdefaults}
+
+Similar to [RowBinary](#rowbinary), but with an extra byte before each column that indicates if default value should be used.
+
+Examples:
+
+```sql
+:) select * from format('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x'010001000000')
+
+┌──x─┬─y─┐
+│ 42 │ 1 │
+└────┴───┘
+```
+
+For column `x` there is only one byte `01` that indicates that default value should be used and no other data after this byte is provided.
+For column `y` data starts with byte `00` that indicates that column has actual value that should be read from the subsequent data `01000000`.
+
 ## RowBinary format settings {#row-binary-format-settings}
 
 - [format_binary_max_string_size](/docs/en/operations/settings/settings-formats.md/#format_binary_max_string_size) - The maximum allowed size for String in RowBinary format. Default value - `1GiB`.
@@ -1704,6 +1735,34 @@ You can select data from a ClickHouse table and save them into some file in the 
 ``` bash
 $ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
 ```
+
+### Using autogenerated schema {#using-autogenerated-capn-proto-schema}
+
+If you don't have an external CapnProto schema for your data, you can still output/input data in CapnProto format using autogenerated schema.
+For example:
+
+```sql
+SELECT * FROM test.hits format CapnProto SETTINGS format_capn_proto_use_autogenerated_schema=1
+```
+
+In this case ClickHouse will autogenerate CapnProto schema according to the table structure using function [structureToCapnProtoSchema](../sql-reference/functions/other-functions.md#structure_to_capn_proto_schema) and will use this schema to serialize data in CapnProto format.
+
+You can also read CapnProto file with autogenerated schema (in this case the file must be created using the same schema):
+
+```bash
+$ cat hits.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_capn_proto_use_autogenerated_schema=1 FORMAT CapnProto"
+```
+
+The setting [format_capn_proto_use_autogenerated_schema](../operations/settings/settings-formats.md#format_capn_proto_use_autogenerated_schema) is enabled by default and applies if [format_schema](../operations/settings/settings-formats.md#formatschema-format-schema) is not set.
+
+You can also save autogenerated schema in the file during input/output using setting [output_format_schema](../operations/settings/settings-formats.md#outputformatschema-output-format-schema). For example:
+
+```sql
+SELECT * FROM test.hits format CapnProto SETTINGS format_capn_proto_use_autogenerated_schema=1, output_format_schema='path/to/schema/schema.capnp'
+```
+
+In this case autogenerated CapnProto schema will be saved in file `path/to/schema/schema.capnp`.
+
 ## Prometheus {#prometheus}
 
 Expose metrics in [Prometheus text-based exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
@@ -1841,6 +1900,41 @@ are not applied; the [table defaults](/docs/en/sql-reference/statements/create/t
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
 See also [how to read/write length-delimited protobuf messages in popular languages](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
+
+### Using autogenerated schema {#using-autogenerated-protobuf-schema}
+
+If you don't have an external Protobuf schema for your data, you can still output/input data in Protobuf format using autogenerated schema.
+For example:
+
+```sql
+SELECT * FROM test.hits format Protobuf SETTINGS format_protobuf_use_autogenerated_schema=1
+```
+
+In this case ClickHouse will autogenerate Protobuf schema according to the table structure using function [structureToProtobufSchema](../sql-reference/functions/other-functions.md#structure_to_protobuf_schema) and will use this schema to serialize data in Protobuf format.
+
+You can also read Protobuf file with autogenerated schema (in this case the file must be created using the same schema):
+
+```bash
+$ cat hits.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_protobuf_use_autogenerated_schema=1 FORMAT Protobuf"
+```
+
+The setting [format_protobuf_use_autogenerated_schema](../operations/settings/settings-formats.md#format_protobuf_use_autogenerated_schema) is enabled by default and applies if [format_schema](../operations/settings/settings-formats.md#formatschema-format-schema) is not set.
+
+You can also save autogenerated schema in the file during input/output using setting [output_format_schema](../operations/settings/settings-formats.md#outputformatschema-output-format-schema). For example:
+
+```sql
+SELECT * FROM test.hits format Protobuf SETTINGS format_protobuf_use_autogenerated_schema=1, output_format_schema='path/to/schema/schema.proto'
+```
+
+In this case autogenerated Protobuf schema will be saved in file `path/to/schema/schema.capnp`.
+
+### Drop Protobuf cache
+
+To reload Protobuf schema loaded from [format_schema_path](../operations/server-configuration-parameters/settings.md/#server_configuration_parameters-format_schema_path) use [SYSTEM DROP ... FORMAT CACHE](../sql-reference/statements/system.md/#system-drop-schema-format) statement.
+
+```sql
+SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
+```
 
 ## ProtobufSingle {#protobufsingle}
 
@@ -2061,9 +2155,10 @@ To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/t
 - [input_format_parquet_case_insensitive_column_matching](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_case_insensitive_column_matching) - ignore case when matching Parquet columns with ClickHouse columns. Default value - `false`.
 - [input_format_parquet_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_allow_missing_columns) - allow missing columns while reading Parquet data. Default value - `false`.
 - [input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Parquet format. Default value - `false`.
+- [input_format_parquet_local_file_min_bytes_for_seek](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_local_file_min_bytes_for_seek) - min bytes required for local read (file) to do seek, instead of read with ignore in Parquet input format. Default value - `8192`.
 - [output_format_parquet_fixed_string_as_fixed_byte_array](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_fixed_string_as_fixed_byte_array) - use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedString columns. Default value - `true`.
 - [output_format_parquet_version](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_version) - The version of Parquet format used in output format. Default value - `2.latest`.
-- [output_format_parquet_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_compression_method) - compression method used in output Parquet format. Default value - `snappy`.
+- [output_format_parquet_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_compression_method) - compression method used in output Parquet format. Default value - `lz4`.
 
 ## ParquetMetadata {data-format-parquet-metadata}
 
@@ -2262,7 +2357,6 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 
 - [output_format_arrow_low_cardinality_as_dictionary](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_low_cardinality_as_dictionary) - enable output ClickHouse LowCardinality type as Dictionary Arrow type. Default value - `false`.
 - [output_format_arrow_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_string_as_string) - use Arrow String type instead of Binary for String columns. Default value - `false`.
-- [input_format_arrow_import_nested](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_import_nested) - allow inserting array of structs into Nested table in Arrow input format. Default value - `false`.
 - [input_format_arrow_case_insensitive_column_matching](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_case_insensitive_column_matching) - ignore case when matching Arrow columns with ClickHouse columns. Default value - `false`.
 - [input_format_arrow_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_allow_missing_columns) - allow missing columns while reading Arrow data. Default value - `false`.
 - [input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Arrow format. Default value - `false`.
@@ -2328,13 +2422,85 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.
 
 - [output_format_arrow_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_string_as_string) - use Arrow String type instead of Binary for String columns. Default value - `false`.
 - [output_format_orc_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_orc_compression_method) - compression method used in output ORC format. Default value - `none`.
-- [input_format_arrow_import_nested](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_import_nested) - allow inserting array of structs into Nested table in Arrow input format. Default value - `false`.
 - [input_format_arrow_case_insensitive_column_matching](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_case_insensitive_column_matching) - ignore case when matching Arrow columns with ClickHouse columns. Default value - `false`.
 - [input_format_arrow_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_allow_missing_columns) - allow missing columns while reading Arrow data. Default value - `false`.
 - [input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Arrow format. Default value - `false`.
 
 
 To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/table-engines/integrations/hdfs.md).
+
+## One {#data-format-one}
+
+Special input format that doesn't read any data from file and returns only one row with column of type `UInt8`, name `dummy` and value `0` (like `system.one` table).
+Can be used with virtual columns `_file/_path`  to list all files without reading actual data.
+
+Example:
+
+Query:
+```sql
+SELECT _file FROM file('path/to/files/data*', One);
+```
+
+Result:
+```text
+┌─_file────┐
+│ data.csv │
+└──────────┘
+┌─_file──────┐
+│ data.jsonl │
+└────────────┘
+┌─_file────┐
+│ data.tsv │
+└──────────┘
+┌─_file────────┐
+│ data.parquet │
+└──────────────┘
+```
+
+## Npy {#data-format-npy}
+
+This function is designed to load a NumPy array from a .npy file into ClickHouse. The NumPy file format is a binary format used for efficiently storing arrays of numerical data. During import, ClickHouse treats top level dimension as an array of rows with single column. Supported Npy data types and their corresponding type in ClickHouse: 
+| Npy type | ClickHouse type |
+|:--------:|:---------------:|
+| b1       |    UInt8        |
+| i1       |    Int8         |
+| i2       |    Int16        |
+| i4       |    Int32        |
+| i8       |    Int64        |
+| u1       |    UInt8        |
+| u2       |    UInt16       |
+| u4       |    UInt32       |
+| u8       |    UInt64       |
+| f2       |    Float32      |
+| f4       |    Float32      |
+| f8       |    Float64      |
+| S        |    String       |
+| U        |    String       |
+
+**Example of saving an array in .npy format using Python**
+
+
+```Python
+import numpy as np
+arr = np.array([[[1],[2],[3]],[[4],[5],[6]]])
+np.save('example_array.npy', arr)
+```
+
+**Example of reading a NumPy file in ClickHouse**
+
+Query:
+```sql
+SELECT *
+FROM file('example_array.npy', Npy)
+```
+
+Result:
+```
+┌─array─────────┐
+│ [[1],[2],[3]] │
+│ [[4],[5],[6]] │
+└───────────────┘
+```
 
 ## LineAsString {#lineasstring}
 
@@ -2600,6 +2766,53 @@ FROM file(dump.sql, MySQLDump)
 │ 2 │
 │ 3 │
 └───┘
+```
+
+## DWARF {#dwarf}
+
+Parses DWARF debug symbols from an ELF file (executable, library, or object file). Similar to `dwarfdump`, but much faster (hundreds of MB/s) and with SQL. Produces one row for each Debug Information Entry (DIE) in the `.debug_info` section. Includes "null" entries that the DWARF encoding uses to terminate lists of children in the tree.
+
+Quick background: `.debug_info` consists of *units*, corresponding to compilation units. Each unit is a tree of *DIE*s, with a `compile_unit` DIE as its root. Each DIE has a *tag* and a list of *attributes*. Each attribute has a *name* and a *value* (and also a *form*, which specifies how the value is encoded). The DIEs represent things from the source code, and their *tag* tells what kind of thing it is. E.g. there are functions (tag = `subprogram`), classes/structs/enums (`class_type`/`structure_type`/`enumeration_type`), variables (`variable`), function arguments (`formal_parameter`). The tree structure mirrors the corresponding source code. E.g. a `class_type` DIE can contain `subprogram` DIEs representing methods of the class.
+
+Outputs the following columns:
+ - `offset` - position of the DIE in the `.debug_info` section
+ - `size` - number of bytes in the encoded DIE (including attributes)
+ - `tag` - type of the DIE; the conventional "DW_TAG_" prefix is omitted
+ - `unit_name` - name of the compilation unit containing this DIE
+ - `unit_offset` - position of the compilation unit containing this DIE in the `.debug_info` section
+ - `ancestor_tags` - array of tags of the ancestors of the current DIE in the tree, in order from innermost to outermost
+ - `ancestor_offsets` - offsets of ancestors, parallel to `ancestor_tags`
+ - a few common attributes duplicated from the attributes array for convenience:
+   - `name`
+   - `linkage_name` - mangled fully-qualified name; typically only functions have it (but not all functions)
+   - `decl_file` - name of the source code file where this entity was declared
+   - `decl_line` - line number in the source code where this entity was declared
+ - parallel arrays describing attributes:
+   - `attr_name` - name of the attribute; the conventional "DW_AT_" prefix is omitted
+   - `attr_form` - how the attribute is encoded and interpreted; the conventional DW_FORM_ prefix is omitted
+   - `attr_int` - integer value of the attribute; 0 if the attribute doesn't have a numeric value
+   - `attr_str` - string value of the attribute; empty if the attribute doesn't have a string value
+
+Example: find compilation units that have the most function definitions (including template instantiations and functions from included header files):
+```sql
+SELECT
+    unit_name,
+    count() AS c
+FROM file('programs/clickhouse', DWARF)
+WHERE tag = 'subprogram' AND NOT has(attr_name, 'declaration')
+GROUP BY unit_name
+ORDER BY c DESC
+LIMIT 3
+```
+```text
+┌─unit_name──────────────────────────────────────────────────┬─────c─┐
+│ ./src/Core/Settings.cpp                                    │ 28939 │
+│ ./src/AggregateFunctions/AggregateFunctionSumMap.cpp       │ 23327 │
+│ ./src/AggregateFunctions/AggregateFunctionUniqCombined.cpp │ 22649 │
+└────────────────────────────────────────────────────────────┴───────┘
+
+3 rows in set. Elapsed: 1.487 sec. Processed 139.76 million rows, 1.12 GB (93.97 million rows/s., 752.77 MB/s.)
+Peak memory usage: 271.92 MiB.
 ```
 
 ## Markdown {#markdown}

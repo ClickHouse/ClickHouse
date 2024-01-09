@@ -40,22 +40,13 @@ public:
 
     String getName() const override { return "Hive"; }
 
-    bool supportsIndexForIn() const override { return true; }
-
     bool supportsSubcolumns() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(
-        const ASTPtr & /* left_in_operand */,
-        ContextPtr /* query_context */,
-        const StorageMetadataPtr & /* metadata_snapshot */) const override
-    {
-        return true;
-    }
-
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
+        SelectQueryInfo &,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -65,11 +56,14 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns() const;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context_) const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr context_) const override;
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
+
+protected:
+    friend class ReadFromHive;
 
 private:
     using FileFormat = IHiveFile::FileFormat;
@@ -98,7 +92,7 @@ private:
 
     HiveFiles collectHiveFiles(
         size_t max_threads,
-        const SelectQueryInfo & query_info,
+        const ActionsDAGPtr & filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
         const HDFSFSPtr & fs,
         const ContextPtr & context_,
@@ -106,7 +100,7 @@ private:
 
     HiveFiles collectHiveFilesFromPartition(
         const Apache::Hadoop::Hive::Partition & partition,
-        const SelectQueryInfo & query_info,
+        const ActionsDAGPtr & filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
         const HDFSFSPtr & fs,
         const ContextPtr & context_,
@@ -115,7 +109,7 @@ private:
     HiveFilePtr getHiveFileIfNeeded(
         const FileInfo & file_info,
         const FieldVector & fields,
-        const SelectQueryInfo & query_info,
+        const ActionsDAGPtr & filter_actions_dag,
         const HiveTableMetadataPtr & hive_table_metadata,
         const ContextPtr & context_,
         PruneLevel prune_level = PruneLevel::Max) const;
@@ -123,7 +117,7 @@ private:
     void lazyInitialize();
 
     std::optional<UInt64>
-    totalRowsImpl(const Settings & settings, const SelectQueryInfo & query_info, ContextPtr context_, PruneLevel prune_level) const;
+    totalRowsImpl(const Settings & settings, const ActionsDAGPtr & filter_actions_dag, ContextPtr context_, PruneLevel prune_level) const;
 
     String hive_metastore_url;
 

@@ -45,6 +45,7 @@ public:
     size_t queueSize() { return received.size(); }
 
     auto getSubject() const { return current.subject; }
+    const String & getCurrentMessage() const { return current.message; }
 
     /// Return read buffer containing next available message
     /// or nullptr if there are no messages to process.

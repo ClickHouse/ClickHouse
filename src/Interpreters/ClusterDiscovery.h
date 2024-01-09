@@ -137,6 +137,7 @@ private:
     mutable std::mutex mutex;
     std::unordered_map<String, ClusterPtr> cluster_impls;
 
+    bool is_initialized = false;
     ThreadFromGlobalPool main_thread;
 
     Poco::Logger * log;

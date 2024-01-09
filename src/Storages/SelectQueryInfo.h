@@ -10,7 +10,6 @@
 #include <Planner/PlannerContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <memory>
 
@@ -211,8 +210,6 @@ struct SelectQueryInfo
     /// should we use custom key with the cluster
     bool use_custom_key = false;
 
-    mutable ParallelReplicasReadingCoordinatorPtr coordinator;
-
     TreeRewriterResultPtr syntax_analyzer_result;
 
     /// This is an additional filer applied to current table.
@@ -255,13 +252,15 @@ struct SelectQueryInfo
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 
-    bool parallel_replicas_disabled = false;
-
     bool is_parameterized_view = false;
-    NameToNameMap parameterized_view_values;
+
+    bool optimize_trivial_count = false;
 
     // If limit is not 0, that means it's a trivial limit query.
     UInt64 limit = 0;
+
+    /// For IStorageSystemOneBlock
+    std::vector<UInt8> columns_mask;
 
     InputOrderInfoPtr getInputOrderInfo() const
     {

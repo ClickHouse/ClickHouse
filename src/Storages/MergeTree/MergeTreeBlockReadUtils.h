@@ -2,28 +2,14 @@
 
 #include <optional>
 #include <Core/NamesAndTypes.h>
-#include <Storages/StorageSnapshot.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
 
 
 namespace DB
 {
 
-class MergeTreeData;
-struct MergeTreeReadTask;
 struct MergeTreeReaderSettings;
-struct MergeTreeBlockSizePredictor;
 class IMergeTreeDataPartInfoForReader;
-
-using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
-using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredictor>;
-
-class IMergeTreeDataPart;
-using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
-
 
 /** If some of the requested columns are not in the part,
   * then find out which columns may need to be read further,
@@ -36,64 +22,7 @@ NameSet injectRequiredColumns(
     bool with_subcolumns,
     Names & columns);
 
-struct MergeTreeReadTaskColumns
-{
-    /// column names to read during WHERE
-    NamesAndTypesList columns;
-    /// column names to read during each PREWHERE step
-    std::vector<NamesAndTypesList> pre_columns;
-
-    std::string dump() const;
-};
-
-/// A batch of work for MergeTreeThreadSelectProcessor
-struct MergeTreeReadTask
-{
-    /// Data part which should be read while performing this task
-    DataPartPtr data_part;
-    /// Alter converversionss that should be applied on-fly for part.
-    AlterConversionsPtr alter_conversions;
-    /// Ranges to read from `data_part`.
-    MarkRanges mark_ranges;
-    /// for virtual `part_index` virtual column
-    size_t part_index_in_query;
-    /// used to determine whether column should be filtered during PREWHERE or WHERE
-    const NameSet & column_name_set;
-    /// column names to read during PREWHERE and WHERE
-    const MergeTreeReadTaskColumns & task_columns;
-    /// Used to satistfy preferred_block_size_bytes limitation
-    MergeTreeBlockSizePredictorPtr size_predictor;
-    /// Used to save current range processing status
-    MergeTreeRangeReader range_reader;
-    /// Range readers for multiple filtering steps: row level security, PREWHERE etc.
-    /// NOTE: we take references to elements and push_back new elements, that's why it is a deque but not a vector
-    std::deque<MergeTreeRangeReader> pre_range_readers;
-
-    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
-    std::future<MergeTreeReaderPtr> reader;
-    std::vector<std::future<MergeTreeReaderPtr>> pre_reader_for_step;
-
-    Priority priority;
-
-    bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
-
-    MergeTreeReadTask(
-        const DataPartPtr & data_part_,
-        const AlterConversionsPtr & alter_conversions_,
-        const MarkRanges & mark_ranges_,
-        size_t part_index_in_query_,
-        const NameSet & column_name_set_,
-        const MergeTreeReadTaskColumns & task_columns_,
-        MergeTreeBlockSizePredictorPtr size_predictor_,
-        Priority priority_ = {},
-        std::future<MergeTreeReaderPtr> reader_ = {},
-        std::vector<std::future<MergeTreeReaderPtr>> && pre_reader_for_step_ = {});
-
-    ~MergeTreeReadTask();
-};
-
-
-MergeTreeReadTaskColumns getReadTaskColumns(
+MergeTreeReadTask::Columns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
@@ -118,7 +47,6 @@ struct MergeTreeBlockSizePredictor
     {
         return block_size_bytes;
     }
-
 
     /// Predicts what number of rows should be read to exhaust byte quota per column
     inline size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
@@ -153,7 +81,6 @@ struct MergeTreeBlockSizePredictor
     static double calculateDecay() { return 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT); }
 
 protected:
-
     DataPartPtr data_part;
 
     struct ColumnInfo

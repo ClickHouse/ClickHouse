@@ -216,14 +216,12 @@ struct AddBlobOperation final : public IMetadataOperation
 {
     AddBlobOperation(
         const std::string & path_,
-        const std::string & blob_name_,
-        const std::string & root_path_,
+        ObjectStorageKey object_key_,
         uint64_t size_in_bytes_,
         IDisk & disk_,
         const MetadataStorageFromDisk & metadata_storage_)
         : path(path_)
-        , blob_name(blob_name_)
-        , root_path(root_path_)
+        , object_key(std::move(object_key_))
         , size_in_bytes(size_in_bytes_)
         , disk(disk_)
         , metadata_storage(metadata_storage_)
@@ -235,23 +233,13 @@ struct AddBlobOperation final : public IMetadataOperation
 
 private:
     std::string path;
-    std::string blob_name;
-    std::string root_path;
+    ObjectStorageKey object_key;
     uint64_t size_in_bytes;
     IDisk & disk;
     const MetadataStorageFromDisk & metadata_storage;
 
     std::unique_ptr<WriteFileOperation> write_operation;
 };
-
-/// Return the result of operation to the caller.
-/// It is used in `IDiskObjectStorageOperation::finalize` after metadata transaction executed to make decision on blob removal.
-struct UnlinkMetadataFileOperationOutcome
-{
-    UInt32 num_hardlinks = std::numeric_limits<UInt32>::max();
-};
-
-using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
 struct UnlinkMetadataFileOperation final : public IMetadataOperation
 {

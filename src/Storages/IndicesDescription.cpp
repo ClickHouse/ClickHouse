@@ -10,7 +10,10 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
 
+#include <Storages/ReplaceAliasByExpressionVisitor.h>
+
 #include <Core/Defines.h>
+#include "Common/Exception.h"
 
 
 namespace DB
@@ -19,6 +22,11 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -89,8 +97,20 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     result.type = Poco::toLower(index_definition->type->name);
     result.granularity = index_definition->granularity;
 
-    ASTPtr expr_list = extractKeyExpressionList(index_definition->expr->clone());
-    result.expression_list_ast = expr_list->clone();
+    ASTPtr expr_list;
+    if (index_definition->expr)
+    {
+        expr_list = extractKeyExpressionList(index_definition->expr->clone());
+
+        ReplaceAliasToExprVisitor::Data data{columns};
+        ReplaceAliasToExprVisitor{data}.visit(expr_list);
+
+        result.expression_list_ast = expr_list->clone();
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
+    }
 
     auto syntax = TreeRewriter(context).analyze(expr_list, columns.getAllPhysical());
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
@@ -142,7 +162,7 @@ String IndicesDescription::toString() const
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
 
-    return serializeAST(list, true);
+    return serializeAST(list);
 }
 
 

@@ -152,6 +152,9 @@ template <int UNROLL_TIMES>
 static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
 {
     size_t offset = data.size();
+    /// Avoiding calling resize in a loop improves the performance.
+    data.resize(std::max(data.capacity(), static_cast<size_t>(4096)));
+
     for (size_t i = 0; i < limit; ++i)
     {
         if (istr.eof())
@@ -171,7 +174,8 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
         offset += size + 1;
         offsets.push_back(offset);
 
-        data.resize(offset);
+        if (unlikely(offset > data.size()))
+            data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
 
         if (size)
         {
@@ -203,6 +207,8 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
         data[offset - 1] = 0;
     }
+
+    data.resize(offset);
 }
 
 
@@ -323,10 +329,27 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
 {
     if (settings.json.read_objects_as_strings && !istr.eof() && *istr.position() == '{')
     {
-        String field;
-        readJSONObjectPossiblyInvalid(field, istr);
-        ReadBufferFromString buf(field);
-        read(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
+        read(column, [&](ColumnString::Chars & data) { readJSONObjectPossiblyInvalid(data, istr); });
+    }
+    else if (settings.json.read_arrays_as_strings && !istr.eof() && *istr.position() == '[')
+    {
+        read(column, [&](ColumnString::Chars & data) { readJSONArrayInto(data, istr); });
+    }
+    else if (settings.json.read_bools_as_strings && !istr.eof() && (*istr.position() == 't' || *istr.position() == 'f'))
+    {
+        String str_value;
+        if (*istr.position() == 't')
+        {
+            assertString("true", istr);
+            str_value = "true";
+        }
+        else if (*istr.position() == 'f')
+        {
+            assertString("false", istr);
+            str_value = "false";
+        }
+
+        read(column, [&](ColumnString::Chars & data) { data.insert(str_value.begin(), str_value.end()); });
     }
     else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
@@ -361,5 +384,13 @@ void SerializationString::deserializeTextCSV(IColumn & column, ReadBuffer & istr
     read(column, [&](ColumnString::Chars & data) { readCSVStringInto(data, istr, settings.csv); });
 }
 
+void SerializationString::serializeTextMarkdown(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (settings.markdown.escape_special_characters)
+        writeMarkdownEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
+    else
+        serializeTextEscaped(column, row_num, ostr, settings);
+}
 
 }

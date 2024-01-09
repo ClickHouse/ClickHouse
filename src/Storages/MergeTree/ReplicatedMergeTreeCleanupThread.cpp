@@ -32,6 +32,12 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
 
 void ReplicatedMergeTreeCleanupThread::run()
 {
+    if (cleanup_blocker.isCancelled())
+    {
+        LOG_TRACE(LogFrequencyLimiter(log, 30), "Cleanup is cancelled, exiting");
+        return;
+    }
+
     SCOPE_EXIT({ is_running.store(false, std::memory_order_relaxed); });
     is_running.store(true, std::memory_order_relaxed);
 
@@ -147,10 +153,7 @@ Float32 ReplicatedMergeTreeCleanupThread::iterate()
         auto lock = storage.lockForShare(RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
         /// Both use relative_data_path which changes during rename, so we
         /// do it under share lock
-        cleaned_other += storage.clearOldWriteAheadLogs();
         cleaned_part_like += storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
-        if (storage.getSettings()->merge_tree_enable_clear_old_broken_detached)
-            cleaned_part_like += storage.clearOldBrokenPartsFromDetachedDirectory();
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
@@ -492,7 +495,7 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_di
         }
         else
         {
-            LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, Coordination::errorMessage(rc));
+            LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", path, rc);
         }
         first_outdated_block++;
     }

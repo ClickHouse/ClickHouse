@@ -14,6 +14,11 @@ struct JSONInferenceInfo
     std::unordered_set<const IDataType *> numbers_parsed_from_json_strings;
     /// Indicates if currently we are inferring type for Map/Object key.
     bool is_object_key = false;
+    /// When we transform types for the same column from different files
+    /// we cannot use DataTypeJSONPaths for inferring named tuples from JSON objects,
+    /// because DataTypeJSONPaths was already finalized to named tuple. IN this case
+    /// we can only merge named tuples from different files together.
+    bool allow_merging_named_tuples = false;
 };
 
 /// Try to determine datatype of the value in buffer/string. If the type cannot be inferred, return nullptr.
@@ -64,16 +69,22 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
 ///     from strings in json_info while inference and use it here, so we will know that Array(Int64) contains
 ///     integer inferred from a string.
 /// Example 2:
-///     When we have maps with different value types, we convert all types to JSON object type.
-///     For example, if we have Map(String, UInt64) (like `{"a" : 123}`) and Map(String, String) (like `{"b" : 'abc'}`)
-///     we will convert both types to Object('JSON').
+///     We merge DataTypeJSONPaths types to a single DataTypeJSONPaths type with union of all JSON paths.
 void transformInferredJSONTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
-/// Check if type is Tuple(...), try to transform nested types to find a common type for them and if all nested types
-/// are the same after transform, we convert this tuple to an Array with common nested type.
-/// For example, if we have Tuple(String, Nullable(Nothing)) we will convert it to Array(String).
-/// It's used when all rows were read and we have Tuple in the result type that can be actually an Array.
-void transformJSONTupleToArrayIfPossible(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info);
+/// Make final transform for types inferred in JSON format. It does 3 types of transformation:
+/// 1) Checks if type is unnamed Tuple(...), tries to transform nested types to find a common type for them and if all nested types
+///    are the same after transform, it converts this tuple to an Array with common nested type.
+///    For example, if we have Tuple(String, Nullable(Nothing)) we will convert it to Array(String).
+///    It's used when all rows were read and we have Tuple in the result type that can be actually an Array.
+/// 2) Finalizes all DataTypeJSONPaths to named Tuple.
+/// 3) Converts all Nothing types to String types if input_format_json_infer_incomplete_types_as_strings is enabled.
+void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info);
+
+/// Transform types for the same column inferred from different files.
+/// Does the same as transformInferredJSONTypesIfNeeded, but also merges named Tuples together,
+/// because DataTypeJSONPaths types were finalized when we finished inference for a file.
+void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings);
 
 /// Make type Nullable recursively:
 /// - Type -> Nullable(type)

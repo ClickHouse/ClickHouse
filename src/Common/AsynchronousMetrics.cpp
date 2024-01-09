@@ -1,3 +1,4 @@
+#include <Common/formatReadable.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
@@ -8,6 +9,8 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <base/errnoToString.h>
+#include <base/getPageSize.h>
+#include <sys/resource.h>
 #include <chrono>
 
 #include "config.h"
@@ -655,6 +658,19 @@ void AsynchronousMetrics::update(TimePoint update_time)
             total_memory_tracker.setRSS(rss, free_memory_in_allocator_arenas);
         }
     }
+
+    {
+        struct rusage rusage{};
+        if (!getrusage(RUSAGE_SELF, &rusage))
+        {
+            new_values["MemoryResidentMax"] = { rusage.ru_maxrss * 1024 /* KiB -> bytes */,
+                "Maximum amount of physical memory used by the server process, in bytes." };
+        }
+        else
+        {
+            LOG_ERROR(log, "Cannot obtain resource usage: {}", errnoToString(errno));
+        }
+    }
 #endif
 
 #if defined(OS_LINUX)
@@ -797,7 +813,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
             int64_t hz = sysconf(_SC_CLK_TCK);
             if (-1 == hz)
-                throwFromErrno("Cannot call 'sysconf' to obtain system HZ", ErrorCodes::CANNOT_SYSCONF);
+                throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
 
             double multiplier = 1.0 / hz / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_after_previous_update).count() / 1e9);
             size_t num_cpus = 0;

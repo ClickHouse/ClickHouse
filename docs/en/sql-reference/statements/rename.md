@@ -16,7 +16,7 @@ The `RENAME` query is supported by the [Atomic](../../engines/database-engines/a
 **Syntax**
 
 ```sql
-RENAME DATABASE|TABLE|DICTIONARY name TO new_name [,...] [ON CLUSTER cluster]
+RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
 ```
 
 ## RENAME DATABASE
@@ -46,6 +46,11 @@ RENAME TABLE [db1.]name1 TO [db2.]name2 [,...] [ON CLUSTER cluster]
 
 ```sql
 RENAME TABLE table_A TO table_A_bak, table_B TO table_B_bak;
+```
+
+And you can use a simpler sql:  
+```sql
+RENAME table_A TO table_A_bak, table_B TO table_B_bak;
 ```
 
 ## RENAME DICTIONARY

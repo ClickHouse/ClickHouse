@@ -12,6 +12,7 @@ void registerTableFunctionNull(TableFunctionFactory & factory);
 void registerTableFunctionZeros(TableFunctionFactory & factory);
 void registerTableFunctionExecutable(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
+void registerTableFunctionFileCluster(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
 void registerTableFunctionURLCluster(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
@@ -19,8 +20,9 @@ void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 void registerTableFunctionRedis(TableFunctionFactory & factory);
-
-void registerTableFunctionMeiliSearch(TableFunctionFactory & factory);
+#if USE_RAPIDJSON || USE_SIMDJSON
+void registerTableFunctionFuzzJSON(TableFunctionFactory & factory);
+#endif
 
 #if USE_AWS_S3
 void registerTableFunctionS3(TableFunctionFactory & factory);
@@ -72,6 +74,7 @@ void registerTableFunctionExplain(TableFunctionFactory & factory);
 
 #if USE_AZURE_BLOB_STORAGE
 void registerTableFunctionAzureBlobStorage(TableFunctionFactory & factory);
+void registerTableFunctionAzureBlobStorageCluster(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctions();

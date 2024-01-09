@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -159,20 +160,19 @@ struct IMergeTreeIndex
         return {0 /*unknown*/, ""};
     }
 
-    /// Checks whether the column is in data skipping index.
-    virtual bool mayBenefitFromIndexForIn(const ASTPtr & node) const = 0;
-
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
+    virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
 
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart([[maybe_unused]]const GinIndexStorePtr &store) const
+    virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & /*store*/, const MergeTreeWriterSettings & settings) const
     {
-        return createIndexAggregator();
+        return createIndexAggregator(settings);
     }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query_info, ContextPtr context) const = 0;
+        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const = 0;
+
+    virtual bool isVectorSearch() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
@@ -236,6 +236,11 @@ void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 #ifdef ENABLE_ANNOY
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index);
 void annoyIndexValidator(const IndexDescription & index, bool attach);
+#endif
+
+#ifdef ENABLE_USEARCH
+MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
+void usearchIndexValidator(const IndexDescription& index, bool attach);
 #endif
 
 MergeTreeIndexPtr invertedIndexCreator(const IndexDescription& index);

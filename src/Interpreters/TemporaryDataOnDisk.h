@@ -95,7 +95,7 @@ public:
     ///   1) it doesn't account data in parent scope
     ///   2) returned buffer owns resources (instead of TemporaryDataOnDisk itself)
     /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
-    WriteBufferPtr createRawStream(size_t max_file_size = 0);
+    std::unique_ptr<WriteBufferFromFileBase> createRawStream(size_t max_file_size = 0);
 
     std::vector<TemporaryFileStream *> getStreams() const;
     bool empty() const;
@@ -141,6 +141,7 @@ public:
     Block read();
 
     String getPath() const;
+    size_t getSize() const;
 
     Block getHeader() const { return header; }
 

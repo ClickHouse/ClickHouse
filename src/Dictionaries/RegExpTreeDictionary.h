@@ -40,6 +40,7 @@ public:
     {
         bool require_nonempty;
         DictionaryLifetime lifetime;
+        bool use_async_executor = false;
     };
 
     const std::string name = "RegExpTree";
@@ -49,7 +50,9 @@ public:
         const DictionaryStructure & structure_,
         DictionarySourcePtr source_ptr_,
         Configuration configuration_,
-        bool use_vectorscan_);
+        bool use_vectorscan_,
+        bool flag_case_insensitive_,
+        bool flag_dotall_);
 
     std::string getTypeName() const override { return name; }
 
@@ -85,7 +88,8 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<RegExpTreeDictionary>(getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan);
+        return std::make_shared<RegExpTreeDictionary>(
+            getDictionaryID(), structure, source_ptr->clone(), configuration, use_vectorscan, flag_case_insensitive, flag_dotall);
     }
 
     ColumnUInt8::Ptr hasKeys(const Columns &, const DataTypes &) const override
@@ -189,6 +193,8 @@ private:
     using RegexTreeNodePtr = std::shared_ptr<RegexTreeNode>;
 
     bool use_vectorscan;
+    bool flag_case_insensitive;
+    bool flag_dotall;
 
     std::vector<std::string> simple_regexps;
     std::vector<UInt64>      regexp_ids;
@@ -199,7 +205,7 @@ private:
     #if USE_VECTORSCAN
     MultiRegexps::DeferredConstructedRegexpsPtr hyperscan_regex;
     MultiRegexps::ScratchPtr origin_scratch;
-    hs_database_t* origin_db;
+    MultiRegexps::DataBasePtr origin_db;
     #endif
 
     Poco::Logger * logger;

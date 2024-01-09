@@ -116,6 +116,7 @@ namespace
                 writeBinary(info.base_size, out);
                 writeBinary(info.base_checksum, out);
                 writeBinary(info.encrypted_by_disk, out);
+                writeBinary(info.reference_target, out);
                 /// We don't store `info.data_file_name` and `info.data_file_index` because they're determined automalically
                 /// after reading file infos for all the hosts (see the class BackupCoordinationFileInfos).
             }
@@ -138,6 +139,7 @@ namespace
                 readBinary(info.base_size, in);
                 readBinary(info.base_checksum, in);
                 readBinary(info.encrypted_by_disk, in);
+                readBinary(info.reference_target, in);
             }
             return res;
         }
@@ -182,12 +184,12 @@ BackupCoordinationRemote::BackupCoordinationRemote(
             if (my_is_internal)
             {
                 String alive_node_path = my_zookeeper_path + "/stage/alive|" + my_current_host;
-                auto code = zk->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
 
-                if (code == Coordination::Error::ZNODEEXISTS)
-                    zk->handleEphemeralNodeExistenceNoFailureInjection(alive_node_path, "");
-                else if (code != Coordination::Error::ZOK)
-                    throw zkutil::KeeperException(code, alive_node_path);
+                /// Delete the ephemeral node from the previous connection so we don't have to wait for keeper to do it automatically.
+                zk->tryRemove(alive_node_path);
+
+                zk->createAncestors(alive_node_path);
+                zk->create(alive_node_path, "", zkutil::CreateMode::Ephemeral);
             }
         })
 {
@@ -230,6 +232,7 @@ void BackupCoordinationRemote::createRootNodes()
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_data_paths", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_access", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/repl_sql_objects", "", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/keeper_map_tables", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/file_infos", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/writing_files", "", zkutil::CreateMode::Persistent));
         zk->tryMulti(ops, responses);
@@ -666,6 +669,80 @@ void BackupCoordinationRemote::prepareReplicatedSQLObjects() const
         replicated_sql_objects->addDirectory(std::move(directory));
 }
 
+void BackupCoordinationRemote::addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup)
+{
+    {
+        std::lock_guard lock{keeper_map_tables_mutex};
+        if (keeper_map_tables)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "addKeeperMapTable() must not be called after preparing");
+    }
+
+    auto holder = with_retries.createRetriesControlHolder("addKeeperMapTable");
+    holder.retries_ctl.retryLoop(
+    [&, &zk = holder.faulty_zookeeper]()
+    {
+        with_retries.renewZooKeeper(zk);
+        String path = zookeeper_path + "/keeper_map_tables/" + escapeForFileName(table_id);
+        if (auto res
+            = zk->tryCreate(path, fmt::format("{}\n{}", table_zookeeper_root_path, data_path_in_backup), zkutil::CreateMode::Persistent);
+            res != Coordination::Error::ZOK && res != Coordination::Error::ZNODEEXISTS)
+            throw zkutil::KeeperException(res);
+    });
+}
+
+void BackupCoordinationRemote::prepareKeeperMapTables() const
+{
+    if (keeper_map_tables)
+        return;
+
+    std::vector<std::pair<std::string, BackupCoordinationKeeperMapTables::KeeperMapTableInfo>> keeper_map_table_infos;
+    auto holder = with_retries.createRetriesControlHolder("prepareKeeperMapTables");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+    {
+        keeper_map_table_infos.clear();
+
+        with_retries.renewZooKeeper(zk);
+
+        fs::path tables_path = fs::path(zookeeper_path) / "keeper_map_tables";
+
+        auto tables = zk->getChildren(tables_path);
+        keeper_map_table_infos.reserve(tables.size());
+
+        for (auto & table : tables)
+            table = tables_path / table;
+
+        auto tables_info = zk->get(tables);
+        for (size_t i = 0; i < tables_info.size(); ++i)
+        {
+            const auto & table_info = tables_info[i];
+
+            if (table_info.error != Coordination::Error::ZOK)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Path in Keeper {} is unexpectedly missing", tables[i]);
+
+            std::vector<std::string> data;
+            boost::split(data, table_info.data, [](char c) { return c == '\n'; });
+            keeper_map_table_infos.emplace_back(
+                std::move(data[0]),
+                BackupCoordinationKeeperMapTables::KeeperMapTableInfo{
+                    .table_id = fs::path(tables[i]).filename(), .data_path_in_backup = std::move(data[1])});
+        }
+    });
+
+    keeper_map_tables.emplace();
+    for (const auto & [zk_root_path, table_info] : keeper_map_table_infos)
+        keeper_map_tables->addTable(zk_root_path, table_info.table_id, table_info.data_path_in_backup);
+
+}
+
+String BackupCoordinationRemote::getKeeperMapDataPath(const String & table_zookeeper_root_path) const
+{
+    std::lock_guard lock(keeper_map_tables_mutex);
+    prepareKeeperMapTables();
+    return keeper_map_tables->getDataPath(table_zookeeper_root_path);
+}
+
+
 void BackupCoordinationRemote::addFileInfos(BackupFileInfos && file_infos_)
 {
     {
@@ -745,7 +822,7 @@ bool BackupCoordinationRemote::startWritingFile(size_t data_file_index)
         else if (code == Coordination::Error::ZNODEEXISTS)
             host_is_assigned = (zk->get(full_path) == host_index_str); /// The previous retry could write this ZooKeeper's node and then fail.
         else
-            throw zkutil::KeeperException(code, full_path);
+            throw zkutil::KeeperException::fromPath(code, full_path);
     });
 
     if (!host_is_assigned)
@@ -815,7 +892,7 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &)
                 break;
             bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
             if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
-                throw zkutil::KeeperException(code, backup_stage_path);
+                throw zkutil::KeeperException::fromPath(code, backup_stage_path);
         }
     });
 

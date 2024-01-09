@@ -56,8 +56,19 @@ MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_
 void MsgPackRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    buf->reset();
     visitor.reset();
+}
+
+void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IRowInputFormat::setReadBuffer(*buf);
+}
+
+void MsgPackRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    IRowInputFormat::resetReadBuffer();
 }
 
 void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type, UInt8 & read) // NOLINT
@@ -244,7 +255,8 @@ static void insertString(IColumn & column, DataTypePtr type, const char * value,
             case TypeIndex::Decimal256:
                 insertFromBinaryRepresentation<ColumnDecimal<Decimal256>>(column, type, value, size);
                 return;
-            default:;
+            default:
+                break;
         }
     }
 
@@ -326,8 +338,8 @@ static void insertUUID(IColumn & column, DataTypePtr type, const char * value, s
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack UUID into column with type {}.", type->getName());
     ReadBufferFromMemory buf(value, size);
     UUID uuid;
-    readBinaryBigEndian(uuid.toUnderType().items[0], buf);
-    readBinaryBigEndian(uuid.toUnderType().items[1], buf);
+    readBinaryBigEndian(UUIDHelpers::getHighBytes(uuid), buf);
+    readBinaryBigEndian(UUIDHelpers::getLowBytes(uuid), buf);
     assert_cast<ColumnUUID &>(column).insertValue(uuid);
 }
 
@@ -482,14 +494,15 @@ void MsgPackVisitor::parse_error(size_t, size_t) // NOLINT
     throw Exception(ErrorCodes::INCORRECT_DATA, "Error occurred while parsing msgpack data.");
 }
 
-bool MsgPackRowInputFormat::readObject()
+template <typename Parser>
+bool MsgPackRowInputFormat::readObject(Parser & msgpack_parser)
 {
     if (buf->eof())
         return false;
 
     PeekableReadBufferCheckpoint checkpoint{*buf};
     size_t offset = 0;
-    while (!parser.execute(buf->position(), buf->available(), offset))
+    while (!msgpack_parser.execute(buf->position(), buf->available(), offset))
     {
         buf->position() = buf->buffer().end();
         if (buf->eof())
@@ -502,6 +515,24 @@ bool MsgPackRowInputFormat::readObject()
     return true;
 }
 
+size_t MsgPackRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    msgpack::null_visitor null_visitor;
+    msgpack::detail::parse_helper<msgpack::null_visitor> null_parser(null_visitor);
+
+    size_t columns = getPort().getHeader().columns();
+
+    while (!buf->eof() && num_rows < max_block_size)
+    {
+        for (size_t i = 0; i < columns; ++i)
+            readObject(null_parser);
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
     size_t column_index = 0;
@@ -510,7 +541,7 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     for (; column_index != columns.size(); ++column_index)
     {
         visitor.set_info(*columns[column_index], data_types[column_index], ext.read_columns[column_index]);
-        has_more_data = readObject();
+        has_more_data = readObject(parser);
         if (!has_more_data)
             break;
     }
@@ -521,11 +552,6 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         return false;
     }
     return true;
-}
-
-void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    buf->setSubBuffer(in_);
 }
 
 MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -634,7 +660,7 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
     UNREACHABLE();
 }
 
-DataTypes MsgPackSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
 {
     if (buf.eof())
         return {};

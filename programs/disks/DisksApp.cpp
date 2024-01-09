@@ -209,7 +209,35 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         po::parsed_options parsed = parser.run();
         args = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
     }
-    command->execute(args, global_context, config());
+
+    std::unordered_set<std::string> disks
+    {
+        config().getString("disk", "default"),
+        config().getString("disk-from", config().getString("disk", "default")),
+        config().getString("disk-to", config().getString("disk", "default")),
+    };
+
+    auto validator = [&disks](
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & disk_config_prefix,
+        const std::string & disk_name)
+    {
+        if (!disks.contains(disk_name))
+            return false;
+
+        const auto disk_type = config.getString(disk_config_prefix + ".type", "local");
+
+        if (disk_type == "cache")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk type 'cache' of disk {} is not supported by clickhouse-disks", disk_name);
+
+        return true;
+    };
+
+    constexpr auto config_prefix = "storage_configuration.disks";
+    auto disk_selector = std::make_shared<DiskSelector>();
+    disk_selector->initialize(config(), config_prefix, global_context, validator);
+
+    command->execute(args, disk_selector, config());
 
     return Application::EXIT_OK;
 }

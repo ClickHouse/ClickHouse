@@ -3,14 +3,15 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", with_zookeeper=False)
+node1 = cluster.add_instance("node1", with_zookeeper=False, allow_analyzer=False)
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=False,
     image="yandex/clickhouse-server",
-    tag="21.7.2.7",
+    tag="21.6",
     stay_alive=True,
     with_installed_binary=True,
+    allow_analyzer=False,
 )
 
 

@@ -132,13 +132,6 @@ func TestConfigFileFrameCopy(t *testing.T) {
 		configFrame, errs := data.NewConfigFileFrame(path.Join(cwd, "../../../testdata", "configs", "xml"))
 		require.Empty(t, errs)
 		i := 0
-		sizes := map[string]int64{
-			"users.xml":            int64(2017),
-			"default-password.xml": int64(188),
-			"config.xml":           int64(59506),
-			"server-include.xml":   int64(168),
-			"user-include.xml":     int64(559),
-		}
 		var checkedFiles []string
 		for {
 			values, ok, err := configFrame.Next()
@@ -153,8 +146,6 @@ func TestConfigFileFrameCopy(t *testing.T) {
 			newPath := path.Join(tmrDir, fileName)
 			err = configFile.Copy(newPath, true)
 			require.FileExists(t, newPath)
-			destInfo, _ := os.Stat(newPath)
-			require.Equal(t, sizes[fileName], destInfo.Size())
 			require.Nil(t, err)
 			bytes, err := ioutil.ReadFile(newPath)
 			require.Nil(t, err)
@@ -186,13 +177,6 @@ func TestConfigFileFrameCopy(t *testing.T) {
 		configFrame, errs := data.NewConfigFileFrame(path.Join(cwd, "../../../testdata", "configs", "yaml"))
 		require.Empty(t, errs)
 		i := 0
-		sizes := map[string]int64{
-			"users.yaml":            int64(1023),
-			"default-password.yaml": int64(132),
-			"config.yaml":           int64(41633),
-			"server-include.yaml":   int64(21),
-			"user-include.yaml":     int64(120),
-		}
 		var checkedFiles []string
 		for {
 			values, ok, err := configFrame.Next()
@@ -207,8 +191,6 @@ func TestConfigFileFrameCopy(t *testing.T) {
 			newPath := path.Join(tmrDir, fileName)
 			err = configFile.Copy(newPath, true)
 			require.FileExists(t, newPath)
-			destInfo, _ := os.Stat(newPath)
-			require.Equal(t, sizes[fileName], destInfo.Size())
 			require.Nil(t, err)
 			bytes, err := ioutil.ReadFile(newPath)
 			require.Nil(t, err)

@@ -121,30 +121,31 @@ public:
         AggregateFunctionProperties properties;
         AggregateFunctionPtr bitmap_function;
         WhichDataType which(nested_type);
+        auto action = NullsAction::EMPTY;
         if (which.isUInt8())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<UInt8>::name(), argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<UInt8>::name(), action, argument_types, params_row, properties);
         else if (which.isUInt16())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<UInt16>::name(), argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<UInt16>::name(), action, argument_types, params_row, properties);
         else if (which.isUInt32())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<UInt32>::name(), argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<UInt32>::name(), action, argument_types, params_row, properties);
         else if (which.isUInt64())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<UInt64>::name(), argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<UInt64>::name(), action, argument_types, params_row, properties);
         else if (which.isInt8())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<Int8>::name(), argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<Int8>::name(), action, argument_types, params_row, properties);
         else if (which.isInt16())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<Int16>::name(), argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<Int16>::name(), action, argument_types, params_row, properties);
         else if (which.isInt32())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<Int32>::name(), argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<Int32>::name(), action, argument_types, params_row, properties);
         else if (which.isInt64())
             bitmap_function = AggregateFunctionFactory::instance().get(
-                AggregateFunctionGroupBitmapData<Int64>::name(), argument_types, params_row, properties);
+                AggregateFunctionGroupBitmapData<Int64>::name(), action, argument_types, params_row, properties);
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
                 array_type->getName(), getName());
@@ -198,8 +199,9 @@ private:
         // output data
         Array params_row;
         AggregateFunctionProperties properties;
+        auto action = NullsAction::EMPTY;
         AggregateFunctionPtr bitmap_function = AggregateFunctionFactory::instance().get(
-            AggregateFunctionGroupBitmapData<T>::name(), argument_types, params_row, properties);
+            AggregateFunctionGroupBitmapData<T>::name(), action, argument_types, params_row, properties);
         auto col_to = ColumnAggregateFunction::create(bitmap_function);
         col_to->reserve(offsets.size());
 

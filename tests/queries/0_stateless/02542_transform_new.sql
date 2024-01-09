@@ -33,3 +33,16 @@ select 'sep6';
 SELECT transform(-9223372036854775807, [-1], [toDecimal32(1024, 3)]) FROM system.numbers LIMIT 7; -- { serverError BAD_ARGUMENTS }
 SELECT [NULL, NULL, NULL, NULL], transform(number, [2147483648], [toDecimal32(1, 2)]) AS x FROM numbers(257) WHERE materialize(10); -- { serverError BAD_ARGUMENTS }
 SELECT transform(-2147483649, [1], [toDecimal32(1, 2)]) GROUP BY [1] WITH TOTALS; -- { serverError BAD_ARGUMENTS }
+
+SELECT 'issue #53187';
+SELECT
+    CAST(number, 'String') AS v2,
+    caseWithExpression('x', 'y', 0, cond2) AS cond1,
+    toNullable('0' = v2) AS cond2
+FROM numbers(2);
+SELECT '-';
+SELECT
+    CAST(number, 'String') AS v2,
+    caseWithExpression('x', 'y', 0, cond2) AS cond1,
+    toNullable('1' = v2) AS cond2
+FROM numbers(2);

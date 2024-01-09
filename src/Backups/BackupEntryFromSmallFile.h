@@ -13,8 +13,8 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class BackupEntryFromSmallFile : public BackupEntryWithChecksumCalculation<IBackupEntry>
 {
 public:
-    explicit BackupEntryFromSmallFile(const String & file_path_);
-    BackupEntryFromSmallFile(const DiskPtr & disk_, const String & file_path_, bool copy_encrypted_ = false);
+    explicit BackupEntryFromSmallFile(const String & file_path_, const ReadSettings & read_settings_);
+    BackupEntryFromSmallFile(const DiskPtr & disk_, const String & file_path_, const ReadSettings & read_settings_, bool copy_encrypted_ = false);
 
     std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings &) const override;
     UInt64 getSize() const override { return data.size(); }

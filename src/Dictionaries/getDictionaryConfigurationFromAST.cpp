@@ -16,9 +16,11 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -322,7 +324,7 @@ void buildSingleAttribute(
 
 
 /** Transforms
-  *   PRIMARY KEY Attr1 ,..., AttrN
+  *   PRIMARY KEY Attr1, ..., AttrN
   * to the next configuration
   *  <id><name>Attr1</name></id>
   * or
@@ -517,8 +519,11 @@ void buildSourceConfiguration(
     AutoPtr<Element> root,
     const ASTFunctionWithKeyValueArguments * source,
     const ASTDictionarySettings * settings,
+    const String & dictionary_name,
     ContextPtr context)
 {
+    DictionarySourceFactory::instance().checkSourceAvailable(source->name, dictionary_name, context);
+
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
     AutoPtr<Element> source_element(doc->createElement(source->name));
@@ -571,11 +576,28 @@ void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names
 
 }
 
+void checkLifetime(const ASTCreateQuery & query)
+{
+    if (query.dictionary->layout && query.dictionary->layout->layout_type == "direct")
+    {
+        if (query.dictionary->lifetime)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "'lifetime' parameter is redundant for the dictionary' of layout '{}'",
+                query.dictionary->layout->layout_type);
+    }
+}
+
 
 DictionaryConfigurationPtr
 getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_)
 {
     checkAST(query);
+    checkLifetime(query);
+
+    String dictionary_name = query.getTable();
+    String db_name = !database_.empty() ? database_ : query.getDatabase();
+    String full_dictionary_name = (!db_name.empty() ? (db_name + ".") : "") + dictionary_name;
 
     AutoPtr<Poco::XML::Document> xml_document(new Poco::XML::Document());
     AutoPtr<Poco::XML::Element> document_root(xml_document->createElement("dictionaries"));
@@ -586,12 +608,12 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     AutoPtr<Poco::XML::Element> name_element(xml_document->createElement("name"));
     current_dictionary->appendChild(name_element);
-    AutoPtr<Text> name(xml_document->createTextNode(query.getTable()));
+    AutoPtr<Text> name(xml_document->createTextNode(dictionary_name));
     name_element->appendChild(name);
 
     AutoPtr<Poco::XML::Element> database_element(xml_document->createElement("database"));
     current_dictionary->appendChild(database_element);
-    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.getDatabase()));
+    AutoPtr<Text> database(xml_document->createTextNode(db_name));
     database_element->appendChild(database);
 
     if (query.uuid != UUIDHelpers::Nil)
@@ -614,10 +636,20 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     checkPrimaryKey(all_attr_names_and_types, pk_attrs);
 
+    /// If the pk size is 1 and pk's DataType is not number, we should convert to complex.
+    /// NOTE: the data type of Numeric key(simple layout) is UInt64, so if the type is not under UInt64, type casting will lead to precision loss.
+    DataTypePtr first_key_type = DataTypeFactory::instance().get(all_attr_names_and_types.find(pk_attrs[0])->second.type);
+    if ((pk_attrs.size() > 1 || (pk_attrs.size() == 1 && !isNumber(first_key_type)))
+        && !complex
+        && DictionaryFactory::instance().convertToComplex(dictionary_layout->layout_type))
+    {
+        complex = true;
+    }
+
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
     buildLayoutConfiguration(xml_document, current_dictionary, query.dictionary->dict_settings, dictionary_layout);
-    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, context);
+    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings, full_dictionary_name, context);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
     if (query.dictionary->range)

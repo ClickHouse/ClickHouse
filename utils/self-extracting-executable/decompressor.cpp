@@ -45,6 +45,7 @@ int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_off
         std::cerr << "Error (ZSTD):" << decompressed_size << " " << ZSTD_getErrorName(decompressed_size) << std::endl;
         return 1;
     }
+    std::cerr << "." << std::flush;
     return 0;
 }
 
@@ -173,7 +174,7 @@ bool isSudo()
     return geteuid() == 0;
 }
 
-/// Read data about files and decomrpess them.
+/// Read data about files and decompress them.
 int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
 {
     /// Read data about output file.
@@ -243,27 +244,27 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         memset(file_name, '\0', file_path_len);
         if (path)
         {
-            strcat(file_name, path);
-            strcat(file_name, "/");
+            strcat(file_name, path); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
+            strcat(file_name, "/"); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
         }
 
         bool same_name = false;
         if (file_info.exec)
         {
             has_exec = true;
-            strcat(file_name, name);
+            strcat(file_name, name); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
         }
         else
         {
             if (strcmp(name, input + files_pointer) == 0)
                 same_name = true;
-            strcat(file_name, input + files_pointer);
+            strcat(file_name, input + files_pointer); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
         }
 
         files_pointer += le64toh(file_info.name_length);
         if (file_info.exec || same_name)
         {
-            strcat(file_name, ".decompressed.XXXXXX");
+            strcat(file_name, ".decompressed.XXXXXX"); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
             int fd = mkstemp(file_name);
             if (fd == -1)
             {
@@ -332,6 +333,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
     if (0 != munmap(input, info_in.st_size))
         perror("munmap");
+
+    std::cerr << std::endl;
     return 0;
 }
 
@@ -362,11 +365,12 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #else
 
-    int read_exe_path(char *exe, size_t/* buf_sz*/)
+    int read_exe_path(char *exe, size_t buf_sz)
     {
-        if (realpath("/proc/self/exe", exe) == nullptr)
-            return 1;
-        return 0;
+        ssize_t n = readlink("/proc/self/exe", exe, buf_sz - 1);
+        if (n > 0)
+            exe[n] = '\0';
+        return n > 0 && n < static_cast<ssize_t>(buf_sz);
     }
 
 #endif
@@ -410,7 +414,7 @@ int main(int/* argc*/, char* argv[])
     }
 
     char file_path[strlen(self) + 1];
-    strcpy(file_path, self);
+    strcpy(file_path, self); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
 
     char * path = nullptr;
     char * name = strrchr(file_path, '/');
@@ -430,58 +434,57 @@ int main(int/* argc*/, char* argv[])
         return 1;
     }
 
-    int lock = -1;
-    /// Protection from double decompression
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
     /// get inode of this executable
     uint64_t inode = getInode(self);
-    /// In some cases /proc/self/maps may not contain the inode for the
-    /// /proc/self/exe, one of such examples are using qemu-*-static, in this
-    /// case maps will be proxied through the qemu, and it will remove
-    /// information about itself from it.
-    if (inode != 0)
+    if (inode == 0)
     {
-        std::stringstream lock_path; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        lock_path << "/tmp/" << name << ".decompression." << inode << ".lock";
-        lock = open(lock_path.str().c_str(), O_CREAT | O_RDWR, 0666);
-        if (lock < 0)
+        std::cerr << "Unable to obtain inode for exe '" << self << "'." << std::endl;
+        return 1;
+    }
+
+    std::cerr << "Decompressing the binary" << std::flush;
+
+    std::stringstream lock_path; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    lock_path << "/tmp/" << name << ".decompression." << inode << ".lock";
+    int lock = open(lock_path.str().c_str(), O_CREAT | O_RDWR, 0666);
+    if (lock < 0)
+    {
+        perror("lock open");
+        return 1;
+    }
+
+    /// lock file should be closed on exec call
+    fcntl(lock, F_SETFD, FD_CLOEXEC);
+
+    if (lockf(lock, F_LOCK, 0))
+    {
+        perror("lockf");
+        return 1;
+    }
+
+    /// inconsistency in WSL1 Ubuntu - inode reported in /proc/self/maps is a 64bit to
+    /// 32bit conversion of input_info.st_ino
+    if (input_info.st_ino & 0xFFFFFFFF00000000 && !(inode & 0xFFFFFFFF00000000))
+        input_info.st_ino &= 0x00000000FFFFFFFF;
+
+    /// if decompression was performed by another process since this copy was started
+    /// then file referred by path "self" is already pointing to different inode
+    if (input_info.st_ino != inode)
+    {
+        struct stat lock_info;
+        if (0 != fstat(lock, &lock_info))
         {
-            perror("lock open");
+            perror("fstat lock");
             return 1;
         }
 
-        /// lock file should be closed on exec call
-        fcntl(lock, F_SETFD, FD_CLOEXEC);
+        /// size 1 of lock file indicates that another decompressor has found active executable
+        if (lock_info.st_size == 1)
+            execv(self, argv);
 
-        if (lockf(lock, F_LOCK, 0))
-        {
-            perror("lockf");
-            return 1;
-        }
-
-        /// inconsistency in WSL1 Ubuntu - inode reported in /proc/self/maps is a 64bit to
-        /// 32bit conversion of input_info.st_ino
-        if (input_info.st_ino & 0xFFFFFFFF00000000 && !(inode & 0xFFFFFFFF00000000))
-            input_info.st_ino &= 0x00000000FFFFFFFF;
-
-        /// if decompression was performed by another process since this copy was started
-        /// then file referred by path "self" is already pointing to different inode
-        if (input_info.st_ino != inode)
-        {
-            struct stat lock_info;
-            if (0 != fstat(lock, &lock_info))
-            {
-                perror("fstat lock");
-                return 1;
-            }
-
-            /// size 1 of lock file indicates that another decompressor has found active executable
-            if (lock_info.st_size == 1)
-                execv(self, argv);
-
-            printf("No target executable - decompression only was performed.\n");
-            return 0;
-        }
+        printf("No target executable - decompression only was performed.\n"); // NOLINT(modernize-use-std-print)
+        return 0;
     }
 #endif
 
@@ -500,7 +503,7 @@ int main(int/* argc*/, char* argv[])
     /// Decompress all files
     if (0 != decompressFiles(input_fd, path, name, have_compressed_analoge, has_exec, decompressed_suffix, &decompressed_umask))
     {
-        printf("Error happened during decompression.\n");
+        printf("Error happened during decompression.\n"); // NOLINT(modernize-use-std-print)
         if (0 != close(input_fd))
             perror("close");
         return 1;
@@ -516,7 +519,7 @@ int main(int/* argc*/, char* argv[])
     }
 
     if (!have_compressed_analoge)
-        printf("No target executable - decompression only was performed.\n");
+        printf("No target executable - decompression only was performed.\n"); // NOLINT(modernize-use-std-print)
     else
     {
         const char * const decompressed_name_fmt = "%s.decompressed.%s";
@@ -549,20 +552,22 @@ int main(int/* argc*/, char* argv[])
 
         if (has_exec)
         {
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
             /// write one byte to the lock in case other copies of compressed are running to indicate that
             /// execution should be performed
-            if (lock >= 0)
-                write(lock, "1", 1);
+            write(lock, "1", 1);
+#endif
             execv(self, argv);
 
             /// This part of code will be reached only if error happened
             perror("execv");
             return 1;
         }
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
         /// since inodes can be reused - it's a precaution if lock file already exists and have size of 1
-        if (lock >= 0)
-            ftruncate(lock, 0);
+        ftruncate(lock, 0);
+#endif
 
-        printf("No target executable - decompression only was performed.\n");
+        printf("No target executable - decompression only was performed.\n"); // NOLINT(modernize-use-std-print)
     }
 }

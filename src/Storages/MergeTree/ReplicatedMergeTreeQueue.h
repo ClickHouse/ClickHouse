@@ -240,7 +240,7 @@ private:
     /// by first argument. If remove_part == true, than also remove part itself.
     /// Both negative flags will throw exception.
     ///
-    /// Part removed from mutations which satisfy contitions:
+    /// Part removed from mutations which satisfy conditions:
     /// block_number > part.getDataVersion()
     /// or block_number == part.getDataVersion()
     ///    ^ (this may happen if we downloaded mutated part from other replica)
@@ -331,11 +331,11 @@ public:
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       * Return the version of "logs" node (that is updated for every merge/mutation/... added to the log)
       */
-    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {}, PullLogsReason reason = OTHER);
+    std::pair<int32_t, int32_t> pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {}, PullLogsReason reason = OTHER);
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
-    void updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
+    int32_t updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback = {});
 
     /// Remove a mutation from ZooKeeper and from the local set. Returns the removed entry or nullptr
     /// if it could not be found. Called during KILL MUTATION query execution.
@@ -388,12 +388,12 @@ public:
 
     /// Count the total number of active mutations that are finished (is_done = true).
     size_t countFinishedMutations() const;
-    /// Count the total number of active mutations that are not finished (is_done = false).
-    size_t countUnfinishedMutations() const;
+
+    std::map<std::string, MutationCommands> getUnfinishedMutations() const;
 
     /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
-    ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper,
-                                                        std::optional<PartitionIdsHint> && partition_ids_hint);
+    ReplicatedMergeTreeMergePredicate
+    getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint);
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;
@@ -505,19 +505,19 @@ public:
     bool operator()(const MergeTreeData::DataPartPtr & left,
                     const MergeTreeData::DataPartPtr & right,
                     const MergeTreeTransaction * txn,
-                    String * out_reason = nullptr) const;
+                    String & out_reason) const;
 
     /// Can we assign a merge with these two parts?
     /// (assuming that no merge was assigned after the predicate was constructed)
     /// If we can't and out_reason is not nullptr, set it to the reason why we can't merge.
     bool canMergeTwoParts(const MergeTreeData::DataPartPtr & left,
                           const MergeTreeData::DataPartPtr & right,
-                          String * out_reason = nullptr) const;
+                          String & out_reason) const;
 
     /// Can we assign a merge this part and some other part?
     /// For example a merge of a part and itself is needed for TTL.
     /// This predicate is checked for the first part of each range.
-    bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
+    bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String & out_reason) const;
 
     CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std::string & zookeeper_path, Poco::Logger * log_);
 
@@ -561,7 +561,7 @@ public:
 
     /// Returns true if part is needed for some REPLACE_RANGE entry.
     /// We should not drop part in this case, because replication queue may stuck without that part.
-    bool partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
+    bool partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String & out_reason) const;
 
     /// Return nonempty optional of desired mutation version and alter version.
     /// If we have no alter (modify/drop) mutations in mutations queue, than we return biggest possible

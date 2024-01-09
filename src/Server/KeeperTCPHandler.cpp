@@ -20,6 +20,7 @@
 #include <queue>
 #include <mutex>
 #include <Coordination/FourLetterCommand.h>
+#include <IO/CompressionMethod.h>
 #include <base/hex.h>
 
 
@@ -82,7 +83,7 @@ struct SocketInterruptablePollWrapper
 #if defined(POCO_HAVE_FD_EPOLL)
         epollfd = epoll_create(2);
         if (epollfd < 0)
-            throwFromErrno("Cannot epoll_create", ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot epoll_create");
 
         socket_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         socket_event.data.fd = sockfd;
@@ -91,7 +92,7 @@ struct SocketInterruptablePollWrapper
             int err = ::close(epollfd);
             chassert(!err || errno == EINTR);
 
-            throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot insert socket into epoll queue");
         }
         pipe_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         pipe_event.data.fd = pipe.fds_rw[0];
@@ -100,7 +101,7 @@ struct SocketInterruptablePollWrapper
             int err = ::close(epollfd);
             chassert(!err || errno == EINTR);
 
-            throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot insert socket into epoll queue");
         }
 #endif
     }
@@ -110,13 +111,13 @@ struct SocketInterruptablePollWrapper
         return pipe.fds_rw[1];
     }
 
-    PollResult poll(Poco::Timespan remaining_time, const std::shared_ptr<ReadBufferFromPocoSocket> & in)
+    PollResult poll(Poco::Timespan remaining_time, const ReadBufferFromPocoSocket & in)
     {
 
         bool socket_ready = false;
         bool fd_ready = false;
 
-        if (in->available() != 0)
+        if (in.available() != 0)
             socket_ready = true;
 
         if (response_in.available() != 0)
@@ -175,10 +176,13 @@ struct SocketInterruptablePollWrapper
             }
             while (rc < 0 && errno == POCO_EINTR);
 
-            if (rc >= 1 && poll_buf[0].revents & POLLIN)
-                socket_ready = true;
-            if (rc >= 2 && poll_buf[1].revents & POLLIN)
-                fd_ready = true;
+            if (rc >= 1)
+            {
+                if (poll_buf[0].revents & POLLIN)
+                    socket_ready = true;
+                if (poll_buf[1].revents & POLLIN)
+                    fd_ready = true;
+            }
 #endif
         }
 
@@ -239,12 +243,15 @@ KeeperTCPHandler::KeeperTCPHandler(
     KeeperTCPHandler::registerConnection(this);
 }
 
-void KeeperTCPHandler::sendHandshake(bool has_leader)
+void KeeperTCPHandler::sendHandshake(bool has_leader, bool & use_compression)
 {
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     if (has_leader)
     {
-        Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
+        if (use_compression)
+            Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION, *out);
+        else
+            Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
     }
     else
     {
@@ -266,7 +273,7 @@ void KeeperTCPHandler::run()
     runImpl();
 }
 
-Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
+Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool & use_compression)
 {
     int32_t protocol_version;
     int64_t last_zxid_seen;
@@ -279,8 +286,10 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
 
     Coordination::read(protocol_version, *in);
 
-    if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION)
+    if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION && protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected protocol version: {}", toString(protocol_version));
+
+    use_compression = (protocol_version == Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION);
 
     Coordination::read(last_zxid_seen, *in);
     Coordination::read(timeout_ms, *in);
@@ -306,8 +315,12 @@ void KeeperTCPHandler::runImpl()
     socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
 
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket());
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket());
+    in.emplace(socket());
+    out.emplace(socket());
+    compressed_in.reset();
+    compressed_out.reset();
+
+    bool use_compression = false;
 
     if (in->eof())
     {
@@ -340,7 +353,7 @@ void KeeperTCPHandler::runImpl()
     try
     {
         int32_t handshake_length = header;
-        auto client_timeout = receiveHandshake(handshake_length);
+        auto client_timeout = receiveHandshake(handshake_length, use_compression);
 
         if (client_timeout.totalMilliseconds() == 0)
             client_timeout = Poco::Timespan(Coordination::DEFAULT_SESSION_TIMEOUT_MS * Poco::Timespan::MILLISECONDS);
@@ -364,24 +377,30 @@ void KeeperTCPHandler::runImpl()
         catch (const Exception & e)
         {
             LOG_WARNING(log, "Cannot receive session id {}", e.displayText());
-            sendHandshake(false);
+            sendHandshake(/* has_leader */ false, use_compression);
             return;
 
         }
 
-        sendHandshake(true);
+        sendHandshake(/* has_leader */ true, use_compression);
     }
     else
     {
         LOG_WARNING(log, "Ignoring user request, because the server is not active yet");
-        sendHandshake(false);
+        sendHandshake(/* has_leader */ false, use_compression);
         return;
     }
 
-    auto response_fd = poll_wrapper->getResponseFD();
-    auto response_callback = [this, response_fd] (const Coordination::ZooKeeperResponsePtr & response)
+    if (use_compression)
     {
-        if (!responses->push(response))
+        compressed_in.emplace(*in);
+        compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4",{}));
+    }
+
+    auto response_fd = poll_wrapper->getResponseFD();
+    auto response_callback = [responses_ = this->responses, response_fd](const Coordination::ZooKeeperResponsePtr & response)
+    {
+        if (!responses_->push(response))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push response with xid {} and zxid {}",
                 response->xid,
@@ -412,7 +431,7 @@ void KeeperTCPHandler::runImpl()
         {
             using namespace std::chrono_literals;
 
-            PollResult result = poll_wrapper->poll(session_timeout, in);
+            PollResult result = poll_wrapper->poll(session_timeout, *in);
             log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
@@ -464,7 +483,8 @@ void KeeperTCPHandler::runImpl()
                 updateStats(response);
                 packageSent();
 
-                response->write(*out);
+                response->write(getWriteBuffer());
+                flushWriteBuffer();
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {
@@ -522,7 +542,7 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
         try
         {
             String res = command_ptr->run();
-            out->write(res.data(), res.size());
+            out->write(res.data(),res.size());
             out->next();
         }
         catch (...)
@@ -534,19 +554,41 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
     }
 }
 
+WriteBuffer & KeeperTCPHandler::getWriteBuffer()
+{
+    if (compressed_out)
+        return *compressed_out;
+    return *out;
+}
+
+void KeeperTCPHandler::flushWriteBuffer()
+{
+    if (compressed_out)
+        compressed_out->next();
+    out->next();
+}
+
+ReadBuffer & KeeperTCPHandler::getReadBuffer()
+{
+    if (compressed_in)
+        return *compressed_in;
+    return *in;
+}
+
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
+    auto & read_buffer = getReadBuffer();
     int32_t length;
-    Coordination::read(length, *in);
+    Coordination::read(length, read_buffer);
     int32_t xid;
-    Coordination::read(xid, *in);
+    Coordination::read(xid, read_buffer);
 
     Coordination::OpNum opnum;
-    Coordination::read(opnum, *in);
+    Coordination::read(opnum, read_buffer);
 
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
-    request->readImpl(*in);
+    request->readImpl(read_buffer);
 
     if (!keeper_dispatcher->putRequest(request, session_id))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
