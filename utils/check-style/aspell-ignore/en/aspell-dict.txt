@@ -344,6 +344,7 @@ Hypot
 IANA
 IDE
 IDEs
+IDNA
 IMDS
 INFILE
 INSERTed
@@ -701,8 +702,6 @@ PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
-TotalPrimaryKeyBytesInMemory
-TotalPrimaryKeyBytesInMemoryAllocated
 PrivateKeyPassphraseHandler
 ProfileEvents
 Profiler
@@ -714,6 +713,7 @@ Promtail
 Protobuf
 ProtobufSingle
 ProxySQL
+Punycode
 PyArrow
 PyCharm
 QEMU
@@ -912,6 +912,7 @@ ThreadsInOvercommitTracker
 Timeunit
 TinyLog
 Tkachenko
+ToASCII
 ToCenterChild
 ToChildren
 ToGeo
@@ -920,10 +921,13 @@ ToIPv
 ToParent
 ToSnowflake
 ToString
+ToUnicode
 Toolset
 TopK
 TotalBytesOfMergeTreeTables
 TotalPartsOfMergeTreeTables
+TotalPrimaryKeyBytesInMemory
+TotalPrimaryKeyBytesInMemoryAllocated
 TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
@@ -1651,6 +1655,8 @@ hyvor
 icosahedron
 icudata
 idempotency
+idnaDecode
+idnaEncode
 ifNotFinite
 ifNull
 iframe
@@ -1790,6 +1796,7 @@ llvm
 loadDefaultCAFile
 localhost
 localread
+loess
 logTrace
 logagent
 loghouse
@@ -1848,14 +1855,14 @@ metrica
 metroHash
 mfedotov
 minMap
+minSampleSizeContinuous
+minSampleSizeConversion
 mindsdb
 minimalistic
 mininum
 miniselect
 minmap
 minmax
-minSampleSizeContinuous
-minSampleSizeConversion
 mins
 misconfiguration
 mispredictions
@@ -2075,6 +2082,8 @@ pseudorandom
 pseudorandomize
 psql
 ptrs
+punycodeDecode
+punycodeEncode
 pushdown
 pwrite
 py
@@ -2239,6 +2248,7 @@ sequenceCount
 sequenceMatch
 sequenceNextNode
 seriesPeriodDetectFFT
+seriesDecomposeSTL
 serverTimeZone
 serverTimezone
 serverUUID
@@ -2521,6 +2531,8 @@ trimRight
 trunc
 tryBase
 tryDecrypt
+tryIdnaEncode
+tryPunycodeDecode
 tskv
 tsv
 tui
