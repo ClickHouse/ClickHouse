@@ -297,18 +297,19 @@ struct ByteDamerauLevenshteinDistanceImpl
         if (haystack_size == needle_size && memcmp(haystack, needle, haystack_size) == 0)
             return 0;
 
-        /// Implements the algorithm for optimal string alignment distance:
+        /// Implements the algorithm for optimal string alignment distance from
+        /// https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance#Optimal_string_alignment_distance
 
         /// Dynamically allocate memory for the 2D array
         /// Allocating a 2D array, for convenience starts is an array of pointers to the start of the rows.
-        std::vector<int> rows((needle_size + 1) * (haystack_size + 1));
+        std::vector<int> d((needle_size + 1) * (haystack_size + 1));
         std::vector<int *> starts(haystack_size + 1);
 
         /// Setting the pointers in starts to the beginning of (needle_size + 1)-long intervals.
         /// Also initialize the row values based on the mentioned algorithm.
         for (size_t i = 0; i <= haystack_size; ++i)
         {
-            starts[i] = rows.data() + (needle_size + 1) * i;
+            starts[i] = d.data() + (needle_size + 1) * i;
             starts[i][0] = static_cast<int>(i);
         }
 
@@ -322,9 +323,9 @@ struct ByteDamerauLevenshteinDistanceImpl
             for (size_t j = 1; j <= needle_size; ++j)
             {
                 int cost = (haystack[i - 1] == needle[j - 1]) ? 0 : 1;
-                starts[i][j] = std::min(starts[i - 1][j - 1] + cost,    /// substitution
-                                   std::min(starts[i][j - 1] + 1,       /// insertion
-                                            starts[i - 1][j] + 1)       /// deletion
+                starts[i][j] = std::min(starts[i - 1][j] + 1,                  /// deletion
+                                        std::min(starts[i][j - 1] + 1,         /// insertion
+                                                 starts[i - 1][j - 1] + cost)  /// substitution
                                );
                 if (i > 1 && j > 1 && haystack[i - 1] == needle[j - 2] && haystack[i - 2] == needle[j - 1])
                     starts[i][j] = std::min(starts[i][j], starts[i - 2][j - 2] + 1); /// transposition
@@ -402,6 +403,7 @@ struct ByteJaroSimilarityImpl
             s1i++;
             s2i++;
         }
+
         double m = static_cast<double>(matching_characters);
         double jaro_similarity = 1.0 / 3.0  * (m / static_cast<double>(s1len)
                                             + m / static_cast<double>(s2len)
@@ -432,10 +434,7 @@ struct ByteJaroWinklerSimilarityImpl
 
         ResultType jaro_winkler_similarity = ByteJaroSimilarityImpl::process(haystack, haystack_size, needle, needle_size);
 
-        if (jaro_winkler_similarity== -1.0)
-            return -1.0;
-
-        if (jaro_winkler_similarity> boost_threshold)
+        if (jaro_winkler_similarity > boost_threshold)
         {
             const int common_length = std::min(max_prefix_length, std::min(s1len, s2len));
             int common_prefix = 0;
