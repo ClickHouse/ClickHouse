@@ -2,5 +2,7 @@
     <merge_tree>
         <!-- 10 seconds (default is 1 minute) -->
         <zookeeper_session_expiration_check_period>10</zookeeper_session_expiration_check_period>
+
+        <allow_experimental_block_number_column>0</allow_experimental_block_number_column>
     </merge_tree>
 </clickhouse>
