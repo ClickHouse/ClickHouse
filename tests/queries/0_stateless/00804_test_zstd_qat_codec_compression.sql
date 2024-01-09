@@ -4,8 +4,7 @@
 
 SET enable_zstd_qat_codec = 1;
 
--- Suppress test failures because stderr contains warning "Initialization of hardware-assisted ZSTD failed, falling
--- back to software ZSTD coded."
+-- Suppress test failures because stderr contains warning "Initialization of hardware-assisted ZSTD_QAT codec failed, falling back to software ZSTD coded."
 SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS compression_codec;
