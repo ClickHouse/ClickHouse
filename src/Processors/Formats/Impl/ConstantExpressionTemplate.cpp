@@ -604,7 +604,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
             buf[bytes_to_copy] = 0;
 
             /// Skip leading zeroes - we don't want any funny octal business
-            auto* non_zero_buf = find_first_not_symbols<'0'>(buf, buf + bytes_to_copy);
+            char * non_zero_buf = find_first_not_symbols<'0'>(buf, buf + bytes_to_copy);
 
             char * pos_double = non_zero_buf;
             errno = 0;
