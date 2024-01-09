@@ -1,11 +1,12 @@
-#include <Columns/ColumnSparse.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/WeakHash.h>
-#include <Common/SipHash.h>
-#include <Common/HashTable/Hash.h>
+#include <Columns/ColumnsCommon.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
+#include <Common/WeakHash.h>
+#include <Common/iota.h>
 
 #include <algorithm>
 #include <bit>
@@ -499,8 +500,7 @@ void ColumnSparse::getPermutationImpl(IColumn::PermutationSortDirection directio
     res.resize(_size);
     if (offsets->empty())
     {
-        for (size_t i = 0; i < _size; ++i)
-            res[i] = i;
+        iota(res.data(), _size, IColumn::Permutation::value_type(0));
         return;
     }
 

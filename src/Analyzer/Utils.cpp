@@ -326,7 +326,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
     }
 }
 
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node)
+QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join)
 {
     QueryTreeNodes result;
 
@@ -357,6 +357,8 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node)
             {
                 auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
                 nodes_to_process.push_front(array_join_node.getTableExpression());
+                if (add_array_join)
+                    result.push_back(std::move(node_to_process));
                 break;
             }
             case QueryTreeNodeType::JOIN:
@@ -665,6 +667,22 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
     CollectIdentifiersFullNamesVisitor visitor(out);
     visitor.visit(node);
     return out;
+}
+
+QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context)
+{
+    auto enum_literal = std::make_shared<ConstantValue>(result_type->getName(), std::make_shared<DataTypeString>());
+    auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
+
+    auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
+    QueryTreeNodes arguments{ std::move(node), std::move(enum_literal_node) };
+
+    auto function_node = std::make_shared<FunctionNode>("_CAST");
+    function_node->getArguments().getNodes() = std::move(arguments);
+
+    function_node->resolveAsFunction(cast_function->build(function_node->getArgumentColumns()));
+
+    return function_node;
 }
 
 }

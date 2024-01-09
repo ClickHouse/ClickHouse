@@ -44,7 +44,7 @@ static void makeFdNonBlocking(int fd)
 {
     bool result = tryMakeFdNonBlocking(fd);
     if (!result)
-        throwFromErrno("Cannot set non-blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
+        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot set non-blocking mode of pipe");
 }
 
 static bool tryMakeFdBlocking(int fd)
@@ -63,7 +63,7 @@ static void makeFdBlocking(int fd)
 {
     bool result = tryMakeFdBlocking(fd);
     if (!result)
-        throwFromErrno("Cannot set blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
+        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot set blocking mode of pipe");
 }
 
 static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_milliseconds)
@@ -78,7 +78,7 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
         if (res < 0)
         {
             if (errno != EINTR)
-                throwFromErrno("Cannot poll", ErrorCodes::CANNOT_POLL);
+                throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll");
 
             const auto elapsed = watch.elapsedMilliseconds();
             if (timeout_milliseconds <= elapsed)
@@ -177,7 +177,7 @@ public:
                 ssize_t res = ::read(stdout_fd, internal_buffer.begin(), internal_buffer.size());
 
                 if (-1 == res && errno != EINTR)
-                    throwFromErrno("Cannot read from pipe", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+                    throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from pipe");
 
                 if (res == 0)
                     break;
@@ -261,7 +261,7 @@ public:
             ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
 
             if ((-1 == res || 0 == res) && errno != EINTR)
-                throwFromErrno("Cannot write into pipe", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
+                throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot write into pipe");
 
             if (res > 0)
                 bytes_written += res;

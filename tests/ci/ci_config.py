@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 
+from enum import Enum
 import logging
-
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
+
+from integration_test_images import IMAGES
+
+
+class Labels(Enum):
+    DO_NOT_TEST_LABEL = "do not test"
 
 
 @dataclass
@@ -23,6 +29,15 @@ class DigestConfig:
 
 
 @dataclass
+class LabelConfig:
+    """
+    class to configure different CI scenarious per GH label
+    """
+
+    run_jobs: Iterable[str] = frozenset()
+
+
+@dataclass
 class JobConfig:
     """
     contains config parameter relevant for job execution in CI workflow
@@ -37,6 +52,7 @@ class JobConfig:
     timeout: Optional[int] = None
     num_batches: int = 1
     run_by_label: str = ""
+    run_always: bool = False
 
 
 @dataclass
@@ -56,10 +72,20 @@ class BuildConfig:
             include_paths=[
                 "./src",
                 "./contrib/*-cmake",
+                "./contrib/consistent-hashing",
+                "./contrib/murmurhash",
+                "./contrib/libfarmhash",
+                "./contrib/pdqsort",
+                "./contrib/cityhash102",
+                "./contrib/sparse-checkout",
+                "./contrib/libmetrohash",
+                "./contrib/update-submodules.sh",
+                "./contrib/CMakeLists.txt",
                 "./cmake",
                 "./base",
                 "./programs",
                 "./packages",
+                "./docker/packager/packager",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/binary-builder"],
@@ -94,7 +120,7 @@ class TestConfig:
 BuildConfigs = Dict[str, BuildConfig]
 BuildsReportConfig = Dict[str, BuildReportConfig]
 TestConfigs = Dict[str, TestConfig]
-
+LabelConfigs = Dict[str, LabelConfig]
 
 # common digests configs
 compatibility_check_digest = DigestConfig(
@@ -130,27 +156,13 @@ upgrade_check_digest = DigestConfig(
 integration_check_digest = DigestConfig(
     include_paths=["./tests/ci/integration_test_check.py", "./tests/integration"],
     exclude_files=[".md"],
-    docker=[
-        "clickhouse/dotnet-client",
-        "clickhouse/integration-helper",
-        "clickhouse/integration-test",
-        "clickhouse/integration-tests-runner",
-        "clickhouse/kerberized-hadoop",
-        "clickhouse/kerberos-kdc",
-        "clickhouse/mysql-golang-client",
-        "clickhouse/mysql-java-client",
-        "clickhouse/mysql-js-client",
-        "clickhouse/mysql-php-client",
-        "clickhouse/nginx-dav",
-        "clickhouse/postgresql-java-client",
-    ],
+    docker=IMAGES.copy(),
 )
-# FIXME: which tests are AST_FUZZER_TEST? just python?
-# FIXME: should ast fuzzer test be non-skipable?
+
 ast_fuzzer_check_digest = DigestConfig(
-    include_paths=["./tests/ci/ast_fuzzer_check.py"],
-    exclude_files=[".md"],
-    docker=["clickhouse/fuzzer"],
+    # include_paths=["./tests/ci/ast_fuzzer_check.py"],
+    # exclude_files=[".md"],
+    # docker=["clickhouse/fuzzer"],
 )
 unit_check_digest = DigestConfig(
     include_paths=["./tests/ci/unit_tests_check.py"],
@@ -166,9 +178,9 @@ perf_check_digest = DigestConfig(
     docker=["clickhouse/performance-comparison"],
 )
 sqllancer_check_digest = DigestConfig(
-    include_paths=["./tests/ci/sqlancer_check.py"],
-    exclude_files=[".md"],
-    docker=["clickhouse/sqlancer-test"],
+    # include_paths=["./tests/ci/sqlancer_check.py"],
+    # exclude_files=[".md"],
+    # docker=["clickhouse/sqlancer-test"],
 )
 sqllogic_check_digest = DigestConfig(
     include_paths=["./tests/ci/sqllogic_test.py"],
@@ -188,20 +200,9 @@ bugfix_validate_check = DigestConfig(
         "./tests/ci/bugfix_validate_check.py",
     ],
     exclude_files=[".md"],
-    docker=[
+    docker=IMAGES.copy()
+    + [
         "clickhouse/stateless-test",
-        "clickhouse/dotnet-client",
-        "clickhouse/integration-helper",
-        "clickhouse/integration-test",
-        "clickhouse/integration-tests-runner",
-        "clickhouse/kerberized-hadoop",
-        "clickhouse/kerberos-kdc",
-        "clickhouse/mysql-golang-client",
-        "clickhouse/mysql-java-client",
-        "clickhouse/mysql-js-client",
-        "clickhouse/mysql-php-client",
-        "clickhouse/nginx-dav",
-        "clickhouse/postgresql-java-client",
     ],
 )
 # common test params
@@ -226,6 +227,7 @@ upgrade_test_common_params = {
 astfuzzer_test_common_params = {
     "digest": ast_fuzzer_check_digest,
     "run_command": "ast_fuzzer_check.py",
+    "run_always": True,
 }
 integration_test_common_params = {
     "digest": integration_check_digest,
@@ -242,6 +244,7 @@ perf_test_common_params = {
 sqllancer_test_common_params = {
     "digest": sqllancer_check_digest,
     "run_command": "sqlancer_check.py",
+    "run_always": True,
 }
 sqllogic_test_params = {
     "digest": sqllogic_check_digest,
@@ -266,6 +269,13 @@ class CiConfig:
     builds_report_config: BuildsReportConfig
     test_configs: TestConfigs
     other_jobs_configs: TestConfigs
+    label_configs: LabelConfigs
+
+    def get_label_config(self, label_name: str) -> Optional[LabelConfig]:
+        for label, config in self.label_configs.items():
+            if label_name == label:
+                return config
+        return None
 
     def get_job_config(self, check_name: str) -> JobConfig:
         res = None
@@ -415,6 +425,9 @@ class CiConfig:
 
 
 CI_CONFIG = CiConfig(
+    label_configs={
+        Labels.DO_NOT_TEST_LABEL.value: LabelConfig(run_jobs=["Style check"]),
+    },
     build_config={
         "package_release": BuildConfig(
             name="package_release",
@@ -609,9 +622,7 @@ CI_CONFIG = CiConfig(
         "Style check": TestConfig(
             "",
             job_config=JobConfig(
-                digest=DigestConfig(
-                    include_paths=["."], exclude_dirs=[".git", "__pycache__"]
-                )
+                run_always=True,
             ),
         ),
         "tests bugfix validate check": TestConfig(
@@ -847,6 +858,7 @@ CI_CONFIG.validate()
 
 # checks required by Mergeable Check
 REQUIRED_CHECKS = [
+    "PR Check",
     "ClickHouse build check",
     "ClickHouse special build check",
     "Docs Check",

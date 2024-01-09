@@ -707,7 +707,7 @@ KeyMetadata::iterator FileCache::addFileSegment(
             stash_records.emplace(
                 stash_key, stash->queue->add(locked_key.getKeyMetadata(), offset, 0, *lock));
 
-            if (stash->queue->getElementsCount(*lock) > stash->queue->getElementsLimit())
+            if (stash->queue->getElementsCount(*lock) > stash->queue->getElementsLimit(*lock))
                 stash->queue->pop(*lock);
 
             result_state = FileSegment::State::DETACHED;
@@ -748,7 +748,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
     LOG_TEST(
         log, "Trying to reserve space ({} bytes) for {}:{}, current usage {}/{}",
         size, file_segment.key(), file_segment.offset(),
-        main_priority->getSize(cache_lock), main_priority->getSizeLimit());
+        main_priority->getSize(cache_lock), main_priority->getSizeLimit(cache_lock));
 
     /// In case of per query cache limit (by default disabled), we add/remove entries from both
     /// (main_priority and query_priority) priority queues, but iterate entries in order of query_priority,
@@ -760,7 +760,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
     {
         query_priority = &query_context->getPriority();
 
-        const bool query_limit_exceeded = query_priority->getSize(cache_lock) + size > query_priority->getSizeLimit();
+        const bool query_limit_exceeded = query_priority->getSize(cache_lock) + size > query_priority->getSizeLimit(cache_lock);
         if (query_limit_exceeded && !query_context->recacheOnFileCacheQueryLimitExceeded())
         {
             LOG_TEST(log, "Query limit exceeded, space reservation failed, "
@@ -771,7 +771,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
 
         LOG_TEST(
             log, "Using query limit, current usage: {}/{} (while reserving for {}:{})",
-            query_priority->getSize(cache_lock), query_priority->getSizeLimit(),
+            query_priority->getSize(cache_lock), query_priority->getSizeLimit(cache_lock),
             file_segment.key(), file_segment.offset());
     }
 
@@ -1066,9 +1066,11 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
 
             bool limits_satisfied;
             IFileCachePriority::IteratorPtr cache_it;
+            size_t size_limit = 0;
 
             {
                 auto lock = lockCache();
+                size_limit = main_priority->getSizeLimit(lock);
 
                 limits_satisfied = main_priority->canFit(size, lock);
                 if (limits_satisfied)
@@ -1118,7 +1120,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir)
                     log,
                     "Cache capacity changed (max size: {}), "
                     "cached file `{}` does not fit in cache anymore (size: {})",
-                    main_priority->getSizeLimit(), offset_it->path().string(), size);
+                    size_limit, offset_it->path().string(), size);
 
                 fs::remove(offset_it->path());
             }
@@ -1222,7 +1224,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
     std::lock_guard lock(apply_settings_mutex);
 
-    if (metadata.setBackgroundDownloadQueueSizeLimit(new_settings.background_download_queue_size_limit))
+    if (new_settings.background_download_queue_size_limit != actual_settings.background_download_queue_size_limit
+        && metadata.setBackgroundDownloadQueueSizeLimit(new_settings.background_download_queue_size_limit))
     {
         LOG_INFO(log, "Changed background_download_queue_size from {} to {}",
                  actual_settings.background_download_queue_size_limit,
@@ -1231,24 +1234,57 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         actual_settings.background_download_queue_size_limit = new_settings.background_download_queue_size_limit;
     }
 
-    bool updated;
-    try
+    if (new_settings.background_download_threads != actual_settings.background_download_threads)
     {
-        updated = metadata.setBackgroundDownloadThreads(new_settings.background_download_threads);
-    }
-    catch (...)
-    {
-        actual_settings.background_download_threads = metadata.getBackgroundDownloadThreads();
-        throw;
+        bool updated = false;
+        try
+        {
+            updated = metadata.setBackgroundDownloadThreads(new_settings.background_download_threads);
+        }
+        catch (...)
+        {
+            actual_settings.background_download_threads = metadata.getBackgroundDownloadThreads();
+            throw;
+        }
+
+        if (updated)
+        {
+            LOG_INFO(log, "Changed background_download_threads from {} to {}",
+                    actual_settings.background_download_threads,
+                    new_settings.background_download_threads);
+
+            actual_settings.background_download_threads = new_settings.background_download_threads;
+        }
     }
 
-    if (updated)
-    {
-        LOG_INFO(log, "Changed background_download_threads from {} to {}",
-                 actual_settings.background_download_threads,
-                 new_settings.background_download_threads);
 
-        actual_settings.background_download_threads = new_settings.background_download_threads;
+    if (new_settings.max_size != actual_settings.max_size
+        || new_settings.max_elements != actual_settings.max_elements)
+    {
+        auto cache_lock = lockCache();
+
+        bool updated = false;
+        try
+        {
+            updated = main_priority->modifySizeLimits(
+                new_settings.max_size, new_settings.max_elements, new_settings.slru_size_ratio, cache_lock);
+        }
+        catch (...)
+        {
+            actual_settings.max_size = main_priority->getSizeLimit(cache_lock);
+            actual_settings.max_elements = main_priority->getElementsLimit(cache_lock);
+            throw;
+        }
+
+        if (updated)
+        {
+            LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
+                    actual_settings.max_size, new_settings.max_size,
+                    actual_settings.max_elements, new_settings.max_elements);
+
+            actual_settings.max_size = main_priority->getSizeLimit(cache_lock);
+            actual_settings.max_elements = main_priority->getElementsLimit(cache_lock);
+        }
     }
 }
 

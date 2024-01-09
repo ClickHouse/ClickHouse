@@ -54,6 +54,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"storage_policy", std::make_shared<DataTypeString>()},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"total_bytes_uncompressed", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
@@ -103,7 +104,7 @@ ColumnPtr getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr 
     MutableColumnPtr database_column = ColumnString::create();
     MutableColumnPtr engine_column;
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, sample);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
     if (dag)
     {
         bool filter_by_engine = false;
@@ -514,6 +515,15 @@ protected:
                     auto total_bytes = table->totalBytes(settings);
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
+                    if (total_bytes_uncompressed)
+                        res_columns[res_index++]->insert(*total_bytes_uncompressed);
                     else
                         res_columns[res_index++]->insertDefault();
                 }
