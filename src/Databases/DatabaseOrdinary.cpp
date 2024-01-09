@@ -283,7 +283,16 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
             return;
 
         auto has_metadata = rmt->hasMetadataInZooKeeper();
-        if (has_metadata.has_value())
+        if (!has_metadata.has_value())
+        {
+            LOG_INFO
+            (
+                log,
+                "No connection to ZooKeeper, can't restore metadata for {} in ZooKeeper after conversion. Run SYSTEM RESTORE REPLICA while connected to ZooKeeper.",
+                backQuote(name.getFullName())
+            );
+        }
+        else
         {
             if (*has_metadata)
             {
@@ -296,23 +305,24 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
             }
             else
             {
-                rmt->restoreMetadataInZooKeeper();
-                LOG_INFO
-                (
-                    log,
-                    "Metadata in ZooKeeper for {} is restored.",
-                    backQuote(name.getFullName())
-                );
+                try
+                {
+                    rmt->restoreMetadataInZooKeeper();
+                    LOG_INFO
+                    (
+                        log,
+                        "Metadata in ZooKeeper for {} is restored.",
+                        backQuote(name.getFullName())
+                    );
+                }
+                catch (...)
+                {
+                    /// Something unpredicted happened
+                    /// Remove flag to allow server to restart
+                    fs::remove(convert_to_replicated_flag_path);
+                    throw;
+                }
             }
-        }
-        else
-        {
-            LOG_INFO
-            (
-                log,
-                "No connection to ZooKeeper, can't restore metadata for {} in ZooKeeper after conversion. Run SYSTEM RESTORE REPLICA while connected to ZooKeeper.",
-                backQuote(name.getFullName())
-            );
         }
         fs::remove(convert_to_replicated_flag_path);
         LOG_INFO
