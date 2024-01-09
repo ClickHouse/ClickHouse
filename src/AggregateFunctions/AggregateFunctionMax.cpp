@@ -8,6 +8,11 @@ namespace DB
 {
 struct Settings;
 
+namespace ErrorCodes
+{
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 namespace
 {
 
@@ -114,10 +119,6 @@ createAggregateFunctionMax(const std::string & name, const DataTypes & argument_
 void registerAggregateFunctionMax(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("max", createAggregateFunctionMax, AggregateFunctionFactory::CaseInsensitive);
-    //
-    //    /// The functions below depend on the order of data.
-    //    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
-    //    factory.registerFunction("argMax", { createAggregateFunctionArgMax, properties });
 }
 
 }

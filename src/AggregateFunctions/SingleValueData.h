@@ -15,10 +15,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NOT_IMPLEMENTED;
 extern const int TOO_LARGE_STRING_SIZE;
-extern const int LOGICAL_ERROR;
 }
 
 /** Aggregate functions that store one of passed values.

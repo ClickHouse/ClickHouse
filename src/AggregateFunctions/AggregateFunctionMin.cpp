@@ -9,6 +9,11 @@ namespace DB
 {
 struct Settings;
 
+namespace ErrorCodes
+{
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 namespace
 {
 
@@ -109,21 +114,11 @@ createAggregateFunctionMin(const std::string & name, const DataTypes & argument_
 {
     return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionMin>(name, argument_types, parameters, settings));
 }
-
-//AggregateFunctionPtr createAggregateFunctionArgMin(
-//    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
-//{
-//    return AggregateFunctionPtr(createAggregateFunctionArgMinMax<AggregateFunctionMinData>(name, argument_types, parameters, settings));
-//}
 }
 
 void registerAggregateFunctionMin(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("min", createAggregateFunctionMin, AggregateFunctionFactory::CaseInsensitive);
-
-    //    /// The functions below depend on the order of data.
-    //    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
-    //    factory.registerFunction("argMin", { createAggregateFunctionArgMin, properties });
 }
 
 }
