@@ -92,7 +92,6 @@ namespace ErrorCodes
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
-    extern const int LOGICAL_ERROR;
 }
 
 StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
