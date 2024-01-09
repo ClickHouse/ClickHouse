@@ -1,0 +1,34 @@
+-- { echo }
+select count() from data_r1;
+100
+select replica, length(groupArray(partition)) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
+1	5
+2	5
+3	5
+4	5
+system drop cluster replica data_r3;
+system drop cluster replica data_r4;
+select table, is_readonly from system.replicas where database = currentDatabase() and table like 'data_%' order by 1;
+data_r1	0
+data_r2	0
+data_r3	1
+data_r4	1
+system sync replica data_r1 cluster;
+select replica, length(groupArray(partition)) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
+1	10
+2	10
+select count() from data_r4;
+100
+system restart replica data_r3;
+system restart replica data_r4;
+select table, is_readonly from system.replicas where database = currentDatabase() and table like 'data_%' order by 1;
+data_r1	0
+data_r2	0
+data_r3	1
+data_r4	1
+system sync replica data_r1 cluster;
+select replica, length(groupArray(partition)) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
+1	10
+2	10
+select count() from data_r4;
+100

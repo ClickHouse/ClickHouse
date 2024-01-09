@@ -1,0 +1,27 @@
+100000
+Waiting for some rows to be mutated
+Some rows mutated
+-- { echo }
+select _table, count(), countIf(value <= 0), length(groupArrayDistinct(_partition_id)) from merge(currentDatabase(), '^data_') group by _table order by 1 settings cluster_query_shards=0;
+data_r1	50000	50000	5
+data_r2	50000	50000	5
+data_r3	50000	50000	5
+data_r4	50000	50000	5
+select count(), countIf(value <= 0) from data_r1;
+100000	100000
+select replica, if(length(groupArray(partition)) as cnt == 5, cnt, (cnt - 1)::UInt64) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
+1	5
+2	5
+3	5
+4	5
+select partition, if(count() as cnt == 2, cnt, (cnt - 1)::UInt64) from system.cluster_partitions array join active_replicas as replica where database = currentDatabase() and table = 'data_r1' group by 1 order by 1;
+0	2
+1	2
+2	2
+3	2
+4	2
+5	2
+6	2
+7	2
+8	2
+9	2

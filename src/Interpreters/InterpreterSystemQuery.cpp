@@ -629,6 +629,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_REPLICA:
             dropReplica(query);
             break;
+        case Type::DROP_CLUSTER_REPLICA:
+            dropClusterReplica(query);
+            break;
         case Type::DROP_DATABASE_REPLICA:
             dropDatabaseReplica(query);
             break;
@@ -936,6 +939,14 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
     }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
+}
+
+void InterpreterSystemQuery::dropClusterReplica(ASTSystemQuery &)
+{
+    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(DatabaseCatalog::instance().getTable(table_id, getContext()).get()))
+        storage_replicated->dropClusterReplica(getContext());
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is not ReplicatedMergeTree", table_id.getNameForLogs());
 }
 
 bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table)
@@ -1288,6 +1299,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::DROP_REPLICA:
+        case Type::DROP_CLUSTER_REPLICA:
         case Type::DROP_DATABASE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase(), query.getTable());

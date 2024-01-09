@@ -1,0 +1,15 @@
+-- { echoOn }
+alter table data_r1 update value = value*10 where 1 settings mutations_sync=2;
+-- Only after sync replica we could check any data, since SELECT will do distributed query.
+system sync replica data_r1 cluster;
+system sync replica data_r2 cluster;
+system sync replica data_r3 cluster;
+system sync replica data_r4 cluster;
+select arraySort(groupArray(value)) from data_r1;
+[0,10,20,30,40,50,60,70,80,90]
+select arraySort(groupArray(value)) from data_r2;
+[0,10,20,30,40,50,60,70,80,90]
+select arraySort(groupArray(value)) from data_r3;
+[0,10,20,30,40,50,60,70,80,90]
+select arraySort(groupArray(value)) from data_r4;
+[0,10,20,30,40,50,60,70,80,90]

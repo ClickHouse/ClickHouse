@@ -1,0 +1,17 @@
+-- { echoOn }
+alter table data_r1 drop partition (0, 0) settings mutations_sync=2;
+-- Only after sync replica we could check any data, since SELECT will do distributed query.
+system sync replica data_r1 cluster;
+system sync replica data_r2 cluster;
+system sync replica data_r3 cluster;
+system sync replica data_r4 cluster;
+-- FIXME: why this is required?
+
+select count(key) from data_r1;
+15
+select count(key) from data_r2;
+15
+select count(key) from data_r3;
+15
+select count(key) from data_r4;
+15
