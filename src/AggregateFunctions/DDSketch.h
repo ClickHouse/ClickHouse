@@ -26,8 +26,8 @@ namespace ErrorCodes
 class BaseQuantileDDSketch
 {
 public:
-    BaseQuantileDDSketch(std::unique_ptr<KeyMapping> mapping_, std::unique_ptr<DenseStore> store_,
-                         std::unique_ptr<DenseStore> negative_store_, Float64 zero_count_)
+    BaseQuantileDDSketch(std::unique_ptr<DDSketchKeyMapping> mapping_, std::unique_ptr<DDSketchDenseStore> store_,
+                         std::unique_ptr<DDSketchDenseStore> negative_store_, Float64 zero_count_)
         : mapping(std::move(mapping_)), store(std::move(store_)), negative_store(std::move(negative_store_)),
           zero_count(zero_count_),
           count(static_cast<Float64>(negative_store->count + zero_count_ + store->count)) {}
@@ -85,9 +85,9 @@ public:
     void copy(const BaseQuantileDDSketch& other)
     {
         Float64 rel_acc = (other.mapping->getGamma() - 1) / (other.mapping->getGamma() + 1);
-        mapping = std::make_unique<LogarithmicMapping>(rel_acc);
-        store = std::make_unique<DenseStore>();
-        negative_store = std::make_unique<DenseStore>();
+        mapping = std::make_unique<DDSketchLogarithmicMapping>(rel_acc);
+        store = std::make_unique<DDSketchDenseStore>();
+        negative_store = std::make_unique<DDSketchDenseStore>();
         store->copy(other.store.get());
         negative_store->copy(other.negative_store.get());
         zero_count = other.zero_count;
@@ -187,9 +187,9 @@ public:
     }
 
 private:
-    std::unique_ptr<KeyMapping> mapping;
-    std::unique_ptr<DenseStore> store;
-    std::unique_ptr<DenseStore> negative_store;
+    std::unique_ptr<DDSketchKeyMapping> mapping;
+    std::unique_ptr<DDSketchDenseStore> store;
+    std::unique_ptr<DDSketchDenseStore> negative_store;
     Float64 zero_count;
     Float64 count;
     DDSketchEncoding enc;
@@ -197,12 +197,12 @@ private:
 
     BaseQuantileDDSketch changeMapping(Float64 new_gamma) const
     {
-        auto new_mapping = std::make_unique<LogarithmicMapping>((new_gamma - 1) / (new_gamma + 1));
+        auto new_mapping = std::make_unique<DDSketchLogarithmicMapping>((new_gamma - 1) / (new_gamma + 1));
 
-        auto new_positive_store = std::make_unique<DenseStore>();
-        auto new_negative_store = std::make_unique<DenseStore>();
+        auto new_positive_store = std::make_unique<DDSketchDenseStore>();
+        auto new_negative_store = std::make_unique<DDSketchDenseStore>();
 
-        auto remap_store = [this, &new_mapping](DenseStore& old_store, std::unique_ptr<DenseStore>& target_store)
+        auto remap_store = [this, &new_mapping](DDSketchDenseStore& old_store, std::unique_ptr<DDSketchDenseStore>& target_store)
         {
             for (int i = 0; i < old_store.length(); ++i)
             {
@@ -239,9 +239,9 @@ class DDSketch : public BaseQuantileDDSketch
 {
 public:
     explicit DDSketch(Float64 relative_accuracy = 0.01)
-        : BaseQuantileDDSketch(std::make_unique<LogarithmicMapping>(relative_accuracy),
-                               std::make_unique<DenseStore>(),
-                               std::make_unique<DenseStore>(), 0.0) {}
+        : BaseQuantileDDSketch(std::make_unique<DDSketchLogarithmicMapping>(relative_accuracy),
+                               std::make_unique<DDSketchDenseStore>(),
+                               std::make_unique<DDSketchDenseStore>(), 0.0) {}
 };
 
 }

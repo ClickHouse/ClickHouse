@@ -11,6 +11,7 @@ FROM
     SELECT arrayJoin([toInt64(number), number - 10]) AS number
     FROM numbers(0, 10)
 );
+SELECT round(quantileDDSketch(0.01, 0.5)(number - 10), 2) from numbers(21)
 
 SELECT '3'; -- all values are negative
 SELECT round(quantileDDSketch(0.01, 0.99)(-number), 2) FROM numbers(1, 500);

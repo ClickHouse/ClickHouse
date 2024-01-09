@@ -18,29 +18,29 @@ constexpr UInt32 CHUNK_SIZE = 128;
 namespace DB
 {
 
-class Store
+class DDSketchStore
 {
 public:
-    virtual ~Store() = default;
+    virtual ~DDSketchStore() = default;
     Float64 count = 0;
     int min_key = std::numeric_limits<int>::max();
     int max_key = std::numeric_limits<int>::min();
     int offset = 0;
     std::vector<Float64> bins;
 
-    virtual void copy(Store* store) = 0;
+    virtual void copy(DDSketchStore* store) = 0;
     virtual int length() = 0;
     virtual void add(int key, Float64 weight) = 0;
     virtual int keyAtRank(Float64 rank, bool lower) = 0;
-    virtual void merge(Store* store) = 0;
+    virtual void merge(DDSketchStore* store) = 0;
 };
 
-class DenseStore : public Store
+class DDSketchDenseStore : public DDSketchStore
 {
 public:
-    explicit DenseStore(UInt32 chunk_size_ = CHUNK_SIZE) : chunk_size(chunk_size_) {}
+    explicit DDSketchDenseStore(UInt32 chunk_size_ = CHUNK_SIZE) : chunk_size(chunk_size_) {}
 
-    void copy(Store* other) override
+    void copy(DDSketchStore* other) override
     {
         bins = other->bins;
         count = other->count;
@@ -75,7 +75,7 @@ public:
         return max_key;
     }
 
-    void merge(Store* other) override
+    void merge(DDSketchStore* other) override
     {
         if (other->count == 0) return;
 
