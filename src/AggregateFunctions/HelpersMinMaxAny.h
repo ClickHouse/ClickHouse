@@ -42,8 +42,8 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
 /// Functions that inherit from SingleValueData*
 /// singleValueOrNull
 template <template <typename> class AggregateFunctionTemplate, template <typename> class ChildType>
-static IAggregateFunction *
-createAggregateFunctionSingleValueDerived(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+static IAggregateFunction * createAggregateFunctionSingleValueComposite(
+    const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);

@@ -160,7 +160,7 @@ AggregateFunctionPtr createAggregateFunctionSingleValueOrNull(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
     return AggregateFunctionPtr(
-        createAggregateFunctionSingleValueDerived<AggregateFunctionSingleValueOrNull, AggregateFunctionSingleValueOrNullData>(
+        createAggregateFunctionSingleValueComposite<AggregateFunctionSingleValueOrNull, AggregateFunctionSingleValueOrNullData>(
             name, argument_types, parameters, settings));
 }
 
