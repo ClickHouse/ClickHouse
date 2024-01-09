@@ -2682,7 +2682,7 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
             chassert(!existing_replicas.contains(""));
             bool is_entry_from_removed_or_unknown_replica = !existing_replicas.contains(entry->source_replica) || entry->source_replica.empty();
 
-            bool need_wait_for_entry = is_entry_from_specified_replica || is_entry_from_removed_or_unknown_replica;
+            bool need_wait_for_entry = src_replicas.empty() || is_entry_from_specified_replica || is_entry_from_removed_or_unknown_replica;
 
             if (need_wait_for_entry)
             {
