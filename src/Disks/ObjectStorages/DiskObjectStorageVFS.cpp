@@ -1,6 +1,7 @@
 #include "DiskObjectStorageVFS.h"
 #include "DiskObjectStorageMetadata.h"
 #include "DiskObjectStorageVFSTransaction.h"
+#include "IO/S3Common.h"
 #include "Interpreters/Context.h"
 #include "ObjectStorageVFSGCThread.h"
 
@@ -97,49 +98,60 @@ void DiskObjectStorageVFS::unlock(std::string_view path)
     zookeeper()->remove(lock_path_full);
 }
 
-bool DiskObjectStorageVFS::shouldUploadMetadata(std::string_view remote) const
+bool DiskObjectStorageVFS::tryDownloadMetadata(std::string_view remote_from, const String & to)
 {
-    return !object_storage->exists(getMetadataObject(remote));
+    auto metadata_object_buf = object_storage->readObject(getMetadataObject(remote_from));
+    auto metadata_tx = metadata_storage->createTransaction();
+    metadata_tx->createDirectoryRecursive(to);
+
+    try
+    {
+        // TODO myrrc do not write error message with "Information" level as it would be a normal situation
+        metadata_object_buf->eof();
+    }
+    catch (const S3Exception & e) // TODO myrrc this works only for s3
+    {
+        if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
+            return false;
+        throw;
+    }
+
+    while (!metadata_object_buf->eof())
+    {
+        String relative_file_path;
+        readString(relative_file_path, *metadata_object_buf);
+        const fs::path full_path = fs::path(to) / relative_file_path;
+        LOG_TRACE(log, "Metadata: downloading {} to {}", relative_file_path, full_path);
+        assertChar('\n', *metadata_object_buf);
+
+        DiskObjectStorageMetadata md(object_key_prefix, full_path); // TODO myrrc this works only for S3
+        md.deserialize(*metadata_object_buf); // TODO myrrc just write to local filesystem
+        metadata_tx->writeStringToFile(full_path, md.serializeToString());
+    }
+    metadata_tx->commit();
+    return true;
 }
 
 void DiskObjectStorageVFS::uploadMetadata(std::string_view remote_to, const String & from)
 {
-    auto obj = getMetadataObject(remote_to);
-    Strings files; // TODO myrrc does it iterate subdirs? E.g. projections
-    for (auto it = iterateDirectory(from); it->isValid(); it->next())
-        files.emplace_back(it->path());
-    LOG_DEBUG(log, "Metadata: uploading to {}", obj);
+    auto metadata_object = getMetadataObject(remote_to);
+    LOG_DEBUG(log, "Metadata: uploading to {}", metadata_object);
 
-    auto buf = object_storage->writeObject(obj, WriteMode::Rewrite);
+    Strings files; // iterateDirectory() is non-recursive (we need that for projections)
+    for (auto const & entry : fs::recursive_directory_iterator(from))
+        if (entry.is_regular_file())
+            files.emplace_back(entry.path());
+
+    auto metadata_object_buf = object_storage->writeObject(metadata_object, WriteMode::Rewrite);
     for (auto & [filename, metadata] : getSerializedMetadata(files))
     {
         String relative_path = fs::path(filename).lexically_relative(from);
         LOG_TRACE(log, "Metadata: uploading {}", relative_path);
-        writeString(relative_path + "\n" + metadata, *buf);
+        writeString(relative_path + "\n" + metadata, *metadata_object_buf);
     }
-    buf->finalize();
+    metadata_object_buf->finalize();
 }
 
-void DiskObjectStorageVFS::downloadMetadata(std::string_view remote_from, const String & to)
-{
-    auto buf = object_storage->readObject(getMetadataObject(remote_from));
-    auto tx = metadata_storage->createTransaction();
-    tx->createDirectoryRecursive(to);
-
-    while (!buf->eof())
-    {
-        String filename;
-        readString(filename, *buf);
-        const auto full_path = fs::path(to) / filename;
-        LOG_TRACE(log, "Metadata: downloading {} to {}", filename, full_path);
-        assertChar('\n', *buf);
-        // TODO myrrc this works only for S3
-        DiskObjectStorageMetadata md(object_key_prefix, full_path);
-        md.deserialize(*buf); // TODO myrrc just write to local filesystem
-        tx->writeStringToFile(full_path, md.serializeToString());
-    }
-    tx->commit();
-}
 
 zkutil::ZooKeeperPtr DiskObjectStorageVFS::zookeeper()
 {
