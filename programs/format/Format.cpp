@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <Interpreters/registerInterpreters.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
@@ -128,6 +129,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 hash_func.update(options["seed"].as<std::string>());
             }
 
+            registerInterpreters();
             registerFunctions();
             registerAggregateFunctions();
             registerTableFunctions();
