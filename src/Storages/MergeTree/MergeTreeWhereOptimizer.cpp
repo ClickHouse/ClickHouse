@@ -132,14 +132,14 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     if (!optimize_result)
         return {};
 
-    if (optimize_result->where_conditions.empty())
-        return {.prewhere_nodes = {}, .fully_moved_to_prewhere = true};
+    // if (optimize_result->where_conditions.empty())
+    //     return {.prewhere_nodes = {}, .fully_moved_to_prewhere = true};
 
     std::unordered_set<const ActionsDAG::Node *> prewhere_conditions;
     for (const auto & condition : optimize_result->prewhere_conditions)
         prewhere_conditions.insert(condition.node.getDAGNode());
 
-    return {.prewhere_nodes = std::move(prewhere_conditions), .fully_moved_to_prewhere = false};
+    return {.prewhere_nodes = std::move(prewhere_conditions), .fully_moved_to_prewhere = optimize_result->where_conditions.empty()};
 }
 
 static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & columns_names, NameSet & result_set, bool & has_invalid_column)

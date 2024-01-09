@@ -449,8 +449,8 @@ Block MergeTreeSelectProcessor::applyPrewhereActions(Block block, const Prewhere
 Block MergeTreeSelectProcessor::transformHeader(
     Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns)
 {
+    injectVirtualColumns(block, 0, nullptr, partition_value_type, virtual_columns);
     auto transformed = applyPrewhereActions(std::move(block), prewhere_info);
-    injectVirtualColumns(transformed, 0, nullptr, partition_value_type, virtual_columns);
     return transformed;
 }
 

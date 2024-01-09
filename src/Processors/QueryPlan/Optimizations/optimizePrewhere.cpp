@@ -62,6 +62,20 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
+static void removeFromOutput(ActionsDAG & dag, const std::string name)
+{
+    const auto * node = &dag.findInOutputs(name);
+    auto & outputs = dag.getOutputs();
+    for (size_t i = 0; i < outputs.size(); ++i)
+    {
+        if (node == outputs[i])
+        {
+            outputs.erase(outputs.begin() + i);
+            return;
+        }
+    }
+}
+
 void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
 {
     if (stack.size() < 3)
@@ -172,7 +186,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         read_from_merge_tree->getContext(),
         is_final);
 
-    if (!optimize_result.fully_moved_to_prewhere && optimize_result.prewhere_nodes.empty())
+    if (optimize_result.prewhere_nodes.empty())
         return;
 
     PrewhereInfoPtr prewhere_info;
@@ -182,55 +196,102 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         prewhere_info = std::make_shared<PrewhereInfo>();
 
     prewhere_info->need_filter = true;
+    // std::cerr << filter_step->getExpression()->dumpDAG() << std::endl;
 
     // QueryPlan::Node * replace_old_filter_node = nullptr;
     // bool remove_filter_node = false;
 
-    if (!optimize_result.fully_moved_to_prewhere)
-    {
-        auto split_result = filter_step->getExpression()->split(optimize_result.prewhere_nodes, true);
-        ActionsDAG::NodeRawConstPtrs conditions;
-        conditions.reserve(split_result.split_nodes_mapping.size());
-        for (const auto * condition : optimize_result.prewhere_nodes)
-            conditions.push_back(split_result.split_nodes_mapping.at(condition));
+    auto filter_expression = filter_step->getExpression();
+    const auto & filter_column_name = filter_step->getFilterColumnName();
 
-        prewhere_info->prewhere_actions = std::move(split_result.first);
+    if (optimize_result.fully_moved_to_prewhere && filter_step->removesFilterColumn())
+    {
+        removeFromOutput(*filter_expression, filter_column_name);
+        auto & outputs = filter_expression->getOutputs();
+        size_t size = outputs.size();
+        outputs.insert(outputs.end(), optimize_result.prewhere_nodes.begin(), optimize_result.prewhere_nodes.end());
+        filter_expression->removeUnusedActions(false);
+        outputs.resize(size);
+    }
+
+    // std::cerr << "!!!!!!!!!!!!!!!!\n";
+
+    // if (!optimize_result.fully_moved_to_prewhere)
+    // {
+    auto split_result = filter_step->getExpression()->split(optimize_result.prewhere_nodes, true);
+
+    // std::cerr << split_result.first->dumpDAG() << std::endl;
+    // std::cerr << split_result.second->dumpDAG() << std::endl;
+
+    // for (const auto * input : split_result.first->getInputs())
+    //     std::cerr << "in 1" << input->result_name << std::endl;
+    // for (const auto * input : split_result.second->getInputs())
+    //     std::cerr << "in 2" << input->result_name << std::endl;
+
+    ActionsDAG::NodeRawConstPtrs conditions;
+    conditions.reserve(split_result.split_nodes_mapping.size());
+    for (const auto * condition : optimize_result.prewhere_nodes)
+    {
+        // std::cerr << ".. " << condition->result_name << std::endl;
+        conditions.push_back(split_result.split_nodes_mapping.at(condition));
+    }
+
+    prewhere_info->prewhere_actions = std::move(split_result.first);
+    prewhere_info->remove_prewhere_column = optimize_result.fully_moved_to_prewhere && filter_step->removesFilterColumn();
+
+    if (conditions.size() == 1)
+    {
+        prewhere_info->prewhere_column_name = conditions.front()->result_name;
+        prewhere_info->prewhere_actions->getOutputs().push_back(conditions.front());
+    }
+    else
+    {
         prewhere_info->remove_prewhere_column = true;
 
-        if (conditions.size() == 1)
-        {
-            for (const auto * output : prewhere_info->prewhere_actions->getOutputs())
-            {
-                if (output == conditions.front())
-                    prewhere_info->remove_prewhere_column = false;
-            }
+        FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        const auto * node = &prewhere_info->prewhere_actions->addFunction(func_builder_and, std::move(conditions), {});
+        prewhere_info->prewhere_column_name = node->result_name;
+        prewhere_info->prewhere_actions->getOutputs().push_back(node);
+    }
 
-            prewhere_info->prewhere_column_name = conditions.front()->result_name;
-        }
-        else
-        {
+    // std::cerr << read_from_merge_tree->getOutputStream().header.dumpStructure() << std::endl;
+    // std::cerr << read_from_merge_tree->getOutputStream().header.dumpIndex() << std::endl;
 
-            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-            const auto * node = &prewhere_info->prewhere_actions->addFunction(func_builder_and, std::move(conditions), {});
-            prewhere_info->prewhere_column_name = node->result_name;
-            prewhere_info->prewhere_actions->getOutputs().push_back(node);
-        }
+    read_from_merge_tree->updatePrewhereInfo(prewhere_info);
 
-        read_from_merge_tree->updatePrewhereInfo(prewhere_info);
+    // std::cerr << read_from_merge_tree->getOutputStream().header.dumpStructure() << std::endl;
+    // std::cerr << read_from_merge_tree->getOutputStream().header.dumpIndex() << std::endl;
+
+    if (!optimize_result.fully_moved_to_prewhere)
+    {
         filter_node->step = std::make_unique<FilterStep>(
             read_from_merge_tree->getOutputStream(),
             std::move(split_result.second),
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
-
-        return;
     }
+    else
+    {
+        // std::cerr << split_result.second->dumpDAG() << std::endl;
+        // std::cerr << read_from_merge_tree->getOutputStream().header.dumpStructure() << std::endl;
+        // std::cerr << read_from_merge_tree->getOutputStream().header.dumpIndex() << std::endl;
 
-    prewhere_info->prewhere_actions = filter_step->getExpression();
-    prewhere_info->prewhere_column_name = filter_step->getFilterColumnName();
-    prewhere_info->remove_prewhere_column = filter_step->removesFilterColumn();
+        filter_node->step = std::make_unique<ExpressionStep>(
+            read_from_merge_tree->getOutputStream(),
+            std::move(split_result.second));
+    }
+    // return;
+    // }
 
-    read_from_merge_tree->updatePrewhereInfo(prewhere_info);
+    // std::cerr << "!!!!!!!!!!!!!!!!\n";
+
+    // prewhere_info->prewhere_actions = filter_step->getExpression();
+    // prewhere_info->prewhere_actions->projectInput(false);
+    // std::cerr << prewhere_info->prewhere_actions->dumpDAG() << std::endl;
+    // prewhere_info->prewhere_column_name = filter_step->getFilterColumnName();
+    // prewhere_info->remove_prewhere_column = filter_step->removesFilterColumn();
+
+    // read_from_merge_tree->updatePrewhereInfo(prewhere_info);
 
     // replace_old_filter_node = frame.node;
     // remove_filter_node = true;
@@ -405,23 +466,23 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     //     }
     // }
 
-    QueryPlan::Node * filter_parent_node = (stack.rbegin() + 2)->node;
+    // QueryPlan::Node * filter_parent_node = (stack.rbegin() + 2)->node;
 
-    for (auto & filter_parent_child : filter_parent_node->children)
-    {
-        if (filter_parent_child == filter_node)
-        {
-            filter_parent_child = frame.node;
+    // for (auto & filter_parent_child : filter_parent_node->children)
+    // {
+    //     if (filter_parent_child == filter_node)
+    //     {
+    //         filter_parent_child = frame.node;
 
-            size_t stack_size = stack.size();
+    //         size_t stack_size = stack.size();
 
-            /// Step is completely replaced with PREWHERE filter actions, remove it from stack.
-            std::swap(stack[stack_size - 1], stack[stack_size - 2]);
-            stack.pop_back();
+    //         /// Step is completely replaced with PREWHERE filter actions, remove it from stack.
+    //         std::swap(stack[stack_size - 1], stack[stack_size - 2]);
+    //         stack.pop_back();
 
-            break;
-        }
-    }
+    //         break;
+    //     }
+    // }
 }
 
 }
