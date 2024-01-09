@@ -21,10 +21,7 @@ namespace ErrorCodes
 std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 {
     auto res = std::make_shared<StorageSnapshot>(storage, metadata, object_columns);
-
-    res->projection = projection;
     res->data = std::move(data_);
-
     return res;
 }
 
@@ -41,7 +38,7 @@ void StorageSnapshot::init()
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
 {
-    auto all_columns = getMetadataForQuery()->getColumns().get(options);
+    auto all_columns = metadata->getColumns().get(options);
 
     if (options.with_extended_objects)
         extendObjectColumns(all_columns, object_columns, options.with_subcolumns);
@@ -88,8 +85,7 @@ NamesAndTypesList StorageSnapshot::getColumnsByNames(const GetColumnsOptions & o
 
 std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
 {
-    const auto & columns = getMetadataForQuery()->getColumns();
-    auto column = columns.tryGetColumn(options, column_name);
+    auto column = metadata->getColumns().tryGetColumn(options, column_name);
     if (column && (!column->type->hasDynamicSubcolumns() || !options.with_extended_objects))
         return column;
 
@@ -130,7 +126,7 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
 {
     Block res;
 
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
     for (const auto & column_name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
@@ -162,7 +158,7 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
 ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & column_names) const
 {
     ColumnsDescription res;
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
     for (const auto & name : column_names)
     {
         auto column = columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::All, name);
@@ -199,7 +195,7 @@ namespace
 
 void StorageSnapshot::check(const Names & column_names) const
 {
-    const auto & columns = getMetadataForQuery()->getColumns();
+    const auto & columns = metadata->getColumns();
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
 
     if (column_names.empty())

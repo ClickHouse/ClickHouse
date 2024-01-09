@@ -58,7 +58,6 @@ public:
         MergeTreeData::DataPartsVector parts,
         const PrewhereInfoPtr & prewhere_info,
         const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const ActionDAGNodes & added_filter_nodes,

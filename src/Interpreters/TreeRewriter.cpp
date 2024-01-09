@@ -1145,7 +1145,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         {
             for (const auto & name_type : storage_virtuals)
             {
-                if (name_type.name == "_shard_num" && storage->isVirtualColumn("_shard_num", storage_snapshot->getMetadataForQuery()))
+                if (name_type.name == "_shard_num" && storage->isVirtualColumn("_shard_num", storage_snapshot->metadata))
                 {
                     has_virtual_shard_num = true;
                     break;
