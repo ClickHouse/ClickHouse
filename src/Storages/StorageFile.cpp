@@ -118,8 +118,12 @@ void listFilesWithRegexpMatchingImpl(
     {
         try
         {
-            fs::path path = fs::canonical(path_for_ls + for_match);
-            result.push_back(path.string());
+            /// We use fs::canonical to resolve the canonical path and check if the file does exists
+            /// but the result path will be fs::absolute.
+            /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+            fs::canonical(path_for_ls + for_match);
+            fs::path absolute_path = fs::absolute(path_for_ls + for_match);
+            result.push_back(absolute_path.string());
         }
         catch (const std::exception &) // NOLINT
         {
@@ -1393,7 +1397,7 @@ void StorageFile::read(
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", p->at(0));
 
             auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-            InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
+            InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
             return;
         }
     }
@@ -1571,8 +1575,12 @@ public:
 
         /// In case of formats with prefixes if file is not empty we have already written prefix.
         bool do_not_write_prefix = naked_buffer->size();
-
-        write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
+        const auto & settings = context->getSettingsRef();
+        write_buf = wrapWriteBufferWithCompressionMethod(
+            std::move(naked_buffer),
+            compression_method,
+            static_cast<int>(settings.output_format_compression_level),
+            static_cast<int>(settings.output_format_compression_zstd_window_log));
 
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
                                                                              *write_buf, metadata_snapshot->getSampleBlock(), context, format_settings);

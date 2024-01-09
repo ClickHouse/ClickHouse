@@ -112,6 +112,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     std::make_unique<WriteBufferFromOStream>(*response_body_ostr),
                     compress ? compression_method : CompressionMethod::None,
                     compression_level,
+                    0,
                     working_buffer.size(),
                     working_buffer.begin());
             else
