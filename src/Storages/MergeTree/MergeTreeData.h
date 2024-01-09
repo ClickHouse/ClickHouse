@@ -404,8 +404,7 @@ public:
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
-        bool has_filter,
-        const SelectQueryInfo & query_info,
+        const ActionsDAGPtr & filter_dag,
         const DataPartsVector & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
@@ -1222,7 +1221,7 @@ protected:
         boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const SelectQueryInfo & query_info, ContextPtr context, const DataPartsVector & parts) const;
+        const ActionsDAGPtr & filter_actions_dag, ContextPtr context, const DataPartsVector & parts) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {

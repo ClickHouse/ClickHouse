@@ -88,7 +88,8 @@ public:
         return name;
     }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names &,
         const StorageSnapshotPtr &,
         SelectQueryInfo &,
@@ -126,6 +127,8 @@ public:
         bool distributed_processing = false);
 
 private:
+    friend class ReadFromAzureBlob;
+
     std::string name;
     Configuration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
@@ -156,7 +159,7 @@ public:
             AzureObjectStorage * object_storage_,
             const std::string & container_,
             String blob_path_with_globs_,
-            ASTPtr query_,
+            const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns_,
             ContextPtr context_,
             RelativePathsWithMetadata * outer_blobs_,
@@ -169,8 +172,7 @@ public:
         AzureObjectStorage * object_storage;
         std::string container;
         String blob_path_with_globs;
-        ASTPtr query;
-        ASTPtr filter_ast;
+        ActionsDAGPtr filter_dag;
         NamesAndTypesList virtual_columns;
 
         size_t index = 0;
@@ -184,7 +186,6 @@ public:
 
         void createFilterAST(const String & any_key);
         bool is_finished = false;
-        bool is_initialized = false;
         std::mutex next_mutex;
 
         std::function<void(FileProgress)> file_progress_callback;
@@ -212,7 +213,7 @@ public:
             AzureObjectStorage * object_storage_,
             const std::string & container_,
             const Strings & keys_,
-            ASTPtr query_,
+            const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns_,
             ContextPtr context_,
             RelativePathsWithMetadata * outer_blobs,
@@ -226,7 +227,7 @@ public:
         std::string container;
         RelativePathsWithMetadata keys;
 
-        ASTPtr query;
+        ActionsDAGPtr filter_dag;
         NamesAndTypesList virtual_columns;
 
         std::atomic<size_t> index = 0;
@@ -244,8 +245,7 @@ public:
         const String & container_,
         const String & connection_url_,
         std::shared_ptr<IIterator> file_iterator_,
-        bool need_only_count_,
-        const SelectQueryInfo & query_info_);
+        bool need_only_count_);
     ~StorageAzureBlobSource() override;
 
     Chunk generate() override;
@@ -271,7 +271,6 @@ private:
     std::shared_ptr<IIterator> file_iterator;
     bool need_only_count;
     size_t total_rows_in_file = 0;
-    SelectQueryInfo query_info;
 
     struct ReaderHolder
     {

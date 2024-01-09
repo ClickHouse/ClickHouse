@@ -570,6 +570,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
     {
         Pipe pipe = createMergeTreeSequentialSource(
+            MergeTreeSequentialSourceType::Merge,
             *global_ctx->data,
             global_ctx->storage_snapshot,
             global_ctx->future_part->parts[part_num],
@@ -925,6 +926,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     for (const auto & part : global_ctx->future_part->parts)
     {
         Pipe pipe = createMergeTreeSequentialSource(
+            MergeTreeSequentialSourceType::Merge,
             *global_ctx->data,
             global_ctx->storage_snapshot,
             part,
