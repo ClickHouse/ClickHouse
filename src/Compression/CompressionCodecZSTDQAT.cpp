@@ -26,7 +26,6 @@ public:
     static constexpr int ZSTDQAT_DEVICE_UNINITIALIZED = 0XFFFF;
 
     explicit CompressionCodecZSTDQAT(int level_);
-    ~CompressionCodecZSTDQAT() override;
 
 protected:
     bool isZstdQat() const override { return true; }
@@ -34,9 +33,8 @@ protected:
 
 private:
     const int level;
-    ZSTD_CCtx * cctx = nullptr;
-    void * sequenceProducerState = nullptr;
     Poco::Logger * log;
+    /// Initialize QAT device and to check if it works, otherwise fallback to software ZSTD.
     static int qat_state;
 };
 
@@ -44,11 +42,32 @@ int CompressionCodecZSTDQAT::qat_state = ZSTDQAT_DEVICE_UNINITIALIZED;
 
 UInt32 CompressionCodecZSTDQAT::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
+    ZSTD_CCtx * cctx = ZSTD_createCCtx();
+    void * sequenceProducerState = nullptr;
+
+    if(qat_state == ZSTDQAT_DEVICE_UNINITIALIZED)
+    {
+        qat_state = QZSTD_startQatDevice();
+        if(qat_state == QZSTD_OK)
+            LOG_DEBUG(log, "Initialization of hardware-assissted ZSTD_QAT codec successful");
+        else
+            LOG_WARNING(log, "Initialization of hardware-assisted ZSTD_QAT codec failed, falling back to software ZSTD codec -> status: {}", qat_state);
+    }
+    if (qat_state == QZSTD_OK)
+    {
+        sequenceProducerState = QZSTD_createSeqProdState();
+        ZSTD_registerSequenceProducer(cctx, sequenceProducerState, qatSequenceProducer);
+        ZSTD_CCtx_setParameter(cctx, ZSTD_c_enableSeqProducerFallback, 1);
+    }
+    ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
+
     size_t compressed_size = ZSTD_compress2(cctx, dest, ZSTD_compressBound(source_size), source, source_size);
 
     if (ZSTD_isError(compressed_size))
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD_QAT codec: {}", ZSTD_getErrorName(compressed_size));
 
+    QZSTD_freeSeqProdState(sequenceProducerState);
+    ZSTD_freeCCtx(cctx);
     return static_cast<UInt32>(compressed_size);
 }
 
@@ -86,40 +105,6 @@ CompressionCodecZSTDQAT::CompressionCodecZSTDQAT(int level_)
     , log(&Poco::Logger::get("CompressionCodecZSTDQAT"))
 {
     setCodecDescription("ZSTD_QAT", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
-
-    cctx = ZSTD_createCCtx();
-
-    if(qat_state == ZSTDQAT_DEVICE_UNINITIALIZED)
-    {
-        qat_state = QZSTD_startQatDevice();
-        if(qat_state == QZSTD_OK)
-            LOG_DEBUG(log, "Initialization of hardware-assissted ZSTD_QAT codec successful");
-        else
-            LOG_WARNING(log, "Initialization of hardware-assisted ZSTD_QAT codec failed, falling back to software ZSTD codec -> status: {}", qat_state);
-    }
-
-    if (qat_state == QZSTD_OK)
-    {
-        sequenceProducerState = QZSTD_createSeqProdState();
-        ZSTD_registerSequenceProducer(cctx, sequenceProducerState, qatSequenceProducer);
-        ZSTD_CCtx_setParameter(cctx, ZSTD_c_enableSeqProducerFallback, 1);
-    }
-    else
-        sequenceProducerState = nullptr;
-
-    ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
-}
-
-CompressionCodecZSTDQAT::~CompressionCodecZSTDQAT()
-{
-    if (sequenceProducerState != nullptr)
-    {
-        QZSTD_freeSeqProdState(sequenceProducerState);
-        sequenceProducerState = nullptr;
-    }
-
-    ZSTD_freeCCtx(cctx);
-    cctx = nullptr;
 }
 
 }
