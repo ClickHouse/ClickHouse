@@ -9,6 +9,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TOTAL_REPLICAS=10
 REPLICAS_TO_DROP=7
+export TOTAL_REPLICAS
+export REPLICAS_TO_DROP
 
 for i in $(seq $TOTAL_REPLICAS); do
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_table_$i"
