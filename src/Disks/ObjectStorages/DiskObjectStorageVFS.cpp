@@ -108,13 +108,13 @@ void DiskObjectStorageVFS::uploadMetadata(std::string_view remote_to, const Stri
     Strings files; // TODO myrrc does it iterate subdirs? E.g. projections
     for (auto it = iterateDirectory(from); it->isValid(); it->next())
         files.emplace_back(it->path());
-    LOG_DEBUG(log, "VFS move: uploading metadata to {}", obj);
+    LOG_DEBUG(log, "Metadata: uploading to {}", obj);
 
     auto buf = object_storage->writeObject(obj, WriteMode::Rewrite);
     for (auto & [filename, metadata] : getSerializedMetadata(files))
     {
         String relative_path = fs::path(filename).lexically_relative(from);
-        LOG_DEBUG(log, "VFS move: uploading {}", relative_path);
+        LOG_TRACE(log, "Metadata: uploading {}", relative_path);
         writeString(relative_path + "\n" + metadata, *buf);
     }
     buf->finalize();
@@ -125,14 +125,13 @@ void DiskObjectStorageVFS::downloadMetadata(std::string_view remote_from, const 
     auto buf = object_storage->readObject(getMetadataObject(remote_from));
     auto tx = metadata_storage->createTransaction();
     tx->createDirectoryRecursive(to);
-    LOG_DEBUG(log, "VFS move: created temporary directory {}", to);
 
     while (!buf->eof())
     {
         String filename;
         readString(filename, *buf);
         const auto full_path = fs::path(to) / filename;
-        LOG_DEBUG(log, "VFS move: downloading {} metadata to {}", filename, full_path);
+        LOG_TRACE(log, "Metadata: downloading {} to {}", filename, full_path);
         assertChar('\n', *buf);
         // TODO myrrc this works only for S3
         DiskObjectStorageMetadata md(object_key_prefix, full_path);

@@ -219,19 +219,21 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     };
     cancellation_hook();
 
-    auto settings = data->getSettings();
+    MergeTreeSettingsPtr settings = data->getSettings();
     auto part = moving_part.part;
-    const auto & storage = part->getDataPartStorage();
-    auto disk = moving_part.reserved_space->getDisk();
+    const IDataPartStorage & storage = part->getDataPartStorage();
+    DiskPtr disk = moving_part.reserved_space->getDisk();
 
     LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, storage.getDiskName(), disk->getName());
 
     TemporaryClonedPart cloned_part;
     cloned_part.temporary_directory_lock = data->getTemporaryPartDirectoryHolder(part->name);
 
+    // TODO myrrc this duplicates lock key in MergeTreeData::moveParts
     const String vfs_move_lock = fs::path(data->getTableSharedID()) / part->name / "move";
     const bool is_vfs = disk->isObjectStorageVFS();
-    auto * vfs_disk = dynamic_cast<DiskObjectStorageVFS *>(disk.get());
+    auto * const vfs_disk = is_vfs ? dynamic_cast<DiskObjectStorageVFS *>(disk.get()) : nullptr;
+    // TODO myrrc save call by ultimately trying to download metadata first
     const bool vfs_upload = is_vfs && vfs_disk->shouldUploadMetadata(vfs_move_lock);
 
     const bool is_zero_copy = disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication;
@@ -266,30 +268,24 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     {
         vfs_disk->downloadMetadata(vfs_move_lock, result_dir);
 
-        LOG_DEBUG(log, "VFS move: picking metadata from {}", result_dir);
+        LOG_DEBUG(log, "Picking metadata from {}", result_dir);
         cloned_part_storage = std::make_shared<DataPartStorageOnDiskFull>(
-            std::make_shared<SingleDiskVolume>(disk->getName(), disk),
-            moving_dir, part_dir);
+            std::make_shared<SingleDiskVolume>(disk->getName(), disk), moving_dir, part_dir);
     }
-    else if (is_zero_copy)
+    else if (MergeTreeData::MutableDataPartPtr zero_copy_part; is_zero_copy &&
+        (zero_copy_part = data->tryToFetchIfShared(*part, disk, moving_dir / part->name)) != nullptr)
     {
-        /// Try zero-copy replication and fallback to default copy if it's not possible
-        auto zero_copy_part = data->tryToFetchIfShared(*part, disk, moving_dir / part->name);
-
-        if (zero_copy_part)
-        {
-            /// FIXME for some reason we cannot just use this part, we have to re-create it through MergeTreeDataPartBuilder
-            zero_copy_part->is_temp = false;    /// Do not remove it in dtor
-            cloned_part_storage = zero_copy_part->getDataPartStoragePtr();
-        }
-        else
-        {
-            LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
-            cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings, cancellation_hook);
-        }
+        /// FIXME for some reason we cannot just use this part, we have to re-create it through MergeTreeDataPartBuilder
+        zero_copy_part->is_temp = false;    /// Do not remove it in dtor
+        cloned_part_storage = zero_copy_part->getDataPartStoragePtr();
     }
     else
     {
+        if (is_zero_copy)
+        {
+            LOG_INFO(log, "Part {} was not fetched, we are the first who move it to another disk, so we will copy it", part->name);
+        }
+
         cloned_part_storage = part->makeCloneOnDisk(disk, MergeTreeData::MOVING_DIR_NAME, read_settings, write_settings, cancellation_hook);
     }
 

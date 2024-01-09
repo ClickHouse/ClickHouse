@@ -7787,11 +7787,12 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             }
             else /// Ordinary move as it should be
             {
-                // V2: acquire lock only for uploading metadata, upload metadata before uploading part files
-                // V3 upload per-file, load multiple files in parallel
                 // TODO myrrc revisit whether blocking wait on a Zookeeper lock is the best we can imagine
-                // If we can remove wait_for_move_if_zero_copy, lock acquisition code can be moved to
-                // MergeTreePartsMover
+                //  If we can remove wait_for_move_if_zero_copy, lock acquisition code can be moved to
+                //  MergeTreePartsMover.
+                // TODO myrrc consider other locking options:
+                // - acquire lock only for uploading metadata, upload metadata before uploading part files
+                // - above, but also upload per-file, load multiple files in parallel
                 const String move_lock = fs::path(getTableSharedID()) / moving_part.part->name / "move";
                 if (!disk->lock(move_lock, wait_for_move_if_zero_copy))
                 {
