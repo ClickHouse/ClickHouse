@@ -385,9 +385,25 @@ endif ()
 
 include("${ClickHouse_SOURCE_DIR}/contrib/google-protobuf-cmake/protobuf_generate.cmake")
 
+# These files needs to be installed to make it possible that users can use well-known protobuf types
+set(google_proto_files
+  ${protobuf_source_dir}/src/google/protobuf/any.proto
+  ${protobuf_source_dir}/src/google/protobuf/api.proto
+  ${protobuf_source_dir}/src/google/protobuf/descriptor.proto
+  ${protobuf_source_dir}/src/google/protobuf/duration.proto
+  ${protobuf_source_dir}/src/google/protobuf/empty.proto
+  ${protobuf_source_dir}/src/google/protobuf/field_mask.proto
+  ${protobuf_source_dir}/src/google/protobuf/source_context.proto
+  ${protobuf_source_dir}/src/google/protobuf/struct.proto
+  ${protobuf_source_dir}/src/google/protobuf/timestamp.proto
+  ${protobuf_source_dir}/src/google/protobuf/type.proto
+  ${protobuf_source_dir}/src/google/protobuf/wrappers.proto
+)
+
 add_library(_protobuf INTERFACE)
 target_link_libraries(_protobuf INTERFACE _libprotobuf)
 target_include_directories(_protobuf INTERFACE "${Protobuf_INCLUDE_DIR}")
+set_target_properties(_protobuf PROPERTIES google_proto_files "${google_proto_files}")
 add_library(ch_contrib::protobuf ALIAS _protobuf)
 
 add_library(_protoc INTERFACE)

@@ -7,10 +7,10 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
+#include <Functions/formatString.h>
 #include <IO/WriteHelpers.h>
 #include <base/map.h>
 
-#include "formatString.h"
 
 namespace DB
 {
@@ -145,13 +145,13 @@ private:
                 }
                 write_helper.finalize();
 
-                /// Same as the normal `ColumnString` branch
-                has_column_string = true;
-                data[i] = &converted_col_str->getChars();
-                offsets[i] = &converted_col_str->getOffsets();
-
                 /// Keep the pointer alive
                 converted_col_ptrs[i] = std::move(converted_col_str);
+
+                /// Same as the normal `ColumnString` branch
+                has_column_string = true;
+                data[i] = &converted_col_ptrs[i]->getChars();
+                offsets[i] = &converted_col_ptrs[i]->getOffsets();
             }
         }
 

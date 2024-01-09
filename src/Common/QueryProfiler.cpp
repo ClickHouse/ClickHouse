@@ -141,7 +141,7 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
 
             /// Also, it cannot be created if the server has too many threads.
 
-            throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
+            throw ErrnoException(ErrorCodes::CANNOT_CREATE_TIMER, "Failed to create thread timer");
         }
         timer_id.emplace(local_timer_id);
         CurrentMetrics::add(CurrentMetrics::CreatedTimersInQueryProfiler);
@@ -164,7 +164,7 @@ void Timer::set(UInt32 period)
 
     struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
     if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
-        throwFromErrno("Failed to set thread timer period", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_TIMER_PERIOD, "Failed to set thread timer period");
     CurrentMetrics::add(CurrentMetrics::ActiveTimersInQueryProfiler);
 }
 
@@ -238,13 +238,13 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(UInt64 thread_id, int clock_t
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
 
     if (sigemptyset(&sa.sa_mask))
-        throwFromErrno("Failed to clean signal mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to clean signal mask for query profiler");
 
     if (sigaddset(&sa.sa_mask, pause_signal))
-        throwFromErrno("Failed to add signal to mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add signal to mask for query profiler");
 
     if (sigaction(pause_signal, &sa, nullptr))
-        throwFromErrno("Failed to setup signal handler for query profiler", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for query profiler");
 
     try
     {

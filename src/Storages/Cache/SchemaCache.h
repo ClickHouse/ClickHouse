@@ -29,10 +29,11 @@ public:
         String source;
         String format;
         String additional_format_info;
+        String schema_inference_mode;
 
         bool operator==(const Key & other) const
         {
-            return source == other.source && format == other.format && additional_format_info == other.additional_format_info;
+            return source == other.source && format == other.format && additional_format_info == other.additional_format_info && schema_inference_mode == other.schema_inference_mode;
         }
     };
 
@@ -42,7 +43,7 @@ public:
     {
         size_t operator()(const Key & key) const
         {
-            return std::hash<String>()(key.source + key.format + key.additional_format_info);
+            return std::hash<String>()(key.source + key.format + key.additional_format_info + key.schema_inference_mode);
         }
     };
 

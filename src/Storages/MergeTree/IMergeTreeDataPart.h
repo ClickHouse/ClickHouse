@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/ColumnsDescription.h>
@@ -103,6 +104,7 @@ public:
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const Statistics & stats_to_recalc_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity) = 0;
@@ -167,6 +169,8 @@ public:
     void assertOnDisk() const;
 
     void remove();
+
+    Statistics loadStatistics() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -246,6 +250,8 @@ public:
         REMOVE_BLOBS,
         /// is set when Clickhouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
         PRESERVE_BLOBS,
+        /// remove blobs even if the part is not temporary
+        REMOVE_BLOBS_OF_NOT_TEMPORARY,
     };
     BlobsRemovalPolicyForTemporaryParts remove_tmp_policy = BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
 
@@ -365,9 +371,12 @@ public:
     UInt64 getIndexSizeFromFile() const;
 
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }
+    UInt64 getBytesUncompressedOnDisk() const { return bytes_uncompressed_on_disk; }
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
+    void setBytesUncompressedOnDisk(UInt64 bytes_uncompressed_on_disk_) { bytes_uncompressed_on_disk = bytes_uncompressed_on_disk_; }
 
     size_t getFileSizeOrZero(const String & file_name) const;
+    auto getFilesChecksums() const { return checksums.files; }
 
     /// Moves a part to detached/ directory and adds prefix to its name
     void renameToDetached(const String & prefix);
@@ -381,7 +390,12 @@ public:
                                                    const DiskTransactionPtr & disk_transaction) const;
 
     /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
-    MutableDataPartStoragePtr makeCloneOnDisk(const DiskPtr & disk, const String & directory_name, const ReadSettings & read_settings, const WriteSettings & write_settings) const;
+    MutableDataPartStoragePtr makeCloneOnDisk(
+        const DiskPtr & disk,
+        const String & directory_name,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
@@ -555,6 +569,7 @@ protected:
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
     UInt64 bytes_on_disk{0};
+    UInt64 bytes_uncompressed_on_disk{0};
 
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;

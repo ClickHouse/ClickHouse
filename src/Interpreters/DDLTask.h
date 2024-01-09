@@ -44,6 +44,9 @@ struct HostID
     explicit HostID(const Cluster::Address & address)
         : host_name(address.host_name), port(address.port) {}
 
+    HostID(const String & host_name_, UInt16 port_)
+        : host_name(host_name_), port(port_) {}
+
     static HostID fromString(const String & host_port_str);
 
     String toString() const
@@ -143,7 +146,7 @@ struct DDLTask : public DDLTaskBase
 {
     DDLTask(const String & name, const String & path) : DDLTaskBase(name, path) {}
 
-    bool findCurrentHostID(ContextPtr global_context, Poco::Logger * log);
+    bool findCurrentHostID(ContextPtr global_context, Poco::Logger * log, const ZooKeeperPtr & zookeeper, const std::optional<std::string> & config_host_name);
 
     void setClusterInfo(ContextPtr context, Poco::Logger * log);
 

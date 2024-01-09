@@ -469,7 +469,17 @@ void PocoHTTPClient::makeRequestInternalImpl(
             for (const auto & [header_name, header_value] : request.GetHeaders())
                 poco_request.set(header_name, header_value);
             for (const auto & [header_name, header_value] : extra_headers)
-                poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
+            {
+                // AWS S3 canonical headers must include `Host`, `Content-Type` and any `x-amz-*`.
+                // These headers will be signed. Custom S3 headers specified in ClickHouse storage conf are added in `extra_headers`.
+                // At this point in the stack trace, request has already been signed and any `x-amz-*` extra headers was already added
+                // to the canonical headers list. Therefore, we should not add them again to the request.
+                // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
+                if (!header_name.starts_with("x-amz-"))
+                {
+                    poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
+                }
+            }
 
             Poco::Net::HTTPResponse poco_response;
 

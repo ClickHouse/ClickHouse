@@ -9,6 +9,7 @@
 #include <memory>
 #include <Storages/StorageS3Settings.h>
 #include <Common/MultiVersion.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 
 
 namespace DB
@@ -22,11 +23,13 @@ struct S3ObjectStorageSettings
         const S3Settings::RequestSettings & request_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
-        int32_t objects_chunk_size_to_delete_)
+        int32_t objects_chunk_size_to_delete_,
+        bool read_only_)
         : request_settings(request_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
+        , read_only(read_only_)
     {}
 
     S3Settings::RequestSettings request_settings;
@@ -34,8 +37,8 @@ struct S3ObjectStorageSettings
     uint64_t min_bytes_for_seek;
     int32_t list_object_keys_size;
     int32_t objects_chunk_size_to_delete;
+    bool read_only;
 };
-
 
 class S3ObjectStorage : public IObjectStorage
 {
@@ -50,9 +53,11 @@ private:
         const S3Capabilities & s3_capabilities_,
         String bucket_,
         String connection_string,
-        String object_key_prefix_)
+        ObjectStorageKeysGeneratorPtr key_generator_,
+        const String & disk_name_)
         : bucket(std::move(bucket_))
-        , object_key_prefix(std::move(object_key_prefix_))
+        , key_generator(std::move(key_generator_))
+        , disk_name(disk_name_)
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
@@ -164,6 +169,8 @@ public:
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
+    bool isReadOnly() const override { return s3_settings.get()->read_only; }
+
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
@@ -172,8 +179,8 @@ private:
 
 private:
     std::string bucket;
-    String object_key_prefix;
-
+    ObjectStorageKeysGeneratorPtr key_generator;
+    std::string disk_name;
 
     MultiVersion<S3::Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
@@ -192,11 +199,6 @@ private:
 class S3PlainObjectStorage : public S3ObjectStorage
 {
 public:
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
-    {
-        return ObjectStorageKey::createAsRelative(object_key_prefix, path);
-    }
-
     std::string getName() const override { return "S3PlainObjectStorage"; }
 
     template <class ...Args>
