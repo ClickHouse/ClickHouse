@@ -43,6 +43,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE_ENGINE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
