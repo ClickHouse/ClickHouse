@@ -102,9 +102,9 @@ public:
             Float64 lower_fence = q1 - 1.5 * iqr;
             Float64 upper_fence = q3 + 1.5 * iqr;
 
-            for (auto elem : src_vec)
+            for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
             {
-                auto score = std::min((elem - lower_fence) / iqr, 0.0) + std::max((elem - upper_fence) / iqr, 0.0);
+                auto score = std::min((src_vec[j] - lower_fence) / iqr, 0.0) + std::max((src_vec[j] - upper_fence) / iqr, 0.0);
                 outlier_data.push_back(score);
             }
             res_offsets_data.push_back(outlier_data.size());
