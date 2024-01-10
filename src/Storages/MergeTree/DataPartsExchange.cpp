@@ -172,13 +172,15 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
         /// E.g. remote_fs_metadata = "local, s3_plain, web" --> capabilities = ["local", "s3_plain", "web"]
         Strings capabilities;
         const String delimiter(", ");
-        size_t pos = 0;
-        while ((pos = remote_fs_metadata.find(delimiter)) != String::npos)
+        size_t pos_start = 0;
+        size_t pos_end;
+        while ((pos_end = remote_fs_metadata.find(delimiter, pos_start)) != std::string::npos)
         {
-            String capability = remote_fs_metadata.substr(0, pos);
-            capabilities.push_back(capability);
-            remote_fs_metadata.erase(0, pos + delimiter.size());
+            const String token = remote_fs_metadata.substr(pos_start, pos_end - pos_start);
+            pos_start = pos_end + delimiter.size();
+            capabilities.push_back(token);
         }
+        capabilities.push_back(remote_fs_metadata.substr(pos_start));
 
         bool send_projections = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION;
 
