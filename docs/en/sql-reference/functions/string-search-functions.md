@@ -207,7 +207,7 @@ Functions `multiSearchFirstIndexCaseInsensitive`, `multiSearchFirstIndexUTF8` an
 multiSearchFirstIndex(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
 ```
 
-## multiSearchAny
+## multiSearchAny {#multisearchany}
 
 Returns 1, if at least one string needle<sub>i</sub> matches the string `haystack` and 0 otherwise.
 
@@ -414,7 +414,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## like
+## like {#like}
 
 Returns whether string `haystack` matches the LIKE expression `pattern`.
 
@@ -445,7 +445,7 @@ like(haystack, pattern)
 
 Alias: `haystack LIKE pattern` (operator)
 
-## notLike
+## notLike {#notlike}
 
 Like `like` but negates the result.
 

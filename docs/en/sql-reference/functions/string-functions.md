@@ -731,7 +731,7 @@ Alias: `FROM_BASE64`.
 
 Like `base64Decode` but returns an empty string in case of error.
 
-## endsWith
+## endsWith {#endswith}
 
 Returns whether string `str` ends with `suffix`.
 
@@ -765,7 +765,7 @@ Result:
 └──────────────────────────┴──────────────────────┘
 ```
 
-## startsWith
+## startsWith {#startswith}
 
 Returns whether string `str` starts with `prefix`.
 
