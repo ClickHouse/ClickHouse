@@ -44,8 +44,8 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     }
 }
 
-HTTPRequestHandlerFactoryPtr
-createPrometheusHandlerFactory(IServer & server,
+HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
+    IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics,
     const std::string & config_prefix)

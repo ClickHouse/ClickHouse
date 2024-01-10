@@ -845,9 +845,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     query_context->getQueryContext()->addQueryAccessInfo(
                         backQuoteIfNeed(local_storage_id.getDatabaseName()),
                         local_storage_id.getFullTableName(),
-                        columns_names,
-                        {},
-                        {});
+                        columns_names);
                 }
             }
 

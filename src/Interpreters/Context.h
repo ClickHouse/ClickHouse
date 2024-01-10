@@ -693,13 +693,14 @@ public:
     void addSpecialScalar(const String & name, const Block & block);
 
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
+
     void addQueryAccessInfo(
         const String & quoted_database_name,
         const String & full_quoted_table_name,
-        const Names & column_names,
-        const String & projection_name = {},
-        const String & view_name = {});
+        const Names & column_names);
+
     void addQueryAccessInfo(const Names & partition_names);
+    void addViewAccessInfo(const String & view_name);
 
     struct QualifiedProjectionName
     {
@@ -707,8 +708,8 @@ public:
         String projection_name;
         explicit operator bool() const { return !projection_name.empty(); }
     };
-    void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
 
+    void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories

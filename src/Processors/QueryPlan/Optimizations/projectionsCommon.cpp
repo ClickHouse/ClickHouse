@@ -250,23 +250,17 @@ bool analyzeProjectionCandidate(
         context->getSettingsRef().max_threads,
         max_added_blocks);
 
-    if (projection_result_ptr->error())
-        return false;
-
     candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
-    candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->marks();
+    candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->selected_marks;
 
     if (!normal_parts.empty())
     {
         /// TODO: We can reuse existing analysis_result by filtering out projection parts
         auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts), std::move(alter_conversions));
 
-        if (normal_result_ptr->error())
-            return false;
-
-        if (normal_result_ptr->marks() != 0)
+        if (normal_result_ptr->selected_marks != 0)
         {
-            candidate.sum_marks += normal_result_ptr->marks();
+            candidate.sum_marks += normal_result_ptr->selected_marks;
             candidate.merge_tree_ordinary_select_result_ptr = std::move(normal_result_ptr);
         }
     }
