@@ -198,6 +198,7 @@ DELETEs
 DESC
 DIEs
 DOGEFI
+Damerau
 DataGrip
 DataLens
 DataTime
@@ -414,6 +415,7 @@ JSONType
 JSONs
 Jaeger
 Jannis
+Jaro
 JavaHash
 Jemalloc
 Jepsen
@@ -716,6 +718,7 @@ ProxySQL
 Punycode
 PyArrow
 PyCharm
+QATlib
 QEMU
 QTCreator
 Quantile
@@ -725,6 +728,7 @@ QueryCacheHits
 QueryCacheMisses
 QueryPreempted
 QueryThread
+QuickAssist
 QuoteMeta
 RBAC
 RClickHouse
@@ -980,6 +984,7 @@ Werror
 Wether
 WikiStat
 WindowView
+Winkler
 WithNames
 WithNamesAndTypes
 WordNet
@@ -996,6 +1001,7 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
+ZSTDQAT
 Zabbix
 Zipkin
 ZooKeeper
@@ -1342,6 +1348,7 @@ cutToFirstSignificantSubdomainWithWWW
 cutURLParameter
 cutWWW
 cyrus
+damerauLevenshteinDistance
 datacenter
 datacenters
 datafiles
@@ -1455,6 +1462,7 @@ endian
 endianness
 endsWith
 endsWithUTF
+endswith
 enqueued
 enum
 enum's
@@ -1627,6 +1635,8 @@ hasToken
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
+hasall
+hasany
 hashtables
 haversine
 hdbc
@@ -1701,6 +1711,8 @@ isZeroOrNull
 iteratively
 jaccard
 jaccardIndex
+jaroSimilarity
+jaroWinklerSimilarity
 javaHash
 javaHashUTF
 jbod
@@ -1796,6 +1808,7 @@ llvm
 loadDefaultCAFile
 localhost
 localread
+loess
 logTrace
 logagent
 loghouse
@@ -1891,6 +1904,7 @@ multidirectory
 multiline
 multiplyDecimal
 multipolygon
+multisearchany
 multisets
 multithread
 multiword
@@ -1943,7 +1957,9 @@ notEquals
 notILike
 notIn
 notLike
+notempty
 notequals
+notlike
 notretry
 nowInBlock
 ntile
@@ -2246,6 +2262,7 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+seriesDecomposeSTL
 seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
@@ -2291,6 +2308,8 @@ splitByString
 splitByWhitespace
 splitby
 sqid
+sqidDecode
+sqidEncode
 sql
 sqlalchemy
 sqlinsert
@@ -2301,6 +2320,7 @@ stacktrace
 stacktraces
 startsWith
 startsWithUTF
+startswith
 statbox
 stateful
 stddev
