@@ -1207,6 +1207,8 @@ private:
 
     static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
+    static void checkDuplicateTableNamesOrAlias(QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr);
+
     static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
 
     static void expandGroupByAll(QueryNode & query_tree_node_typed);
@@ -6777,6 +6779,28 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     }
 }
 
+void QueryAnalyzer::checkDuplicateTableNamesOrAlias(QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr)
+{
+    Names column_names;
+    auto * left_node = left_table_expr->as<QueryNode>();
+    auto * right_node = right_table_expr->as<QueryNode>();
+
+    for (const auto & name_and_type : left_node->getProjectionColumns())
+        column_names.push_back(name_and_type.name);
+    for (const auto & name_and_type : right_node->getProjectionColumns())
+        column_names.push_back(name_and_type.name);
+
+    if (column_names.empty())
+        return;
+
+    std::sort(column_names.begin(), column_names.end());
+    for (size_t i = 0; i < column_names.size() - 1; i++) // Check if there is not any duplicates because it will lead to broken result
+        if (column_names[i] == column_names[i+1])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Name of columns and aliases should be unique for this query (you can add alias that will be different)"
+                            "While processing '{}'", join_node->formatASTForErrorMessage());
+}
+
 /// Resolve join node in scope
 void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
@@ -6787,6 +6811,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     resolveQueryJoinTreeNode(join_node_typed.getRightTableExpression(), scope, expressions_visitor);
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
+
+    checkDuplicateTableNamesOrAlias(join_node, join_node_typed.getLeftTableExpression(), join_node_typed.getRightTableExpression());
 
     if (join_node_typed.isOnJoinExpression())
     {

@@ -265,6 +265,8 @@ bool JoinedTables::resolveTables()
         for (const auto & t : tables_with_columns)
             for (auto & name : t.columns.getNames())
                 column_names.push_back(name);
+        if (column_names.empty())
+            return false;
 
         std::sort(column_names.begin(), column_names.end());
         for (size_t i = 0; i < column_names.size() - 1; i++) // Check if there is not any duplicates because it will lead to broken result
