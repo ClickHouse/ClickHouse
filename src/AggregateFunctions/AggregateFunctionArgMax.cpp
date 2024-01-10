@@ -54,8 +54,8 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (this->data(place).value->setIfGreater(*columns[1], row_num, arena))
-            this->data(place).result->set(*columns[0], row_num, arena);
+        if (this->data(place).value().setIfGreater(*columns[1], row_num, arena))
+            this->data(place).result().set(*columns[0], row_num, arena);
     }
 
     void addBatchSinglePlace(
@@ -70,15 +70,15 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & if_map = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            idx = this->data(place).value->getGreatestIndexNotNullIf(*columns[1], nullptr, if_map.data(), row_begin, row_end);
+            idx = this->data(place).value().getGreatestIndexNotNullIf(*columns[1], nullptr, if_map.data(), row_begin, row_end);
         }
         else
         {
-            idx = this->data(place).value->getGreatestIndex(*columns[1], row_begin, row_end);
+            idx = this->data(place).value().getGreatestIndex(*columns[1], row_begin, row_end);
         }
 
-        if (idx && this->data(place).value->setIfGreater(*columns[1], *idx, arena))
-            this->data(place).result->set(*columns[0], *idx, arena);
+        if (idx && this->data(place).value().setIfGreater(*columns[1], *idx, arena))
+            this->data(place).result().set(*columns[0], *idx, arena);
     }
 
     void addBatchSinglePlaceNotNull(
@@ -94,47 +94,47 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto & if_map = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            idx = this->data(place).value->getGreatestIndexNotNullIf(*columns[1], null_map, if_map.data(), row_begin, row_end);
+            idx = this->data(place).value().getGreatestIndexNotNullIf(*columns[1], null_map, if_map.data(), row_begin, row_end);
         }
         else
         {
-            idx = this->data(place).value->getGreatestIndexNotNullIf(*columns[1], null_map, nullptr, row_begin, row_end);
+            idx = this->data(place).value().getGreatestIndexNotNullIf(*columns[1], null_map, nullptr, row_begin, row_end);
         }
 
-        if (idx && this->data(place).value->setIfGreater(*columns[1], *idx, arena))
-            this->data(place).result->set(*columns[0], *idx, arena);
+        if (idx && this->data(place).value().setIfGreater(*columns[1], *idx, arena))
+            this->data(place).result().set(*columns[0], *idx, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        if (this->data(place).value->setIfGreater(*this->data(rhs).value, arena))
-            this->data(place).result->set(*this->data(rhs).result, arena);
+        if (this->data(place).value().setIfGreater(this->data(rhs).value(), arena))
+            this->data(place).result().set(this->data(rhs).result(), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).result->write(buf, *serialization_res);
-        this->data(place).value->write(buf, *serialization_val);
+        this->data(place).result().write(buf, *serialization_res);
+        this->data(place).value().write(buf, *serialization_val);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).result->read(buf, *serialization_res, arena);
-        this->data(place).value->read(buf, *serialization_val, arena);
-        if (unlikely(this->data(place).value->has() != this->data(place).result->has()))
+        this->data(place).result().read(buf, *serialization_res, arena);
+        this->data(place).value().read(buf, *serialization_val, arena);
+        if (unlikely(this->data(place).value().has() != this->data(place).result().has()))
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Invalid state of the aggregate function {}: has_value ({}) != has_result ({})",
                 getName(),
-                this->data(place).value->has(),
-                this->data(place).result->has());
+                this->data(place).value().has(),
+                this->data(place).result().has());
     }
 
     bool allocatesMemoryInArena() const override { return result_type == TypeIndex::String || value_type == TypeIndex::String; }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).result->insertResultInto(to);
+        this->data(place).result().insertResultInto(to);
     }
 };
 

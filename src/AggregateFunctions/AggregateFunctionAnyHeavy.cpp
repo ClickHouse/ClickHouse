@@ -44,12 +44,12 @@ struct AggregateFunctionAnyHeavyData
 
     void add(const Self & to, Arena * arena)
     {
-        if (!data.has())
+        if (!to.data.has())
             return;
 
         if (data.isEqualTo(to.data))
             counter += to.counter;
-        else if ((!data.has() && to.data.has()) || counter < to.counter)
+        else if (!data.has() || counter < to.counter)
             data.set(to.data, arena);
         else
             counter -= to.counter;

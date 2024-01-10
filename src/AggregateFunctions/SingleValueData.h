@@ -24,6 +24,7 @@ extern const int TOO_LARGE_STRING_SIZE;
 struct SingleValueDataBase
 {
     static constexpr int nan_direction_hint = 1;
+    static constexpr UInt32 MAX_STORAGE_SIZE = 64;
 
     virtual ~SingleValueDataBase() { }
     virtual bool has() const = 0;
@@ -200,7 +201,10 @@ struct SingleValueDataFixed final : public SingleValueDataBase
     static bool allocatesMemoryInArena() { return false; }
 };
 
-#define DISPATCH(TYPE) extern template struct SingleValueDataFixed<TYPE>;
+#define DISPATCH(TYPE) \
+    extern template struct SingleValueDataFixed<TYPE>; \
+    static_assert( \
+        sizeof(SingleValueDataFixed<TYPE>) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataFixed struct");
 
 FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
@@ -218,10 +222,9 @@ struct SingleValueDataString final : public SingleValueDataBase
     UInt32 capacity = 0; /// power of two or zero
     char * large_data;
 
-    static constexpr UInt32 AUTOMATIC_STORAGE_SIZE = 64;
     //// TODO: Maybe instead of a virtual class we need to go with a std::variant of the 3 to avoid reserving space for the vtable
     static constexpr UInt32 MAX_SMALL_STRING_SIZE
-        = AUTOMATIC_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(large_data) - sizeof(SingleValueDataBase);
+        = SingleValueDataBase::MAX_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(large_data) - sizeof(SingleValueDataBase);
     static constexpr UInt32 MAX_STRING_SIZE = std::numeric_limits<Int32>::max();
 
 private:
@@ -300,8 +303,7 @@ public:
     static bool allocatesMemoryInArena() { return true; }
 };
 
-static_assert(
-    sizeof(SingleValueDataString) == SingleValueDataString::AUTOMATIC_STORAGE_SIZE, "Incorrect size of SingleValueDataString struct");
+static_assert(sizeof(SingleValueDataString) == SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataString struct");
 
 
 /// For any other value types.
@@ -422,4 +424,6 @@ public:
 
     static bool allocatesMemoryInArena() { return false; }
 };
+
+static_assert(sizeof(SingleValueDataGeneric) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataGeneric struct");
 }

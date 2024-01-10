@@ -42,12 +42,10 @@ ORDER BY event_time_microseconds;
 -- 1 * 8 + AggregateFunction(argMax, String, DateTime)
 --
 -- Size of AggregateFunction(argMax, String, DateTime):
--- SingleValueDataString() + SingleValueDataFixed(DateTime)
--- SingleValueDataString = 64B for small strings, 64B + string size + 1 for larger
--- SingleValueDataFixed(DateTime) = 1 + 4. With padding = 8
--- SingleValueDataString Total: 72B
+-- 2 * MAX(sizeOf(SingleValueDataFixed<T>), sizeOf(SingleValueDataString), sizeOf(SingleValueDataGeneric))
+-- Which is the same as 2 * SingleValueDataBase::MAX_STORAGE_SIZE (64)
 --
--- ColumnAggregateFunction total: 8 + 72 = 80
+-- ColumnAggregateFunction total: 8 + 2 * 64 = 136
 SELECT 'AggregateFunction(argMax, String, DateTime)',
        read_rows,
        read_bytes

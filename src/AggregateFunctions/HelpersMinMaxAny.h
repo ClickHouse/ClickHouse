@@ -12,6 +12,11 @@ namespace DB
 {
 struct Settings;
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 /// min, max, any, anyLast, anyHeavy, etc...
 template <template <typename> class AggregateFunctionTemplate>
 static IAggregateFunction *
@@ -69,41 +74,70 @@ static IAggregateFunction * createAggregateFunctionSingleValueComposite(
 /// For possible values for template parameters, see 'AggregateFunctionMinMaxAny.h'.
 struct AggregateFunctionArgMinMaxData
 {
-    using Data = std::unique_ptr<SingleValueDataBase>;
+private:
+    char r_data[SingleValueDataBase::MAX_STORAGE_SIZE];
+    char v_data[SingleValueDataBase::MAX_STORAGE_SIZE];
 
-    static Data generateSingleValueFromTypeIndex(TypeIndex idx)
+    static void generateSingleValueFromTypeIndex(TypeIndex idx, char data[SingleValueDataBase::MAX_STORAGE_SIZE])
     {
 #define DISPATCH(TYPE) \
     if (idx == TypeIndex::TYPE) \
-        return std::make_unique<SingleValueDataFixed<TYPE>>();
+    { \
+        static_assert(sizeof(SingleValueDataFixed<TYPE>) <= SingleValueDataBase::MAX_STORAGE_SIZE); \
+        new (data) SingleValueDataFixed<TYPE>(); \
+        return; \
+    }
 
         FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
         if (idx == TypeIndex::Date)
-            return std::make_unique<SingleValueDataFixed<DataTypeDate::FieldType>>();
+        {
+            static_assert(sizeof(SingleValueDataFixed<DataTypeDate::FieldType>) <= SingleValueDataBase::MAX_STORAGE_SIZE);
+            new (data) SingleValueDataFixed<DataTypeDate::FieldType>;
+            return;
+        }
         if (idx == TypeIndex::DateTime)
-            return std::make_unique<SingleValueDataFixed<DataTypeDateTime::FieldType>>();
+        {
+            static_assert(sizeof(SingleValueDataFixed<DataTypeDateTime::FieldType>) <= SingleValueDataBase::MAX_STORAGE_SIZE);
+            new (data) SingleValueDataFixed<DataTypeDateTime::FieldType>;
+            return;
+        }
         if (idx == TypeIndex::String)
-            return std::make_unique<SingleValueDataString>();
-        return std::make_unique<SingleValueDataGeneric>();
+        {
+            static_assert(sizeof(SingleValueDataString) <= SingleValueDataBase::MAX_STORAGE_SIZE);
+            new (data) SingleValueDataString;
+            return;
+        }
+        static_assert(sizeof(SingleValueDataGeneric) <= SingleValueDataBase::MAX_STORAGE_SIZE);
+        new (data) SingleValueDataGeneric;
     }
 
-    Data result; // the argument at which the minimum/maximum value is reached.
-    Data value; // value for which the minimum/maximum is calculated.
+public:
+    SingleValueDataBase & result() { return *reinterpret_cast<SingleValueDataBase *>(r_data); }
 
-    explicit AggregateFunctionArgMinMaxData()
+    SingleValueDataBase const & result() const { return *reinterpret_cast<const SingleValueDataBase *>(r_data); }
+
+    SingleValueDataBase & value() { return *reinterpret_cast<SingleValueDataBase *>(v_data); }
+
+    SingleValueDataBase const & value() const { return *reinterpret_cast<const SingleValueDataBase *>(v_data); }
+
+    [[noreturn]] explicit AggregateFunctionArgMinMaxData()
     {
-        result = nullptr;
-        value = nullptr;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionArgMinMaxData initialized empty");
     }
 
     explicit AggregateFunctionArgMinMaxData(TypeIndex result_type, TypeIndex value_type)
     {
-        result = generateSingleValueFromTypeIndex(result_type);
-        value = generateSingleValueFromTypeIndex(value_type);
+        generateSingleValueFromTypeIndex(result_type, r_data);
+        generateSingleValueFromTypeIndex(value_type, v_data);
     }
 };
+
+static_assert(
+    sizeof(AggregateFunctionArgMinMaxData) == 2 * SingleValueDataBase::MAX_STORAGE_SIZE,
+    "Incorrect size of AggregateFunctionArgMinMaxData struct");
+
 
 template <template <typename> class AggregateFunctionTemplate>
 static IAggregateFunction *
