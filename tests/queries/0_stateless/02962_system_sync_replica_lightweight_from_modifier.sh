@@ -30,7 +30,7 @@ function sync_and_drop_replicas() {
         for i in $(seq $REPLICAS_TO_DROP); do
             local stable_replica_id=$((i + 1))
             $CLICKHOUSE_CLIENT --query "ALTER TABLE test_table_$i MODIFY SETTING parts_to_throw_insert = 0"
-            $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA LIGHTWEIGHT test_table_$stable_replica_id FROM '$i'"
+            $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA test_table_$stable_replica_id LIGHTWEIGHT FROM '$i'"
             $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_table_$i"
         done
 
