@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/IStorage_fwd.h>
+#include "Interpreters/ExpressionAnalyzer.h"
 
 namespace DB
 {
@@ -27,7 +28,8 @@ public:
     void reset(const ASTSelectQuery & select_query);
 
     StoragePtr getLeftTableStorage();
-    bool resolveTables();
+    bool resolveTables(ExpressionAnalysisResult result);
+    void checkDuplicateNames();
 
     /// Make fake tables_with_columns[0] in case we have predefined input in InterpreterSelectQuery
     void makeFakeTable(StoragePtr storage, const StorageMetadataPtr & metadata_snapshot, const Block & source_header);

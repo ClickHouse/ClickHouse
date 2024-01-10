@@ -452,7 +452,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr, context);
     }
 
-    if (has_input || !joined_tables.resolveTables())
+    if (has_input || !joined_tables.resolveTables(analysis_result))
         joined_tables.makeFakeTable(storage, metadata_snapshot, source_header);
 
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
@@ -513,7 +513,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         rewriteMultipleJoins(query_ptr, joined_tables.tablesWithColumns(), context->getCurrentDatabase(), context->getSettingsRef());
 
         joined_tables.reset(getSelectQuery());
-        joined_tables.resolveTables();
+        joined_tables.resolveTables(analysis_result);
         if (auto view_source = context->getViewSource())
         {
             // If we are using a virtual block view to replace a table and that table is used

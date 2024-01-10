@@ -1207,7 +1207,7 @@ private:
 
     static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
-    static void checkDuplicateTableNamesOrAlias(QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr);
+    static void checkDuplicateTableNamesOrAlias(QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope);
 
     static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
 
@@ -6779,8 +6779,14 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     }
 }
 
-void QueryAnalyzer::checkDuplicateTableNamesOrAlias(QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr)
+void QueryAnalyzer::checkDuplicateTableNamesOrAlias(QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope)
 {
+    if (scope.context->getSettingsRef().joined_subquery_requires_alias)
+        return;
+
+    if (join_node->as<JoinNode &>().getKind() != JoinKind::Paste)
+        return;
+
     Names column_names;
     auto * left_node = left_table_expr->as<QueryNode>();
     auto * right_node = right_table_expr->as<QueryNode>();
@@ -6813,7 +6819,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
 
     if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
-        checkDuplicateTableNamesOrAlias(join_node, join_node_typed.getLeftTableExpression(), join_node_typed.getRightTableExpression());
+        checkDuplicateTableNamesOrAlias(join_node, join_node_typed.getLeftTableExpression(), join_node_typed.getRightTableExpression(), scope);
 
     if (join_node_typed.isOnJoinExpression())
     {
