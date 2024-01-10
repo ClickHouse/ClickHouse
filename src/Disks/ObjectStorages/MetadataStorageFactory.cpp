@@ -41,7 +41,7 @@ MetadataStoragePtr MetadataStorageFactory::create(
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Expected `metadata_type` in config");
     }
 
-    const auto type = config.getString(config_prefix + ".metadata_type");
+    const auto type = config.getString(config_prefix + ".metadata_type", compatibility_type_hint);
     const auto it = registry.find(type);
 
     if (it == registry.end())
@@ -53,9 +53,17 @@ MetadataStoragePtr MetadataStorageFactory::create(
     return it->second(name, config, config_prefix, object_storage);
 }
 
+static std::string getObjectStoragePrefix(
+    const IObjectStorage & object_storage,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix)
+{
+    return config.getString(config_prefix + ".key_compatibility_prefix", object_storage.getDataPrefix());
+}
+
 void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
 {
-    auto creator = [](
+    factory.registerMetadataStorageType("local", [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -65,35 +73,42 @@ void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
                                               fs::path(Context::getGlobalContextInstance()->getPath()) / "disks" / name / "");
         fs::create_directories(metadata_path);
         auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, 0, config, config_prefix);
-        return std::make_shared<MetadataStorageFromDisk>(metadata_disk, object_storage->getBasePath());
-    };
-    factory.registerMetadataStorageType("local", creator);
+        auto key_compatibility_prefix = getObjectStoragePrefix(*object_storage, config, config_prefix);
+        return std::make_shared<MetadataStorageFromDisk>(metadata_disk, key_compatibility_prefix);
+    });
 }
 
-void registerMetadataStorageFromDiskPlain(MetadataStorageFactory & factory)
+void registerPlainMetadataStorage(MetadataStorageFactory & factory)
 {
-    auto creator = [](
+    factory.registerMetadataStorageType("plain", [](
         const std::string & /* name */,
-        const Poco::Util::AbstractConfiguration & /* config */,
-        const std::string & /* config_prefix */,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
         ObjectStoragePtr object_storage) -> MetadataStoragePtr
     {
-        return std::make_shared<MetadataStorageFromPlainObjectStorage>(object_storage, object_storage->getBasePath());
-    };
-    factory.registerMetadataStorageType("plain", creator);
+        auto key_compatibility_prefix = getObjectStoragePrefix(*object_storage, config, config_prefix);
+        return std::make_shared<MetadataStorageFromPlainObjectStorage>(object_storage, key_compatibility_prefix);
+    });
 }
 
 void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFactory & factory)
 {
-    auto creator = [](
+    factory.registerMetadataStorageType("web", [](
         const std::string & /* name */,
         const Poco::Util::AbstractConfiguration & /* config */,
         const std::string & /* config_prefix */,
         ObjectStoragePtr object_storage) -> MetadataStoragePtr
     {
         return std::make_shared<MetadataStorageFromStaticFilesWebServer>(assert_cast<const WebObjectStorage &>(*object_storage));
-    };
-    factory.registerMetadataStorageType("web", creator);
+    });
+}
+
+void registerMetadataStorages()
+{
+    auto & factory = MetadataStorageFactory::instance();
+    registerMetadataStorageFromDisk(factory);
+    registerPlainMetadataStorage(factory);
+    registerMetadataStorageFromStaticFilesWebServer(factory);
 }
 
 }

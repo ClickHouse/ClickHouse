@@ -2,7 +2,7 @@
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
-#include <Disks/ObjectStorages/S3/checkBatchRemove.h>
+#include <Disks/ObjectStorages/S3/DiskS3Utils.h>
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
@@ -28,13 +28,12 @@ ObjectStorageFactory & ObjectStorageFactory::instance()
     return factory;
 }
 
-void ObjectStorageFactory::registerObjectStorageType(const std::string & metadata_type, Creator creator)
+void ObjectStorageFactory::registerObjectStorageType(const std::string & type, Creator creator)
 {
-    if (!registry.emplace(metadata_type, creator).second)
+    if (!registry.emplace(type, creator).second)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "ObjectStorageFactory: the metadata type '{}' is not unique",
-                        metadata_type);
+                        "ObjectStorageFactory: the metadata type '{}' is not unique", type);
     }
 }
 
@@ -46,7 +45,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
     bool skip_access_check) const
 {
     std::string type;
-    if (config.has(config_prefix + ".obejct_storage_type"))
+    if (config.has(config_prefix + ".object_storage_type"))
     {
         type = config.getString(config_prefix + ".object_storage_type");
     }
@@ -76,15 +75,20 @@ static S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config,
 {
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     S3::URI uri(endpoint);
-    if (!uri.key.ends_with('/'))
+
+    /// An empty key remains empty.
+    if (!uri.key.empty() && !uri.key.ends_with('/'))
         uri.key.push_back('/');
+
     return uri;
 }
 
 #if USE_AWS_S3
 void registerS3ObjectStorage(ObjectStorageFactory & factory)
 {
-    auto creator = [](
+    static constexpr auto disk_type = "s3";
+
+    factory.registerObjectStorageType(disk_type, [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -95,10 +99,10 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto settings = getSettings(config, config_prefix, context);
         auto client = getClient(config, config_prefix, context, *settings);
+        auto key_generator = getKeyGenerator(disk_type, uri, config, config_prefix);
 
         auto object_storage = std::make_shared<S3ObjectStorage>(
-            std::move(client), std::move(settings), uri.version_id,
-            s3_capabilities, uri.bucket, uri.endpoint, uri.key, name);
+            std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
 
         /// NOTE: should we still perform this check for clickhouse-disks?
         if (!skip_access_check)
@@ -117,13 +121,14 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
             }
         }
         return object_storage;
-    };
-    factory.registerObjectStorageType("s3", creator);
+    });
 }
 
 void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
 {
-    auto creator = [](
+    static constexpr auto disk_type = "s3_plain";
+
+    factory.registerObjectStorageType(disk_type, [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -142,19 +147,18 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto settings = getSettings(config, config_prefix, context);
         auto client = getClient(config, config_prefix, context, *settings);
+        auto key_generator = getKeyGenerator(disk_type, uri, config, config_prefix);
 
         return std::make_shared<S3PlainObjectStorage>(
-            std::move(client), std::move(settings), uri.version_id,
-            s3_capabilities, uri.bucket, uri.endpoint, uri.key, name);
-    };
-    factory.registerObjectStorageType("s3_plain", creator);
+            std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
+    });
 }
 #endif
 
 #if USE_HDFS
 void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 {
-    auto creator = [](
+    factory.registerObjectStorageType("hdfs", [](
         const std::string & /* name */,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -173,15 +177,14 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
         );
 
         return std::make_unique<HDFSObjectStorage>(uri, std::move(settings), config);
-    };
-    factory.registerObjectStorageType("hdfs", creator);
+    });
 }
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
 void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
-    auto creator = [](
+    factory.registerObjectStorageType("azure_blob_storage", [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -193,14 +196,13 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
             getAzureBlobContainerClient(config, config_prefix),
             getAzureBlobStorageSettings(config, config_prefix, context));
 
-    };
-    factory.registerObjectStorageType("azure_blob_storage", creator);
+    });
 }
 #endif
 
 void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
-    auto creator = [](
+    factory.registerObjectStorageType("web", [](
         const std::string & /* name */,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -222,13 +224,12 @@ void registerWebObjectStorage(ObjectStorageFactory & factory)
         }
 
         return std::make_shared<WebObjectStorage>(uri, context);
-    };
-    factory.registerObjectStorageType("web", creator);
+    });
 }
 
 void registerLocalObjectStorage(ObjectStorageFactory & factory)
 {
-    auto creator = [](
+    factory.registerObjectStorageType("local_blob_storage", [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -241,8 +242,28 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
         return std::make_shared<LocalObjectStorage>(object_key_prefix);
-    };
-    factory.registerObjectStorageType("local", creator);
+    });
+}
+
+void registerObjectStorages()
+{
+    auto & factory = ObjectStorageFactory::instance();
+
+#if USE_AWS_S3
+    registerS3ObjectStorage(factory);
+    registerS3PlainObjectStorage(factory);
+#endif
+
+#if USE_HDFS
+    registerHDFSObjectStorage(factory);
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+    registerAzureObjectStorage(factory);
+#endif
+
+    registerLocalObjectStorage(factory);
+    registerWebObjectStorage(factory);
 }
 
 }

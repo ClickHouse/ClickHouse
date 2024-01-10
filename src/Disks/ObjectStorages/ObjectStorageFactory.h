@@ -17,7 +17,7 @@ public:
 
     static ObjectStorageFactory & instance();
 
-    void registerObjectStorageType(const std::string & metadata_type, Creator creator);
+    void registerObjectStorageType(const std::string & type, Creator creator);
 
     ObjectStoragePtr create(
         const std::string & name,

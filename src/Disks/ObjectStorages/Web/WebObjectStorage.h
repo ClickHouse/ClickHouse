@@ -33,9 +33,7 @@ public:
 
     std::string getName() const override { return "WebObjectStorage"; }
 
-    std::string getBasePath() const override { return ""; }
-
-    std::string getTypeName() const override { return "web"; }
+    std::string getDataPrefix() const override { return ""; }
 
     bool exists(const StoredObject & object) const override;
 

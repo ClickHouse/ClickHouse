@@ -27,7 +27,7 @@ LocalObjectStorage::LocalObjectStorage(String key_prefix_)
     : key_prefix(std::move(key_prefix_))
     , log(&Poco::Logger::get("LocalObjectStorage"))
 {
-    data_source_description.type = DataSourceType::Local;
+    data_source_description.type = DataSourceType::LocalBlobStorage;
     if (auto block_device_id = tryGetBlockDeviceId("/"); block_device_id.has_value())
         data_source_description.description = *block_device_id;
     else

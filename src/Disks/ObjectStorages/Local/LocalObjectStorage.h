@@ -22,9 +22,7 @@ public:
 
     std::string getName() const override { return "LocalObjectStorage"; }
 
-    std::string getBasePath() const override { return key_prefix; }
-
-    std::string getTypeName() const override { return "local_blob_storage"; }
+    std::string getDataPrefix() const override { return key_prefix; }
 
     bool exists(const StoredObject & object) const override;
 

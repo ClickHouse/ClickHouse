@@ -58,9 +58,7 @@ public:
 
     std::string getName() const override { return "HDFSObjectStorage"; }
 
-    std::string getBasePath() const override { return hdfs_root_path; }
-
-    std::string getTypeName() const override { return "hdfs"; }
+    std::string getDataPrefix() const override { return hdfs_root_path; }
 
     DataSourceDescription getDataSourceDescription() const override
     {

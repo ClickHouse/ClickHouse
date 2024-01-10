@@ -11,23 +11,35 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-static std::string getCompatibilityMetadataTypeHint(const std::string & object_storage_type)
+void registerObjectStorages();
+void registerMetadataStorages();
+
+static std::string getCompatibilityMetadataTypeHint(const DataSourceDescription & description)
 {
-    /// TODO: change type name to enum
-    if (object_storage_type == "s3"
-        || object_storage_type == "hdfs"
-        || object_storage_type == "azure_blob_storage"
-        || object_storage_type == "local_blob_storage")
-        return "local";
-    else if (object_storage_type == "s3_plain")
-        return "plain";
-    else if (object_storage_type == "web")
-        return "web";
-    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown object storage type: {}", object_storage_type);
+    switch (description.type)
+    {
+        case DataSourceType::S3:
+        case DataSourceType::HDFS:
+        case DataSourceType::LocalBlobStorage:
+        case DataSourceType::AzureBlobStorage:
+            return "local";
+        case DataSourceType::S3_Plain:
+            return "plain";
+        case DataSourceType::WebServer:
+            return "web";
+        default:
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                            "Cannot get compatibility metadata hint: "
+                            "no such object storage type: {}", toString(description.type));
+    }
+    UNREACHABLE();
 }
 
 void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check)
 {
+    registerObjectStorages();
+    registerMetadataStorages();
+
     auto creator = [global_skip_access_check](
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
@@ -37,13 +49,17 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
     {
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         auto object_storage = ObjectStorageFactory::instance().create(name, config, config_prefix, context, skip_access_check);
-        auto compatibility_metadata_type_hint = config.has("metadata_type") ? "" : getCompatibilityMetadataTypeHint(object_storage->getTypeName());
-        auto metadata_storage = MetadataStorageFactory::instance().create(name, config, config_prefix, object_storage, compatibility_metadata_type_hint);
+        auto compatibility_metadata_type_hint = config.has("metadata_type")
+            ? ""
+            : getCompatibilityMetadataTypeHint(object_storage->getDataSourceDescription());
+
+        auto metadata_storage = MetadataStorageFactory::instance().create(
+            name, config, config_prefix, object_storage, compatibility_metadata_type_hint);
 
         DiskObjectStoragePtr disk = std::make_shared<DiskObjectStorage>(
             name,
-            object_storage->getBasePath(),
-            "Disk" + object_storage->getTypeName(),
+            object_storage->getDataPrefix(),
+            fmt::format("Disk_{}({})", toString(object_storage->getDataSourceDescription().type), name),
             std::move(metadata_storage),
             std::move(object_storage),
             config,
@@ -52,6 +68,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         disk->startup(context, skip_access_check);
         return disk;
     };
+
     factory.registerDiskType("object_storage", creator);
 #if USE_AWS_S3
     factory.registerDiskType("s3", creator); /// For compatibility

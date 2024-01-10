@@ -63,9 +63,7 @@ public:
 
     std::string getName() const override { return "AzureObjectStorage"; }
 
-    std::string getBasePath() const override { return ""; } /// No namespaces in azure.
-
-    std::string getTypeName() const override { return "azure_blob_storage"; }
+    std::string getDataPrefix() const override { return ""; } /// No namespaces in azure.
 
     bool exists(const StoredObject & object) const override;
 
