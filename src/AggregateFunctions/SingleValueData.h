@@ -35,8 +35,9 @@ struct SingleValueDataBase
     virtual void insertResultInto(IColumn &) const = 0;
     virtual void write(WriteBuffer &, const ISerialization &) const = 0;
     virtual void read(ReadBuffer &, const ISerialization &, Arena *) = 0;
-    virtual bool isEqualTo(const IColumn & column, size_t row_num) const = 0;
 
+    virtual bool isEqualTo(const IColumn & column, size_t row_num) const = 0;
+    virtual bool isEqualTo(const SingleValueDataBase &) const = 0;
     virtual void set(const IColumn &, size_t row_num, Arena *) = 0;
     virtual void set(const SingleValueDataBase &, Arena *) = 0;
     virtual bool setIfSmaller(const IColumn &, size_t row_num, Arena *) = 0;
@@ -120,7 +121,11 @@ struct SingleValueDataFixed final : public SingleValueDataBase
         return has() && assert_cast<const ColVecType &>(column).getData()[index] == value;
     }
 
-    bool isEqualTo(const Self & to) const { return has() && to.value == value; }
+    bool isEqualTo(const SingleValueDataBase & to) const override
+    {
+        auto const & other = assert_cast<const Self &>(to);
+        return has() && other.value == value;
+    }
 
     void set(const IColumn & column, size_t row_num, Arena *) override
     {
@@ -294,7 +299,7 @@ public:
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override;
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena) override;
     bool isEqualTo(const IColumn & column, size_t row_num) const override;
-    bool isEqualTo(const Self & to) const;
+    bool isEqualTo(const SingleValueDataBase & to) const override;
     void set(const IColumn & column, size_t row_num, Arena * arena) override;
     void set(const SingleValueDataBase & to, Arena * arena) override;
 
@@ -350,7 +355,11 @@ public:
 
     bool isEqualTo(const IColumn & column, size_t row_num) const override { return has() && value == column[row_num]; }
 
-    bool isEqualTo(const Self & to) const { return has() && to.value == value; }
+    bool isEqualTo(const SingleValueDataBase & other) const override
+    {
+        auto const & to = assert_cast<const Self &>(other);
+        return has() && to.value == value;
+    }
 
     void set(const IColumn & column, size_t row_num, Arena *) override { column.get(row_num, value); }
 
@@ -459,31 +468,4 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
 
 /// For Data classes that want to compose on top of SingleValueDataBase values, like argMax or singleValueOrNull
 void generateSingleValueFromTypeIndex(TypeIndex idx, char data[SingleValueDataBase::MAX_STORAGE_SIZE]);
-
-/// Functions that extend SingleValueData: REMOVE THIS SHIT
-/// singleValueOrNull
-template <template <typename> class AggregateFunctionTemplate, template <typename> class ChildType>
-static IAggregateFunction * createAggregateFunctionSingleValueComposite(
-    const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
-{
-    assertNoParameters(name, parameters);
-    assertUnary(name, argument_types);
-
-    const DataTypePtr & argument_type = argument_types[0];
-    WhichDataType which(argument_type);
-#define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) \
-        return new AggregateFunctionTemplate<ChildType<SingleValueDataFixed<TYPE>>>(argument_type); /// NOLINT
-    FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
-#undef DISPATCH
-
-    if (which.idx == TypeIndex::Date)
-        return new AggregateFunctionTemplate<ChildType<SingleValueDataFixed<DataTypeDate::FieldType>>>(argument_type);
-    if (which.idx == TypeIndex::DateTime)
-        return new AggregateFunctionTemplate<ChildType<SingleValueDataFixed<DataTypeDateTime::FieldType>>>(argument_type);
-    if (which.idx == TypeIndex::String)
-        return new AggregateFunctionTemplate<ChildType<SingleValueDataString>>(argument_type);
-
-    return new AggregateFunctionTemplate<ChildType<SingleValueDataGeneric>>(argument_type);
-}
 }

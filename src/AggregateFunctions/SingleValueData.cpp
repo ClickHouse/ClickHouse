@@ -466,8 +466,9 @@ bool SingleValueDataString::isEqualTo(const DB::IColumn & column, size_t row_num
         && StringValueCompatibility::getDataAtWithTerminatingZero(assert_cast<const ColumnString &>(column), row_num) == getStringRef();
 }
 
-bool SingleValueDataString::isEqualTo(const Self & to) const
+bool SingleValueDataString::isEqualTo(const SingleValueDataBase & other) const
 {
+    auto const & to = assert_cast<const Self &>(other);
     return has() && to.getStringRef() == getStringRef();
 }
 

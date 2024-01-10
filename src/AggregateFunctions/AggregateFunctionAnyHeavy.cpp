@@ -17,23 +17,35 @@ namespace
   * Otherwise, selects some arbitrary value.
   * http://www.cs.umd.edu/~samir/498/karp.pdf
   */
-template <typename Data>
 struct AggregateFunctionAnyHeavyData
 {
     using Self = AggregateFunctionAnyHeavyData;
-    using Data_t = Data;
+
+private:
+    char v_data[SingleValueDataBase::MAX_STORAGE_SIZE];
     UInt64 counter = 0;
-    Data data;
+
+public:
+    [[noreturn]] explicit AggregateFunctionAnyHeavyData()
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionAnyHeavyData initialized empty");
+    }
+
+    explicit AggregateFunctionAnyHeavyData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
+
+    SingleValueDataBase & data() { return *reinterpret_cast<SingleValueDataBase *>(v_data); }
+
+    const SingleValueDataBase & data() const { return *reinterpret_cast<const SingleValueDataBase *>(v_data); }
 
     void add(const IColumn & column, size_t row_num, Arena * arena)
     {
-        if (data.isEqualTo(column, row_num))
+        if (data().isEqualTo(column, row_num))
         {
             ++counter;
         }
         else if (counter == 0)
         {
-            data.set(column, row_num, arena);
+            data().set(column, row_num, arena);
             ++counter;
         }
         else
@@ -44,13 +56,13 @@ struct AggregateFunctionAnyHeavyData
 
     void add(const Self & to, Arena * arena)
     {
-        if (!to.data.has())
+        if (!to.data().has())
             return;
 
-        if (data.isEqualTo(to.data))
+        if (data().isEqualTo(to.data()))
             counter += to.counter;
-        else if (!data.has() || counter < to.counter)
-            data.set(to.data, arena);
+        else if (!data().has() || counter < to.counter)
+            data().set(to.data(), arena);
         else
             counter -= to.counter;
     }
@@ -63,32 +75,35 @@ struct AggregateFunctionAnyHeavyData
 
     void write(WriteBuffer & buf, const ISerialization & serialization) const
     {
-        data.write(buf, serialization);
+        data().write(buf, serialization);
         writeBinaryLittleEndian(counter, buf);
     }
 
     void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena)
     {
-        data.read(buf, serialization, arena);
+        data().read(buf, serialization, arena);
         readBinaryLittleEndian(counter, buf);
     }
 
-    void insertResultInto(IColumn & to) const { data.insertResultInto(to); }
+    void insertResultInto(IColumn & to) const { data().insertResultInto(to); }
 };
 
 
-template <typename Data>
-class AggregateFunctionAnyHeavy final : public IAggregateFunctionDataHelper<Data, AggregateFunctionAnyHeavy<Data>>
+class AggregateFunctionAnyHeavy final : public IAggregateFunctionDataHelper<AggregateFunctionAnyHeavyData, AggregateFunctionAnyHeavy>
 {
 private:
     SerializationPtr serialization;
+    const TypeIndex value_type_index;
 
 public:
     explicit AggregateFunctionAnyHeavy(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionAnyHeavy<Data>>({type}, {}, type)
+        : IAggregateFunctionDataHelper<AggregateFunctionAnyHeavyData, AggregateFunctionAnyHeavy>({type}, {}, type)
         , serialization(type->getDefaultSerialization())
+        , value_type_index(WhichDataType(type).idx)
     {
     }
+
+    void create(AggregateDataPtr __restrict place) const override { new (place) AggregateFunctionAnyHeavyData(value_type_index); }
 
     String getName() const override { return "anyHeavy"; }
 
@@ -117,7 +132,7 @@ public:
         this->data(place).read(buf, *serialization, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return Data::Data_t::allocatesMemoryInArena(); }
+    bool allocatesMemoryInArena() const override { return value_type_index == TypeIndex::String; }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -126,11 +141,14 @@ public:
 };
 
 
-AggregateFunctionPtr createAggregateFunctionAnyHeavy(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+AggregateFunctionPtr
+createAggregateFunctionAnyHeavy(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
-    return AggregateFunctionPtr(createAggregateFunctionSingleValueComposite<AggregateFunctionAnyHeavy, AggregateFunctionAnyHeavyData>(
-        name, argument_types, parameters, settings));
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
+
+    const DataTypePtr & res_type = argument_types[0];
+    return AggregateFunctionPtr(new AggregateFunctionAnyHeavy(res_type));
 }
 
 }

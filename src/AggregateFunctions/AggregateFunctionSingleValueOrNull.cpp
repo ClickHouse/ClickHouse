@@ -19,24 +19,37 @@ namespace
   * If there are zero or at least two distinct values - returns NULL.
   */
 
-template <typename Data>
 struct AggregateFunctionSingleValueOrNullData
 {
     using Self = AggregateFunctionSingleValueOrNullData;
-    using Data_t = Data;
 
-    Data data;
+private:
+    char v_data[SingleValueDataBase::MAX_STORAGE_SIZE];
     bool first_value = true;
     bool is_null = false;
+
+public:
+    [[noreturn]] explicit AggregateFunctionSingleValueOrNullData()
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionSingleValueOrNullData initialized empty");
+    }
+
+    explicit AggregateFunctionSingleValueOrNullData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
+
+    SingleValueDataBase & data() { return *reinterpret_cast<SingleValueDataBase *>(v_data); }
+
+    const SingleValueDataBase & data() const { return *reinterpret_cast<const SingleValueDataBase *>(v_data); }
+
+    bool isNull() { return is_null; }
 
     void add(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (first_value)
         {
             first_value = false;
-            data.set(column, row_num, arena);
+            data().set(column, row_num, arena);
         }
-        else if (!data.isEqualTo(column, row_num))
+        else if (!data().isEqualTo(column, row_num))
         {
             is_null = true;
         }
@@ -44,15 +57,15 @@ struct AggregateFunctionSingleValueOrNullData
 
     void add(const Self & to, Arena * arena)
     {
-        if (!to.data.has())
+        if (!to.data().has())
             return;
 
         if (first_value && !to.first_value)
         {
             first_value = false;
-            data.set(to.data, arena);
+            data().set(to.data(), arena);
         }
-        else if (!data.isEqualTo(to.data))
+        else if (!data().isEqualTo(to.data()))
         {
             is_null = true;
         }
@@ -60,9 +73,9 @@ struct AggregateFunctionSingleValueOrNullData
 
     /// TODO: Methods write and read lose data (first_value and is_null)
     /// Fixing it requires a breaking change (but it's probably necessary)
-    void write(WriteBuffer & buf, const ISerialization & serialization) const { data.write(buf, serialization); }
+    void write(WriteBuffer & buf, const ISerialization & serialization) const { data().write(buf, serialization); }
 
-    void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena) { data.read(buf, serialization, arena); }
+    void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena) { data().read(buf, serialization, arena); }
 
     void insertResultInto(IColumn & to) const
     {
@@ -74,24 +87,29 @@ struct AggregateFunctionSingleValueOrNullData
         {
             ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
             col.getNullMapColumn().insertDefault();
-            data.insertResultInto(col.getNestedColumn());
+            data().insertResultInto(col.getNestedColumn());
         }
     }
 };
 
 
-template <typename Data>
-class AggregateFunctionSingleValueOrNull final : public IAggregateFunctionDataHelper<Data, AggregateFunctionSingleValueOrNull<Data>>
+class AggregateFunctionSingleValueOrNull final
+    : public IAggregateFunctionDataHelper<AggregateFunctionSingleValueOrNullData, AggregateFunctionSingleValueOrNull>
 {
 private:
     SerializationPtr serialization;
+    const TypeIndex value_type_index;
 
 public:
     explicit AggregateFunctionSingleValueOrNull(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionSingleValueOrNull<Data>>({type}, {}, makeNullable(type))
+        : IAggregateFunctionDataHelper<AggregateFunctionSingleValueOrNullData, AggregateFunctionSingleValueOrNull>(
+            {type}, {}, makeNullable(type))
         , serialization(type->getDefaultSerialization())
+        , value_type_index(WhichDataType(type).idx)
     {
     }
+
+    void create(AggregateDataPtr __restrict place) const override { new (place) AggregateFunctionSingleValueOrNullData(value_type_index); }
 
     String getName() const override { return "singleValueOrNull"; }
 
@@ -108,9 +126,9 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        if (this->data(place).is_null)
+        if (this->data(place).isNull())
             return;
-        IAggregateFunctionDataHelper<Data, AggregateFunctionSingleValueOrNull<Data>>::addBatchSinglePlace(
+        IAggregateFunctionDataHelper<Data, AggregateFunctionSingleValueOrNull>::addBatchSinglePlace(
             row_begin, row_end, place, columns, arena, if_argument_pos);
     }
 
@@ -123,9 +141,9 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        if (this->data(place).is_null)
+        if (this->data(place).isNull())
             return;
-        IAggregateFunctionDataHelper<Data, AggregateFunctionSingleValueOrNull<Data>>::addBatchSinglePlaceNotNull(
+        IAggregateFunctionDataHelper<Data, AggregateFunctionSingleValueOrNull>::addBatchSinglePlaceNotNull(
             row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
     }
 
@@ -149,7 +167,7 @@ public:
         this->data(place).read(buf, *serialization, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return Data::Data_t::allocatesMemoryInArena(); }
+    bool allocatesMemoryInArena() const override { return value_type_index == TypeIndex::String; }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
@@ -158,11 +176,13 @@ public:
 };
 
 AggregateFunctionPtr createAggregateFunctionSingleValueOrNull(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
-    return AggregateFunctionPtr(
-        createAggregateFunctionSingleValueComposite<AggregateFunctionSingleValueOrNull, AggregateFunctionSingleValueOrNullData>(
-            name, argument_types, parameters, settings));
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
+
+    const DataTypePtr & res_type = argument_types[0];
+    return AggregateFunctionPtr(new AggregateFunctionSingleValueOrNull(res_type));
 }
 
 }
