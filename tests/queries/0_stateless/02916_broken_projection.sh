@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-merge-tree-settings, no-random-settings, no-s3-storage
+# Tags: long, no-random-merge-tree-settings, no-random-settings, no-s3-storage, no-parallel
 # shellcheck disable=SC2046
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
