@@ -1462,6 +1462,7 @@ endian
 endianness
 endsWith
 endsWithUTF
+endswith
 enqueued
 enum
 enum's
@@ -1634,6 +1635,8 @@ hasToken
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
+hasall
+hasany
 hashtables
 haversine
 hdbc
@@ -1901,6 +1904,7 @@ multidirectory
 multiline
 multiplyDecimal
 multipolygon
+multisearchany
 multisets
 multithread
 multiword
@@ -1953,7 +1957,9 @@ notEquals
 notILike
 notIn
 notLike
+notempty
 notequals
+notlike
 notretry
 nowInBlock
 ntile
@@ -2256,8 +2262,8 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
-seriesPeriodDetectFFT
 seriesDecomposeSTL
+seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
 serverUUID
@@ -2314,6 +2320,7 @@ stacktrace
 stacktraces
 startsWith
 startsWithUTF
+startswith
 statbox
 stateful
 stddev

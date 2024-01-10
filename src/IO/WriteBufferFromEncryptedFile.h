@@ -39,6 +39,8 @@ private:
     bool flush_header = false;
 
     FileEncryption::Encryptor encryptor;
+
+    Poco::Logger * log = &Poco::Logger::get("WriteBufferFromEncryptedFile");
 };
 
 }
