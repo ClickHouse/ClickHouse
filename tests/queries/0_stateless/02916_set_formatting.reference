@@ -6,7 +6,7 @@ statement: CREATE VIEW default.v1
 (
     `v` UInt64
 )
-DEFINER = default SQL SECURITY DEFINER
+SQL SECURITY INVOKER
 AS SELECT v
 FROM default.t1
 SETTINGS additional_table_filters = {'default.t1':'s != \'s1%\''}

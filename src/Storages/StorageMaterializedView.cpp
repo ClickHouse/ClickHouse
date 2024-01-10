@@ -309,7 +309,7 @@ bool StorageMaterializedView::optimize(
 
 std::tuple<ContextMutablePtr, std::shared_ptr<ASTInsertQuery>> StorageMaterializedView::prepareRefresh() const
 {
-    auto refresh_context = Context::createCopy(getContext());
+    auto refresh_context = getInMemoryMetadataPtr()->getSQLSecurityOverriddenContext(getContext());
     /// Generate a random query id.
     refresh_context->setCurrentQueryId("");
 
