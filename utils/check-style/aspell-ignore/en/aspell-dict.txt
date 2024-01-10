@@ -2302,6 +2302,8 @@ splitByString
 splitByWhitespace
 splitby
 sqid
+sqidDecode
+sqidEncode
 sql
 sqlalchemy
 sqlinsert
