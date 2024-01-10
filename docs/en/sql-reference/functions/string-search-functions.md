@@ -219,7 +219,7 @@ Functions `multiSearchAnyCaseInsensitive`, `multiSearchAnyUTF8` and `multiSearch
 multiSearchAny(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\])
 ```
 
-## match
+## match {#match}
 
 Returns whether string `haystack` matches the regular expression `pattern` in [re2 regular syntax](https://github.com/google/re2/wiki/Syntax).
 
