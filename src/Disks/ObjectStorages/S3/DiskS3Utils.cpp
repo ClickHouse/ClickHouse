@@ -1,7 +1,10 @@
 #include "DiskS3Utils.h"
+
+#if USE_AWS_S3
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Core/ServerUUID.h>
+#include <IO/S3/URI.h>
 
 namespace DB
 {
@@ -120,3 +123,5 @@ bool checkBatchRemove(S3ObjectStorage & storage, const String & key_with_trailin
     }
 }
 }
+
+#endif
