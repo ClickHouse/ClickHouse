@@ -367,10 +367,11 @@ bool CSVFormatReader::readField(
 
     const bool at_delimiter = !buf->eof() && *buf->position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || *buf->position() == '\r');
+    const bool nullable_string_field_as_empty = format_settings.csv.default_empty_for_nullable_string && type->isNullable() && isString(removeNullable(type));
 
     /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
     /// only one empty or NULL column will be expected
-    if (format_settings.csv.empty_as_default && (at_delimiter || at_last_column_line_end))
+    if (format_settings.csv.empty_as_default && (at_delimiter || at_last_column_line_end) && !nullable_string_field_as_empty)
     {
         /// Treat empty unquoted column value as default value, if
         /// specified in the settings. Tuple columns might seem
@@ -378,13 +379,8 @@ bool CSVFormatReader::readField(
         /// commas, which might be also used as delimiters. However,
         /// they do not contain empty unquoted fields, so this check
         /// works for tuples as well.
-        const bool nullable_string_field_not_set_null =
-            format_settings.csv.empty_not_as_null_for_nullable_string_field && type->isNullable() && isString(removeNullable(type));
-        if (!nullable_string_field_not_set_null)
-        {
-            column.insertDefault();
-            return false;
-        }
+        column.insertDefault();
+        return false;
     }
 
     if (format_settings.csv.use_default_on_bad_values)

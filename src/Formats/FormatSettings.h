@@ -153,7 +153,7 @@ struct FormatSettings
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
         bool empty_as_default = false;
-        bool empty_not_as_null_for_nullable_string_field = false;
+        bool default_empty_for_nullable_string = false;
         bool crlf_end_of_line = false;
         bool allow_cr_end_of_line = false;
         bool enum_as_number = false;

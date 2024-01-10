@@ -990,9 +990,9 @@ When enabled, replace empty input fields in CSV with default values. For complex
 
 Enabled by default.
 
-### input_format_csv_empty_not_as_null_for_nullable_string_field {#input_format_csv_empty_not_as_null_for_nullable_string_field}
+### input_format_csv_default_empty_for_nullable_string {#input_format_csv_default_empty_for_nullable_string}
 
-when enabled , not treat empty as null for nullable string type field while `input_format_csv_empty_as_default` enabled.
+when enabled , Treat empty as default value for nullable string type field.
 
 Disabled by default
 
