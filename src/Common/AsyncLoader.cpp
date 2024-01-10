@@ -43,6 +43,19 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
     }
 }
 
+void cancelOnDependencyFailure(const LoadJobPtr & self, const LoadJobPtr & dependency, std::exception_ptr & cancel)
+{
+    cancel = std::make_exception_ptr(Exception(ErrorCodes::ASYNC_LOAD_CANCELED,
+        "Load job '{}' -> {}",
+        self->name,
+        getExceptionMessage(dependency->exception(), /* with_stacktrace = */ false)));
+}
+
+void ignoreDependencyFailure(const LoadJobPtr &, const LoadJobPtr &, std::exception_ptr &)
+{
+    // No-op
+}
+
 LoadStatus LoadJob::status() const
 {
     std::unique_lock lock{mutex};
@@ -96,7 +109,10 @@ size_t LoadJob::canceled(const std::exception_ptr & ptr)
 
 size_t LoadJob::finish()
 {
-    func = {}; // To ensure job function is destructed before `AsyncLoader::wait()` return
+    // To ensure functions are destructed before `AsyncLoader::wait()` return
+    func = {};
+    dependency_failure = {};
+
     finish_time = std::chrono::system_clock::now();
     if (waiters > 0)
         finished.notify_all();
@@ -327,17 +343,19 @@ void AsyncLoader::schedule(const LoadJobSet & jobs_to_schedule)
 
                 if (dep_status == LoadStatus::FAILED || dep_status == LoadStatus::CANCELED)
                 {
-                    // Dependency on already failed or canceled job -- it's okay. Cancel all dependent jobs.
-                    std::exception_ptr e;
+                    // Dependency on already failed or canceled job -- it's okay.
+                    // Process as usual (may lead to cancel of all dependent jobs).
+                    std::exception_ptr cancel;
                     NOEXCEPT_SCOPE({
                         ALLOW_ALLOCATIONS_IN_SCOPE;
-                        e = std::make_exception_ptr(Exception(ErrorCodes::ASYNC_LOAD_CANCELED,
-                            "Load job '{}' -> {}",
-                            job->name,
-                            getExceptionMessage(dep->exception(), /* with_stacktrace = */ false)));
+                        if (job->dependency_failure)
+                            job->dependency_failure(job, dep, cancel);
                     });
-                    finish(job, LoadStatus::CANCELED, e, lock);
-                    break; // This job is now finished, stop its dependencies processing
+                    if (cancel)
+                    {
+                        finish(job, LoadStatus::CANCELED, cancel, lock);
+                        break; // This job is now finished, stop its dependencies processing
+                    }
                 }
             }
         }
@@ -515,63 +533,76 @@ String AsyncLoader::checkCycle(const LoadJobPtr & job, LoadJobSet & left, LoadJo
     return {};
 }
 
-void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, std::exception_ptr exception_from_job, std::unique_lock<std::mutex> & lock)
+void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, std::exception_ptr reason, std::unique_lock<std::mutex> & lock)
 {
     chassert(scheduled_jobs.contains(job)); // Job was pending
+
+    // Notify waiters
     size_t resumed_workers = 0; // Number of workers resumed in the execution pool of the job
     if (status == LoadStatus::OK)
-    {
-        // Notify waiters
-        resumed_workers += job->ok();
+        resumed_workers = job->ok();
+    else if (status == LoadStatus::FAILED)
+        resumed_workers = job->failed(reason);
+    else if (status == LoadStatus::CANCELED)
+        resumed_workers = job->canceled(reason);
 
-        // Update dependent jobs and enqueue if ready
-        for (const auto & dep : scheduled_jobs[job].dependent_jobs)
+    // Adjust suspended workers count
+    if (resumed_workers)
+    {
+        Pool & pool = pools[job->executionPool()];
+        pool.suspended_workers -= resumed_workers;
+    }
+
+    Info & info = scheduled_jobs[job];
+    if (info.isReady())
+    {
+        // Job could be in ready queue (on cancel) -- must be dequeued
+        pools[job->pool_id].ready_queue.erase(info.ready_seqno);
+        info.ready_seqno = 0;
+    }
+
+    // To avoid container modification during recursion (during clean dependency graph edges below)
+    LoadJobSet dependent;
+    dependent.swap(info.dependent_jobs);
+
+    // Update dependent jobs
+    for (const auto & dpt : dependent)
+    {
+        if (auto dpt_info = scheduled_jobs.find(dpt); dpt_info != scheduled_jobs.end())
         {
-            chassert(scheduled_jobs.contains(dep)); // All depended jobs must be pending
-            Info & dep_info = scheduled_jobs[dep];
-            dep_info.dependencies_left--;
-            if (!dep_info.isBlocked())
-                enqueue(dep_info, dep, lock);
+            dpt_info->second.dependencies_left--;
+            if (!dpt_info->second.isBlocked())
+                enqueue(dpt_info->second, dpt, lock);
+
+            if (status != LoadStatus::OK)
+            {
+                std::exception_ptr cancel;
+                NOEXCEPT_SCOPE({
+                    ALLOW_ALLOCATIONS_IN_SCOPE;
+                    if (dpt->dependency_failure)
+                        dpt->dependency_failure(dpt, job, cancel);
+                });
+                // Recurse into dependent job if it should be canceled
+                if (cancel)
+                    finish(dpt, LoadStatus::CANCELED, cancel, lock);
+            }
+        }
+        else
+        {
+            // Job has already been canceled. Do not enter twice into the same job during finish recursion.
+            // This happens in {A<-B; A<-C; B<-D; C<-D} graph for D if A is failed or canceled.
+            chassert(status == LoadStatus::CANCELED);
         }
     }
-    else
+
+    // Clean dependency graph edges pointing to canceled jobs
+    if (status != LoadStatus::OK)
     {
-        // Notify waiters
-        if (status == LoadStatus::FAILED)
-            resumed_workers += job->failed(exception_from_job);
-        else if (status == LoadStatus::CANCELED)
-            resumed_workers += job->canceled(exception_from_job);
-
-        Info & info = scheduled_jobs[job];
-        if (info.isReady())
-        {
-            pools[job->pool_id].ready_queue.erase(info.ready_seqno);
-            info.ready_seqno = 0;
-        }
-
-        // Recurse into all dependent jobs
-        LoadJobSet dependent;
-        dependent.swap(info.dependent_jobs); // To avoid container modification during recursion
-        for (const auto & dep : dependent)
-        {
-            if (!scheduled_jobs.contains(dep))
-                continue; // Job has already been canceled
-            std::exception_ptr e;
-            NOEXCEPT_SCOPE({
-                ALLOW_ALLOCATIONS_IN_SCOPE;
-                e = std::make_exception_ptr(
-                    Exception(ErrorCodes::ASYNC_LOAD_CANCELED,
-                        "Load job '{}' -> {}",
-                        dep->name,
-                        getExceptionMessage(exception_from_job, /* with_stacktrace = */ false)));
-            });
-            finish(dep, LoadStatus::CANCELED, e, lock);
-        }
-
-        // Clean dependency graph edges pointing to canceled jobs
         for (const auto & dep : job->dependencies)
+        {
             if (auto dep_info = scheduled_jobs.find(dep); dep_info != scheduled_jobs.end())
                 dep_info->second.dependent_jobs.erase(job);
+        }
     }
 
     // Job became finished
@@ -582,12 +613,6 @@ void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, std::excepti
         if (log_progress)
             logAboutProgress(log, finished_jobs.size() - old_jobs, finished_jobs.size() + scheduled_jobs.size() - old_jobs, stopwatch);
     });
-
-    if (resumed_workers)
-    {
-        Pool & pool = pools[job->executionPool()];
-        pool.suspended_workers -= resumed_workers;
-    }
 }
 
 void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool_id, std::unique_lock<std::mutex> & lock)
@@ -612,6 +637,9 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool_id, std::un
     }
 
     job->pool_id.store(new_pool_id);
+    // TODO(serxa): we should adjust suspended_workers and suspended_waiters here.
+    // Otherwise suspended_workers we be left inconsistent. Fix it and add a test.
+    // Scenario: schedule a job A, wait for it from a job B in the same pool, prioritize A
 
     // Recurse into dependencies
     for (const auto & dep : job->dependencies)
