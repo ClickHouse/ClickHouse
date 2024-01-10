@@ -1915,7 +1915,6 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
 
         if (default_security == ASTSQLSecurity::Type::DEFINER)
         {
-            sql_security.type = ASTSQLSecurity::Type::DEFINER;
             String default_definer = context_->getSettingsRef().default_view_definer;
             if (default_definer == "CURRENT_USER")
                 sql_security.is_definer_current_user = true;
@@ -1942,7 +1941,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
             sql_security.definer = std::make_shared<ASTUserNameWithHost>(current_user_name);
     }
 
-    /// Checks the permissions to specify the selected user as a definer.
+    /// Checks the permissions for the specified definer user.
     if (sql_security.definer && !sql_security.is_definer_current_user && !is_attach)
     {
         const auto definer_name = sql_security.definer->toString();
