@@ -1120,7 +1120,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
     if (create.sql_security)
-        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.attach);
+        processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.attach, create.is_materialized_view);
 
     DDLGuardPtr ddl_guard;
 
