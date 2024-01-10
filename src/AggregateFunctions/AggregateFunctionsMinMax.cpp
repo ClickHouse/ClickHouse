@@ -78,7 +78,7 @@ public:
             if constexpr (isMin)
                 this->data(place).setSmallest(*columns[0], row_begin, row_end, arena);
             else
-                this->data(place).setSmallest(*columns[0], row_begin, row_end, arena);
+                this->data(place).setGreatest(*columns[0], row_begin, row_end, arena);
         }
     }
 
