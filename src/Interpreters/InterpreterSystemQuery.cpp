@@ -459,6 +459,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_DISK_METADATA_CACHE:
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+        }
         case Type::DROP_PAGE_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PAGE_CACHE);

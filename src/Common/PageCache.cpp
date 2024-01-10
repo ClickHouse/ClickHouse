@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <base/hex.h>
@@ -161,7 +162,7 @@ PageCache::PageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes
                 LOG_WARNING(&Poco::Logger::get("PageCache"), "The OS huge page size is too large for our purposes: {} KiB. Using regular pages. Userspace page cache will be relatively slow.", huge_page_size);
             }
         }
-        catch (DB::Exception & e)
+        catch (Exception & e)
         {
             if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
                 throw;
@@ -609,7 +610,7 @@ PageCache::Mmap::Mmap(size_t bytes_per_page_, size_t pages_per_chunk_, size_t pa
 #endif
     ptr = mmap(address_hint, size, PROT_READ | PROT_WRITE, flags, -1, 0);
     if (MAP_FAILED == ptr)
-        DB::throwFromErrno(fmt::format("Cannot mmap {}.", ReadableSize(size)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, fmt::format("Cannot mmap {}.", ReadableSize(size)));
     if (reinterpret_cast<UInt64>(ptr) % bytes_per_page_ != 0)
     {
         munmap(ptr, size);
