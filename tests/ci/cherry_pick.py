@@ -606,16 +606,18 @@ def parse_args():
 
 @contextmanager
 def clear_repo():
-    orig_ref = git_runner("git branch --show-current") or git_runner(
-        "git rev-parse HEAD"
-    )
+    def ref():
+        return git_runner("git branch --show-current") or git_runner(
+            "git rev-parse HEAD"
+        )
+
+    orig_ref = ref()
     try:
         yield
-    except (Exception, KeyboardInterrupt):
-        git_runner(f"git checkout -f {orig_ref}")
-        raise
-    else:
-        git_runner(f"git checkout -f {orig_ref}")
+    finally:
+        current_ref = ref()
+        if orig_ref != current_ref:
+            git_runner(f"git checkout -f {orig_ref}")
 
 
 @contextmanager
@@ -627,11 +629,7 @@ def stash():
     try:
         with clear_repo():
             yield
-    except (Exception, KeyboardInterrupt):
-        if need_stash:
-            git_runner("git stash pop")
-        raise
-    else:
+    finally:
         if need_stash:
             git_runner("git stash pop")
 
