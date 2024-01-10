@@ -168,8 +168,12 @@ void ReplaceDistributedTableNameVisitor::enter(ASTTableIdentifier & table_ident,
         /// 1. Initialize scope
 
         /// For example self join
-        if (std::find(scope->tables.begin(), scope->tables.end(), table_ident.getTableId()) != scope->tables.end())
+        auto found = scope->tables_map.find(table_ident.getTableId());
+        if (found != scope->tables_map.end())
+        {
+            table_ident.resetTable(found->second.getDatabaseName(), found->second.getTableName());
             return;
+        }
 
         scope->tables.push_back(table_ident.getTableId());
         auto database_name = distributed_table->getRemoteDatabaseName();
