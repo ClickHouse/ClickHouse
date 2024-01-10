@@ -172,7 +172,7 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
 
 template<typename WriteBufferT>
 std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
-    WriteBufferT && nested, CompressionMethod method, int level, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty)
+    WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty)
 {
     if (method == DB::CompressionMethod::Gzip || method == CompressionMethod::Zlib)
         return std::make_unique<ZlibDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), method, level, buf_size, existing_memory, alignment, compress_empty);
@@ -185,7 +185,7 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
         return std::make_unique<LZMADeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment, compress_empty);
 
     if (method == CompressionMethod::Zstd)
-        return std::make_unique<ZstdDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment, compress_empty);
+        return std::make_unique<ZstdDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
 
     if (method == CompressionMethod::Lz4)
         return std::make_unique<Lz4DeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), level, buf_size, existing_memory, alignment, compress_empty);

@@ -4006,9 +4006,13 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         /// We don't need to commit it to zk, and don't even need to activate it.
 
         MergeTreePartInfo empty_info = drop_range;
-        empty_info.min_block = empty_info.level = empty_info.mutation = 0;
+        empty_info.level = empty_info.mutation = 0;
+        empty_info.min_block = MergeTreePartInfo::MAX_BLOCK_NUMBER;
         for (const auto & part : parts_to_remove)
         {
+            /// We still have to take min_block into account to avoid creating multiple covering ranges
+            /// that intersect each other
+            empty_info.min_block = std::min(empty_info.min_block, part->info.min_block);
             empty_info.level = std::max(empty_info.level, part->info.level);
             empty_info.mutation = std::max(empty_info.mutation, part->info.mutation);
         }
@@ -6884,7 +6888,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     ContextPtr query_context,
     QueryProcessingStage::Enum to_stage,
     const StorageSnapshotPtr &,
-    SelectQueryInfo & query_info) const
+    SelectQueryInfo &) const
 {
     if (query_context->getClientInfo().collaborate_with_initiator)
         return QueryProcessingStage::Enum::FetchColumns;
@@ -6899,11 +6903,6 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
         /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
         if (query_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree)
             return QueryProcessingStage::Enum::WithMergeableState;
-    }
-
-    if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
-    {
-        query_info.projection = std::nullopt;
     }
 
     return QueryProcessingStage::Enum::FetchColumns;

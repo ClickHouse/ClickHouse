@@ -391,6 +391,9 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3PutObject, "Number of DiskS3 API PutObject calls.") \
     M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
     \
+    M(S3Clients, "Number of created S3 clients.") \
+    M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.") \
+    \
     M(EngineFileLikeReadFiles, "Number of files read in table engines working with files (like File/S3/URL/HDFS).") \
     \
     M(ReadBufferFromS3Microseconds, "Time spent on reading from S3.") \

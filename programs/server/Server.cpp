@@ -58,6 +58,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -658,6 +659,7 @@ try
     }
 #endif
 
+    registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
