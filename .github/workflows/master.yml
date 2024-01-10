@@ -319,22 +319,15 @@ jobs:
       run_command: |
         python3 build_report_check.py "$CHECK_NAME"
   MarkReleaseReady:
+    needs: [RunConfig, BuilderBinDarwin, BuilderBinDarwinAarch64, BuilderDebRelease, BuilderDebAarch64]
     if: ${{ !failure() && !cancelled() }}
-    needs:
-      - BuilderBinDarwin
-      - BuilderBinDarwinAarch64
-      - BuilderDebRelease
-      - BuilderDebAarch64
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-      - name: Mark Commit Release Ready
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 mark_release_ready.py
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Mark Commit Release Ready
+      runner_type: style-checker
+      data: ${{ needs.RunConfig.outputs.data }}
+      run_command: |
+        python3 mark_release_ready.py
 ############################################################################################
 #################################### INSTALL PACKAGES ######################################
 ############################################################################################

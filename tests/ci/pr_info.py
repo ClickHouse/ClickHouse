@@ -289,6 +289,9 @@ class PRInfo:
     def is_master(self) -> bool:
         return self.number == 0 and self.base_ref == "master"
 
+    def is_release(self) -> bool:
+        return self.number == 0
+
     def is_scheduled(self):
         return self.event_type == EventType.SCHEDULE
 
