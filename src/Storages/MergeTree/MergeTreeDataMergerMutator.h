@@ -165,6 +165,7 @@ public:
         ReservationSharedPtr space_reservation,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         const MergeTreeData::MergingParams & merging_params,
         const MergeTreeTransactionPtr & txn,
         bool need_prefix = true,

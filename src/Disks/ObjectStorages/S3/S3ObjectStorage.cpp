@@ -18,7 +18,6 @@
 
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
-#include <Common/getRandomASCIIString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -555,27 +554,12 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     return std::make_unique<S3ObjectStorage>(
         std::move(new_client), std::move(new_s3_settings),
         version_id, s3_capabilities, new_namespace,
-        endpoint, object_key_prefix, disk_name);
+        endpoint, key_generator, disk_name);
 }
 
-ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string &) const
+ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
-    /// Path to store the new S3 object.
-
-    /// Total length is 32 a-z characters for enough randomness.
-    /// First 3 characters are used as a prefix for
-    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
-
-    constexpr size_t key_name_total_size = 32;
-    constexpr size_t key_name_prefix_size = 3;
-
-    /// Path to store new S3 object.
-    String key = fmt::format("{}/{}",
-                             getRandomASCIIString(key_name_prefix_size),
-                             getRandomASCIIString(key_name_total_size - key_name_prefix_size));
-
-    /// what ever key_prefix value is, consider that key as relative
-    return ObjectStorageKey::createAsRelative(object_key_prefix, key);
+    return key_generator->generate(path);
 }
 
 

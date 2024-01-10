@@ -1,4 +1,5 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
+#include "IO/S3/Client.h"
 
 #if USE_AWS_S3
 
@@ -92,10 +93,15 @@ std::unique_ptr<S3::Client> getClient(
     HTTPHeaderEntries headers = S3::getHTTPHeaders(config_prefix, config);
     S3::ServerSideEncryptionKMSConfig sse_kms_config = S3::getSSEKMSConfig(config_prefix, config);
 
+    S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = local_settings.s3_disable_checksum,
+        .gcs_issue_compose_request = config.getBool("s3.gcs_issue_compose_request", false),
+    };
+
     return S3::ClientFactory::instance().create(
         client_configuration,
-        uri.is_virtual_hosted_style,
-        local_settings.s3_disable_checksum,
+        client_settings,
         config.getString(config_prefix + ".access_key_id", ""),
         config.getString(config_prefix + ".secret_access_key", ""),
         config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
