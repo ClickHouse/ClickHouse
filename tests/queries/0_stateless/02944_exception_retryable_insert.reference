@@ -1,0 +1,8 @@
+ZK failure
+< X-ClickHouse-EXC-Code: 999
+< X-ClickHouse-EXC-Retryable: 1
+0
+Timeout
+< X-ClickHouse-EXC-Code: 159
+< X-ClickHouse-EXC-Retryable: 1
+0

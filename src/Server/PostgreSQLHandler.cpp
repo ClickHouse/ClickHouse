@@ -229,7 +229,8 @@ void PostgreSQLHandler::cancelRequest()
 
     auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId("");
-    executeQuery(replacement, *out, true, query_context, {});
+    QueryStatusPtr query_status;
+    executeQuery(replacement, *out, true, query_context, query_status, {});
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
@@ -295,7 +296,8 @@ void PostgreSQLHandler::processQuery()
 
             CurrentThread::QueryScope query_scope{query_context};
             ReadBufferFromString read_buf(spl_query);
-            executeQuery(read_buf, *out, false, query_context, {});
+            QueryStatusPtr query_status;
+            executeQuery(read_buf, *out, false, query_context, query_status, {});
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);

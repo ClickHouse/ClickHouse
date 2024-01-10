@@ -58,7 +58,11 @@ void WriteBufferFromHTTPServerResponse::writeExceptionCode()
     if (headers_finished_sending || !exception_code)
         return;
     if (response_header_ostr)
+    {
         *response_header_ostr << "X-ClickHouse-Exception-Code: " << exception_code << "\r\n" << std::flush;
+        if (exception_retryable.has_value())
+            *response_header_ostr << "X-ClickHouse-Exception-Retryable: " << int(*exception_retryable) << "\r\n" << std::flush;
+    }
 }
 
 void WriteBufferFromHTTPServerResponse::finishSendHeaders()

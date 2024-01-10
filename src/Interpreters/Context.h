@@ -1257,6 +1257,9 @@ public:
 
     const ServerSettings & getServerSettings() const;
 
+    /** Check if an error code is safe to be retried given what has happened in the running query */
+    std::optional<bool> isExceptionSafeToRetry(int error_code) const;
+
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 

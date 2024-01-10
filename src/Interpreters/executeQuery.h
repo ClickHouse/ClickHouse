@@ -38,14 +38,18 @@ struct QueryFlags
 
 /// Parse and execute a query.
 void executeQuery(
-    ReadBuffer & istr,                  /// Where to read query from (and data for INSERT, if present).
-    WriteBuffer & ostr,                 /// Where to write query output to.
-    bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
-    ContextMutablePtr context,          /// DB, tables, data types, storage engines, functions, aggregate functions...
-    SetResultDetailsFunc set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone.
+    ReadBuffer & istr, /// Where to read query from (and data for INSERT, if present).
+    WriteBuffer & ostr, /// Where to write query output to.
+    bool allow_into_outfile, /// If true and the query contains INTO OUTFILE section, redirect output to that file.
+    ContextMutablePtr context, /// DB, tables, data types, storage engines, functions, aggregate functions...
+    QueryStatusPtr & query_status, /// When we need the query status to live until the end of the query (handlers)
+    SetResultDetailsFunc
+        set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone.
     QueryFlags flags = {},
-    const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
-    HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {} /// If a non-empty callback is passed, it will be called on exception with created output format.
+    const std::optional<FormatSettings> & output_format_settings
+    = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
+    HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}
+    /// If a non-empty callback is passed, it will be called on exception with created output format.
 );
 
 
