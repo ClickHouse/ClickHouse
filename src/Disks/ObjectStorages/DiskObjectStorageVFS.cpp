@@ -115,7 +115,7 @@ bool DiskObjectStorageVFS::tryDownloadMetadata(std::string_view remote_from, con
         // TODO myrrc do not write error message with "Information" level as it would be a normal situation
         metadata_object_buf->eof();
     }
-#ifdef USE_AWS_S3
+#if USE_AWS_S3
     catch (const S3Exception & e) // TODO myrrc this works only for s3
     {
         if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
