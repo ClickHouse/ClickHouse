@@ -23,48 +23,194 @@ namespace DB
 namespace
 {
 
-class FunctionToSubcolumnsVisitor : public InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitor>
+std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node)
+{
+    auto * function_node = node->as<FunctionNode>();
+    if (!function_node)
+        return {};
+
+    auto & function_arguments_nodes = function_node->getArguments().getNodes();
+    if (function_arguments_nodes.empty() || function_arguments_nodes.size() > 2)
+        return {};
+    auto * first_argument_column_node = function_arguments_nodes.front()->as<ColumnNode>();
+    if (!first_argument_column_node)
+        return {};
+
+    auto column_source = first_argument_column_node->getColumnSource();
+    auto * table_node = column_source->as<TableNode>();
+    if (!table_node)
+        return {};
+
+    if (!table_node->getStorageSnapshot())
+        return {};
+
+    if (!table_node->getStorage()->supportsSubcolumns())
+        return {};
+
+    return std::make_tuple(function_node, first_argument_column_node, table_node);
+}
+
+class FunctionToSubcolumnsVisitorFirstPass : public InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorFirstPass>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorFirstPass>;
     using Base::Base;
 
-    void enterImpl(QueryTreeNodePtr & node) const
+    struct Data
     {
-        if (!getSettings().optimize_functions_to_subcolumns)
+        std::unordered_set<Identifier> all_key_columns;
+        std::unordered_map<Identifier, UInt64> indentifiers_count;
+        std::unordered_map<Identifier, UInt64> optimized_identifiers_count;
+    };
+
+    Data getData() const { return data; }
+
+    void enterImpl(const QueryTreeNodePtr & node)
+    {
+        if (auto * column_node = node->as<ColumnNode>())
+        {
+            enterImpl(*column_node);
             return;
+        }
 
-        auto * function_node = node->as<FunctionNode>();
-        if (!function_node)
+        auto [function_node, first_argument_node, table_node] = getTypedNodesForOptimization(node);
+        if (function_node && first_argument_node && table_node)
+        {
+            enterImpl(*function_node, *first_argument_node, *table_node);
             return;
+        }
+    }
 
-        auto & function_arguments_nodes = function_node->getArguments().getNodes();
-        size_t function_arguments_nodes_size = function_arguments_nodes.size();
-
-        if (function_arguments_nodes.empty() || function_arguments_nodes_size > 2)
-            return;
-
-        auto * first_argument_column_node = function_arguments_nodes.front()->as<ColumnNode>();
-
-        if (!first_argument_column_node)
-            return;
-
-        auto column_source = first_argument_column_node->getColumnSource();
+private:
+    void enterImpl(const ColumnNode & column_node)
+    {
+        auto column_source = column_node.getColumnSource();
         auto * table_node = column_source->as<TableNode>();
-
         if (!table_node)
             return;
 
-        const auto & storage = table_node->getStorage();
-        if (!storage->supportsSubcolumns())
-            return;
+        auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
+        Identifier qualified_name({table_name, column_node.getColumnName()});
 
-        auto column = first_argument_column_node->getColumn();
+        ++data.indentifiers_count[qualified_name];
+
+        if (processed_tables.emplace(table_name).second)
+        {
+            const auto & metadata_snapshot = table_node->getStorageSnapshot()->metadata;
+
+            auto add_key_columns = [&](const auto & key_columns)
+            {
+                for (const auto & column_name : key_columns)
+                {
+                    Identifier identifier({table_name, column_name});
+                    data.all_key_columns.insert(identifier);
+                }
+            };
+
+            /// Do not optimize index columns (primary, min-max, secondary),
+            /// because otherwise analysis of indexes may be broken.
+            /// TODO: handle subcolumns in index analysis.
+
+            const auto & primary_key_columns = metadata_snapshot->getColumnsRequiredForPrimaryKey();
+            add_key_columns(primary_key_columns);
+
+            const auto & partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
+            add_key_columns(partition_key_columns);
+
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+            {
+                const auto & index_columns = index.expression->getRequiredColumns();
+                add_key_columns(index_columns);
+            }
+        }
+    }
+
+    void enterImpl(const FunctionNode & function_node, const ColumnNode & first_argument_column_node, const TableNode & table_node)
+    {
+        const auto & function_arguments_nodes = function_node.getArguments().getNodes();
+        const auto & function_name = function_node.getFunctionName();
+
+        auto column = first_argument_column_node.getColumn();
         WhichDataType column_type(column.type);
 
+        auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
+        Identifier qualified_name({table_name, column.name});
+
+        if (function_arguments_nodes.size() == 1)
+        {
+            if (column_type.isArray())
+            {
+                if (function_name == "length" || function_name == "empty" || function_name == "notEmpty")
+                    ++data.optimized_identifiers_count[qualified_name];
+            }
+            else if (column_type.isNullable())
+            {
+                if (function_name == "isNull" || function_name == "isNotNull")
+                    ++data.optimized_identifiers_count[qualified_name];
+            }
+            else if (column_type.isMap())
+            {
+                if (function_name == "mapKeys" || function_name == "mapValues")
+                    ++data.optimized_identifiers_count[qualified_name];
+            }
+        }
+        else if (function_arguments_nodes.size() == 2)
+        {
+            const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
+            if (function_name == "tupleElement" && column_type.isTuple() && second_argument_constant_node)
+            {
+                /** Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)`
+                  * with `tuple_argument.column_name`.
+                  */
+                const auto & tuple_element_constant_value = second_argument_constant_node->getValue();
+                const auto & tuple_element_constant_value_type = tuple_element_constant_value.getType();
+
+                if (tuple_element_constant_value_type == Field::Types::String || tuple_element_constant_value_type == Field::Types::UInt64)
+                    ++data.optimized_identifiers_count[qualified_name];
+            }
+            else if (function_name == "mapContains" && column_type.isMap())
+            {
+                ++data.optimized_identifiers_count[qualified_name];
+            }
+        }
+    }
+
+    Data data;
+    NameSet processed_tables;
+};
+
+
+class FunctionToSubcolumnsVisitorSecondPass : public InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
+    using Base::Base;
+
+    FunctionToSubcolumnsVisitorSecondPass(ContextPtr context_, std::unordered_set<Identifier> identifiers_to_optimize_)
+        : Base(std::move(context_)), identifiers_to_optimize(std::move(identifiers_to_optimize_))
+    {
+    }
+
+    void enterImpl(QueryTreeNodePtr & node) const
+    {
+        auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node);
+        if (!function_node || !first_argument_column_node || !table_node)
+            return;
+
+        auto & function_arguments_nodes = function_node->getArguments().getNodes();
         const auto & function_name = function_node->getFunctionName();
 
-        if (function_arguments_nodes_size == 1)
+        auto column = first_argument_column_node->getColumn();
+        auto column_source = first_argument_column_node->getColumnSource();
+        WhichDataType column_type(column.type);
+
+        auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
+        Identifier qualified_name({table_name, column.name});
+
+        if (!identifiers_to_optimize.contains(qualified_name))
+            return;
+
+        if (function_arguments_nodes.size() == 1)
         {
             if (column_type.isArray())
             {
@@ -72,7 +218,6 @@ public:
                 {
                     /// Replace `length(array_argument)` with `array_argument.size0`
                     column.name += ".size0";
-
                     node = std::make_shared<ColumnNode>(column, column_source);
                 }
                 else if (function_name == "empty")
@@ -106,7 +251,6 @@ public:
                 {
                     /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
                     column.name += ".null";
-
                     node = std::make_shared<ColumnNode>(column, column_source);
                 }
                 else if (function_name == "isNotNull")
@@ -140,10 +284,9 @@ public:
                 }
             }
         }
-        else
+        else if (function_arguments_nodes.size() == 2)
         {
             const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
-
             if (function_name == "tupleElement" && column_type.isTuple() && second_argument_constant_node)
             {
                 /** Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)`
@@ -193,6 +336,8 @@ public:
     }
 
 private:
+    std::unordered_set<Identifier> identifiers_to_optimize;
+
     inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
         auto function = FunctionFactory::instance().get(function_name, getContext());
@@ -204,8 +349,26 @@ private:
 
 void FunctionToSubcolumnsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    FunctionToSubcolumnsVisitor visitor(context);
-    visitor.visit(query_tree_node);
+    if (!context->getSettingsRef().optimize_functions_to_subcolumns)
+        return;
+
+    std::unordered_set<Identifier> identifiers_to_optimize;
+
+    {
+        FunctionToSubcolumnsVisitorFirstPass visitor(context);
+        visitor.visit(query_tree_node);
+
+        auto data = visitor.getData();
+        for (const auto & [identifier, count] : data.optimized_identifiers_count)
+            if (!data.all_key_columns.contains(identifier) && data.indentifiers_count[identifier] == count)
+                identifiers_to_optimize.insert(identifier);
+    }
+
+    if (!identifiers_to_optimize.empty())
+    {
+        FunctionToSubcolumnsVisitorSecondPass visitor(std::move(context), std::move(identifiers_to_optimize));
+        visitor.visit(query_tree_node);
+    }
 }
 
 }

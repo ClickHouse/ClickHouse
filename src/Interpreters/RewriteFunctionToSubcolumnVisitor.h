@@ -17,6 +17,7 @@ public:
     void visit(ASTFunction & function, ASTPtr & ast) const;
 
     StorageMetadataPtr metadata_snapshot;
+    IdentifierNameSet forbidden_identifiers;
 };
 
 using RewriteFunctionToSubcolumnMatcher = OneTypeMatcher<RewriteFunctionToSubcolumnData>;

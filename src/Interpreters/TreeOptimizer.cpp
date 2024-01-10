@@ -656,10 +656,41 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
-void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & metadata_snapshot)
+void optimizeFunctionsToSubcolumns(ASTPtr & query, const TreeRewriterResult & result)
 {
-    RewriteFunctionToSubcolumnVisitor::Data data{metadata_snapshot};
-    RewriteFunctionToSubcolumnVisitor(data).visit(query);
+    if (!result.storage || !result.storage->supportsSubcolumns() || !result.storage_snapshot)
+        return;
+
+    const auto & metadata_snapshot = result.storage_snapshot->metadata;
+    // const auto & select_query = assert_cast<const ASTSelectQuery &>(*query);
+
+    /// For queries with FINAL converting function to subcolumn may alter
+    /// special merging algorithms and produce wrong result of query.
+    // if (select_query.final())
+    //     return;
+
+    // FindIdentifiersForbiddenToReplaceToSubcolumnsVisitor::Data data;
+    // FindIdentifiersForbiddenToReplaceToSubcolumnsVisitor(data).visit(query);
+
+    IdentifierNameSet forbidden_identifiers;
+
+    /// Do not optimize index columns (primary, min-max, secondary),
+    /// because otherwise analysis of indexes may be broken.
+    /// TODO: handle subcolumns in index analysis.
+    const auto & primary_key_columns = result.storage_snapshot->metadata->getColumnsRequiredForPrimaryKey();
+    forbidden_identifiers.insert(primary_key_columns.begin(), primary_key_columns.end());
+
+    const auto & partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
+    forbidden_identifiers.insert(partition_key_columns.begin(), partition_key_columns.end());
+
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        const auto & index_columns = index.expression->getRequiredColumns();
+        forbidden_identifiers.insert(index_columns.begin(), index_columns.end());
+    }
+
+    RewriteFunctionToSubcolumnVisitor::Data rewrite_data{metadata_snapshot, forbidden_identifiers};
+    RewriteFunctionToSubcolumnVisitor(rewrite_data).visit(query);
 }
 
 void optimizeOrLikeChain(ASTPtr & query)
@@ -726,8 +757,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (!select_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Select analyze for not select asts.");
 
-    if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
-        optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
+    if (settings.optimize_functions_to_subcolumns)
+        optimizeFunctionsToSubcolumns(query, result);
 
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
