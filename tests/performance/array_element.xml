@@ -4,7 +4,7 @@
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore([[], []][number % 2 + 2])</query>
 
     <!-- arrayElement function with input type Array(Array(UInt8)) -->
-    <query>select materialize(array(array(1,2,3,4)))[1] from numbers(10000000) fromat Null</query>
+    <query>select materialize(array(array(1,2,3,4)))[1] from numbers(10000000) format Null</query>
     <query>select materialize(array(array(1,2,3,4)))[materialize(1)] from numbers(10000000) format Null</query>
 
     <!-- arrayElement function with input type Array(Array(String)) -->
