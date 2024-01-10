@@ -365,7 +365,7 @@ DECLARE_AVX512VBMI2_SPECIFIC_CODE(
     FUNCTION_HEADER \
     \
     name \
-    FUNCTION_BODY                                                             \
+    FUNCTION_BODY \
 
 /// NOLINTNEXTLINE
 #define MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \

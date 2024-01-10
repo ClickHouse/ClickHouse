@@ -335,6 +335,22 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
     {
         read(column, [&](ColumnString::Chars & data) { readJSONArrayInto(data, istr); });
     }
+    else if (settings.json.read_bools_as_strings && !istr.eof() && (*istr.position() == 't' || *istr.position() == 'f'))
+    {
+        String str_value;
+        if (*istr.position() == 't')
+        {
+            assertString("true", istr);
+            str_value = "true";
+        }
+        else if (*istr.position() == 'f')
+        {
+            assertString("false", istr);
+            str_value = "false";
+        }
+
+        read(column, [&](ColumnString::Chars & data) { data.insert(str_value.begin(), str_value.end()); });
+    }
     else if (settings.json.read_numbers_as_strings && !istr.eof() && *istr.position() != '"')
     {
         String field;

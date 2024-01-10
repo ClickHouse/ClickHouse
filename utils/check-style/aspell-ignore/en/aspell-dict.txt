@@ -198,6 +198,7 @@ DELETEs
 DESC
 DIEs
 DOGEFI
+Damerau
 DataGrip
 DataLens
 DataTime
@@ -344,6 +345,7 @@ Hypot
 IANA
 IDE
 IDEs
+IDNA
 IMDS
 INFILE
 INSERTed
@@ -413,6 +415,7 @@ JSONType
 JSONs
 Jaeger
 Jannis
+Jaro
 JavaHash
 Jemalloc
 Jepsen
@@ -701,8 +704,6 @@ PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
-TotalPrimaryKeyBytesInMemory
-TotalPrimaryKeyBytesInMemoryAllocated
 PrivateKeyPassphraseHandler
 ProfileEvents
 Profiler
@@ -714,6 +715,7 @@ Promtail
 Protobuf
 ProtobufSingle
 ProxySQL
+Punycode
 PyArrow
 PyCharm
 QEMU
@@ -912,6 +914,7 @@ ThreadsInOvercommitTracker
 Timeunit
 TinyLog
 Tkachenko
+ToASCII
 ToCenterChild
 ToChildren
 ToGeo
@@ -920,10 +923,13 @@ ToIPv
 ToParent
 ToSnowflake
 ToString
+ToUnicode
 Toolset
 TopK
 TotalBytesOfMergeTreeTables
 TotalPartsOfMergeTreeTables
+TotalPrimaryKeyBytesInMemory
+TotalPrimaryKeyBytesInMemoryAllocated
 TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
@@ -976,6 +982,7 @@ Werror
 Wether
 WikiStat
 WindowView
+Winkler
 WithNames
 WithNamesAndTypes
 WordNet
@@ -1338,6 +1345,7 @@ cutToFirstSignificantSubdomainWithWWW
 cutURLParameter
 cutWWW
 cyrus
+damerauLevenshteinDistance
 datacenter
 datacenters
 datafiles
@@ -1651,6 +1659,8 @@ hyvor
 icosahedron
 icudata
 idempotency
+idnaDecode
+idnaEncode
 ifNotFinite
 ifNull
 iframe
@@ -1695,6 +1705,8 @@ isZeroOrNull
 iteratively
 jaccard
 jaccardIndex
+jaroSimilarity
+jaroWinklerSimilarity
 javaHash
 javaHashUTF
 jbod
@@ -1790,6 +1802,7 @@ llvm
 loadDefaultCAFile
 localhost
 localread
+loess
 logTrace
 logagent
 loghouse
@@ -1848,14 +1861,14 @@ metrica
 metroHash
 mfedotov
 minMap
+minSampleSizeContinuous
+minSampleSizeConversion
 mindsdb
 minimalistic
 mininum
 miniselect
 minmap
 minmax
-minSampleSizeContinuous
-minSampleSizeConversion
 mins
 misconfiguration
 mispredictions
@@ -2075,6 +2088,8 @@ pseudorandom
 pseudorandomize
 psql
 ptrs
+punycodeDecode
+punycodeEncode
 pushdown
 pwrite
 py
@@ -2239,6 +2254,7 @@ sequenceCount
 sequenceMatch
 sequenceNextNode
 seriesPeriodDetectFFT
+seriesDecomposeSTL
 serverTimeZone
 serverTimezone
 serverUUID
@@ -2521,6 +2537,8 @@ trimRight
 trunc
 tryBase
 tryDecrypt
+tryIdnaEncode
+tryPunycodeDecode
 tskv
 tsv
 tui

@@ -58,6 +58,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -152,18 +153,6 @@ namespace ProfileEvents
 {
     extern const Event MainConfigLoads;
     extern const Event ServerStartupMilliseconds;
-    extern const Event InterfaceNativeSendBytes;
-    extern const Event InterfaceNativeReceiveBytes;
-    extern const Event InterfaceHTTPSendBytes;
-    extern const Event InterfaceHTTPReceiveBytes;
-    extern const Event InterfacePrometheusSendBytes;
-    extern const Event InterfacePrometheusReceiveBytes;
-    extern const Event InterfaceInterserverSendBytes;
-    extern const Event InterfaceInterserverReceiveBytes;
-    extern const Event InterfaceMySQLSendBytes;
-    extern const Event InterfaceMySQLReceiveBytes;
-    extern const Event InterfacePostgreSQLSendBytes;
-    extern const Event InterfacePostgreSQLReceiveBytes;
 }
 
 namespace fs = std::filesystem;
@@ -658,6 +647,7 @@ try
     }
 #endif
 
+    registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
@@ -1272,11 +1262,11 @@ try
         {
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
-            ServerSettings server_settings_;
-            server_settings_.loadSettingsFromConfig(*config);
+            ServerSettings new_server_settings;
+            new_server_settings.loadSettingsFromConfig(*config);
 
-            size_t max_server_memory_usage = server_settings_.max_server_memory_usage;
-            double max_server_memory_usage_to_ram_ratio = server_settings_.max_server_memory_usage_to_ram_ratio;
+            size_t max_server_memory_usage = new_server_settings.max_server_memory_usage;
+            double max_server_memory_usage_to_ram_ratio = new_server_settings.max_server_memory_usage_to_ram_ratio;
 
             size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
             size_t default_max_server_memory_usage = static_cast<size_t>(current_physical_server_memory * max_server_memory_usage_to_ram_ratio);
@@ -1306,9 +1296,9 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-            size_t merges_mutations_memory_usage_soft_limit = server_settings_.merges_mutations_memory_usage_soft_limit;
+            size_t merges_mutations_memory_usage_soft_limit = new_server_settings.merges_mutations_memory_usage_soft_limit;
 
-            size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(current_physical_server_memory * server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+            size_t default_merges_mutations_server_memory_usage = static_cast<size_t>(current_physical_server_memory * new_server_settings.merges_mutations_memory_usage_to_ram_ratio);
             if (merges_mutations_memory_usage_soft_limit == 0)
             {
                 merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
@@ -1316,7 +1306,7 @@ try
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
-                    server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+                    new_server_settings.merges_mutations_memory_usage_to_ram_ratio);
             }
             else if (merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
             {
@@ -1325,7 +1315,7 @@ try
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
-                    server_settings_.merges_mutations_memory_usage_to_ram_ratio);
+                    new_server_settings.merges_mutations_memory_usage_to_ram_ratio);
             }
 
             LOG_INFO(log, "Merges and mutations memory limit is set to {}",
@@ -1334,7 +1324,7 @@ try
             background_memory_tracker.setDescription("(background)");
             background_memory_tracker.setMetric(CurrentMetrics::MergesMutationsMemoryTracking);
 
-            total_memory_tracker.setAllowUseJemallocMemory(server_settings_.allow_use_jemalloc_memory);
+            total_memory_tracker.setAllowUseJemallocMemory(new_server_settings.allow_use_jemalloc_memory);
 
             auto * global_overcommit_tracker = global_context->getGlobalOvercommitTracker();
             total_memory_tracker.setOvercommitTracker(global_overcommit_tracker);
@@ -1358,26 +1348,26 @@ try
             global_context->setRemoteHostFilter(*config);
             global_context->setHTTPHeaderFilter(*config);
 
-            global_context->setMaxTableSizeToDrop(server_settings_.max_table_size_to_drop);
-            global_context->setMaxPartitionSizeToDrop(server_settings_.max_partition_size_to_drop);
-            global_context->setMaxTableNumToWarn(server_settings_.max_table_num_to_warn);
-            global_context->setMaxDatabaseNumToWarn(server_settings_.max_database_num_to_warn);
-            global_context->setMaxPartNumToWarn(server_settings_.max_part_num_to_warn);
+            global_context->setMaxTableSizeToDrop(new_server_settings.max_table_size_to_drop);
+            global_context->setMaxPartitionSizeToDrop(new_server_settings.max_partition_size_to_drop);
+            global_context->setMaxTableNumToWarn(new_server_settings.max_table_num_to_warn);
+            global_context->setMaxDatabaseNumToWarn(new_server_settings.max_database_num_to_warn);
+            global_context->setMaxPartNumToWarn(new_server_settings.max_part_num_to_warn);
 
             ConcurrencyControl::SlotCount concurrent_threads_soft_limit = ConcurrencyControl::Unlimited;
-            if (server_settings_.concurrent_threads_soft_limit_num > 0 && server_settings_.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
-                concurrent_threads_soft_limit = server_settings_.concurrent_threads_soft_limit_num;
-            if (server_settings_.concurrent_threads_soft_limit_ratio_to_cores > 0)
+            if (new_server_settings.concurrent_threads_soft_limit_num > 0 && new_server_settings.concurrent_threads_soft_limit_num < concurrent_threads_soft_limit)
+                concurrent_threads_soft_limit = new_server_settings.concurrent_threads_soft_limit_num;
+            if (new_server_settings.concurrent_threads_soft_limit_ratio_to_cores > 0)
             {
-                auto value = server_settings_.concurrent_threads_soft_limit_ratio_to_cores * std::thread::hardware_concurrency();
+                auto value = new_server_settings.concurrent_threads_soft_limit_ratio_to_cores * std::thread::hardware_concurrency();
                 if (value > 0 && value < concurrent_threads_soft_limit)
                     concurrent_threads_soft_limit = value;
             }
             ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
 
-            global_context->getProcessList().setMaxSize(server_settings_.max_concurrent_queries);
-            global_context->getProcessList().setMaxInsertQueriesAmount(server_settings_.max_concurrent_insert_queries);
-            global_context->getProcessList().setMaxSelectQueriesAmount(server_settings_.max_concurrent_select_queries);
+            global_context->getProcessList().setMaxSize(new_server_settings.max_concurrent_queries);
+            global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings.max_concurrent_insert_queries);
+            global_context->getProcessList().setMaxSelectQueriesAmount(new_server_settings.max_concurrent_select_queries);
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
@@ -1388,68 +1378,68 @@ try
             /// This is done for backward compatibility.
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = server_settings_.background_pool_size;
-                auto new_ratio = server_settings_.background_merges_mutations_concurrency_ratio;
+                auto new_pool_size = new_server_settings.background_pool_size;
+                auto new_ratio = new_server_settings.background_merges_mutations_concurrency_ratio;
                 global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(new_pool_size * new_ratio));
-                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(server_settings_.background_merges_mutations_scheduling_policy.toString());
+                global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_server_settings.background_merges_mutations_scheduling_policy.toString());
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = server_settings_.background_move_pool_size;
+                auto new_pool_size = new_server_settings.background_move_pool_size;
                 global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = server_settings_.background_fetches_pool_size;
+                auto new_pool_size = new_server_settings.background_fetches_pool_size;
                 global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = server_settings_.background_common_pool_size;
+                auto new_pool_size = new_server_settings.background_common_pool_size;
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
-            global_context->getBufferFlushSchedulePool().increaseThreadsCount(server_settings_.background_buffer_flush_schedule_pool_size);
-            global_context->getSchedulePool().increaseThreadsCount(server_settings_.background_schedule_pool_size);
-            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(server_settings_.background_message_broker_schedule_pool_size);
-            global_context->getDistributedSchedulePool().increaseThreadsCount(server_settings_.background_distributed_schedule_pool_size);
+            global_context->getBufferFlushSchedulePool().increaseThreadsCount(new_server_settings.background_buffer_flush_schedule_pool_size);
+            global_context->getSchedulePool().increaseThreadsCount(new_server_settings.background_schedule_pool_size);
+            global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_server_settings.background_message_broker_schedule_pool_size);
+            global_context->getDistributedSchedulePool().increaseThreadsCount(new_server_settings.background_distributed_schedule_pool_size);
 
-            global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, server_settings_.tables_loader_foreground_pool_size);
-            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, server_settings_.tables_loader_background_pool_size);
-            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundStartupPoolId, server_settings_.tables_loader_background_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, new_server_settings.tables_loader_foreground_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, new_server_settings.tables_loader_background_pool_size);
+            global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundStartupPoolId, new_server_settings.tables_loader_background_pool_size);
 
             getIOThreadPool().reloadConfiguration(
-                server_settings.max_io_thread_pool_size,
-                server_settings.max_io_thread_pool_free_size,
-                server_settings.io_thread_pool_queue_size);
+                new_server_settings.max_io_thread_pool_size,
+                new_server_settings.max_io_thread_pool_free_size,
+                new_server_settings.io_thread_pool_queue_size);
 
             getBackupsIOThreadPool().reloadConfiguration(
-                server_settings.max_backups_io_thread_pool_size,
-                server_settings.max_backups_io_thread_pool_free_size,
-                server_settings.backups_io_thread_pool_queue_size);
+                new_server_settings.max_backups_io_thread_pool_size,
+                new_server_settings.max_backups_io_thread_pool_free_size,
+                new_server_settings.backups_io_thread_pool_queue_size);
 
             getActivePartsLoadingThreadPool().reloadConfiguration(
-                server_settings.max_active_parts_loading_thread_pool_size,
+                new_server_settings.max_active_parts_loading_thread_pool_size,
                 0, // We don't need any threads once all the parts will be loaded
-                server_settings.max_active_parts_loading_thread_pool_size);
+                new_server_settings.max_active_parts_loading_thread_pool_size);
 
             getOutdatedPartsLoadingThreadPool().reloadConfiguration(
-                server_settings.max_outdated_parts_loading_thread_pool_size,
+                new_server_settings.max_outdated_parts_loading_thread_pool_size,
                 0, // We don't need any threads once all the parts will be loaded
-                server_settings.max_outdated_parts_loading_thread_pool_size);
+                new_server_settings.max_outdated_parts_loading_thread_pool_size);
 
             /// It could grow if we need to synchronously wait until all the data parts will be loaded.
             getOutdatedPartsLoadingThreadPool().setMaxTurboThreads(
-                server_settings.max_active_parts_loading_thread_pool_size
+                new_server_settings.max_active_parts_loading_thread_pool_size
             );
 
             getPartsCleaningThreadPool().reloadConfiguration(
-                server_settings.max_parts_cleaning_thread_pool_size,
+                new_server_settings.max_parts_cleaning_thread_pool_size,
                 0, // We don't need any threads one all the parts will be deleted
-                server_settings.max_parts_cleaning_thread_pool_size);
+                new_server_settings.max_parts_cleaning_thread_pool_size);
 
             if (config->has("resources"))
             {
@@ -2059,7 +2049,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     auto create_factory = [&](const std::string & type, const std::string & conf_name) -> TCPServerConnectionFactory::Ptr
     {
         if (type == "tcp")
-            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes));
+            return TCPServerConnectionFactory::Ptr(new TCPHandlerFactory(*this, false, false));
 
         if (type == "tls")
 #if USE_SSL
@@ -2071,20 +2061,20 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (type == "proxy1")
             return TCPServerConnectionFactory::Ptr(new ProxyV1HandlerFactory(*this, conf_name));
         if (type == "mysql")
-            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes));
+            return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this));
         if (type == "postgres")
-            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
+            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this));
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"))
             );
         if (type == "prometheus")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"))
             );
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"))
             );
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
@@ -2217,7 +2207,7 @@ void Server::createServers(
                     port_name,
                     "http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
             });
         }
 
@@ -2237,7 +2227,7 @@ void Server::createServers(
                     port_name,
                     "https://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
@@ -2260,7 +2250,7 @@ void Server::createServers(
                     port_name,
                     "native protocol (tcp): " + address.toString(),
                     std::make_unique<TCPServer>(
-                        new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
+                        new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false),
                         server_pool,
                         socket,
                         new Poco::Net::TCPServerParams));
@@ -2282,7 +2272,7 @@ void Server::createServers(
                     port_name,
                     "native protocol (tcp) with PROXY: " + address.toString(),
                     std::make_unique<TCPServer>(
-                        new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
+                        new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ true),
                         server_pool,
                         socket,
                         new Poco::Net::TCPServerParams));
@@ -2305,7 +2295,7 @@ void Server::createServers(
                     port_name,
                     "secure native protocol (tcp_secure): " + address.toString(),
                     std::make_unique<TCPServer>(
-                        new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
+                        new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false),
                         server_pool,
                         socket,
                         new Poco::Net::TCPServerParams));
@@ -2329,7 +2319,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "MySQL compatibility protocol: " + address.toString(),
-                    std::make_unique<TCPServer>(new MySQLHandlerFactory(*this, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
+                    std::make_unique<TCPServer>(new MySQLHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
             });
         }
 
@@ -2346,7 +2336,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "PostgreSQL compatibility protocol: " + address.toString(),
-                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
+                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
             });
         }
 
@@ -2380,7 +2370,7 @@ void Server::createServers(
                     port_name,
                     "Prometheus: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
             });
         }
     }
@@ -2426,9 +2416,7 @@ void Server::createInterserverServers(
                         createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
                         server_pool,
                         socket,
-                        http_params,
-                        ProfileEvents::InterfaceInterserverReceiveBytes,
-                        ProfileEvents::InterfaceInterserverSendBytes));
+                        http_params));
             });
         }
 
@@ -2451,9 +2439,7 @@ void Server::createInterserverServers(
                         createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
                         server_pool,
                         socket,
-                        http_params,
-                        ProfileEvents::InterfaceInterserverReceiveBytes,
-                        ProfileEvents::InterfaceInterserverSendBytes));
+                        http_params));
 #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");

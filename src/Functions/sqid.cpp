@@ -1,6 +1,6 @@
 #include "config.h"
 
-#ifdef ENABLE_SQIDS
+#if USE_SQIDS
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -57,9 +57,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        size_t num_args = arguments.size();
         auto col_res = ColumnString::create();
+        col_res->reserve(input_rows_count);
 
+        const size_t num_args = arguments.size();
         std::vector<UInt64> numbers(num_args);
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -83,7 +84,7 @@ REGISTER_FUNCTION(Sqid)
 {
     factory.registerFunction<FunctionSqid>(FunctionDocumentation{
         .description=R"(
-Transforms numbers into YouTube-like short URL hash called [Sqid](https://sqids.org/).)",
+Transforms numbers into a [Sqid](https://sqids.org/) which is a Youtube-like ID string.)",
         .syntax="sqid(number1, ...)",
         .arguments={{"number1, ...", "Arbitrarily many UInt8, UInt16, UInt32 or UInt64 arguments"}},
         .returned_value="A hash id [String](/docs/en/sql-reference/data-types/string.md).",
