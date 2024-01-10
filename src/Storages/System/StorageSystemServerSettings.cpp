@@ -23,6 +23,14 @@ namespace CurrentMetrics
 namespace DB
 {
 
+enum class ChangeableWithoutRestart
+{
+    No,
+    IncreaseOnly,
+    DecreaseOnly,
+    Yes
+};
+
 ColumnsDescription StorageSystemServerSettings::getColumnsDescription()
 {
     auto changeable_without_restart_type = std::make_shared<DataTypeEnum8>(
@@ -33,6 +41,7 @@ ColumnsDescription StorageSystemServerSettings::getColumnsDescription()
             {"DecreaseOnly",    static_cast<Int8>(ChangeableWithoutRestart::DecreaseOnly)},
             {"Yes",             static_cast<Int8>(ChangeableWithoutRestart::Yes)},
         });
+
     return ColumnsDescription
     {
         {"name", std::make_shared<DataTypeString>(), "Server setting name."},
