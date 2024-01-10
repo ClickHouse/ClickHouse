@@ -257,6 +257,7 @@ ConnectionPoolWithFailover::getShuffledPools(const Settings & settings, GetPrior
 {
     if (!priority_func)
         priority_func = makeGetPriorityFunc(settings);
+
     UInt64 max_ignored_errors = settings.distributed_replica_max_ignored_errors.value;
     return Base::getShuffledPools(max_ignored_errors, priority_func);
 }

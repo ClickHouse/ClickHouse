@@ -272,17 +272,25 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
             const String query_string = formattedAST(query);
 
-            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                shard.shard_info.pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage);
-            remote_query_executor->setLogger(log);
-
-            remote_query_executor->setPoolMode(PoolMode::GET_ONE);
-
             if (!priority_func_factory.has_value())
                 priority_func_factory = GetPriorityForLoadBalancing(LoadBalancing::ROUND_ROBIN, randomSeed());
 
-            remote_query_executor->setPriorityFunction(
-                priority_func_factory->getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, shard.shard_info.pool->getPoolSize()));
+            GetPriorityForLoadBalancing::Func priority_func
+                = priority_func_factory->getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, shard.shard_info.pool->getPoolSize());
+
+            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+                shard.shard_info.pool,
+                query_string,
+                output_stream->header,
+                context,
+                throttler,
+                scalars,
+                external_tables,
+                stage,
+                std::nullopt,
+                priority_func);
+            remote_query_executor->setLogger(log);
+            remote_query_executor->setPoolMode(PoolMode::GET_ONE);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);

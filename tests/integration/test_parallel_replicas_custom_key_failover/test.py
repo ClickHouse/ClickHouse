@@ -75,7 +75,6 @@ def test_parallel_replicas_custom_key_failover(
     filter_type,
     prefer_localhost_replica,
 ):
-    filter_type = "default"
     cluster = "test_single_shard_multiple_replicas"
     table = "test_table"
 

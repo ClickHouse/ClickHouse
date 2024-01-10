@@ -50,6 +50,7 @@ public:
         std::shared_ptr<TaskIterator> task_iterator = nullptr;
         std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator = nullptr;
         std::optional<IConnections::ReplicaInfo> replica_info = {};
+        GetPriorityForLoadBalancing::Func priority_func;
     };
 
     /// Takes already set connection.
@@ -76,9 +77,15 @@ public:
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_, const Block & header_, ContextPtr context_,
-        const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        const ThrottlerPtr & throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt,
+        GetPriorityForLoadBalancing::Func priority_func = {});
 
     ~RemoteQueryExecutor();
 
@@ -189,14 +196,16 @@ public:
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
-    using LoadBalancingPriorityFunc = std::function<Priority(size_t index)>;
-    void setPriorityFunction(LoadBalancingPriorityFunc priority_func_) { priority_func = priority_func_; }
-
 private:
     RemoteQueryExecutor(
-        const String & query_, const Block & header_, ContextPtr context_,
-        const Scalars & scalars_, const Tables & external_tables_,
-        QueryProcessingStage::Enum stage_, std::optional<Extension> extension_);
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        const Scalars & scalars_,
+        const Tables & external_tables_,
+        QueryProcessingStage::Enum stage_,
+        std::optional<Extension> extension_,
+        GetPriorityForLoadBalancing::Func priority_func = {});
 
     Block header;
     Block totals;
@@ -276,7 +285,7 @@ private:
 
     Poco::Logger * log = nullptr;
 
-    LoadBalancingPriorityFunc priority_func;
+    GetPriorityForLoadBalancing::Func priority_func;
 
     /// Send all scalars to remote servers
     void sendScalars();
