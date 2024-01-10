@@ -25,7 +25,7 @@ public:
         bool compress_empty_ = true)
     : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment), compress_empty(compress_empty_)
     {
-        initialize(compression_level);
+        initialize(compression_level, window_log);
     }
 
     ~ZstdDeflatingWriteBuffer() override;
@@ -36,7 +36,7 @@ public:
     }
 
 private:
-    void initialize(int compression_level);
+    void initialize(int compression_level, int window_log);
 
     void nextImpl() override;
 

@@ -207,6 +207,7 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     std::unique_ptr<WriteBuffer> nested,
     CompressionMethod method,
     int level,
+    int zstd_window_log,
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
@@ -214,7 +215,7 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
 {
     if (method == CompressionMethod::None)
         return nested;
-    return createWriteCompressedWrapper(nested, method, level, buf_size, existing_memory, alignment, compress_empty);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
 }
 
 
@@ -222,13 +223,14 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     WriteBuffer * nested,
     CompressionMethod method,
     int level,
+    int zstd_window_log,
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
     bool compress_empty)
 {
     assert(method != CompressionMethod::None);
-    return createWriteCompressedWrapper(nested, method, level, buf_size, existing_memory, alignment, compress_empty);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
 }
 
 }

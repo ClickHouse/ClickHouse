@@ -21,7 +21,7 @@ static void setZstdParameter(ZSTD_CCtx * cctx, ZSTD_cParameter param, int value)
             ZSTD_VERSION_STRING);
 }
 
-void ZstdDeflatingWriteBuffer::initialize(int compression_level)
+void ZstdDeflatingWriteBuffer::initialize(int compression_level, int window_log)
 {
     cctx = ZSTD_createCCtx();
     if (cctx == nullptr)

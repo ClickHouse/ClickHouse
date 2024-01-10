@@ -75,6 +75,7 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     WriteBuffer * nested,
     CompressionMethod method,
     int level,
+    int zstd_window_log,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
     size_t alignment = 0,

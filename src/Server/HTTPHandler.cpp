@@ -642,7 +642,7 @@ void HTTPHandler::processQuery(
                 used_output.out_holder.get(),
                 http_response_compression_method,
                 static_cast<int>(http_zlib_compression_level),
-                DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0, false);
+                0, DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0, false);
         used_output.out = used_output.wrap_compressed_holder;
     }
 
