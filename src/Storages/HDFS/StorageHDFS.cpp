@@ -724,13 +724,13 @@ public:
         const CompressionMethod compression_method)
         : SinkToStorage(sample_block)
     {
+        const auto & settings = context->getSettingsRef();
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromHDFS>(
-                uri,
-                context->getGlobalContext()->getConfigRef(),
-                context->getSettingsRef().hdfs_replication,
-                context->getWriteSettings()),
-            compression_method, 3);
+                uri, context->getGlobalContext()->getConfigRef(), context->getSettingsRef().hdfs_replication, context->getWriteSettings()),
+            compression_method,
+            static_cast<int>(settings.output_format_compression_level),
+            static_cast<int>(settings.output_format_compression_zstd_window_log));
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context);
     }
 

@@ -1435,11 +1435,12 @@ void executeQuery(
                     const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
                     compression_method = compression_method_node.value.safeGet<std::string>();
                 }
-
+                const auto & settings = context->getSettingsRef();
                 compressed_buffer = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
                     chooseCompressionMethod(out_file, compression_method),
-                    /* compression level = */ 3
+                    /* compression level = */ static_cast<int>(settings.output_format_compression_level),
+                    /* zstd_window_log = */ static_cast<int>(settings.output_format_compression_zstd_window_log)
                 );
             }
 

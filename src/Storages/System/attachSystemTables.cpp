@@ -107,6 +107,10 @@
 #include <Storages/RocksDB/StorageSystemRocksDB.h>
 #endif
 
+#if USE_MYSQL
+#include <Storages/System/StorageSystemMySQLBinlogs.h>
+#endif
+
 
 namespace DB
 {
@@ -173,6 +177,9 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 #endif
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
+#endif
+#if USE_MYSQL
+    attach<StorageSystemMySQLBinlogs>(context, system_database, "mysql_binlogs");
 #endif
 
     attach<StorageSystemParts>(context, system_database, "parts");

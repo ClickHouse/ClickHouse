@@ -561,7 +561,6 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr local_context,
-        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams);
 
@@ -571,7 +570,6 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr local_context,
-        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams);
 
