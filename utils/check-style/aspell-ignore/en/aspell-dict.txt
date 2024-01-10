@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2646
+personal_ws-1.1 en 2657 
 AArch
 ACLs
 ALTERs
@@ -198,6 +198,7 @@ DELETEs
 DESC
 DIEs
 DOGEFI
+Damerau
 DataGrip
 DataLens
 DataTime
@@ -344,6 +345,7 @@ Hypot
 IANA
 IDE
 IDEs
+IDNA
 IMDS
 INFILE
 INSERTed
@@ -413,6 +415,7 @@ JSONType
 JSONs
 Jaeger
 Jannis
+Jaro
 JavaHash
 Jemalloc
 Jepsen
@@ -502,6 +505,7 @@ Memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
+MemoryResidentMax
 MemorySanitizer
 MemoryShared
 MemoryTracking
@@ -751,6 +755,7 @@ Redash
 Reddit
 Refactorings
 ReferenceKeyed
+Refreshable
 RegexpTree
 RemoteRead
 ReplacingMergeTree
@@ -909,6 +914,7 @@ ThreadsInOvercommitTracker
 Timeunit
 TinyLog
 Tkachenko
+ToASCII
 ToCenterChild
 ToChildren
 ToGeo
@@ -917,10 +923,13 @@ ToIPv
 ToParent
 ToSnowflake
 ToString
+ToUnicode
 Toolset
 TopK
 TotalBytesOfMergeTreeTables
 TotalPartsOfMergeTreeTables
+TotalPrimaryKeyBytesInMemory
+TotalPrimaryKeyBytesInMemoryAllocated
 TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
@@ -973,6 +982,7 @@ Werror
 Wether
 WikiStat
 WindowView
+Winkler
 WithNames
 WithNamesAndTypes
 WordNet
@@ -1335,6 +1345,7 @@ cutToFirstSignificantSubdomainWithWWW
 cutURLParameter
 cutWWW
 cyrus
+damerauLevenshteinDistance
 datacenter
 datacenters
 datafiles
@@ -1648,6 +1659,8 @@ hyvor
 icosahedron
 icudata
 idempotency
+idnaDecode
+idnaEncode
 ifNotFinite
 ifNull
 iframe
@@ -1692,6 +1705,8 @@ isZeroOrNull
 iteratively
 jaccard
 jaccardIndex
+jaroSimilarity
+jaroWinklerSimilarity
 javaHash
 javaHashUTF
 jbod
@@ -1787,6 +1802,7 @@ llvm
 loadDefaultCAFile
 localhost
 localread
+loess
 logTrace
 logagent
 loghouse
@@ -1845,14 +1861,14 @@ metrica
 metroHash
 mfedotov
 minMap
+minSampleSizeContinuous
+minSampleSizeConversion
 mindsdb
 minimalistic
 mininum
 miniselect
 minmap
 minmax
-minSampleSizeContinuous
-minSampleSizeConversion
 mins
 misconfiguration
 mispredictions
@@ -2152,6 +2168,7 @@ reddit
 redis
 redisstreams
 refcounter
+refreshable
 regexpExtract
 regexpQuoteMeta
 regionHierarchy
@@ -2196,8 +2213,6 @@ retentions
 rethrow
 retransmit
 retriable
-retuned
-reverseDNSQuery
 reverseUTF
 rightPad
 rightPadUTF
@@ -2239,6 +2254,7 @@ sequenceCount
 sequenceMatch
 sequenceNextNode
 seriesPeriodDetectFFT
+seriesDecomposeSTL
 serverTimeZone
 serverTimezone
 serverUUID
@@ -2521,6 +2537,8 @@ trimRight
 trunc
 tryBase
 tryDecrypt
+tryIdnaEncode
+tryPunycodeDecode
 tskv
 tsv
 tui

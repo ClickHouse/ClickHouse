@@ -245,6 +245,7 @@ bool PartLog::addNewParts(
             elem.part_type = part->getType();
 
             elem.bytes_compressed_on_disk = part->getBytesOnDisk();
+            elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
             elem.rows = part->rows_count;
 
             elem.error = static_cast<UInt16>(execution_status.code);

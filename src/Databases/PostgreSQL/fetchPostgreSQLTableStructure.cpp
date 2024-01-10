@@ -207,7 +207,6 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
 
                     columns.push_back(NameAndTypePair(column_name, data_type));
                     auto attgenerated = std::get<6>(row);
-                    LOG_TEST(&Poco::Logger::get("kssenii"), "KSSENII: attgenerated: {}", attgenerated);
 
                     attributes.emplace(
                         column_name,

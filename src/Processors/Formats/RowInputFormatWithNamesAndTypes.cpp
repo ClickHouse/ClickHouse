@@ -66,11 +66,6 @@ RowInputFormatWithNamesAndTypes::RowInputFormatWithNamesAndTypes(
 
 void RowInputFormatWithNamesAndTypes::readPrefix()
 {
-    /// This is a bit of abstraction leakage, but we need it in parallel parsing:
-    /// we check if this InputFormat is working with the "real" beginning of the data.
-    if (getCurrentUnitNumber() != 0)
-        return;
-
     /// Search and remove BOM only in textual formats (CSV, TSV etc), not in binary ones (RowBinary*).
     /// Also, we assume that column name or type cannot contain BOM, so, if format has header,
     /// then BOM at beginning of stream cannot be confused with name or type of field, and it is safe to skip it.
@@ -206,7 +201,7 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
 
     updateDiagnosticInfo();
 
-    if (likely(row_num != 1 || (getCurrentUnitNumber() == 0 && (with_names || with_types || is_header_detected))))
+    if (likely(getRowNum() != 0 || with_names || with_types || is_header_detected))
         format_reader->skipRowBetweenDelimiter();
 
     format_reader->skipRowStartDelimiter();
@@ -270,7 +265,7 @@ size_t RowInputFormatWithNamesAndTypes::countRows(size_t max_block_size)
         return 0;
 
     size_t num_rows = 0;
-    bool is_first_row = getTotalRows() == 0 && !with_names && !with_types && !is_header_detected;
+    bool is_first_row = getRowNum() == 0 && !with_names && !with_types && !is_header_detected;
     while (!format_reader->checkForSuffix() && num_rows < max_block_size)
     {
         if (likely(!is_first_row))
@@ -323,7 +318,7 @@ bool RowInputFormatWithNamesAndTypes::parseRowAndPrintDiagnosticInfo(MutableColu
     if (!format_reader->tryParseSuffixWithDiagnosticInfo(out))
         return false;
 
-    if (likely(row_num != 1) && !format_reader->parseRowBetweenDelimiterWithDiagnosticInfo(out))
+    if (likely(getRowNum() != 0) && !format_reader->parseRowBetweenDelimiterWithDiagnosticInfo(out))
         return false;
 
     if (!format_reader->parseRowStartWithDiagnosticInfo(out))

@@ -58,6 +58,7 @@ if [[ -n "$BUGFIX_VALIDATE_CHECK" ]] && [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; th
 
     # it contains some new settings, but we can safely remove it
     rm /etc/clickhouse-server/users.d/s3_cache_new.xml
+    rm /etc/clickhouse-server/config.d/zero_copy_destructive_operations.xml
 fi
 
 # For flaky check we also enable thread fuzzer

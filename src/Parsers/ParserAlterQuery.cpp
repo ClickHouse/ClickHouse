@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserPartition.h>
+#include <Parsers/ParserRefreshStrategy.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -39,6 +40,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_reset_setting("RESET SETTING");
     ParserKeyword s_modify_query("MODIFY QUERY");
     ParserKeyword s_modify_sql_security("MODIFY SQL SECURITY");
+    ParserKeyword s_modify_refresh("MODIFY REFRESH");
 
     ParserKeyword s_add_index("ADD INDEX");
     ParserKeyword s_drop_index("DROP INDEX");
@@ -135,6 +137,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserNameList values_p;
     ParserSelectWithUnionQuery select_p;
     ParserSQLSecurity sql_security_p;
+    ParserRefreshStrategy refresh_p;
     ParserTTLExpressionList parser_ttl_list;
 
     switch (alter_object)
@@ -826,6 +829,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!sql_security_p.parse(pos, command->sql_security, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_SQL_SECURITY;
+            }
+            else if (s_modify_refresh.ignore(pos, expected))
+            {
+                if (!refresh_p.parse(pos, command->refresh, expected))
+                    return false;
+                command->type = ASTAlterCommand::MODIFY_REFRESH;
             }
             else if (s_modify_comment.ignore(pos, expected))
             {

@@ -11,6 +11,7 @@
 #include <Storages/KeyDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
+#include <Storages/MaterializedView/RefreshSchedule.h>
 
 #include <Common/MultiVersion.h>
 
@@ -49,6 +50,8 @@ struct StorageInMemoryMetadata
     ASTPtr settings_changes;
     /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
     SelectQueryDescription select;
+    /// Materialized view REFRESH parameters.
+    ASTPtr refresh;
 
     /// DEFINER <user_name>. Allows to specify a definer of the table.
     /// Supported for MaterializedView and View.
@@ -103,6 +106,9 @@ struct StorageInMemoryMetadata
 
     /// Set SELECT query for (Materialized)View
     void setSelectQuery(const SelectQueryDescription & select_);
+
+    /// Set refresh parameters for materialized view (REFRESH ... [DEPENDS ON ...] [SETTINGS ...]).
+    void setRefresh(ASTPtr refresh_);
 
     /// Set version of metadata.
     void setMetadataVersion(int32_t metadata_version_);

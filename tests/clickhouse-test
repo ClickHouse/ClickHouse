@@ -531,6 +531,7 @@ class FailureReason(enum.Enum):
     FAST_ONLY = "running fast tests only"
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
+    NON_ATOMIC_DB = "database engine not Atomic"
     S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
@@ -997,6 +998,13 @@ class TestCase:
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
+        elif (
+            tags
+            and ("atomic-database" in tags)
+            and (args.replicated_database or args.db_engine not in (None, "Atomic"))
+        ):
+            return FailureReason.NON_ATOMIC_DB
+
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
         elif (
@@ -1031,7 +1039,24 @@ class TestCase:
         if proc:
             if proc.returncode is None:
                 try:
-                    proc.kill()
+                    pgid = os.getpgid(proc.pid)
+                    # NOTE: this still may leave some processes, that had been
+                    # created by timeout(1), since it also creates new process
+                    # group. But this should not be a problem with default
+                    # options, since the default time for each test is 10min,
+                    # and this is way more bigger then the timeout for each
+                    # timeout(1) invocation.
+                    #
+                    # But as a workaround we are sending SIGTERM first, and
+                    # only after SIGKILL, that way timeout(1) will have an
+                    # ability to terminate childrens (though not always since
+                    # signals are asynchronous).
+                    os.killpg(pgid, signal.SIGTERM)
+                    # This may not be enough, but this is at least something
+                    # (and anyway it is OK to spend 0.1 second more in case of
+                    # test timeout).
+                    sleep(0.1)
+                    os.killpg(pgid, signal.SIGKILL)
                 except OSError as e:
                     if e.errno != ESRCH:
                         raise
@@ -1307,7 +1332,7 @@ class TestCase:
 
         command = pattern.format(**params)
 
-        proc = Popen(command, shell=True, env=os.environ)
+        proc = Popen(command, shell=True, env=os.environ, start_new_session=True)
 
         while (
             datetime.now() - start_time
@@ -2307,7 +2332,7 @@ def reportLogStats(args):
               'Attempt to read after eof', 'String size is too big ({}), maximum: {}'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(message), 1, 120),
-            min(if(notEmpty(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)') as prefix), prefix, length(message)) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate
+            min(if(length(regexpExtract(message, '(.*)\\([A-Z0-9_]+\\)')) as prefix_len > 0, prefix_len, length(message)) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate
         FROM system.text_log
         WHERE (now() - toIntervalMinute(240)) < event_time
             AND (length(message_format_string) < 16

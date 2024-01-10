@@ -43,6 +43,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -285,7 +286,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", getContext());
+    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext());
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -1092,6 +1093,13 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             "{} UUID specified, but engine of database {} is not Atomic", kind, create.getDatabase());
         }
 
+        if (create.refresh_strategy && database->getEngineName() != "Atomic")
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Refreshable materialized view requires Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+                /// TODO: Support Replicated databases, only with Shared/ReplicatedMergeTree.
+                ///       Figure out how to make the refreshed data appear all at once on other
+                ///       replicas; maybe a replicated SYSTEM SYNC REPLICA query before the rename?
+
         /// The database doesn't support UUID so we'll ignore it. The UUID could be set here because of either
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
         /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
@@ -1215,6 +1223,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         visitor.visit(*create.select);
     }
 
+    if (create.refresh_strategy)
+    {
+        if (!getContext()->getSettingsRef().allow_experimental_refreshable_materialized_view)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Refreshable materialized views are experimental. Enable allow_experimental_refreshable_materialized_view to use.");
+
+        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        visitor.visit(*create.refresh_strategy);
+    }
+
     if (create.columns_list)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
@@ -1274,6 +1292,23 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+
+    if (database && database->getEngineName() == "Replicated" && create.select)
+    {
+        bool is_storage_replicated = false;
+        if (create.storage && create.storage->engine)
+        {
+            const auto & storage_name = create.storage->engine->name;
+            if (storage_name.starts_with("Replicated") || storage_name.starts_with("Shared"))
+                is_storage_replicated = true;
+        }
+
+        const bool allow_create_select_for_replicated = create.isView() || create.is_create_empty || !is_storage_replicated;
+        if (!allow_create_select_for_replicated)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "CREATE AS SELECT is not supported with Replicated databases. Use separate CREATE and INSERT queries");
+    }
 
     if (need_add_to_database && database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
@@ -1735,7 +1770,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
         throw Exception(ErrorCodes::INCORRECT_QUERY,
                         "Seems like cluster is configured for cross-replication, "
-                        "but zookeeper_path for ReplicatedMergeTree is not specified or contains {uuid} macro. "
+                        "but zookeeper_path for ReplicatedMergeTree is not specified or contains {{uuid}} macro. "
                         "It's not supported for cross replication, because tables must have different UUIDs. "
                         "Please specify unique zookeeper_path explicitly.");
     }
@@ -1913,6 +1948,15 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
 
     if (sql_security.type == ASTSQLSecurity::Type::NONE && !is_attach)
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
+}
+
+void registerInterpreterCreateQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateQuery", create_fn);
 }
 
 }

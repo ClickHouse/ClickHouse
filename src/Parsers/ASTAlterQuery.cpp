@@ -453,6 +453,12 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
                       << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::MODIFY_REFRESH)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY REFRESH " << settings.nl_or_ws
+                      << (settings.hilite ? hilite_none : "");
+        refresh->formatImpl(settings, state, frame);
+    }
     else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "REFRESH " << (settings.hilite ? hilite_none : "");

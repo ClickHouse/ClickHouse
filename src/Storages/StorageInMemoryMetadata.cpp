@@ -47,6 +47,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , select(other.select)
     , definer(other.definer)
     , sql_security_type(other.sql_security_type)
+    , refresh(other.refresh ? other.refresh->clone() : nullptr)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
 {
@@ -78,6 +79,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     select = other.select;
     definer = other.definer;
     sql_security_type = other.sql_security_type;
+    refresh = other.refresh ? other.refresh->clone() : nullptr;
     comment = other.comment;
     metadata_version = other.metadata_version;
     return *this;
@@ -188,6 +190,11 @@ void StorageInMemoryMetadata::setSettingsChanges(const ASTPtr & settings_changes
 void StorageInMemoryMetadata::setSelectQuery(const SelectQueryDescription & select_)
 {
     select = select_;
+}
+
+void StorageInMemoryMetadata::setRefresh(ASTPtr refresh_)
+{
+    refresh = refresh_;
 }
 
 void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)

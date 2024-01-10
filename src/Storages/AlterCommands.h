@@ -44,6 +44,7 @@ struct AlterCommand
         MODIFY_SETTING,
         RESET_SETTING,
         MODIFY_QUERY,
+        MODIFY_REFRESH,
         RENAME_COLUMN,
         REMOVE_TTL,
         MODIFY_DATABASE_SETTING,
@@ -148,6 +149,9 @@ struct AlterCommand
 
     /// For MODIFY_SQL_SECURITY
     ASTPtr sql_security = nullptr;
+
+    /// For MODIFY_REFRESH
+    ASTPtr refresh = nullptr;
 
     /// Target column name
     String rename_to;

@@ -34,7 +34,6 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
-        QueryProcessingStage::Enum processed_stage,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
         bool enable_parallel_reading = false) const;
 
@@ -71,6 +70,7 @@ public:
         const MergeTreeData::DataPartPtr & part,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
+        const std::optional<KeyCondition> & part_offset_condition,
         const Settings & settings,
         Poco::Logger * log);
 
@@ -161,15 +161,13 @@ public:
         size_t bytes_granularity,
         size_t max_marks);
 
+    /// If possible, construct optional key condition from predicates containing _part_offset column.
+    static void buildKeyConditionFromPartOffset(
+        std::optional<KeyCondition> & part_offset_condition, const ActionsDAGPtr & filter_dag, ContextPtr context);
+
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
     /// If expression found, return a set with allowed part names (std::nullopt otherwise).
-    static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
-        const MergeTreeData & data,
-        const MergeTreeData::DataPartsVector & parts,
-        const ASTPtr & query,
-        ContextPtr context);
-
     static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
         const MergeTreeData & data,
         const MergeTreeData::DataPartsVector & parts,
@@ -199,6 +197,7 @@ public:
         StorageMetadataPtr metadata_snapshot,
         const ContextPtr & context,
         const KeyCondition & key_condition,
+        const std::optional<KeyCondition> & part_offset_condition,
         const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         Poco::Logger * log,
