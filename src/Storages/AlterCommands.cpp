@@ -402,6 +402,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.select = command_ast->select;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_REFRESH)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_REFRESH;
+        command.refresh = command_ast->refresh;
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::RENAME_COLUMN)
     {
         AlterCommand command;
@@ -431,7 +439,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true, true);
 
         column.ttl = ttl;
 
@@ -496,7 +504,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true, true);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true, true, true);
 
                 if (comment)
                     column.comment = *comment;
@@ -715,7 +723,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_QUERY)
     {
-        metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, context);
+        metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
         Block as_select_sample;
 
         if (context->getSettingsRef().allow_experimental_analyzer)
@@ -731,6 +739,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         metadata.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+    }
+    else if (type == MODIFY_REFRESH)
+    {
+        metadata.refresh = refresh->clone();
     }
     else if (type == MODIFY_SETTING)
     {
@@ -1237,7 +1249,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                                             "this column name is reserved for _block_number persisting feature", backQuote(column_name));
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
@@ -1262,7 +1274,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (all_columns.hasAlias(column_name))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)

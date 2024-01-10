@@ -14,7 +14,7 @@ function insert {
     offset=500
     while true;
     do
-        ${CLICKHOUSE_CLIENT} -q "INSERT INTO test_race_condition_landing SELECT number, toString(number), toString(number) from system.numbers limit $i, $offset"
+        ${CLICKHOUSE_CLIENT} -q "INSERT INTO test_race_condition_landing SELECT number, toString(number), toString(number) from system.numbers limit $i, $offset settings ignore_materialized_views_with_dropped_target_table=1"
         i=$(( $i + $RANDOM % 100 + 400 ))
     done
 }

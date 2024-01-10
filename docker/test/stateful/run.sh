@@ -44,6 +44,9 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
     # It is not needed, we will explicitly create tables on s3.
     # We do not have statefull tests with s3 storage run in public repository, but this is needed for another repository.
     rm /etc/clickhouse-server/config.d/s3_storage_policy_for_merge_tree_by_default.xml
+
+    rm /etc/clickhouse-server/config.d/storage_metadata_with_full_object_key.xml
+    rm /etc/clickhouse-server/config.d/s3_storage_policy_with_template_object_key.xml
 fi
 
 function start()

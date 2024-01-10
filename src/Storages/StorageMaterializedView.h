@@ -5,6 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Storages/MaterializedView/RefreshTask_fwd.h>
 
 namespace DB
 {
@@ -47,6 +48,7 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ContextPtr context) override;
 
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
@@ -71,11 +73,13 @@ public:
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
+    StorageID getTargetTableId() const;
 
     /// Get the virtual column of the target table;
     NamesAndTypesList getVirtuals() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
+    void onActionLockRemove(StorageActionBlockType action_type) override;
 
     void read(
         QueryPlan & query_plan,
@@ -98,12 +102,26 @@ public:
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
 private:
+    mutable std::mutex target_table_id_mutex;
     /// Will be initialized in constructor
     StorageID target_table_id = StorageID::createEmpty();
 
+    RefreshTaskHolder refresher;
+    bool refresh_on_start = false;
+
     bool has_inner_table = false;
 
+    friend class RefreshTask;
+
     void checkStatementCanBeForwarded() const;
+
+    /// Prepare to refresh a refreshable materialized view: create query context, create temporary
+    /// table, form the insert-select query.
+    std::tuple<ContextMutablePtr, std::shared_ptr<ASTInsertQuery>> prepareRefresh() const;
+    StorageID exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context);
+
+    void setTargetTableId(StorageID id);
+    void updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name);
 };
 
 }

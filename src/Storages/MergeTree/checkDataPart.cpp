@@ -16,6 +16,7 @@
 #include <IO/S3Common.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -79,6 +80,11 @@ bool isRetryableException(const std::exception_ptr exception_ptr)
     catch (const ErrnoException & e)
     {
         if (e.getErrno() == EMFILE)
+            return true;
+    }
+    catch (const Coordination::Exception  & e)
+    {
+        if (Coordination::isHardwareError(e.code))
             return true;
     }
     catch (const Exception & e)
