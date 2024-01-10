@@ -420,7 +420,11 @@ Chain buildPushingToViewsChain(
         if (!no_destination && context->hasQueryContext())
         {
             context->getQueryContext()->addQueryAccessInfo(
-                backQuoteIfNeed(view_id.getDatabaseName()), views_data->views.back().runtime_stats->target_name, {}, "", view_id.getFullTableName());
+                backQuoteIfNeed(view_id.getDatabaseName()),
+                views_data->views.back().runtime_stats->target_name,
+                /*column_names=*/ {});
+
+            context->getQueryContext()->addViewAccessInfo(view_id.getFullTableName());
         }
     }
 

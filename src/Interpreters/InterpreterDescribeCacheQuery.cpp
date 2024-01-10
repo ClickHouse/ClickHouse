@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDescribeCacheQuery.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -66,6 +67,15 @@ BlockIO InterpreterDescribeCacheQuery::execute()
     res.pipeline = QueryPipeline(std::move(source));
 
     return res;
+}
+
+void registerInterpreterDescribeCacheQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDescribeCacheQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDescribeCacheQuery", create_fn);
 }
 
 }
