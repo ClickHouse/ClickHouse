@@ -723,7 +723,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     if (!force_process_all_ranges)
     {
-        SplitPartsRangesResult split_result = splitPartsRanges(std::move(parts));
+        SplitPartsRangesResult split_result = splitPartsRanges(intersecting_parts_ranges);
         result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
         intersecting_parts_ranges = std::move(split_result.intersecting_parts_ranges);
     }
