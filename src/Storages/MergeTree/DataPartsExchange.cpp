@@ -112,12 +112,19 @@ std::string Service::getId(const std::string & node_id) const
     return getEndpointId(node_id);
 }
 
-Strings parseCommaDelimited(const String& str)
+Strings parseCommaDelimited(const String & str)
 {
-    std::regex re("\\s*,\\s*");
-    return {
-        std::sregex_token_iterator(str.begin(), str.end(), re, -1),
-        std::sregex_token_iterator()};
+    Strings out;
+    constexpr std::string_view delimiter = ", ";
+    size_t pos_start = 0, pos_end;
+    while ((pos_end = str.find(delimiter, pos_start)) != std::string::npos)
+    {
+        String token = str.substr(pos_start, pos_end - pos_start);
+        pos_start = pos_end + delimiter.size();
+        out.emplace_back(std::move(token));
+    }
+    out.push_back(str.substr(pos_start));
+    return out;
 }
 
 bool contains(auto && range, auto && value)
