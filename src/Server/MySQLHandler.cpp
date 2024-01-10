@@ -535,7 +535,7 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET @@(.*)))"
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
     assert(expr.ok());
-    return re2::RE2::PartialMatch(query, expr);
+    return re2::RE2::FullMatch(query, expr);
 }
 
 /// Replace "[query(such as SHOW VARIABLES...)]" into "".
