@@ -826,7 +826,7 @@ Tags:
 - `<disk_name_N>` — Disk name. Names must be different for all disks.
 - `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with ‘/’.
 - `keep_free_space_bytes` — the amount of free disk space to be reserved.
-- `allow_vfs` and `vfs_gc_sleep_ms` -- settings for [DiskVFS](#disk-vfs).
+- `allow_vfs` and `vfs_gc_sleep_ms` -- settings for [Disk VFS](#disk-vfs).
 
 The order of the disk definition is not important.
 
@@ -941,7 +941,7 @@ You could change storage policy after table creation with [ALTER TABLE ... MODIF
 
 The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_move_pool_size) setting.
 
-### DiskVFS {#disk-vfs}
+### Disk VFS {#disk-vfs}
 
 `allow_vfs` disk flag (off by default) activates a feature that integrates elements of a distributed virtual
 filesystem (VFS) with object storage, primarily focusing on distributed hardlinks and accurate reference

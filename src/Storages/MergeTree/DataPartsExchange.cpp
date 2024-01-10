@@ -221,6 +221,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
         // endpoint + key + secret) and query by it. Users having identical buckets for different
         // disks could specify same _vfs_disk_id_.
         // See also: VFSTraits.h
+        // See also: DiskObjectStorageVFS::getMetadataObject
         const Strings desired_vfs_disk_names = parseCommaDelimited(params.get(DISK_VFS, ""));
         bool verify_checksums = true;
         if (part->getDataPartStorage().supportVFS() &&
