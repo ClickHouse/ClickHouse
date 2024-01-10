@@ -196,9 +196,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
         String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
         log_settings.engine += " ORDER BY (" + order_by + ")";
 
-        /// Add comment to AST. So it will be saved when the table will be renamed.
-        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
-
         /// SETTINGS expr is not necessary.
         ///   https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#settings
         ///
@@ -214,10 +211,16 @@ std::shared_ptr<TSystemLog> createSystemLog(
             if (!settings.empty())
                 log_settings.engine += (storage_policy.empty() ? " " : ", ") + settings;
         }
+
+        /// Add comment to AST. So it will be saved when the table will be renamed.
+        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
     ParserStorageWithComment storage_parser;
+
+    std::cout << log_settings.engine << std::endl;
+
     parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
             "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
