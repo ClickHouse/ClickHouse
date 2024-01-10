@@ -826,6 +826,7 @@ Tags:
 - `<disk_name_N>` — Disk name. Names must be different for all disks.
 - `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with ‘/’.
 - `keep_free_space_bytes` — the amount of free disk space to be reserved.
+- `allow_vfs` and `vfs_gc_sleep_ms` -- settings for [DiskVFS](#disk-vfs).
 
 The order of the disk definition is not important.
 
@@ -939,6 +940,25 @@ The `default` storage policy implies using only one volume, which consists of on
 You could change storage policy after table creation with [ALTER TABLE ... MODIFY SETTING] query, new policy should include all old disks and volumes with same names.
 
 The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_move_pool_size) setting.
+
+### DiskVFS {#disk-vfs}
+
+`allow_vfs` disk flag (off by default) activates a feature that integrates elements of a distributed virtual
+filesystem (VFS) with object storage, primarily focusing on distributed hardlinks and accurate reference
+counting.
+
+If turned on, disables `allow_remote_fs_zero_copy_replication` for disk. Unlike the former, can't be set in
+runtime, a server restart is needed.
+ClickHouse Keeper can not use VFS disk as a storage backend.
+VFS is incompatible with `send_metadata`.
+
+When turned on, reuses the following settings:
+- `remote_fs_execute_merges_on_single_replica_time_threshold`
+- `zero_copy_merge_mutation_min_parts_size_sleep_before_lock`
+
+
+`vfs_gc_sleep_ms` disk setting handles garbage collector sleep timeout between iterations for VFS disks
+(default: 10'000).
 
 ### Dynamic Storage
 

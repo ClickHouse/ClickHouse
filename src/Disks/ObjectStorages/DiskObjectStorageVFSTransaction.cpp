@@ -7,7 +7,7 @@
 namespace DB
 {
 DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_)
-    // TODO myrrc we don't prohibit send_metadata yet, pay attention to nullptr passed
+    // nullptr passed as we prohibit send_metadata in VFS disk constructor
     : DiskObjectStorageTransaction(*disk_.object_storage, *disk_.metadata_storage, nullptr), disk(disk_)
 {
 }
@@ -62,6 +62,7 @@ struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectSto
         for (auto && [_, unlink_by_path] : objects_to_remove_by_path)
             std::ranges::move(unlink_by_path.objects, std::back_inserter(unlink));
         const String entry = VFSLogItem::getSerialised({}, std::move(unlink));
+        LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
         disk.zookeeper()->create(disk.traits.log_item, entry, zkutil::CreateMode::PersistentSequential);
     }
 };
@@ -93,6 +94,7 @@ struct RemoveManyObjectStorageVFSOperation final : RemoveManyObjectStorageOperat
         for (auto && [objects, _] : objects_to_remove)
             std::ranges::move(objects, std::back_inserter(unlink));
         const String entry = VFSLogItem::getSerialised({}, std::move(unlink));
+        LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
         disk.zookeeper()->create(disk.traits.log_item, entry, zkutil::CreateMode::PersistentSequential);
     }
 
@@ -126,6 +128,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
             std::make_unique<WriteBufferFromFile>(path_without_tag, buf_size),
             [tx = shared_from_this(), path_without_tag](size_t)
             {
+                // TODO myrrc this queries file on s3.
                 tx->addStoredObjectsOp(tx->metadata_storage.getStorageObjects(path_without_tag), {});
                 tx->commit();
             },
@@ -179,6 +182,7 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
     {
         CopyFileObjectStorageOperation::execute(tx);
         const String entry = VFSLogItem::getSerialised(std::move(created_objects), {});
+        LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
         disk.zookeeper()->create(disk.traits.log_item, entry, zkutil::CreateMode::PersistentSequential);
     }
 };
@@ -190,12 +194,26 @@ void DiskObjectStorageVFSTransaction::copyFile(
         std::make_unique<CopyFileObjectStorageVFSOperation>(disk, read_settings, write_settings, from_file_path, to_file_path));
 }
 
+// TODO myrrc A better approach would be to execute writes to Keeper as a single transaction when
+// all other transactions are committed. So instead of adding a transaction operation on each filesystem
+// operation, we could store Keeper actions in the VFSTransaction class directly. However, this brings two
+// major questions:
+//
+// What happens if Keeper dies after we finished all FS operations? Will they be retried in order so that
+//  correct info would be propagated to VFS log?
+//  Currently on each Keeper failure we just abort the operation by throwing, achieving "early exit".
+// On metadata copying from replica to replica, how will we handle that? Currently there's a hacky
+//  approach: when a metadata file is written, it's immediately read back, deserialized, and StoredObject
+//  info is propagated to Keeper. Then transaction is committed immediately. This solution was developed
+//  as writeFile autocommits by default, so writing to actual file happens when buffer is finalized, not
+//  when the corresponding transaction commits.
 void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, StoredObjects && unlink)
 {
     if (link.empty() && unlink.empty()) [[unlikely]]
         return;
+
+    LOG_TRACE(disk.log, "Pushing:\nlink:{}\nunlink:{}", fmt::join(link, "\n"), fmt::join(unlink, "\n"));
     String entry = VFSLogItem::getSerialised(std::move(link), std::move(unlink));
-    LOG_TRACE(disk.log, "Pushing {}", entry);
 
     auto callback = [entry_captured = std::move(entry), &disk_captured = disk]
     {

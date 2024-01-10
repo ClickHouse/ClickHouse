@@ -299,29 +299,6 @@ Possible values:
 
 Default value: 10800
 
-### allow_vfs
-
-This disk flag activates a feature that integrates elements of a distributed virtual filesystem (VFS) with object storage, primarily focusing on distributed hardlinks and accurate reference counting.
-
-Disables `allow_remote_fs_zero_copy_replication` for disk. Unlike the former, can't be set in runtime,
-a server restart is needed.
-ClickHouse Keeper can not use VFS disk as a storage backend.
-VFS is incompatible with `send_metadata`.
-
-When turned on, reuses the following settings:
-- `remote_fs_execute_merges_on_single_replica_time_threshold`
-- `zero_copy_merge_mutation_min_parts_size_sleep_before_lock`
-
-Possible values: 0, 1
-Default value: 0
-
-
-### vfs_gc_sleep_ms
-
-Garbage collector sleep timeout between iterations for VFS disks
-
-Default value: 10'000
-
 ## try_fetch_recompressed_part_timeout
 
 Recompression works slow in most cases, so we don't start merge with recompression until this timeout and trying to fetch recompressed part from replica which assigned this merge with recompression.

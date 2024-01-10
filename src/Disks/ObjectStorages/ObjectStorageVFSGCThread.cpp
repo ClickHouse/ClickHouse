@@ -58,7 +58,11 @@ void ObjectStorageVFSGCThread::run() const
     if (log_items_batch.size() < batch_min_size)
         return;
 
-    // TODO myrrc handle counter overflow by checking (max - min) != batch_size
+    // TODO myrrc Sequential node in zookeeper overflows after 32 bit.
+    // We can catch this case by checking (end_logpointer - start_logpointer) != log_items_batch.size()
+    // In that case we should find the overflow point and process only the part before overflow
+    // (so next GC could capture the range with increasing logpointers).
+    // We also must use a signed type for logpointers.
     const auto [start_str, end_str] = std::ranges::minmax(std::move(log_items_batch));
     const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4)); // log- is a prefix
     const size_t end_logpointer = std::min(parseFromString<size_t>(end_str.substr(4)), start_logpointer + batch_max_size);

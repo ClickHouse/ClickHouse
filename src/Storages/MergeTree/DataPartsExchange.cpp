@@ -194,6 +194,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
         const auto & part_storage = part->getDataPartStorage();
         const String disk_type = part_storage.getDiskType();
+        const String disk_name = part_storage.getDiskName();
 
         const Strings desired_zero_copy_disk_types = parseCommaDelimited(params.get(DISK_ZERO_COPY, ""));
         if (data_settings->allow_remote_fs_zero_copy_replication &&
@@ -210,13 +211,23 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             return;
         }
 
-        const Strings desired_vfs_disk_types = parseCommaDelimited(params.get(DISK_VFS, ""));
+        // TODO myrrc Unlike 0copy, the information about disk type (s3/hdfs/azure) is not sufficient to decide
+        // whether to send VFS metadata. 0copy operates on a table level, so metadata is just copied and
+        // later accessed. For VFS we have different logs for every disk, so if we download data from
+        // disk s1 to disk s2, we can't send metadata as otherwise logs would be corrupted.
+        // So currently VFS is limited. This has an implication that if different replicas have
+        // disks with same names but different endpoints (+credentials?), everything will break.
+        // A possible solution is to introduce a _vfs_disk_id_ parameter (by default a hash of
+        // endpoint + key + secret) and query by it. Users having identical buckets for different
+        // disks could specify same _vfs_disk_id_.
+        // See also: VFSTraits.h
+        const Strings desired_vfs_disk_names = parseCommaDelimited(params.get(DISK_VFS, ""));
         bool verify_checksums = true;
         if (part->getDataPartStorage().supportVFS() &&
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY &&
-            contains(desired_vfs_disk_types, disk_type))
+            contains(desired_vfs_disk_names, disk_name))
         {
-            response.addCookie({DISK_VFS, disk_type});
+            response.addCookie({DISK_VFS, disk_name});
             verify_checksums = false;
         }
 
@@ -429,20 +440,23 @@ Fetcher::Fetcher(StorageReplicatedMergeTree & data_)
     , log(&Poco::Logger::get(data.getStorageID().getNameForLogs() + " (Fetcher)"))
 {}
 
-Strings getCapableDiskTypes(DiskPtr disk, const Disks& other, Fn<bool(DiskPtr)> auto && capability_checker)
+Strings getCapableDiskIdentifiers(
+    DiskPtr disk, const Disks & other,
+    Fn<bool(DiskPtr)> auto && capability_checker,
+    Fn<String(DiskPtr)> auto && get_disk_identifier)
 {
     Strings out;
     if (!disk)
     {
         for (const auto & data_disk : other)
             if (capability_checker(data_disk))
-                out.emplace_back(toString(data_disk->getDataSourceDescription().type));
+                out.emplace_back(get_disk_identifier(data_disk));
 
         std::ranges::sort(out);
         out.erase(std::unique(out.begin(), out.end()), out.end());
     }
     else if (capability_checker(disk))
-        out.emplace_back(toString(disk->getDataSourceDescription().type));
+        out.emplace_back(get_disk_identifier(disk));
 
     return out;
 }
@@ -510,15 +524,17 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     }
 
     Strings zero_copy_disk_types;
-    const Strings vfs_disk_types = getCapableDiskTypes(disk, data.getDisks(),
-        [](DiskPtr d) { return d->isObjectStorageVFS(); });
+    const Strings vfs_disk_names = getCapableDiskIdentifiers(disk, data.getDisks(),
+        [](DiskPtr d) { return d->isObjectStorageVFS(); },
+        [](DiskPtr d) { return d->getName(); });
 
-    if (!vfs_disk_types.empty())
-        uri.addQueryParameter(DISK_VFS, fmt::format("{}", fmt::join(vfs_disk_types, ", ")));
+    if (!vfs_disk_names.empty())
+        uri.addQueryParameter(DISK_VFS, fmt::format("{}", fmt::join(vfs_disk_names, ", ")));
     else if (try_zero_copy && data_settings->allow_remote_fs_zero_copy_replication)
     {
-        zero_copy_disk_types = getCapableDiskTypes(disk, data.getDisks(),
-            [](DiskPtr d) { return d->supportZeroCopyReplication(); });
+        zero_copy_disk_types = getCapableDiskIdentifiers(disk, data.getDisks(),
+            [](DiskPtr d) { return d->supportZeroCopyReplication(); },
+            [](DiskPtr d) { return toString(d->getDataSourceDescription().type); });
         if (zero_copy_disk_types.empty())
         {
             if (data.canUseZeroCopyReplication())
@@ -562,10 +578,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         }
     }
 
-    const String response_disk_type_with_vfs = in->getResponseCookie(DISK_VFS, "");
-    if (!response_disk_type_with_vfs.empty() && !preffered_disk)
+    const String response_disk_name_with_vfs = in->getResponseCookie(DISK_VFS, "");
+    if (!response_disk_name_with_vfs.empty() && !preffered_disk)
         for (const auto & candidate : data.getDisks())
-            if (toString(candidate->getDataSourceDescription().type) == response_disk_type_with_vfs)
+            if (candidate->getName() == response_disk_name_with_vfs)
             {
                 preffered_disk = candidate;
                 break;
@@ -737,14 +753,14 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         }
     }
 
-    if (!response_disk_type_with_vfs.empty())
+    if (!response_disk_name_with_vfs.empty())
     {
-        if (!contains(vfs_disk_types, response_disk_type_with_vfs))
+        if (!contains(vfs_disk_names, response_disk_name_with_vfs))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Got '{}' cookie {}, expected one from {}",
                 DISK_VFS,
-                response_disk_type_with_vfs,
-                fmt::join(vfs_disk_types, ", "));
+                response_disk_name_with_vfs,
+                fmt::join(vfs_disk_names, ", "));
         if (part_type == PartType::InMemory)
             throw Exception(ErrorCodes::INCORRECT_PART_TYPE,
                 "Got '{}' cookie for in-memory part",
