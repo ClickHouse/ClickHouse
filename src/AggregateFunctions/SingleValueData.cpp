@@ -172,7 +172,7 @@ bool SingleValueDataFixed<T>::setIfGreater(const IColumn & column, size_t row_nu
 template <typename T>
 void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena)
 {
-    if (row_begin == row_end)
+    if (row_begin >= row_end)
         return;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
@@ -194,7 +194,7 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
 template <typename T>
 void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena)
 {
-    if (row_begin == row_end)
+    if (row_begin >= row_end)
         return;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
@@ -288,7 +288,7 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
 template <typename T>
 std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end)
 {
-    if (row_begin == row_end)
+    if (row_begin >= row_end)
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
@@ -318,7 +318,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
 template <typename T>
 std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end)
 {
-    if (row_begin == row_end)
+    if (row_begin >= row_end)
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);

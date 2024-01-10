@@ -49,7 +49,7 @@ public:
         if constexpr (isMin)
             this->data(place).setIfSmaller(*columns[0], row_num, arena);
         else
-            this->data(place).setIfGreater(*columns[0], 0, arena);
+            this->data(place).setIfGreater(*columns[0], row_num, arena);
     }
 
     void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
