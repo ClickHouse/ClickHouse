@@ -32,10 +32,9 @@ INSERT INTO t2 SELECT number, number FROM numbers(15, 15);
 SELECT * FROM ( SELECT * from t1 ) t1 PASTE JOIN ( SELECT * from t2 ) t2 SETTINGS max_threads = 1;
 SELECT toTypeName(a) FROM (SELECT number as a FROM numbers(11)) t1 PASTE JOIN (select number as a from numbers(10)) t2 SETTINGS join_use_nulls = 1;
 SET max_threads = 2;
+select * from (SELECT number as a FROM numbers_mt(10)) t1 PASTE JOIN (select number as a from numbers(10) ORDER BY a DESC) t2 SETTINGS max_block_size=10;
 select * from (SELECT number as a FROM numbers(10)) t1 ANY PASTE JOIN (select number as a from numbers(10)) t2; -- { clientError SYNTAX_ERROR }
 select * from (SELECT number as a FROM numbers(10)) t1 ALL PASTE JOIN (select number as a from numbers(10)) t2; -- { clientError SYNTAX_ERROR }
-select * from (SELECT number as a FROM numbers_mt(10)) t1 PASTE JOIN (select number as a from numbers(10) ORDER BY a DESC) t2 SETTINGS max_block_size=3; -- { serverError BAD_ARGUMENTS }
-
 
 INSERT INTO test SELECT * FROM numbers(10);
 SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(10) ORDER BY number DESC ) SETTINGS joined_subquery_requires_alias = 0; -- { serverError BAD_ARGUMENTS }

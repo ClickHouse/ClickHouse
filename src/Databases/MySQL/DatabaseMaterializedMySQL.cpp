@@ -10,6 +10,7 @@
 #    include <Databases/DatabaseFactory.h>
 #    include <Databases/MySQL/DatabaseMaterializedTablesIterator.h>
 #    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
+#    include <Databases/MySQL/MySQLBinlogClientFactory.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Parsers/ASTFunction.h>
 #    include <Parsers/queryToString.h>
@@ -39,10 +40,11 @@ DatabaseMaterializedMySQL::DatabaseMaterializedMySQL(
     const String & mysql_database_name_,
     mysqlxx::Pool && pool_,
     MySQLClient && client_,
+    const MySQLReplication::BinlogClientPtr & binlog_client_,
     std::unique_ptr<MaterializedMySQLSettings> settings_)
     : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializedMySQL(" + database_name_ + ")", context_)
     , settings(std::move(settings_))
-    , materialize_thread(context_, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
+    , materialize_thread(context_, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), binlog_client_, settings.get())
 {
 }
 
@@ -197,6 +199,7 @@ void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)
 
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
+        MySQLReplication::BinlogClientPtr binlog_client;
         StorageMySQL::Configuration configuration;
         ASTs & arguments = engine->arguments->children;
         auto mysql_settings = std::make_unique<MySQLSettings>();
@@ -241,6 +244,12 @@ void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)
         if (engine_define->settings)
             materialize_mode_settings->loadFromQuery(*engine_define);
 
+        if (materialize_mode_settings->use_binlog_client)
+            binlog_client = DB::MySQLReplication::BinlogClientFactory::instance().getClient(
+                configuration.host, configuration.port, configuration.username, configuration.password,
+                materialize_mode_settings->max_bytes_in_binlog_dispatcher_buffer,
+                materialize_mode_settings->max_flush_milliseconds_in_binlog_dispatcher);
+
         if (args.uuid == UUIDHelpers::Nil)
         {
             auto print_create_ast = args.create_query.clone();
@@ -261,6 +270,7 @@ void registerDatabaseMaterializedMySQL(DatabaseFactory & factory)
             configuration.database,
             std::move(mysql_pool),
             std::move(client),
+            binlog_client,
             std::move(materialize_mode_settings));
     };
     factory.registerDatabase("MaterializeMySQL", create_fn);

@@ -17,6 +17,7 @@ public:
     ZstdDeflatingWriteBuffer(
         std::unique_ptr<WriteBuffer> out_,
         int compression_level,
+        int window_log = 0,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         char * existing_memory = nullptr,
         size_t alignment = 0);
