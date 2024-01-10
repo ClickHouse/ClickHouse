@@ -85,9 +85,9 @@ public:
 
 SensitiveDataMasker::~SensitiveDataMasker() = default;
 
-std::shared_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
+SensitiveDataMasker::MaskerMultiVersion SensitiveDataMasker::sensitive_data_masker{};
 
-void SensitiveDataMasker::setInstance(std::shared_ptr<SensitiveDataMasker> sensitive_data_masker_)
+void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker>&& sensitive_data_masker_)
 {
 
     if (!sensitive_data_masker_)
@@ -95,18 +95,17 @@ void SensitiveDataMasker::setInstance(std::shared_ptr<SensitiveDataMasker> sensi
 
     if (sensitive_data_masker_->rulesCount() > 0)
     {
-        std::atomic_store(&sensitive_data_masker, std::move(sensitive_data_masker_));
+        sensitive_data_masker.set(std::move(sensitive_data_masker_));
     }
     else
     {
-        std::atomic_store(&sensitive_data_masker, std::shared_ptr<SensitiveDataMasker>(nullptr));
+        sensitive_data_masker.set(nullptr);
     }
 }
 
-std::shared_ptr<SensitiveDataMasker> SensitiveDataMasker::getInstance()
+SensitiveDataMasker::MaskerMultiVersion::Version SensitiveDataMasker::getInstance()
 {
-    // TODO: use std::atomic<std::shared_ptr> when compiler supports it
-    return std::atomic_load(&sensitive_data_masker);
+    return sensitive_data_masker.get();
 }
 
 SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
