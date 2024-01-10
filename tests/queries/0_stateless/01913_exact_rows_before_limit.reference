@@ -32,7 +32,7 @@
 
 	"rows": 1,
 
-	"rows_before_limit_at_least": 20000
+	"rows_before_limit_at_least": 10000
 }
 {
 	"meta":
@@ -68,5 +68,5 @@
 
 	"rows": 1,
 
-	"rows_before_limit_at_least": 20000
+	"rows_before_limit_at_least": 8192
 }

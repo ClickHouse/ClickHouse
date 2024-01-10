@@ -1600,8 +1600,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
             result.index_stats,
             indexes->use_skip_indexes);
 
-        /// Apply LIMIT for LIMIT only queries
-        if (query_info.limit > 0)
+        /** Apply LIMIT for LIMIT only queries.
+          * For query with FINAL we cannot apply LIMIT.
+          */
+        if (query_info.limit > 0 && !query_info.isFinal())
             result.parts_with_ranges = MergeTreeDataSelectExecutor::applyLimitForRangesInDataParts(std::move(result.parts_with_ranges), query_info.limit);
     }
 
