@@ -1,10 +1,12 @@
 #pragma once
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-
+#include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <base/StringRef.h>
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
@@ -18,12 +20,14 @@ namespace ErrorCodes
 extern const int TOO_LARGE_STRING_SIZE;
 }
 
-/** Aggregate functions that store one of passed values.
-  * For example: min, max, any, anyLast.
+/** Base class for data that stores one of passed values: min, max, any, anyLast...
   */
 struct SingleValueDataBase
 {
     static constexpr int nan_direction_hint = 1;
+    /// Any subclass (numeric, string, generic) must be smaller than MAX_STORAGE_SIZE
+    /// We use this knowledge to create composite data classes that use them directly.
+    /// For example ArgMin holds 2 of these objects
     static constexpr UInt32 MAX_STORAGE_SIZE = 64;
 
     virtual ~SingleValueDataBase() { }
@@ -75,7 +79,7 @@ struct SingleValueDataBase
     M(Decimal256) \
     M(DateTime64)
 
-/// For numeric values.
+/// For numeric values
 template <typename T>
 struct SingleValueDataFixed final : public SingleValueDataBase
 {
@@ -426,4 +430,60 @@ public:
 };
 
 static_assert(sizeof(SingleValueDataGeneric) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataGeneric struct");
+
+/// min, max, any, anyLast, anyHeavy, etc...
+template <template <typename, bool...> class AggregateFunctionTemplate, bool... isMin>
+static IAggregateFunction *
+createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+{
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
+
+    const DataTypePtr & argument_type = argument_types[0];
+    WhichDataType which(argument_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) \
+        return new AggregateFunctionTemplate<SingleValueDataFixed<TYPE>, isMin...>(argument_type); /// NOLINT
+    FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+
+    if (which.idx == TypeIndex::Date)
+        return new AggregateFunctionTemplate<SingleValueDataFixed<DataTypeDate::FieldType>, isMin...>(argument_type);
+    if (which.idx == TypeIndex::DateTime)
+        return new AggregateFunctionTemplate<SingleValueDataFixed<DataTypeDateTime::FieldType>, isMin...>(argument_type);
+    if (which.idx == TypeIndex::String)
+        return new AggregateFunctionTemplate<SingleValueDataString, isMin...>(argument_type);
+
+    return new AggregateFunctionTemplate<SingleValueDataGeneric, isMin...>(argument_type);
+}
+
+/// For Data classes that want to compose on top of SingleValueDataBase values, like argMax or singleValueOrNull
+void generateSingleValueFromTypeIndex(TypeIndex idx, char data[SingleValueDataBase::MAX_STORAGE_SIZE]);
+
+/// Functions that extend SingleValueData: REMOVE THIS SHIT
+/// singleValueOrNull
+template <template <typename> class AggregateFunctionTemplate, template <typename> class ChildType>
+static IAggregateFunction * createAggregateFunctionSingleValueComposite(
+    const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+{
+    assertNoParameters(name, parameters);
+    assertUnary(name, argument_types);
+
+    const DataTypePtr & argument_type = argument_types[0];
+    WhichDataType which(argument_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) \
+        return new AggregateFunctionTemplate<ChildType<SingleValueDataFixed<TYPE>>>(argument_type); /// NOLINT
+    FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+
+    if (which.idx == TypeIndex::Date)
+        return new AggregateFunctionTemplate<ChildType<SingleValueDataFixed<DataTypeDate::FieldType>>>(argument_type);
+    if (which.idx == TypeIndex::DateTime)
+        return new AggregateFunctionTemplate<ChildType<SingleValueDataFixed<DataTypeDateTime::FieldType>>>(argument_type);
+    if (which.idx == TypeIndex::String)
+        return new AggregateFunctionTemplate<ChildType<SingleValueDataString>>(argument_type);
+
+    return new AggregateFunctionTemplate<ChildType<SingleValueDataGeneric>>(argument_type);
+}
 }

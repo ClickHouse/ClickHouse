@@ -1,6 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <AggregateFunctions/HelpersMinMaxAny.h>
+#include <AggregateFunctions/SingleValueData.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 

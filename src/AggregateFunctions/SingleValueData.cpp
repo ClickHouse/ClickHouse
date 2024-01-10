@@ -532,4 +532,38 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
 }
 
 
+void generateSingleValueFromTypeIndex(TypeIndex idx, char data[SingleValueDataBase::MAX_STORAGE_SIZE])
+{
+#define DISPATCH(TYPE) \
+    if (idx == TypeIndex::TYPE) \
+    { \
+        static_assert(sizeof(SingleValueDataFixed<TYPE>) <= SingleValueDataBase::MAX_STORAGE_SIZE); \
+        new (data) SingleValueDataFixed<TYPE>(); \
+        return; \
+    }
+
+    FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+
+    if (idx == TypeIndex::Date)
+    {
+        static_assert(sizeof(SingleValueDataFixed<DataTypeDate::FieldType>) <= SingleValueDataBase::MAX_STORAGE_SIZE);
+        new (data) SingleValueDataFixed<DataTypeDate::FieldType>;
+        return;
+    }
+    if (idx == TypeIndex::DateTime)
+    {
+        static_assert(sizeof(SingleValueDataFixed<DataTypeDateTime::FieldType>) <= SingleValueDataBase::MAX_STORAGE_SIZE);
+        new (data) SingleValueDataFixed<DataTypeDateTime::FieldType>;
+        return;
+    }
+    if (idx == TypeIndex::String)
+    {
+        static_assert(sizeof(SingleValueDataString) <= SingleValueDataBase::MAX_STORAGE_SIZE);
+        new (data) SingleValueDataString;
+        return;
+    }
+    static_assert(sizeof(SingleValueDataGeneric) <= SingleValueDataBase::MAX_STORAGE_SIZE);
+    new (data) SingleValueDataGeneric;
+}
 }
