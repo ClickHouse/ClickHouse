@@ -25,60 +25,58 @@
 namespace Coordination
 {
 
+class IClientsConnectionBalancer
+{
+public:
+    struct ClientSettings
+    {
+        bool use_fallback_session_lifetime = false;
+    };
+
+    struct EndpointInfo
+    {
+        const String & address;
+        bool secure = false;
+        size_t id = 0;
+        ClientSettings settings = {};
+    };
+
+    virtual EndpointInfo getHostToConnect() = 0;
+    virtual size_t addEndpoint(const String & address, bool secure) = 0;
+
+    virtual void atHostIsOffline(size_t id) = 0;
+    virtual void atHostIsOnline(size_t id) = 0;
+
+    virtual void resetOfflineStatuses() = 0;
+    virtual size_t getAvailableEndpointsCount() const = 0;
+    virtual size_t getEndpointsCount() const = 0;
+
+    virtual ~IClientsConnectionBalancer() = default;
+};
+using ClientsConnectionBalancerPtr = std::unique_ptr<IClientsConnectionBalancer>;
+
+ClientsConnectionBalancerPtr getConnectionBalancer(LoadBalancing load_balancing_type);
+
 class ZooKeeperLoadBalancer
 {
 public:
-    using BetterKeeperHostUpdater = std::function<void (std::unique_ptr<Coordination::IKeeper>)>;
-
     static ZooKeeperLoadBalancer & instance();
 
     void init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_);
     std::unique_ptr<Coordination::ZooKeeper> createClient();
 
-    // When ZooKeeperLoadBalancer detects that a better Keeper hots is available, it will call this handler.
-    void setBetterKeeperHostUpdater(BetterKeeperHostUpdater handler);
-
 private:
-    struct HostInfo
-    {
-        // address is the network address without "secure://" prefix.
-        String address;
-        UInt8 original_index;
-        bool secure;
-        Priority priority;
-        UInt64 random = 0;
+    void recordKeeperHostError(UInt8 id);
 
-        Coordination::ZooKeeper::Node toZooKeeperNode() const
-        {
-            Coordination::ZooKeeper::Node node;
-            node.address = Poco::Net::SocketAddress(address);
-            node.secure = secure;
-            node.original_index = original_index;
-            return node;
-        }
-
-        void randomize()
-        {
-            random = thread_local_rng();
-        }
-
-        static bool compare(const HostInfo & lhs, const HostInfo & rhs)
-        {
-            return std::forward_as_tuple(lhs.priority, lhs.random)
-                < std::forward_as_tuple(rhs.priority, rhs.random);
-        }
-    };
-
-    void shuffleHosts();
-    void recordKeeperHostError(UInt8 original_index);
-
-    std::vector<HostInfo> host_info_list;
-    zkutil::ZooKeeperArgs args;
-    std::shared_ptr<ZooKeeperLog> zk_log;
-    BetterKeeperHostUpdater better_keeper_host_updater;
-
+    /// Do not know why mutex is used here
+    /// do we call createClient() concurrently?
     std::mutex mutex;
 
+    zkutil::ZooKeeperArgs args;
+
+    ClientsConnectionBalancerPtr connection_balancer;
+
+    std::shared_ptr<ZooKeeperLog> zk_log;
     Poco::Logger* log;
 };
 
