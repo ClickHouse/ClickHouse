@@ -378,9 +378,7 @@ public:
     bool setIfSmaller(const SingleValueDataBase & other, Arena *) override
     {
         auto const & to = assert_cast<const Self &>(other);
-        if (!to.has())
-            return false;
-        if (!has() || to.value < value)
+        if (to.has() && (!has() || to.value < value))
         {
             value = to.value;
             return true;
@@ -413,9 +411,7 @@ public:
     bool setIfGreater(const SingleValueDataBase & other, Arena *) override
     {
         auto const & to = assert_cast<const Self &>(other);
-        if (!to.has())
-            return false;
-        if (!has() || to.value > value)
+        if (to.has() && (!has() || to.value > value))
         {
             value = to.value;
             return true;

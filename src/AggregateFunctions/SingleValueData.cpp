@@ -497,7 +497,7 @@ bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num,
 bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Arena * arena)
 {
     auto const & to = assert_cast<const Self &>(other);
-    if (!has() || to.getStringRef() < getStringRef())
+    if (to.has() && (!has() || to.getStringRef() < getStringRef()))
     {
         changeImpl(to.getStringRef(), arena);
         return true;
@@ -522,7 +522,7 @@ bool SingleValueDataString::setIfGreater(const IColumn & column, size_t row_num,
 bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Arena * arena)
 {
     auto const & to = assert_cast<const Self &>(other);
-    if (!has() || to.getStringRef() > getStringRef())
+    if (to.has() && (!has() || to.getStringRef() > getStringRef()))
     {
         changeImpl(to.getStringRef(), arena);
         return true;
