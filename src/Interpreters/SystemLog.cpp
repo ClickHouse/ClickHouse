@@ -219,8 +219,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
     /// Validate engine definition syntax to prevent some configuration errors.
     ParserStorageWithComment storage_parser;
 
-    std::cout << log_settings.engine << std::endl;
-
     parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
             "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
