@@ -11,6 +11,7 @@ namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int LOGICAL_ERROR;
 }
 
 MetadataStorageFactory & MetadataStorageFactory::instance()
