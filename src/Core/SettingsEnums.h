@@ -6,6 +6,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadSettings.h>
 #include <Common/ShellCommandSettings.h>
+#include <Parsers/ASTSQLSecurity.h>
 
 
 namespace DB
@@ -266,4 +267,5 @@ DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(SQLSecurityType, ASTSQLSecurity::Type)
 }

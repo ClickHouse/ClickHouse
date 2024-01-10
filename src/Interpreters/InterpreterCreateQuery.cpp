@@ -1901,18 +1901,19 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
     }
 }
 
-void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach)
+void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQLSecurity & sql_security, bool is_attach, bool is_materialized_view)
 {
+    /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type.has_value())
     {
-        /// SQL SECURITY/DEFINER options wasn't specified, will use defaults.
-        String default_security = context_->getSettingsRef().default_view_sql_security;
+        ASTSQLSecurity::Type default_security;
 
-        if (default_security == "NONE")
-            sql_security.type = ASTSQLSecurity::Type::NONE;
-        else if (default_security == "INVOKER")
-            sql_security.type = ASTSQLSecurity::Type::INVOKER;
-        else if (default_security == "DEFINER")
+        if (is_materialized_view)
+            default_security = context_->getSettingsRef().default_materialized_view_sql_security;
+        else
+            default_security = context_->getSettingsRef().default_normal_view_sql_security;
+
+        if (default_security == ASTSQLSecurity::Type::DEFINER)
         {
             sql_security.type = ASTSQLSecurity::Type::DEFINER;
             String default_definer = context_->getSettingsRef().default_view_definer;
@@ -1921,26 +1922,32 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextPtr context_, ASTSQ
             else
                 sql_security.definer = std::make_shared<ASTUserNameWithHost>(default_definer);
         }
-        else
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected default_view_sql_security = <DEFINER | INVOKER | NONE>. Got {}", default_security);
+
+        sql_security.type = default_security;
     }
 
+    /// Resolves `DEFINER = CURRENT_USER`. Can change the SQL security type if we try to resolve the user during the attachment.
     const auto current_user_name = context_->getUserName();
     if (sql_security.is_definer_current_user)
     {
         if (current_user_name.empty())
             /// This can happen only when attaching a view for the first time after migration and with `CURRENT_USER` default.
-            sql_security.type = ASTSQLSecurity::Type::NONE;
+            if (is_materialized_view)
+                sql_security.type = ASTSQLSecurity::Type::NONE;
+            else
+                sql_security.type = ASTSQLSecurity::Type::INVOKER;
         else if (sql_security.definer)
             sql_security.definer->replace(current_user_name);
         else
             sql_security.definer = std::make_shared<ASTUserNameWithHost>(current_user_name);
     }
-    else if (sql_security.definer && !is_attach)
+
+    /// Checks the permissions to specify the selected user as a definer.
+    if (sql_security.definer && !sql_security.is_definer_current_user && !is_attach)
     {
         const auto definer_name = sql_security.definer->toString();
 
-        /// Validate that definer exists.
+        /// Validate that the user exists.
         context_->getAccessControl().getID<User>(definer_name);
         if (definer_name != current_user_name)
             context_->checkAccess(AccessType::SET_DEFINER, definer_name);

@@ -1,5 +1,6 @@
 #include <Core/SettingsEnums.h>
 #include <magic_enum.hpp>
+#include "Parsers/ASTSQLSecurity.h"
 
 
 namespace DB
@@ -206,4 +207,9 @@ IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
      {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
      {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
+
+IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
+    {{"DEFINER", ASTSQLSecurity::Type::DEFINER},
+     {"INVOKER", ASTSQLSecurity::Type::INVOKER},
+     {"NONE", ASTSQLSecurity::Type::NONE}})
 }

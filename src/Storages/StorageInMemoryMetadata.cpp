@@ -45,9 +45,9 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
+    , refresh(other.refresh ? other.refresh->clone() : nullptr)
     , definer(other.definer)
     , sql_security_type(other.sql_security_type)
-    , refresh(other.refresh ? other.refresh->clone() : nullptr)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
 {
@@ -77,9 +77,9 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     else
         settings_changes.reset();
     select = other.select;
+    refresh = other.refresh ? other.refresh->clone() : nullptr;
     definer = other.definer;
     sql_security_type = other.sql_security_type;
-    refresh = other.refresh ? other.refresh->clone() : nullptr;
     comment = other.comment;
     metadata_version = other.metadata_version;
     return *this;
