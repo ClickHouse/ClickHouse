@@ -24,6 +24,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageValues.h>
+#include "Common/Exception.h"
 
 namespace DB
 {
@@ -267,13 +268,13 @@ bool JoinedTables::resolveTables()
             for (auto & name : t.columns.getNames())
                 column_names.push_back(name);
         if (column_names.empty())
-            return false;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Names of joining columns cannot be empty");
 
         std::sort(column_names.begin(), column_names.end());
         for (size_t i = 0; i < column_names.size() - 1; i++) // Check if there is not any duplicates because it will lead to broken result
             if (column_names[i] == column_names[i+1])
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Name of columns and aliases should be unique for this query (you can add alias that will be different)"
+                                "Name of columns and aliases should be unique for this query (you can add/change aliases so they will not be duplicated)"
                                 "While processing '{}'", table_expressions[i]->formatForErrorMessage());
     }
 

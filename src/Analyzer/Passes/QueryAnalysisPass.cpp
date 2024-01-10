@@ -6791,13 +6791,13 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAlias(QueryTreeNodePtr & join_node
         column_names.push_back(name_and_type.name);
 
     if (column_names.empty())
-        return;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Names of projection columns cannot be empty");
 
     std::sort(column_names.begin(), column_names.end());
     for (size_t i = 0; i < column_names.size() - 1; i++) // Check if there is not any duplicates because it will lead to broken result
         if (column_names[i] == column_names[i+1])
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Name of columns and aliases should be unique for this query (you can add alias that will be different)"
+                            "Name of columns and aliases should be unique for this query (you can add/change aliases so they will not be duplicated)"
                             "While processing '{}'", join_node->formatASTForErrorMessage());
 }
 
@@ -6812,7 +6812,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     resolveQueryJoinTreeNode(join_node_typed.getRightTableExpression(), scope, expressions_visitor);
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
 
-    checkDuplicateTableNamesOrAlias(join_node, join_node_typed.getLeftTableExpression(), join_node_typed.getRightTableExpression());
+    if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
+        checkDuplicateTableNamesOrAlias(join_node, join_node_typed.getLeftTableExpression(), join_node_typed.getRightTableExpression());
 
     if (join_node_typed.isOnJoinExpression())
     {
