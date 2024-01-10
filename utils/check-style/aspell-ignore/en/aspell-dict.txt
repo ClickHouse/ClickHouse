@@ -718,6 +718,7 @@ ProxySQL
 Punycode
 PyArrow
 PyCharm
+QATlib
 QEMU
 QTCreator
 Quantile
@@ -727,6 +728,7 @@ QueryCacheHits
 QueryCacheMisses
 QueryPreempted
 QueryThread
+QuickAssist
 QuoteMeta
 RBAC
 RClickHouse
@@ -999,6 +1001,7 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
+ZSTDQAT
 Zabbix
 Zipkin
 ZooKeeper
