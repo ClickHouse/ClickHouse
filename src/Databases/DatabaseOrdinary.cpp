@@ -241,6 +241,20 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
     return startup_database_task = makeLoadTask(async_loader, {job});
 }
 
+void DatabaseOrdinary::waitTableLoaded(const String & name) const
+{
+    /// Prioritize jobs (load and startup the table) to be executed in foreground pool and wait for them synchronously
+    LoadTaskPtr task;
+    {
+        std::scoped_lock lock(mutex);
+        if (auto it = load_table.find(name); it != load_table.end())
+            task = it->second;
+    }
+
+    if (task)
+        waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task);
+}
+
 void DatabaseOrdinary::waitTableStarted(const String & name) const
 {
     /// Prioritize jobs (load and startup the table) to be executed in foreground pool and wait for them synchronously
@@ -272,9 +286,9 @@ DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_c
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
-    waitDatabaseStarted(false);
-
     String table_name = table_id.table_name;
+
+    waitTableLoaded(table_name);
 
     /// Read the definition of the table and replace the necessary parts with new ones.
     String table_metadata_path = getObjectMetadataPath(table_name);

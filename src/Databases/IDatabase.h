@@ -215,6 +215,9 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
+    /// Waits for specific table to be loaded, i.e. task returned by `loadTableFromMetadataAsync()` is done
+    virtual void waitTableLoaded(const String & /*name*/) const {}
+
     /// Waits for specific table to be started up, i.e. task returned by `startupTableAsync()` is done
     virtual void waitTableStarted(const String & /*name*/) const {}
 

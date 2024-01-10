@@ -49,8 +49,8 @@ public:
         const QualifiedTableName & name,
         LoadingStrictnessLevel mode) override;
 
+    void waitTableLoaded(const String & name) const override;
     void waitTableStarted(const String & name) const override;
-
     void waitDatabaseStarted(bool no_throw) const override;
 
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
