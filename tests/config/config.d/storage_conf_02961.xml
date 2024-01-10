@@ -25,16 +25,16 @@
                         <disk>disk1_02961</disk>
                         <volume_priority>2</volume_priority>
                     </vol1_02961>
-                    <vol_untagged1_02961>
+                    <vol_untagged2_02961>
                         <disk>disk2_02961</disk>
-                    </vol_untagged1_02961>
+                    </vol_untagged2_02961>
                     <vol2_02961>
                         <disk>disk3_02961</disk>
                         <volume_priority>1</volume_priority>
                     </vol2_02961>
-                    <vol_untagged2_02961>
+                    <vol_untagged1_02961>
                         <disk>disk4_02961</disk>
-                    </vol_untagged2_02961>
+                    </vol_untagged1_02961>
                 </volumes>
                 <move_factor>0.2</move_factor>
             </policy_02961>
