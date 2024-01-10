@@ -83,7 +83,7 @@ public:
         ColumnArray::Offset prev_src_offset = 0;
         for (auto curr_src_offset : src_offsets)
         {
-            chassert(prev_src_offset < curr_src_offset);
+            chassert(prev_src_offset <= curr_src_offset);
             size_t len = curr_src_offset - prev_src_offset;
             if (len < 4)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least four data points are needed for function {}", getName());
