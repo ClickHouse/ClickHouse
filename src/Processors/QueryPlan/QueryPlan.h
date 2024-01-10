@@ -127,5 +127,6 @@ private:
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);
+QueryPlan::Node & cloneQueryPlanTree(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 }

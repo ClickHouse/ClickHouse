@@ -133,6 +133,8 @@ public:
 
     virtual bool canUpdateInputStream() const { return false; }
 
+    virtual std::unique_ptr<IQueryPlanStep> clone() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
+
 protected:
     virtual void updateOutputStream() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); }
 

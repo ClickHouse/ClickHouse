@@ -319,6 +319,25 @@ ReadFromMergeTree::ReadFromMergeTree(
         prewhere_info);
 }
 
+QueryPlanStepPtr ReadFromMergeTree::clone() const
+{
+    return std::make_unique<ReadFromMergeTree>(
+        prepared_parts,
+        alter_conversions_for_parts,
+        real_column_names,
+        virt_column_names,
+        data,
+        query_info,
+        storage_snapshot,
+        context,
+        block_size.max_block_size_rows,
+        requested_num_streams,
+        sample_factor_column_queried,
+        max_block_numbers_to_read,
+        log,
+        /*analyzed_result_ptr=*/ nullptr,
+        is_parallel_reading_from_replicas);
+}
 
 Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
     RangesInDataParts parts_with_range,
@@ -1167,7 +1186,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
                 /// Parts of non-zero level still may contain duplicate PK values to merge on FINAL if there's is_deleted column,
                 /// so we have to process all ranges. It would be more optimal to remove this flag and add an extra filtering step.
-                bool force_process_all_ranges = !data.merging_params.is_deleted_column.empty();
+                size_t min_level = data.merging_params.is_deleted_column.empty() ? 1 : MergeTreePartInfo::MAX_LEVEL;
 
                 SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
                     metadata_for_reading->getPrimaryKey(),
@@ -1176,7 +1195,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     num_streams,
                     context,
                     std::move(in_order_reading_step_getter),
-                    force_process_all_ranges);
+                    min_level);
 
                 for (auto && non_intersecting_parts_range : split_ranges_result.non_intersecting_parts_ranges)
                     non_intersecting_parts_by_primary_key.push_back(std::move(non_intersecting_parts_range));

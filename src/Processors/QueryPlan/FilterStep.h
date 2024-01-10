@@ -1,4 +1,5 @@
 #pragma once
+#include "Processors/QueryPlan/QueryPlan.h"
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 namespace DB
@@ -16,6 +17,8 @@ public:
         const ActionsDAGPtr & actions_dag_,
         String filter_column_name_,
         bool remove_filter_column_);
+
+    QueryPlanStepPtr clone() const override;
 
     String getName() const override { return "Filter"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;

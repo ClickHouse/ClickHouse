@@ -6,6 +6,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Common/JSONBuilder.h>
+#include <memory>
 
 namespace DB
 {
@@ -32,6 +33,11 @@ ExpressionStep::ExpressionStep(const DataStream & input_stream_, const ActionsDA
         getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description))
     , actions_dag(actions_dag_)
 {
+}
+
+QueryPlanStepPtr ExpressionStep::clone() const
+{
+    return std::make_unique<ExpressionStep>(getInputStreams().front(), actions_dag);
 }
 
 void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)

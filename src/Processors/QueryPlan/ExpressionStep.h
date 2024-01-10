@@ -1,4 +1,5 @@
 #pragma once
+#include "Processors/QueryPlan/IQueryPlanStep.h"
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 namespace DB
@@ -16,6 +17,7 @@ class ExpressionStep : public ITransformingStep
 public:
 
     explicit ExpressionStep(const DataStream & input_stream_, const ActionsDAGPtr & actions_dag_);
+    QueryPlanStepPtr clone() const override;
     String getName() const override { return "Expression"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;

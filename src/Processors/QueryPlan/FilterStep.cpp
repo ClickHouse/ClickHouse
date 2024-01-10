@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <memory>
 
 namespace DB
 {
@@ -50,6 +51,11 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
+}
+
+QueryPlanStepPtr FilterStep::clone() const
+{
+    return std::make_unique<FilterStep>(getInputStreams().front(), actions_dag, filter_column_name, remove_filter_column);
 }
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
