@@ -160,7 +160,6 @@ public:
         std::vector<AlterConversionsPtr> alter_conversions,
         const PrewhereInfoPtr & prewhere_info,
         const ActionDAGNodes & added_filter_nodes,
-        const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -178,7 +177,7 @@ public:
 
     ContextPtr getContext() const { return context; }
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
-    StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
+    StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
     const PrewhereInfoPtr & getPrewhereInfo() const { return prewhere_info; }
 
     /// Returns `false` if requested reading cannot be performed.
@@ -210,7 +209,6 @@ private:
     static AnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions,
-        const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -242,9 +240,7 @@ private:
     SelectQueryInfo query_info;
     PrewhereInfoPtr prewhere_info;
     ExpressionActionsSettings actions_settings;
-
     StorageSnapshotPtr storage_snapshot;
-    StorageMetadataPtr metadata_for_reading;
 
     ContextPtr context;
     const MergeTreeReadTask::BlockSizeParams block_size;
