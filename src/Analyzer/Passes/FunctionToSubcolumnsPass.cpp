@@ -40,7 +40,7 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
 
     auto column_source = first_argument_column_node->getColumnSource();
     auto * table_node = column_source->as<TableNode>();
-    if (!table_node || !table_node->getStorageSnapshot() || !table_node->getStorage()->supportsSubcolumns())
+    if (!table_node || !table_node->getStorage()->supportsSubcolumns())
         return {};
 
     return std::make_tuple(function_node, first_argument_column_node, table_node);
@@ -67,25 +67,15 @@ public:
         if (data.has_final)
             return;
 
+        if (auto * table_node = node->as<TableNode>())
+        {
+            enterImpl(*table_node);
+            return;
+        }
+
         if (auto * column_node = node->as<ColumnNode>())
         {
             enterImpl(*column_node);
-            return;
-        }
-
-        if (auto * table_node = node->as<TableNode>())
-        {
-            if (table_node->hasTableExpressionModifiers()
-                && table_node->getTableExpressionModifiers()->hasFinal())
-                data.has_final = true;
-            return;
-        }
-
-        if (auto * table_function_node = node->as<TableFunctionNode>())
-        {
-            if (table_function_node->hasTableExpressionModifiers()
-                && table_function_node->getTableExpressionModifiers()->hasFinal())
-                data.has_final = true;
             return;
         }
 
@@ -98,6 +88,45 @@ public:
     }
 
 private:
+    Data data;
+    NameSet processed_tables;
+
+    void enterImpl(const TableNode & table_node)
+    {
+        if (table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
+        {
+            data.has_final = true;
+            return;
+        }
+
+        auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
+        if (processed_tables.emplace(table_name).second)
+            return;
+
+        auto add_key_columns = [&](const auto & key_columns)
+        {
+            for (const auto & column_name : key_columns)
+            {
+                Identifier identifier({table_name, column_name});
+                data.all_key_columns.insert(identifier);
+            }
+        };
+
+        const auto & metadata_snapshot = table_node.getStorageSnapshot()->metadata;
+
+        const auto & primary_key_columns = metadata_snapshot->getColumnsRequiredForPrimaryKey();
+        add_key_columns(primary_key_columns);
+
+        const auto & partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
+        add_key_columns(partition_key_columns);
+
+        for (const auto & index : metadata_snapshot->getSecondaryIndices())
+        {
+            const auto & index_columns = index.expression->getRequiredColumns();
+            add_key_columns(index_columns);
+        }
+    }
+
     void enterImpl(const ColumnNode & column_node)
     {
         auto column_source = column_node.getColumnSource();
@@ -109,36 +138,6 @@ private:
         Identifier qualified_name({table_name, column_node.getColumnName()});
 
         ++data.indentifiers_count[qualified_name];
-
-        if (processed_tables.emplace(table_name).second)
-        {
-            const auto & metadata_snapshot = table_node->getStorageSnapshot()->metadata;
-
-            auto add_key_columns = [&](const auto & key_columns)
-            {
-                for (const auto & column_name : key_columns)
-                {
-                    Identifier identifier({table_name, column_name});
-                    data.all_key_columns.insert(identifier);
-                }
-            };
-
-            /// Do not optimize index columns (primary, min-max, secondary),
-            /// because otherwise analysis of indexes may be broken.
-            /// TODO: handle subcolumns in index analysis.
-
-            const auto & primary_key_columns = metadata_snapshot->getColumnsRequiredForPrimaryKey();
-            add_key_columns(primary_key_columns);
-
-            const auto & partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
-            add_key_columns(partition_key_columns);
-
-            for (const auto & index : metadata_snapshot->getSecondaryIndices())
-            {
-                const auto & index_columns = index.expression->getRequiredColumns();
-                add_key_columns(index_columns);
-            }
-        }
     }
 
     void enterImpl(const FunctionNode & function_node, const ColumnNode & first_argument_column_node, const TableNode & table_node)
@@ -187,9 +186,6 @@ private:
             }
         }
     }
-
-    Data data;
-    NameSet processed_tables;
 };
 
 
@@ -214,14 +210,14 @@ public:
         const auto & function_name = function_node->getFunctionName();
 
         auto column = first_argument_column_node->getColumn();
-        auto column_source = first_argument_column_node->getColumnSource();
-        WhichDataType column_type(column.type);
-
         auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
-        Identifier qualified_name({table_name, column.name});
 
+        Identifier qualified_name({table_name, column.name});
         if (!identifiers_to_optimize.contains(qualified_name))
             return;
+
+        auto column_source = first_argument_column_node->getColumnSource();
+        WhichDataType column_type(column.type);
 
         if (function_arguments_nodes.size() == 1)
         {
@@ -369,19 +365,36 @@ void FunctionToSubcolumnsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr 
     first_visitor.visit(query_tree_node);
     auto data = first_visitor.getData();
 
+    /// For queries with FINAL converting function to subcolumn may alter
+    /// special merging algorithms and produce wrong result of query.
     if (data.has_final)
         return;
+
+    /// Do not optimize if full column is requested in other context.
+    /// It doesn't make sense because it doesn't reduce amount of read data
+    /// and optimized functions are not computation heavy. But introducing
+    /// new identifier complicates query analysis and may break it.
+    ///
+    /// E.g. query:
+    ///     SELECT n FROM table GROUP BY n HAVING isNotNull(n)
+    /// may be optimized to incorrect query:
+    ///     SELECT n FROM table GROUP BY n HAVING not(n.null)
+    /// Will produce: `n.null` is not under aggregate function and not in GROUP BY keys)
+    ///
+    /// Do not optimize index columns (primary, min-max, secondary),
+    /// because otherwise analysis of indexes may be broken.
+    /// TODO: handle subcolumns in index analysis.
 
     std::unordered_set<Identifier> identifiers_to_optimize;
     for (const auto & [identifier, count] : data.optimized_identifiers_count)
         if (!data.all_key_columns.contains(identifier) && data.indentifiers_count[identifier] == count)
             identifiers_to_optimize.insert(identifier);
 
-    if (!identifiers_to_optimize.empty())
-    {
-        FunctionToSubcolumnsVisitorSecondPass second_visitor(std::move(context), std::move(identifiers_to_optimize));
-        second_visitor.visit(query_tree_node);
-    }
+    if (identifiers_to_optimize.empty())
+        return;
+
+    FunctionToSubcolumnsVisitorSecondPass second_visitor(std::move(context), std::move(identifiers_to_optimize));
+    second_visitor.visit(query_tree_node);
 }
 
 }
