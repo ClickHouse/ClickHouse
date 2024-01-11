@@ -29,7 +29,7 @@ public:
     void stat(AsyncTrxVar<StatResponse> var_resp, bool throw_on_non_exists = true, StatSkip skip = StatSkip::SKIP_NONE);
 
     /// Retrieve znode stat and data. Implicitly assert exists.
-    void get(AsyncTrxVar<Coordination::GetResponse> var_resp);
+    void get(AsyncTrxVar<Coordination::GetResponse> var_resp, bool throw_on_non_exists = true);
 
     /// Check znode version is updated. Implicitly assert exists.
     void check(int32_t version);

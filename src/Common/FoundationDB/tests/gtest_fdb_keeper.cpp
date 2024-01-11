@@ -1520,16 +1520,16 @@ TEST_P(FDBKeeperChrootSuite, MultiRead)
     }
 
     {
-        SCOPED_TRACE("Multi failed request");
+        SCOPED_TRACE("Multi failed read");
         KEEPER_MULTI(
             multi,
             {
                 makeGetRequest("/a"),
                 makeGetRequest("/b"),
-                makeGetRequest("/c"),
+                makeGetRequest("/a/c"),
             });
         auto resps = wait(multi_future);
-        ASSERT_EQ(resps.error, Error::ZNONODE);
+        ASSERT_EQ(resps.error, Error::ZOK);
         ASSERT_EQ(resps.responses.size(), 3);
 
         auto resp0 = dynamic_cast<const Coordination::GetResponse &>(*resps.responses[0]);
@@ -1539,7 +1539,7 @@ TEST_P(FDBKeeperChrootSuite, MultiRead)
         ASSERT_EQ(resp1.error, Error::ZNONODE);
 
         auto resp2 = dynamic_cast<const Coordination::GetResponse &>(*resps.responses[2]);
-        ASSERT_EQ(resp2.error, Error::ZRUNTIMEINCONSISTENCY);
+        ASSERT_EQ(resp2.error, Error::ZOK);
     }
 }
 

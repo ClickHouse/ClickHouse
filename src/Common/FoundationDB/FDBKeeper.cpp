@@ -594,7 +594,7 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
 
             ZNodeLayer znode(trxb, chrooted_path, *keys);
             auto var_resp = trxb.var<GetResponse>();
-            znode.get(var_resp);
+            znode.get(var_resp, false);
 
 #ifdef ZOOKEEPER_LOG
             keeper_logger.getRequest(concrete_request_get->path, false, session_id);

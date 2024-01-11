@@ -354,10 +354,21 @@ void ZNodeLayer::stat(AsyncTrxVar<StatResponse> var_resp, bool throw_on_non_exis
 template void ZNodeLayer::stat(AsyncTrxVar<SetResponse> var_resp, bool throw_on_non_exists, StatSkip skip);
 template void ZNodeLayer::stat(AsyncTrxVar<ExistsResponse> var_resp, bool throw_on_non_exists, StatSkip skip);
 
-void ZNodeLayer::get(AsyncTrxVar<GetResponse> var_resp)
+void ZNodeLayer::get(AsyncTrxVar<GetResponse> var_resp, bool throw_on_non_exists)
 {
-    stat(var_resp);
+    stat(var_resp, throw_on_non_exists);
     auto var_data_key = trxb.var<String>();
+
+    if (!throw_on_non_exists)
+    {
+        trxb.then(TRX_STEP(var_resp) {
+            auto & resp = *ctx.getVar(var_resp);
+            if (resp.error != Error::ZOK)
+                ctx.gotoCur(2);
+            return nullptr;
+        });
+    }
+
     trxb.then(TRX_STEP(var_data_key, local_keys = keys, local_path = path)
         {
             auto & data_key = *ctx.getVar(var_data_key);
