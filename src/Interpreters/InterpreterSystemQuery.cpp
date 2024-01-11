@@ -1398,17 +1398,21 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_LISTEN);
             break;
         }
-        case Type::STOP_THREAD_FUZZER:
-        case Type::START_THREAD_FUZZER:
-        case Type::ENABLE_FAILPOINT:
-        case Type::DISABLE_FAILPOINT:
-        case Type::RESET_COVERAGE:
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
         case Type::JEMALLOC_ENABLE_PROFILE:
         case Type::JEMALLOC_DISABLE_PROFILE:
         case Type::JEMALLOC_FLUSH_PROFILE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
+            break;
+        }
 #endif
+        case Type::STOP_THREAD_FUZZER:
+        case Type::START_THREAD_FUZZER:
+        case Type::ENABLE_FAILPOINT:
+        case Type::DISABLE_FAILPOINT:
+        case Type::RESET_COVERAGE:
         case Type::UNKNOWN:
         case Type::END: break;
     }
