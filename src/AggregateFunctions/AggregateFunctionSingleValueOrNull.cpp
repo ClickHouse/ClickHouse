@@ -28,7 +28,7 @@ struct AggregateFunctionSingleValueOrNullData
     using Self = AggregateFunctionSingleValueOrNullData;
 
 private:
-    char v_data[SingleValueDataBase::MAX_STORAGE_SIZE];
+    SingleValueDataBase::memory_block v_data;
     bool first_value = true;
     bool is_null = false;
 
@@ -40,9 +40,8 @@ public:
 
     explicit AggregateFunctionSingleValueOrNullData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
 
-    SingleValueDataBase & data() { return *reinterpret_cast<SingleValueDataBase *>(v_data); }
-
-    const SingleValueDataBase & data() const { return *reinterpret_cast<const SingleValueDataBase *>(v_data); }
+    SingleValueDataBase & data() { return v_data.get(); }
+    const SingleValueDataBase & data() const { return v_data.get(); }
 
     bool isNull() { return is_null; }
 

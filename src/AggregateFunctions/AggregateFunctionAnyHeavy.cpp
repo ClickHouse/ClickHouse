@@ -27,7 +27,7 @@ struct AggregateFunctionAnyHeavyData
     using Self = AggregateFunctionAnyHeavyData;
 
 private:
-    char v_data[SingleValueDataBase::MAX_STORAGE_SIZE];
+    SingleValueDataBase::memory_block v_data;
     UInt64 counter = 0;
 
 public:
@@ -38,9 +38,8 @@ public:
 
     explicit AggregateFunctionAnyHeavyData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
 
-    SingleValueDataBase & data() { return *reinterpret_cast<SingleValueDataBase *>(v_data); }
-
-    const SingleValueDataBase & data() const { return *reinterpret_cast<const SingleValueDataBase *>(v_data); }
+    SingleValueDataBase & data() { return v_data.get(); }
+    const SingleValueDataBase & data() const { return v_data.get(); }
 
     void add(const IColumn & column, size_t row_num, Arena * arena)
     {

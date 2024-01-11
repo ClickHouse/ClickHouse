@@ -26,9 +26,19 @@ struct SingleValueDataBase
 {
     static constexpr int nan_direction_hint = 1;
     /// Any subclass (numeric, string, generic) must be smaller than MAX_STORAGE_SIZE
-    /// We use this knowledge to create composite data classes that use them directly.
+    /// We use this knowledge to create composite data classes that use them directly by reserving a ::memory_block
     /// For example ArgMin holds 2 of these objects
     static constexpr UInt32 MAX_STORAGE_SIZE = 64;
+
+    /// Helper to allocate enough memory to store any derived class and subclasses will be misaligned
+    /// alignas is necessary as otherwise alignof(memory_block) == 1
+    struct alignas(MAX_STORAGE_SIZE) memory_block
+    {
+        char memory[SingleValueDataBase::MAX_STORAGE_SIZE];
+        SingleValueDataBase & get() { return *reinterpret_cast<SingleValueDataBase *>(memory); }
+        const SingleValueDataBase & get() const { return *reinterpret_cast<const SingleValueDataBase *>(memory); }
+    };
+    static_assert(alignof(memory_block) == SingleValueDataBase::MAX_STORAGE_SIZE);
 
     virtual ~SingleValueDataBase() { }
     virtual bool has() const = 0;
@@ -135,8 +145,12 @@ struct SingleValueDataFixed final : public SingleValueDataBase
 
     void set(const SingleValueDataBase & to, Arena *) override
     {
-        has_value = true;
-        value = assert_cast<const Self &>(to).value;
+        auto const & other = assert_cast<const Self &>(to);
+        if (other.has())
+        {
+            has_value = true;
+            value = other.value;
+        }
     }
 
     bool setIfSmaller(const T & to)
@@ -366,7 +380,8 @@ public:
     void set(const SingleValueDataBase & other, Arena *) override
     {
         auto const & to = assert_cast<const Self &>(other);
-        value = to.value;
+        if (other.has())
+            value = to.value;
     }
 
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override
@@ -467,5 +482,5 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
 }
 
 /// For Data classes that want to compose on top of SingleValueDataBase values, like argMax or singleValueOrNull
-void generateSingleValueFromTypeIndex(TypeIndex idx, char data[SingleValueDataBase::MAX_STORAGE_SIZE]);
+void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBase::memory_block & data);
 }

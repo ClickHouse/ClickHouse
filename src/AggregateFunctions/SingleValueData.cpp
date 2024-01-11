@@ -480,7 +480,8 @@ void SingleValueDataString::set(const IColumn & column, size_t row_num, Arena * 
 void SingleValueDataString::set(const SingleValueDataBase & other, Arena * arena)
 {
     auto const & to = assert_cast<const Self &>(other);
-    changeImpl(to.getStringRef(), arena);
+    if (to.has())
+        changeImpl(to.getStringRef(), arena);
 }
 
 bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
@@ -533,13 +534,13 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
 }
 
 
-void generateSingleValueFromTypeIndex(TypeIndex idx, char data[SingleValueDataBase::MAX_STORAGE_SIZE])
+void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBase::memory_block & data)
 {
 #define DISPATCH(TYPE) \
     if (idx == TypeIndex::TYPE) \
     { \
         static_assert(sizeof(SingleValueDataFixed<TYPE>) <= SingleValueDataBase::MAX_STORAGE_SIZE); \
-        new (data) SingleValueDataFixed<TYPE>(); \
+        new (data.memory) SingleValueDataFixed<TYPE>(); \
         return; \
     }
 
@@ -549,22 +550,22 @@ void generateSingleValueFromTypeIndex(TypeIndex idx, char data[SingleValueDataBa
     if (idx == TypeIndex::Date)
     {
         static_assert(sizeof(SingleValueDataFixed<DataTypeDate::FieldType>) <= SingleValueDataBase::MAX_STORAGE_SIZE);
-        new (data) SingleValueDataFixed<DataTypeDate::FieldType>;
+        new (data.memory) SingleValueDataFixed<DataTypeDate::FieldType>;
         return;
     }
     if (idx == TypeIndex::DateTime)
     {
         static_assert(sizeof(SingleValueDataFixed<DataTypeDateTime::FieldType>) <= SingleValueDataBase::MAX_STORAGE_SIZE);
-        new (data) SingleValueDataFixed<DataTypeDateTime::FieldType>;
+        new (data.memory) SingleValueDataFixed<DataTypeDateTime::FieldType>;
         return;
     }
     if (idx == TypeIndex::String)
     {
         static_assert(sizeof(SingleValueDataString) <= SingleValueDataBase::MAX_STORAGE_SIZE);
-        new (data) SingleValueDataString;
+        new (data.memory) SingleValueDataString;
         return;
     }
     static_assert(sizeof(SingleValueDataGeneric) <= SingleValueDataBase::MAX_STORAGE_SIZE);
-    new (data) SingleValueDataGeneric;
+    new (data.memory) SingleValueDataGeneric;
 }
 }

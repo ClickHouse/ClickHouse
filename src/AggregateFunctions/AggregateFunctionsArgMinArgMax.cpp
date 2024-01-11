@@ -22,21 +22,17 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
-/// For possible values for template parameters, see 'AggregateFunctionMinMaxAny.h'.
 struct AggregateFunctionArgMinMaxData
 {
 private:
-    char r_data[SingleValueDataBase::MAX_STORAGE_SIZE];
-    char v_data[SingleValueDataBase::MAX_STORAGE_SIZE];
+    SingleValueDataBase::memory_block r_data;
+    SingleValueDataBase::memory_block v_data;
 
 public:
-    SingleValueDataBase & result() { return *reinterpret_cast<SingleValueDataBase *>(r_data); }
-
-    const SingleValueDataBase & result() const { return *reinterpret_cast<const SingleValueDataBase *>(r_data); }
-
-    SingleValueDataBase & value() { return *reinterpret_cast<SingleValueDataBase *>(v_data); }
-
-    const SingleValueDataBase & value() const { return *reinterpret_cast<const SingleValueDataBase *>(v_data); }
+    SingleValueDataBase & result() { return r_data.get(); }
+    const SingleValueDataBase & result() const { return r_data.get(); }
+    SingleValueDataBase & value() { return v_data.get(); }
+    const SingleValueDataBase & value() const { return v_data.get(); }
 
     [[noreturn]] explicit AggregateFunctionArgMinMaxData()
     {

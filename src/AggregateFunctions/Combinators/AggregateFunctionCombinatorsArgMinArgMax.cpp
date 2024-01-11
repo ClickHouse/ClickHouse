@@ -16,14 +16,13 @@ namespace
 struct AggregateFunctionCombinatorArgMinArgMaxData
 {
 private:
-    char v_data[SingleValueDataBase::MAX_STORAGE_SIZE];
+    SingleValueDataBase::memory_block v_data;
 
 public:
     explicit AggregateFunctionCombinatorArgMinArgMaxData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
 
-    SingleValueDataBase & data() { return *reinterpret_cast<SingleValueDataBase *>(v_data); }
-
-    const SingleValueDataBase & data() const { return *reinterpret_cast<const SingleValueDataBase *>(v_data); }
+    SingleValueDataBase & data() { return v_data.get(); }
+    const SingleValueDataBase & data() const { return v_data.get(); }
 };
 
 template <bool isMin>
