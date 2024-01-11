@@ -71,6 +71,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
     return it->second(name, config, config_prefix, context, skip_access_check);
 }
 
+#if USE_AWS_S3
 static S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config,
                         const std::string & config_prefix,
                         const ContextPtr & context)
@@ -85,7 +86,6 @@ static S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config,
     return uri;
 }
 
-#if USE_AWS_S3
 void registerS3ObjectStorage(ObjectStorageFactory & factory)
 {
     static constexpr auto disk_type = "s3";
