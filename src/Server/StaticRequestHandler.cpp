@@ -59,6 +59,8 @@ static inline void trySendExceptionToClient(
     try
     {
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
+        if (ErrorCodes::is_retryable(exception_code))
+            response.set("X-ClickHouse-Exception-Retryable", "1");
 
         /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
         /// to avoid reading part of the current request body in the next request.
