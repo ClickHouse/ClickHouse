@@ -80,6 +80,8 @@ BlockIO InterpreterModifyEngineQuery::execute()
     FunctionNameNormalizer().visit(query_ptr.get());
     const auto & query = query_ptr->as<ASTModifyEngineQuery &>();
 
+    getContext()->checkAccess(getRequiredAccess());
+
     if (!query.cluster.empty())
         /// Doesn't work correctly if converting to replicated while tables on other hosts aren't empty
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Modify engine on cluster is not implemented.");
@@ -176,20 +178,13 @@ AccessRightsElements InterpreterModifyEngineQuery::getRequiredAccess() const
     AccessRightsElements required_access;
     const auto & query = query_ptr->as<const ASTModifyEngineQuery &>();
 
-    String temp_name = query.getTable() + "_temp";
+    required_access.emplace_back(AccessType::DROP_TABLE, query.getDatabase(), query.getTable());
+    required_access.emplace_back(AccessType::CREATE_TABLE, query.getDatabase(), query.getTable());
 
-    required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, query.getDatabase(), query.getTable());
-    required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, query.getDatabase(), temp_name);
-    required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, query.getDatabase(), query.getTable());
-    required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, query.getDatabase(), temp_name);
-
-    // if (query.storage)
-    // {
-    //     auto & storage = query.storage->as<ASTStorage &>();
-    //     auto source_access_type = StorageFactory::instance().getSourceAccessType(storage.engine->name);
-    //     if (source_access_type != AccessType::NONE)
-    //         required_access.emplace_back(source_access_type);
-    // }
+    String engine_name = query.storage->as<ASTStorage>()->engine->name;
+    auto source_access_type = StorageFactory::instance().getSourceAccessType(engine_name);
+    if (source_access_type != AccessType::NONE)
+        required_access.emplace_back(source_access_type);
 
     return required_access;
 }
