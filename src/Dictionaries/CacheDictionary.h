@@ -139,6 +139,20 @@ public:
         const DataTypes & key_types,
         const Columns & default_values_columns) const override;
 
+    ColumnPtr getColumnOrDefaultShortCircuit(
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        IColumn::Filter & default_mask) const override;
+
+     Columns getColumnsOrDefaultShortCircuit(
+        const Strings & attribute_names,
+        const DataTypes & attribute_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        IColumn::Filter & default_mask) const override;
+
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
@@ -157,19 +171,20 @@ public:
 private:
     using FetchResult = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, SimpleKeysStorageFetchResult, ComplexKeysStorageFetchResult>;
 
-    static MutableColumns aggregateColumnsInOrderOfKeys(
+    MutableColumns aggregateColumnsInOrderOfKeys(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns,
-        const PaddedPODArray<KeyState> & key_index_to_state);
+        const PaddedPODArray<KeyState> & key_index_to_state) const;
 
-    static MutableColumns aggregateColumns(
+    MutableColumns aggregateColumns(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns_from_storage,
         const PaddedPODArray<KeyState> & key_index_to_fetched_columns_from_storage_result,
         const MutableColumns & fetched_columns_during_update,
-        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index);
+        const HashMap<KeyType, size_t> & found_keys_to_fetched_columns_during_update_index,
+        std::shared_ptr<IColumn::Filter> default_mask = nullptr) const;
 
     void update(CacheDictionaryUpdateUnitPtr<dictionary_key_type> update_unit_ptr);
 
