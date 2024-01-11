@@ -38,7 +38,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
     else if (identifier.name_parts.size() == 1)
         table = identifier.name_parts[0];
     else
-        throw Exception(ErrorCodes::INVALID_IDENTIFIER, "Invalid identifier \'{}\'", identifier.name());
+        throw Exception(ErrorCodes::INVALID_IDENTIFIER, "Invalid identifier {}", backQuote(identifier.name()));
 
     if (database.empty())
         database = current_database;
