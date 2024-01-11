@@ -397,70 +397,76 @@ void SerializationVariant::deserializeBinary(IColumn & column, ReadBuffer & istr
 namespace
 {
 
-std::unordered_map<TypeIndex, size_t> getTypesTextDeserializePriorityMap()
+const std::unordered_map<TypeIndex, size_t> & getTypesTextDeserializePriorityMap()
 {
-    static const std::vector<TypeIndex> priorities = {
-        /// Complex types have highest priority.
-        TypeIndex::Array,
-        TypeIndex::Tuple,
-        TypeIndex::Map,
-        TypeIndex::AggregateFunction,
+    static std::unordered_map<TypeIndex, size_t> priority_map = []
+    {
+        static constexpr std::array priorities = {
+            /// Complex types have highest priority.
+            TypeIndex::Array,
+            TypeIndex::Tuple,
+            TypeIndex::Map,
+            TypeIndex::AggregateFunction,
 
-        /// Enums can be parsed both from strings and numbers.
-        /// So they have high enough priority.
-        TypeIndex::Enum8,
-        TypeIndex::Enum16,
+            /// Enums can be parsed both from strings and numbers.
+            /// So they have high enough priority.
+            TypeIndex::Enum8,
+            TypeIndex::Enum16,
 
-        /// Types that can be parsed from strings.
-        TypeIndex::UUID,
-        TypeIndex::IPv4,
-        TypeIndex::IPv6,
+            /// Types that can be parsed from strings.
+            TypeIndex::UUID,
+            TypeIndex::IPv4,
+            TypeIndex::IPv6,
 
-        /// Types that can be parsed from numbers.
-        /// The order:
-        ///    1) Integers
-        ///    2) Big Integers
-        ///    3) Decimals
-        ///    4) Floats
-        /// In each group small types have higher priority.
-        TypeIndex::Int8,
-        TypeIndex::UInt8,
-        TypeIndex::Int16,
-        TypeIndex::UInt16,
-        TypeIndex::Int32,
-        TypeIndex::UInt32,
-        TypeIndex::Int64,
-        TypeIndex::UInt64,
-        TypeIndex::Int128,
-        TypeIndex::UInt128,
-        TypeIndex::Int256,
-        TypeIndex::UInt256,
-        TypeIndex::Decimal32,
-        TypeIndex::Decimal64,
-        TypeIndex::Decimal128,
-        TypeIndex::Decimal256,
-        TypeIndex::Float32,
-        TypeIndex::Float64,
+            /// Types that can be parsed from numbers.
+            /// The order:
+            ///    1) Integers
+            ///    2) Big Integers
+            ///    3) Decimals
+            ///    4) Floats
+            /// In each group small types have higher priority.
+            TypeIndex::Int8,
+            TypeIndex::UInt8,
+            TypeIndex::Int16,
+            TypeIndex::UInt16,
+            TypeIndex::Int32,
+            TypeIndex::UInt32,
+            TypeIndex::Int64,
+            TypeIndex::UInt64,
+            TypeIndex::Int128,
+            TypeIndex::UInt128,
+            TypeIndex::Int256,
+            TypeIndex::UInt256,
+            TypeIndex::Decimal32,
+            TypeIndex::Decimal64,
+            TypeIndex::Decimal128,
+            TypeIndex::Decimal256,
+            TypeIndex::Float32,
+            TypeIndex::Float64,
 
-        /// Dates and DateTimes. More simple Date types have higher priority.
-        /// They have lower priority as numbers as some DateTimes sometimes can
-        /// be also parsed from numbers, but we don't want it usually.
-        TypeIndex::Date,
-        TypeIndex::Date32,
-        TypeIndex::DateTime,
-        TypeIndex::DateTime64,
+            /// Dates and DateTimes. More simple Date types have higher priority.
+            /// They have lower priority as numbers as some DateTimes sometimes can
+            /// be also parsed from numbers, but we don't want it usually.
+            TypeIndex::Date,
+            TypeIndex::Date32,
+            TypeIndex::DateTime,
+            TypeIndex::DateTime64,
 
-        /// String types have almost the lowest priority,
-        /// as in text formats almost all data can
-        /// be deserialized into String type.
-        TypeIndex::FixedString,
-        TypeIndex::String,
-    };
+            /// String types have almost the lowest priority,
+            /// as in text formats almost all data can
+            /// be deserialized into String type.
+            TypeIndex::FixedString,
+            TypeIndex::String,
+        };
 
-    std::unordered_map<TypeIndex, size_t> priority_map;
-    priority_map.reserve(priorities.size());
-    for (size_t i = 0; i != priorities.size(); ++i)
-        priority_map[priorities[i]] = priorities.size() - i;
+        std::unordered_map<TypeIndex, size_t> pm;
+
+        pm.reserve(priorities.size());
+        for (size_t i = 0; i != priorities.size(); ++i)
+            pm[priorities[i]] = priorities.size() - i;
+        return pm;
+    }();
+
     return priority_map;
 }
 
@@ -476,7 +482,7 @@ std::unordered_map<TypeIndex, size_t> getTypesTextDeserializePriorityMap()
 /// so if we have types with the same level of nesting and the same priority, we will first try to deserialize LowCardinality/Nullable types
 /// (for example if we have types Array(Array(String)) and Array(Array(Nullable(String))).
 /// This is just a batch of heuristics.
-std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataTypePtr & type, size_t nested_depth, size_t simple_nested_depth, std::unordered_map<TypeIndex, size_t> & priority_map)
+std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataTypePtr & type, size_t nested_depth, size_t simple_nested_depth, const std::unordered_map<TypeIndex, size_t> & priority_map)
 {
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
         return getTypeTextDeserializePriority(nullable_type->getNestedType(), nested_depth, simple_nested_depth + 1, priority_map);
@@ -487,7 +493,7 @@ std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataType
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
     {
         auto [elements_nested_depth, elements_priority, elements_simple_nested_depth] = getTypeTextDeserializePriority(array_type->getNestedType(), nested_depth + 1, simple_nested_depth, priority_map);
-        return {elements_nested_depth, elements_priority + priority_map[TypeIndex::Array], elements_simple_nested_depth};
+        return {elements_nested_depth, elements_priority + priority_map.at(TypeIndex::Array), elements_simple_nested_depth};
     }
 
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
@@ -505,14 +511,14 @@ std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataType
                 max_simple_nested_depth = elem_simple_nested_depth;
         }
 
-        return {max_nested_depth, sum_priority + priority_map[TypeIndex::Tuple], max_simple_nested_depth};
+        return {max_nested_depth, sum_priority + priority_map.at(TypeIndex::Tuple), max_simple_nested_depth};
     }
 
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
     {
         auto [key_max_depth, key_priority, key_simple_nested_depth] = getTypeTextDeserializePriority(map_type->getKeyType(), nested_depth + 1, simple_nested_depth, priority_map);
         auto [value_max_depth, value_priority, value_simple_nested_depth] = getTypeTextDeserializePriority(map_type->getValueType(), nested_depth + 1, simple_nested_depth, priority_map);
-        return {std::max(key_max_depth, value_max_depth), key_priority + value_priority + priority_map[TypeIndex::Map], std::max(key_simple_nested_depth, value_simple_nested_depth)};
+        return {std::max(key_max_depth, value_max_depth), key_priority + value_priority + priority_map.at(TypeIndex::Map), std::max(key_simple_nested_depth, value_simple_nested_depth)};
     }
 
     if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
@@ -536,9 +542,10 @@ std::tuple<size_t, size_t, size_t> getTypeTextDeserializePriority(const DataType
 
     /// Bool type should have priority higher then all integers.
     if (isBool(type))
-        return {nested_depth, priority_map[TypeIndex::Int8] + 1, simple_nested_depth};
+        return {nested_depth, priority_map.at(TypeIndex::Int8) + 1, simple_nested_depth};
 
-    return {nested_depth, priority_map[type->getTypeId()], simple_nested_depth};
+    auto it = priority_map.find(type->getTypeId());
+    return {nested_depth, it == priority_map.end() ? 0 : it->second, simple_nested_depth};
 }
 
 }
@@ -549,7 +556,7 @@ std::vector<size_t> SerializationVariant::getVariantsDeserializeTextOrder(const 
     priorities.reserve(variant_types.size());
     std::vector<size_t> order;
     order.reserve(variant_types.size());
-    auto priority_map = getTypesTextDeserializePriorityMap();
+    const auto & priority_map = getTypesTextDeserializePriorityMap();
     for (size_t i = 0; i != variant_types.size(); ++i)
     {
         priorities.push_back(getTypeTextDeserializePriority(variant_types[i], 0, 0, priority_map));

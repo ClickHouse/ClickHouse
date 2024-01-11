@@ -176,7 +176,7 @@ String getNameForSubstreamPath(
                 stream_name += "." + it->tuple_element_name;
         }
         else if (it->type == Substream::VariantDiscriminators)
-            stream_name += ".discr";
+            stream_name += ".variant_discr";
         else if (it->type == Substream::VariantOffsets)
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
@@ -261,43 +261,51 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     return true;
 }
 
-#define TRY_DESERIALIZE_TEXT(deserialize)                \
-    size_t prev_size = column.size();                    \
-    try                                                  \
-    {                                                    \
-        deserialize(column, istr, settings);             \
-        return true;                                     \
-    }                                                    \
-    catch (...)                                          \
-    {                                                    \
-        if (column.size() > prev_size)                   \
-            column.popBack(column.size() - prev_size);   \
-        return false;                                    \
-    }                                                    \
+namespace
+{
+
+template <typename F>
+bool tryDeserializeText(const F deserialize, DB::IColumn & column)
+{
+    size_t prev_size = column.size();
+    try
+    {
+        deserialize(column);
+        return true;
+    }
+    catch (...)
+    {
+        if (column.size() > prev_size)
+            column.popBack(column.size() - prev_size);
+        return false;
+    }
+}
+
+}
 
 bool ISerialization::tryDeserializeTextCSV(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
-    TRY_DESERIALIZE_TEXT(deserializeTextCSV)
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextCSV(my_column, istr, settings); }, column);
 }
 
 bool ISerialization::tryDeserializeTextEscaped(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
-    TRY_DESERIALIZE_TEXT(deserializeTextEscaped)
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextEscaped(my_column, istr, settings); }, column);
 }
 
 bool ISerialization::tryDeserializeTextJSON(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
-    TRY_DESERIALIZE_TEXT(deserializeTextJSON)
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextJSON(my_column, istr, settings); }, column);
 }
 
 bool ISerialization::tryDeserializeTextQuoted(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
-    TRY_DESERIALIZE_TEXT(deserializeTextQuoted)
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeTextQuoted(my_column, istr, settings); }, column);
 }
 
 bool ISerialization::tryDeserializeWholeText(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
-    TRY_DESERIALIZE_TEXT(deserializeWholeText)
+    return tryDeserializeText([&](DB::IColumn & my_column) { deserializeWholeText(my_column, istr, settings); }, column);
 }
 
 void ISerialization::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -346,7 +354,6 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
-            || path[last_elem].type == Substream::VariantDiscriminators
             || path[last_elem].type == Substream::VariantElement;
 }
 
