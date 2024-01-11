@@ -227,7 +227,7 @@ public:
         cache_policy->setMaxSizeInBytes(max_size_in_bytes);
     }
 
-    void setQuotaForUser(std::optional<UUID> user_id, size_t max_size_in_bytes, size_t max_entries)
+    void setQuotaForUser(const UUID & user_id, size_t max_size_in_bytes, size_t max_entries)
     {
         std::lock_guard lock(mutex);
         cache_policy->setQuotaForUser(user_id, max_size_in_bytes, max_entries);

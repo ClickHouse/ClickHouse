@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel, no-fasttest, long
 # Tag no-parallel: Messes with internal cache
 #     no-fasttest: Produces wrong results in fasttest, unclear why, didn't reproduce locally.
+#     long: Sloooow ...
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,7 +14,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #    - drop the user, recreate it with the same name
 #    - test that the cache entry is inaccessible
 
-${CLICKHOUSE_CLIENT} --query "SELECT 'Attack 1'"
+echo "Attack 1"
 
 rnd=`tr -dc 1-9 </dev/urandom | head -c 5` # disambiguates the specific query in system.query_log below
 # echo $rnd
@@ -57,7 +58,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
 #    - create two roles, each with different row policies
 #    - cached query result in the context of the 1st role must must not be visible in the context of the 2nd role
 
-${CLICKHOUSE_CLIENT} --query "SELECT 'Attack 2'"
+echo "Attack 2"
 
 # Start with empty query cache (QC).
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY CACHE"
