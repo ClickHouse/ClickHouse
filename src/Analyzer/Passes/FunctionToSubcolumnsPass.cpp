@@ -16,6 +16,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 
 namespace DB
 {
@@ -32,19 +33,14 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     auto & function_arguments_nodes = function_node->getArguments().getNodes();
     if (function_arguments_nodes.empty() || function_arguments_nodes.size() > 2)
         return {};
+
     auto * first_argument_column_node = function_arguments_nodes.front()->as<ColumnNode>();
     if (!first_argument_column_node)
         return {};
 
     auto column_source = first_argument_column_node->getColumnSource();
     auto * table_node = column_source->as<TableNode>();
-    if (!table_node)
-        return {};
-
-    if (!table_node->getStorageSnapshot())
-        return {};
-
-    if (!table_node->getStorage()->supportsSubcolumns())
+    if (!table_node || !table_node->getStorageSnapshot() || !table_node->getStorage()->supportsSubcolumns())
         return {};
 
     return std::make_tuple(function_node, first_argument_column_node, table_node);
@@ -58,6 +54,7 @@ public:
 
     struct Data
     {
+        bool has_final = false;
         std::unordered_set<Identifier> all_key_columns;
         std::unordered_map<Identifier, UInt64> indentifiers_count;
         std::unordered_map<Identifier, UInt64> optimized_identifiers_count;
@@ -67,9 +64,28 @@ public:
 
     void enterImpl(const QueryTreeNodePtr & node)
     {
+        if (data.has_final)
+            return;
+
         if (auto * column_node = node->as<ColumnNode>())
         {
             enterImpl(*column_node);
+            return;
+        }
+
+        if (auto * table_node = node->as<TableNode>())
+        {
+            if (table_node->hasTableExpressionModifiers()
+                && table_node->getTableExpressionModifiers()->hasFinal())
+                data.has_final = true;
+            return;
+        }
+
+        if (auto * table_function_node = node->as<TableFunctionNode>())
+        {
+            if (table_function_node->hasTableExpressionModifiers()
+                && table_function_node->getTableExpressionModifiers()->hasFinal())
+                data.has_final = true;
             return;
         }
 
@@ -159,9 +175,6 @@ private:
             const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
             if (function_name == "tupleElement" && column_type.isTuple() && second_argument_constant_node)
             {
-                /** Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)`
-                  * with `tuple_argument.column_name`.
-                  */
                 const auto & tuple_element_constant_value = second_argument_constant_node->getValue();
                 const auto & tuple_element_constant_value_type = tuple_element_constant_value.getType();
 
@@ -352,22 +365,22 @@ void FunctionToSubcolumnsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr 
     if (!context->getSettingsRef().optimize_functions_to_subcolumns)
         return;
 
+    FunctionToSubcolumnsVisitorFirstPass first_visitor(context);
+    first_visitor.visit(query_tree_node);
+    auto data = first_visitor.getData();
+
+    if (data.has_final)
+        return;
+
     std::unordered_set<Identifier> identifiers_to_optimize;
-
-    {
-        FunctionToSubcolumnsVisitorFirstPass visitor(context);
-        visitor.visit(query_tree_node);
-
-        auto data = visitor.getData();
-        for (const auto & [identifier, count] : data.optimized_identifiers_count)
-            if (!data.all_key_columns.contains(identifier) && data.indentifiers_count[identifier] == count)
-                identifiers_to_optimize.insert(identifier);
-    }
+    for (const auto & [identifier, count] : data.optimized_identifiers_count)
+        if (!data.all_key_columns.contains(identifier) && data.indentifiers_count[identifier] == count)
+            identifiers_to_optimize.insert(identifier);
 
     if (!identifiers_to_optimize.empty())
     {
-        FunctionToSubcolumnsVisitorSecondPass visitor(std::move(context), std::move(identifiers_to_optimize));
-        visitor.visit(query_tree_node);
+        FunctionToSubcolumnsVisitorSecondPass second_visitor(std::move(context), std::move(identifiers_to_optimize));
+        second_visitor.visit(query_tree_node);
     }
 }
 
