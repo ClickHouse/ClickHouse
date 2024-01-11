@@ -576,8 +576,8 @@ private:
 class NearestHostname: public IBalancerWithConstPriorities
 {
 public:
-    NearestHostname(const String client_hostname_)
-        : client_hostname(std::move(client_hostname_))
+    explicit NearestHostname(const String client_hostname_)
+        : client_hostname(client_hostname_)
     { }
 
 private:
@@ -599,8 +599,8 @@ private:
 class Levenshtein: public IBalancerWithConstPriorities
 {
 public:
-    Levenshtein(const String client_hostname_)
-        : client_hostname(std::move(client_hostname_))
+    explicit Levenshtein(const String client_hostname_)
+        : client_hostname(client_hostname_)
     { }
 
 private:
@@ -694,10 +694,18 @@ bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string & address, bo
     return true;
 }
 
-ZooKeeperLoadBalancer & ZooKeeperLoadBalancer::instance()
+ZooKeeperLoadBalancer & ZooKeeperLoadBalancer::instance(const std::string & config_name)
 {
-    static ZooKeeperLoadBalancer instance;
-    return instance;
+    static std::unordered_map<std::string, ZooKeeperLoadBalancer> load_balancer_by_name;
+    static std::mutex mutex;
+
+    std::lock_guard<std::mutex> lock{mutex};
+    return load_balancer_by_name.emplace(config_name, ZooKeeperLoadBalancer(config_name)).first->second;
+}
+
+ZooKeeperLoadBalancer::ZooKeeperLoadBalancer(const std::string & config_name)
+    : log(&Poco::Logger::get("ZooKeeperLoadBalancer/" + config_name))
+{
 }
 
 void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_)
@@ -705,16 +713,11 @@ void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<Zo
     if (args_.hosts.empty())
         throw zkutil::KeeperException::fromMessage(Coordination::Error::ZBADARGUMENTS, "No hosts specified in ZooKeeperArgs.");
 
-    std::lock_guard lock{mutex};
-
     args = args_;
     zk_log = std::move(zk_log_);
-    log = &Poco::Logger::get("ZooKeeperLoadBalancer");
 
     connection_balancer = getConnectionBalancer(args.get_priority_load_balancing.load_balancing);
 
-    // TODO(jianfei): need to make the host info info stateful to track connection states, rather than reset every time we call `init`.
-    /// We should not reinit ZooKeeperLoadBalancer, endpoints could be added/removed at runtime
     for (size_t i = 0; i < args_.hosts.size(); ++i)
     {
         auto [address, secure] =  parseForSocketAddress(args_.hosts[i]);
@@ -734,8 +737,6 @@ void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<Zo
 
 std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
 {
-    std::lock_guard lock{mutex};
-
     bool dns_error_occurred = false;
 
     size_t attempts = 0;

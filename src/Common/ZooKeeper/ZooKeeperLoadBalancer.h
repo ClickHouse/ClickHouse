@@ -60,17 +60,18 @@ ClientsConnectionBalancerPtr getConnectionBalancer(LoadBalancing load_balancing_
 class ZooKeeperLoadBalancer
 {
 public:
-    static ZooKeeperLoadBalancer & instance();
+    // We supports different named ZooKeeper for example <zookeeper> and <auxiliary_zookeeper>.
+    // Their ZK nodes, timeout, fault injestion configurations are all independent, so use different
+    // load balancer instance for different config name.
+    static ZooKeeperLoadBalancer & instance(const std::string & config_name);
+
+    ZooKeeperLoadBalancer(const std::string & config_name);
 
     void init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_);
     std::unique_ptr<Coordination::ZooKeeper> createClient();
 
 private:
     void recordKeeperHostError(UInt8 id);
-
-    /// Do not know why mutex is used here
-    /// do we call createClient() concurrently?
-    std::mutex mutex;
 
     zkutil::ZooKeeperArgs args;
 

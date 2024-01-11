@@ -72,8 +72,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
     log = &Poco::Logger::get("ZooKeeper");
     if (args.implementation == "zookeeper")
     {
-        auto & zk_load_balancer = Coordination::ZooKeeperLoadBalancer::instance();
-        zk_load_balancer.init(args, zk_log);
+        auto & zk_load_balancer = Coordination::ZooKeeperLoadBalancer::instance(config_name);
         impl = zk_load_balancer.createClient();
         if (args.chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(args.hosts, ","));
@@ -117,24 +116,26 @@ void ZooKeeper::updateWithBetterKeeperHost(std::unique_ptr<Coordination::IKeeper
     impl = std::move(better_keeper);
 }
 
-ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
-    : zk_log(std::move(zk_log_))
+ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, const std::string & config_name_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+    : config_name(config_name_), zk_log(std::move(zk_log_))
 {
     init(args_);
 }
 
 
-ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
-    :  zk_log(std::move(zk_log_))
+ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+    :  config_name(config_name_), zk_log(std::move(zk_log_))
 {
     auto zk_args = ZooKeeperArgs(config, config_name);
+    // When we invoke this constructor, it implies the configuration has changed, therefore we should reload configuration to load balancer as well.
+    Coordination::ZooKeeperLoadBalancer::instance(config_name).init(args, zk_log_);
     init(zk_args);
 }
 
 
-bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) const
+bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, const std::string & config_name_) const
 {
-    ZooKeeperArgs new_args(config, config_name);
+    ZooKeeperArgs new_args(config, config_name_);
 
     // skip reload testkeeper cause it's for test and data in memory
     if (new_args.implementation == args.implementation && args.implementation == "testkeeper")
@@ -883,7 +884,7 @@ Coordination::ReconfigResponse ZooKeeper::reconfig(
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-    return std::make_shared<ZooKeeper>(args, zk_log);
+    return std::make_shared<ZooKeeper>(args, config_name, zk_log);
 }
 
 
