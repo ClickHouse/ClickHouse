@@ -116,11 +116,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
     const bool is_metadata_file_for_vfs = path.ends_with(":vfs");
     const String path_without_tag = is_metadata_file_for_vfs ? path.substr(0, path.size() - 4) : path;
 
-    LOG_TRACE(disk.log, "writeFile(is_metadata={})", is_metadata_file_for_vfs);
-
-    // This is a metadata file we got from some replica, we need to load it on local metadata disk
-    if (is_metadata_file_for_vfs)
+    if (is_metadata_file_for_vfs) // We got this file from other replica, need to load it on local metadata disk
     {
+        LOG_TRACE(disk.log, "writeFile(vfs_metadata=true)");
         chassert(autocommit);
         // TODO myrrc research whether there's any optimal way except for writing file and immediately
         // reading it back
@@ -128,7 +126,6 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageVFSTransaction::writeF
             std::make_unique<WriteBufferFromFile>(path_without_tag, buf_size),
             [tx = shared_from_this(), path_without_tag](size_t)
             {
-                // TODO myrrc this queries file on s3.
                 tx->addStoredObjectsOp(tx->metadata_storage.getStorageObjects(path_without_tag), {});
                 tx->commit();
             },

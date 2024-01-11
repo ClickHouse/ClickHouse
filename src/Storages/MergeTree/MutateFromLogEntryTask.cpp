@@ -49,10 +49,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     }
 
     /// TODO - some better heuristic?
-    size_t estimated_space = MergeTreeDataMergerMutator::estimateNeededDiskSpace({source_part});
+    size_t estimated_space_for_result = MergeTreeDataMergerMutator::estimateNeededDiskSpace({source_part});
 
     if (entry.create_time + storage_settings_ptr->prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr)
-        && estimated_space >= storage_settings_ptr->prefer_fetch_merged_part_size_threshold)
+        && estimated_space_for_result >= storage_settings_ptr->prefer_fetch_merged_part_size_threshold)
     {
         /// If entry is old enough, and have enough size, and some replica has the desired part,
         /// then prefer fetching from replica.
@@ -98,7 +98,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
-    reserved_space = storage.reserveSpace(estimated_space, source_part->getDataPartStorage());
+    reserved_space = storage.reserveSpace(estimated_space_for_result, source_part->getDataPartStorage());
 
     table_lock_holder = storage.lockForShare(
             RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
@@ -114,7 +114,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     future_mutated_part->updatePath(storage, reserved_space.get());
     future_mutated_part->part_format = source_part->getFormat();
 
-    disk = reserved_space->getDisk();
+    DiskPtr disk = reserved_space->getDisk();
     const bool is_zerocopy = storage_settings_ptr->allow_remote_fs_zero_copy_replication
         && disk->supportZeroCopyReplication();
     const bool is_vfs = disk->isObjectStorageVFS();
@@ -131,14 +131,13 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
             };
         }
 
-        mitigateReplicaSkew(estimated_space);
+        mitigateReplicaSkew(estimated_space_for_result);
 
         if (is_zerocopy)
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
         const bool zerocopy_lock_already_acquired = is_zerocopy
             && (!zero_copy_lock || !zero_copy_lock->isLocked());
 
-        // TODO myrrc revisit whether we need table shared id
         const String vfs_lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name / "mutate";
         const bool vfs_lock_already_acquired = is_vfs && !disk->lock(vfs_lock_path, false);
 
@@ -259,7 +258,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
         zero_copy_lock->lock->unlock();
     }
     const String lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name / "mutate";
-    disk->unlock(lock_path);
+    new_part->storage.getDisks()[0]->unlock(lock_path);
 
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
          * This is not a problem, because in this case the entry will remain in the queue, and we will try again.

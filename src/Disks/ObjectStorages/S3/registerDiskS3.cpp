@@ -177,11 +177,6 @@ void registerDiskS3(DiskFactory & factory,
 
         auto [object_key_compatibility_prefix, object_key_generator] = getPrefixAndKeyGenerator(type, uri, config, config_prefix);
 
-        // TODO myrrc need to sync default value of setting in MergeTreeSettings and here
-        constexpr auto key = "merge_tree.allow_object_storage_vfs";
-        const bool s3_enable_disk_vfs = config.getBool(key, false);
-        if (s3_enable_disk_vfs) chassert(type == "s3");
-
         MetadataStoragePtr metadata_storage;
         auto settings = getSettings(config, config_prefix, context);
         auto client = getClient(config, config_prefix, context, *settings);

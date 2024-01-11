@@ -27,7 +27,6 @@ public:
             storage_,
             selected_entry_,
             task_result_callback_)
-        , rng(randomSeed())
         {}
 
 
@@ -60,8 +59,6 @@ private:
     FutureMergedMutatedPartPtr future_mutated_part{nullptr};
 
     MutateTaskPtr mutate_task;
-    pcg64 rng;
-    DiskPtr disk; // TODO myrrc should remove
 };
 
 

@@ -393,10 +393,7 @@ public:
     /// Required for remote disk to ensure that replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
-    // TODO myrrc not sure we need a generic locking interface similar to flock/fcntl as this
-    // will be used only for remote disks with VFS support for merges and mutations.
-    // Moreover, the paths that we'd like to "lock" wouldn't be really existing ones so this looks
-    // quite hacky
+    // Assure exclusive access to some remote "path" (needn't be an existent one).
     virtual bool lock(std::string_view path, bool block);
     virtual void unlock(std::string_view path);
 

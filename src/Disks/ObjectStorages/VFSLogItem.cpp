@@ -1,8 +1,8 @@
 #include "VFSLogItem.h"
+#include "Common/logger_useful.h"
 #include "IO/ReadBufferFromString.h"
 #include "IO/ReadHelpers.h"
 #include "IO/WriteHelpers.h"
-#include "Common/logger_useful.h"
 
 namespace DB
 {
@@ -27,6 +27,7 @@ VFSLogItem VFSLogItem::parse(std::string_view str)
     for (int size; int links : {1, -1})
     {
         readIntTextUnsafe(size, buf);
+        out.reserve(out.size() + size);
         checkChar('\n', buf);
         for (int i = 0; i < size; ++i)
         {
@@ -41,7 +42,7 @@ VFSLogItem VFSLogItem::parse(std::string_view str)
 
 void VFSLogItem::merge(VFSLogItem && other)
 {
-    // TODO myrrc rewrite to O(N) time
+    reserve(size() + other.size());
     // As we have only link + unlink, we can't distinguish 2 situations:
     // 1. We created an object and deleted it in the log batch -- then we need to remove it
     // 2. We created and removed link to object -- we don't need to remove the object.
@@ -61,7 +62,7 @@ VFSMergeResult VFSLogItem::mergeWithSnapshot(ReadBuffer & snapshot, WriteBuffer 
 
     using Pair = std::remove_cvref_t<decltype(out.invalid)::reference>;
     std::optional<Pair> left;
-    auto batch_it = cbegin();
+    auto batch_it = begin();
 
     auto read_left = [&] -> decltype(left)
     {

@@ -215,7 +215,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     future_merged_part->updatePath(storage, reserved_space.get());
     future_merged_part->merge_type = entry.merge_type;
 
-    disk = reserved_space->getDisk();
+    DiskPtr disk = reserved_space->getDisk();
     const bool is_zerocopy = storage_settings_ptr->allow_remote_fs_zero_copy_replication
         && disk->supportZeroCopyReplication();
     const bool is_vfs = disk->isObjectStorageVFS();
@@ -240,7 +240,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         const bool zerocopy_lock_already_acquired = is_zerocopy
             && (!zero_copy_lock || !zero_copy_lock->isLocked());
 
-        // TODO myrrc revisit whether we need table shared id
         const String vfs_lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name / "merge";
         const bool vfs_lock_already_acquired = is_vfs && !disk->lock(vfs_lock_path, false);
 
@@ -407,7 +406,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     if (zero_copy_lock)
         zero_copy_lock->lock->unlock();
     const String lock_path = fs::path(storage.getTableSharedID()) / entry.new_part_name / "merge";
-    disk->unlock(lock_path);
+    part->storage.getDisks()[0]->unlock(lock_path);
 
     /** Removing old parts from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
      */

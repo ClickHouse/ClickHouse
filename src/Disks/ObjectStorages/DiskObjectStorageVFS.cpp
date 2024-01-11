@@ -1,5 +1,4 @@
 #include "DiskObjectStorageVFS.h"
-#include "DiskObjectStorageMetadata.h"
 #include "DiskObjectStorageVFSTransaction.h"
 #include "IO/S3Common.h"
 #include "Interpreters/Context.h"
@@ -81,9 +80,7 @@ bool DiskObjectStorageVFS::lock(std::string_view path, bool block)
 
     LOG_TRACE(log, "Creating lock {} (zk path {}), block={}", path, lock_path_full, block);
 
-    // TODO myrrc need something better for blocking case as now we should nearly always lose in tryCreate
-    // in case there's contention on node
-    do
+    do // TODO myrrc some stop condition e.g. when we are shutting down
     {
         if (block)
             zookeeper()->waitForDisappear(lock_path_full);
@@ -106,14 +103,13 @@ void DiskObjectStorageVFS::unlock(std::string_view path)
 
 bool DiskObjectStorageVFS::tryDownloadMetadata(std::string_view remote_from, const String & to)
 {
-    auto metadata_object_buf = object_storage->readObject(getMetadataObject(remote_from));
-    auto metadata_tx = metadata_storage->createTransaction();
-    metadata_tx->createDirectoryRecursive(to);
+    auto buf = object_storage->readObject(getMetadataObject(remote_from));
+    auto tx = metadata_storage->createTransaction();
+    tx->createDirectoryRecursive(to);
 
     try
     {
-        // TODO myrrc do not write error message with "Information" level as it would be a normal situation
-        metadata_object_buf->eof();
+        buf->eof(); // TODO myrrc do not write error message with "Information" level as it's a normal situation
     }
 #if USE_AWS_S3
     catch (const S3Exception & e) // TODO myrrc this works only for s3
@@ -128,40 +124,40 @@ bool DiskObjectStorageVFS::tryDownloadMetadata(std::string_view remote_from, con
         throw;
     }
 
-    while (!metadata_object_buf->eof())
+    String str;
+    while (!buf->eof())
     {
-        String relative_file_path;
-        readString(relative_file_path, *metadata_object_buf);
-        const fs::path full_path = fs::path(to) / relative_file_path;
-        LOG_TRACE(log, "Metadata: downloading {} to {}", relative_file_path, full_path);
-        assertChar('\n', *metadata_object_buf);
-
-        DiskObjectStorageMetadata md(object_key_prefix, full_path); // TODO myrrc this works only for S3
-        md.deserialize(*metadata_object_buf); // TODO myrrc just write to local filesystem
-        metadata_tx->writeStringToFile(full_path, md.serializeToString());
+        str.clear();
+        readNullTerminated(str, *buf);
+        const fs::path full_path = fs::path(to) / str;
+        LOG_TRACE(log, "Metadata: downloading {} to {}", str, full_path);
+        str.clear();
+        readNullTerminated(str, *buf);
+        tx->writeStringToFile(full_path, str);
     }
-    metadata_tx->commit();
+    tx->commit();
     return true;
 }
 
 void DiskObjectStorageVFS::uploadMetadata(std::string_view remote_to, const String & from)
 {
-    auto metadata_object = getMetadataObject(remote_to);
+    const StoredObject metadata_object = getMetadataObject(remote_to);
     LOG_DEBUG(log, "Metadata: uploading to {}", metadata_object);
 
     Strings files; // iterateDirectory() is non-recursive (we need that for projections)
-    for (auto const & entry : fs::recursive_directory_iterator(from))
+    for (const fs::directory_entry & entry : fs::recursive_directory_iterator(from))
         if (entry.is_regular_file())
             files.emplace_back(entry.path());
 
-    auto metadata_object_buf = object_storage->writeObject(metadata_object, WriteMode::Rewrite);
-    for (auto & [filename, metadata] : getSerializedMetadata(files))
+    auto buf = object_storage->writeObject(metadata_object, WriteMode::Rewrite);
+    for (auto & [path, metadata] : getSerializedMetadata(files))
     {
-        String relative_path = fs::path(filename).lexically_relative(from);
+        const String relative_path = fs::path(path).lexically_relative(from);
         LOG_TRACE(log, "Metadata: uploading {}", relative_path);
-        writeString(relative_path + "\n" + metadata, *metadata_object_buf);
+        writeNullTerminatedString(relative_path, *buf);
+        writeNullTerminatedString(metadata, *buf);
     }
-    metadata_object_buf->finalize();
+    buf->finalize();
 }
 
 zkutil::ZooKeeperPtr DiskObjectStorageVFS::zookeeper()
@@ -169,6 +165,7 @@ zkutil::ZooKeeperPtr DiskObjectStorageVFS::zookeeper()
     // TODO myrrc support remote_fs_zero_copy_zookeeper_path
     // TODO myrrc this is incredibly slow, however, we can't cache zookeeper ptr on init
     //  as we need to change it on expiration, and a data race occurs
+    // TODO myrrc what if global context instance is nullptr due to shutdown?
     return Context::getGlobalContextInstance()->getZooKeeper();
 }
 
