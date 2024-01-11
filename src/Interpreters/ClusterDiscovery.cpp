@@ -136,7 +136,7 @@ ClusterDiscovery::ClusterDiscovery(
         const auto & password = config.getString(cluster_config_prefix + ".password", "");
         const auto & cluster_secret = config.getString(cluster_config_prefix + ".secret", "");
         if (!password.empty() && !cluster_secret.empty())
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Mutually exclusive options 'password' and 'secret' are specified for cluster '{}'", key);
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Both 'password' and 'secret' are specified for cluster '{}', only one option can be used at the same time", key);
 
         clusters_info.emplace(
             key,
