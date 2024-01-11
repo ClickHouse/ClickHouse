@@ -744,17 +744,11 @@ public:
         const IColumn ** columns,
         Arena * arena) const override
     {
-        if constexpr (sizeof(Data) > 16 || !std::is_trivially_constructible_v<Data>)
-        {
-            IAggregateFunctionHelper<Derived>::addBatchLookupTable8(row_begin, row_end, map, place_offset, init, key, columns, arena);
-            return;
-        }
-
         const Derived & func = *static_cast<const Derived *>(this);
 
         /// If the function is complex or too large, use more generic algorithm.
 
-        if (func.allocatesMemoryInArena() || func.sizeOfData() != sizeof(Data))
+        if (func.allocatesMemoryInArena() || sizeof(Data) > 16 || func.sizeOfData() != sizeof(Data))
         {
             IAggregateFunctionHelper<Derived>::addBatchLookupTable8(row_begin, row_end, map, place_offset, init, key, columns, arena);
             return;
