@@ -22,58 +22,62 @@ MULTITARGET_FUNCTION_AVX2_SSE42(
         template <has_find_extreme_implementation T, typename ComparatorClass, bool add_all_elements, bool add_if_cond_zero>
         static std::optional<T> NO_INLINE),
     findExtremeImpl,
-    MULTITARGET_FUNCTION_BODY(
-        (const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end) /// NOLINT
+    MULTITARGET_FUNCTION_BODY((const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t row_begin, size_t row_end) /// NOLINT
+    {
+        size_t count = row_end - row_begin;
+        ptr += row_begin;
+        if constexpr (!add_all_elements)
+            condition_map += row_begin;
+
+        T ret{};
+        size_t i = 0;
+        for (; i < count; i++)
         {
-            size_t count = row_end - row_begin;
-            ptr += row_begin;
-            if constexpr (!add_all_elements)
-                condition_map += row_begin;
-
-            T ret{};
-            size_t i = 0;
-            for (; i < count; i++)
+            if (add_all_elements || !condition_map[i] == add_if_cond_zero)
             {
-                if (add_all_elements || !condition_map[i] == add_if_cond_zero)
-                {
-                    ret = ptr[i];
-                    break;
-                }
+                ret = ptr[i];
+                break;
             }
-            if (i >= count)
-                return std::nullopt;
+        }
+        if (i >= count)
+            return std::nullopt;
 
-            /// Unroll the loop manually for floating point, since the compiler doesn't do it without fastmath
-            /// as it might change the return value
-            if constexpr (std::is_floating_point_v<T>)
+        /// Unroll the loop manually for floating point, since the compiler doesn't do it without fastmath
+        /// as it might change the return value
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            constexpr size_t unroll_block = 512 / sizeof(T); /// Chosen via benchmarks with AVX2 so YMMV
+            size_t unrolled_end = i + (((count - i) / unroll_block) * unroll_block);
+
+            if (i < unrolled_end)
             {
-                constexpr size_t unroll_block = 512 / sizeof(T); /// Chosen via benchmarks with AVX2 so YMMV
-                size_t unrolled_end = i + (((count - i) / unroll_block) * unroll_block);
+                T partial_min[unroll_block];
+                for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
+                    partial_min[unroll_it] = ret;
 
-                if (i < unrolled_end)
+                while (i < unrolled_end)
                 {
-                    T partial_min[unroll_block];
                     for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
-                        partial_min[unroll_it] = ret;
-
-                    while (i < unrolled_end)
                     {
-                        for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
-                            if (add_all_elements || !condition_map[i + unroll_it] == add_if_cond_zero)
-                                partial_min[unroll_it] = ComparatorClass::cmp(partial_min[unroll_it], ptr[i + unroll_it]);
-                        i += unroll_block;
+                        if (add_all_elements || !condition_map[i + unroll_it] == add_if_cond_zero)
+                            partial_min[unroll_it] = ComparatorClass::cmp(partial_min[unroll_it], ptr[i + unroll_it]);
                     }
-                    for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
-                        ret = ComparatorClass::cmp(ret, partial_min[unroll_it]);
+                    i += unroll_block;
                 }
+                for (size_t unroll_it = 0; unroll_it < unroll_block; unroll_it++)
+                    ret = ComparatorClass::cmp(ret, partial_min[unroll_it]);
             }
+        }
 
-            for (; i < count; i++)
-                if (add_all_elements || !condition_map[i] == add_if_cond_zero)
-                    ret = ComparatorClass::cmp(ret, ptr[i]);
+        for (; i < count; i++)
+        {
+            if (add_all_elements || !condition_map[i] == add_if_cond_zero)
+                ret = ComparatorClass::cmp(ret, ptr[i]);
+        }
 
-            return ret;
-        }))
+        return ret;
+    }
+))
 
 /// Given a vector of T finds the extreme (MIN or MAX) value
 template <has_find_extreme_implementation T, class ComparatorClass, bool add_all_elements, bool add_if_cond_zero>
@@ -84,7 +88,6 @@ findExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[m
     /// In some cases the compiler if able to apply the condition and still generate SIMD, so we still build both
     /// conditional and unconditional functions with multiple architectures
     /// We see no benefit from using AVX512BW or AVX512F (over AVX2), so we only declare SSE and AVX2
-    ///
     if (isArchSupported(TargetArch::AVX2))
         return findExtremeImplAVX2<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
 
