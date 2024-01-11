@@ -8,6 +8,8 @@
 #include <IO/S3/Requests.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -856,6 +858,7 @@ public:
             blob_log->query_id = context->getCurrentQueryId();
         }
 
+        const auto & settings = context->getSettingsRef();
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(
                 configuration_.client,
@@ -868,7 +871,8 @@ public:
                 threadPoolCallbackRunner<void>(getIOThreadPool().get(), "S3ParallelWrite"),
                 context->getWriteSettings()),
             compression_method,
-            3);
+            static_cast<int>(settings.output_format_compression_level),
+            static_cast<int>(settings.output_format_compression_zstd_window_log));
         writer
             = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, format_settings);
     }
@@ -1377,7 +1381,7 @@ bool StorageS3::Configuration::update(ContextPtr context)
     request_settings = s3_settings.request_settings;
     request_settings.updateFromSettings(context->getSettings());
 
-    if (client && (static_configuration || s3_settings.auth_settings == auth_settings))
+    if (client && (static_configuration || !auth_settings.hasUpdates(s3_settings.auth_settings)))
         return false;
 
     auth_settings.updateFrom(s3_settings.auth_settings);
@@ -1600,11 +1604,11 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         if (engine_args_to_idx.contains("session_token"))
             configuration.auth_settings.session_token = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["session_token"]], "session_token");
 
-
-        configuration.auth_settings.no_sign_request = no_sign_request;
+        if (no_sign_request)
+            configuration.auth_settings.no_sign_request = no_sign_request;
     }
 
-    configuration.static_configuration = !configuration.auth_settings.access_key_id.empty();
+    configuration.static_configuration = !configuration.auth_settings.access_key_id.empty() || configuration.auth_settings.no_sign_request.has_value();
 
     configuration.keys = {configuration.url.key};
 
