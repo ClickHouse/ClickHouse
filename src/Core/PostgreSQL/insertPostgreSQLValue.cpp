@@ -162,6 +162,8 @@ void insertPostgreSQLValue(
             assert_cast<ColumnArray &>(column).insert(Array(dimensions[1].begin(), dimensions[1].end()));
             break;
         }
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
     }
 }
 
