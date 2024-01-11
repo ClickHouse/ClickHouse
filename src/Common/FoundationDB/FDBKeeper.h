@@ -129,8 +129,6 @@ private:
     std::unique_ptr<DB::FoundationDB::KeeperOperationLogger> keeper_logger;
 
     FDBTransaction * newTrx();
-    template <typename VarResp, typename Callback>
-    auto handleKeeperCallback(VarResp var_resp, Callback callback, const String & message = "");
 
     String chroot;
     DB::KeeperFeatureFlags keeper_feature;
