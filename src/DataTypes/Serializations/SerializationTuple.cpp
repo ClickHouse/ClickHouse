@@ -77,7 +77,7 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
             auto & element_column = extractElementColumn(column, i);
             if (element_column.size() > old_size)
             {
-                chassert(old_size - element_column.size() == 1);
+                chassert(element_column.size() - old_size == 1);
                 element_column.popBack(1);
             }
         }

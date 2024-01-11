@@ -119,13 +119,7 @@ public:
         });
 
         if (context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_when_no_common_type_in_if)
-        {
-            if (auto res = tryGetLeastSupertype(types_of_branches))
-                return res;
-            for (auto & type : types_of_branches)
-                type = removeNullableOrLowCardinalityNullable(type);
-            return std::make_shared<DataTypeVariant>(types_of_branches);
-        }
+            return getLeastSupertypeOrVariant(types_of_branches);
 
         return getLeastSupertype(types_of_branches);
     }

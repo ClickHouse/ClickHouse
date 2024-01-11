@@ -688,15 +688,9 @@ private:
 
         DataTypePtr common_type;
         if (use_variant_when_no_common_type)
-        {
-            common_type = tryGetLeastSupertype(DataTypes{arg1.type, arg2.type});
-            if (!common_type)
-                common_type = std::make_shared<DataTypeVariant>(DataTypes{removeNullableOrLowCardinalityNullable(arg1.type), removeNullableOrLowCardinalityNullable(arg2.type)});
-        }
+            common_type = getLeastSupertypeOrVariant(DataTypes{arg1.type, arg2.type});
         else
-        {
             common_type = getLeastSupertype(DataTypes{arg1.type, arg2.type});
-        }
 
         ColumnPtr col_then = castColumn(arg1, common_type);
         ColumnPtr col_else = castColumn(arg2, common_type);
@@ -1118,11 +1112,7 @@ public:
                 "Must be UInt8.", arguments[0]->getName());
 
         if (use_variant_when_no_common_type)
-        {
-            if (auto res = tryGetLeastSupertype(DataTypes{arguments[1], arguments[2]}))
-                return res;
-            return std::make_shared<DataTypeVariant>(DataTypes{removeNullableOrLowCardinalityNullable(arguments[1]), removeNullableOrLowCardinalityNullable(arguments[2])});
-        }
+            return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]});
 
         return getLeastSupertype(DataTypes{arguments[1], arguments[2]});
     }
