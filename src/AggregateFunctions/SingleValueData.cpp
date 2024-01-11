@@ -184,10 +184,8 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
     }
     else
     {
-        setIfSmaller(column, row_begin, arena);
-        for (size_t i = row_begin + 1; i < row_end; i++)
-            if (vec.getData()[i] < value)
-                value = vec.getData()[i];
+        for (size_t i = row_begin; i < row_end; i++)
+            setIfSmaller(column, i, arena);
     }
 }
 
@@ -206,10 +204,8 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
     }
     else
     {
-        setIfGreater(column, row_begin, arena);
-        for (size_t i = row_begin + 1; i < row_end; i++)
-            if (vec.getData().data()[i] > value)
-                value = vec.getData()[i];
+        for (size_t i = row_begin; i < row_end; i++)
+            setIfGreater(column, i, arena);
     }
 }
 
@@ -252,8 +248,8 @@ void SingleValueDataFixed<T>::setSmallestNotNullIf(
         setIfSmaller(column, index, arena);
 
         for (size_t i = index + 1; i < row_end; i++)
-            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec.getData()[i] < value))
-                value = vec.getData()[i];
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0))
+                setIfSmaller(column, i, arena);
     }
 }
 
@@ -269,7 +265,23 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
     chassert(if_map || null_map);
 
     const auto & vec = assert_cast<const ColVecType &>(column);
+    if constexpr (has_find_extreme_implementation<T>)
+    {
+        std::optional<T> opt;
+        if (!if_map)
+            opt = findExtremeMaxNotNull(vec.getData().data(), null_map, row_begin, row_end);
+        else if (!null_map)
+            opt = findExtremeMaxIf(vec.getData().data(), if_map, row_begin, row_end);
+        else
+        {
+            auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
+            opt = findExtremeMaxIf(vec.getData().data(), if_map, row_begin, row_end);
+        }
 
+        if (opt.has_value())
+            setIfGreater(*opt);
+    }
+    else
     {
         size_t index = row_begin;
         while (((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)) && (index < row_end))
@@ -277,11 +289,11 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
         if (index >= row_end)
             return;
 
-        setIfGreater(column, index, arena);
+        setIfSmaller(column, index, arena);
 
         for (size_t i = index + 1; i < row_end; i++)
-            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec.getData()[i] > value))
-                value = vec.getData()[i];
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0))
+                setIfGreater(column, i, arena);
     }
 }
 
@@ -294,12 +306,11 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
     const auto & vec = assert_cast<const ColVecType &>(column);
     if constexpr (has_find_extreme_implementation<T>)
     {
-        /// TODO: Implement findExtremeMinIndex
-        ///
         std::optional<T> opt = findExtremeMin(vec.getData().data(), row_begin, row_end);
-        if (!opt)
+        if (!opt || (has() && value <= opt))
             return std::nullopt;
-        /// TODO: What if we don't search if it's not smaller than the stored value???
+
+        /// TODO: Implement findExtremeMinIndex to do the lookup properly (with SIMD and batching)
         for (size_t i = row_begin; i < row_end; i++)
             if (vec.getData()[i] == *opt)
                 return i;
@@ -324,10 +335,11 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & 
     const auto & vec = assert_cast<const ColVecType &>(column);
     if constexpr (has_find_extreme_implementation<T>)
     {
-        /// TODO: Implement findExtremeMaxIndex
         std::optional<T> opt = findExtremeMax(vec.getData().data(), row_begin, row_end);
-        if (!opt)
+        if (!opt || (has() && value >= opt))
             return std::nullopt;
+
+        /// TODO: Implement findExtremeMaxIndex to do the lookup properly (with SIMD and batching)
         for (size_t i = row_begin; i < row_end; i++)
             if (vec.getData()[i] == *opt)
                 return i;

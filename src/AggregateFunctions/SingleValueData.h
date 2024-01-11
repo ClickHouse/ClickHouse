@@ -55,17 +55,21 @@ struct SingleValueDataBase
     virtual bool setIfGreater(const IColumn &, size_t row_num, Arena *) = 0;
     virtual bool setIfGreater(const SingleValueDataBase &, Arena *) = 0;
 
+    /// Given a column, sets the internal value to the smallest or greatest value from the column
+    virtual void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena);
+    virtual void setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena);
+    virtual void setSmallestNotNullIf(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *);
+    virtual void setGreatestNotNullIf(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *);
+
+    /// Given a column returns the index of the smallest or greatest value in it
+    /// Doesn't return anything if the column is empty. Might also return empty if the value stored is the smallest/greatest
+    /// Useful to implement argMin / argMax
     virtual std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end);
     virtual std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end);
     static std::optional<size_t> getSmallestIndexNotNullIf(
         const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end);
     static std::optional<size_t> getGreatestIndexNotNullIf(
         const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end);
-
-    virtual void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena);
-    virtual void setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena);
-    virtual void setSmallestNotNullIf(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *);
-    virtual void setGreatestNotNullIf(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *);
 };
 
 
@@ -307,7 +311,7 @@ private:
     }
 
 public:
-    bool has() const override { return size; }
+    bool has() const override { return size != 0; }
 
     void insertResultInto(IColumn & to) const override;
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override;
