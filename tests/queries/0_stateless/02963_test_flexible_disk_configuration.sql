@@ -37,7 +37,6 @@ settings disk=disk(name='test3',
                    access_key_id = clickhouse,
                    secret_access_key = clickhouse); -- { serverError UNKNOWN_ELEMENT_IN_CONFIG }
 
-drop table test;
 create table test (a Int32) engine = MergeTree() order by tuple()
 settings disk=disk(name='test4',
                    type = object_storage,
@@ -47,7 +46,6 @@ settings disk=disk(name='test4',
                    access_key_id = clickhouse,
                    secret_access_key = clickhouse); -- { serverError UNKNOWN_ELEMENT_IN_CONFIG }
 
-drop table test;
 create table test (a Int32) engine = MergeTree() order by tuple()
 settings disk=disk(name='test5',
                    type = kkk,
