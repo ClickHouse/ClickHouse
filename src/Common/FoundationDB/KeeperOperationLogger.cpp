@@ -255,7 +255,7 @@ void KeeperOperationLogger::response(const Response & resp, size_t elapsed_ms, i
     {
         elem.stat = existsResponse->stat;
         elem.op_num = static_cast<uint32_t>(OpNum::Exists);
-    }    
+    }
     else if (auto * getResponse = dynamic_cast<const GetResponse *>(&resp))
     {
         elem.data = getResponse->data;
