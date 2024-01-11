@@ -26,7 +26,7 @@ public:
     void transform(Chunk & chunk) override
     {
         size_t num_rows = chunk.getNumRows();
-        auto select_final_indices_info = std::dynamic_pointer_cast<const ChunkSelectFinalIndices>(chunk.getChunkInfo());
+        const auto * select_final_indices_info = typeid_cast<const ChunkSelectFinalIndices *>(chunk.getChunkInfo().get());
 
         if (!select_final_indices_info || !select_final_indices_info->select_final_indices)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk passed to SelectByIndicesTransform without indices column");

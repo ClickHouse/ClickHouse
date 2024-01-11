@@ -40,10 +40,10 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes,
     bool cleanup_,
-    bool use_skipping_final_)
+    bool enable_vertical_final_)
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
     , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size_rows, max_block_size_bytes), cleanup(cleanup_)
-    , use_skipping_final(use_skipping_final_)
+    , enable_vertical_final(enable_vertical_final_)
 {
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_.getPositionByName(is_deleted_column);
@@ -63,7 +63,7 @@ void ReplacingSortedAlgorithm::insertRow()
         current_row_sources.resize(0);
     }
 
-    if (use_skipping_final)
+    if (enable_vertical_final)
     {
         /// We just record the position to be selected in the chunk
         if (!selected_row.owned_chunk->replace_final_selection)
@@ -204,7 +204,7 @@ void ReplacingSortedAlgorithm::saveChunkForSkippingFinalFromSelectedRow()
 
 void ReplacingSortedAlgorithm::saveChunkForSkippingFinalFromSource(size_t current_source_index)
 {
-    if (use_skipping_final)
+    if (enable_vertical_final)
     {
         auto & chunk = sources[current_source_index].chunk;
         if (selected_row.owned_chunk.get() == chunk.get())

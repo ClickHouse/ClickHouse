@@ -23,7 +23,7 @@ SELECT if(explain like '%ReadType: InOrder%', 'Ok', 'Error: ' || explain) FROM (
     SELECT timestamp, value
     FROM mytable FINAL
     WHERE key = 5
-    ORDER BY timestamp SETTINGS use_skipping_final = 0
+    ORDER BY timestamp SETTINGS enable_vertical_final = 0
 ) WHERE explain like '%ReadType%';
 
 
