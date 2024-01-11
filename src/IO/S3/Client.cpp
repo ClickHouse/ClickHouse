@@ -3,7 +3,6 @@
 #if USE_AWS_S3
 
 #include <aws/core/client/CoreErrors.h>
-#include <aws/core/client/DefaultRetryStrategy.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
@@ -15,7 +14,6 @@
 
 #include <Poco/Net/NetException.h>
 
-#include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
@@ -37,6 +35,9 @@ namespace ProfileEvents
 
     extern const Event DiskS3WriteRequestsErrors;
     extern const Event DiskS3ReadRequestsErrors;
+
+    extern const Event S3Clients;
+    extern const Event TinyS3Clients;
 }
 
 namespace DB
@@ -199,6 +200,8 @@ Client::Client(
 
     cache = std::make_shared<ClientCache>();
     ClientCacheRegistry::instance().registerClient(cache);
+
+    ProfileEvents::increment(ProfileEvents::S3Clients);
 }
 
 Client::Client(
@@ -219,6 +222,22 @@ Client::Client(
 {
     cache = std::make_shared<ClientCache>(*other.cache);
     ClientCacheRegistry::instance().registerClient(cache);
+
+    ProfileEvents::increment(ProfileEvents::TinyS3Clients);
+}
+
+
+Client::~Client()
+{
+    try
+    {
+        ClientCacheRegistry::instance().unregisterClient(cache.get());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+        throw;
+    }
 }
 
 Aws::Auth::AWSCredentials Client::getCredentials() const

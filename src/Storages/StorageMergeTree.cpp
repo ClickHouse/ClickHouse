@@ -250,7 +250,6 @@ void StorageMergeTree::read(
                 local_context,
                 max_block_size,
                 num_streams,
-                processed_stage,
                 nullptr,
                 enable_parallel_reading))
             query_plan = std::move(*plan);
@@ -262,10 +261,10 @@ std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
     return getTotalActiveSizeInRows();
 }
 
-std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr local_context) const
+std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr local_context) const
 {
     auto parts = getVisibleDataPartsVector(local_context);
-    return totalRowsByPartitionPredicateImpl(query_info, local_context, parts);
+    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, parts);
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
