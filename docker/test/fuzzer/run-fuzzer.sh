@@ -225,7 +225,7 @@ quit
 
     setup_logs_replication
 
-    timeout -s TERM --preserve-status 40m $repo_dir/tests/clickhouse-test \
+    timeout -s TERM --preserve-status 35m $repo_dir/tests/clickhouse-test \
         --fuzz \
         --query-fuzzer-runs=1000 \
         --create-query-fuzzer-runs=50 \
