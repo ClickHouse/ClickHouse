@@ -1964,17 +1964,7 @@ class ClickHouseCluster:
         with open(path, "w") as p:
             p.write(data)
 
-    def restart_instance_with_ip_change(self, node, new_ip):
-        if "::" in new_ip:
-            if node.ipv6_address is None:
-                raise Exception("You should specity ipv6_address in add_node method")
-            self._replace(node.docker_compose_path, node.ipv6_address, new_ip)
-            node.ipv6_address = new_ip
-        else:
-            if node.ipv4_address is None:
-                raise Exception("You should specity ipv4_address in add_node method")
-            self._replace(node.docker_compose_path, node.ipv4_address, new_ip)
-            node.ipv4_address = new_ip
+    def restart_instance(self, node):
         run_and_check(self.base_cmd + ["stop", node.name])
         run_and_check(self.base_cmd + ["rm", "--force", "--stop", node.name])
         run_and_check(
@@ -1992,6 +1982,19 @@ class ClickHouseCluster:
         logging.info("Restarted")
 
         return node
+
+    def restart_instance_with_ip_change(self, node, new_ip):
+        if "::" in new_ip:
+            if node.ipv6_address is None:
+                raise Exception("You should specity ipv6_address in add_node method")
+            self._replace(node.docker_compose_path, node.ipv6_address, new_ip)
+            node.ipv6_address = new_ip
+        else:
+            if node.ipv4_address is None:
+                raise Exception("You should specity ipv4_address in add_node method")
+            self._replace(node.docker_compose_path, node.ipv4_address, new_ip)
+            node.ipv4_address = new_ip
+        return self.restart_instance(node)
 
     def restart_service(self, service_name):
         run_and_check(self.base_cmd + ["restart", service_name])

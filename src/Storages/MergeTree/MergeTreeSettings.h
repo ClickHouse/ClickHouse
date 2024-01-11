@@ -130,6 +130,14 @@ struct Settings;
     M(Float, shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations, 0.5, "Only available in ClickHouse Cloud", 0) \
     M(UInt64, shared_merge_tree_parts_load_batch_size, 32, "Only available in ClickHouse Cloud", 0) \
     \
+    /** Gep-replication control settings. */ \
+    M(String, geo_replication_control_region, "", "Which region the replica belong to, value defined by users", 0) \
+    M(UInt64, geo_replication_control_leader_election_period_ms, 10*1000, "If there is no region leader, how frequent should this replica trigger a leader election", 0) \
+    M(Seconds, geo_replication_control_leader_wait, 5, "When the target part is not yet in any node the region, how long follower should wait before try executing the log entry again", 0) \
+    M(Seconds, geo_replication_control_leader_wait_timeout, 300, "Maximum time the follower should wait to fetch within the region, if timeout then follower will fetch from any replica", 0) \
+    M(Bool, fetch_merged_part_within_region_only, true, "If true, always fetching merged parts from same region only, unless the local merge result in inconsistent part and need to fetch from somewhere to bring all replicas to a consistent state", 0) \
+    M(Bool, fetch_covered_part_within_region_only, true, "If true, when fetching a part, only looking for covered part within same region, unless the exact part cannot be found on any replica and we need to fetch a covered part from somewhere to bring all replicas to a consistent state", 0) \
+    \
     /** Check delay of replicas settings. */ \
     M(UInt64, min_relative_delay_to_measure, 120, "Calculate relative replica delay only if absolute delay is not less that this value.", 0) \
     M(UInt64, cleanup_delay_period, 30, "Minimum period to clean old queue logs, blocks hashes and parts.", 0) \

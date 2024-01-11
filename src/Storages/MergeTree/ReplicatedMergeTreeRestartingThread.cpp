@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
@@ -136,6 +137,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     setNotReadonly();
 
+
     /// Start queue processing
     storage.background_operations_assignee.start();
     storage.queue_updating_task->activateAndSchedule();
@@ -145,6 +147,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.cleanup_thread.start();
     storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
+    storage.geo_replication_controller.start();
 
     LOG_DEBUG(log, "Table started successfully");
     return true;

@@ -251,6 +251,9 @@ private:
         std::optional<time_t> min_unprocessed_insert_time_changed,
         std::optional<time_t> max_processed_insert_time_changed) const;
 
+    /// Whether the entry should not be reorder after execution
+    bool shouldRespectEntryOrder(const LogEntry & entry) const;
+
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
     {
