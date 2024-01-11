@@ -1583,9 +1583,7 @@ bool Context::hasScalar(const String & name) const
 void Context::addQueryAccessInfo(
     const String & quoted_database_name,
     const String & full_quoted_table_name,
-    const Names & column_names,
-    const String & projection_name,
-    const String & view_name)
+    const Names & column_names)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
@@ -1593,12 +1591,9 @@ void Context::addQueryAccessInfo(
     std::lock_guard lock(query_access_info.mutex);
     query_access_info.databases.emplace(quoted_database_name);
     query_access_info.tables.emplace(full_quoted_table_name);
+
     for (const auto & column_name : column_names)
         query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
-    if (!projection_name.empty())
-        query_access_info.projections.emplace(full_quoted_table_name + "." + backQuoteIfNeed(projection_name));
-    if (!view_name.empty())
-        query_access_info.views.emplace(view_name);
 }
 
 void Context::addQueryAccessInfo(const Names & partition_names)
@@ -1609,6 +1604,15 @@ void Context::addQueryAccessInfo(const Names & partition_names)
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
     for (const auto & partition_name : partition_names)
         query_access_info.partitions.emplace(partition_name);
+}
+
+void Context::addViewAccessInfo(const String & view_name)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard<std::mutex> lock(query_access_info.mutex);
+    query_access_info.views.emplace(view_name);
 }
 
 void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name)

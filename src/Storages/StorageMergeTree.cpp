@@ -250,7 +250,6 @@ void StorageMergeTree::read(
                 local_context,
                 max_block_size,
                 num_streams,
-                processed_stage,
                 nullptr,
                 enable_parallel_reading))
             query_plan = std::move(*plan);

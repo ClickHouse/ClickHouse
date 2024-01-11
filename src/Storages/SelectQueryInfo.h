@@ -9,7 +9,6 @@
 #include <Interpreters/PreparedSets.h>
 #include <Planner/PlannerContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Storages/ProjectionsDescription.h>
 
 #include <memory>
 
@@ -42,9 +41,6 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
-
-struct MergeTreeDataSelectAnalysisResult;
-using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
 
 struct PrewhereInfo
 {
@@ -142,32 +138,6 @@ class IMergeTreeDataPart;
 
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 
-// The projection selected to execute current query
-struct ProjectionCandidate
-{
-    ProjectionDescriptionRawPtr desc{};
-    PrewhereInfoPtr prewhere_info;
-    ActionsDAGPtr before_where;
-    String where_column_name;
-    bool remove_where_filter = false;
-    ActionsDAGPtr before_aggregation;
-    Names required_columns;
-    NamesAndTypesList aggregation_keys;
-    AggregateDescriptions aggregate_descriptions;
-    bool aggregate_overflow_row = false;
-    bool aggregate_final = false;
-    bool complete = false;
-    ReadInOrderOptimizerPtr order_optimizer;
-    InputOrderInfoPtr input_order_info;
-    ManyExpressionActions group_by_elements_actions;
-    SortDescription group_by_elements_order_descr;
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
-
-    /// Because projection analysis uses a separate interpreter.
-    ContextPtr context;
-};
-
 /** Query along with some additional data,
   *  that can be used during query processing
   *  inside storage engines.
@@ -180,7 +150,6 @@ struct SelectQueryInfo
 
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
-    ASTPtr original_query; /// Unmodified query for projection analysis
 
     /// Query tree
     QueryTreeNodePtr query_tree;
@@ -242,18 +211,10 @@ struct SelectQueryInfo
 
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
-    /// If not null, it means we choose a projection to execute current query.
-    std::optional<ProjectionCandidate> projection;
-    bool ignore_projections = false;
-    bool is_projection_query = false;
-    bool merge_tree_empty_result = false;
     bool settings_limit_offset_done = false;
     bool is_internal = false;
-    Block minmax_count_projection_block;
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
-
+    bool parallel_replicas_disabled = false;
     bool is_parameterized_view = false;
-
     bool optimize_trivial_count = false;
 
     // If limit is not 0, that means it's a trivial limit query.
@@ -261,11 +222,6 @@ struct SelectQueryInfo
 
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
-
-    InputOrderInfoPtr getInputOrderInfo() const
-    {
-        return input_order_info ? input_order_info : (projection ? projection->input_order_info : nullptr);
-    }
 
     bool isFinal() const;
 };
