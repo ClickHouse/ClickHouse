@@ -40,8 +40,10 @@ static std::shared_ptr<const ChunkSelectFinalIndices> getSelectByFinalIndices(Ch
 {
     if (auto select_final_indices_info = std::dynamic_pointer_cast<const ChunkSelectFinalIndices>(chunk.getChunkInfo()))
     {
+        const auto & index_column = select_final_indices_info->select_final_indices;
         chunk.setChunkInfo(nullptr);
-        return select_final_indices_info;
+        if (index_column && index_column->size() != chunk.getNumRows())
+            return select_final_indices_info;
     }
     return nullptr;
 }
@@ -53,9 +55,8 @@ executeSelectByIndices(Columns & columns, std::shared_ptr<const ChunkSelectFinal
     {
         const auto & index_column = select_final_indices_info->select_final_indices;
 
-        if (index_column && index_column->size() != num_rows)
-            for (auto & column : columns)
-                column = column->index(*index_column, 0);
+        for (auto & column : columns)
+            column = column->index(*index_column, 0);
 
         num_rows = index_column->size();
     }
@@ -70,7 +71,7 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
     {
         const auto * index_column = select_final_indices_info->select_final_indices;
 
-        if (index_column && index_column->size() != num_rows && description->hasOne())
+        if (description->hasOne())
         {
             const auto & selected_by_indices = index_column->getData();
             const auto * selected_by_filter = description->data->data();
@@ -154,7 +155,7 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
     {
         const auto * index_column = select_final_indices_info->select_final_indices;
 
-        if (index_column && index_column->size() != num_rows && description->hasOne())
+        if (description->hasOne())
         {
             std::unique_ptr<FilterDescription> res;
             res->has_one = 0;
@@ -169,7 +170,7 @@ static std::unique_ptr<IFilterDescription> combineFilterAndIndices(
             return res;
         }
     }
-    return description;
+    return std::move(description);
 }
 
 Block FilterTransform::transformHeader(
