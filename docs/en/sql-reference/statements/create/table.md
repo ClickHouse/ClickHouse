@@ -293,6 +293,8 @@ You can't combine both ways in one query.
 
 Along with columns descriptions constraints could be defined:
 
+### CONSTRAINT
+
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
@@ -306,6 +308,30 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 `boolean_expr_1` could by any boolean expression. If constraints are defined for the table, each of them will be checked for every row in `INSERT` query. If any constraint is not satisfied — server will raise an exception with constraint name and checking expression.
 
 Adding large amount of constraints can negatively affect performance of big `INSERT` queries.
+
+### ASSUME
+
+The `ASSUME` clause is used to define a `CONSTRAINT` on a table that is assumed to be true. This constraint can then be used by the optimizer to enhance the performance of SQL queries.
+
+Take this example where `ASSUME CONSTRAINT` is used in the creation of the `users_a` table:
+
+```sql
+CREATE TABLE users_a (
+    uid Int16, 
+    name String, 
+    age Int16, 
+    name_len UInt8 MATERIALIZED length(name), 
+    CONSTRAINT c1 ASSUME length(name) = name_len
+) 
+ENGINE=MergeTree 
+ORDER BY (name_len, name);
+```
+
+Here, `ASSUME CONSTRAINT` is used to assert that the `length(name)` function always equals the value of the `name_len` column. This means that whenever `length(name)` is called in a query, ClickHouse can replace it with `name_len`, which should be faster because it avoids calling the `length()` function.
+
+Then, when executing the query `SELECT name FROM users_a WHERE length(name) < 5;`, ClickHouse can optimize it to `SELECT name FROM users_a WHERE name_len < 5`; because of the `ASSUME CONSTRAINT`. This can make the query run faster because it avoids calculating the length of `name` for each row.
+
+`ASSUME CONSTRAINT` **does not enforce the constraint**, it merely informs the optimizer that the constraint holds true. If the constraint is not actually true, the results of the queries may be incorrect. Therefore, you should only use `ASSUME CONSTRAINT` if you are sure that the constraint is true.
 
 ## TTL Expression
 
