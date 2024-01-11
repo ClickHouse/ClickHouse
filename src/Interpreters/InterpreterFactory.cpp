@@ -30,6 +30,7 @@
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/ASTModifyEngineQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -92,6 +93,7 @@
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
+#include <Interpreters/InterpreterModifyEngineQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
@@ -395,6 +397,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTDeleteQuery>())
     {
         return std::make_unique<InterpreterDeleteQuery>(query, context);
+    }
+    else if (query->as<ASTModifyEngineQuery>())
+    {
+        return std::make_unique<InterpreterModifyEngineQuery>(query, context);
     }
     else
     {
