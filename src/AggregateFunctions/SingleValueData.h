@@ -313,15 +313,15 @@ public:
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override;
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena) override;
     bool isEqualTo(const IColumn & column, size_t row_num) const override;
-    bool isEqualTo(const SingleValueDataBase & to) const override;
+    bool isEqualTo(const SingleValueDataBase &) const override;
     void set(const IColumn & column, size_t row_num, Arena * arena) override;
-    void set(const SingleValueDataBase & to, Arena * arena) override;
+    void set(const SingleValueDataBase &, Arena * arena) override;
 
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
-    bool setIfSmaller(const SingleValueDataBase & to, Arena * arena) override;
+    bool setIfSmaller(const SingleValueDataBase &, Arena * arena) override;
 
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
-    bool setIfGreater(const SingleValueDataBase & to, Arena * arena) override;
+    bool setIfGreater(const SingleValueDataBase &, Arena * arena) override;
 
     static bool allocatesMemoryInArena() { return true; }
 };

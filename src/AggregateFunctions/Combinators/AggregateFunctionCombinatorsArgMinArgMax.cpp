@@ -37,7 +37,10 @@ private:
     const size_t key_offset;
     const TypeIndex key_type_index;
 
-    SingleValueDataBase & data(AggregateDataPtr __restrict place) const { return reinterpret_cast<Key *>(place + key_offset)->data(); }
+    SingleValueDataBase & data(const AggregateDataPtr __restrict place) const
+    {
+        return reinterpret_cast<Key *>(place + key_offset)->data();
+    }
     const SingleValueDataBase & data(ConstAggregateDataPtr __restrict place) const
     {
         return reinterpret_cast<const Key *>(place + key_offset)->data();

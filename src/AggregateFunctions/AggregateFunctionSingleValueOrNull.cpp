@@ -43,7 +43,7 @@ public:
     SingleValueDataBase & data() { return v_data.get(); }
     const SingleValueDataBase & data() const { return v_data.get(); }
 
-    bool isNull() { return is_null; }
+    bool isNull() const { return is_null; }
 
     void add(const IColumn & column, size_t row_num, Arena * arena)
     {
