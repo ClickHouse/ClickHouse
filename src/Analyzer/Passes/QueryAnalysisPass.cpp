@@ -2245,6 +2245,9 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     if (table_expression_has_alias)
         return;
 
+    if (join_node->as<JoinNode &>().getKind() == JoinKind::Paste)
+        return;
+
     auto * query_node = table_expression_node->as<QueryNode>();
     auto * union_node = table_expression_node->as<UnionNode>();
     if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
@@ -6781,7 +6784,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
 void QueryAnalyzer::checkDuplicateTableNamesOrAlias(QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope)
 {
-    if (scope.context->getSettingsRef().joined_subquery_requires_alias)
+    if (!scope.context->getSettingsRef().joined_subquery_requires_alias)
         return;
 
     if (join_node->as<JoinNode &>().getKind() != JoinKind::Paste)

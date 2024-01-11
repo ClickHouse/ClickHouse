@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <Interpreters/JoinedTables.h>
 
 #include <Core/SettingsEnums.h>
@@ -24,8 +23,6 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageValues.h>
-#include "Common/Exception.h"
-#include "Interpreters/ExpressionAnalyzer.h"
 
 namespace DB
 {
@@ -35,7 +32,6 @@ namespace ErrorCodes
     extern const int ALIAS_REQUIRED;
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -239,24 +235,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
     return DatabaseCatalog::instance().getTable(table_id, context);
 }
 
-void JoinedTables::checkDuplicateNames()
-{
-    Names column_names = {};
-    for (const auto & t : tables_with_columns)
-        for (auto & name : t.columns.getNames())
-            column_names.push_back(name);
-    if (column_names.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Names of joining columns cannot be empty");
-
-    std::sort(column_names.begin(), column_names.end());
-    for (size_t i = 0; i < column_names.size() - 1; i++) // Check if there is not any duplicates because it will lead to broken result
-        if (column_names[i] == column_names[i+1])
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Name of columns and aliases should be unique for this query (you can add/change aliases so they will not be duplicated)"
-                            "While processing '{}'", table_expressions[i]->formatForErrorMessage());
-}
-
-bool JoinedTables::resolveTables(ExpressionAnalysisResult result)
+bool JoinedTables::resolveTables()
 {
     const auto & settings = context->getSettingsRef();
     bool include_alias_cols = include_all_columns || settings.asterisk_include_alias_columns;
@@ -267,23 +246,15 @@ bool JoinedTables::resolveTables(ExpressionAnalysisResult result)
 
     if (settings.joined_subquery_requires_alias && tables_with_columns.size() > 1)
     {
-        if (result.hasJoin())
+        for (size_t i = 0; i < tables_with_columns.size(); ++i)
         {
-            if (result.join->getTableJoin().kind() == JoinKind::Paste)
-               checkDuplicateNames();
-            else
+            const auto & t = tables_with_columns[i];
+            if (t.table.table.empty() && t.table.alias.empty())
             {
-                for (size_t i = 0; i < tables_with_columns.size(); ++i)
-                {
-                    const auto & t = tables_with_columns[i];
-                    if (t.table.table.empty() && t.table.alias.empty())
-                    {
-                        throw Exception(ErrorCodes::ALIAS_REQUIRED,
-                                        "No alias for subquery or table function "
-                                        "in JOIN (set joined_subquery_requires_alias=0 to disable restriction). "
-                                        "While processing '{}'", table_expressions[i]->formatForErrorMessage());
-                    }
-                }
+                throw Exception(ErrorCodes::ALIAS_REQUIRED,
+                                "No alias for subquery or table function "
+                                "in JOIN (set joined_subquery_requires_alias=0 to disable restriction). "
+                                "While processing '{}'", table_expressions[i]->formatForErrorMessage());
             }
         }
     }

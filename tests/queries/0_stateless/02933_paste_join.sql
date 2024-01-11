@@ -36,5 +36,5 @@ select * from (SELECT number as a FROM numbers_mt(10)) t1 PASTE JOIN (select num
 select * from (SELECT number as a FROM numbers(10)) t1 ANY PASTE JOIN (select number as a from numbers(10)) t2; -- { clientError SYNTAX_ERROR }
 select * from (SELECT number as a FROM numbers(10)) t1 ALL PASTE JOIN (select number as a from numbers(10)) t2; -- { clientError SYNTAX_ERROR }
 
-INSERT INTO test SELECT * FROM numbers(10);
-SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(10) ORDER BY number DESC ) SETTINGS joined_subquery_requires_alias = 0; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(10) ORDER BY number DESC ) SETTINGS joined_subquery_requires_alias = 1, allow_experimental_analyzer = 1; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(6) ORDER BY number DESC ) SETTINGS joined_subquery_requires_alias = 0;
