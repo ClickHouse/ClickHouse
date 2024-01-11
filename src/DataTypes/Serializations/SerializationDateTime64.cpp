@@ -50,7 +50,7 @@ void SerializationDateTime64::deserializeText(IColumn & column, ReadBuffer & ist
 bool SerializationDateTime64::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const
 {
     DateTime64 result = 0;
-    if (tryReadDateTime64Text(result, scale, istr, time_zone) || (whole && istr.eof()))
+    if (!tryReadDateTime64Text(result, scale, istr, time_zone) || (whole && !istr.eof()))
         return false;
 
     assert_cast<ColumnType &>(column).getData().push_back(result);
@@ -151,7 +151,7 @@ bool SerializationDateTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuf
     DateTime64 x = 0;
     if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
     {
-        if (tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
+        if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
             return false;
     }
     else /// Just 1504193808 or 01504193808
@@ -265,7 +265,7 @@ bool SerializationDateTime64::tryDeserializeTextCSV(IColumn & column, ReadBuffer
     {
         if (settings.csv.delimiter != ',' || settings.date_time_input_format == FormatSettings::DateTimeInputFormat::Basic)
         {
-            if (tryReadText(x, scale, istr, settings, time_zone, utc_time_zone))
+            if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone))
                 return false;
         }
         else

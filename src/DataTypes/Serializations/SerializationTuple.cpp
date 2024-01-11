@@ -212,10 +212,7 @@ ReturnType SerializationTuple::deserializeTextImpl(IColumn & column, ReadBuffer 
         return ReturnType(true);
     };
 
-    if constexpr (throw_exception)
-        addElementSafe<ReturnType>(elems.size(), column, impl);
-    else
-        return addElementSafe<ReturnType>(elems.size(), column, impl);
+    return addElementSafe<ReturnType>(elems.size(), column, impl);
 }
 
 void SerializationTuple::deserializeText(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings, bool whole) const
@@ -457,10 +454,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
             return ReturnType(true);
         };
 
-        if constexpr (throw_exception)
-            addElementSafe<ReturnType>(elems.size(), column, impl);
-        else
-            return addElementSafe<ReturnType>(elems.size(), column, impl);
+        return addElementSafe<ReturnType>(elems.size(), column, impl);
     }
     else
     {
@@ -502,10 +496,7 @@ ReturnType SerializationTuple::deserializeTextJSONImpl(IColumn & column, ReadBuf
             return ReturnType(true);
         };
 
-        if constexpr (throw_exception)
-            addElementSafe<ReturnType>(elems.size(), column, impl);
-        else
-            return addElementSafe<ReturnType>(elems.size(), column, impl);
+        return addElementSafe<ReturnType>(elems.size(), column, impl);
     }
 }
 

@@ -1,5 +1,4 @@
 #include <DataTypes/Serializations/SerializationNamed.h>
-#include <iostream>
 
 namespace DB
 {

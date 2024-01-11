@@ -60,10 +60,7 @@ public:
 
     bool tryReadValue(ReadBuffer & istr, FieldType & x) const
     {
-       if (!tryReadText(x, istr) || !ref_enum_values.hasValue(x))
-           return false;
-
-       return true;
+       return tryReadText(x, istr) && ref_enum_values.hasValue(x);
     }
 
     std::optional<EnumValues<Type>> own_enum_values;
