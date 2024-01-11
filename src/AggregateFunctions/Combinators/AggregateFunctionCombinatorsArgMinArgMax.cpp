@@ -49,7 +49,7 @@ public:
         , nested_function{nested_function_}
         , serialization(arguments.back()->getDefaultSerialization())
         , key_col{arguments.size() - 1}
-        , key_offset{(nested_function->sizeOfData() + alignof(Key) - 1) / alignof(Key) * alignof(Key)}
+        , key_offset{alignOfData()}
         , key_type_index(WhichDataType(arguments[key_col]).idx)
     {
         if (!arguments[key_col]->isComparable())
@@ -81,11 +81,14 @@ public:
         return nested_function->allocatesMemoryInArena() || key_type_index == TypeIndex::String;
     }
 
-    bool hasTrivialDestructor() const override { return nested_function->hasTrivialDestructor(); }
+    bool hasTrivialDestructor() const override
+    {
+        return nested_function->hasTrivialDestructor() && std::is_trivially_destructible_v<SingleValueDataBase>;
+    }
 
-    size_t sizeOfData() const override { return key_offset + sizeof(AggregateFunctionCombinatorArgMinArgMaxData); }
+    size_t sizeOfData() const override { return key_offset + sizeof(Key); }
 
-    size_t alignOfData() const override { return nested_function->alignOfData(); }
+    size_t alignOfData() const override { return std::max(nested_function->alignOfData(), alignof(SingleValueDataBase::memory_block)); }
 
     void create(AggregateDataPtr __restrict place) const override
     {
@@ -93,9 +96,17 @@ public:
         new (place + key_offset) Key(key_type_index);
     }
 
-    void destroy(AggregateDataPtr __restrict place) const noexcept override { nested_function->destroy(place); }
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    {
+        data(place).~SingleValueDataBase();
+        nested_function->destroy(place);
+    }
 
-    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override { nested_function->destroyUpToState(place); }
+    void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
+    {
+        data(place).~SingleValueDataBase();
+        nested_function->destroyUpToState(place);
+    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
