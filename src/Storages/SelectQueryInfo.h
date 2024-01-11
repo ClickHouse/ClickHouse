@@ -176,8 +176,6 @@ struct SelectQueryInfo
     ///
     /// Configured in StorageDistributed::getQueryProcessingStage()
     ClusterPtr optimized_cluster;
-    /// should we use custom key with the cluster
-    bool use_custom_key = false;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
