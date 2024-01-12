@@ -2305,6 +2305,7 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+seriesDecomposeAnomaliesDetection
 seriesDecomposeSTL
 seriesOutliersDetectTukey
 seriesPeriodDetectFFT

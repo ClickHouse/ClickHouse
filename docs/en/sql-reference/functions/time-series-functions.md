@@ -170,3 +170,61 @@ Result:
     ]]                                                                                                                   │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## seriesDecomposeAnomaliesDetection
+
+Detect anomalies in series data through [series decomposition](#seriesDecomposeSTL).
+
+**Syntax**
+
+``` sql
+seriesDecomposeAnomaliesDetection(series);
+seriesDecomposeAnomaliesDetection(series, threshold, seasonality, AD_method);
+```
+
+**Arguments**
+
+- `series` - An array of numeric values
+- `threshold` - A positive number to detect mild or stronger anomalies. The default is 1.5, K value.
+- `Seasonality` - Represents the period for the seasonal analysis of series data. Supported values are:
+                - `-1`: Autodetect period using [seriesPeriodDetectFFT](#seriesPeriodDetectFFT). This is the default value.
+                - `0`: Set period to 0 to skip extracting seasonal component.
+                - A positive integer representing the period of series.
+- `AD_method` - The method to use for anomaly detection on residual component. Supported values are:
+                - `tukey` : [Tukey fence](#seriesoutliersdetecttukey) test with standard 25th-75th percentile range.
+                - `ctukey`: Tukey fence test with custom 10th-90th percentile range. This is the default value.
+
+The number of data points in `series` should be at least twice the value of `period`.
+
+**Returned value**
+
+- An array of three arrays where the first array includes a ternary series containing (+1,-1,0) marking up/down/no anomaly respectively, the second array - anomaly score,
+the third array - baseline(seasonal + trend) component.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT seriesDecomposeAnomaliesDetection([4, 3, 2, 4, 3, 2, 4, 3, 2, 4, 3, 2, 4, 3, 2, 4, 3, 2, 4, 3, 2], 1.5, -1, 'tukey') AS print_0;
+```
+
+Result:
+
+``` text
+┌───────────print_0─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [[
+        1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0
+    ],
+    [
+        2.384185791015625e-7, 0, 0, 0, 0, 0, 2.384185791015625e-7, 2.384185791015625e-7, 0, 2.384185791015625e-7,
+        0, 0, 0, 0, 2.384185791015625e-7, 0, 0, 0, 0, -2.384185791015625e-7, 0
+    ],
+    [
+        3.999999761581421, 3, 2, 4, 3, 2, 4, 2.999999761581421, 1.9999998807907104, 4, 3, 2, 4,
+        3,1.9999996423721313, 4, 3, 2, 4, 3.000000238418579, 2]
+    ]                                                                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
