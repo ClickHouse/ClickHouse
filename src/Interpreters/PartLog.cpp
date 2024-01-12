@@ -133,7 +133,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
 
         /// Merge-specific info
         {"merged_from", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of the source parts names which the current part was made up from."},
-        {"bytes_uncompressed", std::make_shared<DataTypeUInt64>(), "Size of uncompressed bytes of the resulting part (after the merge)."},
+        {"bytes_uncompressed", std::make_shared<DataTypeUInt64>(), "Uncompressed size of the resulting part in bytes."},
         {"read_rows", std::make_shared<DataTypeUInt64>(), "The number of rows was read during the merge."},
         {"read_bytes", std::make_shared<DataTypeUInt64>(), "The number of bytes was read during the merge."},
         {"peak_memory_usage", std::make_shared<DataTypeUInt64>(), "The maximum difference between the amount of allocated and freed memory in context of this operation."}, // ?
