@@ -1,10 +1,11 @@
-#include <Common/Exception.h>
 #include <Common/Arena.h>
-#include <Common/SipHash.h>
-#include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
+#include <Common/SipHash.h>
+#include <Common/WeakHash.h>
+#include <Common/assert_cast.h>
+#include <Common/iota.h>
 
 #include <base/sort.h>
 
@@ -163,8 +164,7 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
     if (limit >= data_size)
         limit = 0;
 
-    for (size_t i = 0; i < data_size; ++i)
-        res[i] = i;
+    iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
     if constexpr (is_arithmetic_v<NativeT> && !is_big_int_v<NativeT>)
     {
@@ -183,8 +183,7 @@ void ColumnDecimal<T>::getPermutation(IColumn::PermutationSortDirection directio
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (data_size >= 256 && data_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
-                for (size_t i = 0; i < data_size; ++i)
-                    res[i] = i;
+                iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
                 bool try_sort = false;
 

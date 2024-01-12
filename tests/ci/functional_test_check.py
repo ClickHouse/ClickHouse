@@ -55,6 +55,7 @@ def get_additional_envs(
         result.append("USE_PARALLEL_REPLICAS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
+        result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
     if "analyzer" in check_name:
         result.append("USE_NEW_ANALYZER=1")
 
@@ -254,7 +255,7 @@ def main():
     )
 
     commit = get_commit(gh, pr_info.sha)
-    atexit.register(update_mergeable_check, gh, pr_info, check_name)
+    atexit.register(update_mergeable_check, commit, pr_info, check_name)
 
     if validate_bugfix_check and "pr-bugfix" not in pr_info.labels:
         if args.post_commit_status == "file":

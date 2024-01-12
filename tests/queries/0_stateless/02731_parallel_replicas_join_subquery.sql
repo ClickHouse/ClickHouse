@@ -1,5 +1,7 @@
 -- Tags: zookeeper
 
+DROP TABLE IF EXISTS join_inner_table SYNC;
+
 CREATE TABLE join_inner_table
 (
     id UUID,
@@ -76,6 +78,8 @@ GROUP BY is_initial_query, query
 ORDER BY is_initial_query, c, query;
 
 ---- Query with JOIN
+
+DROP TABLE IF EXISTS join_outer_table SYNC;
 
 CREATE TABLE join_outer_table
 (

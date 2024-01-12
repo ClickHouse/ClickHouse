@@ -48,6 +48,8 @@ public:
 
     void pop(const CacheGuard::Lock & lock) { remove(queue.begin(), lock); }
 
+    bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CacheGuard::Lock &) override;
+
 private:
     void updateElementsCount(int64_t num);
     void updateSize(int64_t size);

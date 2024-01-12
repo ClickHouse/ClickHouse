@@ -19,6 +19,8 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           clear-repository: true # to ensure correct digests
+          fetch-depth: 0 # to get version
+          filter: tree:0
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -260,6 +262,8 @@ jobs:
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
   BuilderReport:
+    # run report check for failed builds to indicate the CI error
+    if: ${{ !cancelled() }}
     needs:
       - RunConfig
       - BuilderBinRelease
@@ -270,7 +274,6 @@ jobs:
       - BuilderDebRelease
       - BuilderDebTsan
       - BuilderDebUBsan
-    if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
@@ -283,7 +286,8 @@ jobs:
       run_command: |
         python3 build_report_check.py "$CHECK_NAME"
   BuilderSpecialReport:
-    if: ${{ !failure() && !cancelled() }}
+    # run report check for failed builds to indicate the CI error
+    if: ${{ !cancelled() }}
     needs:
       - RunConfig
       - BuilderBinAarch64

@@ -94,7 +94,7 @@ void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::
         client,
         uri.bucket,
         uri.key,
-        DBMS_DEFAULT_BUFFER_SIZE,
+        DB::DBMS_DEFAULT_BUFFER_SIZE,
         request_settings,
         {}
     );
@@ -140,10 +140,15 @@ void testServerSideEncryption(
     bool use_environment_credentials = false;
     bool use_insecure_imds_request = false;
 
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = disable_checksum,
+        .gcs_issue_compose_request = false,
+    };
+
     std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
         client_configuration,
-        uri.is_virtual_hosted_style,
-        disable_checksum,
+        client_settings,
         access_key_id,
         secret_access_key,
         server_side_encryption_customer_key_base64,

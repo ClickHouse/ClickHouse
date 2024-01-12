@@ -59,6 +59,7 @@ private:
 class ZooKeeperWithFaultInjection
 {
     zkutil::ZooKeeper::Ptr keeper;
+
     std::unique_ptr<RandomFaultInjection> fault_policy;
     std::string name;
     Poco::Logger * logger = nullptr;
@@ -202,6 +203,8 @@ public:
     bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr);
 
     zkutil::ZooKeeper::MultiExistsResponse exists(const std::vector<std::string> & paths);
+
+    bool anyExists(const std::vector<std::string> & paths);
 
     std::string create(const std::string & path, const std::string & data, int32_t mode);
 
