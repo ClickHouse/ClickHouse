@@ -79,8 +79,6 @@ public:
 
     SortDescription & getSortDescription() { return result_description; }
 
-    void SetSortDescription(const SortDescription & new_description) { result_description = std::move(new_description); }
-
     void convertToFinishSorting(SortDescription prefix_description);
 
     Type getType() const { return type; }
@@ -121,7 +119,7 @@ private:
     Type type;
 
     SortDescription prefix_description;
-    const SortDescription result_description;
+    SortDescription result_description;
 
     SortDescription partition_by_description;
 

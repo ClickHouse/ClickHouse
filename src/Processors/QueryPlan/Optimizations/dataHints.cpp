@@ -341,6 +341,34 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
                 {
                     node_to_hint[node].multiplyConst(info->value);
                 }
+                else if (name == "toHour")
+                {
+                    node_to_hint[node] = {0, 23, true};
+                }
+                else if (name == "toMinute" || name == "toSecond")
+                {
+                    node_to_hint[node] = {0, 59, true};
+                }
+                else if (name == "toDayOfYear")
+                {
+                    node_to_hint[node] = {1, 366, true};
+                }
+                else if (name == "toDayOfMonth")
+                {
+                    node_to_hint[node] = {1, 31, true};
+                }
+                else if (name == "toDayOfWeek")
+                {
+                    node_to_hint[node] = {1, 7, true};
+                }
+                else if (name == "toMonth")
+                {
+                    node_to_hint[node] = {1, 12, true};
+                }
+                else if (name == "toQuarter")
+                {
+                    node_to_hint[node] = {1, 4, true};
+                }
             }
         }
 

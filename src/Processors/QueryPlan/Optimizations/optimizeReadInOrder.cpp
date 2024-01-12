@@ -1010,7 +1010,7 @@ void optimizeAggregationWithDataHints(QueryPlan::Node & node)
     if (!aggregating)
         return;
 
-    aggregating->enableDataHintsOptimization();
+    aggregating->setOptimizedWithDataHints();
 }
 
 /// This optimization is obsolete and will be removed.
