@@ -2,6 +2,11 @@
 #include <Columns/ColumnString.h>
 #include <Common/findExtreme.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
+
 namespace DB
 {
 
@@ -354,6 +359,279 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & 
         return index;
     }
 }
+
+
+#if USE_EMBEDDED_COMPILER
+
+template <typename T>
+bool SingleValueDataFixed<T>::isCompilable(const IDataType & type)
+{
+    return canBeNativeType(type);
+}
+
+template <typename T>
+llvm::Value * SingleValueDataFixed<T>::getValuePtrFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+    auto * value_ptr = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, value_offset);
+    return value_ptr;
+}
+
+template <typename T>
+llvm::Value * SingleValueDataFixed<T>::getValueFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+    auto * type = toNativeType<T>(builder);
+    auto * value_ptr = getValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
+    return b.CreateLoad(type, value_ptr);
+}
+
+template <typename T>
+llvm::Value * SingleValueDataFixed<T>::getHasValuePtrFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+    auto * has_value_ptr = b.CreateConstInBoundsGEP1_64(b.getInt8Ty(), aggregate_data_ptr, has_value_offset);
+    return has_value_ptr;
+}
+
+template <typename T>
+llvm::Value * SingleValueDataFixed<T>::getHasValueFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+    auto * has_value_ptr = getHasValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
+    return b.CreateLoad(b.getInt1Ty(), has_value_ptr);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::compileCreate(
+    llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, size_t size_of_data, size_t alignof_data)
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+    b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), size_of_data, llvm::assumeAligned(alignof_data));
+}
+
+template <typename T>
+llvm::Value * SingleValueDataFixed<T>::compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
+{
+    return getValueFromAggregateDataPtr(builder, aggregate_data_ptr);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::compileSetValueFromNumber(
+    llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+    auto * has_value_ptr = getHasValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
+    b.CreateStore(b.getTrue(), has_value_ptr);
+
+    auto * value_ptr = getValuePtrFromAggregateDataPtr(b, aggregate_data_ptr);
+    b.CreateStore(value_to_check, value_ptr);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::compileSetValueFromAggregation(
+    llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * aggregate_data_src_ptr)
+{
+    auto * value_src = getValueFromAggregateDataPtr(builder, aggregate_data_src_ptr);
+    compileSetValueFromNumber(builder, aggregate_data_ptr, value_src);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::compileAny(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+    auto * head = b.GetInsertBlock();
+    auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+    auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+    auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+    auto * has_value_value = getHasValueFromAggregateDataPtr(b, aggregate_data_ptr);
+    b.CreateCondBr(has_value_value, if_should_not_change, if_should_change);
+
+    b.SetInsertPoint(if_should_not_change);
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(if_should_change);
+    compileSetValueFromNumber(builder, aggregate_data_ptr, value_to_check);
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(join_block);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::compileAnyMerge(
+    llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+    auto * head = b.GetInsertBlock();
+    auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+    auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+    auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+    auto * has_value_dst = getHasValueFromAggregateDataPtr(b, aggregate_data_dst_ptr);
+    auto * has_value_src = getHasValueFromAggregateDataPtr(b, aggregate_data_src_ptr);
+    b.CreateCondBr(b.CreateAnd(b.CreateNot(has_value_dst), has_value_src), if_should_change, if_should_not_change);
+
+    b.SetInsertPoint(if_should_change);
+    compileSetValueFromAggregation(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(if_should_not_change);
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(join_block);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::compileAnyLast(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+{
+    compileSetValueFromNumber(builder, aggregate_data_ptr, value_to_check);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::compileAnyLastMerge(
+    llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+    auto * head = b.GetInsertBlock();
+    auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+    auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+    auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+    auto * has_value_src = getHasValueFromAggregateDataPtr(b, aggregate_data_src_ptr);
+    b.CreateCondBr(has_value_src, if_should_change, if_should_not_change);
+
+    b.SetInsertPoint(if_should_change);
+    compileSetValueFromAggregation(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(if_should_not_change);
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(join_block);
+}
+
+template <typename T>
+template <bool isMin>
+void SingleValueDataFixed<T>::compileMinMax(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+    auto * has_value_value = getHasValueFromAggregateDataPtr(b, aggregate_data_ptr);
+    auto * value = getValueFromAggregateDataPtr(b, aggregate_data_ptr);
+
+    auto * head = b.GetInsertBlock();
+
+    auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+    auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+    auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+    auto is_signed = std::numeric_limits<T>::is_signed;
+
+    llvm::Value * should_change_after_comparison = nullptr;
+
+    if constexpr (isMin)
+        if (value_to_check->getType()->isIntegerTy())
+            should_change_after_comparison = is_signed ? b.CreateICmpSLT(value_to_check, value) : b.CreateICmpULT(value_to_check, value);
+        else
+            should_change_after_comparison = b.CreateFCmpOLT(value_to_check, value);
+    else if (value_to_check->getType()->isIntegerTy())
+        should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_to_check, value) : b.CreateICmpUGT(value_to_check, value);
+    else
+        should_change_after_comparison = b.CreateFCmpOGT(value_to_check, value);
+
+    b.CreateCondBr(b.CreateOr(b.CreateNot(has_value_value), should_change_after_comparison), if_should_change, if_should_not_change);
+
+    b.SetInsertPoint(if_should_change);
+    compileSetValueFromNumber(builder, aggregate_data_ptr, value_to_check);
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(if_should_not_change);
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(join_block);
+}
+
+
+template <typename T>
+template <bool isMin>
+void SingleValueDataFixed<T>::compileMinMaxMerge(
+    llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+{
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+    auto * has_value_dst = getHasValueFromAggregateDataPtr(b, aggregate_data_dst_ptr);
+    auto * value_dst = getValueFromAggregateDataPtr(b, aggregate_data_dst_ptr);
+
+    auto * has_value_src = getHasValueFromAggregateDataPtr(b, aggregate_data_src_ptr);
+    auto * value_src = getValueFromAggregateDataPtr(b, aggregate_data_src_ptr);
+
+    auto * head = b.GetInsertBlock();
+
+    auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+    auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
+    auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
+
+    auto is_signed = std::numeric_limits<T>::is_signed;
+
+    llvm::Value * should_change_after_comparison = nullptr;
+
+    if constexpr (isMin)
+        if (value_src->getType()->isIntegerTy())
+            should_change_after_comparison = is_signed ? b.CreateICmpSLT(value_src, value_dst) : b.CreateICmpULT(value_src, value_dst);
+        else
+            should_change_after_comparison = b.CreateFCmpOLT(value_src, value_dst);
+    else if (value_src->getType()->isIntegerTy())
+        should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_src, value_dst) : b.CreateICmpUGT(value_src, value_dst);
+    else
+        should_change_after_comparison = b.CreateFCmpOGT(value_src, value_dst);
+
+    b.CreateCondBr(
+        b.CreateAnd(has_value_src, b.CreateOr(b.CreateNot(has_value_dst), should_change_after_comparison)),
+        if_should_change,
+        if_should_not_change);
+
+    b.SetInsertPoint(if_should_change);
+    compileSetValueFromAggregation(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(if_should_not_change);
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(join_block);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::compileMin(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+{
+    return compileMinMax<true>(builder, aggregate_data_ptr, value_to_check);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::compileMinMerge(
+    llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+{
+    return compileMinMaxMerge<true>(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::compileMax(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check)
+{
+    return compileMinMax<false>(builder, aggregate_data_ptr, value_to_check);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::compileMaxMerge(
+    llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr)
+{
+    return compileMinMaxMerge<false>(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+}
+
+#endif
 
 
 #define DISPATCH(TYPE) template struct SingleValueDataFixed<TYPE>;

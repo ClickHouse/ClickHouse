@@ -98,11 +98,13 @@ struct SingleValueDataBase
 template <typename T>
 struct SingleValueDataFixed final : public SingleValueDataBase
 {
+    static constexpr bool is_compilable = true;
     using Self = SingleValueDataFixed;
     using ColVecType = ColumnVectorOrDecimal<T>;
 
     T value = T{};
-    bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
+    /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf or when merging states
+    bool has_value = false;
 
     ~SingleValueDataFixed() override { }
 
@@ -226,6 +228,41 @@ struct SingleValueDataFixed final : public SingleValueDataBase
     std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) override;
 
     static bool allocatesMemoryInArena() { return false; }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr size_t has_value_offset = offsetof(SingleValueDataFixed<T>, has_value);
+    static constexpr size_t value_offset = offsetof(SingleValueDataFixed<T>, value);
+
+    static bool isCompilable(const IDataType & type);
+    static llvm::Value * getValuePtrFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr);
+    static llvm::Value * getValueFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr);
+    static llvm::Value * getHasValuePtrFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr);
+    static llvm::Value * getHasValueFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr);
+
+    static void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, size_t size_of_data, size_t alignof_data);
+    static llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr);
+
+    static void compileSetValueFromNumber(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check);
+    static void
+    compileSetValueFromAggregation(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check);
+
+    static void compileAny(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check);
+    static void compileAnyMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr);
+
+    static void compileAnyLast(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check);
+    static void
+    compileAnyLastMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr);
+
+    template <bool isMin>
+    static void compileMinMax(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check);
+    template <bool isMin>
+    static void
+    compileMinMaxMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr);
+    static void compileMin(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check);
+    static void compileMinMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr);
+    static void compileMax(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check);
+    static void compileMaxMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr);
+#endif
 };
 
 #define DISPATCH(TYPE) \
@@ -236,12 +273,12 @@ struct SingleValueDataFixed final : public SingleValueDataBase
 FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
-
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
 //  */
 struct SingleValueDataString final : public SingleValueDataBase
 {
+    static constexpr bool is_compilable = false;
     using Self = SingleValueDataString;
 
     /// 0 size indicates that there is no value. Empty string must has terminating '\0' and, therefore, size of empty string is 1
@@ -336,6 +373,8 @@ static_assert(sizeof(SingleValueDataString) == SingleValueDataBase::MAX_STORAGE_
 /// For any other value types.
 struct SingleValueDataGeneric final : public SingleValueDataBase
 {
+    static constexpr bool is_compilable = false;
+
 private:
     using Self = SingleValueDataGeneric;
     Field value;

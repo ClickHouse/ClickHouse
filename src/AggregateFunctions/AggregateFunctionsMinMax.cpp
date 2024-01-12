@@ -132,6 +132,55 @@ public:
     {
         this->data(place).insertResultInto(to);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilable() const override
+    {
+        if constexpr (!Data::is_compilable)
+            return false;
+        else
+            return Data::isCompilable(*this->argument_types[0]);
+    }
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileCreate(builder, aggregate_data_ptr, this->sizeOfData(), this->alignOfData());
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    {
+        if constexpr (Data::is_compilable)
+            if constexpr (isMin)
+                Data::compileMin(builder, aggregate_data_ptr, arguments[0].value);
+            else
+                Data::compileMax(builder, aggregate_data_ptr, arguments[0].value);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    void
+    compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            if constexpr (isMin)
+                Data::compileMinMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+            else
+                Data::compileMaxMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            return Data::compileGetResult(builder, aggregate_data_ptr);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+#endif
 };
 
 template <bool isMin>

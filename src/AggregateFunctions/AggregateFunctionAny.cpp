@@ -9,6 +9,11 @@ namespace DB
 {
 struct Settings;
 
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
+
 namespace
 {
 
@@ -126,6 +131,49 @@ public:
     {
         this->data(place).insertResultInto(to);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilable() const override
+    {
+        if constexpr (!Data::is_compilable)
+            return false;
+        else
+            return Data::isCompilable(*this->argument_types[0]);
+    }
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileCreate(builder, aggregate_data_ptr, this->sizeOfData(), this->alignOfData());
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileAny(builder, aggregate_data_ptr, arguments[0].value);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    void
+    compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileAnyMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            return Data::compileGetResult(builder, aggregate_data_ptr);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+#endif
 };
 
 AggregateFunctionPtr
@@ -252,6 +300,49 @@ public:
     {
         this->data(place).insertResultInto(to);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilable() const override
+    {
+        if constexpr (!Data::is_compilable)
+            return false;
+        else
+            return Data::isCompilable(*this->argument_types[0]);
+    }
+
+    void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileCreate(builder, aggregate_data_ptr, this->sizeOfData(), this->alignOfData());
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileAnyLast(builder, aggregate_data_ptr, arguments[0].value);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    void
+    compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            Data::compileAnyLastMerge(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+
+    llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
+    {
+        if constexpr (Data::is_compilable)
+            return Data::compileGetResult(builder, aggregate_data_ptr);
+        else
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+    }
+#endif
 };
 
 AggregateFunctionPtr createAggregateFunctionAnyLast(
