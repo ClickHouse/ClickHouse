@@ -22,7 +22,7 @@ ch2 = cluster.add_instance(
     macros={"replica": "node2"},
 )
 
-database_name = "modify_engine"
+database_name = "modify_engine_replicated"
 
 
 @pytest.fixture(scope="module")
@@ -83,20 +83,19 @@ def create_tables():
 def convert_tables():
     q(
         ch1,
-        "ALTER TABLE rmt MODIFY ENGINE ReplicatedMergeTree() PARTITION BY toYYYYMM(D) ORDER BY A"
+        "ALTER TABLE rmt MODIFY ENGINE TO REPLICATED"
     )
     q(
         ch1,
-        "ALTER TABLE replacing MODIFY ENGINE ReplicatedReplacingMergeTree() PARTITION BY toYYYYMM(D) ORDER BY A"
-    )
-
-    q(
-        ch1,
-        "ALTER TABLE replacing_ver MODIFY ENGINE ReplicatedReplacingMergeTree() PARTITION BY toYYYYMM(D) ORDER BY A"
+        "ALTER TABLE replacing MODIFY ENGINE TO REPLICATED"
     )
     q(
         ch1,
-        "ALTER TABLE collapsing_ver MODIFY ENGINE ReplicatedCollapsingMergeTree() ORDER BY ID"
+        "ALTER TABLE replacing_ver MODIFY ENGINE TO REPLICATED"
+    )
+    q(
+        ch1,
+        "ALTER TABLE collapsing_ver MODIFY ENGINE TO REPLICATED"
     )
 
 def check_tables():
@@ -163,6 +162,13 @@ def check_tables():
             == "1100000"
         )
 
+    # Check tables not readonly
+    q(ch1, "INSERT INTO rmt VALUES (1, today(), 'a')")
+    q(ch1, "INSERT INTO replacing VALUES (1, today(), 'a')")
+    q(ch1, "INSERT INTO replacing_ver VALUES (1, today(), 'a')")
+    q(ch1, "INSERT INTO collapsing_ver VALUES (1, 1, 1)")
+
+
 
 def check_replica_added():
     # Add replica to check if zookeeper path is correct and consistent with table uuid
@@ -185,11 +191,11 @@ def check_replica_added():
             ch2,
             f"SELECT count() FROM rmt",
         ).strip()
-        == "1100000"
+        == "1100001"
     )
 
 
-def test_modify_engine_on_restart(started_cluster):
+def test_modify_engine(started_cluster):
     ch1.query("CREATE DATABASE " + database_name + " ON CLUSTER cluster")
 
     create_tables()
@@ -197,3 +203,5 @@ def test_modify_engine_on_restart(started_cluster):
     convert_tables()
 
     check_tables()
+
+    check_replica_added()

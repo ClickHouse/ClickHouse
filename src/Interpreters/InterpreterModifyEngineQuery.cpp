@@ -13,21 +13,12 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
-#include "Common/escapeForFileName.h"
-#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include "Interpreters/DatabaseCatalog.h"
-#include "Interpreters/StorageID.h"
-#include "Parsers/ASTCreateQuery.h"
-#include "Parsers/ParserCreateQuery.h"
-#include "Parsers/parseQuery.h"
-#include "Parsers/queryToString.h"
 #include <Access/Common/AccessType.h>
 
 #include <boost/algorithm/string/replace.hpp>
 #include <fmt/core.h>
-
 
 namespace DB
 {
@@ -42,6 +33,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
+constexpr const char * const REPLICATED_PREFIX = "Replicated";
 
 InterpreterModifyEngineQuery::InterpreterModifyEngineQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
 {
@@ -68,11 +60,56 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     }
 
     auto engine = std::make_shared<ASTFunction>();
-    engine->name = "Replicated" + storage->engine->name;
+    engine->name = REPLICATED_PREFIX + storage->engine->name;
     engine->arguments = args;
 
     /// Set new engine for the old query
     create_query->storage->set(create_query->storage->engine, engine->clone());
+}
+
+static void setNotReplicatedEngine(ASTCreateQuery * create_query, ContextPtr)
+{
+    auto * storage = create_query->storage;
+
+    auto args = std::make_shared<ASTExpressionList>();
+
+    /// Add old engine's arguments without first two
+    if (storage->engine->arguments)
+    {
+        for (size_t i = 2; i < storage->engine->arguments->children.size(); ++i)
+            args->children.push_back(storage->engine->arguments->children[i]->clone());
+    }
+
+    auto engine = std::make_shared<ASTFunction>();
+    engine->name = storage->engine->name.substr(strlen(REPLICATED_PREFIX));
+    engine->arguments = args;
+
+    /// Set new engine for the old query
+    create_query->storage->set(create_query->storage->engine, engine->clone());
+}
+
+static void setNewEngine(ASTCreateQuery * create_query, bool to_replicated, ContextPtr context)
+{
+    if (to_replicated)
+        setReplicatedEngine(create_query, context);
+    else
+        setNotReplicatedEngine(create_query, context);
+}
+
+static void checkEngineChangeIsPossible(ASTStorage * storage, bool to_replicated)
+{
+    String engine_name = storage->engine->name;
+
+    if (!engine_name.ends_with("MergeTree"))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only MergeTree and ReplicatedMergeTree family engines are supported");
+
+    if (engine_name.starts_with(REPLICATED_PREFIX))
+    {
+        if (to_replicated)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is already replicated");
+    }
+    else if (!to_replicated)
+       throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is already not replicated");
 }
 
 BlockIO InterpreterModifyEngineQuery::execute()
@@ -84,8 +121,7 @@ BlockIO InterpreterModifyEngineQuery::execute()
 
     if (!query.cluster.empty())
         /// Doesn't work correctly if converting to replicated while tables on other hosts aren't empty
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Modify engine on cluster is not implemented.");
-
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Modify engine on cluster is not implemented");
 
     StorageID table_id = getContext()->resolveStorageID(query, Context::ResolveOrdinary);
 
@@ -100,17 +136,22 @@ BlockIO InterpreterModifyEngineQuery::execute()
     try {
         auto * log = &Poco::Logger::get("InterpreterModifyEngineQuery");
 
+        /// Get attach query from metadata
+        auto table_metadata_path = database->getObjectMetadataPath(table_id.getTableName());
+        auto ast = DatabaseOnDisk::parseQueryFromMetadata(log, getContext(), table_metadata_path);
+        auto * create_query = ast->as<ASTCreateQuery>();
+
+        checkEngineChangeIsPossible(create_query->storage, query.to_replicated);
+
         /// Detach table
         String detach_query = fmt::format("DETACH TABLE {} SYNC", table_id.getFullTableName());
         auto res = executeQuery(detach_query, getContext(), { .internal=true });
         executeTrivialBlockIO(res.second, getContext());
 
-        /// Get attach query from metadata
-        auto table_metadata_path = database->getObjectMetadataPath(table_id.getTableName());
-        auto ast = DatabaseOnDisk::parseQueryFromMetadata(log, getContext(), table_metadata_path);//database->getCreateTableQuery(table_id.getTableName(), getContext());
-        auto * create_query = ast->as<ASTCreateQuery>();
-        setReplicatedEngine(create_query, getContext());
+        /// Set new engine in the query
+        setNewEngine(create_query, query.to_replicated, getContext());
         LOG_INFO(log, "Create query {}", create_query->formatForLogging());
+
         DatabaseCatalog::instance().removeUUIDMapping(create_query->uuid);
 
         /// Change metadata
@@ -135,38 +176,17 @@ BlockIO InterpreterModifyEngineQuery::execute()
         executeTrivialBlockIO(res.second, getContext());
 
         /// If engine is ReplicatedMergeTree, restore metadata in zk
-        String restore_query = fmt::format("SYSTEM RESTORE REPLICA {}", table_id.getFullTableName());
-        res = executeQuery(restore_query, getContext(), { .internal=true });
-        executeTrivialBlockIO(res.second, getContext());
+        if (query.to_replicated)
+        {
+            String restore_query = fmt::format("SYSTEM RESTORE REPLICA {}", table_id.getFullTableName());
+            res = executeQuery(restore_query, getContext(), { .internal=true });
+            executeTrivialBlockIO(res.second, getContext());
+        }
     } catch (...) {
         throw;
     }
 
     return {};
-}
-
-void InterpreterModifyEngineQuery::checkEngineChangeIsPossible(StoragePtr)
-{
-    // String target_engine_name = query_ptr->as<ASTModifyEngineQuery &>().storage->as<ASTStorage &>().engine->name;
-
-    // if (auto table_merge_tree = dynamic_pointer_cast<StorageMergeTree>(table))
-    // {
-    //     if (target_engine_name != "MergeTree" && target_engine_name != "ReplicatedMergeTree")
-    //         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Converting from MergeTree to {} is not implemented", target_engine_name);
-    //     auto unfinished_mutations = table_merge_tree->getUnfinishedMutationCommands();
-    //     if (!unfinished_mutations.empty())
-    //         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Modify engine while there are unfinished mutations left is prohibited");
-    // }
-    // else if (auto table_replicated_merge_tree = dynamic_pointer_cast<StorageReplicatedMergeTree>(table))
-    // {
-    //     if (target_engine_name != "MergeTree" && target_engine_name != "ReplicatedMergeTree")
-    //         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Converting from ReplicatedMergeTree to {} is not implemented", target_engine_name);
-    //     auto unfinished_mutations = table_replicated_merge_tree->getUnfinishedMutationCommands();
-    //     if (!unfinished_mutations.empty())
-    //         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Modify engine while there are unfinished mutations left is prohibited");
-    // }
-    // else
-    //     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only MergeTree family tables are supported");
 }
 
 AccessRightsElements InterpreterModifyEngineQuery::getRequiredAccess() const
@@ -181,7 +201,7 @@ AccessRightsElements InterpreterModifyEngineQuery::getRequiredAccess() const
     required_access.emplace_back(AccessType::DROP_TABLE, query.getDatabase(), query.getTable());
     required_access.emplace_back(AccessType::CREATE_TABLE, query.getDatabase(), query.getTable());
 
-    String engine_name = query.storage->as<ASTStorage>()->engine->name;
+    String engine_name = "ReplicatedMergeTree";//query.storage->as<ASTStorage>()->engine->name;
     auto source_access_type = StorageFactory::instance().getSourceAccessType(engine_name);
     if (source_access_type != AccessType::NONE)
         required_access.emplace_back(source_access_type);

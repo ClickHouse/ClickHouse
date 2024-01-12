@@ -9,8 +9,7 @@ namespace DB
 {
 
 /** Query like this:
-  * ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY
-  * ENGINE = name [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...]
+  * ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY ENGINE TO [NOT] REPLICATED
   */
 
 class ParserModifyEngineQuery : public IParserBase

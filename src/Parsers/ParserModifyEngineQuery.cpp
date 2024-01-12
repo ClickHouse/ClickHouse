@@ -38,19 +38,22 @@ bool ParserModifyEngineQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     }
     query->cluster = cluster_str;
 
-    ParserKeyword s_modify("MODIFY");
-    ParserStorage storage_p(ParserStorage::EngineKind::TABLE_ENGINE);
+    ParserKeyword modify("MODIFY");
+    ParserKeyword engine("ENGINE");
+    ParserKeyword to("TO");
+    ParserKeyword not_keyword("NOT");
+    ParserKeyword replicated("REPLICATED");
 
-    if (s_modify.ignore(pos, expected))
-    {
-        if (!storage_p.parse(pos, query->storage, expected))
-            return false;
-    }
-    else
+    if (!modify.ignore(pos, expected))
         return false;
-
-    if (query->storage)
-        query->children.push_back(query->storage);
+    if (!engine.ignore(pos, expected))
+        return false;
+    if (!to.ignore(pos, expected))
+        return false;
+    if (not_keyword.ignore(pos, expected))
+        query->to_replicated = false;
+    if (!replicated.ignore(pos, expected))
+        return false;
 
     if (query->database)
         query->children.push_back(query->database);

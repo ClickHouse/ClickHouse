@@ -23,8 +23,6 @@ public:
     bool supportsTransactions() const override { return false; }
 
 private:
-    void checkEngineChangeIsPossible(StoragePtr table);
-
     AccessRightsElements getRequiredAccess() const;
 
     ASTPtr query_ptr;

@@ -13,7 +13,7 @@ namespace DB
 class ASTModifyEngineQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    ASTPtr storage;
+    bool to_replicated = true;
 
     String getID(char) const override;
 
