@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
-from enum import Enum
 import logging
-
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
+
+from integration_test_images import IMAGES
 
 
 class Labels(Enum):
@@ -46,7 +47,7 @@ class JobConfig:
     @num_batches - sets number of batches for multi-batch job
     """
 
-    digest: DigestConfig = DigestConfig()
+    digest: DigestConfig = field(default_factory=DigestConfig)
     run_command: str = ""
     timeout: Optional[int] = None
     num_batches: int = 1
@@ -66,20 +67,32 @@ class BuildConfig:
     sparse_checkout: bool = False
     comment: str = ""
     static_binary_name: str = ""
-    job_config: JobConfig = JobConfig(
-        digest=DigestConfig(
-            include_paths=[
-                "./src",
-                "./contrib/*-cmake",
-                "./cmake",
-                "./base",
-                "./programs",
-                "./packages",
-            ],
-            exclude_files=[".md"],
-            docker=["clickhouse/binary-builder"],
-            git_submodules=True,
-        ),
+    job_config: JobConfig = field(
+        default_factory=lambda: JobConfig(
+            digest=DigestConfig(
+                include_paths=[
+                    "./src",
+                    "./contrib/*-cmake",
+                    "./contrib/consistent-hashing",
+                    "./contrib/murmurhash",
+                    "./contrib/libfarmhash",
+                    "./contrib/pdqsort",
+                    "./contrib/cityhash102",
+                    "./contrib/sparse-checkout",
+                    "./contrib/libmetrohash",
+                    "./contrib/update-submodules.sh",
+                    "./contrib/CMakeLists.txt",
+                    "./cmake",
+                    "./base",
+                    "./programs",
+                    "./packages",
+                    "./docker/packager/packager",
+                ],
+                exclude_files=[".md"],
+                docker=["clickhouse/binary-builder"],
+                git_submodules=True,
+            ),
+        )
     )
 
     def export_env(self, export: bool = False) -> str:
@@ -96,14 +109,14 @@ class BuildConfig:
 @dataclass
 class BuildReportConfig:
     builds: List[str]
-    job_config: JobConfig = JobConfig()
+    job_config: JobConfig = field(default_factory=JobConfig)
 
 
 @dataclass
 class TestConfig:
     required_build: str
     force_tests: bool = False
-    job_config: JobConfig = JobConfig()
+    job_config: JobConfig = field(default_factory=JobConfig)
 
 
 BuildConfigs = Dict[str, BuildConfig]
@@ -145,20 +158,7 @@ upgrade_check_digest = DigestConfig(
 integration_check_digest = DigestConfig(
     include_paths=["./tests/ci/integration_test_check.py", "./tests/integration"],
     exclude_files=[".md"],
-    docker=[
-        "clickhouse/dotnet-client",
-        "clickhouse/integration-helper",
-        "clickhouse/integration-test",
-        "clickhouse/integration-tests-runner",
-        "clickhouse/kerberized-hadoop",
-        "clickhouse/kerberos-kdc",
-        "clickhouse/mysql-golang-client",
-        "clickhouse/mysql-java-client",
-        "clickhouse/mysql-js-client",
-        "clickhouse/mysql-php-client",
-        "clickhouse/nginx-dav",
-        "clickhouse/postgresql-java-client",
-    ],
+    docker=IMAGES.copy(),
 )
 
 ast_fuzzer_check_digest = DigestConfig(
@@ -202,20 +202,9 @@ bugfix_validate_check = DigestConfig(
         "./tests/ci/bugfix_validate_check.py",
     ],
     exclude_files=[".md"],
-    docker=[
+    docker=IMAGES.copy()
+    + [
         "clickhouse/stateless-test",
-        "clickhouse/dotnet-client",
-        "clickhouse/integration-helper",
-        "clickhouse/integration-test",
-        "clickhouse/integration-tests-runner",
-        "clickhouse/kerberized-hadoop",
-        "clickhouse/kerberos-kdc",
-        "clickhouse/mysql-golang-client",
-        "clickhouse/mysql-java-client",
-        "clickhouse/mysql-js-client",
-        "clickhouse/mysql-php-client",
-        "clickhouse/nginx-dav",
-        "clickhouse/postgresql-java-client",
     ],
 )
 # common test params

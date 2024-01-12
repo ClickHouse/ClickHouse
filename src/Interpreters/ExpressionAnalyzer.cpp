@@ -56,6 +56,7 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/PasteJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 
 
@@ -951,6 +952,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     std::unique_ptr<QueryPlan> & joined_plan,
     ContextPtr context)
 {
+    if (analyzed_join->kind() == JoinKind::Paste)
+        return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
+
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {
         JoinPtr direct_join = tryKeyValueJoin(analyzed_join, right_sample_block);
@@ -1046,7 +1050,7 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         join_element.table_expression,
         context,
         original_right_column_names,
-        query_options.copy().setWithAllColumns().ignoreProjections(false).ignoreAlias(false));
+        query_options.copy().setWithAllColumns().ignoreAlias(false));
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {

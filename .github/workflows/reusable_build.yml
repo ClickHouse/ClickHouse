@@ -76,6 +76,8 @@ jobs:
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/build_check.py" "$BUILD_NAME"
       - name: Post
+        # it still be build report to upload for failed build job
+        if: always()
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --post --job-name '${{inputs.build_name}}'
       - name: Mark as done

@@ -39,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
 }
 
 ThreadStatusesHolder::~ThreadStatusesHolder()
@@ -316,7 +317,21 @@ Chain buildPushingToViewsChain(
             type = QueryViewsLogElement::ViewType::MATERIALIZED;
             result_chain.addTableLock(lock);
 
-            StoragePtr inner_table = materialized_view->getTargetTable();
+            StoragePtr inner_table = materialized_view->tryGetTargetTable();
+            /// If target table was dropped, ignore this materialized view.
+            if (!inner_table)
+            {
+                if (context->getSettingsRef().ignore_materialized_views_with_dropped_target_table)
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::UNKNOWN_TABLE,
+                    "Target table '{}' of view '{}' doesn't exists. To ignore this view use setting "
+                    "ignore_materialized_views_with_dropped_target_table",
+                    materialized_view->getTargetTableId().getFullTableName(),
+                    view_id.getFullTableName());
+            }
+
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
 
@@ -405,7 +420,11 @@ Chain buildPushingToViewsChain(
         if (!no_destination && context->hasQueryContext())
         {
             context->getQueryContext()->addQueryAccessInfo(
-                backQuoteIfNeed(view_id.getDatabaseName()), views_data->views.back().runtime_stats->target_name, {}, "", view_id.getFullTableName());
+                backQuoteIfNeed(view_id.getDatabaseName()),
+                views_data->views.back().runtime_stats->target_name,
+                /*column_names=*/ {});
+
+            context->getQueryContext()->addViewAccessInfo(view_id.getFullTableName());
         }
     }
 

@@ -1,6 +1,7 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Databases/DatabaseFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -622,4 +623,16 @@ void DatabaseAtomic::checkDetachedTableNotInUse(const UUID & uuid)
     assertDetachedTableNotInUse(uuid);
 }
 
+void registerDatabaseAtomic(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        return make_shared<DatabaseAtomic>(
+            args.database_name,
+            args.metadata_path,
+            args.uuid,
+            args.context);
+    };
+    factory.registerDatabase("Atomic", create_fn);
+}
 }

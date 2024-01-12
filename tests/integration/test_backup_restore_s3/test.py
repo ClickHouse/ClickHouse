@@ -445,3 +445,10 @@ def test_backup_with_fs_cache(
     # see MergeTreeData::initializeDirectoriesAndFormatVersion()
     if "CachedWriteBufferCacheWriteBytes" in restore_events:
         assert restore_events["CachedWriteBufferCacheWriteBytes"] <= 1
+
+
+def test_backup_to_zip():
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', 'minio123')"
+    check_backup_and_restore(storage_policy, backup_destination)
