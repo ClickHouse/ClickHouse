@@ -807,7 +807,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             return;
 
         const auto & entry = it->getEntry();
-        if (entry.size != reserved_size)
+        if (download_state != State::DOWNLOADING && entry.size != reserved_size)
             throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry.size, reserved_size));
 
         chassert(entry.key == key());
