@@ -6,7 +6,7 @@ sidebar_label: Arrays
 
 # Array Functions
 
-## empty
+## empty {#empty}
 
 Checks whether the input array is empty.
 
@@ -50,7 +50,7 @@ Result:
 └────────────────┘
 ```
 
-## notEmpty
+## notEmpty {#notempty}
 
 Checks whether the input array is non-empty.
 
@@ -221,7 +221,7 @@ SELECT has([1, 2, NULL], NULL)
 └─────────────────────────┘
 ```
 
-## hasAll
+## hasAll {#hasall}
 
 Checks whether one array is a subset of another.
 
@@ -261,7 +261,7 @@ Raises an exception `NO_COMMON_TYPE` if the set and subset elements do not share
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` returns 0.
 
-## hasAny
+## hasAny {#hasany}
 
 Checks whether two arrays have intersection by some elements.
 

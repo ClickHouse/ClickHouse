@@ -42,7 +42,7 @@ Columns:
     - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Query starting date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query starting time.
-- `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query starting time with microseconds precision.
+- `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Query starting time with microseconds precision.
 - `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
 - `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Start time of query execution with microsecond precision.
 - `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution in milliseconds.

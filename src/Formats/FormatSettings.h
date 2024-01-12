@@ -204,6 +204,7 @@ struct FormatSettings
         bool ignore_unknown_keys_in_named_tuple = false;
         bool serialize_as_strings = false;
         bool read_bools_as_numbers = true;
+        bool read_bools_as_strings = true;
         bool read_numbers_as_strings = true;
         bool read_objects_as_strings = true;
         bool read_arrays_as_strings = true;

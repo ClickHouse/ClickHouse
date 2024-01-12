@@ -711,17 +711,24 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     RangesInDataParts parts,
     size_t max_layers,
     ContextPtr context,
-    ReadingInOrderStepGetter && in_order_reading_step_getter)
+    ReadingInOrderStepGetter && in_order_reading_step_getter,
+    bool force_process_all_ranges)
 {
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
     SplitPartsWithRangesByPrimaryKeyResult result;
 
-    SplitPartsRangesResult split_result = splitPartsRanges(std::move(parts));
-    result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
+    RangesInDataParts intersecting_parts_ranges = std::move(parts);
 
-    auto && [layers, borders] = splitIntersectingPartsRangesIntoLayers(std::move(split_result.intersecting_parts_ranges), max_layers);
+    if (!force_process_all_ranges)
+    {
+        SplitPartsRangesResult split_result = splitPartsRanges(intersecting_parts_ranges);
+        result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
+        intersecting_parts_ranges = std::move(split_result.intersecting_parts_ranges);
+    }
+
+    auto && [layers, borders] = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers);
     auto filters = buildFilters(primary_key, borders);
     result.merging_pipes.resize(layers.size());
 
