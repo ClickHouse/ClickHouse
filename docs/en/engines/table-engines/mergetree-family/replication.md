@@ -304,6 +304,10 @@ We use the term `MergeTree` to refer to all table engines in the `MergeTree fami
 
 If you had a `MergeTree` table that was manually replicated, you can convert it to a replicated table. You might need to do this if you have already collected a large amount of data in a `MergeTree` table and now you want to enable replication.
 
+[ALTER TABLE ... MODIFY ENGINE](/docs/en/sql-reference/statements/alter/engine.md) statement allows to convert `MergeTree` table to `ReplicatedMergeTree` on a single server.
+
+There is also a manual way to do this.
+
 If the data differs on various replicas, first sync it, or delete this data on all the replicas except one.
 
 Rename the existing MergeTree table, then create a `ReplicatedMergeTree` table with the old name.
@@ -312,7 +316,9 @@ Then run `ALTER TABLE ATTACH PARTITION` on one of the replicas to add these data
 
 ## Converting from ReplicatedMergeTree to MergeTree {#converting-from-replicatedmergetree-to-mergetree}
 
-Create a MergeTree table with a different name. Move all the data from the directory with the `ReplicatedMergeTree` table data to the new table’s data directory. Then delete the `ReplicatedMergeTree` table and restart the server.
+Use [ALTER TABLE ... MODIFY ENGINE](/docs/en/sql-reference/statements/alter/engine.md) statement to convert `ReplicatedMergeTree` table to `MergeTree` on a single server.
+
+Another way to do this involves server restart. Create a MergeTree table with a different name. Move all the data from the directory with the `ReplicatedMergeTree` table data to the new table’s data directory. Then delete the `ReplicatedMergeTree` table and restart the server.
 
 If you want to get rid of a `ReplicatedMergeTree` table without launching the server:
 
