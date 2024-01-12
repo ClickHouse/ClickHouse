@@ -64,7 +64,7 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     engine->arguments = args;
 
     /// Set new engine for the old query
-    create_query->storage->set(create_query->storage->engine, engine->clone());
+    create_query->storage->set(create_query->storage->engine, engine);
 }
 
 static void setNotReplicatedEngine(ASTCreateQuery * create_query, ContextPtr)
@@ -85,7 +85,7 @@ static void setNotReplicatedEngine(ASTCreateQuery * create_query, ContextPtr)
     engine->arguments = args;
 
     /// Set new engine for the old query
-    create_query->storage->set(create_query->storage->engine, engine->clone());
+    create_query->storage->set(create_query->storage->engine, engine);
 }
 
 static void setNewEngine(ASTCreateQuery * create_query, bool to_replicated, ContextPtr context)
@@ -127,6 +127,10 @@ BlockIO InterpreterModifyEngineQuery::execute()
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
 
+    if (database->getEngineName() != "Atomic")
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Table engine conversion is supported only for Atomic databases");
+
     {
         StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
         if (!table)
@@ -134,11 +138,9 @@ BlockIO InterpreterModifyEngineQuery::execute()
     }
 
     try {
-        auto * log = &Poco::Logger::get("InterpreterModifyEngineQuery");
-
         /// Get attach query from metadata
         auto table_metadata_path = database->getObjectMetadataPath(table_id.getTableName());
-        auto ast = DatabaseOnDisk::parseQueryFromMetadata(log, getContext(), table_metadata_path);
+        auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), table_metadata_path);
         auto * create_query = ast->as<ASTCreateQuery>();
 
         checkEngineChangeIsPossible(create_query->storage, query.to_replicated);
@@ -150,16 +152,13 @@ BlockIO InterpreterModifyEngineQuery::execute()
 
         /// Set new engine in the query
         setNewEngine(create_query, query.to_replicated, getContext());
-        LOG_INFO(log, "Create query {}", create_query->formatForLogging());
 
         DatabaseCatalog::instance().removeUUIDMapping(create_query->uuid);
 
         /// Change metadata
         auto table_metadata_tmp_path = table_metadata_path + ".tmp";
 
-        LOG_INFO(log, "Metadata path {}", table_metadata_path);
         String statement = getObjectDefinitionFromCreateQuery(ast);
-        LOG_INFO(log, "Create query in metadata {}", statement);
         {
             WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
             writeString(statement, out);
@@ -201,7 +200,10 @@ AccessRightsElements InterpreterModifyEngineQuery::getRequiredAccess() const
     required_access.emplace_back(AccessType::DROP_TABLE, query.getDatabase(), query.getTable());
     required_access.emplace_back(AccessType::CREATE_TABLE, query.getDatabase(), query.getTable());
 
-    String engine_name = "ReplicatedMergeTree";//query.storage->as<ASTStorage>()->engine->name;
+    String engine_name = "MergeTree";
+    if (query_ptr->as<ASTModifyEngineQuery>()->to_replicated)
+        engine_name = REPLICATED_PREFIX + engine_name;
+
     auto source_access_type = StorageFactory::instance().getSourceAccessType(engine_name);
     if (source_access_type != AccessType::NONE)
         required_access.emplace_back(source_access_type);
