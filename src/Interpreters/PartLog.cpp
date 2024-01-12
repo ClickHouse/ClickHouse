@@ -129,7 +129,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"path_on_disk", std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},
 
         {"rows", std::make_shared<DataTypeUInt64>(), "The number of rows in the data part."},
-        {"size_in_bytes", std::make_shared<DataTypeUInt64>(), "Size (on disk) of the data part in bytes."},
+        {"size_in_bytes", std::make_shared<DataTypeUInt64>(), "Size of the data part on disk in bytes."},
 
         /// Merge-specific info
         {"merged_from", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of the parts which the current part was made up from (after the merge)."},
