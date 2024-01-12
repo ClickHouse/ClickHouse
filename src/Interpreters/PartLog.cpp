@@ -136,7 +136,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"bytes_uncompressed", std::make_shared<DataTypeUInt64>(), "Uncompressed size of the resulting part in bytes."},
         {"read_rows", std::make_shared<DataTypeUInt64>(), "The number of rows was read during the merge."},
         {"read_bytes", std::make_shared<DataTypeUInt64>(), "The number of bytes was read during the merge."},
-        {"peak_memory_usage", std::make_shared<DataTypeUInt64>(), "The maximum difference between the amount of allocated and freed memory in context of this operation."}, // ?
+        {"peak_memory_usage", std::make_shared<DataTypeUInt64>(), "The maximum amount of used during merge RAM"},
 
         /// Is there an error during the execution or commit
         {"error", std::make_shared<DataTypeUInt16>(), "The code number of the occurred error."},
