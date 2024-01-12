@@ -820,7 +820,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         std::lock_guard lk(write_mutex);
         if (downloaded_size == 0)
         {
-            if (fs::exists(file_path))
+            if (download_state != State::DOWNLOADING && fs::exists(file_path))
                 throw_logical("Expected file " + file_path + " not to exist");
         }
         else if (!fs::exists(file_path))
