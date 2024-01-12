@@ -759,7 +759,7 @@ public:
         static constexpr size_t UNROLL_COUNT = 4;
 
         std::unique_ptr<Data[]> places{new Data[256 * UNROLL_COUNT]};
-        std::unique_ptr<bool[]> has_data{new bool[256 * UNROLL_COUNT]}; /// Separate flags array to avoid heavy initialization.
+        bool has_data[256 * UNROLL_COUNT]{}; /// Separate flags array to avoid heavy initialization.
 
         size_t i = row_begin;
 
