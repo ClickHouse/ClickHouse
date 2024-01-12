@@ -43,7 +43,7 @@ ColumnsDescription StorageSystemSchemaInferenceCache::getColumnsDescription()
         },
         {"registration_time", std::make_shared<DataTypeDateTime>(), "Timestamp when schema was added in cache."},
         {"schema", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Cached schema."},
-        {"number_of_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"number_of_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Number of rows in the file in given format. It's used for caching trivial count() from data files and for caching number of rows from the metadata during schema inference."},
         {"schema_inference_mode", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Scheme inference mode."},
     };
 }
