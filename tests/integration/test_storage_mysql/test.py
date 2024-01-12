@@ -898,6 +898,12 @@ def test_mysql_point(started_cluster):
         ).strip()
     )
 
+    node1.query("DROP TABLE IF EXISTS test")
+    node1.query(
+        f"CREATE TABLE test (id Int32, point Point) Engine=MySQL('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
+    )
+    assert "(15,20)" == node1.query(f"SELECT point FROM test").strip()
+
     drop_mysql_table(conn, table_name)
     conn.close()
 
