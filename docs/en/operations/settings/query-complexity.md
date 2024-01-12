@@ -172,8 +172,7 @@ If you set `timeout_before_checking_execution_speed `to 0, ClickHouse will use c
 
 ## timeout_overflow_mode {#timeout-overflow-mode}
 
-What to do if the query is run longer than `max_execution_time` or the estimated running time is
-longer than `max_estimated_execution_time`: `throw` or `break`. By default, `throw`.
+What to do if the query is run longer than `max_execution_time` or the estimated running time is longer than `max_estimated_execution_time`: `throw` or `break`. By default, `throw`.
 
 # max_execution_time_leaf
 
