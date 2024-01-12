@@ -4,6 +4,8 @@ import logging
 import subprocess
 import os
 import sys
+from pathlib import Path
+from typing import Dict
 
 from github import Github
 
@@ -14,10 +16,10 @@ from commit_status_helper import (
     get_commit,
     post_commit_status,
 )
-from docker_pull_helper import get_image_with_version
+from docker_images_helper import pull_image, get_docker_image
 from env_helper import (
     GITHUB_RUN_URL,
-    REPORTS_PATH,
+    REPORT_PATH,
     TEMP_PATH,
 )
 from get_robot_token import get_best_robot_token
@@ -47,13 +49,16 @@ def main():
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-    reports_path = REPORTS_PATH
+    temp_path = Path(TEMP_PATH)
+    reports_path = Path(REPORT_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
-    check_name = sys.argv[1]
+    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided as an input arg or in CHECK_NAME env"
 
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
+    temp_path.mkdir(parents=True, exist_ok=True)
 
     pr_info = PRInfo()
 
@@ -65,7 +70,7 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
+    docker_image = pull_image(get_docker_image(IMAGE_NAME))
 
     build_name = get_build_name_for_check(check_name)
     print(build_name)
@@ -82,7 +87,7 @@ def main():
 
     logging.info("Got build url %s", build_url)
 
-    workspace_path = os.path.join(temp_path, "workspace")
+    workspace_path = temp_path / "workspace"
     if not os.path.exists(workspace_path):
         os.makedirs(workspace_path)
 
@@ -91,7 +96,7 @@ def main():
     )
     logging.info("Going to run %s", run_command)
 
-    run_log_path = os.path.join(temp_path, "run.log")
+    run_log_path = temp_path / "run.log"
     with open(run_log_path, "w", encoding="utf-8") as log:
         with subprocess.Popen(
             run_command, shell=True, stderr=log, stdout=log
@@ -110,23 +115,24 @@ def main():
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/sqltest_{check_name_lower}/"
     paths = {
         "run.log": run_log_path,
-        "server.log.zst": os.path.join(workspace_path, "server.log.zst"),
-        "server.err.log.zst": os.path.join(workspace_path, "server.err.log.zst"),
-        "report.html": os.path.join(workspace_path, "report.html"),
-        "test.log": os.path.join(workspace_path, "test.log"),
+        "server.log.zst": workspace_path / "server.log.zst",
+        "server.err.log.zst": workspace_path / "server.err.log.zst",
+        "report.html": workspace_path / "report.html",
+        "test.log": workspace_path / "test.log",
     }
+    path_urls = {}  # type: Dict[str, str]
 
     s3_helper = S3Helper()
     for f in paths:
         try:
-            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + f)
+            path_urls[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + f)
         except Exception as ex:
             logging.info("Exception uploading file %s text %s", f, ex)
-            paths[f] = ""
+            path_urls[f] = ""
 
     report_url = GITHUB_RUN_URL
-    if paths["report.html"]:
-        report_url = paths["report.html"]
+    if path_urls["report.html"]:
+        report_url = path_urls["report.html"]
 
     status = "success"
     description = "See the report"
@@ -148,7 +154,9 @@ def main():
 
     logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(commit, status, report_url, description, check_name, pr_info)
+    post_commit_status(
+        commit, status, report_url, description, check_name, pr_info, dump_to_file=True
+    )
 
 
 if __name__ == "__main__":

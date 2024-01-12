@@ -16,10 +16,10 @@
         ORDER BY (d, n)
     </create_query>
 
-    <fill_query>insert into a select '2000-01-01', ['aa','bb','cc','dd'][number % 4 + 1], number from numbers_mt(100000000)</fill_query>
-    <fill_query>insert into a select '2000-01-02', ['aa','bb','cc','dd'][number % 4 + 1], number from numbers_mt(100000000)</fill_query>
-    <fill_query>insert into a select '2000-01-03', ['aa','bb','cc','dd'][number % 4 + 1], number from numbers_mt(100000000)</fill_query>
-    <fill_query>insert into a select '2000-01-04', ['aa','bb','cc','dd'][number % 4 + 1], number from numbers_mt(100000000)</fill_query>
+    <fill_query>insert into a select '2000-01-01', ['aa','bb','cc','dd'][number % 4 + 1], number from numbers_mt(10000000)</fill_query>
+    <fill_query>insert into a select '2000-01-02', ['aa','bb','cc','dd'][number % 4 + 1], number from numbers_mt(10000000)</fill_query>
+    <fill_query>insert into a select '2000-01-03', ['aa','bb','cc','dd'][number % 4 + 1], number from numbers_mt(10000000)</fill_query>
+    <fill_query>insert into a select '2000-01-04', ['aa','bb','cc','dd'][number % 4 + 1], number from numbers_mt(10000000)</fill_query>
 
     <fill_query>OPTIMIZE TABLE a FINAL</fill_query>
 

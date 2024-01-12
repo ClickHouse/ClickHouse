@@ -95,7 +95,7 @@ ReturnType parseDateTimeBestEffortImpl(
                                              FmtArgs && ...fmt_args [[maybe_unused]])
     {
         if constexpr (std::is_same_v<ReturnType, void>)
-            throw ParsingException(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
+            throw Exception(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
         else
             return false;
     };
@@ -434,7 +434,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 num_digits = readDigits(digits, sizeof(digits), in);
                 if (fractional)
                 {
-                    using FractionalType = typename std::decay<decltype(fractional->value)>::type;
+                    using FractionalType = typename std::decay_t<decltype(fractional->value)>;
                     // Reading more decimal digits than fits into FractionalType would case an
                     // overflow, so it is better to skip all digits from the right side that do not
                     // fit into result type. To provide less precise value rather than bogus one.

@@ -10,6 +10,9 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/tuple.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 
@@ -31,6 +34,7 @@
 #include <type_traits>
 #include <vector>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -40,6 +44,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 namespace
@@ -108,6 +113,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
+    , max_memory_usage(settings.max_memory_usage)
     , tmp_volume(tmp_volume_)
 {
 }
@@ -135,7 +141,12 @@ void TableJoin::resetCollected()
 
 void TableJoin::addUsingKey(const ASTPtr & ast)
 {
-    addKey(ast->getColumnName(), renamedRightColumnName(ast->getAliasOrColumnName()), ast);
+    /** For USING key and right key AST are the same.
+      * Example:
+      * SELECT ... FROM t1 JOIN t2 USING (key)
+      * Both key_asts_left and key_asts_right will reference the same ASTIdentifer `key`
+      */
+    addKey(ast->getColumnName(), renamedRightColumnName(ast->getAliasOrColumnName()), ast, ast);
 }
 
 void TableJoin::addDisjunct()
@@ -146,9 +157,9 @@ void TableJoin::addDisjunct()
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StorageJoin with ORs is not supported");
 }
 
-void TableJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
+void TableJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast, bool null_safe_comparison)
 {
-    addKey(left_table_ast->getColumnName(), right_table_ast->getAliasOrColumnName(), left_table_ast, right_table_ast);
+    addKey(left_table_ast->getColumnName(), right_table_ast->getAliasOrColumnName(), left_table_ast, right_table_ast, null_safe_comparison);
     right_key_aliases[right_table_ast->getColumnName()] = right_table_ast->getAliasOrColumnName();
 }
 
@@ -365,7 +376,8 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
              */
-            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
+            bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), require_strict_keys_match);
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
             {
@@ -425,59 +437,187 @@ static void renameIfNeeded(String & name, const NameToNameMap & renames)
         name = it->second;
 }
 
+static void makeColumnNameUnique(const ColumnsWithTypeAndName & source_columns, String & name)
+{
+    for (const auto & source_col : source_columns)
+    {
+        if (source_col.name != name)
+            continue;
+
+        /// Duplicate found, slow path
+        NameSet names;
+        for (const auto & col : source_columns)
+            names.insert(col.name);
+
+        String base_name = name;
+        for (size_t i = 0; ; ++i)
+        {
+            name = base_name + "_" + toString(i);
+            if (!names.contains(name))
+                return;
+        }
+    }
+}
+
+static ActionsDAGPtr createWrapWithTupleActions(
+    const ColumnsWithTypeAndName & source_columns,
+    std::unordered_set<std::string_view> && column_names_to_wrap,
+    NameToNameMap & new_names)
+{
+    if (column_names_to_wrap.empty())
+        return nullptr;
+
+    auto actions_dag = std::make_shared<ActionsDAG>(source_columns);
+
+    FunctionOverloadResolverPtr func_builder = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
+
+    for (const auto * input_node : actions_dag->getInputs())
+    {
+        const auto & column_name = input_node->result_name;
+        auto it = column_names_to_wrap.find(column_name);
+        if (it == column_names_to_wrap.end())
+            continue;
+        column_names_to_wrap.erase(it);
+
+        String node_name = "__wrapNullsafe(" + column_name + ")";
+        makeColumnNameUnique(source_columns, node_name);
+
+        const auto & dst_node = actions_dag->addFunction(func_builder, {input_node}, node_name);
+        new_names[column_name] = dst_node.result_name;
+        actions_dag->addOrReplaceInOutputs(dst_node);
+    }
+
+    if (!column_names_to_wrap.empty())
+        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Can't find columns {} in input columns [{}]",
+                        fmt::join(column_names_to_wrap, ", "), Block(source_columns).dumpNames());
+
+    return actions_dag;
+}
+
+/// Wrap only those keys that are nullable on both sides
+std::pair<NameSet, NameSet> TableJoin::getKeysForNullSafeComparion(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns)
+{
+    std::unordered_map<String, size_t> left_idx;
+    for (size_t i = 0; i < left_sample_columns.size(); ++i)
+        left_idx[left_sample_columns[i].name] = i;
+
+    std::unordered_map<String, size_t> right_idx;
+    for (size_t i = 0; i < right_sample_columns.size(); ++i)
+        right_idx[right_sample_columns[i].name] = i;
+
+    NameSet left_keys_to_wrap;
+    NameSet right_keys_to_wrap;
+
+    for (const auto & clause : clauses)
+    {
+        for (size_t i : clause.nullsafe_compare_key_indexes)
+        {
+            const auto & left_key = clause.key_names_left[i];
+            const auto & right_key = clause.key_names_right[i];
+            auto lit = left_idx.find(left_key);
+            if (lit == left_idx.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find key {} in left columns [{}]",
+                                left_key, Block(left_sample_columns).dumpNames());
+            auto rit = right_idx.find(right_key);
+            if (rit == right_idx.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find key {} in right columns [{}]",
+                                right_key, Block(right_sample_columns).dumpNames());
+
+            if (!left_sample_columns[lit->second].type->isNullable() || !right_sample_columns[rit->second].type->isNullable())
+                continue;
+
+            left_keys_to_wrap.insert(left_key);
+            right_keys_to_wrap.insert(right_key);
+        }
+    }
+
+    return {left_keys_to_wrap, right_keys_to_wrap};
+}
+
+static void mergeDags(ActionsDAGPtr & result_dag, ActionsDAGPtr && new_dag)
+{
+    if (result_dag)
+        result_dag->mergeInplace(std::move(*new_dag));
+    else
+        result_dag = std::move(new_dag);
+}
+
 std::pair<ActionsDAGPtr, ActionsDAGPtr>
 TableJoin::createConvertingActions(
     const ColumnsWithTypeAndName & left_sample_columns,
     const ColumnsWithTypeAndName & right_sample_columns)
 {
-    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE));
+    ActionsDAGPtr left_dag = nullptr;
+    ActionsDAGPtr right_dag = nullptr;
+    /** If the types are not equal, we need to convert them to a common type.
+      * Example:
+      *   SELECT * FROM t1 JOIN t2 ON t1.a = t2.b
+      * Assume that t1.a is UInt16 and t2.b is Int8. The supertype for them is Int32.
+      * The query will be semantically transformed to:
+      *   SELECT * FROM t1 JOIN t2 ON CAST(t1.a AS 'Int32') = CAST(t2.b AS 'Int32')
+      * As a result, the user will get the original columns `a` and `b` without `CAST`.
+      *
+      */
+    NameToNameMap left_column_rename;
+    NameToNameMap right_column_rename;
 
-    NameToNameMap left_key_column_rename;
-    NameToNameMap right_key_column_rename;
-    auto left_converting_actions = applyKeyConvertToTable(
-        left_sample_columns, left_type_map, left_key_column_rename, forceNullableLeft());
-    auto right_converting_actions = applyKeyConvertToTable(
-        right_sample_columns, right_type_map, right_key_column_rename, forceNullableRight());
-
+    /// FullSortingMerge join algorithm doesn't support joining keys with different types (e.g. String and Nullable(String))
+    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
+    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), require_strict_keys_match);
+    if (!left_type_map.empty() || !right_type_map.empty())
     {
-        auto log_actions = [](const String & side, const ActionsDAGPtr & dag)
-        {
-            if (dag)
-            {
-                /// Just debug message
-                std::vector<std::string> input_cols;
-                for (const auto & col : dag->getRequiredColumns())
-                    input_cols.push_back(col.name + ": " + col.type->getName());
-
-                std::vector<std::string> output_cols;
-                for (const auto & col : dag->getResultColumns())
-                    output_cols.push_back(col.name + ": " + col.type->getName());
-
-                LOG_DEBUG(&Poco::Logger::get("TableJoin"), "{} JOIN converting actions: [{}] -> [{}]",
-                    side, fmt::join(input_cols, ", "), fmt::join(output_cols, ", "));
-            }
-            else
-            {
-                LOG_DEBUG(&Poco::Logger::get("TableJoin"), "{} JOIN converting actions: empty", side);
-                return;
-            }
-        };
-        log_actions("Left", left_converting_actions);
-        log_actions("Right", right_converting_actions);
+        left_dag = applyKeyConvertToTable(left_sample_columns, left_type_map, JoinTableSide::Left, left_column_rename);
+        right_dag = applyKeyConvertToTable(right_sample_columns, right_type_map, JoinTableSide::Right, right_column_rename);
     }
 
-    forAllKeys(clauses, [&](auto & left_key, auto & right_key)
+    /**
+      * Similarly, when we have a null-safe comparison (a IS NOT DISTICT FROM b),
+      * we need to wrap keys with a non-nullable type.
+      * The type `tuple` can be used for this purpose,
+      * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
+      * Thus, join algorithm will match keys with values tuple(NULL).
+      * Example:
+      *   SELECT * FROM t1 JOIN t2 ON t1.a <=> t2.b
+      * This will be semantically transformed to:
+      *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
+      */
+    auto [left_keys_nullsafe_comparison, right_keys_nullsafe_comparison] = getKeysForNullSafeComparion(
+        left_dag ? left_dag->getResultColumns() : left_sample_columns,
+        right_dag ? right_dag->getResultColumns() : right_sample_columns);
+    if (!left_keys_nullsafe_comparison.empty() || !right_keys_nullsafe_comparison.empty())
     {
-        renameIfNeeded(left_key, left_key_column_rename);
-        renameIfNeeded(right_key, right_key_column_rename);
-        return true;
-    });
+        auto new_left_dag = applyNullsafeWrapper(
+            left_dag ? left_dag->getResultColumns() : left_sample_columns,
+            left_keys_nullsafe_comparison, JoinTableSide::Left, left_column_rename);
+        mergeDags(left_dag, std::move(new_left_dag));
 
-    return {left_converting_actions, right_converting_actions};
+        auto new_right_dag = applyNullsafeWrapper(
+            right_dag ? right_dag->getResultColumns() : right_sample_columns,
+            right_keys_nullsafe_comparison, JoinTableSide::Right, right_column_rename);
+        mergeDags(right_dag, std::move(new_right_dag));
+    }
+
+    if (forceNullableLeft())
+    {
+        auto new_left_dag = applyJoinUseNullsConversion(
+            left_dag ? left_dag->getResultColumns() : left_sample_columns,
+            left_column_rename);
+        mergeDags(left_dag, std::move(new_left_dag));
+    }
+
+    if (forceNullableRight())
+    {
+        auto new_right_dag = applyJoinUseNullsConversion(
+            right_dag ? right_dag->getResultColumns() : right_sample_columns,
+            right_column_rename);
+        mergeDags(right_dag, std::move(new_right_dag));
+    }
+
+    return {left_dag, right_dag};
 }
 
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool strict)
+void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool require_strict_keys_match)
 {
     if (!left_type_map.empty() || !right_type_map.empty())
         return;
@@ -510,7 +650,7 @@ void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const Rig
         const auto & ltype = ltypeit->second;
         const auto & rtype = rtypeit->second;
 
-        bool type_equals = strict ? ltype->equals(*rtype) : JoinCommon::typesEqualUpToNullability(ltype, rtype);
+        bool type_equals = require_strict_keys_match ? ltype->equals(*rtype) : JoinCommon::typesEqualUpToNullability(ltype, rtype);
         if (type_equals)
             return true;
 
@@ -608,30 +748,66 @@ static ActionsDAGPtr changeTypesToNullable(
 ActionsDAGPtr TableJoin::applyKeyConvertToTable(
     const ColumnsWithTypeAndName & cols_src,
     const NameToTypeMap & type_mapping,
-    NameToNameMap & key_column_rename,
-    bool make_nullable) const
+    JoinTableSide table_side,
+    NameToNameMap & key_column_rename)
 {
+    if (type_mapping.empty())
+        return nullptr;
+
     /// Create DAG to convert key columns
-    ActionsDAGPtr dag_stage1 = changeKeyTypes(cols_src, type_mapping, !hasUsing(), key_column_rename);
+    ActionsDAGPtr convert_dag = changeKeyTypes(cols_src, type_mapping, !hasUsing(), key_column_rename);
+    applyRename(table_side, key_column_rename);
+    return convert_dag;
+}
+
+ActionsDAGPtr TableJoin::applyNullsafeWrapper(
+    const ColumnsWithTypeAndName & cols_src,
+    const NameSet & columns_for_nullsafe_comparison,
+    JoinTableSide table_side,
+    NameToNameMap & key_column_rename)
+{
+    if (columns_for_nullsafe_comparison.empty())
+        return nullptr;
+
+    std::unordered_set<std::string_view> column_names_to_wrap;
+    for (const auto & name : columns_for_nullsafe_comparison)
+    {
+        /// Take into account column renaming for type conversion
+        /// if we changed key `a == b` to `_CAST(a, 'UInt64') = b` we need to wrap `tuple(_CAST(a, 'UInt64')) = tuple(b)`
+        if (auto it = key_column_rename.find(name); it != key_column_rename.end())
+            column_names_to_wrap.insert(it->second);
+        else
+            column_names_to_wrap.insert(name);
+    }
+
+    /// Create DAG to wrap keys with tuple for null-safe comparison
+    ActionsDAGPtr null_safe_wrap_dag = createWrapWithTupleActions(cols_src, std::move(column_names_to_wrap), key_column_rename);
+    for (auto & clause : clauses)
+    {
+        for (size_t i : clause.nullsafe_compare_key_indexes)
+        {
+            if (table_side == JoinTableSide::Left)
+                renameIfNeeded(clause.key_names_left[i], key_column_rename);
+            else
+                renameIfNeeded(clause.key_names_right[i], key_column_rename);
+        }
+    }
+
+    return null_safe_wrap_dag;
+}
+
+ActionsDAGPtr TableJoin::applyJoinUseNullsConversion(
+    const ColumnsWithTypeAndName & cols_src,
+    const NameToNameMap & key_column_rename)
+{
+    /// Do not need to make nullable temporary columns that would be used only as join keys, but is not visible to user
+    NameSet exclude_columns;
+    for (const auto & it : key_column_rename)
+        exclude_columns.insert(it.second);
 
     /// Create DAG to make columns nullable if needed
-    if (make_nullable)
-    {
-        /// Do not need to make nullable temporary columns that would be used only as join keys, but is not visible to user
-        NameSet cols_not_nullable;
-        for (const auto & t : key_column_rename)
-            cols_not_nullable.insert(t.second);
-
-        ColumnsWithTypeAndName input_cols = dag_stage1 ? dag_stage1->getResultColumns() : cols_src;
-        ActionsDAGPtr dag_stage2 = changeTypesToNullable(input_cols, cols_not_nullable);
-
-        /// Merge dags if we got two ones
-        if (dag_stage1)
-            return ActionsDAG::merge(std::move(*dag_stage1), std::move(*dag_stage2));
-        else
-            return dag_stage2;
-    }
-    return dag_stage1;
+    ActionsDAGPtr add_nullable_dag = changeTypesToNullable(cols_src, exclude_columns);
+    return add_nullable_dag;
 }
 
 void TableJoin::setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage)
@@ -674,12 +850,13 @@ void TableJoin::setRename(const String & from, const String & to)
     renames[from] = to;
 }
 
-void TableJoin::addKey(const String & left_name, const String & right_name, const ASTPtr & left_ast, const ASTPtr & right_ast)
+void TableJoin::addKey(const String & left_name, const String & right_name,
+                       const ASTPtr & left_ast, const ASTPtr & right_ast,
+                       bool null_safe_comparison)
 {
-    clauses.back().key_names_left.emplace_back(left_name);
-    key_asts_left.emplace_back(left_ast);
+    clauses.back().addKey(left_name, right_name, null_safe_comparison);
 
-    clauses.back().key_names_right.emplace_back(right_name);
+    key_asts_left.emplace_back(left_ast);
     key_asts_right.emplace_back(right_ast ? right_ast : left_ast);
 }
 
@@ -731,6 +908,19 @@ Names TableJoin::getAllNames(JoinTableSide side) const
     return res;
 }
 
+void TableJoin::applyRename(JoinTableSide side, const NameToNameMap & name_map)
+{
+    auto rename_callback = [&name_map](auto & key_name)
+    {
+        renameIfNeeded(key_name, name_map);
+        return true;
+    };
+    if (side == JoinTableSide::Left)
+        forAllKeys<LeftSideTag>(clauses, rename_callback);
+    else
+        forAllKeys<RightSideTag>(clauses, rename_callback);
+}
+
 void TableJoin::assertHasOneOnExpr() const
 {
     if (!oneDisjunct())
@@ -751,7 +941,9 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (!right_storage_name.empty() || !join_algorithm.isSet(JoinAlgorithm::PARALLEL_HASH))
+    if (std::find(join_algorithm.begin(), join_algorithm.end(), JoinAlgorithm::PARALLEL_HASH) == join_algorithm.end())
+        return false;
+    if (!right_storage_name.empty())
         return false;
     if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)
         return false;
@@ -768,5 +960,11 @@ ActionsDAGPtr TableJoin::createJoinedBlockActions(ContextPtr context) const
     auto syntax_result = TreeRewriter(context).analyze(expression_list, columnsFromJoinedTable());
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
+
+size_t TableJoin::getMaxMemoryUsage() const
+{
+    return max_memory_usage;
+}
+
 
 }

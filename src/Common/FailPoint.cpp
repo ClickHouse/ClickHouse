@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/Config/ConfigHelper.h>
 
 #include <boost/core/noncopyable.hpp>
 #include <chrono>
@@ -27,13 +28,21 @@ static struct InitFiu
 
 /// We should define different types of failpoints here. There are four types of them:
 /// - ONCE: the failpoint will only be triggered once.
-/// - REGULAR: the failpoint will always be triggered util disableFailPoint is called.
-/// - PAUSAEBLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, util disableFailPoint is called.
-/// - PAUSAEBLE: the failpoint will be blocked every time when pauseFailPoint is called, util disableFailPoint is called.
+/// - REGULAR: the failpoint will always be triggered until disableFailPoint is called.
+/// - PAUSEABLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, util disableFailPoint is called.
+/// - PAUSEABLE: the failpoint will be blocked every time when pauseFailPoint is called, util disableFailPoint is called.
 
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
+    ONCE(replicated_queue_fail_next_entry) \
+    REGULAR(replicated_queue_unfail_entries) \
+    ONCE(replicated_merge_tree_insert_quorum_fail_0) \
+    REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
+    REGULAR(use_delayed_remote_source) \
+    REGULAR(cluster_discovery_faults) \
+    REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
+    REGULAR(prefetched_reader_pool_failpoint) \
     PAUSEABLE_ONCE(dummy_pausable_failpoint_once) \
     PAUSEABLE(dummy_pausable_failpoint)
 
@@ -161,6 +170,21 @@ void FailPointInjection::wait(const String & fail_point_name)
         auto ptr = iter->second;
         ptr->wait();
     }
-};
+}
+
+void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    String root_key = "fail_points_active";
+
+    Poco::Util::AbstractConfiguration::Keys fail_point_names;
+    config.keys(root_key, fail_point_names);
+
+    for (const auto & fail_point_name : fail_point_names)
+    {
+        if (ConfigHelper::getBool(config, root_key + "." + fail_point_name))
+            FailPointInjection::enableFailPoint(fail_point_name);
+    }
+}
+
 
 }

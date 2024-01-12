@@ -3,8 +3,8 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/Exception.h>
+#include <Common/re2.h>
 #include <optional>
-#include <re2/re2.h>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 

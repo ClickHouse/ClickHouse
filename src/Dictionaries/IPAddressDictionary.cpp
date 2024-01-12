@@ -16,7 +16,9 @@
 #include <base/map.h>
 #include <base/range.h>
 #include <base/sort.h>
+#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -197,13 +199,11 @@ IPAddressDictionary::IPAddressDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
-    const DictionaryLifetime dict_lifetime_,
-    bool require_nonempty_)
+    IPAddressDictionary::Configuration configuration_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
-    , dict_lifetime(dict_lifetime_)
-    , require_nonempty(require_nonempty_)
+    , configuration(configuration_)
     , access_to_key_from_attributes(dict_struct_.access_to_key_from_attributes)
     , logger(&Poco::Logger::get("IPAddressDictionary"))
 {
@@ -369,7 +369,7 @@ void IPAddressDictionary::loadData()
 
     bool has_ipv6 = false;
 
-    PullingPipelineExecutor executor(pipeline);
+    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
     Block block;
     while (executor.pull(block))
     {
@@ -525,7 +525,7 @@ void IPAddressDictionary::loadData()
 
     LOG_TRACE(logger, "{} ip records are read", ip_records.size());
 
-    if (require_nonempty && 0 == element_count)
+    if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
 
@@ -971,7 +971,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr,
-                             ContextPtr /* global_context */,
+                             ContextPtr global_context,
                              bool /*created_from_ddl*/) -> DictionaryPtr
     {
         if (!dict_struct.key || dict_struct.key->size() != 1)
@@ -981,8 +981,17 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
 
+        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+        const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
+        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
+
+        IPAddressDictionary::Configuration configuration{
+            .dict_lifetime = dict_lifetime,
+            .require_nonempty = require_nonempty,
+            .use_async_executor = use_async_executor,
+        };
         // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
-        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
     factory.registerLayout("ip_trie", create_layout, true);
 }

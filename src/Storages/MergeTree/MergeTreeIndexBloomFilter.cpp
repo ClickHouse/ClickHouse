@@ -38,41 +38,14 @@ MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, index.column_names.size());
 }
 
-bool MergeTreeIndexBloomFilter::mayBenefitFromIndexForIn(const ASTPtr & node) const
-{
-    Names required_columns = index.expression->getRequiredColumns();
-    NameSet required_columns_set(required_columns.begin(), required_columns.end());
-
-    std::vector<ASTPtr> nodes_to_check;
-    nodes_to_check.emplace_back(node);
-
-    while (!nodes_to_check.empty())
-    {
-        auto node_to_check = nodes_to_check.back();
-        nodes_to_check.pop_back();
-
-        const auto & column_name = node_to_check->getColumnName();
-        if (required_columns_set.find(column_name) != required_columns_set.end())
-            return true;
-
-        if (const auto * function = typeid_cast<const ASTFunction *>(node_to_check.get()))
-        {
-            auto & function_arguments_children = function->arguments->children;
-            nodes_to_check.insert(nodes_to_check.end(), function_arguments_children.begin(), function_arguments_children.end());
-        }
-    }
-
-    return false;
-}
-
-MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, index.column_names);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const SelectQueryInfo & query_info, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionBloomFilter>(query_info, context, index.sample_block, hash_functions);
+    return std::make_shared<MergeTreeIndexConditionBloomFilter>(filter_actions_dag, context, index.sample_block, hash_functions);
 }
 
 static void assertIndexColumnsType(const Block & header)

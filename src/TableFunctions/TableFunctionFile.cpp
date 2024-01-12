@@ -1,7 +1,7 @@
-#include <TableFunctions/TableFunctionFile.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <TableFunctions/ITableFunctionFileLike.h>
+#include <TableFunctions/TableFunctionFile.h>
 
-#include "Parsers/IAST_fwd.h"
 #include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
@@ -10,7 +10,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
-#include <Parsers/ASTIdentifier_fwd.h>
+
 
 namespace DB
 {
@@ -85,7 +85,7 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
 
-    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), args);
+    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), false, args);
 }
 
 ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
@@ -97,17 +97,24 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
         size_t total_bytes_to_read = 0;
 
         Strings paths;
-        Strings paths_to_archives;
+        std::optional<StorageFile::ArchiveInfo> archive_info;
         if (path_to_archive.empty())
             paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
         else
-            paths_to_archives = StorageFile::getPathsList(path_to_archive, context->getUserFilesPath(), context, total_bytes_to_read);
+            archive_info
+                = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
 
-        return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, paths_to_archives);
+        return StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
     }
 
 
     return parseColumnsListFromString(structure, context);
+}
+
+std::unordered_set<String> TableFunctionFile::getVirtualsToCheckBeforeUsingStructureHint() const
+{
+    auto virtual_column_names = StorageFile::getVirtualColumnNames();
+    return {virtual_column_names.begin(), virtual_column_names.end()};
 }
 
 void registerTableFunctionFile(TableFunctionFactory & factory)

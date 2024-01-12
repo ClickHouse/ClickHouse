@@ -42,12 +42,9 @@ const char * ServerType::serverTypeToString(ServerType::Type type)
 
 bool ServerType::shouldStart(Type server_type, const std::string & server_custom_name) const
 {
-    if (type == Type::QUERIES_ALL)
-        return true;
-
-    if (type == Type::QUERIES_DEFAULT)
+    auto is_type_default = [](Type current_type)
     {
-        switch (server_type)
+        switch (current_type)
         {
             case Type::TCP:
             case Type::TCP_WITH_PROXY:
@@ -64,21 +61,37 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
             default:
                 return false;
         }
+    };
+
+    if (exclude_types.contains(Type::QUERIES_ALL))
+        return false;
+
+    if (exclude_types.contains(Type::QUERIES_DEFAULT) && is_type_default(server_type))
+        return false;
+
+    if (exclude_types.contains(Type::QUERIES_CUSTOM) && server_type == Type::CUSTOM)
+        return false;
+
+    if (exclude_types.contains(server_type))
+    {
+        if (server_type != Type::CUSTOM)
+            return false;
+
+        if (exclude_custom_names.contains(server_custom_name))
+            return false;
     }
+
+    if (type == Type::QUERIES_ALL)
+        return true;
+
+    if (type == Type::QUERIES_DEFAULT)
+        return is_type_default(server_type);
 
     if (type == Type::QUERIES_CUSTOM)
-    {
-        switch (server_type)
-        {
-            case Type::CUSTOM:
-                return true;
-            default:
-                return false;
-        }
-    }
+        return server_type == Type::CUSTOM;
 
     if (type == Type::CUSTOM)
-        return server_type == type && server_custom_name == "protocols." + custom_name + ".port";
+        return server_type == type && server_custom_name == custom_name;
 
     return server_type == type;
 }
@@ -86,6 +99,7 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
 bool ServerType::shouldStop(const std::string & port_name) const
 {
     Type port_type;
+    std::string port_custom_name;
 
     if (port_name == "http_port")
         port_type = Type::HTTP;
@@ -121,12 +135,22 @@ bool ServerType::shouldStop(const std::string & port_name) const
         port_type = Type::INTERSERVER_HTTPS;
 
     else if (port_name.starts_with("protocols.") && port_name.ends_with(".port"))
+    {
         port_type = Type::CUSTOM;
+
+        constexpr size_t protocols_size = std::string_view("protocols.").size();
+        constexpr size_t ports_size = std::string_view(".ports").size();
+
+        port_custom_name = port_name.substr(protocols_size, port_name.size() - protocols_size - ports_size + 1);
+    }
+
+    else if (port_name == "cloud.port")
+        port_type = Type::CLOUD;
 
     else
         return false;
 
-    return shouldStart(port_type, port_name);
+    return shouldStart(port_type, port_custom_name);
 }
 
 }

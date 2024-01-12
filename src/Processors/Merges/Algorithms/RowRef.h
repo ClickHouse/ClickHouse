@@ -129,6 +129,8 @@ struct RowRef
     size_t num_columns = 0;
     UInt64 row_num = 0;
 
+    UInt64 source_stream_index = 0;
+
     bool empty() const { return sort_columns == nullptr; }
     void reset() { sort_columns = nullptr; }
 
@@ -137,6 +139,7 @@ struct RowRef
         sort_columns = cursor.impl->sort_columns.data();
         num_columns = cursor.impl->sort_columns.size();
         row_num = cursor.impl->getRow();
+        source_stream_index = cursor.impl->order;
     }
 
     static bool checkEquals(size_t size, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
@@ -171,12 +174,15 @@ struct RowRefWithOwnedChunk
     ColumnRawPtrs * sort_columns = nullptr;
     UInt64 row_num = 0;
 
+    UInt64 source_stream_index = 0;
+
     void swap(RowRefWithOwnedChunk & other)
     {
         owned_chunk.swap(other.owned_chunk);
         std::swap(all_columns, other.all_columns);
         std::swap(sort_columns, other.sort_columns);
         std::swap(row_num, other.row_num);
+        std::swap(source_stream_index, other.source_stream_index);
     }
 
     bool empty() const { return owned_chunk == nullptr; }
@@ -187,6 +193,7 @@ struct RowRefWithOwnedChunk
         all_columns = nullptr;
         sort_columns = nullptr;
         row_num = 0;
+        source_stream_index = 0;
     }
 
     void set(SortCursor & cursor, SharedChunkPtr chunk)
@@ -195,6 +202,7 @@ struct RowRefWithOwnedChunk
         row_num = cursor.impl->getRow();
         all_columns = &owned_chunk->all_columns;
         sort_columns = &owned_chunk->sort_columns;
+        source_stream_index = cursor.impl->order;
     }
 
     bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const

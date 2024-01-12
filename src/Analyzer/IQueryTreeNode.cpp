@@ -10,6 +10,8 @@
 
 #include <Parsers/ASTWithAlias.h>
 
+#include <boost/functional/hash.hpp>
+
 namespace DB
 {
 
@@ -276,6 +278,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         if (it != replacement_map.end())
             continue;
 
+        node_clone->original_ast = node_to_clone->original_ast;
         node_clone->setAlias(node_to_clone->alias);
         node_clone->children = node_to_clone->children;
         node_clone->weak_pointers = node_to_clone->weak_pointers;
@@ -316,6 +319,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
 
         *weak_pointer_ptr = it->second;
     }
+    result_cloned_node_place->original_ast = original_ast;
 
     return result_cloned_node_place;
 }

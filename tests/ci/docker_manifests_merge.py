@@ -6,22 +6,26 @@ import logging
 import os
 import subprocess
 
-from typing import List, Dict, Tuple
+import sys
+from typing import List, Tuple
+
 from github import Github
 
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from clickhouse_helper import (
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+)
 from commit_status_helper import format_description, get_commit, post_commit_status
-from env_helper import RUNNER_TEMP
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResults, TestResult
+from report import TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from env_helper import ROOT_DIR
 from upload_result_helper import upload_results
+from docker_images_helper import docker_login, get_images_oredered_list
 
 NAME = "Push multi-arch images to Dockerhub"
-CHANGED_IMAGES = "changed_images_{}.json"
-Images = Dict[str, List[str]]
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,10 +44,21 @@ def parse_args() -> argparse.Namespace:
         help="suffixes for existing images' tags. More than two should be given",
     )
     parser.add_argument(
-        "--path",
+        "--missing-images",
         type=str,
-        default=RUNNER_TEMP,
-        help="path to changed_images_*.json files",
+        required=True,
+        help="json (array) string or json file with images to create manifest for",
+    )
+    parser.add_argument(
+        "--image-tags",
+        type=str,
+        required=True,
+        help="json string or json file with all images and their tags {IMAGE: TAG}",
+    )
+    parser.add_argument(
+        "--set-latest",
+        action="store_true",
+        help="add latest tag",
     )
     parser.add_argument("--reports", default=True, help=argparse.SUPPRESS)
     parser.add_argument(
@@ -69,70 +84,13 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def load_images(path: str, suffix: str) -> Images:
-    with open(os.path.join(path, CHANGED_IMAGES.format(suffix)), "rb") as images:
-        return json.load(images)  # type: ignore
-
-
-def strip_suffix(suffix: str, images: Images) -> Images:
-    result = {}
-    for image, versions in images.items():
-        for v in versions:
-            if not v.endswith(f"-{suffix}"):
-                raise ValueError(
-                    f"version {image}:{v} does not contain suffix {suffix}"
-                )
-        result[image] = [v[: -len(suffix) - 1] for v in versions]
-
-    return result
-
-
-def check_sources(to_merge: Dict[str, Images]) -> Images:
-    """get a dict {arch1: Images, arch2: Images}"""
-    result = {}  # type: Images
-    first_suffix = ""
-    for suffix, images in to_merge.items():
-        if not result:
-            first_suffix = suffix
-            result = strip_suffix(suffix, images)
-            continue
-        if not result == strip_suffix(suffix, images):
-            raise ValueError(
-                f"images in {images} are not equal to {to_merge[first_suffix]}"
-            )
-
-    return result
-
-
-def get_changed_images(images: Images) -> Dict[str, str]:
-    """The original json format is {"image": "tag"}, so the output artifact is
-    produced here. The latest version is {PR_NUMBER}-{SHA1}
-    """
-    return {k: v[-1] for k, v in images.items()}
-
-
-def merge_images(to_merge: Dict[str, Images]) -> Dict[str, List[List[str]]]:
-    """The function merges image-name:version-suffix1 and image-name:version-suffix2
-    into image-name:version"""
-    suffixes = to_merge.keys()
-    result_images = check_sources(to_merge)
-    merge = {}  # type: Dict[str, List[List[str]]]
-
-    for image, versions in result_images.items():
-        merge[image] = []
-        for i, v in enumerate(versions):
-            merged_v = [v]  # type: List[str]
-            for suf in suffixes:
-                merged_v.append(to_merge[suf][image][i])
-            merge[image].append(merged_v)
-
-    return merge
-
-
-def create_manifest(image: str, tags: List[str], push: bool) -> Tuple[str, str]:
-    tag = tags[0]
-    manifest = f"{image}:{tag}"
-    cmd = "docker manifest create --amend " + " ".join((f"{image}:{t}" for t in tags))
+def create_manifest(
+    image: str, result_tag: str, tags: List[str], push: bool
+) -> Tuple[str, str]:
+    manifest = f"{image}:{result_tag}"
+    cmd = "docker manifest create --amend " + " ".join(
+        (f"{image}:{t}" for t in [result_tag] + tags)
+    )
     logging.info("running: %s", cmd)
     with subprocess.Popen(
         cmd,
@@ -168,40 +126,58 @@ def create_manifest(image: str, tags: List[str], push: bool) -> Tuple[str, str]:
 
 
 def main():
+    # to be aligned with docker paths from image.json
+    os.chdir(ROOT_DIR)
     logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
 
     args = parse_args()
+
     if args.push:
-        subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
-            "docker login --username 'robotclickhouse' --password-stdin",
-            input=get_parameter_from_ssm("dockerhub_robot_password"),
-            encoding="utf-8",
-            shell=True,
-        )
+        docker_login()
 
-    to_merge = {}
-    for suf in args.suffixes:
-        to_merge[suf] = load_images(args.path, suf)
+    archs = args.suffixes
+    assert len(archs) > 1, "arch suffix input param is invalid"
 
-    changed_images = get_changed_images(check_sources(to_merge))
-
-    os.environ["DOCKER_CLI_EXPERIMENTAL"] = "enabled"
-    merged = merge_images(to_merge)
-
+    image_tags = (
+        json.loads(args.image_tags)
+        if not os.path.isfile(args.image_tags)
+        else json.load(open(args.image_tags))
+    )
+    missing_images = (
+        list(image_tags)
+        if args.missing_images == "all"
+        else json.loads(args.missing_images)
+        if not os.path.isfile(args.missing_images)
+        else json.load(open(args.missing_images))
+    )
+    test_results = []
     status = "success"
-    test_results = []  # type: TestResults
-    for image, versions in merged.items():
-        for tags in versions:
-            manifest, test_result = create_manifest(image, tags, args.push)
-            test_results.append(TestResult(manifest, test_result))
-            if test_result != "OK":
-                status = "failure"
 
-    with open(
-        os.path.join(args.path, "changed_images.json"), "w", encoding="utf-8"
-    ) as ci:
-        json.dump(changed_images, ci)
+    ok_cnt, fail_cnt = 0, 0
+    images = get_images_oredered_list()
+    for image_obj in images:
+        if image_obj.repo not in missing_images:
+            continue
+        tag = image_tags[image_obj.repo]
+        if image_obj.only_amd64:
+            # FIXME: WA until full arm support
+            tags = [f"{tag}-{arch}" for arch in archs if arch != "aarch64"]
+        else:
+            tags = [f"{tag}-{arch}" for arch in archs]
+        manifest, test_result = create_manifest(image_obj.repo, tag, tags, args.push)
+        test_results.append(TestResult(manifest, test_result))
+        if args.set_latest:
+            manifest, test_result = create_manifest(
+                image_obj.repo, "latest", tags, args.push
+            )
+            test_results.append(TestResult(manifest, test_result))
+
+        if test_result != "OK":
+            status = "failure"
+            fail_cnt += 1
+        else:
+            ok_cnt += 1
 
     pr_info = PRInfo()
     s3_helper = S3Helper()
@@ -213,16 +189,15 @@ def main():
     if not args.reports:
         return
 
-    if changed_images:
-        description = "Updated " + ", ".join(changed_images.keys())
-    else:
-        description = "Nothing to update"
-
-    description = format_description(description)
+    description = format_description(
+        f"Multiarch images created [ok: {ok_cnt}, failed: {fail_cnt}]"
+    )
 
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
-    post_commit_status(commit, status, url, description, NAME, pr_info)
+    post_commit_status(
+        commit, status, url, description, NAME, pr_info, dump_to_file=True
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
@@ -235,6 +210,8 @@ def main():
     )
     ch_helper = ClickHouseHelper()
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    if status == "failure":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

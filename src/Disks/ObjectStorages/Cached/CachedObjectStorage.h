@@ -57,11 +57,15 @@ public:
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void copyObjectToAnotherObjectStorage( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         IObjectStorage & object_storage_to,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
@@ -88,7 +92,7 @@ public:
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    std::string generateBlobNameForPath(const std::string & path) override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
     bool isRemote() const override { return object_storage->isRemote(); }
 

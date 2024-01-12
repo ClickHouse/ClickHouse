@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -138,8 +139,9 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     /// Form the block based on the column names from the query
-    Names names;
     const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, metadata_snapshot, query.columns);
+    Names names;
+    names.reserve(columns_ast->children.size());
     for (const auto & identifier : columns_ast->children)
     {
         std::string current_name = identifier->getColumnName();
@@ -147,6 +149,25 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     return getSampleBlock(names, table, metadata_snapshot);
+}
+
+std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
+{
+    auto const * insert_query = query_ptr->as<ASTInsertQuery>();
+    if (!insert_query || !insert_query->columns)
+        return std::nullopt;
+
+    auto table = DatabaseCatalog::instance().getTable(getDatabaseTable(), getContext());
+    const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(), insert_query->columns);
+    Names names;
+    names.reserve(columns_ast->children.size());
+    for (const auto & identifier : columns_ast->children)
+    {
+        std::string current_name = identifier->getColumnName();
+        names.emplace_back(std::move(current_name));
+    }
+
+    return names;
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -350,7 +371,7 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-    if (!(settings.insert_distributed_sync && table->isRemote()) && !async_insert && !no_squash && !(query && query->watch))
+    if (!(settings.distributed_foreground_insert && table->isRemote()) && !async_insert && !no_squash && !(query && query->watch))
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
@@ -456,7 +477,7 @@ BlockIO InterpreterInsertQuery::execute()
 
                 auto new_context = Context::createCopy(context);
                 new_context->setSettings(new_settings);
-                new_context->setInsertionTable(getContext()->getInsertionTable());
+                new_context->setInsertionTable(getContext()->getInsertionTable(), getContext()->getInsertionTableColumnNames());
 
                 auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
@@ -616,6 +637,7 @@ BlockIO InterpreterInsertQuery::execute()
         presink_chains.at(0).appendChain(std::move(sink_chains.at(0)));
         res.pipeline = QueryPipeline(std::move(presink_chains[0]));
         res.pipeline.setNumThreads(std::min<size_t>(res.pipeline.getNumThreads(), settings.max_threads));
+        res.pipeline.setConcurrencyControl(settings.use_concurrency_control);
 
         if (query.hasInlinedData() && !async_insert)
         {
@@ -659,4 +681,12 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
     extendQueryLogElemImpl(elem, context_);
 }
 
+void registerInterpreterInsertQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterInsertQuery>(args.query, args.context, args.allow_materialized);
+    };
+    factory.registerInterpreter("InterpreterInsertQuery", create_fn);
+}
 }

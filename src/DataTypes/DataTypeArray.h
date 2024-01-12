@@ -29,13 +29,11 @@ public:
         return "Array(" + nested->getName() + ")";
     }
 
+    std::string doGetPrettyName(size_t indent) const override;
+
     const char * getFamilyName() const override
     {
         return "Array";
-    }
-    String getSQLCompatibleName() const override
-    {
-        return "TEXT";
     }
 
     bool canBeInsideNullable() const override

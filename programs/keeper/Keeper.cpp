@@ -14,6 +14,7 @@
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Server/waitServersToFinish.h>
+#include <base/getMemoryAmount.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
 #include <Poco/Net/NetException.h>
@@ -32,10 +33,11 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/TCPServer.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Server/KeeperReadinessHandler.h>
 
 #include "Core/Defines.h"
 #include "config.h"
-#include "config_version.h"
+#include <Common/config_version.h>
 #include "config_tools.h"
 
 
@@ -50,6 +52,9 @@
 
 #include <Disks/registerDisks.h>
 
+#include <incbin.h>
+/// A minimal file used when the keeper is run without installation
+INCBIN(keeper_resource_embedded_xml, SOURCE_DIR "/programs/keeper/keeper_embedded.xml");
 
 int mainEntryClickHouseKeeper(int argc, char ** argv)
 {
@@ -67,7 +72,7 @@ int mainEntryClickHouseKeeper(int argc, char ** argv)
     }
 }
 
-#ifdef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifdef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 
 // Weak symbols don't work correctly on Darwin
 // so we have a stub implementation to avoid linker errors
@@ -158,6 +163,8 @@ int Keeper::run()
 
 void Keeper::initialize(Poco::Util::Application & self)
 {
+    ConfigProcessor::registerEmbeddedConfig("keeper_config.xml", std::string_view(reinterpret_cast<const char *>(gkeeper_resource_embedded_xmlData), gkeeper_resource_embedded_xmlSize));
+
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
@@ -284,6 +291,33 @@ try
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
 
+    auto updateMemorySoftLimitInConfig = [&](Poco::Util::AbstractConfiguration & config)
+    {
+        UInt64 memory_soft_limit = 0;
+        if (config.has("keeper_server.max_memory_usage_soft_limit"))
+        {
+            memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
+        }
+
+        /// if memory soft limit is not set, we will use default value
+        if (memory_soft_limit == 0)
+        {
+            Float64 ratio = 0.9;
+            if (config.has("keeper_server.max_memory_usage_soft_limit_ratio"))
+                ratio = config.getDouble("keeper_server.max_memory_usage_soft_limit_ratio");
+
+            size_t physical_server_memory = getMemoryAmount();
+            if (ratio > 0 && physical_server_memory > 0)
+            {
+                memory_soft_limit = static_cast<UInt64>(physical_server_memory * ratio);
+                config.setUInt64("keeper_server.max_memory_usage_soft_limit", memory_soft_limit);
+            }
+        }
+        LOG_INFO(log, "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(memory_soft_limit));
+    };
+
+    updateMemorySoftLimitInConfig(config());
+
     std::string path;
 
     if (config().has("keeper_server.storage_path"))
@@ -301,7 +335,7 @@ try
     else if (std::filesystem::is_directory(std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"))
     {
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                        "By default 'keeper.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper.storage_path' in the keeper configuration explicitly",
+                        "By default 'keeper_server.storage_path' could be assigned to {}, but the directory {} already exists. Please specify 'keeper_server.storage_path' in the keeper configuration explicitly",
                         KEEPER_DEFAULT_PATH, String{std::filesystem::path{config().getString("path", DBMS_DEFAULT_PATH)} / "coordination"});
     }
     else
@@ -323,6 +357,13 @@ try
         config().getUInt("max_thread_pool_free_size", 1000),
         config().getUInt("thread_pool_queue_size", 10000)
     );
+    /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
+    SCOPE_EXIT({
+        Stopwatch watch;
+        LOG_INFO(log, "Waiting for background threads");
+        GlobalThreadPool::instance().shutdown();
+        LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
+    });
 
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
@@ -454,6 +495,29 @@ try
                 std::make_unique<HTTPServer>(
                     std::move(my_http_context), createPrometheusMainHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
         });
+
+        /// HTTP control endpoints
+        port_name = "keeper_server.http_control.port";
+        createServer(listen_host, port_name, listen_try, [&](UInt16 port) mutable
+        {
+            auto my_http_context = httpContext();
+            Poco::Timespan my_keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
+            Poco::Net::HTTPServerParams::Ptr my_http_params = new Poco::Net::HTTPServerParams;
+            my_http_params->setTimeout(my_http_context->getReceiveTimeout());
+            my_http_params->setKeepAliveTimeout(my_keep_alive_timeout);
+
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port);
+            socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
+            socket.setSendTimeout(my_http_context->getSendTimeout());
+            servers->emplace_back(
+                listen_host,
+                port_name,
+                "HTTP Control: http://" + address.toString(),
+                std::make_unique<HTTPServer>(
+                    std::move(my_http_context), createKeeperHTTPControlMainHandlerFactory(config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params)
+                    );
+        });
     }
 
     for (auto & server : *servers)
@@ -485,6 +549,10 @@ try
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
+            updateLevels(*config, logger());
+
+            updateMemorySoftLimitInConfig(*config);
+
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
 
@@ -549,17 +617,20 @@ catch (...)
 {
     /// Poco does not provide stacktrace.
     tryLogCurrentException("Application");
-    throw;
+    auto code = getCurrentExceptionCode();
+    return code ? code : -1;
 }
 
 
 void Keeper::logRevision() const
 {
-    Poco::Logger::root().information("Starting ClickHouse Keeper " + std::string{VERSION_STRING}
-        + "(revision : " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", git hash: " + (git_hash.empty() ? "<unknown>" : git_hash)
-        + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
-        + ", PID " + std::to_string(getpid()));
+    LOG_INFO(&Poco::Logger::get("Application"),
+        "Starting ClickHouse Keeper {} (revision: {}, git hash: {}, build id: {}), PID {}",
+        VERSION_STRING,
+        ClickHouseRevision::getVersionRevision(),
+        git_hash.empty() ? "<unknown>" : git_hash,
+        build_id.empty() ? "<unknown>" : build_id,
+        getpid());
 }
 
 

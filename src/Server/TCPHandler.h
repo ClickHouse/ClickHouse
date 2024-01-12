@@ -21,6 +21,7 @@
 #include <Formats/NativeWriter.h>
 
 #include "IServer.h"
+#include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include "base/types.h"
@@ -73,6 +74,8 @@ struct QueryState
 
     /// Query text.
     String query;
+    /// Parsed query
+    ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
 
@@ -144,8 +147,8 @@ public:
       *  because it allows to check the IP ranges of the trusted proxy.
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
-    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
-    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_);
+    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
+    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_, const ProfileEvents::Event & read_event_ = ProfileEvents::end(), const ProfileEvents::Event & write_event_ = ProfileEvents::end());
     ~TCPHandler() override;
 
     void run() override;
@@ -188,14 +191,19 @@ private:
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
 
+    ProfileEvents::Event read_event;
+    ProfileEvents::Event write_event;
+
     /// Time after the last check to stop the request and send the progress.
     Stopwatch after_check_cancelled;
     Stopwatch after_send_progress;
 
     String default_database;
 
+    bool is_ssh_based_auth = false;
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
+    bool is_interserver_authenticated = false;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
     /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
@@ -223,6 +231,7 @@ private:
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
     std::unique_ptr<Session> makeSession();
+    String prepareStringForSshValidation(String user, String challenge);
 
     bool receiveProxyHeader();
     void receiveHello();
@@ -245,7 +254,9 @@ private:
     [[noreturn]] void receiveUnexpectedTablesStatusRequest();
 
     /// Process INSERT query
+    void startInsertQuery();
     void processInsertQuery();
+    AsynchronousInsertQueue::PushResult processAsyncInsertQuery(AsynchronousInsertQueue & insert_queue);
 
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
@@ -264,7 +275,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement);
+    void sendMergeTreeAllRangesAnnouncementAssumeLocked(InitialAllRangesAnnouncement announcement);
     void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);

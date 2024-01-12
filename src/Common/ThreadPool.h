@@ -20,8 +20,9 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Priority.h>
 #include <Common/StackTrace.h>
-#include <Common/Exception.h>
 #include <base/scope_guard.h>
+
+class JobWithPriority;
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -41,18 +42,20 @@ public:
     using Metric = CurrentMetrics::Metric;
 
     /// Maximum number of threads is based on the number of physical cores.
-    ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_);
+    ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_);
 
     /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
     explicit ThreadPoolImpl(
         Metric metric_threads_,
         Metric metric_active_threads_,
+        Metric metric_scheduled_jobs_,
         size_t max_threads_);
 
     /// queue_size - maximum number of running plus scheduled jobs. It can be greater than max_threads. Zero means unlimited.
     ThreadPoolImpl(
         Metric metric_threads_,
         Metric metric_active_threads_,
+        Metric metric_scheduled_jobs_,
         size_t max_threads_,
         size_t max_free_threads_,
         size_t queue_size_,
@@ -107,12 +110,15 @@ public:
     void addOnDestroyCallback(OnDestroyCallback && callback);
 
 private:
+    friend class GlobalThreadPool;
+
     mutable std::mutex mutex;
     std::condition_variable job_finished;
     std::condition_variable new_job_or_shutdown;
 
     Metric metric_threads;
     Metric metric_active_threads;
+    Metric metric_scheduled_jobs;
 
     size_t max_threads;
     size_t max_free_threads;
@@ -122,32 +128,6 @@ private:
     bool shutdown = false;
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
-
-    struct JobWithPriority
-    {
-        Job job;
-        Priority priority;
-        DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
-
-        /// Call stacks of all jobs' schedulings leading to this one
-        std::vector<StackTrace::FramePointers> frame_pointers;
-        bool enable_job_stack_trace = false;
-
-        JobWithPriority(Job job_, Priority priority_, const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_, bool capture_frame_pointers = false)
-            : job(job_), priority(priority_), thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
-        {
-            if (!capture_frame_pointers)
-                return;
-            /// Save all previous jobs call stacks and append with current
-            frame_pointers = DB::Exception::thread_frame_pointers;
-            frame_pointers.push_back(StackTrace().getFramePointers());
-        }
-
-        bool operator<(const JobWithPriority & rhs) const
-        {
-            return priority > rhs.priority; // Reversed for `priority_queue` max-heap to yield minimum value (i.e. highest priority) first
-        }
-    };
 
     boost::heap::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;
@@ -197,6 +177,7 @@ class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
 public:
     static void initialize(size_t max_threads = 10000, size_t max_free_threads = 1000, size_t queue_size = 10000);
     static GlobalThreadPool & instance();
+    static void shutdown();
 };
 
 

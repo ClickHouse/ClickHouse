@@ -38,7 +38,7 @@ public:
     explicit IStorageSystemOneBlock(const StorageID & table_id_) : IStorage(table_id_)
     {
         StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(ColumnsDescription(Self::getNamesAndTypes(), Self::getNamesAndAliases()));
+        storage_metadata.setColumns(Self::getColumnsDescription());
         setInMemoryMetadata(storage_metadata);
     }
 

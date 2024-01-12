@@ -8,7 +8,7 @@ Contains information about threads that execute queries, for example, thread nam
 To start logging:
 
 1.  Configure parameters in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
-2.  Set [log_query_threads](../../operations/settings/settings.md#settings-log-query-threads) to 1.
+2.  Set [log_query_threads](../../operations/settings/settings.md#log-query-threads) to 1.
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
@@ -18,6 +18,7 @@ You can use the [log_queries_probability](../../operations/settings/settings.md#
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the thread has finished execution of the query.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query.
 - `event_time_microsecinds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query with microseconds precision.
@@ -74,6 +75,7 @@ Columns:
 ``` text
 Row 1:
 ──────
+hostname:                      clickhouse.eu-central1.internal
 event_date:                    2020-09-11
 event_time:                    2020-09-11 10:08:17
 event_time_microseconds:       2020-09-11 10:08:17.134042

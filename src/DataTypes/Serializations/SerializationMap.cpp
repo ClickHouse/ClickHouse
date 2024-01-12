@@ -192,7 +192,10 @@ void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, cons
     deserializeTextImpl(column, istr,
         [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
-            subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings);
+            if (settings.null_as_default)
+                SerializationNullable::deserializeTextQuotedImpl(subcolumn, buf, settings, subcolumn_serialization);
+            else
+                subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings);
         });
 
     if (whole && !istr.eof())

@@ -7,10 +7,12 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
+#include <Processors/Chunk.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
+#include <Processors/Merges/Algorithms/MergeTreePartLevelInfo.h>
 
 namespace DB
 {
@@ -20,7 +22,9 @@ namespace ErrorCodes
 }
 
 
-/// Lightweight (in terms of logic) stream for reading single part from MergeTree
+/// Lightweight (in terms of logic) stream for reading single part from
+/// MergeTree, used for merges and mutations.
+///
 /// NOTE:
 ///  It doesn't filter out rows that are deleted with lightweight deletes.
 ///  Use createMergeTreeSequentialSource filter out those rows.
@@ -28,6 +32,7 @@ class MergeTreeSequentialSource : public ISource
 {
 public:
     MergeTreeSequentialSource(
+        MergeTreeSequentialSourceType type,
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         MergeTreeData::DataPartPtr data_part_,
@@ -83,6 +88,7 @@ private:
 
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
+    MergeTreeSequentialSourceType type,
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     MergeTreeData::DataPartPtr data_part_,
@@ -119,7 +125,11 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     addTotalRowsApprox(data_part->rows_count);
 
     /// Add columns because we don't want to read empty blocks
-    injectRequiredColumns(LoadedMergeTreeDataPartInfoForReader(data_part, alter_conversions), storage_snapshot, /*with_subcolumns=*/ false, columns_to_read);
+    injectRequiredColumns(
+        LoadedMergeTreeDataPartInfoForReader(data_part, alter_conversions),
+        storage_snapshot,
+        storage.supportsSubcolumns(),
+        columns_to_read);
 
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
@@ -127,6 +137,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
             .withExtendedObjects()
             .withSystemColumns();
+
+        if (storage.supportsSubcolumns())
+            options.withSubcolumns();
         columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
     }
     else
@@ -135,10 +148,25 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         columns_for_reader = data_part->getColumns().addTypes(columns_to_read);
     }
 
-    ReadSettings read_settings;
+    const auto & context = storage.getContext();
+    ReadSettings read_settings = context->getReadSettings();
+    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+    /// It does not make sense to use pthread_threadpool for background merges/mutations
+    /// And also to preserve backward compatibility
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
     if (read_with_direct_io)
         read_settings.direct_io_threshold = 1;
-    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+    /// Configure throttling
+    switch (type)
+    {
+        case Mutation:
+            read_settings.local_throttler = context->getMutationsThrottler();
+            break;
+        case Merge:
+            read_settings.local_throttler = context->getMergesThrottler();
+            break;
+    }
+    read_settings.remote_throttler = read_settings.local_throttler;
 
     MergeTreeReaderSettings reader_settings =
     {
@@ -160,6 +188,8 @@ Chunk MergeTreeSequentialSource::generate()
 try
 {
     const auto & header = getPort().getHeader();
+    /// Part level is useful for next step for merging non-merge tree table
+    bool add_part_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
     if (!isCancelled() && current_row < data_part->rows_count)
     {
@@ -176,7 +206,7 @@ try
             current_mark += (rows_to_read == rows_read);
 
             bool should_evaluate_missing_defaults = false;
-            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read);
+            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read, data_part->info.min_block);
 
             if (should_evaluate_missing_defaults)
             {
@@ -199,7 +229,7 @@ try
                 ++it;
             }
 
-            return Chunk(std::move(res_columns), rows_read);
+            return Chunk(std::move(res_columns), rows_read, add_part_level ? std::make_shared<MergeTreePartLevelInfo>(data_part->info.level) : nullptr);
         }
     }
     else
@@ -231,23 +261,29 @@ MergeTreeSequentialSource::~MergeTreeSequentialSource() = default;
 
 
 Pipe createMergeTreeSequentialSource(
+    MergeTreeSequentialSourceType type,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     MergeTreeData::DataPartPtr data_part,
     Names columns_to_read,
+    std::optional<MarkRanges> mark_ranges,
+    bool apply_deleted_mask,
     bool read_with_direct_io,
     bool take_column_types_from_storage,
     bool quiet,
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count)
 {
-    /// The part might have some rows masked by lightweight deletes
-    const bool need_to_filter_deleted_rows = data_part->hasLightweightDelete();
-    auto columns = columns_to_read;
-    if (need_to_filter_deleted_rows)
-        columns.emplace_back(LightweightDeleteDescription::FILTER_COLUMN.name);
+    const auto & filter_column = LightweightDeleteDescription::FILTER_COLUMN;
 
-    auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
-        storage, storage_snapshot, data_part, columns, std::optional<MarkRanges>{},
+    /// The part might have some rows masked by lightweight deletes
+    const bool need_to_filter_deleted_rows = apply_deleted_mask && data_part->hasLightweightDelete();
+    const bool has_filter_column = std::ranges::find(columns_to_read, filter_column.name) != columns_to_read.end();
+
+    if (need_to_filter_deleted_rows && !has_filter_column)
+        columns_to_read.emplace_back(filter_column.name);
+
+    auto column_part_source = std::make_shared<MergeTreeSequentialSource>(type,
+        storage, storage_snapshot, data_part, columns_to_read, std::move(mark_ranges),
         /*apply_deleted_mask=*/ false, read_with_direct_io, take_column_types_from_storage, quiet);
 
     Pipe pipe(std::move(column_part_source));
@@ -255,10 +291,10 @@ Pipe createMergeTreeSequentialSource(
     /// Add filtering step that discards deleted rows
     if (need_to_filter_deleted_rows)
     {
-        pipe.addSimpleTransform([filtered_rows_count](const Block & header)
+        pipe.addSimpleTransform([filtered_rows_count, has_filter_column](const Block & header)
         {
             return std::make_shared<FilterTransform>(
-                header, nullptr, LightweightDeleteDescription::FILTER_COLUMN.name, true, false, filtered_rows_count);
+                header, nullptr, filter_column.name, !has_filter_column, false, filtered_rows_count);
         });
     }
 
@@ -274,6 +310,7 @@ class ReadFromPart final : public ISourceStep
 {
 public:
     ReadFromPart(
+        MergeTreeSequentialSourceType type_,
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         MergeTreeData::DataPartPtr data_part_,
@@ -283,6 +320,7 @@ public:
         ContextPtr context_,
         Poco::Logger * log_)
         : ISourceStep(DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)})
+        , type(type_)
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
         , data_part(std::move(data_part_))
@@ -305,12 +343,12 @@ public:
         {
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
             const Names & primary_key_column_names = primary_key.column_names;
-            KeyCondition key_condition(filter, context, primary_key_column_names, primary_key.expression, NameSet{});
+            KeyCondition key_condition(filter, context, primary_key_column_names, primary_key.expression);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())
                 mark_ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
-                    data_part, metadata_snapshot, key_condition, context->getSettingsRef(), log);
+                    data_part, metadata_snapshot, key_condition, {}, context->getSettingsRef(), log);
 
             if (mark_ranges && mark_ranges->empty())
             {
@@ -319,14 +357,23 @@ public:
             }
         }
 
-        auto source = std::make_unique<MergeTreeSequentialSource>(
-            storage, storage_snapshot, data_part, columns_to_read,
-            std::move(mark_ranges), apply_deleted_mask, false, true);
+        auto source = createMergeTreeSequentialSource(type,
+            storage,
+            storage_snapshot,
+            data_part,
+            columns_to_read,
+            std::move(mark_ranges),
+            apply_deleted_mask,
+            /*read_with_direct_io=*/ false,
+            /*take_column_types_from_storage=*/ true,
+            /*quiet=*/ false,
+            /*filtered_rows_count=*/ nullptr);
 
         pipeline.init(Pipe(std::move(source)));
     }
 
 private:
+    MergeTreeSequentialSourceType type;
     const MergeTreeData & storage;
     StorageSnapshotPtr storage_snapshot;
     MergeTreeData::DataPartPtr data_part;
@@ -337,7 +384,8 @@ private:
     Poco::Logger * log;
 };
 
-void createMergeTreeSequentialSource(
+void createReadFromPartStep(
+    MergeTreeSequentialSourceType type,
     QueryPlan & plan,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
@@ -348,7 +396,7 @@ void createMergeTreeSequentialSource(
     ContextPtr context,
     Poco::Logger * log)
 {
-    auto reading = std::make_unique<ReadFromPart>(
+    auto reading = std::make_unique<ReadFromPart>(type,
         storage, storage_snapshot, std::move(data_part),
         std::move(columns_to_read), apply_deleted_mask,
         filter, std::move(context), log);

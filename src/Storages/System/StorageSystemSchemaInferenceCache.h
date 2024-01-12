@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/System/IStorageSystemOneBlock.h>
 #include <Storages/Cache/SchemaCache.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {
@@ -11,7 +11,7 @@ class StorageSystemSchemaInferenceCache final : public IStorageSystemOneBlock<St
 public:
     std::string getName() const override { return "SystemSettingsChanges"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

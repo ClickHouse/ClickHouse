@@ -6,14 +6,14 @@
 #include <lz4.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <IO/WriteHelpers.h>
-#include "config_version.h"
+#include <Common/config_version.h>
+#include <Common/formatReadable.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -226,13 +226,13 @@ struct StatisticsStringRef
 /// or [element of ColumnString] -> std::string_view.
 /// We do this conversion in small batches rather than all at once, just before encoding the batch,
 /// in hopes of getting better performance through cache locality.
-/// The Coverter* structs below are responsible for that.
+/// The Converter* structs below are responsible for that.
 /// When conversion is not needed, getBatch() will just return pointer into original data.
 
-template <typename Col, typename To, typename MinMaxType = typename std::conditional<
-        std::is_signed<typename Col::Container::value_type>::value,
+template <typename Col, typename To, typename MinMaxType = typename std::conditional_t<
+        std::is_signed_v<typename Col::Container::value_type>,
         To,
-        typename std::make_unsigned<To>::type>::type>
+        typename std::make_unsigned_t<To>>>
 struct ConverterNumeric
 {
     using Statistics = StatisticsNumeric<MinMaxType, To>;
@@ -253,6 +253,28 @@ struct ConverterNumeric
                 buf[i] = static_cast<To>(column.getData()[offset + i]); // NOLINT
             return buf.data();
         }
+    }
+};
+
+struct ConverterDateTime64WithMultiplier
+{
+    using Statistics = StatisticsNumeric<Int64, Int64>;
+
+    using Col = ColumnDecimal<DateTime64>;
+    const Col & column;
+    Int64 multiplier;
+    PODArray<Int64> buf;
+
+    ConverterDateTime64WithMultiplier(const ColumnPtr & c, Int64 multiplier_) : column(assert_cast<const Col &>(*c)), multiplier(multiplier_) {}
+
+    const Int64 * getBatch(size_t offset, size_t count)
+    {
+        buf.resize(count);
+        for (size_t i = 0; i < count; ++i)
+            /// Not checking overflow because DateTime64 values should already be in the range where
+            /// they fit in Int64 at any allowed scale (i.e. up to nanoseconds).
+            buf[i] = column.getData()[offset + i].value * multiplier;
+        return buf.data();
     }
 };
 
@@ -426,6 +448,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 std::move(dest_buf),
                 method,
                 /*level*/ 3,
+                /*zstd_window_log*/ 0,
                 source.size(),
                 /*existing_memory*/ source.data());
             chassert(compressed_buf->position() == source.data());
@@ -495,14 +518,14 @@ void writeColumnImpl(
     bool use_dictionary = options.use_dictionary_encoding && !s.is_bool;
 
     std::optional<parquet::ColumnDescriptor> fixed_string_descr;
-    if constexpr (std::is_same<ParquetDType, parquet::FLBAType>::value)
+    if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
     {
         /// This just communicates one number to MakeTypedEncoder(): the fixed string length.
         fixed_string_descr.emplace(parquet::schema::PrimitiveNode::Make(
             "", parquet::Repetition::REQUIRED, parquet::Type::FIXED_LEN_BYTE_ARRAY,
             parquet::ConvertedType::NONE, static_cast<int>(converter.fixedStringSize())), 0, 0);
 
-        if constexpr (std::is_same<typename Converter::Statistics, StatisticsFixedStringRef>::value)
+        if constexpr (std::is_same_v<typename Converter::Statistics, StatisticsFixedStringRef>)
             page_statistics.fixed_string_size = converter.fixedStringSize();
     }
 
@@ -583,7 +606,7 @@ void writeColumnImpl(
 
         if (use_dictionary)
         {
-            dict_encoded_pages.push_back({.header = std::move(header)});
+            dict_encoded_pages.push_back({.header = std::move(header), .data = {}});
             std::swap(dict_encoded_pages.back().data, compressed);
         }
         else
@@ -788,9 +811,14 @@ void writeColumnChunkBody(ColumnChunkWriteState & s, const WriteOptions & option
             break;
 
         case TypeIndex::DateTime64:
-            writeColumnImpl<parquet::Int64Type>(
-                s, options, out, ConverterNumeric<ColumnDecimal<DateTime64>, Int64, Int64>(
-                    s.primitive_column));
+            if (s.datetime64_multiplier == 1)
+                writeColumnImpl<parquet::Int64Type>(
+                    s, options, out, ConverterNumeric<ColumnDecimal<DateTime64>, Int64, Int64>(
+                        s.primitive_column));
+            else
+                writeColumnImpl<parquet::Int64Type>(
+                    s, options, out, ConverterDateTime64WithMultiplier(
+                        s.primitive_column, s.datetime64_multiplier));
             break;
 
         case TypeIndex::IPv4:
@@ -889,7 +917,7 @@ void writeFileFooter(std::vector<parq::RowGroup> row_groups, SchemaElements sche
     meta.row_groups = std::move(row_groups);
     for (auto & r : meta.row_groups)
         meta.num_rows += r.num_rows;
-    meta.__set_created_by(VERSION_NAME " " VERSION_DESCRIBE);
+    meta.__set_created_by(std::string(VERSION_NAME) + " " + VERSION_DESCRIBE);
 
     if (options.write_page_statistics || options.write_column_chunk_statistics)
     {

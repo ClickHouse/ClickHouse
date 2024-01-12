@@ -34,7 +34,11 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const override;
+    RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
+
+    bool supportsSubcolumns() const override { return true; }
+
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 private:
     void updateBeforeRead(const ContextPtr & /*context*/) override {}
@@ -43,7 +47,6 @@ private:
 
     StorageAzureBlob::Configuration configuration;
     NamesAndTypesList virtual_columns;
-    Block virtual_block;
     std::unique_ptr<AzureObjectStorage> object_storage;
 };
 

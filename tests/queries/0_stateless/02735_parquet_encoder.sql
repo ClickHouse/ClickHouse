@@ -168,3 +168,15 @@ select columns.5, columns.6 from file(strings3_02735.parquet, ParquetMetadata) a
 select * from file(strings1_02735.parquet);
 select * from file(strings2_02735.parquet);
 select * from file(strings3_02735.parquet);
+
+-- DateTime64 with different units.
+insert into function file(datetime64_02735.parquet) select
+    toDateTime64(number / 1e3, 3) as ms,
+    toDateTime64(number / 1e6, 6) as us,
+    toDateTime64(number / 1e9, 9) as ns,
+    toDateTime64(number / 1e2, 2) as cs,
+    toDateTime64(number, 0) as s,
+    toDateTime64(number / 1e7, 7) as dus
+    from numbers(2000);
+desc file(datetime64_02735.parquet);
+select sum(cityHash64(*)) from file(datetime64_02735.parquet);

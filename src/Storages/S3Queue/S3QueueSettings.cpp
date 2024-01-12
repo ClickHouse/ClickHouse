@@ -1,8 +1,8 @@
+#include <Storages/S3Queue/S3QueueSettings.h>
+#include <Common/Exception.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Storages/S3Queue/S3QueueSettings.h>
-#include <Common/Exception.h>
 
 
 namespace DB

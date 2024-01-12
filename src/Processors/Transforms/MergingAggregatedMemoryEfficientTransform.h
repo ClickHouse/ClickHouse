@@ -1,5 +1,7 @@
 #pragma once
+
 #include <Core/SortDescription.h>
+#include <Common/HashTable/HashSet.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISimpleTransform.h>
@@ -67,7 +69,7 @@ public:
     void allowSeveralChunksForSingleBucketPerSource() { expect_several_chunks_for_single_bucket_per_source = true; }
 
 protected:
-    Status prepare() override;
+    Status prepare(const PortNumbers & updated_input_ports, const PortNumbers &) override;
     void work() override;
 
 private:
@@ -83,16 +85,15 @@ private:
     bool has_two_level = false;
 
     bool all_inputs_finished = false;
-    bool read_from_all_inputs = false;
-    std::vector<bool> read_from_input;
+    bool initialized_index_to_input = false;
+    std::vector<InputPorts::iterator> index_to_input;
+    HashSet<uint64_t> wait_input_ports_numbers;
 
     /// If we aggregate partitioned data several chunks might be produced for the same bucket: one for each partition.
     bool expect_several_chunks_for_single_bucket_per_source = true;
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
-    /// Read from all inputs first chunk. It is needed to detect if any source has two-level aggregation.
-    void readFromAllInputs();
     /// Push chunks if all inputs has single level.
     bool tryPushSingleLevelData();
     /// Push chunks from ready bucket if has one.

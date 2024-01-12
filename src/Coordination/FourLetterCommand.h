@@ -7,7 +7,7 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <IO/WriteBufferFromString.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 
 namespace DB
@@ -414,5 +414,69 @@ struct FeatureFlagsCommand : public IFourLetterCommand
     String run() override;
     ~FeatureFlagsCommand() override = default;
 };
+
+/// Yield leadership and become follower.
+struct YieldLeadershipCommand : public IFourLetterCommand
+{
+    explicit YieldLeadershipCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "ydld"; }
+    String run() override;
+    ~YieldLeadershipCommand() override = default;
+};
+
+#if USE_JEMALLOC
+struct JemallocDumpStats : public IFourLetterCommand
+{
+    explicit JemallocDumpStats(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmst"; }
+    String run() override;
+    ~JemallocDumpStats() override = default;
+
+};
+
+struct JemallocFlushProfile : public IFourLetterCommand
+{
+    explicit JemallocFlushProfile(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmfp"; }
+    String run() override;
+    ~JemallocFlushProfile() override = default;
+};
+
+struct JemallocEnableProfile : public IFourLetterCommand
+{
+    explicit JemallocEnableProfile(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmep"; }
+    String run() override;
+    ~JemallocEnableProfile() override = default;
+};
+
+struct JemallocDisableProfile : public IFourLetterCommand
+{
+    explicit JemallocDisableProfile(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmdp"; }
+    String run() override;
+    ~JemallocDisableProfile() override = default;
+};
+#endif
 
 }

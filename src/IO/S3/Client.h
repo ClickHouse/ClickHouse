@@ -92,6 +92,23 @@ private:
     std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches;
 };
 
+struct ClientSettings
+{
+    bool use_virtual_addressing;
+    /// Disable checksum to avoid extra read of the input stream
+    bool disable_checksum;
+    /// Should client send ComposeObject request after upload to GCS.
+    ///
+    /// Previously ComposeObject request was required to make Copy possible,
+    /// but not anymore (see [1]).
+    ///
+    ///   [1]: https://cloud.google.com/storage/docs/release-notes#June_23_2023
+    ///
+    /// Ability to enable it preserved since likely it is required for old
+    /// files.
+    bool gcs_issue_compose_request;
+};
+
 /// Client that improves the client from the AWS SDK
 /// - inject region and URI into requests so they are rerouted to the correct destination if needed
 /// - automatically detect endpoint and regions for each bucket and cache them
@@ -116,35 +133,16 @@ public:
             const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
             const PocoHTTPClientConfiguration & client_configuration,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-            bool use_virtual_addressing);
+            const ClientSettings & client_settings);
 
-    /// Create a client with adjusted settings:
-    ///  * override_retry_strategy can be used to disable retries to avoid nested retries when we have
-    ///    a retry loop outside of S3 client. Specifically, for read and write buffers. Currently not
-    ///    actually used.
-    ///  * override_request_timeout_ms is used to increase timeout for CompleteMultipartUploadRequest
-    ///    because it often sits idle for 10 seconds: https://github.com/ClickHouse/ClickHouse/pull/42321
-    std::unique_ptr<Client> clone(
-        std::optional<std::shared_ptr<RetryStrategy>> override_retry_strategy = std::nullopt,
-        std::optional<Int64> override_request_timeout_ms = std::nullopt) const;
+    std::unique_ptr<Client> clone() const;
 
     Client & operator=(const Client &) = delete;
 
     Client(Client && other) = delete;
     Client & operator=(Client &&) = delete;
 
-    ~Client() override
-    {
-        try
-        {
-            ClientCacheRegistry::instance().unregisterClient(cache.get());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            throw;
-        }
-    }
+    ~Client() override;
 
     /// Returns the initial endpoint.
     const String & getInitialEndpoint() const { return initial_endpoint; }
@@ -152,16 +150,16 @@ public:
 
     Aws::Auth::AWSCredentials getCredentials() const;
 
-    /// Decorator for RetryStrategy needed for this client to work correctly.
     /// We want to manually handle permanent moves (status code 301) because:
     /// - redirect location is written in XML format inside the response body something that doesn't exist for HEAD
     ///   requests so we need to manually find the correct location
     /// - we want to cache the new location to decrease number of roundtrips for future requests
-    /// This decorator doesn't retry if 301 is detected and fallbacks to the inner retry strategy otherwise.
+    /// Other retries are processed with exponential backoff timeout
+    /// which is limited and rundomly spread
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        explicit RetryStrategy(std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy_);
+        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -172,14 +170,10 @@ public:
         /// NOLINTNEXTLINE(google-runtime-int)
         long GetMaxAttempts() const override;
 
-        void GetSendToken() override;
-
-        bool HasSendToken() override;
-
-        void RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome) override;
-        void RequestBookkeeping(const Aws::Client::HttpResponseOutcome& httpResponseOutcome, const Aws::Client::AWSError<Aws::Client::CoreErrors>& lastError) override;
     private:
-        std::shared_ptr<Aws::Client::RetryStrategy> wrapped_strategy;
+        uint32_t maxRetries;
+        uint32_t scaleFactor;
+        uint32_t maxDelayMs;
     };
 
     /// SSE-KMS headers MUST be signed, so they need to be added before the SDK signs the message
@@ -189,24 +183,23 @@ public:
     template <typename RequestType>
     void setKMSHeaders(RequestType & request) const;
 
-    Model::HeadObjectOutcome HeadObject(const HeadObjectRequest & request) const;
-    Model::ListObjectsV2Outcome ListObjectsV2(const ListObjectsV2Request & request) const;
-    Model::ListObjectsOutcome ListObjects(const ListObjectsRequest & request) const;
-    Model::GetObjectOutcome GetObject(const GetObjectRequest & request) const;
+    Model::HeadObjectOutcome HeadObject(HeadObjectRequest & request) const;
+    Model::ListObjectsV2Outcome ListObjectsV2(ListObjectsV2Request & request) const;
+    Model::ListObjectsOutcome ListObjects(ListObjectsRequest & request) const;
+    Model::GetObjectOutcome GetObject(GetObjectRequest & request) const;
 
-    Model::AbortMultipartUploadOutcome AbortMultipartUpload(const AbortMultipartUploadRequest & request) const;
-    Model::CreateMultipartUploadOutcome CreateMultipartUpload(const CreateMultipartUploadRequest & request) const;
-    Model::CompleteMultipartUploadOutcome CompleteMultipartUpload(const CompleteMultipartUploadRequest & request) const;
-    Model::UploadPartOutcome UploadPart(const UploadPartRequest & request) const;
-    Model::UploadPartCopyOutcome UploadPartCopy(const UploadPartCopyRequest & request) const;
+    Model::AbortMultipartUploadOutcome AbortMultipartUpload(AbortMultipartUploadRequest & request) const;
+    Model::CreateMultipartUploadOutcome CreateMultipartUpload(CreateMultipartUploadRequest & request) const;
+    Model::CompleteMultipartUploadOutcome CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const;
+    Model::UploadPartOutcome UploadPart(UploadPartRequest & request) const;
+    Model::UploadPartCopyOutcome UploadPartCopy(UploadPartCopyRequest & request) const;
 
-    Model::CopyObjectOutcome CopyObject(const CopyObjectRequest & request) const;
-    Model::PutObjectOutcome PutObject(const PutObjectRequest & request) const;
-    Model::DeleteObjectOutcome DeleteObject(const DeleteObjectRequest & request) const;
-    Model::DeleteObjectsOutcome DeleteObjects(const DeleteObjectsRequest & request) const;
+    Model::CopyObjectOutcome CopyObject(CopyObjectRequest & request) const;
+    Model::PutObjectOutcome PutObject(PutObjectRequest & request) const;
+    Model::DeleteObjectOutcome DeleteObject(DeleteObjectRequest & request) const;
+    Model::DeleteObjectsOutcome DeleteObjects(DeleteObjectsRequest & request) const;
 
     using ComposeObjectOutcome = Aws::Utils::Outcome<Aws::NoResult, Aws::S3::S3Error>;
-    ComposeObjectOutcome ComposeObject(const ComposeObjectRequest & request) const;
 
     using Aws::S3::S3Client::EnableRequestProcessing;
     using Aws::S3::S3Client::DisableRequestProcessing;
@@ -223,7 +216,7 @@ private:
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
            const PocoHTTPClientConfiguration & client_configuration,
            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-           bool use_virtual_addressing);
+           const ClientSettings & client_settings_);
 
     Client(
         const Client & other, const PocoHTTPClientConfiguration & client_configuration);
@@ -246,13 +239,15 @@ private:
     using Aws::S3::S3Client::DeleteObject;
     using Aws::S3::S3Client::DeleteObjects;
 
+    ComposeObjectOutcome ComposeObject(ComposeObjectRequest & request) const;
+
     template <typename RequestType, typename RequestFn>
     std::invoke_result_t<RequestFn, RequestType>
-    doRequest(const RequestType & request, RequestFn request_fn) const;
+    doRequest(RequestType & request, RequestFn request_fn) const;
 
     template <bool IsReadMethod, typename RequestType, typename RequestFn>
     std::invoke_result_t<RequestFn, RequestType>
-    doRequestWithRetryNetworkErrors(const RequestType & request, RequestFn request_fn) const;
+    doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const;
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
@@ -268,7 +263,7 @@ private:
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     PocoHTTPClientConfiguration client_configuration;
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads;
-    bool use_virtual_addressing;
+    ClientSettings client_settings;
 
     std::string explicit_region;
     mutable bool detect_region = true;
@@ -298,7 +293,7 @@ public:
 
     std::unique_ptr<S3::Client> create(
         const PocoHTTPClientConfiguration & cfg,
-        bool is_virtual_hosted_style,
+        ClientSettings client_settings,
         const String & access_key_id,
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
@@ -311,10 +306,12 @@ public:
         const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects,
+        unsigned int s3_retry_attempts,
         bool enable_s3_requests_logging,
         bool for_disk_s3,
         const ThrottlerPtr & get_request_throttler,
-        const ThrottlerPtr & put_request_throttler);
+        const ThrottlerPtr & put_request_throttler,
+        const String & protocol = "https");
 
 private:
     ClientFactory();

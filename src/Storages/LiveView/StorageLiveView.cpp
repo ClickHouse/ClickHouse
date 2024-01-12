@@ -253,7 +253,7 @@ StorageLiveView::StorageLiveView(
 
 StorageLiveView::~StorageLiveView()
 {
-    shutdown();
+    shutdown(false);
 }
 
 NamesAndTypesList StorageLiveView::getVirtuals() const
@@ -263,7 +263,7 @@ NamesAndTypesList StorageLiveView::getVirtuals() const
     };
 }
 
-void StorageLiveView::checkTableCanBeDropped() const
+void StorageLiveView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const
 {
     auto table_id = getStorageID();
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
@@ -289,7 +289,7 @@ void StorageLiveView::startup()
         periodic_refresh_task->activate();
 }
 
-void StorageLiveView::shutdown()
+void StorageLiveView::shutdown(bool)
 {
     shutdown_called = true;
 
@@ -478,7 +478,7 @@ void StorageLiveView::writeBlock(const Block & block, ContextPtr local_context)
     });
 
     auto executor = pipeline.execute();
-    executor->execute(pipeline.getNumThreads());
+    executor->execute(pipeline.getNumThreads(), local_context->getSettingsRef().use_concurrency_control);
 }
 
 void StorageLiveView::refresh()

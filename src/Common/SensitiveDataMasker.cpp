@@ -4,11 +4,10 @@
 #include <string>
 #include <atomic>
 
-#include <re2/re2.h>
-
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Common/logger_useful.h>
+#include <Common/re2.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>

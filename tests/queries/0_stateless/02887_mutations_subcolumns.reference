@@ -1,0 +1,10 @@
+6	1
+5	2
+4	3
+3	4
+4	ttt
+5	ttt
+6	ttt
+{"a":"1","obj":{"k1":1,"k2":null,"k3":null}}
+{"a":"3","obj":{"k1":null,"k2":null,"k3":1}}
+{"a":"1","obj":{"k1":1,"k2":null,"k3":null}}

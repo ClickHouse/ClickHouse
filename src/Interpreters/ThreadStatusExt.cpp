@@ -47,7 +47,15 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_err
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(fatal_error_callback_)
-{}
+{
+    shared_data.query_is_canceled_predicate = [this] () -> bool {
+            if (auto context_locked = query_context.lock())
+            {
+                return context_locked->isCurrentQueryKilled();
+            }
+            return false;
+    };
+}
 
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
 {
@@ -61,10 +69,27 @@ std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
     return res;
 }
 
-void ThreadGroup::linkThread(UInt64 thread_it)
+size_t ThreadGroup::getPeakThreadsUsage() const
 {
     std::lock_guard lock(mutex);
-    thread_ids.insert(thread_it);
+    return peak_threads_usage;
+}
+
+
+void ThreadGroup::linkThread(UInt64 thread_id)
+{
+    std::lock_guard lock(mutex);
+    thread_ids.insert(thread_id);
+
+    ++active_thread_count;
+    peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
+}
+
+void ThreadGroup::unlinkThread()
+{
+    std::lock_guard lock(mutex);
+    chassert(active_thread_count > 0);
+    --active_thread_count;
 }
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
@@ -95,7 +120,7 @@ ThreadGroupPtr ThreadGroup::createForBackgroundProcess(ContextPtr storage_contex
 
 void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_hash)
 {
-    auto hash = normalized_hash ? normalized_hash : normalizedQueryHash<false>(query_);
+    auto hash = normalized_hash ? normalized_hash : normalizedQueryHash(query_, false);
 
     std::lock_guard lock(mutex);
     shared_data.query_for_logs = query_;
@@ -105,7 +130,7 @@ void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_has
 void ThreadStatus::attachQueryForLog(const String & query_)
 {
     local_data.query_for_logs = query_;
-    local_data.normalized_query_hash = normalizedQueryHash<false>(query_);
+    local_data.normalized_query_hash = normalizedQueryHash(query_, false);
 
     if (!thread_group)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
@@ -196,7 +221,7 @@ void ThreadStatus::applyQuerySettings()
         LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
 
         if (0 != setpriority(PRIO_PROCESS, static_cast<unsigned>(thread_id), new_os_thread_priority))
-            throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
+            throw ErrnoException(ErrorCodes::CANNOT_SET_THREAD_PRIORITY, "Cannot 'setpriority'");
 
         os_thread_priority = new_os_thread_priority;
     }
@@ -242,6 +267,8 @@ void ThreadStatus::detachFromGroup()
     memory_tracker.reset();
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
+
+    thread_group->unlinkThread();
 
     thread_group.reset();
 

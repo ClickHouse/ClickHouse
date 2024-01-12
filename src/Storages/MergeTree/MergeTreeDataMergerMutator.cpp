@@ -166,18 +166,20 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     String best_partition_id_to_optimize = getBestPartitionToOptimizeEntire(info.partitions_info);
     if (!best_partition_id_to_optimize.empty())
     {
-            return selectAllPartsToMergeWithinPartition(
-                future_part,
-                can_merge_callback,
-                best_partition_id_to_optimize,
-                /*final=*/true,
-                metadata_snapshot,
-                txn,
-                out_disable_reason,
-                /*optimize_skip_merged_partitions=*/true);
+        return selectAllPartsToMergeWithinPartition(
+            future_part,
+            can_merge_callback,
+            best_partition_id_to_optimize,
+            /*final=*/true,
+            metadata_snapshot,
+            txn,
+            out_disable_reason,
+            /*optimize_skip_merged_partitions=*/true);
     }
 
-    out_disable_reason = "There is no need to merge parts according to merge selector algorithm";
+    if (!out_disable_reason.empty())
+        out_disable_reason += ". ";
+    out_disable_reason += "There is no need to merge parts according to merge selector algorithm";
     return SelectPartsDecision::CANNOT_SELECT;
 }
 
@@ -237,8 +239,8 @@ MergeTreeDataMergerMutator::PartitionIdsHint MergeTreeDataMergerMutator::getPart
     if (!best_partition_id_to_optimize.empty())
         res.emplace(std::move(best_partition_id_to_optimize));
 
-    LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: [{}]"
-              "(max_total_size_to_merge={}, merge_with_ttl_allowed{})",
+    LOG_TRACE(log, "Checked {} partitions, found {} partitions with parts that may be merged: [{}] "
+              "(max_total_size_to_merge={}, merge_with_ttl_allowed={})",
               all_partition_ids.size(), res.size(), fmt::join(res, ", "), max_total_size_to_merge, merge_with_ttl_allowed);
     return res;
 }
@@ -534,11 +536,22 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMergeFromRanges(
 String MergeTreeDataMergerMutator::getBestPartitionToOptimizeEntire(
     const PartitionsInfo & partitions_info) const
 {
-    const auto data_settings = data.getSettings();
+    const auto & data_settings = data.getSettings();
     if (!data_settings->min_age_to_force_merge_on_partition_only)
         return {};
     if (!data_settings->min_age_to_force_merge_seconds)
         return {};
+    size_t occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
+    size_t max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
+    if (occupied > 1 && max_tasks_count - occupied < data_settings->number_of_free_entries_in_pool_to_execute_optimize_entire_partition)
+    {
+        LOG_INFO(
+            log,
+            "Not enough idle threads to execute optimizing entire partition. See settings "
+            "'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' "
+            "and 'background_pool_size'");
+        return {};
+    }
 
     auto best_partition_it = std::max_element(
         partitions_info.begin(),

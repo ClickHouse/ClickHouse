@@ -99,6 +99,7 @@ struct TestKeeperExistsRequest final : ExistsRequest, TestKeeperRequest
 struct TestKeeperGetRequest final : GetRequest, TestKeeperRequest
 {
     TestKeeperGetRequest() = default;
+    explicit TestKeeperGetRequest(const GetRequest & base) : GetRequest(base) {}
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
@@ -118,6 +119,8 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 
 struct TestKeeperListRequest : ListRequest, TestKeeperRequest
 {
+    TestKeeperListRequest() = default;
+    explicit TestKeeperListRequest(const ListRequest & base) : ListRequest(base) {}
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
@@ -175,6 +178,14 @@ struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
             else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
                 requests.push_back(std::make_shared<TestKeeperCheckRequest>(*concrete_request_check));
+            }
+            else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(generic_request.get()))
+            {
+                requests.push_back(std::make_shared<TestKeeperGetRequest>(*concrete_request_get));
+            }
+            else if (const auto * concrete_request_list = dynamic_cast<const ListRequest *>(generic_request.get()))
+            {
+                requests.push_back(std::make_shared<TestKeeperListRequest>(*concrete_request_list));
             }
             else
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
@@ -863,7 +874,9 @@ void TestKeeper::reconfig(
         .callback = [callback](const Response & response)
         {
             callback(dynamic_cast<const ReconfigResponse &>(response));
-        }
+        },
+        .watch = nullptr,
+        .time = {}
     });
 }
 

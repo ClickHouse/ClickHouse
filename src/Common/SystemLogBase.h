@@ -27,9 +27,12 @@
     M(ZooKeeperLogElement) \
     M(ProcessorProfileLogElement) \
     M(TextLogElement) \
+    M(S3QueueLogElement) \
     M(FilesystemCacheLogElement) \
     M(FilesystemReadPrefetchesLogElement) \
-    M(AsynchronousInsertLogElement)
+    M(AsynchronousInsertLogElement) \
+    M(BackupLogElement) \
+    M(BlobStorageLogElement)
 
 namespace Poco
 {

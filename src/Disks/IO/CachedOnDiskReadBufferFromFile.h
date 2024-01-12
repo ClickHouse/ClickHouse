@@ -60,11 +60,14 @@ public:
         REMOTE_FS_READ_AND_PUT_IN_CACHE,
     };
 
+    bool isSeekCheap() override;
+
+    bool isContentCached(size_t offset, size_t size) override;
+
 private:
     using ImplementationBufferPtr = std::shared_ptr<ReadBufferFromFileBase>;
 
-    void initialize(size_t offset, size_t size);
-    void assertCorrectness() const;
+    void initialize();
 
     /**
      * Return a list of file segments ordered in ascending order. This list represents
@@ -76,7 +79,7 @@ private:
 
     ImplementationBufferPtr getReadBufferForFileSegment(FileSegment & file_segment);
 
-    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment) const;
+    ImplementationBufferPtr getCacheReadBuffer(const FileSegment & file_segment);
 
     ImplementationBufferPtr getRemoteReadBuffer(FileSegment & file_segment, ReadType read_type_);
 
@@ -86,7 +89,7 @@ private:
 
     bool nextImplStep();
 
-    size_t getTotalSizeToRead();
+    size_t getRemainingSizeToRead();
 
     bool completeFileSegmentAndGetNext();
 
@@ -95,6 +98,8 @@ private:
     bool writeCache(char * data, size_t size, size_t offset, FileSegment & file_segment);
 
     static bool canStartFromCache(size_t current_offset, const FileSegment & file_segment);
+
+    bool nextFileSegmentsBatch();
 
     Poco::Logger * log;
     FileCache::Key cache_key;
@@ -110,7 +115,8 @@ private:
     ImplementationBufferCreator implementation_buffer_creator;
 
     /// Remote read buffer, which can only be owned by current buffer.
-    FileSegment::RemoteFileReaderPtr remote_file_reader;
+    ImplementationBufferPtr remote_file_reader;
+    ImplementationBufferPtr cache_file_reader;
 
     FileSegmentsHolderPtr file_segments;
 

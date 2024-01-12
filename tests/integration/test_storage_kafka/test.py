@@ -2948,7 +2948,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
     # while materialized view is working to inject zookeeper failure
     pm.drop_instance_zk_connections(instance)
     instance.wait_for_log_line(
-        "Error.*(session has been expired|Connection loss).*while pushing to view"
+        "Error.*(Connection loss|Coordination::Exception).*while pushing to view"
     )
     pm.heal_all()
     instance.wait_for_log_line("Committed offset 22")
@@ -4832,6 +4832,103 @@ JSONExtractString(rdkafka_stat, 'type'): consumer
     instance.query("DROP TABLE test.persistent_kafka_mv2")
 
     kafka_delete_topic(admin_client, topic)
+
+
+def test_formats_errors(kafka_cluster):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    for format_name in [
+        "Template",
+        "Regexp",
+        "TSV",
+        "TSVWithNamesAndTypes",
+        "TSKV",
+        "CSV",
+        "CSVWithNames",
+        "CSVWithNamesAndTypes",
+        "CustomSeparated",
+        "CustomSeparatedWithNames",
+        "CustomSeparatedWithNamesAndTypes",
+        "Values",
+        "JSON",
+        "JSONEachRow",
+        "JSONStringsEachRow",
+        "JSONCompactEachRow",
+        "JSONCompactEachRowWithNamesAndTypes",
+        "JSONObjectEachRow",
+        "Avro",
+        "RowBinary",
+        "RowBinaryWithNamesAndTypes",
+        "MsgPack",
+        "JSONColumns",
+        "JSONCompactColumns",
+        "JSONColumnsWithMetadata",
+        "BSONEachRow",
+        "Native",
+        "Arrow",
+        "Parquet",
+        "ORC",
+        "JSONCompactColumns",
+        "Npy",
+        "ParquetMetadata",
+        "CapnProto",
+        "Protobuf",
+        "ProtobufSingle",
+        "ProtobufList",
+        "DWARF",
+        "HiveText",
+        "MySQLDump",
+    ]:
+        kafka_create_topic(admin_client, format_name)
+        table_name = f"kafka_{format_name}"
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.view;
+            DROP TABLE IF EXISTS test.{table_name};
+
+            CREATE TABLE test.{table_name} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{format_name}',
+                         kafka_group_name = '{format_name}',
+                         kafka_format = '{format_name}',
+                         kafka_max_rows_per_message = 5,
+                         format_template_row='template_row.format',
+                         format_regexp='id: (.+?)',
+                         input_format_with_names_use_header=0,
+                         format_schema='key_value_message:Message';
+
+            CREATE MATERIALIZED VIEW test.view Engine=Log AS
+                SELECT key, value FROM test.{table_name};
+        """
+        )
+
+        kafka_produce(
+            kafka_cluster,
+            format_name,
+            ["Broken message\nBroken message\nBroken message\n"],
+        )
+
+        attempt = 0
+        num_errors = 0
+        while attempt < 200:
+            num_errors = int(
+                instance.query(
+                    f"SELECT length(exceptions.text) from system.kafka_consumers where database = 'test' and table = '{table_name}'"
+                )
+            )
+            if num_errors > 0:
+                break
+            attempt += 1
+
+        assert num_errors > 0
+
+        kafka_delete_topic(admin_client, format_name)
+        instance.query(f"DROP TABLE test.{table_name}")
+        instance.query("DROP TABLE test.view")
 
 
 if __name__ == "__main__":

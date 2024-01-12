@@ -26,6 +26,9 @@ void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
 void registerStorageMeiliSearch(StorageFactory& factory);
+#if USE_RAPIDJSON || USE_SIMDJSON
+void registerStorageFuzzJSON(StorageFactory & factory);
+#endif
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
@@ -127,7 +130,11 @@ void registerStorages()
     registerStorageWindowView(factory);
     registerStorageMeiliSearch(factory);
 
-    #if USE_AWS_S3
+#if USE_RAPIDJSON || USE_SIMDJSON
+    registerStorageFuzzJSON(factory);
+#endif
+
+#if USE_AWS_S3
     registerStorageS3(factory);
     registerStorageCOS(factory);
     registerStorageOSS(factory);

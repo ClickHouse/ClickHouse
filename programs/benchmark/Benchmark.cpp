@@ -4,7 +4,9 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <optional>
 #include <random>
+#include <string_view>
 #include <pcg_random.hpp>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
@@ -27,11 +29,12 @@
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
-#include <Common/Config/configReadClient.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <Common/Config/getClientConfigPath.h>
 #include <Common/TerminalSize.h>
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
-#include <filesystem>
+#include <Common/ErrorCodes.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -42,12 +45,14 @@ namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB
 {
 
 using Ports = std::vector<UInt16>;
+static constexpr std::string_view DEFAULT_CLIENT_NAME = "benchmark";
 
 namespace ErrorCodes
 {
@@ -102,7 +107,7 @@ public:
         settings(settings_),
         shared_context(Context::createShared()),
         global_context(Context::createGlobal(shared_context.get())),
-        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency)
+        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
@@ -122,7 +127,7 @@ public:
                 default_database_, user_, password_, quota_key_,
                 /* cluster_= */ "",
                 /* cluster_secret_= */ "",
-                /* client_name_= */ "benchmark",
+                /* client_name_= */ std::string(DEFAULT_CLIENT_NAME),
                 Protocol::Compression::Enable,
                 secure));
 
@@ -135,6 +140,8 @@ public:
 
         global_context->makeGlobalContext();
         global_context->setSettings(settings);
+        global_context->setClientName(std::string(DEFAULT_CLIENT_NAME));
+        global_context->setQueryKindInitial();
 
         std::cerr << std::fixed << std::setprecision(3);
 
@@ -152,7 +159,17 @@ public:
         if (home_path_cstr)
             home_path = home_path_cstr;
 
-        configReadClient(config(), home_path);
+        std::optional<std::string> config_path;
+        if (config().has("config-file"))
+            config_path.emplace(config().getString("config-file"));
+        else
+            config_path = getClientConfigPath(home_path);
+        if (config_path.has_value())
+        {
+            ConfigProcessor config_processor(*config_path);
+            auto loaded_config = config_processor.loadConfig();
+            config().add(loaded_config.configuration);
+        }
     }
 
     int main(const std::vector<std::string> &) override
@@ -387,7 +404,7 @@ private:
             || sigaddset(&sig_set, SIGINT)
             || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         {
-            throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
+            throw ErrnoException(ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
         }
 
         while (true)

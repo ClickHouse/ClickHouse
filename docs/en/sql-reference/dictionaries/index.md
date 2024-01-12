@@ -123,7 +123,7 @@ LAYOUT(...) -- Memory layout configuration
 LIFETIME(...) -- Lifetime of dictionary in memory
 ```
 
-## Storing Dictionaries in Memory {#storig-dictionaries-in-memory}
+## Storing Dictionaries in Memory {#storing-dictionaries-in-memory}
 
 There are a variety of ways to store dictionaries in memory.
 
@@ -394,7 +394,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(HASHED_ARRAY())
+LAYOUT(HASHED_ARRAY([SHARDS 1]))
 ```
 
 ### complex_key_hashed_array
@@ -412,7 +412,7 @@ Configuration example:
 or
 
 ``` sql
-LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
 ```
 
 ### range_hashed {#range_hashed}
@@ -899,11 +899,11 @@ Other types are not supported yet. The function returns the attribute for the pr
 
 Data must completely fit into RAM.
 
-## Dictionary Updates {#dictionary-updates}
+## Refreshing dictionary data using LIFETIME {#lifetime}
 
-ClickHouse periodically updates the dictionaries. The update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries are defined in the `lifetime` tag in seconds.
+ClickHouse periodically updates dictionaries based on the `LIFETIME` tag (defined in seconds). `LIFETIME` is the update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries.
 
-Dictionary updates (other than loading for first use) do not block queries. During updates, the old version of a dictionary is used. If an error occurs during an update, the error is written to the server log, and queries continue using the old version of dictionaries.
+During updates, the old version of a dictionary can still be queried. Dictionary updates (other than when loading the dictionary for first use) do not block queries. If an error occurs during an update, the error is written to the server log and queries can continue using the old version of the dictionary. If a dictionary update is successful, the old version of the dictionary is replaced atomically.
 
 Example of settings:
 
@@ -1769,7 +1769,7 @@ Example of settings:
         <password>qwerty123</password>
         <keyspase>database_name</keyspase>
         <column_family>table_name</column_family>
-        <allow_filering>1</allow_filering>
+        <allow_filtering>1</allow_filtering>
         <partition_key_prefix>1</partition_key_prefix>
         <consistency>One</consistency>
         <where>"SomeColumn" = 42</where>
@@ -1787,7 +1787,7 @@ Setting fields:
 - `password` – Password of the Cassandra user.
 - `keyspace` – Name of the keyspace (database).
 - `column_family` – Name of the column family (table).
-- `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
+- `allow_filtering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
 - `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table. Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra. Default value is 1 (the first key column is a partition key and other key columns are clustering key).
 - `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default value is `One`.
 - `where` – Optional selection criteria.
@@ -2361,6 +2361,12 @@ Result:
 └────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+#### Matching Modes
+
+Pattern matching behavior can be modified with certain dictionary settings:
+- `regexp_dict_flag_case_insensitive`: Use case-insensitive matching (defaults to `false`). Can be overridden in individual expressions with `(?i)` and `(?-i)`.
+- `regexp_dict_flag_dotall`: Allow '.' to match newline characters (defaults to `false`).
+
 ### Use Regular Expression Tree Dictionary in ClickHouse Cloud
 
 Above used `YAMLRegExpTree` source works in ClickHouse Open Source but not in ClickHouse Cloud. To use regexp tree dictionaries in ClickHouse could, first create a regexp tree dictionary from a YAML file locally in ClickHouse Open Source, then dump this dictionary into a CSV file using the `dictionary` table function and the [INTO OUTFILE](../statements/select/into-outfile.md) clause.
@@ -2409,8 +2415,8 @@ clickhouse client \
     --secure \
     --password MY_PASSWORD \
     --query "
-    INSERT INTO regexp_dictionary_source_table 
-    SELECT * FROM input ('id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)') 
+    INSERT INTO regexp_dictionary_source_table
+    SELECT * FROM input ('id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
     FORMAT CSV" < regexp_dict.csv
 ```
 

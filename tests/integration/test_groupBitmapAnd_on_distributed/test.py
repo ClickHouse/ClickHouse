@@ -26,7 +26,7 @@ node4 = cluster.add_instance(
     "node4",
     main_configs=["configs/clusters.xml"],
     image="yandex/clickhouse-server",
-    tag="21.5",
+    tag="21.6",
     with_zookeeper=True,
     allow_analyzer=False,
 )

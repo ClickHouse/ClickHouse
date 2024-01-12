@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ThreadPool_fwd.h>
 #include <Common/Macros.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
@@ -9,16 +10,11 @@
 
 #include <Poco/Semaphore.h>
 
+#include <condition_variable>
 #include <mutex>
 #include <list>
 #include <atomic>
-
-namespace cppkafka
-{
-
-class Configuration;
-
-}
+#include <cppkafka/cppkafka.h>
 
 namespace DB
 {
@@ -28,7 +24,7 @@ class StorageSystemKafkaConsumers;
 struct StorageKafkaInterceptors;
 
 using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
-using KafkaConsumerWeakPtr = std::weak_ptr<KafkaConsumer>;
+using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
@@ -50,7 +46,7 @@ public:
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown() override;
+    void shutdown(bool is_drop) override;
 
     Pipe read(
         const Names & column_names,
@@ -78,16 +74,16 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
-    HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
+    StreamingHandleErrorMode getStreamingHandleErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
     struct SafeConsumers
     {
         std::shared_ptr<IStorage> storage_ptr;
         std::unique_lock<std::mutex> lock;
-        std::vector<KafkaConsumerWeakPtr> & consumers;
+        std::vector<KafkaConsumerPtr> & consumers;
     };
 
-    SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), all_consumers};  }
+    SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
 private:
     // Configuration and state
@@ -102,20 +98,16 @@ private:
     const String schema_name;
     const size_t num_consumers; /// total number of consumers
     Poco::Logger * log;
-    Poco::Semaphore semaphore;
     const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
 
     std::atomic<bool> mv_attached = false;
 
-    /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
-    /// In this case we still need to be able to shutdown() properly.
-    size_t num_created_consumers = 0; /// number of actually created consumers.
-
-    std::vector<KafkaConsumerPtr> consumers; /// available consumers
-    std::vector<KafkaConsumerWeakPtr> all_consumers; /// busy (belong to a KafkaSource) and vacant consumers
+    std::vector<KafkaConsumerPtr> consumers;
 
     std::mutex mutex;
+    std::condition_variable cv;
+    std::condition_variable cleanup_cv;
 
     // Stream thread
     struct TaskContext
@@ -129,12 +121,17 @@ private:
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
 
+    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
+
     /// For memory accounting in the librdkafka threads.
     std::mutex thread_statuses_mutex;
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
     SettingsChanges createSettingsAdjustments();
-    KafkaConsumerPtr createConsumer(size_t consumer_number);
+    /// Creates KafkaConsumer object without real consumer (cppkafka::Consumer)
+    KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
+    /// Returns consumer configuration with all changes that had been overwritten in config
+    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
 
     /// If named_collection is specified.
     String collection_name;
@@ -142,11 +139,7 @@ private:
     std::atomic<bool> shutdown_called = false;
 
     // Update Kafka configuration with values from CH user configuration.
-    void updateConfiguration(cppkafka::Configuration & kafka_config, std::shared_ptr<KafkaConsumerWeakPtr>);
-    void updateConfiguration(cppkafka::Configuration & kafka_config)
-    {
-        updateConfiguration(kafka_config, std::make_shared<KafkaConsumerWeakPtr>());
-    }
+    void updateConfiguration(cppkafka::Configuration & kafka_config);
 
     String getConfigPrefix() const;
     void threadFunc(size_t idx);
@@ -161,6 +154,7 @@ private:
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
+    void cleanConsumers();
 };
 
 }

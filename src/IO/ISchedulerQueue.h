@@ -50,6 +50,12 @@ public:
     /// Should be called outside of scheduling subsystem, implementation must be thread-safe.
     virtual void enqueueRequest(ResourceRequest * request) = 0;
 
+    /// For introspection
+    ResourceCost getBudget() const
+    {
+        return budget.get();
+    }
+
 private:
     // Allows multiple consumers to synchronize with common "debit/credit" balance.
     // 1) (positive) to avoid wasting of allocated but not used resource (e.g in case of a failure);
