@@ -78,7 +78,7 @@ std::optional<size_t> SingleValueDataBase::getSmallestIndexNotNullIf(
     const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end)
 {
     size_t index = row_begin;
-    while (((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)) && (index < row_end))
+    while ((index < row_end) && ((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)))
         index++;
     if (index >= row_end)
         return std::nullopt;
@@ -93,7 +93,7 @@ std::optional<size_t> SingleValueDataBase::getGreatestIndexNotNullIf(
     const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end)
 {
     size_t index = row_begin;
-    while (((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)) && (index < row_end))
+    while ((index < row_end) && ((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)))
         index++;
     if (index >= row_end)
         return std::nullopt;
@@ -240,7 +240,7 @@ void SingleValueDataFixed<T>::setSmallestNotNullIf(
     else
     {
         size_t index = row_begin;
-        while (((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)) && (index < row_end))
+        while ((index < row_end) && ((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)))
             index++;
         if (index >= row_end)
             return;
@@ -284,7 +284,7 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
     else
     {
         size_t index = row_begin;
-        while (((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)) && (index < row_end))
+        while ((index < row_end) && ((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)))
             index++;
         if (index >= row_end)
             return;
