@@ -54,7 +54,7 @@ MetadataStoragePtr MetadataStorageFactory::create(
     return it->second(name, config, config_prefix, object_storage);
 }
 
-static std::string getObjectStoragePrefix(
+static std::string getObjectKeyCompatiblePrefix(
     const IObjectStorage & object_storage,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
@@ -74,7 +74,7 @@ void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
                                               fs::path(Context::getGlobalContextInstance()->getPath()) / "disks" / name / "");
         fs::create_directories(metadata_path);
         auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, 0, config, config_prefix);
-        auto key_compatibility_prefix = getObjectStoragePrefix(*object_storage, config, config_prefix);
+        auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
         return std::make_shared<MetadataStorageFromDisk>(metadata_disk, key_compatibility_prefix);
     });
 }
@@ -87,7 +87,7 @@ void registerPlainMetadataStorage(MetadataStorageFactory & factory)
         const std::string & config_prefix,
         ObjectStoragePtr object_storage) -> MetadataStoragePtr
     {
-        auto key_compatibility_prefix = getObjectStoragePrefix(*object_storage, config, config_prefix);
+        auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
         return std::make_shared<MetadataStorageFromPlainObjectStorage>(object_storage, key_compatibility_prefix);
     });
 }
