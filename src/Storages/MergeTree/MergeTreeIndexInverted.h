@@ -117,6 +117,7 @@ private:
                 : function(function_), key_column(key_column_), gin_filter(std::move(const_gin_filter_)) {}
 
         Function function = FUNCTION_UNKNOWN;
+
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS and FUNCTION_MULTI_SEARCH
         size_t key_column;
 
