@@ -1,0 +1,33 @@
+-- Compact parts
+Origin
+1	2
+2	54321
+After materialize
+1	2
+2	54321
+-- Wide parts
+Origin
+1	2
+2	54321
+After materialize
+1	2
+2	54321
+-- Nullable column != physically absent
+Origin
+1	2
+2	\N
+3	54321
+After materialize
+1	2
+2	\N
+3	54321
+-- Parts with renamed column
+Origin
+1	2
+2	54321
+After rename
+1	2
+2	54321
+After materialize
+1	2
+2	54321
