@@ -27,11 +27,15 @@ def started_cluster():
 
 
 def q(query):
-    return ch1.query(database=database_name, sql=query)
+    return ch1.query(
+        database=database_name, sql=query, settings={"allow_modify_engine_query": 1}
+    )
 
 
 def q_error(query):
-    return ch1.query_and_get_error(database=database_name, sql=query)
+    return ch1.query_and_get_error(
+        database=database_name, sql=query, settings={"allow_modify_engine_query": 1}
+    )
 
 
 def create_tables():
@@ -80,8 +84,15 @@ def check_tables():
     assert (
         "Table engine conversion is supported only for Atomic databases"
         in ch1.query_and_get_error(
-            database="ord", sql="ALTER TABLE mt MODIFY ENGINE TO REPLICATED"
+            database="ord",
+            sql="ALTER TABLE mt MODIFY ENGINE TO REPLICATED",
+            settings={"allow_modify_engine_query": 1},
         )
+    )
+
+    # Setting not set
+    assert "MODIFY ENGINE query is not allowed" in ch1.query_and_get_error(
+        database=database_name, sql="ALTER TABLE mt MODIFY ENGINE TO REPLICATED"
     )
 
 

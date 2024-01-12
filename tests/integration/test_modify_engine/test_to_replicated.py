@@ -36,7 +36,9 @@ def started_cluster():
 
 
 def q(node, query):
-    return node.query(database=database_name, sql=query)
+    return node.query(
+        database=database_name, sql=query, settings={"allow_modify_engine_query": 1}
+    )
 
 
 def create_tables():
@@ -69,15 +71,6 @@ def create_tables():
         ch1,
         "CREATE TABLE collapsing_ver ( ID UInt64, Sign Int8, Version UInt8 ) ENGINE = VersionedCollapsingMergeTree(Sign, Version) ORDER BY ID",
     )
-
-    # # MergeTree table that will not be converted
-    # q(
-    #     ch1,
-    #     "CREATE TABLE mt ( A Int64, D Date, S String ) ENGINE MergeTree() PARTITION BY toYYYYMM(D) ORDER BY A",
-    # )
-
-    # # Not MergeTree table
-    # q(ch1, "CREATE TABLE log ( A Int64, D Date, S String ) ENGINE Log")
 
 
 def convert_tables():

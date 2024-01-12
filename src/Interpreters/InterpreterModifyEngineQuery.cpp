@@ -114,6 +114,9 @@ static void checkEngineChangeIsPossible(ASTStorage * storage, bool to_replicated
 
 BlockIO InterpreterModifyEngineQuery::execute()
 {
+    if (!getContext()->getSettingsRef().allow_modify_engine_query)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MODIFY ENGINE query is not allowed while allow_modify_engine_query setting is not set");
+
     FunctionNameNormalizer().visit(query_ptr.get());
     const auto & query = query_ptr->as<ASTModifyEngineQuery &>();
 

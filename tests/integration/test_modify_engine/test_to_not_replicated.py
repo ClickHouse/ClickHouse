@@ -27,7 +27,9 @@ def started_cluster():
 
 
 def q(node, query):
-    return node.query(database=database_name, sql=query)
+    return node.query(
+        database=database_name, sql=query, settings={"allow_modify_engine_query": 1}
+    )
 
 
 def create_tables():
