@@ -40,6 +40,8 @@ public:
 
     explicit AggregateFunctionSingleValueOrNullData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
 
+    ~AggregateFunctionSingleValueOrNullData() { data().~SingleValueDataBase(); }
+
     SingleValueDataBase & data() { return v_data.get(); }
     const SingleValueDataBase & data() const { return v_data.get(); }
 

@@ -21,6 +21,8 @@ private:
 public:
     explicit AggregateFunctionCombinatorArgMinArgMaxData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
 
+    ~AggregateFunctionCombinatorArgMinArgMaxData() { data().~SingleValueDataBase(); }
+
     SingleValueDataBase & data() { return v_data.get(); }
     const SingleValueDataBase & data() const { return v_data.get(); }
 };
@@ -37,13 +39,13 @@ private:
     const size_t key_offset;
     const TypeIndex key_type_index;
 
-    SingleValueDataBase & data(AggregateDataPtr __restrict place) const /// NOLINT
+    AggregateFunctionCombinatorArgMinArgMaxData & data(AggregateDataPtr __restrict place) const /// NOLINT
     {
-        return reinterpret_cast<Key *>(place + key_offset)->data();
+        return *reinterpret_cast<Key *>(place + key_offset);
     }
-    const SingleValueDataBase & data(ConstAggregateDataPtr __restrict place) const
+    const AggregateFunctionCombinatorArgMinArgMaxData & data(ConstAggregateDataPtr __restrict place) const
     {
-        return reinterpret_cast<const Key *>(place + key_offset)->data();
+        return *reinterpret_cast<const Key *>(place + key_offset);
     }
 
 public:
@@ -101,26 +103,26 @@ public:
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
-        data(place).~SingleValueDataBase();
+        data(place).~Key();
         nested_function->destroy(place);
     }
 
     void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
     {
-        data(place).~SingleValueDataBase();
+        data(place).~Key();
         nested_function->destroyUpToState(place);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if ((isMin && data(place).setIfSmaller(*columns[key_col], row_num, arena))
-            || (!isMin && data(place).setIfGreater(*columns[key_col], row_num, arena)))
+        if ((isMin && data(place).data().setIfSmaller(*columns[key_col], row_num, arena))
+            || (!isMin && data(place).data().setIfGreater(*columns[key_col], row_num, arena)))
         {
             nested_function->destroy(place);
             nested_function->create(place);
             nested_function->add(place, columns, row_num, arena);
         }
-        else if (data(place).isEqualTo(*columns[key_col], row_num))
+        else if (data(place).data().isEqualTo(*columns[key_col], row_num))
         {
             nested_function->add(place, columns, row_num, arena);
         }
@@ -128,13 +130,14 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        if ((isMin && data(place).setIfSmaller(data(rhs), arena)) || (!isMin && data(place).setIfGreater(data(rhs), arena)))
+        if ((isMin && data(place).data().setIfSmaller(data(rhs).data(), arena))
+            || (!isMin && data(place).data().setIfGreater(data(rhs).data(), arena)))
         {
             nested_function->destroy(place);
             nested_function->create(place);
             nested_function->merge(place, rhs, arena);
         }
-        else if (data(place).isEqualTo(data(rhs)))
+        else if (data(place).data().isEqualTo(data(rhs).data()))
         {
             nested_function->merge(place, rhs, arena);
         }
@@ -143,13 +146,13 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_function->serialize(place, buf, version);
-        data(place).write(buf, *serialization);
+        data(place).data().write(buf, *serialization);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_function->deserialize(place, buf, version, arena);
-        data(place).read(buf, *serialization, arena);
+        data(place).data().read(buf, *serialization, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override

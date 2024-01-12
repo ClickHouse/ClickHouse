@@ -38,6 +38,8 @@ public:
 
     explicit AggregateFunctionAnyHeavyData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
 
+    ~AggregateFunctionAnyHeavyData() { data().~SingleValueDataBase(); }
+
     SingleValueDataBase & data() { return v_data.get(); }
     const SingleValueDataBase & data() const { return v_data.get(); }
 

@@ -44,6 +44,12 @@ public:
         generateSingleValueFromTypeIndex(result_type, r_data);
         generateSingleValueFromTypeIndex(value_type, v_data);
     }
+
+    ~AggregateFunctionArgMinMaxData()
+    {
+        result().~SingleValueDataBase();
+        value().~SingleValueDataBase();
+    }
 };
 
 static_assert(
