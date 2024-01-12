@@ -59,7 +59,7 @@ static std::string getObjectStoragePrefix(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
 {
-    return config.getString(config_prefix + ".key_compatibility_prefix", object_storage.getDataPrefix());
+    return config.getString(config_prefix + ".key_compatibility_prefix", object_storage.getCommonKeyPrefix());
 }
 
 void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)

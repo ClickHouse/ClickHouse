@@ -22,7 +22,7 @@ public:
 
     std::string getName() const override { return "LocalObjectStorage"; }
 
-    std::string getDataPrefix() const override { return key_prefix; }
+    std::string getCommonKeyPrefix() const override { return key_prefix; }
 
     bool exists(const StoredObject & object) const override;
 

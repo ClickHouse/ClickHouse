@@ -24,7 +24,7 @@ public:
 
     std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
 
-    std::string getDataPrefix() const override { return object_storage->getDataPrefix(); }
+    std::string getCommonKeyPrefix() const override { return object_storage->getCommonKeyPrefix(); }
 
     bool exists(const StoredObject & object) const override;
 

@@ -84,7 +84,7 @@ public:
 
     virtual std::string getName() const = 0;
 
-    virtual std::string getDataPrefix() const = 0;
+    virtual std::string getCommonKeyPrefix() const = 0;
 
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;

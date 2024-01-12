@@ -82,7 +82,7 @@ public:
 
     std::string getName() const override { return "S3ObjectStorage"; }
 
-    std::string getDataPrefix() const override { return uri.key; }
+    std::string getCommonKeyPrefix() const override { return uri.key; }
 
     bool exists(const StoredObject & object) const override;
 
