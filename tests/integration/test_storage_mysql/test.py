@@ -892,7 +892,7 @@ def test_mysql_point(started_cluster):
         )
     )
     assert (
-        "(15, 20)"
+        "(15,20)"
         == node1.query(
             f"SELECT point FROM mysql('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')"
         ).strip()
