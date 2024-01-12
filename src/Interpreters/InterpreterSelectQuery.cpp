@@ -2985,7 +2985,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         // has suitable sorting. Also don't create sort steps when there are no
         // columns to sort by, because the sort nodes are confused by this. It
         // happens in case of `over ()`.
-        // Even if full_sort_description of both windows match, we in case of different
+        // Even if full_sort_description of both windows match, in case of different
         // partitioning we need to add a SortingStep to reshuffle data in the streams.
         bool need_sort = !window.full_sort_description.empty();
         if (need_sort && i != 0)
