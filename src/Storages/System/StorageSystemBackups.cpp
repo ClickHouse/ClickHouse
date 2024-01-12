@@ -23,7 +23,7 @@ ColumnsDescription StorageSystemBackups::getColumnsDescription()
         {"name", std::make_shared<DataTypeString>(), "Operation name, a string like `Disk('backups', 'my_backup')`"},
         {"base_backup_name", std::make_shared<DataTypeString>(), "Base Backup Operation name, a string like `Disk('backups', 'my_base_backup')`"},
         {"status", std::make_shared<DataTypeEnum8>(getBackupStatusEnumValues()), "Status of backup or restore operation."},
-        {"error", std::make_shared<DataTypeString>(), "The error message in case when error happened during execution."},
+        {"error", std::make_shared<DataTypeString>(), "The error message if any."},
         {"start_time", std::make_shared<DataTypeDateTime>(), "The time when operation started."},
         {"end_time", std::make_shared<DataTypeDateTime>(), "The time when operation finished."},
         {"num_files", std::make_shared<DataTypeUInt64>(), "The number of files stored in the backup."},
