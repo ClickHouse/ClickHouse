@@ -4,7 +4,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
-
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -74,17 +74,17 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
             const FormatSettings & format_settings)
         {
             FormatSettings changed_settings = format_settings;
-            using PrettyColor = FormatSettings::Pretty::PrettyColor;
-            switch (format_settings.pretty.output_format_pretty_color)
+			auto value = format_settings.pretty.output_format_pretty_color.valueOr(2);
+            switch (value)
             {
-                case PrettyColor::Off:
+                case 0:
                     changed_settings.pretty.color = false;
                     break;
-                case PrettyColor::On:
+                case 1:
                     changed_settings.pretty.color = no_escapes ? false : true; 
                     break;
-                case PrettyColor::Auto:
-                    changed_settings.pretty.color = isatty(STDOUT_FILENO) && no_escapes ? false : true; 
+                case 2:
+                    changed_settings.pretty.color = isWritingToTerminal(buf) ||  no_escapes ? false : true; 
                     break;
             } 
             if (!changed_settings.pretty.color)

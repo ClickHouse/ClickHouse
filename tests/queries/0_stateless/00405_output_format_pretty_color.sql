@@ -1,4 +1,4 @@
-SET output_format_pretty_color = 'Off';
+SET output_format_pretty_color = 0;
 SHOW SETTING output_format_pretty_color;
 
 SELECT number AS hello, toString(number) AS world, (hello, world) AS tuple, nullIf(hello % 3, 0) AS sometimes_nulls FROM system.numbers LIMIT 10 SETTINGS max_block_size = 5 FORMAT Pretty;
@@ -9,7 +9,7 @@ SELECT number AS hello, toString(number) AS world, (hello, world) AS tuple, null
 SELECT number AS hello, toString(number) AS world, (hello, world) AS tuple, nullIf(hello % 3, 0) AS sometimes_nulls FROM system.numbers LIMIT 10 SETTINGS max_block_size = 5 FORMAT PrettyCompactNoEscapes;
 SELECT number AS hello, toString(number) AS world, (hello, world) AS tuple, nullIf(hello % 3, 0) AS sometimes_nulls FROM system.numbers LIMIT 10 SETTINGS max_block_size = 5 FORMAT PrettySpaceNoEscapes;
 
-SET output_format_pretty_color = 'On';
+SET output_format_pretty_color = 1;
 SHOW SETTING output_format_pretty_color;
 
 SELECT number AS hello, toString(number) AS world, (hello, world) AS tuple, nullIf(hello % 3, 0) AS sometimes_nulls FROM system.numbers LIMIT 10 SETTINGS max_block_size = 5 FORMAT Pretty;
@@ -20,7 +20,7 @@ SELECT number AS hello, toString(number) AS world, (hello, world) AS tuple, null
 SELECT number AS hello, toString(number) AS world, (hello, world) AS tuple, nullIf(hello % 3, 0) AS sometimes_nulls FROM system.numbers LIMIT 10 SETTINGS max_block_size = 5 FORMAT PrettyCompactNoEscapes;
 SELECT number AS hello, toString(number) AS world, (hello, world) AS tuple, nullIf(hello % 3, 0) AS sometimes_nulls FROM system.numbers LIMIT 10 SETTINGS max_block_size = 5 FORMAT PrettySpaceNoEscapes;
 
-SET output_format_pretty_color = 'Auto';
+SET output_format_pretty_color = 'auto';
 SHOW SETTING output_format_pretty_color;
 
 SELECT number AS hello, toString(number) AS world, (hello, world) AS tuple, nullIf(hello % 3, 0) AS sometimes_nulls FROM system.numbers LIMIT 10 SETTINGS max_block_size = 5 FORMAT Pretty;

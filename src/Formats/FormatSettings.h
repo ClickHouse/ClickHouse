@@ -4,7 +4,7 @@
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <base/unit.h>
-
+#include <Core/SettingsFields.h>
 
 namespace DB
 {
@@ -270,13 +270,8 @@ struct FormatSettings
         UInt64 max_column_pad_width = 250;
         UInt64 max_value_width = 10000;
         bool color = true;
-
-		enum class PrettyColor {
-			Off,
-			On,
-	  		Auto,
-		};	
-		PrettyColor output_format_pretty_color = PrettyColor::Auto;
+	
+		SettingFieldUInt64Auto output_format_pretty_color{"auto"};
 
         bool output_format_pretty_row_numbers = false;
 
