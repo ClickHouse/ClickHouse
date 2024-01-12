@@ -39,4 +39,4 @@ select * from (SELECT number as a FROM numbers(10)) t1 ALL PASTE JOIN (select nu
 SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(10) ORDER BY number DESC ) SETTINGS joined_subquery_requires_alias = 1, allow_experimental_analyzer = 1; -- { serverError BAD_ARGUMENTS }
 TRUNCATE TABLE test;
 INSERT INTO test SELECT number from numbers(6);
-SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(6) ORDER BY number DESC ) SETTINGS joined_subquery_requires_alias = 0;
+SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(6) ORDER BY number) SETTINGS joined_subquery_requires_alias = 0;
