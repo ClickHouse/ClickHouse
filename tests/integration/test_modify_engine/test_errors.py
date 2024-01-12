@@ -29,8 +29,10 @@ def started_cluster():
 def q(query):
     return ch1.query(database=database_name, sql=query)
 
+
 def q_error(query):
     return ch1.query_and_get_error(database=database_name, sql=query)
+
 
 def create_tables():
     zk_path = "/clickhouse/tables/{table}/{shard}"
@@ -46,28 +48,49 @@ def create_tables():
 
     q("CREATE TABLE log ( A Int64, D Date, S String ) ENGINE Log")
 
-    ch1.query(database="ord", sql="CREATE TABLE mt ( A Int64, D Date, S String ) ENGINE MergeTree() PARTITION BY toYYYYMM(D) ORDER BY A")
+    ch1.query(
+        database="ord",
+        sql="CREATE TABLE mt ( A Int64, D Date, S String ) ENGINE MergeTree() PARTITION BY toYYYYMM(D) ORDER BY A",
+    )
 
 
 def check_tables():
     # Already converted
-    assert "Table is already not replicated" in q_error("ALTER TABLE mt MODIFY ENGINE TO NOT REPLICATED")
-    assert "Table is already replicated" in q_error("ALTER TABLE rmt MODIFY ENGINE TO REPLICATED")
+    assert "Table is already not replicated" in q_error(
+        "ALTER TABLE mt MODIFY ENGINE TO NOT REPLICATED"
+    )
+    assert "Table is already replicated" in q_error(
+        "ALTER TABLE rmt MODIFY ENGINE TO REPLICATED"
+    )
 
     # Wrong engine
-    assert "Only MergeTree and ReplicatedMergeTree" in q_error("ALTER TABLE log MODIFY ENGINE TO NOT REPLICATED")
-    assert "Only MergeTree and ReplicatedMergeTree" in q_error("ALTER TABLE log MODIFY ENGINE TO REPLICATED")
+    assert "Only MergeTree and ReplicatedMergeTree" in q_error(
+        "ALTER TABLE log MODIFY ENGINE TO NOT REPLICATED"
+    )
+    assert "Only MergeTree and ReplicatedMergeTree" in q_error(
+        "ALTER TABLE log MODIFY ENGINE TO REPLICATED"
+    )
 
     # ON CLUSTER
-    assert "Modify engine on cluster is not implemented" in q_error("ALTER TABLE log ON CLUSTER cluster MODIFY ENGINE TO REPLICATED")
+    assert "Modify engine on cluster is not implemented" in q_error(
+        "ALTER TABLE log ON CLUSTER cluster MODIFY ENGINE TO REPLICATED"
+    )
 
     # Not atomic database
-    assert "Table engine conversion is supported only for Atomic databases" in ch1.query_and_get_error(database="ord", sql="ALTER TABLE mt MODIFY ENGINE TO REPLICATED")
+    assert (
+        "Table engine conversion is supported only for Atomic databases"
+        in ch1.query_and_get_error(
+            database="ord", sql="ALTER TABLE mt MODIFY ENGINE TO REPLICATED"
+        )
+    )
 
 
 def test_modify_engine(started_cluster):
     ch1.query("CREATE DATABASE " + database_name)
-    ch1.query("CREATE DATABASE ord ENGINE = Ordinary", settings={"allow_deprecated_database_ordinary": 1})
+    ch1.query(
+        "CREATE DATABASE ord ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
 
     create_tables()
 

@@ -81,22 +81,11 @@ def create_tables():
 
 
 def convert_tables():
-    q(
-        ch1,
-        "ALTER TABLE rmt MODIFY ENGINE TO REPLICATED"
-    )
-    q(
-        ch1,
-        "ALTER TABLE replacing MODIFY ENGINE TO REPLICATED"
-    )
-    q(
-        ch1,
-        "ALTER TABLE replacing_ver MODIFY ENGINE TO REPLICATED"
-    )
-    q(
-        ch1,
-        "ALTER TABLE collapsing_ver MODIFY ENGINE TO REPLICATED"
-    )
+    q(ch1, "ALTER TABLE rmt MODIFY ENGINE TO REPLICATED")
+    q(ch1, "ALTER TABLE replacing MODIFY ENGINE TO REPLICATED")
+    q(ch1, "ALTER TABLE replacing_ver MODIFY ENGINE TO REPLICATED")
+    q(ch1, "ALTER TABLE collapsing_ver MODIFY ENGINE TO REPLICATED")
+
 
 def check_tables():
     # Check tables exists
@@ -167,7 +156,6 @@ def check_tables():
     q(ch1, "INSERT INTO replacing VALUES (1, today(), 'a')")
     q(ch1, "INSERT INTO replacing_ver VALUES (1, today(), 'a')")
     q(ch1, "INSERT INTO collapsing_ver VALUES (1, 1, 1)")
-
 
 
 def check_replica_added():

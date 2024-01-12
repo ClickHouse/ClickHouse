@@ -65,22 +65,11 @@ def create_tables():
 
 
 def convert_tables():
-    q(
-        ch1,
-        "ALTER TABLE rmt MODIFY ENGINE TO NOT REPLICATED"
-    )
-    q(
-        ch1,
-        "ALTER TABLE replacing MODIFY ENGINE TO NOT REPLICATED"
-    )
-    q(
-        ch1,
-        "ALTER TABLE replacing_ver MODIFY ENGINE TO NOT REPLICATED"
-    )
-    q(
-        ch1,
-        "ALTER TABLE collapsing_ver MODIFY ENGINE TO NOT REPLICATED"
-    )
+    q(ch1, "ALTER TABLE rmt MODIFY ENGINE TO NOT REPLICATED")
+    q(ch1, "ALTER TABLE replacing MODIFY ENGINE TO NOT REPLICATED")
+    q(ch1, "ALTER TABLE replacing_ver MODIFY ENGINE TO NOT REPLICATED")
+    q(ch1, "ALTER TABLE collapsing_ver MODIFY ENGINE TO NOT REPLICATED")
+
 
 def check_tables():
     # Check tables exists
@@ -99,9 +88,7 @@ def check_tables():
             f"SELECT engine_full FROM system.tables WHERE database = '{database_name}' and name = 'rmt'",
         )
         .strip()
-        .startswith(
-            "MergeTree"
-        )
+        .startswith("MergeTree")
     )
     assert (
         q(
@@ -109,9 +96,7 @@ def check_tables():
             f"SELECT engine_full FROM system.tables WHERE database = '{database_name}' and name = 'replacing'",
         )
         .strip()
-        .startswith(
-            "ReplacingMergeTree"
-        )
+        .startswith("ReplacingMergeTree")
     )
 
     # Check engines for tables with arguments
@@ -121,9 +106,7 @@ def check_tables():
             f"SELECT engine_full FROM system.tables WHERE database = '{database_name}' and name = 'replacing_ver'",
         )
         .strip()
-        .startswith(
-            "ReplacingMergeTree(D)"
-        )
+        .startswith("ReplacingMergeTree(D)")
     )
     assert (
         q(
@@ -131,9 +114,7 @@ def check_tables():
             f"SELECT engine_full FROM system.tables WHERE database = '{database_name}' and name = 'collapsing_ver'",
         )
         .strip()
-        .startswith(
-            "VersionedCollapsingMergeTree(Sign, Version)"
-        )
+        .startswith("VersionedCollapsingMergeTree(Sign, Version)")
     )
 
     # Check values
