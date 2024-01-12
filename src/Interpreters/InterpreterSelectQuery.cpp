@@ -2940,7 +2940,15 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         // has suitable sorting. Also don't create sort steps when there are no
         // columns to sort by, because the sort nodes are confused by this. It
         // happens in case of `over ()`.
-        if (!window.full_sort_description.empty() && (i == 0 || !sortIsPrefix(window, *windows_sorted[i - 1])))
+        // Even if full_sort_description of both windows match, in case of different
+        // partitioning we need to add a SortingStep to reshuffle data in the streams.
+        bool need_sort = !window.full_sort_description.empty();
+        if (need_sort && i != 0)
+        {
+            need_sort = !sortIsPrefix(window, *windows_sorted[i - 1])
+                        || (settings.max_threads != 1 && window.partition_by.size() != windows_sorted[i - 1]->partition_by.size());
+        }
+        if (need_sort)
         {
             SortingStep::Settings sort_settings(*context);
 
