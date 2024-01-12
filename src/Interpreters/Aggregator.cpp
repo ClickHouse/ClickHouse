@@ -1205,7 +1205,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     [&](AggregateDataPtr & aggregate_data)
                     {
                         AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                        createAggregateStates(aggregate_data);
+                        createAggregateStates(place);
                         aggregate_data = place;
                     },
                     state.getKeyData(),
