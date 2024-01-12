@@ -82,7 +82,7 @@ public:
                 getName());
     }
 
-    void create(const AggregateDataPtr __restrict place) const override
+    void create(AggregateDataPtr const __restrict place) const override
     {
         new (place) AggregateFunctionArgMinMaxData(result_type_index, value_type_index);
     }
