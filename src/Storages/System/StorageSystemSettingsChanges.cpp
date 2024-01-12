@@ -7,9 +7,11 @@
 
 namespace DB
 {
-NamesAndTypesList StorageSystemSettingsChanges::getNamesAndTypes()
+ColumnsDescription StorageSystemSettingsChanges::getColumnsDescription()
 {
-    return {
+    /// TODO: Fill in all the comments
+    return ColumnsDescription
+    {
         {"version", std::make_shared<DataTypeString>()},
         {"changes",
          std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
