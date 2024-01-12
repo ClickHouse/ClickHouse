@@ -22,7 +22,6 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>
 #include <iterator>
-#include <regex>
 #include <base/sort.h>
 
 
@@ -169,10 +168,19 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
 
         String remote_fs_metadata = parse<String>(params.get("remote_fs_metadata", ""));
 
-        std::regex re("\\s*,\\s*");
-        Strings capability(
-            std::sregex_token_iterator(remote_fs_metadata.begin(), remote_fs_metadata.end(), re, -1),
-            std::sregex_token_iterator());
+        /// Tokenize capabilities from remote_fs_metadata
+        /// E.g. remote_fs_metadata = "local, s3_plain, web" --> capabilities = ["local", "s3_plain", "web"]
+        Strings capabilities;
+        const String delimiter(", ");
+        size_t pos_start = 0;
+        size_t pos_end;
+        while ((pos_end = remote_fs_metadata.find(delimiter, pos_start)) != std::string::npos)
+        {
+            const String token = remote_fs_metadata.substr(pos_start, pos_end - pos_start);
+            pos_start = pos_end + delimiter.size();
+            capabilities.push_back(token);
+        }
+        capabilities.push_back(remote_fs_metadata.substr(pos_start));
 
         bool send_projections = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION;
 
@@ -188,9 +196,9 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
             auto disk_type = part->getDataPartStorage().getDiskType();
-            if (part->getDataPartStorage().supportZeroCopyReplication() && std::find(capability.begin(), capability.end(), disk_type) != capability.end())
+            if (part->getDataPartStorage().supportZeroCopyReplication() && std::find(capabilities.begin(), capabilities.end(), disk_type) != capabilities.end())
             {
-                /// Send metadata if the receiver's capability covers the source disk type.
+                /// Send metadata if the receiver's capabilities covers the source disk type.
                 response.addCookie({"remote_fs_metadata", disk_type});
                 sendPartFromDisk(part, out, client_protocol_version, true, send_projections);
                 return;

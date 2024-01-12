@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -162,6 +163,8 @@ void insertPostgreSQLValue(
             assert_cast<ColumnArray &>(column).insert(Array(dimensions[1].begin(), dimensions[1].end()));
             break;
         }
+        default:
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
     }
 }
 

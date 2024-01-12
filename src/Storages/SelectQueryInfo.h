@@ -42,9 +42,6 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
-struct MergeTreeDataSelectAnalysisResult;
-using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
-
 struct PrewhereInfo
 {
     /// Actions for row level security filter. Applied separately before prewhere_actions.
@@ -179,8 +176,6 @@ struct SelectQueryInfo
     ///
     /// Configured in StorageDistributed::getQueryProcessingStage()
     ClusterPtr optimized_cluster;
-    /// should we use custom key with the cluster
-    bool use_custom_key = false;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
@@ -214,7 +209,6 @@ struct SelectQueryInfo
 
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
-    bool merge_tree_empty_result = false;
     bool settings_limit_offset_done = false;
     bool is_internal = false;
     bool parallel_replicas_disabled = false;
