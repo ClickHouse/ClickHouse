@@ -9,7 +9,7 @@ SELECT hex(xxHash64('xxhash')) = upper('32dd38952c4bc720');
 
 --
 
-SELECT xxHash64(NULL)   = toUInt64(42);
+SELECT xxHash64(NULL) is NULL;
 SELECT xxHash64()       = toUInt64(16324913028386710556);
 
 SELECT xxHash64(0)      = toUInt64(16804241149081757544);
@@ -44,7 +44,7 @@ SELECT xxHash64(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2)))) = toUInt64(
 
 --
 
-SELECT xxHash32(NULL)   = toUInt32(42);
+SELECT xxHash32(NULL) is NULL;
 SELECT xxHash32()       = toUInt32(4263699484);
 
 SELECT xxHash32(0)      = toUInt32(3479547966);

@@ -831,9 +831,6 @@ public:
     static constexpr auto name = Impl::name;
     static constexpr int null_magic_number = 42;
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
-
 private:
     using ToType = typename Impl::ReturnType;
 
