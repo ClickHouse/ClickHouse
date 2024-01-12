@@ -142,18 +142,7 @@ public:
     Client(Client && other) = delete;
     Client & operator=(Client &&) = delete;
 
-    ~Client() override
-    {
-        try
-        {
-            ClientCacheRegistry::instance().unregisterClient(cache.get());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            throw;
-        }
-    }
+    ~Client() override;
 
     /// Returns the initial endpoint.
     const String & getInitialEndpoint() const { return initial_endpoint; }
@@ -170,7 +159,7 @@ public:
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
+        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;

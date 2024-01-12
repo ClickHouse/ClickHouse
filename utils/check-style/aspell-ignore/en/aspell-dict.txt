@@ -198,6 +198,7 @@ DELETEs
 DESC
 DIEs
 DOGEFI
+Damerau
 DataGrip
 DataLens
 DataTime
@@ -414,6 +415,7 @@ JSONType
 JSONs
 Jaeger
 Jannis
+Jaro
 JavaHash
 Jemalloc
 Jepsen
@@ -716,6 +718,7 @@ ProxySQL
 Punycode
 PyArrow
 PyCharm
+QATlib
 QEMU
 QTCreator
 Quantile
@@ -725,6 +728,7 @@ QueryCacheHits
 QueryCacheMisses
 QueryPreempted
 QueryThread
+QuickAssist
 QuoteMeta
 RBAC
 RClickHouse
@@ -980,6 +984,7 @@ Werror
 Wether
 WikiStat
 WindowView
+Winkler
 WithNames
 WithNamesAndTypes
 WordNet
@@ -996,6 +1001,7 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
+ZSTDQAT
 Zabbix
 Zipkin
 ZooKeeper
@@ -1342,6 +1348,7 @@ cutToFirstSignificantSubdomainWithWWW
 cutURLParameter
 cutWWW
 cyrus
+damerauLevenshteinDistance
 datacenter
 datacenters
 datafiles
@@ -1701,6 +1708,8 @@ isZeroOrNull
 iteratively
 jaccard
 jaccardIndex
+jaroSimilarity
+jaroWinklerSimilarity
 javaHash
 javaHashUTF
 jbod
