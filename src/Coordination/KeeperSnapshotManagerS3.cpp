@@ -13,6 +13,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3/Client.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Common/Macros.h>
@@ -69,7 +70,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         {
             std::lock_guard client_lock{snapshot_s3_client_mutex};
             // if client is not changed (same auth settings, same endpoint) we don't need to update
-            if (snapshot_s3_client && snapshot_s3_client->client && auth_settings == snapshot_s3_client->auth_settings
+            if (snapshot_s3_client && snapshot_s3_client->client && !snapshot_s3_client->auth_settings.hasUpdates(auth_settings)
                 && snapshot_s3_client->uri.uri == new_uri.uri)
                 return;
         }
@@ -98,10 +99,15 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         client_configuration.endpointOverride = new_uri.endpoint;
 
+        S3::ClientSettings client_settings{
+            .use_virtual_addressing = new_uri.is_virtual_hosted_style,
+            .disable_checksum = false,
+            .gcs_issue_compose_request = false,
+        };
+
         auto client = S3::ClientFactory::instance().create(
             client_configuration,
-            new_uri.is_virtual_hosted_style,
-            /* disable_checksum= */ false,
+            client_settings,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             auth_settings.server_side_encryption_customer_key_base64,

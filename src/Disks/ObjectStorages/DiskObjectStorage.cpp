@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/formatReadable.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -257,12 +258,6 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
-    if (!id.starts_with(object_key_prefix))
-    {
-        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_key_prefix, StackTrace().toString());
-        return false;
-    }
-
     auto object = StoredObject(id);
     return object_storage->exists(object);
 }

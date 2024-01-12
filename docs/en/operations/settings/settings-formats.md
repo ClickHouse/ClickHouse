@@ -377,6 +377,12 @@ Allow parsing bools as numbers in JSON input formats.
 
 Enabled by default.
 
+## input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
+
+Allow parsing bools as strings in JSON input formats.
+
+Enabled by default.
+
 ## input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
 Allow parsing numbers as strings in JSON input formats.

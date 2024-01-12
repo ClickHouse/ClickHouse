@@ -2,6 +2,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Common/iota.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -838,7 +839,7 @@ MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
 void ColumnObject::getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation & res) const
 {
     res.resize(num_rows);
-    std::iota(res.begin(), res.end(), 0);
+    iota(res.data(), res.size(), size_t(0));
 }
 
 void ColumnObject::compareColumn(const IColumn & rhs, size_t rhs_row_num,
