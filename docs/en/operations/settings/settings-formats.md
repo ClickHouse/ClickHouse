@@ -1569,7 +1569,13 @@ Result:
 
 Use ANSI escape sequences to paint colors in Pretty formats.
 
-Enabled by default.
+possible values:
+
+-   `0` — Disabled. Pretty formats do not use ANSI escape sequences.
+-   `1` — Enabled. Pretty formats will use ANSI escape sequences except for `NoEscapes` formats.
+-   `auto` - Enabled if `stdout` is a terminal except for `NoEscapes` formats.
+
+Default value is `auto`. 
 
 ### output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 
