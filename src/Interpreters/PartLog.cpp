@@ -139,7 +139,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"peak_memory_usage", std::make_shared<DataTypeUInt64>(), "The maximum amount of used during merge RAM"},
 
         /// Is there an error during the execution or commit
-        {"error", std::make_shared<DataTypeUInt16>(), "The code number of the occurred error."},
+        {"error", std::make_shared<DataTypeUInt16>(), "The error code of the occurred exception."},
         {"exception", std::make_shared<DataTypeString>(), "Text message of the occurred error."},
 
         {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
