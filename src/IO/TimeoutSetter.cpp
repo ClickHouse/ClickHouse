@@ -42,8 +42,8 @@ TimeoutSetter::~TimeoutSetter()
         /// Let's not confuse the users of Apple macOS with extraneous error messages.
 #if !defined(OS_DARWIN)
         tryLogCurrentException("Client", "TimeoutSetter: Can't reset timeouts");
-    }
 #endif
+    }
 }
 
 void TimeoutSetter::reset()
