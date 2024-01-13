@@ -716,14 +716,14 @@ void AggregatingTransform::initGenerate()
     {
         if (!skip_merging)
         {
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(
                 std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads));
         }
         else
         {
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             Pipes pipes;
             for (auto & variant : prepared_data)
                 /// Converts hash tables to blocks with data (finalized or not).
