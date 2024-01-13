@@ -11,11 +11,6 @@ RUN apt-get update -y \
         npm \
     && apt-get clean
 
-COPY s3downloader /s3downloader
-
-ENV S3_URL="https://clickhouse-datasets.s3.amazonaws.com"
-ENV DATASETS="hits visits"
-
 # The following is already done in clickhouse/stateless-test
 # RUN npm install -g azurite
 # RUN npm install tslib
