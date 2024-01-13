@@ -23,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FORBID_FOR_STREAMING_QUERIES;
 }
 
 static SizeLimits getSizeLimitsForSet(const Settings & settings)
@@ -156,6 +157,9 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & conte
 
     if (!plan)
         return nullptr;
+
+    if (plan->getCurrentDataStream().is_infinite)
+        throw Exception(ErrorCodes::FORBID_FOR_STREAMING_QUERIES, "Creating set for streaming subquery is not allowed");
 
     auto creating_set = std::make_unique<CreatingSetStep>(
             plan->getCurrentDataStream(),
