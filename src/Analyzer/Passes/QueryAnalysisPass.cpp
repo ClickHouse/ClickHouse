@@ -2233,7 +2233,7 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
 
                 if (table_expression_modifiers->hasFinal() || table_expression_modifiers->hasSampleSizeRatio() || table_expression_modifiers->hasSampleOffsetRatio())
                     throw Exception(ErrorCodes::SYNTAX_ERROR,
-                        "Streaming query does not compatible with other table expression modifiers");
+                        "Streaming query is not compatible with other table expression modifiers (sampling or FINAL)");
             }
         }
     }
