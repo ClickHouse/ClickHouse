@@ -1,15 +1,23 @@
 #include "config.h"
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
+#if USE_AWS_S3
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Disks/ObjectStorages/S3/DiskS3Utils.h>
+#endif
+#if USE_HDFS
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
+#include <Storages/HDFS/HDFSCommon.h>
+#endif
+#if USE_AZURE_BLOB_STORAGE
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
+#endif
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#endif
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 
@@ -202,6 +210,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
 void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("web", [](
@@ -246,6 +255,7 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         return std::make_shared<LocalObjectStorage>(object_key_prefix);
     });
 }
+#endif
 
 void registerObjectStorages()
 {
@@ -264,8 +274,10 @@ void registerObjectStorages()
     registerAzureObjectStorage(factory);
 #endif
 
-    registerLocalObjectStorage(factory);
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     registerWebObjectStorage(factory);
+    registerLocalObjectStorage(factory);
+#endif
 }
 
 }
