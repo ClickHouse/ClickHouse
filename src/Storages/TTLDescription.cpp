@@ -117,11 +117,6 @@ TTLDescription::TTLDescription(const TTLDescription & other)
     , if_exists(other.if_exists)
     , recompression_codec(other.recompression_codec)
 {
-    // if (other.expression)
-    //     expression = other.expression->clone();
-
-    // if (other.where_expression)
-    //     where_expression = other.where_expression->clone();
 }
 
 TTLDescription & TTLDescription::operator=(const TTLDescription & other)
@@ -135,11 +130,6 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     else
         expression_ast.reset();
 
-    // if (other.expression)
-    //     expression = other.expression->clone();
-    // else
-    //     expression.reset();
-
     expression_columns = other.expression_columns;
     result_column = other.result_column;
 
@@ -147,11 +137,6 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
         where_expression_ast = other.where_expression_ast->clone();
     else
         where_expression_ast.reset();
-
-    // if (other.where_expression)
-    //     where_expression = other.where_expression->clone();
-    // else
-    //     where_expression.reset();
 
     where_expression_columns = other.where_expression_columns;
     where_result_column = other.where_result_column;
@@ -179,7 +164,6 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     auto dag = analyzer.getActionsDAG(false);
 
     const auto * col = &dag->findInOutputs(ast->getColumnName());
-    // std::cerr << "buildExpressionAndSets " << ttl_string << std::endl;
     if (col->result_name != ttl_string)
         col = &dag->addAlias(*col, ttl_string);
 
@@ -188,10 +172,6 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
 
     result.expression = std::make_shared<ExpressionActions>(dag, ExpressionActionsSettings::fromContext(context));
     result.sets = analyzer.getPreparedSets();
-
-    // std::cerr << "--------- buildExpressionAndSets\n";
-    // std::cerr << result.expression->dumpActions() << std::endl;
-    // std::cerr << result.sets->getSubqueries().size() << std::endl;
 
     return result;
 }
@@ -232,8 +212,6 @@ TTLDescription TTLDescription::getTTLFromAST(
     auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
 
-    // auto syntax_analyzer_result = TreeRewriter(context).analyze(ttl_ast, columns.getAllPhysical());
-    // result.expression = ExpressionAnalyzer(ttl_ast, syntax_analyzer_result, context).getActions(false);
     result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;
 
     ExpressionActionsPtr where_expression;
@@ -256,9 +234,6 @@ TTLDescription TTLDescription::getTTLFromAST(
             {
                 result.where_expression_ast = where_expr_ast->clone();
                 where_expression = buildExpressionAndSets(where_expr_ast, columns.getAllPhysical(), context).expression;
-                // auto where_syntax_result = TreeRewriter(context).analyze(where_expr_ast, columns.getAllPhysical());
-                // result.where_expression = ExpressionAnalyzer(where_expr_ast, where_syntax_result, context).getActions(false);
-
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
