@@ -20,9 +20,7 @@ class PrettyBlockOutputFormat : public IOutputFormat
 public:
     /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
     PrettyBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool mono_block_, bool color_);
-
     String getName() const override { return "PrettyBlockOutputFormat"; }
-    
 protected:
     void consume(Chunk) override;
     void consumeTotals(Chunk) override;
@@ -59,7 +57,7 @@ protected:
 
 	bool color;
 
-private: 
+private:
     bool mono_block;
     /// For mono_block == true only
     Chunk mono_chunk;
