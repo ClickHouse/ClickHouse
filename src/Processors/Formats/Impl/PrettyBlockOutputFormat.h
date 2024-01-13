@@ -55,7 +55,7 @@ protected:
         total_rows = 0;
     }
 
-	bool color;
+    bool color;
 
 private:
     bool mono_block;
@@ -73,7 +73,7 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
             const Block & sample,
             const FormatSettings & format_settings)
         {
-			bool color = !no_escapes && format_settings.pretty.color.valueOr(isWritingToTerminal(buf));
+            bool color = !no_escapes && format_settings.pretty.color.valueOr(isWritingToTerminal(buf));
             return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block, color);
         });
         if (!mono_block)
