@@ -182,6 +182,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.with_types_use_header = settings.input_format_with_types_use_header;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
+    format_settings.arrow.use_signed_indexes_for_dictionary = settings.output_format_arrow_use_signed_indexes_for_dictionary;
+    format_settings.arrow.use_64_bit_indexes_for_dictionary = settings.output_format_arrow_use_64_bit_indexes_for_dictionary;
     format_settings.arrow.allow_missing_columns = settings.input_format_arrow_allow_missing_columns;
     format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
