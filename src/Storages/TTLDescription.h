@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Parsers/IAST_fwd.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/ColumnsDescription.h>
@@ -6,6 +7,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Storages/TTLMode.h>
+
 
 namespace DB
 {
@@ -94,9 +96,8 @@ struct TTLDescription
     /// Codec name which will be used to recompress data
     ASTPtr recompression_codec;
 
-    /// Parse TTL structure from definition. Able to parse both column and table
-    /// TTLs.
-    static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key);
+    /// Parse TTL structure from definition. Able to parse both column and table TTLs.
+    static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
 
     TTLDescription() = default;
     TTLDescription(const TTLDescription & other);
@@ -133,7 +134,7 @@ struct TTLTableDescription
     TTLTableDescription & operator=(const TTLTableDescription & other);
 
     static TTLTableDescription getTTLForTableFromAST(
-        const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key);
+        const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
 
     /// Parse description from string
     static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key);

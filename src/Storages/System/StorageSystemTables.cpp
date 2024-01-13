@@ -33,41 +33,71 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription({
-        {"database", std::make_shared<DataTypeString>()},
-        {"name", std::make_shared<DataTypeString>()},
-        {"uuid", std::make_shared<DataTypeUUID>()},
-        {"engine", std::make_shared<DataTypeString>()},
-        {"is_temporary", std::make_shared<DataTypeUInt8>()},
-        {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"metadata_path", std::make_shared<DataTypeString>()},
-        {"metadata_modification_time", std::make_shared<DataTypeDateTime>()},
-        {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"create_table_query", std::make_shared<DataTypeString>()},
-        {"engine_full", std::make_shared<DataTypeString>()},
-        {"as_select", std::make_shared<DataTypeString>()},
-        {"partition_key", std::make_shared<DataTypeString>()},
-        {"sorting_key", std::make_shared<DataTypeString>()},
-        {"primary_key", std::make_shared<DataTypeString>()},
-        {"sampling_key", std::make_shared<DataTypeString>()},
-        {"storage_policy", std::make_shared<DataTypeString>()},
-        {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+
+    auto description = ColumnsDescription{
+        {"database", std::make_shared<DataTypeString>(), "The name of the database the table is in."},
+        {"name", std::make_shared<DataTypeString>(), "Table name."},
+        {"uuid", std::make_shared<DataTypeUUID>(), "Table uuid (Atomic database)."},
+        {"engine", std::make_shared<DataTypeString>(), "Table engine name (without parameters)."},
+        {"is_temporary", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the table is temporary."},
+        {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Paths to the table data in the file systems."},
+        {"metadata_path", std::make_shared<DataTypeString>(), "Path to the table metadata in the file system."},
+        {"metadata_modification_time", std::make_shared<DataTypeDateTime>(), "Time of latest modification of the table metadata."},
+        {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Database dependencies."},
+        {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Table dependencies (materialized views the current table)."},
+        {"create_table_query", std::make_shared<DataTypeString>(), "The query that was used to create the table."},
+        {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the table engine."},
+        {"as_select", std::make_shared<DataTypeString>(), "SELECT query for view."},
+        {"partition_key", std::make_shared<DataTypeString>(), "The partition key expression specified in the table."},
+        {"sorting_key", std::make_shared<DataTypeString>(), "The sorting key expression specified in the table."},
+        {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
+        {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
+        {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy."},
+        {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
+        },
+        {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "Total number of bytes, if it is possible to quickly determine exact number "
+            "of bytes for the table on storage, otherwise NULL (does not includes any underlying storage). "
+            "If the table stores data on disk, returns used space on disk (i.e. compressed). "
+            "If the table stores data in memory, returns approximated number of used bytes in memory."
+        },
+        {"total_bytes_uncompressed", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "Total number of uncompressed bytes, if it's possible to quickly determine the exact number "
+            "of bytes from the part checksums for the table on storage, otherwise NULL (does not take underlying storage (if any) into account)."
+        },
         {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"comment", std::make_shared<DataTypeString>()},
-        {"has_own_data", std::make_shared<DataTypeUInt8>()},
-        {"loading_dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"loading_dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"loading_dependent_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-    }, {
+        {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "Total number of rows INSERTed since server start (only for Buffer tables)."
+        },
+        {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "Total number of bytes INSERTed since server start (only for Buffer tables)."
+        },
+        {"comment", std::make_shared<DataTypeString>(), "The comment for the table."},
+        {"has_own_data", std::make_shared<DataTypeUInt8>(),
+            "Flag that indicates whether the table itself stores some data on disk or only accesses some other source."
+        },
+        {"loading_dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Database loading dependencies (list of objects which should be loaded before the current object)."
+        },
+        {"loading_dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Table loading dependencies (list of objects which should be loaded before the current object)."
+        },
+        {"loading_dependent_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Dependent loading database."
+        },
+        {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Dependent loading table."
+        },
+    };
+
+    description.setAliases({
         {"table", std::make_shared<DataTypeString>(), "name"}
-    }));
+    });
+
+    storage_metadata.setColumns(std::move(description));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -103,7 +133,7 @@ ColumnPtr getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr 
     MutableColumnPtr database_column = ColumnString::create();
     MutableColumnPtr engine_column;
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, sample);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
     if (dag)
     {
         bool filter_by_engine = false;
@@ -514,6 +544,15 @@ protected:
                     auto total_bytes = table->totalBytes(settings);
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
+                    if (total_bytes_uncompressed)
+                        res_columns[res_index++]->insert(*total_bytes_uncompressed);
                     else
                         res_columns[res_index++]->insertDefault();
                 }

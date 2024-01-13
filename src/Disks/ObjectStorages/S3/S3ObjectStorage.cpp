@@ -19,7 +19,6 @@
 
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
-#include <Common/getRandomASCIIString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -458,27 +457,39 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     /// Shortcut for S3
     if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
     {
-        auto client_ = client.get();
+        auto client_ = dest_s3->client.get();
         auto settings_ptr = s3_settings.get();
         auto size = S3::getObjectSize(*client_, bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
         auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-        copyS3File(
-            client.get(),
-            bucket,
-            object_from.remote_path,
-            0,
-            size,
-            dest_s3->bucket,
-            object_to.remote_path,
-            settings_ptr->request_settings,
-            patchSettings(read_settings),
-            BlobStorageLogWriter::create(disk_name),
-            object_to_attributes,
-            scheduler,
-            /* for_disk_s3= */ true);
+        try {
+            copyS3File(
+                client_,
+                bucket,
+                object_from.remote_path,
+                0,
+                size,
+                dest_s3->bucket,
+                object_to.remote_path,
+                settings_ptr->request_settings,
+                patchSettings(read_settings),
+                BlobStorageLogWriter::create(disk_name),
+                object_to_attributes,
+                scheduler,
+                /* for_disk_s3= */ true);
+            return;
+        }
+        catch (S3Exception & exc)
+        {
+            /// If authentication/permissions error occurs then fallthrough to copy with buffer.
+            if (exc.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
+                throw;
+            LOG_WARNING(&Poco::Logger::get("S3ObjectStorage"),
+                "S3-server-side copy object from the disk {} to the disk {} can not be performed: {}\n",
+                getName(), dest_s3->getName(), exc.what());
+        }
     }
-    else
-        IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
+
+    IObjectStorage::copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, object_storage_to, object_to_attributes);
 }
 
 void S3ObjectStorage::copyObject( // NOLINT
@@ -544,27 +555,12 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
     return std::make_unique<S3ObjectStorage>(
         std::move(new_client), std::move(new_s3_settings),
         version_id, s3_capabilities, new_namespace,
-        endpoint, object_key_prefix, disk_name);
+        endpoint, key_generator, disk_name);
 }
 
-ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string &) const
+ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
-    /// Path to store the new S3 object.
-
-    /// Total length is 32 a-z characters for enough randomness.
-    /// First 3 characters are used as a prefix for
-    /// https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
-
-    constexpr size_t key_name_total_size = 32;
-    constexpr size_t key_name_prefix_size = 3;
-
-    /// Path to store new S3 object.
-    String key = fmt::format("{}/{}",
-                             getRandomASCIIString(key_name_prefix_size),
-                             getRandomASCIIString(key_name_total_size - key_name_prefix_size));
-
-    /// what ever key_prefix value is, consider that key as relative
-    return ObjectStorageKey::createAsRelative(object_key_prefix, key);
+    return key_generator->generate(path);
 }
 
 

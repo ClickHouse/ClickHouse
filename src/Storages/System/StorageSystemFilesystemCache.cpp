@@ -12,9 +12,11 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemFilesystemCache::getNamesAndTypes()
+ColumnsDescription StorageSystemFilesystemCache::getColumnsDescription()
 {
-    return {
+    /// TODO: Fill in all the comments.
+    return ColumnsDescription
+    {
         {"cache_name", std::make_shared<DataTypeString>()},
         {"cache_base_path", std::make_shared<DataTypeString>()},
         {"cache_path", std::make_shared<DataTypeString>()},
@@ -44,8 +46,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
     for (const auto & [cache_name, cache_data] : caches)
     {
         const auto & cache = cache_data->cache;
-        const auto file_segments = cache->getFileSegmentInfos();
-        for (const auto & file_segment : file_segments)
+        cache->iterate([&](const FileSegment::Info & file_segment)
         {
             size_t i = 0;
             res_columns[i++]->insert(cache_name);
@@ -73,7 +74,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
                 res_columns[i++]->insert(size);
             else
                 res_columns[i++]->insertDefault();
-        }
+        });
     }
 }
 

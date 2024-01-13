@@ -36,7 +36,6 @@ public:
 
     AggregateFunctionPtr getFunction() const { return function; }
     String getName() const override;
-    bool identical(const IDataTypeCustomName & rhs_) const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };
 

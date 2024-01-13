@@ -9,6 +9,7 @@
 #include <base/UUID.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseAtomic.h>
+#include <Databases/MySQL/MySQLBinlogClient.h>
 #include <Databases/MySQL/MaterializedMySQLSettings.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #include <Common/logger_useful.h>
@@ -31,6 +32,7 @@ public:
         const String & mysql_database_name_,
         mysqlxx::Pool && pool_,
         MySQLClient && client_,
+        const MySQLReplication::BinlogClientPtr & binlog_client_,
         std::unique_ptr<MaterializedMySQLSettings> settings_);
 
     void rethrowExceptionIfNeeded() const;

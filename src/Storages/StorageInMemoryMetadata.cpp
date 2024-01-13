@@ -40,6 +40,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
+    , refresh(other.refresh ? other.refresh->clone() : nullptr)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
 {
@@ -69,6 +70,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     else
         settings_changes.reset();
     select = other.select;
+    refresh = other.refresh ? other.refresh->clone() : nullptr;
     comment = other.comment;
     metadata_version = other.metadata_version;
     return *this;
@@ -122,6 +124,11 @@ void StorageInMemoryMetadata::setSettingsChanges(const ASTPtr & settings_changes
 void StorageInMemoryMetadata::setSelectQuery(const SelectQueryDescription & select_)
 {
     select = select_;
+}
+
+void StorageInMemoryMetadata::setRefresh(ASTPtr refresh_)
+{
+    refresh = refresh_;
 }
 
 void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)

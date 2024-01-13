@@ -21,12 +21,9 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     size_t max_block_size_bytes,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes,
-    bool cleanup_,
-    size_t * cleanedup_rows_count_)
+    bool cleanup_)
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
-    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size_rows, max_block_size_bytes)
-    , cleanup(cleanup_)
-    , cleanedup_rows_count(cleanedup_rows_count_)
+    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size_rows, max_block_size_bytes), cleanup(cleanup_)
 {
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_.getPositionByName(is_deleted_column);
@@ -67,7 +64,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         RowRef current_row;
         setRowRef(current_row, current);
 
-        bool key_differs = selected_row.empty() || !current_row.hasEqualSortColumnsWith(selected_row);
+        bool key_differs = selected_row.empty() || rowsHaveDifferentSortColumns(selected_row, current_row);
         if (key_differs)
         {
             /// if there are enough rows and the last one is calculated completely
@@ -77,16 +74,10 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
             /// Write the data for the previous primary key.
             if (!selected_row.empty())
             {
-                if (is_deleted_column_number != -1)
+                if (is_deleted_column_number!=-1)
                 {
-                    uint8_t value = assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num];
-                    if (!cleanup || !value)
+                    if (!(cleanup && assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num]))
                         insertRow();
-                    else if (cleanup && cleanedup_rows_count != nullptr)
-                    {
-                        *cleanedup_rows_count += current_row_sources.size();
-                        current_row_sources.resize(0);
-                    }
                 }
                 else
                     insertRow();
@@ -100,7 +91,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         if (out_row_sources_buf)
             current_row_sources.emplace_back(current.impl->order, true);
 
-        if (is_deleted_column_number != -1)
+        if ((is_deleted_column_number!=-1))
         {
             const UInt8 is_deleted = assert_cast<const ColumnUInt8 &>(*current->all_columns[is_deleted_column_number]).getData()[current->getRow()];
             if ((is_deleted != 1) && (is_deleted != 0))
@@ -138,16 +129,10 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
     /// We will write the data for the last primary key.
     if (!selected_row.empty())
     {
-        if (is_deleted_column_number != -1)
+        if (is_deleted_column_number!=-1)
         {
-            uint8_t value = assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num];
-            if (!cleanup || !value)
+            if (!(cleanup && assert_cast<const ColumnUInt8 &>(*(*selected_row.all_columns)[is_deleted_column_number]).getData()[selected_row.row_num]))
                 insertRow();
-            else if (cleanup && cleanedup_rows_count != nullptr)
-            {
-                *cleanedup_rows_count += current_row_sources.size();
-                current_row_sources.resize(0);
-            }
         }
         else
             insertRow();

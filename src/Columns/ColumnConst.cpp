@@ -2,9 +2,10 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
-#include <Common/typeid_cast.h>
-#include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/WeakHash.h>
+#include <Common/iota.h>
+#include <Common/typeid_cast.h>
 
 #include <base/defines.h>
 
@@ -128,8 +129,7 @@ void ColumnConst::getPermutation(PermutationSortDirection /*direction*/, Permuta
                                 size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const
 {
     res.resize(s);
-    for (size_t i = 0; i < s; ++i)
-        res[i] = i;
+    iota(res.data(), s, IColumn::Permutation::value_type(0));
 }
 
 void ColumnConst::updatePermutation(PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,

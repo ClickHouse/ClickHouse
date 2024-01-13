@@ -3,6 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Common/formatReadable.h>
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -45,6 +46,17 @@ DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
         *metadata_storage,
         send_metadata ? metadata_helper.get() : nullptr);
 }
+
+DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk)
+{
+    return std::make_shared<MultipleDisksObjectStorageTransaction>(
+        *object_storage,
+        *metadata_storage,
+        *to_disk.getObjectStorage(),
+        *to_disk.getMetadataStorage(),
+        send_metadata ? metadata_helper.get() : nullptr);
+}
+
 
 DiskObjectStorage::DiskObjectStorage(
     const String & name_,
@@ -179,12 +191,13 @@ void DiskObjectStorage::copyFile( /// NOLINT
     const std::function<void()> & cancellation_hook
     )
 {
-    if (this == &to_disk)
+    if (getDataSourceDescription() == to_disk.getDataSourceDescription())
     {
-        /// It may use s3-server-side copy
-        auto transaction = createObjectStorageTransaction();
-        transaction->copyFile(from_file_path, to_file_path);
-        transaction->commit();
+            /// It may use s3-server-side copy
+            auto & to_disk_object_storage = dynamic_cast<DiskObjectStorage &>(to_disk);
+            auto transaction = createObjectStorageTransactionToAnotherDisk(to_disk_object_storage);
+            transaction->copyFile(from_file_path, to_file_path);
+            transaction->commit();
     }
     else
     {
@@ -245,12 +258,6 @@ String DiskObjectStorage::getUniqueId(const String & path) const
 
 bool DiskObjectStorage::checkUniqueId(const String & id) const
 {
-    if (!id.starts_with(object_key_prefix))
-    {
-        LOG_DEBUG(log, "Blob with id {} doesn't start with blob storage prefix {}, Stack {}", id, object_key_prefix, StackTrace().toString());
-        return false;
-    }
-
     auto object = StoredObject(id);
     return object_storage->exists(object);
 }

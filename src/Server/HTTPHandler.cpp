@@ -27,6 +27,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+#include <Common/re2.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -46,17 +47,10 @@
 #include <Poco/String.h>
 #include <Poco/Net/SocketAddress.h>
 
+#include <algorithm>
 #include <chrono>
+#include <memory>
 #include <sstream>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -301,7 +295,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
     std::vector<WriteBufferPtr> write_buffers;
     ConcatReadBuffer::Buffers read_buffers;
 
-    auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed.get());
+    auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed);
     if (!cascade_buffer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected CascadeWriteBuffer");
 
@@ -553,7 +547,8 @@ void HTTPHandler::processQuery(
     HTMLForm & params,
     HTTPServerResponse & response,
     Output & used_output,
-    std::optional<CurrentThread::QueryScope> & query_scope)
+    std::optional<CurrentThread::QueryScope> & query_scope,
+    const ProfileEvents::Event & write_event)
 {
     using namespace Poco::Net;
 
@@ -564,6 +559,9 @@ void HTTPHandler::processQuery(
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
+
+    SCOPE_EXIT({ session->releaseSessionID(); });
+
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
@@ -616,17 +614,35 @@ void HTTPHandler::processQuery(
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
-    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
+    bool enable_http_compression = params.getParsed<bool>("enable_http_compression", context->getSettingsRef().enable_http_compression);
+    Int64 http_zlib_compression_level = params.getParsed<Int64>("http_zlib_compression_level", context->getSettingsRef().http_zlib_compression_level);
 
-    used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response,
-        request.getMethod() == HTTPRequest::HTTP_HEAD,
-        keep_alive_timeout,
-        client_supports_http_compression,
-        http_response_compression_method);
+    used_output.out_holder =
+        std::make_shared<WriteBufferFromHTTPServerResponse>(
+            response,
+            request.getMethod() == HTTPRequest::HTTP_HEAD,
+            context->getServerSettings().keep_alive_timeout.totalSeconds(),
+            write_event);
+    used_output.out = used_output.out_holder;
+    used_output.out_maybe_compressed = used_output.out_holder;
+
+    if (client_supports_http_compression && enable_http_compression)
+    {
+        used_output.out_holder->setCompressionMethodHeader(http_response_compression_method);
+        used_output.wrap_compressed_holder =
+            wrapWriteBufferWithCompressionMethod(
+                used_output.out_holder.get(),
+                http_response_compression_method,
+                static_cast<int>(http_zlib_compression_level),
+                0, DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0, false);
+        used_output.out = used_output.wrap_compressed_holder;
+    }
 
     if (internal_compression)
-        used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
+    {
+        used_output.out_compressed_holder = std::make_shared<CompressedWriteBuffer>(*used_output.out);
+        used_output.out_maybe_compressed = used_output.out_compressed_holder;
+    }
     else
         used_output.out_maybe_compressed = used_output.out;
 
@@ -666,12 +682,12 @@ void HTTPHandler::processQuery(
             cascade_buffer2.emplace_back(push_memory_buffer_and_continue);
         }
 
-        used_output.out_maybe_delayed_and_compressed = std::make_shared<CascadeWriteBuffer>(
-            std::move(cascade_buffer1), std::move(cascade_buffer2));
+        used_output.out_delayed_and_compressed_holder = std::make_unique<CascadeWriteBuffer>(std::move(cascade_buffer1), std::move(cascade_buffer2));
+        used_output.out_maybe_delayed_and_compressed = used_output.out_delayed_and_compressed_holder.get();
     }
     else
     {
-        used_output.out_maybe_delayed_and_compressed = used_output.out_maybe_compressed;
+        used_output.out_maybe_delayed_and_compressed = used_output.out_maybe_compressed.get();
     }
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
@@ -731,8 +747,8 @@ void HTTPHandler::processQuery(
     /// to some other value.
     const auto & settings = context->getSettingsRef();
 
-    /// Only readonly queries are allowed for HTTP GET requests.
-    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
+    /// Anything else beside HTTP POST should be readonly queries.
+    if (request.getMethod() != HTTPServerRequest::HTTP_POST)
     {
         if (settings.readonly == 0)
             context->setSetting("readonly", 2);
@@ -800,14 +816,8 @@ void HTTPHandler::processQuery(
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
-    /// HTTP response compression is turned on only if the client signalled that they support it
-    /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
-    used_output.out->setCompression(client_supports_http_compression && settings.enable_http_compression);
-    if (client_supports_http_compression)
-        used_output.out->setCompressionLevel(static_cast<int>(settings.http_zlib_compression_level));
-
-    used_output.out->setSendProgress(settings.send_progress_in_http_headers);
-    used_output.out->setSendProgressInterval(settings.http_headers_progress_interval_ms);
+    used_output.out_holder->setSendProgress(settings.send_progress_in_http_headers);
+    used_output.out_holder->setSendProgressInterval(settings.http_headers_progress_interval_ms);
 
     /// If 'http_native_compression_disable_checksumming_on_decompress' setting is turned on,
     /// checksums of client data compressed with internal algorithm are not checked.
@@ -818,7 +828,7 @@ void HTTPHandler::processQuery(
     /// Note that whether the header is added is determined by the settings, and we can only get the user settings after authentication.
     /// Once the authentication fails, the header can't be added.
     if (settings.add_http_cors_header && !request.get("Origin", "").empty() && !config.has("http_options_response"))
-        used_output.out->addHeaderCORS(true);
+        used_output.out_holder->addHeaderCORS(true);
 
     auto append_callback = [my_context = context] (ProgressCallback callback)
     {
@@ -837,7 +847,7 @@ void HTTPHandler::processQuery(
     /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
     append_callback([&used_output](const Progress & progress)
     {
-        used_output.out->onProgress(progress);
+        used_output.out_holder->onProgress(progress);
     });
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
@@ -890,6 +900,8 @@ void HTTPHandler::processQuery(
         {},
         handle_exception_in_output_format);
 
+    session->releaseSessionID();
+
     if (used_output.hasDelayed())
     {
         /// TODO: set Content-Length if possible
@@ -904,10 +916,8 @@ void HTTPHandler::trySendExceptionToClient(
     const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 try
 {
-    /// In case data has already been sent, like progress headers, try using the output buffer to
-    /// set the exception code since it will be able to append it if it hasn't finished writing headers
-    if (response.sent() && used_output.out)
-        used_output.out->setExceptionCode(exception_code);
+    if (used_output.out_holder)
+        used_output.out_holder->setExceptionCode(exception_code);
     else
         response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
 
@@ -932,10 +942,10 @@ try
         response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
     }
 
-    if (!response.sent() && !used_output.out_maybe_compressed && !used_output.exception_is_written)
+    if (!used_output.out_holder && !used_output.exception_is_written)
     {
         /// If nothing was sent yet and we don't even know if we must compress the response.
-        *response.send() << s << std::endl;
+        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT).writeln(s);
     }
     else if (used_output.out_maybe_compressed)
     {
@@ -945,7 +955,8 @@ try
             /// do not call finalize here for CascadeWriteBuffer used_output.out_maybe_delayed_and_compressed,
             /// exception is written into used_output.out_maybe_compressed later
             /// HTTPHandler::trySendExceptionToClient is called with exception context, it is Ok to destroy buffers
-            used_output.out_maybe_delayed_and_compressed.reset();
+            used_output.out_delayed_and_compressed_holder.reset();
+            used_output.out_maybe_delayed_and_compressed = nullptr;
         }
 
         if (!used_output.exception_is_written)
@@ -955,12 +966,12 @@ try
             /// Also HTTP code 200 could have already been sent.
 
             /// If buffer has data, and that data wasn't sent yet, then no need to send that data
-            bool data_sent = used_output.out->count() != used_output.out->offset();
+            bool data_sent = used_output.out_holder->count() != used_output.out_holder->offset();
 
             if (!data_sent)
             {
                 used_output.out_maybe_compressed->position() = used_output.out_maybe_compressed->buffer().begin();
-                used_output.out->position() = used_output.out->buffer().begin();
+                used_output.out_holder->position() = used_output.out_holder->buffer().begin();
             }
 
             writeString(s, *used_output.out_maybe_compressed);
@@ -991,7 +1002,7 @@ catch (...)
 }
 
 
-void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
     setThreadName("HTTPHandler");
     ThreadStatus thread_status;
@@ -1061,8 +1072,13 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             response.setChunkedTransferEncoding(true);
 
         HTMLForm params(default_settings, request);
-        with_stacktrace = params.getParsed<bool>("stacktrace", false);
-        close_session = params.getParsed<bool>("close_session", false);
+
+        if (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true))
+            with_stacktrace = true;
+
+        if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
+            close_session = true;
+
         if (close_session)
             session_id = params.get("session_id");
 
@@ -1075,7 +1091,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
                             "is no Content-Length header for POST request");
         }
 
-        processQuery(request, params, response, used_output, query_scope);
+        processQuery(request, params, response, used_output, query_scope, write_event);
         if (request_credentials)
             LOG_DEBUG(log, "Authentication in progress...");
         else

@@ -11,7 +11,7 @@ StoragePtr StorageIceberg::create(
     const DB::StorageID & table_id_,
     const DB::ColumnsDescription & columns_,
     const DB::ConstraintsDescription & constraints_,
-    const DB::String & comment,
+    const String & comment,
     std::optional<FormatSettings> format_settings_)
 {
     auto configuration{base_configuration};

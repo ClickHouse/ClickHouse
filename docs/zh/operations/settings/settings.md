@@ -1203,7 +1203,7 @@ ClickHouse生成异常
 -   类型：布尔
 -   默认值：True
 
-启用数据格式的保序并行分析。 仅支持TSV，TKSV，CSV和JSONEachRow格式。
+启用数据格式的保序并行分析。 仅支持TSV，TSKV，CSV和JSONEachRow格式。
 
 ## min_chunk_bytes_for_parallel_parsing {#min-chunk-bytes-for-parallel-parsing}
 

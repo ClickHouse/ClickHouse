@@ -9,13 +9,13 @@ namespace DB
 
 class Context;
 
-/// system.async_loader table. Takes data from context.getAsyncLoader()
+/// system.asynchronous_loader table. Takes data from context.getAsyncLoader()
 class StorageSystemAsyncLoader final : public IStorageSystemOneBlock<StorageSystemAsyncLoader>
 {
 public:
     std::string getName() const override { return "SystemAsyncLoader"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
