@@ -23,14 +23,29 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-class BaseQuantileDDSketch
+class DDSketchDenseLogarithmic
 {
 public:
-    BaseQuantileDDSketch(std::unique_ptr<DDSketchKeyMapping> mapping_, std::unique_ptr<DDSketchDenseStore> store_,
-                         std::unique_ptr<DDSketchDenseStore> negative_store_, Float64 zero_count_)
-        : mapping(std::move(mapping_)), store(std::move(store_)), negative_store(std::move(negative_store_)),
+    explicit DDSketchDenseLogarithmic(Float64 relative_accuracy = 0.01)
+        : mapping(std::make_unique<DDSketchLogarithmicMapping>(relative_accuracy)),
+          store(std::make_unique<DDSketchDenseStore>()),
+          negative_store(std::make_unique<DDSketchDenseStore>()),
+          zero_count(0.0),
+          count(0.0)
+    {
+    }
+
+    DDSketchDenseLogarithmic(std::unique_ptr<DDSketchLogarithmicMapping> mapping_,
+             std::unique_ptr<DDSketchDenseStore> store_,
+             std::unique_ptr<DDSketchDenseStore> negative_store_,
+             Float64 zero_count_)
+        : mapping(std::move(mapping_)),
+          store(std::move(store_)),
+          negative_store(std::move(negative_store_)),
           zero_count(zero_count_),
-          count(static_cast<Float64>(negative_store->count + zero_count_ + store->count)) {}
+          count(store->count + negative_store->count + zero_count_)
+    {
+    }
 
     void add(Float64 val, Float64 weight = 1.0)
     {
@@ -82,7 +97,7 @@ public:
         return quantile_value;
     }
 
-    void copy(const BaseQuantileDDSketch& other)
+    void copy(const DDSketchDenseLogarithmic& other)
     {
         Float64 rel_acc = (other.mapping->getGamma() - 1) / (other.mapping->getGamma() + 1);
         mapping = std::make_unique<DDSketchLogarithmicMapping>(rel_acc);
@@ -94,20 +109,20 @@ public:
         count = other.count;
     }
 
-    void merge(const BaseQuantileDDSketch& other)
+    void merge(const DDSketchDenseLogarithmic& other)
     {
         if (mapping->getGamma() != other.mapping->getGamma())
         {
             // modify the one with higher precision to match the one with lower precision
             if (mapping->getGamma() > other.mapping->getGamma())
             {
-                BaseQuantileDDSketch new_sketch = other.changeMapping(mapping->getGamma());
+                DDSketchDenseLogarithmic new_sketch = other.changeMapping(mapping->getGamma());
                 this->merge(new_sketch);
                 return;
             }
             else
             {
-                BaseQuantileDDSketch new_sketch = changeMapping(other.mapping->getGamma());
+                DDSketchDenseLogarithmic new_sketch = changeMapping(other.mapping->getGamma());
                 copy(new_sketch);
             }
         }
@@ -187,7 +202,7 @@ public:
     }
 
 private:
-    std::unique_ptr<DDSketchKeyMapping> mapping;
+    std::unique_ptr<DDSketchLogarithmicMapping> mapping;
     std::unique_ptr<DDSketchDenseStore> store;
     std::unique_ptr<DDSketchDenseStore> negative_store;
     Float64 zero_count;
@@ -195,7 +210,7 @@ private:
     DDSketchEncoding enc;
 
 
-    BaseQuantileDDSketch changeMapping(Float64 new_gamma) const
+    DDSketchDenseLogarithmic changeMapping(Float64 new_gamma) const
     {
         auto new_mapping = std::make_unique<DDSketchLogarithmicMapping>((new_gamma - 1) / (new_gamma + 1));
 
@@ -231,17 +246,8 @@ private:
         remap_store(*store, new_positive_store);
         remap_store(*negative_store, new_negative_store);
 
-        return BaseQuantileDDSketch(std::move(new_mapping), std::move(new_positive_store), std::move(new_negative_store), zero_count);
+        return DDSketchDenseLogarithmic(std::move(new_mapping), std::move(new_positive_store), std::move(new_negative_store), zero_count);
     }
-};
-
-class DDSketch : public BaseQuantileDDSketch
-{
-public:
-    explicit DDSketch(Float64 relative_accuracy = 0.01)
-        : BaseQuantileDDSketch(std::make_unique<DDSketchLogarithmicMapping>(relative_accuracy),
-                               std::make_unique<DDSketchDenseStore>(),
-                               std::make_unique<DDSketchDenseStore>(), 0.0) {}
 };
 
 }

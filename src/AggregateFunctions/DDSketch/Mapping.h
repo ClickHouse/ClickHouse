@@ -8,7 +8,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
-
 namespace DB
 {
 
@@ -17,13 +16,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class DDSketchKeyMapping
+class DDSketchLogarithmicMapping
 {
 public:
-    explicit DDSketchKeyMapping(Float64 relative_accuracy_, Float64 offset_ = 0.0)
+    explicit DDSketchLogarithmicMapping(Float64 relative_accuracy_, Float64 offset_ = 0.0)
         : relative_accuracy(relative_accuracy_), offset(offset_)
     {
-
         if (relative_accuracy <= 0 || relative_accuracy >= 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative accuracy must be between 0 and 1 but is {}", relative_accuracy);
@@ -35,11 +33,7 @@ public:
         max_possible = std::numeric_limits<Float64>::max() / gamma;
     }
 
-    virtual ~DDSketchKeyMapping() = default;  // Virtual destructor
-
-    virtual Float64 logGamma(Float64 value) const = 0;
-    virtual Float64 powGamma(Float64 value) const = 0;
-    virtual Float64 lowerBound(int index) const = 0;
+    ~DDSketchLogarithmicMapping() = default;
 
     int key(Float64 value) const
     {
@@ -53,6 +47,21 @@ public:
     Float64 value(int key) const
     {
         return lowerBound(key) * (1 + relative_accuracy);
+    }
+
+    Float64 logGamma(Float64 value) const
+    {
+        return std::log(value) * multiplier;
+    }
+
+    Float64 powGamma(Float64 value) const
+    {
+        return std::exp(value / multiplier);
+    }
+
+    Float64 lowerBound(int index) const
+    {
+        return powGamma(static_cast<Float64>(index) - offset);
     }
 
     Float64 getGamma() const
@@ -96,32 +105,6 @@ protected:
     Float64 max_possible;
     Float64 multiplier;
     Float64 offset;
-};
-
-class DDSketchLogarithmicMapping : public DDSketchKeyMapping
-{
-public:
-    explicit DDSketchLogarithmicMapping(Float64 relative_accuracy_, Float64 offset_ = 0.0)
-        : DDSketchKeyMapping(relative_accuracy_, offset_)
-    {
-    }
-
-    ~DDSketchLogarithmicMapping() override = default;  // Virtual destructor
-
-    Float64 logGamma(Float64 value) const override
-    {
-        return std::log(value) * multiplier;
-    }
-
-    Float64 powGamma(Float64 value) const override
-    {
-        return std::exp(value / multiplier);
-    }
-
-    Float64 lowerBound(int index) const override
-    {
-        return powGamma(static_cast<Float64>(index) - offset);
-    }
 };
 
 }

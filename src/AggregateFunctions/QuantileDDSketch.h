@@ -67,7 +67,7 @@ public:
     }
 
 private:
-    DDSketch data;
+    DDSketchDenseLogarithmic data;
 
     template <typename T>
     T getImpl(Float64 level) const

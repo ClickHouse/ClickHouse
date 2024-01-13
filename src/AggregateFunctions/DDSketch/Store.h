@@ -18,29 +18,18 @@ constexpr UInt32 CHUNK_SIZE = 128;
 namespace DB
 {
 
-class DDSketchStore
+class DDSketchDenseStore
 {
 public:
-    virtual ~DDSketchStore() = default;
     Float64 count = 0;
     int min_key = std::numeric_limits<int>::max();
     int max_key = std::numeric_limits<int>::min();
     int offset = 0;
     std::vector<Float64> bins;
 
-    virtual void copy(DDSketchStore* store) = 0;
-    virtual int length() = 0;
-    virtual void add(int key, Float64 weight) = 0;
-    virtual int keyAtRank(Float64 rank, bool lower) = 0;
-    virtual void merge(DDSketchStore* store) = 0;
-};
-
-class DDSketchDenseStore : public DDSketchStore
-{
-public:
     explicit DDSketchDenseStore(UInt32 chunk_size_ = CHUNK_SIZE) : chunk_size(chunk_size_) {}
 
-    void copy(DDSketchStore* other) override
+    void copy(DDSketchDenseStore* other)
     {
         bins = other->bins;
         count = other->count;
@@ -49,19 +38,19 @@ public:
         offset = other->offset;
     }
 
-    int length() override
+    int length()
     {
         return static_cast<int>(bins.size());
     }
 
-    void add(int key, Float64 weight) override
+    void add(int key, Float64 weight)
     {
         int idx = getIndex(key);
         bins[idx] += weight;
         count += weight;
     }
 
-    int keyAtRank(Float64 rank, bool lower) override
+    int keyAtRank(Float64 rank, bool lower)
     {
         Float64 running_ct = 0.0;
         for (size_t i = 0; i < bins.size(); ++i)
@@ -75,7 +64,7 @@ public:
         return max_key;
     }
 
-    void merge(DDSketchStore* other) override
+    void merge(DDSketchDenseStore* other)
     {
         if (other->count == 0) return;
 
@@ -141,11 +130,11 @@ public:
             int previous_index = 0;
             for (int index = min_key; index <= max_key; ++index)
             {
-                Float64 count = bins[index - offset];
-                if (count != 0)
+                Float64 bin_count = bins[index - offset];
+                if (bin_count != 0)
                 {
                     writeVarInt(index - previous_index, buf);
-                    writeFloatBinary(count, buf);
+                    writeFloatBinary(bin_count, buf);
                     previous_index = index;
                 }
             }
@@ -160,17 +149,17 @@ public:
         {
             UInt64 num_bins;
             readVarUInt(num_bins, buf);
-            int min_key;
-            readVarInt(min_key, buf);
+            int start_key;
+            readVarInt(start_key, buf);
             int index_delta;
             readVarInt(index_delta, buf);
 
             for (UInt64 i = 0; i < num_bins; ++i)
             {
-                Float64 count;
-                readFloatBinary(count, buf);
-                add(min_key, count);
-                min_key += index_delta;
+                Float64 bin_count;
+                readFloatBinary(bin_count, buf);
+                add(start_key, bin_count);
+                start_key += index_delta;
             }
         }
         else
@@ -182,10 +171,10 @@ public:
             {
                 int index_delta;
                 readVarInt(index_delta, buf);
-                Float64 count;
-                readFloatBinary(count, buf);
+                Float64 bin_count;
+                readFloatBinary(bin_count, buf);
                 previous_index += index_delta;
-                add(previous_index, count);
+                add(previous_index, bin_count);
             }
         }
     }
