@@ -1055,6 +1055,8 @@ anyheavy
 anylast
 appendTrailingCharIfAbsent
 approximative
+approxtopk
+approxtopsum
 argMax
 argMin
 argmax

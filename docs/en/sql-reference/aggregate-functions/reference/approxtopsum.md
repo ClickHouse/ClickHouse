@@ -19,7 +19,7 @@ We recommend using the `N < 10` value; performance is reduced with large `N` val
 **Parameters**
 
 - `N` — The number of elements to return. Optional. Default value: 10.
-- `reseved` — Defines, how many cells reserved for values. If uniq(column) > reseved, result of topK function will be approximate. Optional. Default value: N * 3.
+- `reserved` — Defines, how many cells reserved for values. If uniq(column) > reseved, result of topK function will be approximate. Optional. Default value: N * 3.
  
 **Arguments**
 
