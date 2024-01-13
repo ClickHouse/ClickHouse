@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <base/types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ProxyConfigurationResolver.h>
