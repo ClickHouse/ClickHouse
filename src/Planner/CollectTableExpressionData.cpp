@@ -193,7 +193,7 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
     }
 }
 
-// checks that there are only user configured columns in requested set
+// checks that there are only user configured columns (no virtual columns) in requested set
 void checkStreamingConstraints(const StoragePtr & storage, const TableExpressionData & data)
 {
     Block sample = storage->getInMemoryMetadata().getSampleBlock();
