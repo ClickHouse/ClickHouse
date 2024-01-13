@@ -13,8 +13,8 @@
 namespace DB
 {
 
-// Structure for managing the subscriptions,
-// necessary for streaming requests to work
+// Utility for propagating data from a single producer to multiple consumers.
+// Used for pushing newly inserted data from a table to streaming queries reading from it.
 class StreamSubscriptionManager
 {
     void clean();
