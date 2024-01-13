@@ -11,7 +11,7 @@
 namespace DB
 {
 template <typename T>
-concept is_any_native_number = (is_any_of<T, Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32, Float64>);
+concept is_any_native_number = (is_any_of<T, Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, BFloat16, Float32, Float64>);
 
 template <is_any_native_number T>
 std::optional<T> findExtremeMin(const T * __restrict ptr, size_t start, size_t end);

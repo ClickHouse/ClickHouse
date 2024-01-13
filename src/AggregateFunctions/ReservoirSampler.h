@@ -278,6 +278,6 @@ private:
         if (OnEmpty == ReservoirSamplerOnEmpty::THROW)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSampler");
         else
-            return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
+            return NanLikeValueConstructor<ResultType, is_floating_point_v<ResultType>>::getValue();
     }
 };

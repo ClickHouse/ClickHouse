@@ -154,7 +154,7 @@ struct common_type<wide::integer<Bits, Signed>, Arithmetic>
     static_assert(wide::ArithmeticConcept<Arithmetic>());
 
     using type = std::conditional_t<
-        std::is_floating_point_v<Arithmetic>,
+        is_floating_point_v<Arithmetic>,
         Arithmetic,
         std::conditional_t<
             sizeof(Arithmetic) * 8 < Bits,
@@ -1289,6 +1289,12 @@ template <size_t Bits, typename Signed>
 constexpr integer<Bits, Signed>::operator float() const noexcept
 {
     return static_cast<float>(static_cast<long double>(*this));
+}
+
+template <size_t Bits, typename Signed>
+constexpr integer<Bits, Signed>::operator __bf16() const noexcept
+{
+    return static_cast<__bf16>(static_cast<long double>(*this));
 }
 
 // Unary operators

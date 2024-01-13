@@ -570,6 +570,7 @@ extern template class ColumnVector<Int32>;
 extern template class ColumnVector<Int64>;
 extern template class ColumnVector<Int128>;
 extern template class ColumnVector<Int256>;
+extern template class ColumnVector<BFloat16>;
 extern template class ColumnVector<Float32>;
 extern template class ColumnVector<Float64>;
 extern template class ColumnVector<UUID>;

@@ -58,7 +58,7 @@ public:
 
     T operator() (const Float64 & x) const
     {
-        if constexpr (!std::is_floating_point_v<T>)
+        if constexpr (!is_floating_point_v<T>)
         {
             if (!isFinite(x))
             {
@@ -88,7 +88,7 @@ public:
     template <typename U>
     T operator() (const DecimalField<U> & x) const
     {
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point_v<T>)
             return x.getValue().template convertTo<T>() / x.getScaleMultiplier().template convertTo<T>();
         else
             return (x.getValue() / x.getScaleMultiplier()). template convertTo<T>();

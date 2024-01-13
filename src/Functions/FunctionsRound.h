@@ -461,7 +461,7 @@ template <typename T, RoundingMode rounding_mode, TieBreakingMode tie_breaking_m
 struct Dispatcher
 {
     template <ScaleMode scale_mode>
-    using FunctionRoundingImpl = std::conditional_t<std::is_floating_point_v<T>,
+    using FunctionRoundingImpl = std::conditional_t<is_floating_point_v<T>,
         FloatRoundingImpl<T, rounding_mode, scale_mode>,
         IntegerRoundingImpl<T, rounding_mode, scale_mode, tie_breaking_mode>>;
 

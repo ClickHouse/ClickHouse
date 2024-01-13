@@ -63,6 +63,7 @@ using DataTypeInt8 = DataTypeNumber<Int8>;
 using DataTypeInt16 = DataTypeNumber<Int16>;
 using DataTypeInt32 = DataTypeNumber<Int32>;
 using DataTypeInt64 = DataTypeNumber<Int64>;
+using DataTypeBFloat16 = DataTypeNumber<BFloat16>;
 using DataTypeFloat32 = DataTypeNumber<Float32>;
 using DataTypeFloat64 = DataTypeNumber<Float64>;
 

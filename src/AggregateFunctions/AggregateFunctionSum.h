@@ -69,7 +69,7 @@ struct AggregateFunctionSumData
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
 
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point_v<T>)
         {
             /// Compiler cannot unroll this loop, do it manually.
             /// (at least for floats, most likely due to the lack of -fassociative-math)
@@ -164,7 +164,7 @@ struct AggregateFunctionSumData
             return;
         }
 
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point_v<T>)
         {
             /// For floating point we use a similar trick as above, except that now we  reinterpret the floating point number as an unsigned
             /// integer of the same size and use a mask instead (0 to discard, 0xFF..FF to keep)
@@ -277,7 +277,7 @@ struct AggregateFunctionSumData
 template <typename T>
 struct AggregateFunctionSumKahanData
 {
-    static_assert(std::is_floating_point_v<T>,
+    static_assert(is_floating_point_v<T>,
         "It doesn't make sense to use Kahan Summation algorithm for non floating point types");
 
     T sum{};

@@ -171,6 +171,8 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
             return static_cast<const ColumnInt128 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
         case TypeIndex::Int256:
             return static_cast<const ColumnInt256 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
+        case TypeIndex::BFloat16:
+            return static_cast<const ColumnBFloat16 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
         case TypeIndex::Float32:
             return static_cast<const ColumnFloat32 *>(nested_column.get())->serializeValueIntoArena(n, arena, begin, &arr[n]);
         case TypeIndex::Float64:

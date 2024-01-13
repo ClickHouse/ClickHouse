@@ -291,7 +291,7 @@ struct ConvertImpl
                     else
                     {
                         /// If From Data is Nan or Inf and we convert to integer type, throw exception
-                        if constexpr (std::is_floating_point_v<FromFieldType> && !std::is_floating_point_v<ToFieldType>)
+                        if constexpr (is_floating_point_v<FromFieldType> && !is_floating_point_v<ToFieldType>)
                         {
                             if (!isFinite(vec_from[i]))
                             {
@@ -1314,7 +1314,7 @@ inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, t
 template <typename DataType>
 void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing)
 {
-    if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
+    if constexpr (is_floating_point_v<typename DataType::FieldType>)
     {
         if (precise_float_parsing)
             readFloatTextPrecise(x, rb);
@@ -1378,7 +1378,7 @@ inline void parseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb
 template <typename DataType>
 bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing)
 {
-    if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
+    if constexpr (is_floating_point_v<typename DataType::FieldType>)
     {
         if (precise_float_parsing)
             return tryReadFloatTextPrecise(x, rb);
@@ -2350,9 +2350,9 @@ private:
                 using RightT = typename RightDataType::FieldType;
 
                 static constexpr bool bad_left =
-                    is_decimal<LeftT> || std::is_floating_point_v<LeftT> || is_big_int_v<LeftT> || is_signed_v<LeftT>;
+                    is_decimal<LeftT> || is_floating_point_v<LeftT> || is_big_int_v<LeftT> || is_signed_v<LeftT>;
                 static constexpr bool bad_right =
-                    is_decimal<RightT> || std::is_floating_point_v<RightT> || is_big_int_v<RightT> || is_signed_v<RightT>;
+                    is_decimal<RightT> || is_floating_point_v<RightT> || is_big_int_v<RightT> || is_signed_v<RightT>;
 
                 /// Disallow int vs UUID conversion (but support int vs UInt128 conversion)
                 if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeUUID>) ||
@@ -2678,7 +2678,7 @@ struct ToNumberMonotonicity
         /// Float cases.
 
         /// When converting to Float, the conversion is always monotonic.
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point_v<T>)
             return { .is_monotonic = true, .is_always_monotonic = true };
 
         const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);

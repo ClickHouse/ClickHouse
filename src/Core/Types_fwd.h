@@ -21,6 +21,7 @@ using Int128 = wide::integer<128, signed>;
 using UInt128 = wide::integer<128, unsigned>;
 using Int256 = wide::integer<256, signed>;
 using UInt256 = wide::integer<256, unsigned>;
+using BFloat16 = __bf16;
 
 namespace DB
 {
@@ -28,15 +29,9 @@ namespace DB
 using UUID = StrongTypedef<UInt128, struct UUIDTag>;
 
 struct IPv4;
-
 struct IPv6;
 
 struct Null;
-
-using UInt128 = ::UInt128;
-using UInt256 = ::UInt256;
-using Int128 = ::Int128;
-using Int256 = ::Int256;
 
 enum class TypeIndex;
 

@@ -153,6 +153,7 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 
 
 template <typename T>
+requires is_floating_point_v<T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
     Int64 result = 0;
@@ -169,10 +170,13 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
     }
     else
     {
-        if (DecomposedFloat32(x).isIntegerInRepresentableRange())
-            result = itoa(Int32(x), buffer) - buffer;
+        /// This will support 16-bit floats as well.
+        float f32 = x;
+
+        if (DecomposedFloat32(f32).isIntegerInRepresentableRange())
+            result = itoa(Int32(f32), buffer) - buffer;
         else
-            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
+            result = jkj::dragonbox::to_chars_n(f32, buffer) - buffer;
     }
 
     if (result <= 0)
@@ -181,10 +185,9 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
 }
 
 template <typename T>
+requires is_floating_point_v<T>
 inline void writeFloatText(T x, WriteBuffer & buf)
 {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for writeFloatText must be float or double");
-
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
     {
@@ -530,7 +533,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
     bool is_finite = isFinite(x);
 
     const bool need_quote = (is_integer<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
-        || (settings.json.quote_denormals && !is_finite) || (is_floating_point<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_floats);
+        || (settings.json.quote_denormals && !is_finite) || (is_floating_point_v<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_floats);
 
     if (need_quote)
         writeChar('"', ostr);
@@ -541,7 +544,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
         writeCString("null", ostr);
     else
     {
-        if constexpr (std::is_floating_point_v<T>)
+        if constexpr (is_floating_point_v<T>)
         {
             if (std::signbit(x))
             {
@@ -800,7 +803,6 @@ inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
 }
 
 /// @brief Serialize `uuid` into an array of characters in big-endian byte order.
-/// @param uuid UUID to serialize.
 /// @return Array of characters in big-endian byte order.
 std::array<char, 36> formatUUID(const UUID & uuid);
 
@@ -1065,7 +1067,9 @@ inline void writeText(is_integer auto x, WriteBuffer & buf)
         writeIntText(x, buf);
 }
 
-inline void writeText(is_floating_point auto x, WriteBuffer & buf) { writeFloatText(x, buf); }
+template <typename T>
+requires is_floating_point_v<T>
+inline void writeText(T x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
 inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }
 

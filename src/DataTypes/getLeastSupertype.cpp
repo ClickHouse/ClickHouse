@@ -108,6 +108,8 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
             maximize(max_bits_of_signed_integer, 128);
         else if (type == TypeIndex::Int256)
             maximize(max_bits_of_signed_integer, 256);
+        else if (type == TypeIndex::BFloat16)
+            maximize(max_mantissa_bits_of_floating, 8);
         else if (type == TypeIndex::Float32)
             maximize(max_mantissa_bits_of_floating, 24);
         else if (type == TypeIndex::Float64)
@@ -144,7 +146,9 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
         if (max_mantissa_bits_of_floating)
         {
             size_t min_mantissa_bits = std::max(min_bit_width_of_integer, max_mantissa_bits_of_floating);
-            if (min_mantissa_bits <= 24)
+            if (min_mantissa_bits <= 8)
+                return std::make_shared<DataTypeBFloat16>();
+            else if (min_mantissa_bits <= 24)
                 return std::make_shared<DataTypeFloat32>();
             else if (min_mantissa_bits <= 53)
                 return std::make_shared<DataTypeFloat64>();

@@ -310,7 +310,7 @@ ReturnType convertToImpl(const DecimalType & decimal, UInt32 scale, To & result)
     using DecimalNativeType = typename DecimalType::NativeType;
     static constexpr bool throw_exception = std::is_void_v<ReturnType>;
 
-    if constexpr (std::is_floating_point_v<To>)
+    if constexpr (is_floating_point_v<To>)
     {
         result = static_cast<To>(decimal.value) / static_cast<To>(scaleMultiplier<DecimalNativeType>(scale));
     }

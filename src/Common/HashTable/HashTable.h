@@ -91,7 +91,7 @@ inline bool bitEquals(T && a, T && b)
 {
     using RealT = std::decay_t<T>;
 
-    if constexpr (std::is_floating_point_v<RealT>)
+    if constexpr (is_floating_point_v<RealT>)
         return 0 == memcmp(&a, &b, sizeof(RealT));  /// Note that memcmp with constant size is compiler builtin.
     else
         return a == b;

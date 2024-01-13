@@ -3,6 +3,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/extended_types.h>
 #include <Common/typeid_cast.h>
+#include <Common/NaNUtils.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -209,9 +210,9 @@ inline ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & 
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    if constexpr (std::is_floating_point_v<FromFieldType>)
+    if constexpr (is_floating_point_v<FromFieldType>)
     {
-        if (!std::isfinite(value))
+        if (!isFinite(value))
         {
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Cannot convert infinity or NaN to decimal", ToDataType::family_name);
