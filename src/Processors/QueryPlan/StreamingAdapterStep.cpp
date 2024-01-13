@@ -50,6 +50,7 @@ void StreamingAdapterStep::updateOutputStream()
     output_stream = DataStream{
         .header = storage_header,
         .has_single_port = true,
+        .is_infinite = true,
     };
 }
 

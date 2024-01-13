@@ -10,6 +10,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+bool IQueryPlanStep::isInputInfinite() const
+{
+    // if the output_stream has is_infinite flag, then some of the input streams also have this flag.
+    return output_stream.has_value() && output_stream->is_infinite;
+}
+
 const DataStream & IQueryPlanStep::getOutputStream() const
 {
     if (!hasOutputStream())

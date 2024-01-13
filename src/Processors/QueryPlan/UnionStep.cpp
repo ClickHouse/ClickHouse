@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <type_traits>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -55,6 +56,8 @@ void UnionStep::updateOutputStream()
         else
             output_stream->sort_scope = sort_scope;
     }
+
+    output_stream->is_infinite = std::any_of(input_streams.begin(), input_streams.end(), [] (auto stream) { return stream.is_infinite; });
 }
 
 QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
