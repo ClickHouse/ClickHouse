@@ -332,7 +332,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     , storage{std::move(storage_)}
     , storage_snapshot{storage_snapshot_}
     , context{std::move(context_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->getMetadataForQuery()->columns, context).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
     , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery&>(), context))
