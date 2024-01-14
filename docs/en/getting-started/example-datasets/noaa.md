@@ -11,7 +11,7 @@ This dataset contains weather measurements for the last 120 years. Each row is a
 
 More precisely and according to the [origin of this data](https://github.com/awslabs/open-data-docs/tree/main/docs/noaa/noaa-ghcn):
 
-> GHCN-Daily is a dataset that contains daily observations over global land areas. It contains station-based measurements from land-based stations worldwide, about two thirds of which are for precipitation measurements only (Menne et al., 2012). GHCN-Daily is a composite of climate records from numerous sources that were merged together and subjected to a common suite of quality assurance reviews (Durre et al., 2010). The archive includes the following meteorological elements:
+> GHCN-Daily is a dataset that contains daily observations over global land areas. It contains station-based measurements from land-based stations worldwide, about two-thirds of which are for precipitation measurements only (Menne et al., 2012). GHCN-Daily is a composite of climate records from numerous sources that were merged together and subjected to a common suite of quality assurance reviews (Durre et al., 2010). The archive includes the following meteorological elements:
 
     - Daily maximum temperature
     - Daily minimum temperature
@@ -28,7 +28,7 @@ More precisely and according to the [origin of this data](https://github.com/aws
 
 ### Pre-prepared data
 
-More specifically, rows have been removed that did not fail any quality assurance checks by Noaa. The data has also been restructured from a measurement per line to a row per station id and date i.e.
+More specifically, rows have been removed that did not fail any quality assurance checks by Noaa. The data has also been restructured from a measurement per line to a row per station id and date, i.e.
 
 ```csv
 "station_id","date","tempAvg","tempMax","tempMin","precipitation","snowfall","snowDepth","percentDailySun","averageWindSpeed","maxWindSpeed","weatherType"
@@ -63,17 +63,19 @@ for i in {1900..2023}; do wget https://noaa-ghcn-pds.s3.amazonaws.com/csv.gz/${i
 #### Sampling the data
 
 ```bash
-zcat 2021.csv.gz | head
-AE000041196,20210101,TMAX,278,,,S,
-AE000041196,20210101,PRCP,0,D,,S,
-AE000041196,20210101,TAVG,214,H,,S,
-AEM00041194,20210101,TMAX,266,,,S,
-AEM00041194,20210101,TMIN,178,,,S,
-AEM00041194,20210101,PRCP,0,,,S,
-AEM00041194,20210101,TAVG,217,H,,S,
-AEM00041217,20210101,TMAX,262,,,S,
-AEM00041217,20210101,TMIN,155,,,S,
-AEM00041217,20210101,TAVG,202,H,,S,
+$ clickhouse-local --query "SELECT * FROM '2021.csv.gz' LIMIT 10" --format PrettyCompact
+┌─c1──────────┬───────c2─┬─c3───┬──c4─┬─c5───┬─c6───┬─c7─┬───c8─┐
+│ AE000041196 │ 20210101 │ TMAX │ 278 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AE000041196 │ 20210101 │ PRCP │   0 │ D    │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AE000041196 │ 20210101 │ TAVG │ 214 │ H    │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041194 │ 20210101 │ TMAX │ 266 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041194 │ 20210101 │ TMIN │ 178 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041194 │ 20210101 │ PRCP │   0 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041194 │ 20210101 │ TAVG │ 217 │ H    │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041217 │ 20210101 │ TMAX │ 262 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041217 │ 20210101 │ TMIN │ 155 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+│ AEM00041217 │ 20210101 │ TAVG │ 202 │ H    │ ᴺᵁᴸᴸ │ S  │ ᴺᵁᴸᴸ │
+└─────────────┴──────────┴──────┴─────┴──────┴──────┴────┴──────┘
 ```
 
 Summarizing the [format documentation](https://github.com/awslabs/open-data-docs/tree/main/docs/noaa/noaa-ghcn):
@@ -88,7 +90,7 @@ Summarizing the format documentation and the columns in order:
     - SNOW - Snowfall (mm)
     - SNWD - Snow depth (mm)
     - TMAX - Maximum temperature (tenths of degrees C)
-    - TAVG - Average temperature (tenths of a degrees C)
+    - TAVG - Average temperature (tenths of a degree C)
     - TMIN - Minimum temperature (tenths of degrees C)
     - PSUN - Daily percent of possible sunshine (percent)
     - AWND - Average daily wind speed (tenths of meters per second)
@@ -215,7 +217,7 @@ CREATE TABLE noaa
 
 ### Inserting from local file
 
-Data can be inserted from local file as follows (from the ClickHouse client):
+Data can be inserted from a local file as follows (from the ClickHouse client):
 
 ```sql
 INSERT INTO noaa FROM INFILE '<path>/noaa_enriched.parquet'
