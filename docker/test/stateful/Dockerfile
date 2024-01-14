@@ -11,9 +11,6 @@ RUN apt-get update -y \
         npm \
     && apt-get clean
 
-# The following is already done in clickhouse/stateless-test
-# RUN npm install -g azurite
-# RUN npm install tslib
-
+COPY create.sql /
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]
