@@ -289,7 +289,7 @@ def parse_env_variables(
         result.append("BUILD_TYPE=None")
 
     if coverage:
-        result.append("SANITIZE_COVERAGE=1")
+        cmake_flags.append("-DSANITIZE_COVERAGE=1")
 
     if not cache:
         cmake_flags.append("-DCOMPILER_CACHE=disabled")
