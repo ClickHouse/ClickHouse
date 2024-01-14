@@ -1,7 +1,7 @@
 -- Tags: no-tsan, no-parallel
 
 DROP TABLE IF EXISTS test.hits_1m;
-CREATE TABLE test.hits_1m as test.hits;
+CREATE TABLE test.hits_1m AS test.hits SETTINGS storage_policy = 'default';
 INSERT INTO test.hits_1m SELECT * FROM test.hits LIMIT 1000000;
 
 CREATE DATABASE IF NOT EXISTS db_dict;
