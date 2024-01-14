@@ -129,6 +129,19 @@ function setup_logs_replication
     debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
     echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
 
+    # We will pre-create a table system.coverage_log.
+    # It is normally created by clickhouse-test rather than the server,
+    # so we will create it in advance to make it be picked up by the next commands:
+
+    clickhouse-client --query "
+        CREATE TABLE IF NOT EXISTS system.coverage_log
+        (
+            time DateTime,
+            test_name String,
+            coverage Array(UInt64)
+        ) ENGINE = MergeTree ORDER BY test_name
+    "
+
     # For each system log table:
     echo 'Create %_log tables'
     clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
