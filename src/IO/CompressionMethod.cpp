@@ -15,7 +15,7 @@
 #include <IO/Bzip2ReadBuffer.h>
 #include <IO/Bzip2WriteBuffer.h>
 #include <IO/HadoopSnappyReadBuffer.h>
-
+#include <IO/SplittableBzip2ReadBuffer.h>
 #include "config.h"
 
 #include <boost/algorithm/string/case_conv.hpp>

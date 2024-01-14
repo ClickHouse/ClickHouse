@@ -14,33 +14,6 @@ namespace ErrorCodes
 
 }
 
-// A subrange of the input, read by one thread.
-struct ParallelReadBuffer::ReadWorker
-{
-    ReadWorker(SeekableReadBuffer & input_, size_t offset, size_t size)
-        : input(input_), start_offset(offset), segment(size)
-    {
-        chassert(size);
-        chassert(segment.size() == size);
-    }
-
-    bool hasBytesToConsume() const { return bytes_produced > bytes_consumed; }
-    bool hasBytesToProduce() const { return bytes_produced < segment.size(); }
-
-    SeekableReadBuffer & input;
-    const size_t start_offset; // start of the segment
-
-    Memory<> segment;
-    /// Reader thread produces data, nextImpl() consumes it.
-    /// segment[bytes_consumed..bytes_produced-1] is data waiting to be picked up by nextImpl()
-    /// segment[bytes_produced..] needs to be read from the input ReadBuffer
-    size_t bytes_produced = 0;
-    size_t bytes_consumed = 0;
-
-    std::atomic_bool cancel{false};
-    std::mutex worker_mutex;
-};
-
 ParallelReadBuffer::ParallelReadBuffer(
     SeekableReadBuffer & input_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers_, size_t range_step_, size_t file_size_)
     : SeekableReadBuffer(nullptr, 0)
