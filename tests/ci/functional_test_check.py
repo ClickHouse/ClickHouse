@@ -118,7 +118,7 @@ def get_run_command(
     )
 
     return (
-        f"docker run --shm-size=2g --volume={builds_path}:/package_folder "
+        f"docker run --volume={builds_path}:/package_folder "
         f"{ci_logs_args}"
         f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
         f"{volume_with_broken_test}"
