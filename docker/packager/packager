@@ -420,7 +420,9 @@ def parse_args() -> argparse.Namespace:
         default="",
     )
     parser.add_argument(
-        "--coverage", action="store_true", help="enable granular coverage with introspection"
+        "--coverage",
+        action="store_true",
+        help="enable granular coverage with introspection",
     )
 
     parser.add_argument("--clang-tidy", action="store_true")
