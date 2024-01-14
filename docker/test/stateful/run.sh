@@ -241,7 +241,7 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
-SETTINGS disk = disk(type = cache, path = '/dev/shm/clickhouse/', max_size = '16G',
+SETTINGS disk = disk(type = cache, path = '/var/lib/clickhouse/filesystem_caches/', max_size = '4G',
          disk = disk(type = web, endpoint = 'https://clickhouse-datasets-web.s3.us-east-1.amazonaws.com/'));
 END
 
@@ -434,7 +434,7 @@ ENGINE = CollapsingMergeTree(Sign)
 PARTITION BY toYYYYMM(StartDate)
 ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
 SAMPLE BY intHash32(UserID)
-SETTINGS disk = disk(type = cache, path = '/dev/shm/clickhouse/', max_size = '16G',
+SETTINGS disk = disk(type = cache, path = '/var/lib/clickhouse/filesystem_caches/', max_size = '4G',
          disk = disk(type = web, endpoint = 'https://clickhouse-datasets-web.s3.us-east-1.amazonaws.com/'));
 END
 
