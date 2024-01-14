@@ -477,6 +477,9 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
     return res;
 }
 
+template <class TCol>
+concept is_col_vector = std::is_same_v<TCol, ColumnVector<typename TCol::ValueType>>;
+
 /// Prevent implicit template instantiation of ColumnVector for common types
 
 extern template class ColumnVector<UInt8>;

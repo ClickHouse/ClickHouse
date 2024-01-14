@@ -44,6 +44,10 @@ concept is_over_big_int =
     || std::is_same_v<T, UInt256>
     || std::is_same_v<T, Decimal128>
     || std::is_same_v<T, Decimal256>;
+
+template <class T>
+concept is_over_big_decimal = is_decimal<T> && is_over_big_int<typename T::NativeType>;
+
 }
 
 template <> struct is_signed<DB::Decimal32> { static constexpr bool value = true; };

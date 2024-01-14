@@ -162,6 +162,14 @@ protected:
     UInt32 scale;
 };
 
+template <class TCol>
+concept is_col_over_big_decimal = std::is_same_v<TCol, ColumnDecimal<typename TCol::ValueType>>
+    && is_decimal<typename TCol::ValueType> && is_over_big_int<typename TCol::NativeT>;
+
+template <class TCol>
+concept is_col_int_decimal = std::is_same_v<TCol, ColumnDecimal<typename TCol::ValueType>>
+    && is_decimal<typename TCol::ValueType> && std::is_integral_v<typename TCol::NativeT>;
+
 template <class> class ColumnVector;
 template <class T> struct ColumnVectorOrDecimalT { using Col = ColumnVector<T>; };
 template <is_decimal T> struct ColumnVectorOrDecimalT<T> { using Col = ColumnDecimal<T>; };

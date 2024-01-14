@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/logger_useful.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -58,7 +59,7 @@ void visitColStrIndexType(size_t data_size, TypeVisitor && visitor)
     }
 }
 
-void reserveColumnStrRows(MutableColumnPtr & col, UInt32 rows_num)
+void reserveColumnStrRows(MutableColumnPtr & col, UInt64 rows_num)
 {
     col->reserve(rows_num);
 
@@ -212,7 +213,7 @@ ParquetLeafColReader<TColumn>::ParquetLeafColReader(
 }
 
 template <typename TColumn>
-ColumnWithTypeAndName ParquetLeafColReader<TColumn>::readBatch(UInt32 rows_num, const String & name)
+ColumnWithTypeAndName ParquetLeafColReader<TColumn>::readBatch(UInt64 rows_num, const String & name)
 {
     reading_rows_num = rows_num;
     auto readPageIfEmpty = [&]() {
@@ -228,7 +229,7 @@ ColumnWithTypeAndName ParquetLeafColReader<TColumn>::readBatch(UInt32 rows_num, 
         // if dictionary page encountered, another page should be read
         readPageIfEmpty();
 
-        auto read_values = std::min(rows_num, cur_page_values);
+        auto read_values = static_cast<UInt32>(std::min(rows_num, static_cast<UInt64>(cur_page_values)));
         data_values_reader->readBatch(column, *null_map, read_values);
 
         cur_page_values -= read_values;
@@ -239,7 +240,7 @@ ColumnWithTypeAndName ParquetLeafColReader<TColumn>::readBatch(UInt32 rows_num, 
 }
 
 template <>
-void ParquetLeafColReader<ColumnString>::resetColumn(UInt32 rows_num)
+void ParquetLeafColReader<ColumnString>::resetColumn(UInt64 rows_num)
 {
     if (reading_low_cardinality)
     {
@@ -261,7 +262,7 @@ void ParquetLeafColReader<ColumnString>::resetColumn(UInt32 rows_num)
 }
 
 template <typename TColumn>
-void ParquetLeafColReader<TColumn>::resetColumn(UInt32 rows_num)
+void ParquetLeafColReader<TColumn>::resetColumn(UInt64 rows_num)
 {
     assert(!reading_low_cardinality);
 
@@ -403,9 +404,9 @@ void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
     assert(col_descriptor.max_definition_level() >= 0);
     std::unique_ptr<RleValuesReader> def_level_reader;
     if (col_descriptor.max_definition_level() > 0) {
-        auto bit_width = arrow::BitUtil::Log2(col_descriptor.max_definition_level() + 1);
+        auto bit_width = arrow::bit_util::Log2(col_descriptor.max_definition_level() + 1);
         auto num_bytes = ::arrow::util::SafeLoadAs<int32_t>(buffer);
-        auto bit_reader = std::make_unique<arrow::BitUtil::BitReader>(buffer + 4, num_bytes);
+        auto bit_reader = std::make_unique<arrow::bit_util::BitReader>(buffer + 4, num_bytes);
         num_bytes += 4;
         buffer += num_bytes;
         max_size -= num_bytes;
@@ -447,7 +448,7 @@ void ParquetLeafColReader<TColumn>::readPageV1(const parquet::DataPageV1 & page)
 
             // refer to: DictDecoderImpl::SetData in encoding.cc
             auto bit_width = *buffer;
-            auto bit_reader = std::make_unique<arrow::BitUtil::BitReader>(++buffer, --max_size);
+            auto bit_reader = std::make_unique<arrow::bit_util::BitReader>(++buffer, --max_size);
             data_values_reader = createDictReader(
                 std::move(def_level_reader), std::make_unique<RleValuesReader>(std::move(bit_reader), bit_width));
             break;
