@@ -85,8 +85,52 @@ public:
 
 REGISTER_FUNCTION(Coverage)
 {
-    factory.registerFunction("coverage", [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCoverage>(Kind::Current)); });
-    factory.registerFunction("coverageAll", [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCoverage>(Kind::All)); });
+    factory.registerFunction("coverage", [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCoverage>(Kind::Current)); },
+        FunctionDocumentation
+        {
+            .description=R"(
+This function is only available if ClickHouse was built with the SANITIZE_COVERAGE=1 option.
+
+It returns an array of unique addresses (a subset of the instrumented points in code) in the code
+encountered at runtime after the previous coverage reset (with the `SYSTEM RESET COVERAGE` query) or after server startup.
+
+[example:functions]
+
+The order of array elements is undetermined.
+
+You can use another function, `coverageAll` to find all instrumented addresses in the code to compare and calculate the percentage.
+
+You can process the addresses with the `addressToSymbol` (possibly with `demangle`) and `addressToLine` functions
+to calculate symbol-level, file-level, or line-level coverage.
+
+If you run multiple tests sequentially and reset the coverage with the `SYSTEM RESET COVERAGE` query between the tests,
+you can obtain a coverage information for every test in isolation, to find which functions are covered by which tests and vise-versa.
+
+By default, every *basic block* in the code is covered, which roughly means - a sequence of instructions without jumps,
+e.g. a body of for loop without ifs, or a single branch of if.
+
+See https://clang.llvm.org/docs/SanitizerCoverage.html for more information.
+)",
+            .examples{
+                {"functions", "SELECT DISTINCT demangle(addressToSymbol(arrayJoin(coverage())))", ""}},
+            .categories{"Introspection"}
+        });
+
+    factory.registerFunction("coverageAll", [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCoverage>(Kind::All)); },
+        FunctionDocumentation
+        {
+            .description=R"(
+This function is only available if ClickHouse was built with the SANITIZE_COVERAGE=1 option.
+
+It returns an array of all unique addresses in the code instrumented for coverage
+- all possible addresses that can appear in the result of the `coverage` function.
+
+You can use this function, and the `coverage` function to compare and calculate the coverage percentage.
+
+See the `coverage` function for the details.
+)",
+            .categories{"Introspection"}
+        });
 }
 
 }
