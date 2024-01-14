@@ -157,6 +157,23 @@ static IAggregateFunction * createWithNumericBasedType(const IDataType & argumen
     return nullptr;
 }
 
+template <template <typename, bool> class AggregateFunctionTemplate, bool bool_param, typename... TArgs>
+static IAggregateFunction * createWithNumericBasedType(const IDataType & argument_type, TArgs && ... args)
+{
+    IAggregateFunction * f = createWithNumericType<AggregateFunctionTemplate, bool_param>(argument_type, std::forward<TArgs>(args)...);
+    if (f)
+        return f;
+
+    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16, bool_param>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32, bool_param>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UUID, bool_param>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::IPv4) return new AggregateFunctionTemplate<IPv4, bool_param>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::IPv6) return new AggregateFunctionTemplate<IPv6, bool_param>(std::forward<TArgs>(args)...);
+    return nullptr;
+}
+
 template <template <typename> class AggregateFunctionTemplate, typename... TArgs>
 static IAggregateFunction * createWithDecimalType(const IDataType & argument_type, TArgs && ... args)
 {
@@ -167,6 +184,19 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
     if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256>(std::forward<TArgs>(args)...);
     if constexpr (AggregateFunctionTemplate<DateTime64>::DateTime64Supported)
         if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionTemplate<DateTime64>(std::forward<TArgs>(args)...);
+    return nullptr;
+}
+
+template <template <typename, bool> class AggregateFunctionTemplate, bool bool_param, typename... TArgs>
+static IAggregateFunction * createWithDecimalType(const IDataType & argument_type, TArgs && ... args)
+{
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::Decimal32) return new AggregateFunctionTemplate<Decimal32, bool_param>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Decimal64) return new AggregateFunctionTemplate<Decimal64, bool_param>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128, bool_param>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256, bool_param>(std::forward<TArgs>(args)...);
+    if constexpr (AggregateFunctionTemplate<DateTime64, bool_param>::DateTime64Supported)
+        if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionTemplate<DateTime64, bool_param>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 

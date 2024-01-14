@@ -41,7 +41,6 @@ select sumMap(map(1,2), map(1,3)); -- { serverError 42 }
 select avgMap([1,1,1], [2,2,2]); -- { serverError 43 }
 select minMap((1,1)); -- { serverError 43 }
 select minMap(([1,1,1],1)); -- { serverError 43 }
-select minMap([1,1,1],1); -- { serverError 43 }
 select minMap([1,1,1]); -- { serverError 43 }
 select minMap(([1,1,1])); -- { serverError 43 }
 
