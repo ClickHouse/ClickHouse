@@ -185,7 +185,7 @@ FROM file('noaa.csv', CSV,
           'station_id String, date Date32, tempAvg Int32, tempMax Int32, tempMin Int32, precipitation Int32, snowfall Int32, snowDepth Int32, percentDailySun Int8, averageWindSpeed Int32, maxWindSpeed Int32, weatherType UInt8') as noaa LEFT OUTER
          JOIN stations ON noaa.station_id = stations.id INTO OUTFILE 'noaa_enriched.parquet' FORMAT Parquet SETTINGS format_regexp='^(.{11})\s+(\-?\d{1,2}\.\d{4})\s+(\-?\d{1,3}\.\d{1,4})\s+(\-?\d*\.\d*)\s+(.*)\s+(?:[\d]*)'" 
 ```
-This query takes a few minutes to run and produces an 6.4GB file `noaa_enriched.parquet`.
+This query takes a few minutes to run and produces a 6.4 GB file, `noaa_enriched.parquet`.
 
 ## Create table
 
