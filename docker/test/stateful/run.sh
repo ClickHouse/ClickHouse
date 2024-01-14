@@ -100,7 +100,7 @@ setup_logs_replication
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
 
-clickhouse-client --query "
+clickhouse-client <<END
 ATTACH TABLE datasets.hits_v1 UUID '78ebf6a1-d987-4579-b3ec-00c1a087b1f3'
 (
     WatchID UInt64,
@@ -227,12 +227,12 @@ ATTACH TABLE datasets.hits_v1 UUID '78ebf6a1-d987-4579-b3ec-00c1a087b1f3'
     ShareService String,
     ShareURL String,
     ShareTitle String,
-    ParsedParams.Key1 Array(String),
-    ParsedParams.Key2 Array(String),
-    ParsedParams.Key3 Array(String),
-    ParsedParams.Key4 Array(String),
-    ParsedParams.Key5 Array(String),
-    ParsedParams.ValueDouble Array(Float64),
+    `ParsedParams.Key1` Array(String),
+    `ParsedParams.Key2` Array(String),
+    `ParsedParams.Key3` Array(String),
+    `ParsedParams.Key4` Array(String),
+    `ParsedParams.Key5` Array(String),
+    `ParsedParams.ValueDouble` Array(Float64),
     IslandID FixedString(16),
     RequestNum UInt32,
     RequestTry UInt8
@@ -243,9 +243,9 @@ ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
 SETTINGS disk = disk(type = cache, path = '/dev/shm/clickhouse/', max_size = '2G',
          disk = disk(type = web, endpoint = 'https://clickhouse-datasets-web.s3.us-east-1.amazonaws.com/'));
-"
+END
 
-clickhouse-client --query "
+clickhouse-client <<END
 ATTACH TABLE datasets.visits_v1 UUID '5131f834-711f-4168-98a5-968b691a104b'
 (
     CounterID UInt32,
@@ -325,12 +325,12 @@ ATTACH TABLE datasets.visits_v1 UUID '5131f834-711f-4168-98a5-968b691a104b'
     Robotness UInt8,
     GeneralInterests Array(UInt16),
     Params Array(String),
-    Goals.ID Array(UInt32),
-    Goals.Serial Array(UInt32),
-    Goals.EventTime Array(DateTime),
-    Goals.Price Array(Int64),
-    Goals.OrderID Array(String),
-    Goals.CurrencyID Array(UInt32),
+    `Goals.ID` Array(UInt32),
+    `Goals.Serial` Array(UInt32),
+    `Goals.EventTime` Array(DateTime),
+    `Goals.Price` Array(Int64),
+    `Goals.OrderID` Array(String),
+    `Goals.CurrencyID` Array(UInt32),
     WatchIDs Array(UInt64),
     ParamSumPrice Int64,
     ParamCurrency FixedString(3),
@@ -379,14 +379,14 @@ ATTACH TABLE datasets.visits_v1 UUID '5131f834-711f-4168-98a5-968b691a104b'
     PredLastVisit Date,
     LastVisit Date,
     TotalVisits UInt32,
-    TraficSource.ID Array(Int8),
-    TraficSource.SearchEngineID Array(UInt16),
-    TraficSource.AdvEngineID Array(UInt8),
-    TraficSource.PlaceID Array(UInt16),
-    TraficSource.SocialSourceNetworkID Array(UInt8),
-    TraficSource.Domain Array(String),
-    TraficSource.SearchPhrase Array(String),
-    TraficSource.SocialSourcePage Array(String),
+    `TraficSource.ID` Array(Int8),
+    `TraficSource.SearchEngineID` Array(UInt16),
+    `TraficSource.AdvEngineID` Array(UInt8),
+    `TraficSource.PlaceID` Array(UInt16),
+    `TraficSource.SocialSourceNetworkID` Array(UInt8),
+    `TraficSource.Domain` Array(String),
+    `TraficSource.SearchPhrase` Array(String),
+    `TraficSource.SocialSourcePage` Array(String),
     Attendance FixedString(16),
     CLID UInt32,
     YCLID UInt64,
@@ -410,24 +410,24 @@ ATTACH TABLE datasets.visits_v1 UUID '5131f834-711f-4168-98a5-968b691a104b'
     FromHash UInt64,
     WebVisorEnabled UInt8,
     WebVisorActivity UInt32,
-    ParsedParams.Key1 Array(String),
-    ParsedParams.Key2 Array(String),
-    ParsedParams.Key3 Array(String),
-    ParsedParams.Key4 Array(String),
-    ParsedParams.Key5 Array(String),
-    ParsedParams.ValueDouble Array(Float64),
-    Market.Type Array(UInt8),
-    Market.GoalID Array(UInt32),
-    Market.OrderID Array(String),
-    Market.OrderPrice Array(Int64),
-    Market.PP Array(UInt32),
-    Market.DirectPlaceID Array(UInt32),
-    Market.DirectOrderID Array(UInt32),
-    Market.DirectBannerID Array(UInt32),
-    Market.GoodID Array(String),
-    Market.GoodName Array(String),
-    Market.GoodQuantity Array(Int32),
-    Market.GoodPrice Array(Int64),
+    `ParsedParams.Key1` Array(String),
+    `ParsedParams.Key2` Array(String),
+    `ParsedParams.Key3` Array(String),
+    `ParsedParams.Key4` Array(String),
+    `ParsedParams.Key5` Array(String),
+    `ParsedParams.ValueDouble` Array(Float64),
+    `Market.Type` Array(UInt8),
+    `Market.GoalID` Array(UInt32),
+    `Market.OrderID` Array(String),
+    `Market.OrderPrice` Array(Int64),
+    `Market.PP` Array(UInt32),
+    `Market.DirectPlaceID` Array(UInt32),
+    `Market.DirectOrderID` Array(UInt32),
+    `Market.DirectBannerID` Array(UInt32),
+    `Market.GoodID` Array(String),
+    `Market.GoodName` Array(String),
+    `Market.GoodQuantity` Array(Int32),
+    `Market.GoodPrice` Array(Int64),
     IslandID FixedString(16)
 )
 ENGINE = CollapsingMergeTree(Sign)
@@ -436,7 +436,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
 SAMPLE BY intHash32(UserID)
 SETTINGS disk = disk(type = cache, path = '/dev/shm/clickhouse/', max_size = '2G',
          disk = disk(type = web, endpoint = 'https://clickhouse-datasets-web.s3.us-east-1.amazonaws.com/'));
-"
+END
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
 
