@@ -10,6 +10,28 @@
 
 namespace DB
 {
+
+/**
+ * A DDSketch is a fully-mergeable quantile sketch with relative-error guarantees. That is, for any value x,
+ * the value returned by the sketch is guaranteed to be in the (1 +- epsilon) * x range. The sketch is
+ * parameterized by a relative accuracy epsilon, which is the maximum relative error of any quantile estimate.
+ *
+ * The sketch is implemented as a set of logarithmically-spaced bins. Each bin is a pair of a value and a count.
+ *
+ * The sketch is fully mergeable, meaning that the merge of two sketches is equivalent to the sketch of the
+ * union of the input datasets. The memory size of the sketch depends on the range that is covered by
+ * the input values: the larger that range, the more bins are needed to keep track of the input values.
+ * As a rough estimate, if working on durations using DDSketches.unboundedDense(0.02) (relative accuracy of 2%),
+ * about 2kB (275 bins) are needed to cover values between 1 millisecond and 1 minute, and about 6kB (802 bins)
+ * to cover values between 1 nanosecond and 1 day.
+ *
+ * This implementation maintains the binary compatibility with the DDSketch ProtoBuf format
+ * https://github.com/DataDog/sketches-java/blob/master/src/protobuf/proto/DDSketch.proto.
+ * Which enables sending the pre-aggregated sketches to the ClickHouse server and calculating the quantiles
+ * during the query time. See DDSketchEncoding.h for byte-level details.
+ *
+*/
+
 template <typename Value>
 class QuantileDDSketch
 {
