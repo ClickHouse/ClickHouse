@@ -453,14 +453,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->codec);
         }
 
-        if (!column.settings.empty())
-        {
-            auto per_column_settings = std::make_shared<ASTSetQuery>();
-            per_column_settings->is_standalone = false;
-            per_column_settings->changes = column.settings;
-            column_declaration->per_column_settings = std::move(per_column_settings);
-        }
-
         if (column.stat)
         {
             column_declaration->stat_type = column.stat->ast;
@@ -471,6 +463,14 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         {
             column_declaration->ttl = column.ttl;
             column_declaration->children.push_back(column_declaration->ttl);
+        }
+
+        if (!column.settings.empty())
+        {
+            auto per_column_settings = std::make_shared<ASTSetQuery>();
+            per_column_settings->is_standalone = false;
+            per_column_settings->changes = column.settings;
+            column_declaration->per_column_settings = std::move(per_column_settings);
         }
 
         columns_list->children.push_back(column_declaration_ptr);

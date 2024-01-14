@@ -39,12 +39,6 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->codec);
     }
 
-    if (per_column_settings)
-    {
-        res->per_column_settings = per_column_settings->clone();
-        res->children.push_back(res->per_column_settings);
-    }
-
     if (stat_type)
     {
         res->stat_type = stat_type->clone();
@@ -61,6 +55,12 @@ ASTPtr ASTColumnDeclaration::clone() const
     {
         res->collation = collation->clone();
         res->children.push_back(res->collation);
+    }
+
+    if (per_column_settings)
+    {
+        res->per_column_settings = per_column_settings->clone();
+        res->children.push_back(res->per_column_settings);
     }
 
     return res;
