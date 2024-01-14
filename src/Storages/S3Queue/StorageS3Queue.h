@@ -39,10 +39,11 @@ public:
 
     String getName() const override { return "S3Queue"; }
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
+        SelectQueryInfo & /*query_info*/,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -57,6 +58,7 @@ public:
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
 private:
+    friend class ReadFromS3Queue;
     using FileIterator = StorageS3QueueSource::FileIterator;
 
     const std::unique_ptr<S3QueueSettings> s3queue_settings;
@@ -85,11 +87,10 @@ private:
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
 
-    std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, ASTPtr query);
+    std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<StorageS3QueueSource> createSource(
+        const ReadFromFormatInfo & info,
         std::shared_ptr<StorageS3Queue::FileIterator> file_iterator,
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
         size_t max_block_size,
         ContextPtr local_context);
 

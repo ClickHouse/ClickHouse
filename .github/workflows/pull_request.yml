@@ -13,13 +13,6 @@ on:  # yamllint disable-line rule:truthy
       - opened
     branches:
       - master
-    paths-ignore:
-      - '**.md'
-      - 'docker/docs/**'
-      - 'docs/**'
-      - 'utils/check-style/aspell-ignore/**'
-      - 'tests/ci/docs_check.py'
-      - '.github/workflows/docs_check.yml'
 ##########################################################################################
 ##################################### SMALL CHECKS #######################################
 ##########################################################################################
@@ -298,6 +291,8 @@ jobs:
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
   BuilderReport:
+    # run report check for failed builds to indicate the CI error
+    if: ${{ !cancelled() }}
     needs:
       - RunConfig
       - BuilderBinRelease
@@ -308,7 +303,6 @@ jobs:
       - BuilderDebRelease
       - BuilderDebTsan
       - BuilderDebUBsan
-    if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
@@ -321,7 +315,8 @@ jobs:
       run_command: |
         python3 build_report_check.py "$CHECK_NAME"
   BuilderSpecialReport:
-    if: ${{ !failure() && !cancelled() }}
+    # run report check for failed builds to indicate the CI error
+    if: ${{ !cancelled() }}
     needs:
       - RunConfig
       - BuilderBinAarch64

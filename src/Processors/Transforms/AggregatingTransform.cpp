@@ -6,6 +6,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 
 #include <Processors/Transforms/SquashingChunksTransform.h>
 
@@ -377,9 +378,7 @@ private:
         auto & output = outputs.front();
         auto chunk = std::move(single_level_chunks.back());
         single_level_chunks.pop_back();
-        const auto has_rows = chunk.hasRows();
-        if (has_rows)
-            output.push(std::move(chunk));
+        output.push(std::move(chunk));
 
         if (finished && single_level_chunks.empty())
         {
@@ -387,7 +386,7 @@ private:
             return Status::Finished;
         }
 
-        return has_rows ? Status::PortFull : Status::Ready;
+        return Status::PortFull;
     }
 
     /// Read all sources and try to push current bucket.
@@ -466,7 +465,8 @@ private:
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
 
-            single_level_chunks.emplace_back(convertToChunk(block));
+            if (block.rows() > 0)
+                single_level_chunks.emplace_back(convertToChunk(block));
         }
     }
 
@@ -493,7 +493,8 @@ private:
 
         auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
         for (auto & block : blocks)
-            single_level_chunks.emplace_back(convertToChunk(block));
+            if (block.rows() > 0)
+                single_level_chunks.emplace_back(convertToChunk(block));
 
         finished = true;
         data.reset();
@@ -731,14 +732,14 @@ void AggregatingTransform::initGenerate()
     {
         if (!skip_merging)
         {
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(
                 std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads));
         }
         else
         {
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             Pipes pipes;
             for (auto & variant : prepared_data)
             {

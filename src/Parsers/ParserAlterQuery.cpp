@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserPartition.h>
+#include <Parsers/ParserRefreshStrategy.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -38,6 +39,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_setting("MODIFY SETTING");
     ParserKeyword s_reset_setting("RESET SETTING");
     ParserKeyword s_modify_query("MODIFY QUERY");
+    ParserKeyword s_modify_refresh("MODIFY REFRESH");
 
     ParserKeyword s_add_index("ADD INDEX");
     ParserKeyword s_drop_index("DROP INDEX");
@@ -112,6 +114,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_remove_ttl("REMOVE TTL");
     ParserKeyword s_remove_sample_by("REMOVE SAMPLE BY");
+    ParserKeyword s_apply_deleted_mask("APPLY DELETED MASK");
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
@@ -133,6 +136,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /* allow_empty = */ false);
     ParserNameList values_p;
     ParserSelectWithUnionQuery select_p;
+    ParserRefreshStrategy refresh_p;
     ParserTTLExpressionList parser_ttl_list;
 
     switch (alter_object)
@@ -823,12 +827,28 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
                 command->type = ASTAlterCommand::MODIFY_QUERY;
             }
+            else if (s_modify_refresh.ignore(pos, expected))
+            {
+                if (!refresh_p.parse(pos, command->refresh, expected))
+                    return false;
+                command->type = ASTAlterCommand::MODIFY_REFRESH;
+            }
             else if (s_modify_comment.ignore(pos, expected))
             {
                 if (!parser_string_literal.parse(pos, command->comment, expected))
                     return false;
 
                 command->type = ASTAlterCommand::MODIFY_COMMENT;
+            }
+            else if (s_apply_deleted_mask.ignore(pos, expected))
+            {
+                command->type = ASTAlterCommand::APPLY_DELETED_MASK;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command->partition, expected))
+                        return false;
+                }
             }
             else
                 return false;

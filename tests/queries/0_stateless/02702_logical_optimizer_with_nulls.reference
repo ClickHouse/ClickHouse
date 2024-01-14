@@ -9,7 +9,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
       COLUMN id: 4, column_name: b, result_type: LowCardinality(String), source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.02702_logical_optimizer
+    TABLE id: 3, alias: __table1, table_name: default.02702_logical_optimizer
   WHERE
     FUNCTION id: 5, function_name: or, function_type: ordinary, result_type: Nullable(UInt8)
       ARGUMENTS
@@ -41,7 +41,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: Int32, source_id: 3
       COLUMN id: 4, column_name: b, result_type: LowCardinality(String), source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.02702_logical_optimizer
+    TABLE id: 3, alias: __table1, table_name: default.02702_logical_optimizer
   WHERE
     FUNCTION id: 5, function_name: or, function_type: ordinary, result_type: Nullable(UInt8)
       ARGUMENTS
@@ -68,10 +68,12 @@ QUERY id: 0
       COLUMN id: 2, column_name: a, result_type: Nullable(Int32), source_id: 3
       COLUMN id: 4, column_name: b, result_type: LowCardinality(String), source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.02702_logical_optimizer_with_null_column
+    TABLE id: 3, alias: __table1, table_name: default.02702_logical_optimizer_with_null_column
   WHERE
     FUNCTION id: 5, function_name: in, function_type: ordinary, result_type: Nullable(UInt8)
       ARGUMENTS
         LIST id: 6, nodes: 2
           COLUMN id: 7, column_name: a, result_type: Nullable(Int32), source_id: 3
           CONSTANT id: 8, constant_value: Tuple_(UInt64_1, UInt64_3, UInt64_2), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+1
+1

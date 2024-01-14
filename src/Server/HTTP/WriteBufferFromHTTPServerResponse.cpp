@@ -112,6 +112,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     std::make_unique<WriteBufferFromOStream>(*response_body_ostr),
                     compress ? compression_method : CompressionMethod::None,
                     compression_level,
+                    0,
                     working_buffer.size(),
                     working_buffer.begin());
             else
@@ -136,7 +137,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
-    size_t keep_alive_timeout_,
+    UInt64 keep_alive_timeout_,
     bool compress_,
     CompressionMethod compression_method_)
     : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE)

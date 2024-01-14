@@ -154,7 +154,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -331,6 +331,12 @@ void ColumnsDescription::flattenNested()
 {
     for (auto it = columns.begin(); it != columns.end();)
     {
+        if (!isNested(it->type))
+        {
+            ++it;
+            continue;
+        }
+
         const auto * type_arr = typeid_cast<const DataTypeArray *>(it->type.get());
         if (!type_arr)
         {

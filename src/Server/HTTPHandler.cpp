@@ -27,6 +27,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+#include <Common/re2.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -48,15 +49,6 @@
 
 #include <chrono>
 #include <sstream>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -616,12 +608,10 @@ void HTTPHandler::processQuery(
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
-    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
-
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
         response,
         request.getMethod() == HTTPRequest::HTTP_HEAD,
-        keep_alive_timeout,
+        context->getServerSettings().keep_alive_timeout.totalSeconds(),
         client_supports_http_compression,
         http_response_compression_method);
 
@@ -731,8 +721,8 @@ void HTTPHandler::processQuery(
     /// to some other value.
     const auto & settings = context->getSettingsRef();
 
-    /// Only readonly queries are allowed for HTTP GET requests.
-    if (request.getMethod() == HTTPServerRequest::HTTP_GET)
+    /// Anything else beside HTTP POST should be readonly queries.
+    if (request.getMethod() != HTTPServerRequest::HTTP_POST)
     {
         if (settings.readonly == 0)
             context->setSetting("readonly", 2);
