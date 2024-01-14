@@ -175,7 +175,8 @@ private:
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
         const MutableColumns & fetched_columns,
-        const PaddedPODArray<KeyState> & key_index_to_state) const;
+        const PaddedPODArray<KeyState> & key_index_to_state,
+        std::shared_ptr<IColumn::Filter> default_mask = nullptr) const;
 
     MutableColumns aggregateColumns(
         const PaddedPODArray<KeyType> & keys,

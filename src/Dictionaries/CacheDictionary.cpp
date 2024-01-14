@@ -331,11 +331,14 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsOrDefaultShortCircuit(
         else
         {
             /// Reorder result from storage to requested keys indexes
+            auto pmask = std::make_shared<IColumn::Filter>(std::move(default_mask));
             MutableColumns aggregated_columns = aggregateColumnsInOrderOfKeys(
                 keys,
                 request,
                 fetched_columns_from_storage,
-                key_index_to_state_from_storage);
+                key_index_to_state_from_storage,
+                pmask);
+            default_mask = std::move(*pmask);
 
             return request.filterRequestedColumns(aggregated_columns);
         }
@@ -358,11 +361,14 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsOrDefaultShortCircuit(
         else
         {
             /// Reorder result from storage to requested keys indexes
+            auto pmask = std::make_shared<IColumn::Filter>(std::move(default_mask));
             MutableColumns aggregated_columns = aggregateColumnsInOrderOfKeys(
                 keys,
                 request,
                 fetched_columns_from_storage,
-                key_index_to_state_from_storage);
+                key_index_to_state_from_storage,
+                pmask);
+            default_mask = std::move(*pmask);
 
             return request.filterRequestedColumns(aggregated_columns);
         }
@@ -541,7 +547,8 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
     const PaddedPODArray<KeyType> & keys,
     const DictionaryStorageFetchRequest & request,
     const MutableColumns & fetched_columns,
-    const PaddedPODArray<KeyState> & key_index_to_state) const
+    const PaddedPODArray<KeyState> & key_index_to_state,
+    std::shared_ptr<IColumn::Filter> default_mask) const
 {
     MutableColumns aggregated_columns = request.makeAttributesResultColumns();
 
@@ -551,6 +558,9 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
     {
         if (!request.shouldFillResultColumnWithIndex(fetch_request_index))
             continue;
+
+        if (default_mask)
+            default_mask->resize(keys.size());
 
         const auto & aggregated_column = aggregated_columns[fetch_request_index];
         const auto & fetched_column = fetched_columns[fetch_request_index];
@@ -562,7 +572,18 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumnsInOrderOfKe
             if (state.isNotFound())
                 continue;
 
-            aggregated_column->insertFrom(*fetched_column, state.getFetchedColumnIndex());
+            if (default_mask)
+            {
+                if (state.isDefault())
+                    (*default_mask)[key_index] = 0;
+                else
+                {
+                    (*default_mask)[key_index] = 1;
+                    aggregated_column->insertFrom(*fetched_column, state.getFetchedColumnIndex());
+                }
+            }
+            else
+                aggregated_column->insertFrom(*fetched_column, state.getFetchedColumnIndex());
         }
     }
 

@@ -99,7 +99,6 @@ SELECT 'Range hashed dictionary';
 SELECT dictGetOrDefault('range_hashed_dictionary', 'val', id, toDate('2023-01-02'), intDiv(NULL, id))
 FROM range_dictionary_source_table;
 DROP DICTIONARY range_hashed_dictionary;
-
 DROP TABLE range_dictionary_source_table;
 
 
@@ -118,11 +117,30 @@ LAYOUT(CACHE(SIZE_IN_CELLS 10));
 SELECT 'Cache dictionary';
 SELECT dictGetOrDefault('cache_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), intDiv(1, id)))
 FROM dictionary_source_table;
--- SELECT dictGetOrDefault('cache_dictionary', 'v2', id+1, '0')
--- FROM dictionary_source_table;
 SELECT dictGetOrDefault('cache_dictionary', 'v2', id+1, intDiv(NULL, id))
 FROM dictionary_source_table;
 DROP DICTIONARY cache_dictionary;
+
+
+DROP DICTIONARY IF EXISTS ssd_cache_dictionary;
+CREATE DICTIONARY ssd_cache_dictionary
+(
+    id UInt64,
+    v1 String,
+    v2 Nullable(String) DEFAULT NULL
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'dictionary_source_table'))
+LIFETIME(MIN 0 MAX 0)
+LAYOUT(SSD_CACHE(PATH '/var/lib/clickhouse/user_files/test_dict'));
+-- LAYOUT(SSD_CACHE(PATH '/home/ubuntu/custom/user_files/test_dict'));
+
+SELECT 'SSD Cache dictionary';
+SELECT dictGetOrDefault('ssd_cache_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), intDiv(1, id)))
+FROM dictionary_source_table;
+SELECT dictGetOrDefault('ssd_cache_dictionary', 'v2', id+1, intDiv(NULL, id))
+FROM dictionary_source_table;
+DROP DICTIONARY ssd_cache_dictionary;
 
 
 DROP TABLE dictionary_source_table;
