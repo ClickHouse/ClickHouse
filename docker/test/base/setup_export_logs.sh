@@ -138,7 +138,8 @@ function setup_logs_replication
         (
             time DateTime,
             test_name String,
-            coverage Array(UInt64)
+            coverage Array(UInt64),
+            symbols Array(LowCardinality(String)) MATERIALIZED arrayMap(x -> demangle(addressToSymbol(x)), coverage)
         ) ENGINE = MergeTree ORDER BY test_name
     "
 
