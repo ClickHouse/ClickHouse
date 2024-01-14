@@ -40,7 +40,6 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
     {
         Poco::Net::HTTPBasicCredentials credentials{};
 
-
         ReadWriteBufferFromHTTP metadata_buf(
             Poco::URI(fs::path(uri_path) / ".index"),
             Poco::Net::HTTPRequest::HTTP_GET,
