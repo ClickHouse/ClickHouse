@@ -1,4 +1,5 @@
 #include "coverage.h"
+#include <sys/mman.h>
 
 #pragma GCC diagnostic ignored "-Wreserved-identifier"
 
@@ -57,6 +58,14 @@ namespace
 
     uintptr_t * all_addresses_array = nullptr;
     size_t all_addresses_array_size = 0;
+
+    uintptr_t * allocate(size_t size)
+    {
+        void * map = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (MAP_FAILED == map)
+            return nullptr;
+        return static_cast<uintptr_t*>(map);
+    }
 }
 
 extern "C"
@@ -79,7 +88,7 @@ void __sanitizer_cov_trace_pc_guard_init(uint32_t * start, uint32_t * stop)
     coverage_array_size = stop - start;
 
     /// Note: we will leak this.
-    coverage_array = static_cast<uintptr_t*>(malloc(sizeof(uintptr_t) * coverage_array_size));
+    coverage_array = allocate(sizeof(uintptr_t) * coverage_array_size);
 
     resetCoverage();
 }
@@ -92,7 +101,7 @@ void __sanitizer_cov_pcs_init(const uintptr_t * pcs_begin, const uintptr_t * pcs
         return;
     pc_table_initialized = true;
 
-    all_addresses_array = static_cast<uintptr_t*>(malloc(sizeof(uintptr_t) * coverage_array_size));
+    all_addresses_array = allocate(sizeof(uintptr_t) * coverage_array_size);
     all_addresses_array_size = pcs_end - pcs_begin;
 
     /// They are not a real pointers, but also contain a flag in the most significant bit,
