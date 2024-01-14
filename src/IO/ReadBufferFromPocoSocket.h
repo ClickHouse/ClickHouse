@@ -20,10 +20,13 @@ protected:
       */
     Poco::Net::SocketAddress peer_address;
 
+    ProfileEvents::Event read_event;
+
     bool nextImpl() override;
 
 public:
     explicit ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, const ProfileEvents::Event & read_event_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
     bool poll(size_t timeout_microseconds) const;
 
