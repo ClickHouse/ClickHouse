@@ -142,15 +142,19 @@ private:
 class LazyNullMap
 {
 public:
-    LazyNullMap(UInt32 size_) : size(size_), col_nullable(nullptr) {}
+    LazyNullMap(UInt64 size_) : size(size_), col_nullable(nullptr) {}
 
-    void setNull(UInt32 cursor)
+    template <typename T>
+    requires std::is_integral_v<T>
+    void setNull(T cursor)
     {
         initialize();
         null_map[cursor] = 1;
     }
 
-    void setNull(UInt32 cursor, UInt32 count)
+    template <typename T>
+    requires std::is_integral_v<T>
+    void setNull(T cursor, UInt32 count)
     {
         initialize();
         memset(null_map + cursor, 1, count);
@@ -159,7 +163,7 @@ public:
     ColumnPtr getNullableCol() { return col_nullable; }
 
 private:
-    UInt32 size;
+    UInt64 size;
     UInt8 * null_map;
     ColumnPtr col_nullable;
 

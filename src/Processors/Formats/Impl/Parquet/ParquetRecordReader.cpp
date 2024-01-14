@@ -5,6 +5,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -30,21 +31,14 @@ namespace ErrorCodes
     extern const int PARQUET_EXCEPTION;
 }
 
-// #define THROW_ARROW_NOT_OK(status)                                     \
-//     do                                                                 \
-//     {                                                                  \
-//         if (::arrow::Status _s = (status); !_s.ok())                   \
-//             throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
-//     } while (false)
-
-
 #define THROW_PARQUET_EXCEPTION(s)                                      \
     do                                                                  \
     {                                                                   \
         try { (s); }                                                    \
         catch (const ::parquet::ParquetException & e)                   \
         {                                                               \
-            throw Exception(e.what(), ErrorCodes::PARQUET_EXCEPTION);   \
+            auto msg = PreformattedMessage::create("Excepted when reading parquet: {}", e.what()); \
+            throw Exception(std::move(msg), ErrorCodes::PARQUET_EXCEPTION);   \
         }                                                               \
     } while (false)
 
@@ -172,13 +166,14 @@ ParquetRecordReader::ParquetRecordReader(
         auto idx = file_reader->metadata()->schema()->ColumnIndex(col_with_name.name);
         if (idx < 0)
         {
-            throw Exception("can not find column with name: " + col_with_name.name, ErrorCodes::BAD_ARGUMENTS);
+            auto msg = PreformattedMessage::create("can not find column with name: {}", col_with_name.name);
+            throw Exception(std::move(msg), ErrorCodes::BAD_ARGUMENTS);
         }
         parquet_col_indice.push_back(idx);
     }
 }
 
-Chunk ParquetRecordReader::readChunk(UInt32 num_rows)
+Chunk ParquetRecordReader::readChunk(size_t num_rows)
 {
     if (!left_rows)
     {
@@ -190,7 +185,7 @@ Chunk ParquetRecordReader::readChunk(UInt32 num_rows)
     }
 
     Columns columns(header.columns());
-    auto num_rows_read = std::min(static_cast<UInt64>(num_rows), cur_row_group_left_rows);
+    auto num_rows_read = std::min(num_rows, cur_row_group_left_rows);
     for (size_t i = 0; i < header.columns(); i++)
     {
         columns[i] = castColumn(

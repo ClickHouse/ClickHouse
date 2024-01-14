@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/logger_useful.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
@@ -28,7 +27,7 @@ public:
         std::unique_ptr<parquet::ColumnChunkMetaData> meta_,
         std::unique_ptr<parquet::PageReader> reader_);
 
-    ColumnWithTypeAndName readBatch(UInt32 rows_num, const String & name) override;
+    ColumnWithTypeAndName readBatch(UInt64 rows_num, const String & name) override;
 
 private:
     const parquet::ColumnDescriptor & col_descriptor;
@@ -42,13 +41,13 @@ private:
 
     ColumnPtr dictionary;
 
+    UInt64 reading_rows_num = 0;
     UInt32 cur_page_values = 0;
-    UInt32 reading_rows_num = 0;
     bool reading_low_cardinality = false;
 
     Poco::Logger * log;
 
-    void resetColumn(UInt32 rows_num);
+    void resetColumn(UInt64 rows_num);
     void degradeDictionary();
     ColumnWithTypeAndName releaseColumn(const String & name);
 

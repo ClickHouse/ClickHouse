@@ -3,7 +3,6 @@
 #include <functional>
 #include <concepts>
 
-#include <base/logger_useful.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -25,7 +24,7 @@ namespace ErrorCodes
 class RleValuesReader
 {
 public:
-    RleValuesReader(std::unique_ptr<arrow::BitUtil::BitReader> bit_reader_, Int32 bit_width_)
+    RleValuesReader(std::unique_ptr<arrow::bit_util::BitReader> bit_reader_, Int32 bit_width_)
         : bit_reader(std::move(bit_reader_)), bit_width(bit_width_) {}
 
     /**
@@ -45,7 +44,7 @@ public:
      * @brief Visit num_values elements.
      * For RLE encoding, for same group, the value is same, so they can be visited repeatedly.
      * For BitPacked encoding, the values may be different with each other, so they must be visited individual.
-     * 
+     *
      * @tparam IndividualVisitor A callback with signature: void(Int32 val)
      * @tparam RepeatedVisitor A callback with signature: void(UInt32 count, Int32 val)
      */
@@ -55,10 +54,10 @@ public:
     /**
      * @brief Visit num_values elements by parsed nullability.
      * If the parsed value is same as max_def_level, then it is processed as null value.
-     * 
+     *
      * @tparam IndividualVisitor A callback with signature: void(size_t cursor)
      * @tparam RepeatedVisitor A callback with signature: void(size_t cursor, UInt32 count)
-     * 
+     *
      * Because the null map is processed, so only the callbacks only need to process the valid data.
      */
     template <typename IndividualVisitor, typename RepeatedVisitor>
@@ -74,18 +73,18 @@ public:
      * @brief Visit num_values elements by parsed nullability.
      * It may be inefficient to process the valid data individually like in visitNullableValues,
      * so a valid_index_steps index array is generated first, in order to process valid data continuously.
-     * 
+     *
      * @tparam IndividualNullVisitor A callback with signature: void(size_t cursor), used to process null value
      * @tparam SteppedValidVisitor  A callback with signature:
      *  void(size_t cursor, const std::vector<UInt8> & valid_index_steps)
      *  for n valid elements with null value interleaved in a BitPacked group,
      *  i-th item in valid_index_steps describes how many elements in column there are after (i-1)-th valid element.
-     * 
+     *
      *  take following BitPacked group with 2 valid elements for example:
      *      null valid null null valid null
      *  then the valid_index_steps has values [1, 3, 2].
      *  Please note that the the sum of valid_index_steps is same as elements number in this group.
-     * 
+     *
      * @tparam RepeatedVisitor  A callback with signature: void(bool is_valid, UInt32 cursor, UInt32 count)
      */
     template <typename IndividualNullVisitor, typename SteppedValidVisitor, typename RepeatedVisitor>
@@ -99,7 +98,7 @@ public:
 
     /**
      * @brief Set the Values to column_data directly
-     * 
+     *
      * @tparam TValue The type of column data.
      * @tparam ValueGetter A callback with signature: TValue(Int32 val)
      */
@@ -118,7 +117,7 @@ public:
         ValueGetter && val_getter);
 
 private:
-    std::unique_ptr<arrow::BitUtil::BitReader> bit_reader;
+    std::unique_ptr<arrow::bit_util::BitReader> bit_reader;
 
     std::vector<Int32> cur_packed_bit_values;
     std::vector<UInt8> valid_index_steps;
@@ -203,7 +202,7 @@ private:
 
 /**
  * Read data according to the format of ColumnLowCardinality format.
- * 
+ *
  * Only index and null column are processed in this class.
  * And all null value is mapped to first index in dictionary,
  * so the result index valued is added by one.
@@ -232,7 +231,7 @@ private:
 /**
  * The definition level is RLE or BitPacked encoded,
  * and the index of dictionary is also RLE or BitPacked encoded.
- * 
+ *
  * while the result is not parsed as a low cardinality column,
  * instead, a normal column is generated.
  */

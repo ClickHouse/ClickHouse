@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 namespace parquet
 {
@@ -18,7 +19,7 @@ namespace DB
 class ParquetColumnReader
 {
 public:
-    virtual ColumnWithTypeAndName readBatch(UInt32 rows_num, const String & name) = 0;
+    virtual ColumnWithTypeAndName readBatch(UInt64 rows_num, const String & name) = 0;
 
     virtual ~ParquetColumnReader() = default;
 };
