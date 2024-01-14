@@ -1259,7 +1259,7 @@ class TestCase:
                 retry_error_codes=True,
             ).decode()
 
-            description_full += f" Coverage: {coverage}"
+            description_full += f" (coverage: {coverage})"
 
         description_full += "\n"
 
