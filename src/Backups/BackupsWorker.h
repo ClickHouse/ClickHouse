@@ -35,7 +35,7 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class BackupsWorker
 {
 public:
-    BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
+    BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool test_inject_sleep_);
     ~BackupsWorker();
 
     /// Waits until all tasks have been completed.
@@ -95,11 +95,16 @@ private:
     enum class ThreadPoolId;
     ThreadPool & getThreadPool(ThreadPoolId thread_pool_id);
 
+    /// Waits for some time if `test_inject_sleep` is true.
+    void maybeSleepForTesting() const;
+
     class ThreadPools;
     std::unique_ptr<ThreadPools> thread_pools;
 
     const bool allow_concurrent_backups;
     const bool allow_concurrent_restores;
+    const bool test_inject_sleep;
+
     Poco::Logger * log;
 
     std::unordered_map<BackupOperationID, BackupOperationInfo> infos;

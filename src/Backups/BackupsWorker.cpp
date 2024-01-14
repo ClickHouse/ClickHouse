@@ -339,10 +339,11 @@ private:
 };
 
 
-BackupsWorker::BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
+BackupsWorker::BackupsWorker(ContextPtr global_context, size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_, bool test_inject_sleep_)
     : thread_pools(std::make_unique<ThreadPools>(num_backup_threads, num_restore_threads))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
+    , test_inject_sleep(test_inject_sleep_)
     , log(&Poco::Logger::get("BackupsWorker"))
 {
     backup_log = global_context->getBackupLog();
@@ -700,9 +701,10 @@ void BackupsWorker::writeBackupEntries(
                 if (process_list_element)
                     process_list_element->checkTimeLimit();
 
-                sleepForSeconds(5);
-
                 backup->writeFile(file_info, std::move(entry));
+
+                maybeSleepForTesting();
+
                 // Update metadata
                 if (!internal)
                 {
@@ -715,7 +717,6 @@ void BackupsWorker::writeBackupEntries(
                             backup->getCompressedSize(),
                             0, 0);
                 }
-
             }
             catch (...)
             {
@@ -1022,6 +1023,9 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
                     process_list_element->checkTimeLimit();
 
                 std::move(task)();
+
+                maybeSleepForTesting();
+
                 setNumFilesAndSize(
                     restore_id,
                     backup->getNumFiles(),
@@ -1139,6 +1143,13 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
     info.compressed_size = compressed_size;
     info.num_read_files = num_read_files;
     info.num_read_bytes = num_read_bytes;
+}
+
+
+void BackupsWorker::maybeSleepForTesting() const
+{
+    if (test_inject_sleep)
+        sleepForSeconds(1);
 }
 
 
