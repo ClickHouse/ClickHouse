@@ -21,11 +21,14 @@ namespace
 enum class Kind
 {
     Current,
+    Cumulative,
     All
 };
 
 /** If ClickHouse is build with coverage instrumentation, returns an array
-  * of currently accumulated (`coverage`) / all possible (`coverageAll`) unique code addresses.
+  * of currently accumulated (`coverageCurrent`)
+  * or accumulated since the startup (`coverageCumulative`)
+  * or all possible (`coverageAll`) unique code addresses.
   */
 class FunctionCoverage : public IFunction
 {
@@ -64,7 +67,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto coverage_table = kind == Kind::Current ? getCoverage() : getAllInstrumentedAddresses();
+        auto coverage_table = kind == Kind::Current
+            ? getCurrentCoverage()
+            : (kind == Kind::Cumulative
+                ? getCumulativeCoverage()
+                : getAllInstrumentedAddresses());
 
         auto column_addresses = ColumnUInt64::create();
         auto & data = column_addresses->getData();
@@ -85,7 +92,7 @@ public:
 
 REGISTER_FUNCTION(Coverage)
 {
-    factory.registerFunction("coverage", [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCoverage>(Kind::Current)); },
+    factory.registerFunction("coverageCurrent", [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCoverage>(Kind::Current)); },
         FunctionDocumentation
         {
             .description=R"(
@@ -112,7 +119,23 @@ e.g. a body of for loop without ifs, or a single branch of if.
 See https://clang.llvm.org/docs/SanitizerCoverage.html for more information.
 )",
             .examples{
-                {"functions", "SELECT DISTINCT demangle(addressToSymbol(arrayJoin(coverage())))", ""}},
+                {"functions", "SELECT DISTINCT demangle(addressToSymbol(arrayJoin(coverageCurrent())))", ""}},
+            .categories{"Introspection"}
+        });
+
+    factory.registerFunction("coverageCumulative", [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionCoverage>(Kind::Cumulative)); },
+        FunctionDocumentation
+        {
+            .description=R"(
+This function is only available if ClickHouse was built with the SANITIZE_COVERAGE=1 option.
+
+It returns an array of unique addresses (a subset of the instrumented points in code) in the code
+encountered at runtime after server startup.
+
+In contrast to `coverageCurrent` it cannot be reset with the `SYSTEM RESET COVERAGE`.
+
+See the `coverageCurrent` function for the details.
+)",
             .categories{"Introspection"}
         });
 
@@ -127,7 +150,7 @@ It returns an array of all unique addresses in the code instrumented for coverag
 
 You can use this function, and the `coverage` function to compare and calculate the coverage percentage.
 
-See the `coverage` function for the details.
+See the `coverageCurrent` function for the details.
 )",
             .categories{"Introspection"}
         });

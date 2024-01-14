@@ -1249,13 +1249,13 @@ class TestCase:
         ):
             clickhouse_execute(
                 args,
-                f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverage()",
+                f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverageCurrent()",
                 retry_error_codes=True,
             )
 
             coverage = clickhouse_execute(
                 args,
-                "SELECT length(coverage())",
+                "SELECT length(coverageCurrent())",
                 retry_error_codes=True,
             ).decode()
 
@@ -2460,7 +2460,7 @@ def main(args):
         # Coverage collected at the system startup before running any tests:
         clickhouse_execute(
             args,
-            "INSERT INTO system.coverage SELECT now(), '', coverage()",
+            "INSERT INTO system.coverage SELECT now(), '', coverageCurrent()",
         )
 
     total_tests_run = 0

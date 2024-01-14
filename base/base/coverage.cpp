@@ -53,7 +53,8 @@ namespace
     uint32_t * guards_start = nullptr;
     uint32_t * guards_end = nullptr;
 
-    uintptr_t * coverage_array = nullptr;
+    uintptr_t * current_coverage_array = nullptr;
+    uintptr_t * cumulative_coverage_array = nullptr;
     size_t coverage_array_size = 0;
 
     uintptr_t * all_addresses_array = nullptr;
@@ -88,7 +89,8 @@ void __sanitizer_cov_trace_pc_guard_init(uint32_t * start, uint32_t * stop)
     coverage_array_size = stop - start;
 
     /// Note: we will leak this.
-    coverage_array = allocate(sizeof(uintptr_t) * coverage_array_size);
+    current_coverage_array = allocate(sizeof(uintptr_t) * coverage_array_size);
+    cumulative_coverage_array = allocate(sizeof(uintptr_t) * coverage_array_size);
 
     resetCoverage();
 }
@@ -126,15 +128,22 @@ void __sanitizer_cov_trace_pc_guard(uint32_t * guard)
     /// and use them to dereference an array or a bit vector.
     void * pc = __builtin_return_address(0);
 
-    coverage_array[guard - guards_start] = reinterpret_cast<uintptr_t>(pc);
+    current_coverage_array[guard - guards_start] = reinterpret_cast<uintptr_t>(pc);
+    cumulative_coverage_array[guard - guards_start] = reinterpret_cast<uintptr_t>(pc);
 }
 
 }
 
 __attribute__((no_sanitize("coverage")))
-std::span<const uintptr_t> getCoverage()
+std::span<const uintptr_t> getCurrentCoverage()
 {
-    return {coverage_array, coverage_array_size};
+    return {current_coverage_array, coverage_array_size};
+}
+
+__attribute__((no_sanitize("coverage")))
+std::span<const uintptr_t> getCumulativeCoverage()
+{
+    return {cumulative_coverage_array, coverage_array_size};
 }
 
 __attribute__((no_sanitize("coverage")))
@@ -146,7 +155,7 @@ std::span<const uintptr_t> getAllInstrumentedAddresses()
 __attribute__((no_sanitize("coverage")))
 void resetCoverage()
 {
-    memset(coverage_array, 0, coverage_array_size * sizeof(*coverage_array));
+    memset(current_coverage_array, 0, coverage_array_size * sizeof(*current_coverage_array));
 
     /// The guard defines whether the __sanitizer_cov_trace_pc_guard should be called.
     /// For example, you can unset it after first invocation to prevent excessive work.
