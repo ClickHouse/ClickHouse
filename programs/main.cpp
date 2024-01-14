@@ -1,6 +1,7 @@
 #include <csignal>
 #include <csetjmp>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include <new>
 #include <iostream>
@@ -19,6 +20,7 @@
 #include <Common/IO.h>
 
 #include <base/phdr_cache.h>
+#include <base/coverage.h>
 
 
 /// Universal executable for various clickhouse applications
@@ -512,6 +514,49 @@ int main(int argc_, char ** argv_)
     if (main_func == printHelp && !argv.empty() && (argv.size() == 1 || argv[1][0] == '-'))
         main_func = mainEntryClickHouseLocal;
 
-    return main_func(static_cast<int>(argv.size()), argv.data());
+    int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
+
+#if defined(SANITIZE_COVERAGE)
+    /// A user can request to dump the coverage information into files at exit.
+    /// This is useful for non-server applications such as clickhouse-format or clickhouse-client,
+    /// that cannot introspect it with SQL functions at runtime.
+
+    /// The CLICKHOUSE_WRITE_COVERAGE environment variable defines a prefix for two filenames:
+    /// 'prefix.covered' and 'prefix.all' which will contain
+    /// the list of addresses of covered and all instrumented addresses, respectively.
+
+    /// The format is even simpler than Clang's "sancov": an array of 64-bit addresses, native byte order, no header.
+
+    if (const char * coverage_filename_prefix = getenv("CLICKHOUSE_WRITE_COVERAGE")) // NOLINT(concurrency-mt-unsafe)
+    {
+        auto dumpCoverage = [](const std::string & name, auto span)
+        {
+            /// Write only non-zeros.
+            std::vector<uintptr_t> data;
+            data.reserve(span.size());
+            for (auto addr : span)
+                if (addr)
+                    data.push_back(addr);
+
+            int fd = ::open(name.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0400);
+            if (-1 == fd)
+            {
+                writeError("Cannot open a file to write the coverage data\n");
+            }
+            else
+            {
+                if (!writeRetry(fd, reinterpret_cast<const char *>(data.data()), data.size() * sizeof(data[0])))
+                    writeError("Cannot write the coverage data to a file\n");
+                if (0 != ::close(fd))
+                    writeError("Cannot close the file with coverage data\n");
+            }
+        };
+
+        dumpCoverage(coverage_filename_prefix + std::string(".covered"), getCumulativeCoverage());
+        dumpCoverage(coverage_filename_prefix + std::string(".all"), getAllInstrumentedAddresses());
+    }
+#endif
+
+    return exit_code;
 }
 #endif
