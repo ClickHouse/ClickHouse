@@ -1,5 +1,4 @@
 SET send_logs_level = 'fatal';
-SET allow_experimental_map_type = 1;
 
 DROP TABLE IF EXISTS map_comb;
 CREATE TABLE map_comb(a int, statusMap Map(UInt16, UInt32)) ENGINE = Log;
@@ -39,10 +38,10 @@ select sumMap(map(1,2), map(1,3)); -- { serverError 42 }
 
 -- array and tuple arguments
 select avgMap([1,1,1], [2,2,2]); -- { serverError 43 }
-select minMap((1,1)); -- { serverError 43 }
-select minMap(([1,1,1],1)); -- { serverError 43 }
-select minMap([1,1,1]); -- { serverError 43 }
-select minMap(([1,1,1])); -- { serverError 43 }
+select minMap((1,1)); -- { serverError 42 }
+select minMap(([1,1,1],1)); -- { serverError 42 }
+select minMap([1,1,1]); -- { serverError 42 }
+select minMap(([1,1,1])); -- { serverError 42 }
 
 DROP TABLE IF EXISTS sum_map_decimal;
 

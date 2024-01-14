@@ -173,7 +173,7 @@ public:
             nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
             nested_func->create(nested_place);
             this->data(place).merged_maps.emplace(key, nested_place);
-        } else  [[likely]]
+        } else
             nested_place = it->second;
 
         nested_func->add(nested_place, value_column, position, arena);
@@ -407,25 +407,37 @@ public:
         const Array & params) const override
     {
 
-        const auto * tup_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
 
-        auto check_func = [](DataTypePtr t) { return t->getTypeId() == TypeIndex::Array; };
-        bool arrays_match = arguments.size() >= 2 && std::all_of(arguments.begin(), arguments.end(), check_func);
+        auto nested_func_name = nested_function->getName();
 
-        if ((arguments.size() == 1 && tup_type) || arrays_match)
+        if (nested_func_name == "sum" || nested_func_name == "min" || nested_func_name == "max")
         {
-            // in case of tuple of arrays or just arrays (checked in transformArguments), try to redirect to sum/min/max-MappedArrays to implement old behavior
-            auto nested_func_name = nested_function->getName();
-            if (nested_func_name == "sum" || nested_func_name == "min" || nested_func_name == "max")
+            const auto * tup_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
+
+            auto check_func = [](DataTypePtr t) { return t->getTypeId() == TypeIndex::Array; };
+
+            AggregateFunctionProperties out_properties;
+            auto & aggr_func_factory = AggregateFunctionFactory::instance();
+            auto action = NullsAction::EMPTY;
+
+            if (tup_type)
             {
-                AggregateFunctionProperties out_properties;
-                auto & aggr_func_factory = AggregateFunctionFactory::instance();
-                auto action = NullsAction::EMPTY;
-                return aggr_func_factory.get(nested_func_name + "MappedArrays", action, arguments, params, out_properties);
+                const auto & types = tup_type->getElements();
+                bool arrays_match = arguments.size() == 1 && types.size() >= 2 && std::all_of(types.begin(), types.end(), check_func);
+                if (arrays_match)
+                {
+                    return aggr_func_factory.get(nested_func_name + "MappedArrays", action, arguments, params, out_properties);
+                }
             }
             else
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '{}Map' is not implemented for mapped arrays",
-                                 nested_func_name);
+            {
+                bool arrays_match = arguments.size() >= 2 && std::all_of(arguments.begin(), arguments.end(), check_func);
+                if (arrays_match)
+                {
+                    return aggr_func_factory.get(nested_func_name + "MappedArrays", action, arguments, params, out_properties);
+                }
+            }
+
         }
 
         const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
@@ -446,7 +458,6 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Map key type {} is not is not supported by combinator {}", key_type->getName(), getName());
-
         }
         else
         {
