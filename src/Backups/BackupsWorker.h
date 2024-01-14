@@ -26,6 +26,9 @@ using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBacku
 using DataRestoreTasks = std::vector<std::function<void()>>;
 struct ReadSettings;
 class BackupLog;
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
 
 /// Manager of backups and restores: executes backups and restores' threads in the background.
 /// Keeps information about backups and restores started in this session.
@@ -63,10 +66,10 @@ private:
         bool called_async);
 
     /// Builds file infos for specified backup entries.
-    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination);
+    void buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, QueryStatusPtr process_list_element);
 
     /// Write backup entries to an opened backup.
-    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool internal);
+    void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const BackupOperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool internal, QueryStatusPtr process_list_element);
 
     BackupOperationID startRestoring(const ASTPtr & query, ContextMutablePtr context);
 
@@ -81,7 +84,7 @@ private:
         bool called_async);
 
     /// Run data restoring tasks which insert data to tables.
-    void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool);
+    void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
 
     void addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, bool internal, BackupStatus status);
     void setStatus(const BackupOperationID & id, BackupStatus status, bool throw_if_error = true);

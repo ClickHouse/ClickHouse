@@ -73,7 +73,8 @@ namespace
                 all_hosts,
                 backup_settings.host_id,
                 !backup_settings.deduplicate_files,
-                backup_settings.internal);
+                backup_settings.internal,
+                context->getProcessListElement());
         }
         else
         {
@@ -110,7 +111,8 @@ namespace
                 toString(*restore_settings.restore_uuid),
                 all_hosts,
                 restore_settings.host_id,
-                restore_settings.internal);
+                restore_settings.internal,
+                context->getProcessListElement());
         }
         else
         {
@@ -408,8 +410,9 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
         bool on_cluster = !backup_query->cluster.empty();
         if (on_cluster || backup_settings.async)
         {
-            /// For ON CLUSTER queries we will need to change some settings.
-            /// For ASYNC queries we have to clone the context anyway.
+            /// We have to clone the query context here because:
+            /// if this is an "ON CLUSTER" query we need to change some settings, and
+            /// if this is an "ASYNC" query it's going to be executed in another thread.
             context_in_use = mutable_context = Context::createCopy(context);
             mutable_context->makeQueryContext();
         }
@@ -471,16 +474,27 @@ void BackupsWorker::doBackup(
     bool called_async)
 {
     std::optional<CurrentThread::QueryScope> query_scope;
+    ProcessList::EntryPtr process_list_entry;
+
     try
     {
         if (called_async)
         {
+            /// Generate a new current query id for an asynchronous call
+            /// (we can't keep using the old one because we will create a new process list entry).
+            mutable_context->setCurrentQueryId("");
+
             query_scope.emplace(mutable_context);
             setThreadName("BackupWorker");
+
+            /// Make asynchronous backups appear in system.processes (that also allows to cancel them if we want to).
+            String backup_query_for_logging = backup_query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
+            process_list_entry = mutable_context->getProcessList().insert(
+                backup_query_for_logging, backup_query.get(), mutable_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
+            mutable_context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
         bool on_cluster = !backup_query->cluster.empty();
-
         assert(mutable_context || (!on_cluster && !called_async));
 
         /// Checks access rights if this is not ON CLUSTER query.
@@ -557,8 +571,8 @@ void BackupsWorker::doBackup(
             }
 
             /// Write the backup entries to the backup.
-            buildFileInfosForBackupEntries(backup, backup_entries, backup_create_params.read_settings, backup_coordination);
-            writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, backup_settings.internal);
+            buildFileInfosForBackupEntries(backup, backup_entries, backup_create_params.read_settings, backup_coordination, context->getProcessListElement());
+            writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, backup_settings.internal, context->getProcessListElement());
 
             /// We have written our backup entries, we need to tell other hosts (they could be waiting for it).
             backup_coordination->setStage(Stage::COMPLETED,"");
@@ -608,15 +622,21 @@ void BackupsWorker::doBackup(
 }
 
 
-void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination)
+void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, QueryStatusPtr process_list_element)
 {
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "");
     backup_coordination->waitForStage(Stage::BUILDING_FILE_INFOS);
-    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(ThreadPoolId::BACKUP_MAKE_FILES_LIST)));
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(ThreadPoolId::BACKUP_MAKE_FILES_LIST), process_list_element));
 }
 
 
-void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const OperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool internal)
+void BackupsWorker::writeBackupEntries(
+    BackupMutablePtr backup,
+    BackupEntries && backup_entries,
+    const OperationID & backup_id,
+    std::shared_ptr<IBackupCoordination> backup_coordination,
+    bool internal,
+    QueryStatusPtr process_list_element)
 {
     LOG_TRACE(log, "{}, num backup entries={}", Stage::WRITING_BACKUP, backup_entries.size());
     backup_coordination->setStage(Stage::WRITING_BACKUP, "");
@@ -676,6 +696,11 @@ void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries &&
                     if (exception)
                         return;
                 }
+
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
+
+                sleepForSeconds(5);
 
                 backup->writeFile(file_info, std::move(entry));
                 // Update metadata
@@ -759,8 +784,9 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
         bool on_cluster = !restore_query->cluster.empty();
         if (restore_settings.async || on_cluster)
         {
-            /// For ON CLUSTER queries we will need to change some settings.
-            /// For ASYNC queries we have to clone the context anyway.
+            /// We have to clone the query context here because:
+            /// if this is an "ON CLUSTER" query we need to change some settings, and
+            /// if this is an "ASYNC" query it's going to be executed in another thread.
             context_in_use = Context::createCopy(context);
             context_in_use->makeQueryContext();
         }
@@ -818,12 +844,24 @@ void BackupsWorker::doRestore(
     bool called_async)
 {
     std::optional<CurrentThread::QueryScope> query_scope;
+    ProcessList::EntryPtr process_list_entry;
+
     try
     {
         if (called_async)
         {
+            /// Generate a new current query id for an asynchronous call
+            /// (we can't keep using the old one because we will create a new process list entry).
+            context->setCurrentQueryId("");
+
             query_scope.emplace(context);
             setThreadName("RestoreWorker");
+
+            /// Make asynchronous restores appear in system.processes (that also allows to cancel them if we want to).
+            String restore_query_for_logging = restore_query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
+            process_list_entry = context->getProcessList().insert(
+                restore_query_for_logging, restore_query.get(), context, Stopwatch{CLOCK_MONOTONIC}.getStart());
+            context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
         /// Open the backup for reading.
@@ -913,7 +951,7 @@ void BackupsWorker::doRestore(
             }
 
             /// Execute the data restoring tasks.
-            restoreTablesData(restore_id, backup, std::move(data_restore_tasks), getThreadPool(ThreadPoolId::RESTORE_TABLES_DATA));
+            restoreTablesData(restore_id, backup, std::move(data_restore_tasks), getThreadPool(ThreadPoolId::RESTORE_TABLES_DATA), context->getProcessListElement());
 
             /// We have restored everything, we need to tell other hosts (they could be waiting for it).
             restore_coordination->setStage(Stage::COMPLETED, "");
@@ -940,7 +978,7 @@ void BackupsWorker::doRestore(
 }
 
 
-void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool)
+void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
     size_t num_active_jobs = 0;
     std::mutex mutex;
@@ -979,6 +1017,9 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
                     if (exception)
                         return;
                 }
+
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
 
                 std::move(task)();
                 setNumFilesAndSize(
