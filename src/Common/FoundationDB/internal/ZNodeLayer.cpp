@@ -361,7 +361,8 @@ void ZNodeLayer::get(AsyncTrxVar<GetResponse> var_resp, bool throw_on_non_exists
 
     if (!throw_on_non_exists)
     {
-        trxb.then(TRX_STEP(var_resp) {
+        trxb.then(TRX_STEP(var_resp)
+        {
             auto & resp = *ctx.getVar(var_resp);
             if (resp.error != Error::ZOK)
                 ctx.gotoCur(2);
