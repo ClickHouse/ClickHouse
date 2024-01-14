@@ -217,13 +217,11 @@ private:
         else
         {
             UInt32 new_length = getNewLength(new_min_key, new_max_key);
-            if (new_length > bins.capacity())
+            if (new_length > bins.size())
             {
-                bins.reserve(new_length);
+                bins.resize(new_length);
+                bins.resize(bins.capacity());
             }
-            std::size_t old_size = bins.size();
-            bins.resize(new_length);
-            std::fill(bins.begin() + old_size, bins.end(), 0.0);
             adjust(new_min_key, new_max_key);
         }
     }
