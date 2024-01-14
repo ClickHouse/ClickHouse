@@ -62,6 +62,7 @@ class BuildConfig:
     package_type: Literal["deb", "binary", "fuzzers"]
     additional_pkgs: bool = False
     debug_build: bool = False
+    coverage: bool = False
     sanitizer: str = ""
     tidy: bool = False
     sparse_checkout: bool = False
@@ -473,6 +474,7 @@ CI_CONFIG = CiConfig(
             name="package_debug",
             compiler="clang-17",
             debug_build=True,
+            coverage=True,
             package_type="deb",
             sparse_checkout=True,
         ),

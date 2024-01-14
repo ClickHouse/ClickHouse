@@ -121,6 +121,7 @@ def is_release_build(debug_build: bool, package_type: str, sanitizer: str) -> bo
 
 def parse_env_variables(
     debug_build: bool,
+    coverage: bool,
     compiler: str,
     sanitizer: str,
     package_type: str,
@@ -287,6 +288,9 @@ def parse_env_variables(
     else:
         result.append("BUILD_TYPE=None")
 
+    if coverage:
+        result.append("SANITIZE_COVERAGE=1")
+
     if not cache:
         cmake_flags.append("-DCOMPILER_CACHE=disabled")
 
@@ -415,6 +419,9 @@ def parse_args() -> argparse.Namespace:
         choices=("address", "thread", "memory", "undefined", ""),
         default="",
     )
+    parser.add_argument(
+        "--coverage", action="store_true", help="enable granular coverage with introspection"
+    )
 
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument(
@@ -507,6 +514,7 @@ def main() -> None:
 
     env_prepared = parse_env_variables(
         args.debug_build,
+        args.coverage,
         args.compiler,
         args.sanitizer,
         args.package_type,
