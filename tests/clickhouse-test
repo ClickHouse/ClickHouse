@@ -2840,7 +2840,7 @@ def parse_args():
     parser.add_argument(
         "--collect-per-test-coverage",
         action="store_true",
-        default=False,
+        default=True,
         help="Create `system.coverage` table on the server and collect information about low-level code coverage on a per test basis there",
     )
     parser.add_argument(
