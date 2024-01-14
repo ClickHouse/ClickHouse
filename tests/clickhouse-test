@@ -1249,7 +1249,7 @@ class TestCase:
         ):
             clickhouse_execute(
                 args,
-                f"INSERT INTO system.coverage SELECT now(), '{self.case}', coverageCurrent()",
+                f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', coverageCurrent()",
                 retry_error_codes=True,
             )
 
@@ -2448,7 +2448,7 @@ def main(args):
         clickhouse_execute(
             args,
             """
-                CREATE TABLE IF NOT EXISTS system.coverage
+                CREATE TABLE IF NOT EXISTS system.coverage_log
                 (
                     time DateTime,
                     test_name String,
@@ -2460,7 +2460,7 @@ def main(args):
         # Coverage collected at the system startup before running any tests:
         clickhouse_execute(
             args,
-            "INSERT INTO system.coverage SELECT now(), '', coverageCurrent()",
+            "INSERT INTO system.coverage_log SELECT now(), '', coverageCurrent()",
         )
 
     total_tests_run = 0
@@ -2842,7 +2842,7 @@ def parse_args():
         "--collect-per-test-coverage",
         action="store_true",
         default=True,
-        help="Create `system.coverage` table on the server and collect information about low-level code coverage on a per test basis there",
+        help="Create `system.coverage_log` table on the server and collect information about low-level code coverage on a per test basis there",
     )
     parser.add_argument(
         "--reset-coverage-before-every-test",
