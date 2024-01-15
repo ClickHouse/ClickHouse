@@ -92,7 +92,7 @@ MySQLHandler::MySQLHandler(
     queries_replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
     settings_replacements.emplace("SQL_SELECT_LIMIT", "limit");
     settings_replacements.emplace("NET_WRITE_TIMEOUT", "send_timeout");
-    settings_replacements.emplace("NET_READ_TIMEOUT", "read_timeout");
+    settings_replacements.emplace("NET_READ_TIMEOUT", "receive_timeout");
 }
 
 void MySQLHandler::run()
