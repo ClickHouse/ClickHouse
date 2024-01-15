@@ -406,9 +406,16 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
                 --scheduled_jobs;
 
-                job_finished.notify_all();
-                if (shutdown)
+                if (!shutdown)
+                {
+                    job_finished.notify_one();
+                }
+                else
+                {
+                    job_finished.notify_all();
                     new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
+                }
+
             }
 
             new_job_or_shutdown.wait(lock, [&] { return !jobs.empty() || shutdown || threads.size() > std::min(max_threads, scheduled_jobs + max_free_threads); });
