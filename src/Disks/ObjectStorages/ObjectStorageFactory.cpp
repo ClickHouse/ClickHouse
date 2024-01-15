@@ -5,11 +5,11 @@
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 #include <Disks/ObjectStorages/S3/DiskS3Utils.h>
 #endif
-#if USE_HDFS
+#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 #include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #endif
-#if USE_AZURE_BLOB_STORAGE
+#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageAuth.h>
 #endif
@@ -165,7 +165,7 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
-#if USE_HDFS
+#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("hdfs", [](
@@ -191,7 +191,7 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
-#if USE_AZURE_BLOB_STORAGE
+#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("azure_blob_storage", [](
@@ -266,11 +266,11 @@ void registerObjectStorages()
     registerS3PlainObjectStorage(factory);
 #endif
 
-#if USE_HDFS
+#if USE_HDFS && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
     registerHDFSObjectStorage(factory);
 #endif
 
-#if USE_AZURE_BLOB_STORAGE
+#if USE_AZURE_BLOB_STORAGE && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
     registerAzureObjectStorage(factory);
 #endif
 
