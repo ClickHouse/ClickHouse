@@ -251,6 +251,11 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     tryLogCurrentExceptionImpl(logger, start_of_message);
 }
 
+void tryLogCurrentException(const LoggerPtr & logger, const std::string & start_of_message)
+{
+    tryLogCurrentException(logger.get(), start_of_message);
+}
+
 static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
 {
     path = std::filesystem::absolute(path);
@@ -521,6 +526,11 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
     {
         tryLogCurrentException(logger, start_of_message);
     }
+}
+
+void tryLogException(std::exception_ptr e, const LoggerPtr & logger, const std::string & start_of_message)
+{
+    tryLogException(e, logger.get(), start_of_message);
 }
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)

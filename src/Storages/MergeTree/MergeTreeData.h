@@ -5,6 +5,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
+#include <Common/LoggerPtr.h>
 #include <Storages/IStorage.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -1117,7 +1118,7 @@ protected:
     /// log_name will change during table RENAME. Use atomic_shared_ptr to allow concurrent RW.
     /// NOTE clang-14 doesn't have atomic_shared_ptr yet. Use std::atomic* operations for now.
     std::shared_ptr<String> log_name;
-    std::atomic<Poco::Logger *> log;
+    LoggerPtr log;
 
     /// Storage settings.
     /// Use get and set to receive readonly versions.

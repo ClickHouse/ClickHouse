@@ -75,7 +75,7 @@ public:
 
 private:
     const MergeTreeData & data;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     static size_t getApproximateTotalRowsToRead(

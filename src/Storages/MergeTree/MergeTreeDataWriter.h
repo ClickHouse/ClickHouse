@@ -45,8 +45,9 @@ class MergeTreeDataWriter
 public:
     explicit MergeTreeDataWriter(MergeTreeData & data_)
         : data(data_)
-        , log(&Poco::Logger::get(data.getLogName() + " (Writer)"))
-    {}
+        , log(getLogger(data.getLogName() + " (Writer)"))
+    {
+    }
 
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
@@ -131,7 +132,7 @@ private:
         const ProjectionDescription & projection);
 
     MergeTreeData & data;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }
