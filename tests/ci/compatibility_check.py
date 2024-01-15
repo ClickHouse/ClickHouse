@@ -13,11 +13,12 @@ from github import Github
 from build_download_helper import download_builds_filter
 from clickhouse_helper import (
     ClickHouseHelper,
+    mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
 from commit_status_helper import RerunHelper, get_commit, post_commit_status
-from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import TEMP_PATH, REPORT_PATH
+from docker_pull_helper import get_images_with_versions, DockerImage
+from env_helper import TEMP_PATH, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults, TestResult
@@ -145,9 +146,8 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
-    reports_path.mkdir(parents=True, exist_ok=True)
+    reports_path = Path(REPORTS_PATH)
 
     pr_info = PRInfo()
 
@@ -188,14 +188,15 @@ def main():
         run_commands.extend(check_glibc_commands)
 
     if args.check_distributions:
-        centos_image = pull_image(get_docker_image(IMAGE_CENTOS))
-        ubuntu_image = pull_image(get_docker_image(IMAGE_UBUNTU))
+        docker_images = get_images_with_versions(
+            reports_path, [IMAGE_CENTOS, IMAGE_UBUNTU]
+        )
         check_distributions_commands = get_run_commands_distributions(
             packages_path,
             result_path,
             server_log_path,
-            centos_image,
-            ubuntu_image,
+            docker_images[0],
+            docker_images[1],
         )
         run_commands.extend(check_distributions_commands)
 
@@ -229,6 +230,7 @@ def main():
     )
 
     ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, args.check_name, test_results)
 
     report_url = upload_results(
         s3_helper,
@@ -239,15 +241,7 @@ def main():
         args.check_name,
     )
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(
-        commit,
-        state,
-        report_url,
-        description,
-        args.check_name,
-        pr_info,
-        dump_to_file=True,
-    )
+    post_commit_status(commit, state, report_url, description, args.check_name, pr_info)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

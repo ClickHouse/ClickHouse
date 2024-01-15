@@ -4,9 +4,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <pcg_random.hpp>
-#include <Common/randomSeed.h>
-#include <cmath>
 
 namespace ProfileEvents
 {
@@ -33,7 +30,6 @@ MergeFromLogEntryTask::MergeFromLogEntryTask(
         storage_,
         selected_entry_,
         task_result_callback_)
-    , rng(randomSeed())
 {
 }
 
@@ -43,8 +39,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
 
-    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
-    int32_t metadata_version = metadata_snapshot->getMetadataVersion();
     const auto storage_settings_ptr = storage.getSettings();
 
     if (storage_settings_ptr->always_fetch_merged_part)
@@ -63,7 +57,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     {
         LOG_INFO(log, "Will try to fetch part {} until '{}' because this part assigned to recompression merge. "
             "Source replica {} will try to merge this part first", entry.new_part_name,
-            DateLUT::serverTimezoneInstance().timeToString(entry.create_time + storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds()), entry.source_replica);
+            DateLUT::instance().timeToString(entry.create_time + storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds()), entry.source_replica);
             /// Waiting other replica to recompress part. No need to check it.
             return PrepareResult{
                 .prepared_successfully = false,
@@ -131,18 +125,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             };
         }
 
-        int32_t part_metadata_version = source_part_or_covering->getMetadataVersion();
-        if (part_metadata_version > metadata_version)
-        {
-            LOG_DEBUG(log, "Source part metadata version {} is newer then the table metadata version {}. ALTER_METADATA is still in progress.",
-                part_metadata_version, metadata_version);
-            return PrepareResult{
-                .prepared_successfully = false,
-                .need_to_check_missing_part_in_fetch = false,
-                .part_log_writer = {}
-            };
-        }
-
         parts.push_back(source_part_or_covering);
     }
 
@@ -190,6 +172,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// It will live until the whole task is being destroyed
     table_lock_holder = storage.lockForShare(RWLockImpl::NO_QUERY, storage_settings_ptr->lock_acquire_timeout_for_background_operations);
 
+    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
+
     auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_format);
     if (future_merged_part->name != entry.new_part_name)
     {
@@ -220,7 +204,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     {
         if (auto disk = reserved_space->getDisk(); disk->supportZeroCopyReplication())
         {
-            if (storage.findReplicaHavingCoveringPart(entry.new_part_name, true))
+            String dummy;
+            if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, true, dummy).empty())
             {
                 LOG_DEBUG(log, "Merge of part {} finished by some other replica, will fetch merged part", entry.new_part_name);
                 /// We found covering part, no checks for missing part.
@@ -231,36 +216,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                 };
             }
 
-            if (storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock != 0 &&
-                estimated_space_for_merge >= storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock)
-            {
-                /// In zero copy replication only one replica execute merge/mutation, others just download merged parts metadata.
-                /// Here we are trying to mitigate the skew of merges execution because of faster/slower replicas.
-                /// Replicas can be slow because of different reasons like bigger latency for ZooKeeper or just slight step behind because of bigger queue.
-                /// In this case faster replica can pick up all merges execution, especially large merges while other replicas can just idle. And even in this case
-                /// the fast replica is not overloaded because amount of executing merges doesn't affect the ability to acquire locks for new merges.
-                ///
-                /// So here we trying to solve it with the simplest solution -- sleep random time up to 500ms for 1GB part and up to 7 seconds for 300GB part.
-                /// It can sound too much, but we are trying to acquire these locks in background tasks which can be scheduled each 5 seconds or so.
-                double start_to_sleep_seconds = std::logf(storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock.value);
-                uint64_t right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_merge) - start_to_sleep_seconds + 0.5) * 1000);
-                uint64_t time_to_sleep_milliseconds = std::min<uint64_t>(10000UL, std::uniform_int_distribution<uint64_t>(1, 1 + right_border_to_sleep_ms)(rng));
-
-                LOG_INFO(log, "Merge size is {} bytes (it's more than sleep threshold {}) so will intentionally sleep for {} ms to allow other replicas to took this big merge",
-                    estimated_space_for_merge, storage_settings_ptr->zero_copy_merge_mutation_min_parts_size_sleep_before_lock, time_to_sleep_milliseconds);
-
-                std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_milliseconds));
-            }
-
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
 
             if (!zero_copy_lock || !zero_copy_lock->isLocked())
             {
-                LOG_DEBUG(
-                    log,
-                    "Merge of part {} started by some other replica, will wait for it and fetch merged part. Number of tries {}",
-                    entry.new_part_name,
-                    entry.num_tries);
+                LOG_DEBUG(log, "Merge of part {} started by some other replica, will wait it and fetch merged part", entry.new_part_name);
                 storage.watchZeroCopyLock(entry.new_part_name, disk);
                 /// Don't check for missing part -- it's missing because other replica still not
                 /// finished merge.
@@ -270,7 +230,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                     .part_log_writer = {}
                 };
             }
-            else if (storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false))
+            else if (!storage.findReplicaHavingCoveringPart(entry.new_part_name, /* active */ false, dummy).empty())
             {
                 /// Why this if still needed? We can check for part in zookeeper, don't find it and sleep for any amount of time. During this sleep part will be actually committed from other replica
                 /// and exclusive zero copy lock will be released. We will take the lock and execute merge one more time, while it was possible just to download the part from other replica.
@@ -300,15 +260,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     auto table_id = storage.getStorageID();
 
-    task_context = Context::createCopy(storage.getContext());
-    task_context->makeQueryContext();
-    task_context->setCurrentQueryId(getQueryId());
-
     /// Add merge to list
+    const Settings & settings = storage.getContext()->getSettingsRef();
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_merged_part,
-        task_context);
+        settings);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
     stopwatch_ptr = std::make_unique<Stopwatch>();
@@ -331,7 +288,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     /// Adjust priority
     for (auto & item : future_merged_part->parts)
-        priority.value += item->getBytesOnDisk();
+        priority += item->getBytesOnDisk();
 
     return {true, true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
     {
@@ -368,13 +325,6 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 
             ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
-            Strings files_with_size;
-            for (const auto & file : part->getFilesChecksums())
-            {
-                files_with_size.push_back(fmt::format("{}: {} ({})",
-                    file.first, file.second.file_size, getHexUIntLowercase(file.second.file_hash)));
-            }
-
             LOG_ERROR(log,
                 "{}. Data after merge is not byte-identical to data on another replicas. There could be several reasons:"
                 " 1. Using newer version of compression library after server update."
@@ -386,10 +336,8 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
                 " 7. Manual modification of source data after server startup."
                 " 8. Manual modification of checksums stored in ZooKeeper."
                 " 9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas."
-                " We will download merged part from replica to force byte-identical result."
-                " List of files in local parts:\n{}",
-                getCurrentExceptionMessage(false),
-                fmt::join(files_with_size, "\n"));
+                " We will download merged part from replica to force byte-identical result.",
+                getCurrentExceptionMessage(false));
 
             write_part_log(ExecutionStatus::fromCurrentException("", true));
 
@@ -416,7 +364,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
      * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
      */
-    finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
+    storage.merge_selecting_task->schedule();
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
     write_part_log({});

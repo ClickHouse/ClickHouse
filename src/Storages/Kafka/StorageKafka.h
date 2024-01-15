@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/ThreadPool_fwd.h>
-#include <Common/Macros.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
@@ -10,21 +8,23 @@
 
 #include <Poco/Semaphore.h>
 
-#include <condition_variable>
 #include <mutex>
 #include <list>
 #include <atomic>
-#include <cppkafka/cppkafka.h>
+
+namespace cppkafka
+{
+
+class Configuration;
+
+}
 
 namespace DB
 {
 
-class StorageSystemKafkaConsumers;
-
 struct StorageKafkaInterceptors;
 
 using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
-using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
@@ -46,7 +46,7 @@ public:
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     Pipe read(
         const Names & column_names,
@@ -60,8 +60,7 @@ public:
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr context,
-        bool async_insert) override;
+        ContextPtr context) override;
 
     /// We want to control the number of rows in a chunk inserted into Kafka
     bool prefersLargeBlocks() const override { return false; }
@@ -74,21 +73,11 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
     Names getVirtualColumnNames() const;
-    StreamingHandleErrorMode getStreamingHandleErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
-
-    struct SafeConsumers
-    {
-        std::shared_ptr<IStorage> storage_ptr;
-        std::unique_lock<std::mutex> lock;
-        std::vector<KafkaConsumerPtr> & consumers;
-    };
-
-    SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
+    HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 
 private:
     // Configuration and state
     std::unique_ptr<KafkaSettings> kafka_settings;
-    Macros::MacroExpansionInfo macros_info;
     const Names topics;
     const String brokers;
     const String group;
@@ -98,16 +87,19 @@ private:
     const String schema_name;
     const size_t num_consumers; /// total number of consumers
     Poco::Logger * log;
+    Poco::Semaphore semaphore;
     const bool intermediate_commit;
     const SettingsChanges settings_adjustments;
 
     std::atomic<bool> mv_attached = false;
 
-    std::vector<KafkaConsumerPtr> consumers;
+    /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
+    /// In this case we still need to be able to shutdown() properly.
+    size_t num_created_consumers = 0; /// number of actually created consumers.
+
+    std::vector<KafkaConsumerPtr> consumers; /// available consumers
 
     std::mutex mutex;
-    std::condition_variable cv;
-    std::condition_variable cleanup_cv;
 
     // Stream thread
     struct TaskContext
@@ -121,17 +113,12 @@ private:
     std::vector<std::shared_ptr<TaskContext>> tasks;
     bool thread_per_consumer = false;
 
-    std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
-
     /// For memory accounting in the librdkafka threads.
     std::mutex thread_statuses_mutex;
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
     SettingsChanges createSettingsAdjustments();
-    /// Creates KafkaConsumer object without real consumer (cppkafka::Consumer)
-    KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
-    /// Returns consumer configuration with all changes that had been overwritten in config
-    cppkafka::Configuration getConsumerConfiguration(size_t consumer_number);
+    KafkaConsumerPtr createConsumer(size_t consumer_number);
 
     /// If named_collection is specified.
     String collection_name;
@@ -140,7 +127,6 @@ private:
 
     // Update Kafka configuration with values from CH user configuration.
     void updateConfiguration(cppkafka::Configuration & kafka_config);
-
     String getConfigPrefix() const;
     void threadFunc(size_t idx);
 
@@ -153,8 +139,6 @@ private:
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
-
-    void cleanConsumers();
 };
 
 }

@@ -21,7 +21,7 @@ namespace DB
 class ISchedulerConstraint : public ISchedulerNode
 {
 public:
-    explicit ISchedulerConstraint(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
+    ISchedulerConstraint(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
         : ISchedulerNode(event_queue_, config, config_prefix)
     {}
 
@@ -43,9 +43,6 @@ public:
             }
         }
     }
-
-    /// For introspection of current state (true = satisfied, false = violated)
-    virtual bool isSatisfied() = 0;
 
 protected:
     // Reference to nearest parent that is also derived from ISchedulerConstraint.

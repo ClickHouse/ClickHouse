@@ -39,9 +39,9 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     const FormatSettings & format_settings_,
     bool yield_strings_)
     : IRowInputFormat(header_, in_, std::move(params_))
+    , format_settings(format_settings_)
     , prev_positions(header_.columns())
     , yield_strings(yield_strings_)
-    , format_settings(format_settings_)
 {
     const auto & header = getPort().getHeader();
     name_map = header.getNamesToIndexesMap();
@@ -71,20 +71,21 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
     if (prev_positions.size() > key_index
-        && prev_positions[key_index] != Block::NameMap::const_iterator{}
-        && name == prev_positions[key_index]->first)
+        && prev_positions[key_index]
+        && name == prev_positions[key_index]->getKey())
     {
-        return prev_positions[key_index]->second;
+        return prev_positions[key_index]->getMapped();
     }
     else
     {
-        const auto it = name_map.find(name);
-        if (it != name_map.end())
+        auto * it = name_map.find(name);
+
+        if (it)
         {
             if (key_index < prev_positions.size())
                 prev_positions[key_index] = it;
 
-            return it->second;
+            return it->getMapped();
         }
         else
             return UNKNOWN_FIELD;
@@ -142,7 +143,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
     skipWhitespaceIfAny(*in);
 
     if (in->eof())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
     else if (*in->position() == '}')
     {
         ++in->position();
@@ -205,7 +206,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         return false;
     skipWhitespaceIfAny(*in);
 
-    bool is_first_row = getRowNum() == 0;
+    bool is_first_row = getCurrentUnitNumber() == 0 && getTotalRows() == 1;
     if (checkEndOfData(is_first_row))
         return false;
 
@@ -236,10 +237,10 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
 bool JSONEachRowRowInputFormat::checkEndOfData(bool is_first_row)
 {
-    /// We consume ',' or '\n' before scanning a new row, instead scanning to next row at the end.
+    /// We consume , or \n before scanning a new row, instead scanning to next row at the end.
     /// The reason is that if we want an exact number of rows read with LIMIT x
     /// from a streaming table engine with text data format, like File or Kafka
-    /// then seeking to next ';,' or '\n' would trigger reading of an extra row at the end.
+    /// then seeking to next ;, or \n would trigger reading of an extra row at the end.
 
     /// Semicolon is added for convenience as it could be used at end of INSERT query.
     if (!in->eof())
@@ -302,26 +303,6 @@ void JSONEachRowRowInputFormat::readSuffix()
     assertEOF(*in);
 }
 
-size_t JSONEachRowRowInputFormat::countRows(size_t max_block_size)
-{
-    if (unlikely(!allow_new_rows))
-        return 0;
-
-    size_t num_rows = 0;
-    bool is_first_row = getRowNum() == 0;
-    skipWhitespaceIfAny(*in);
-    while (num_rows < max_block_size && !checkEndOfData(is_first_row))
-    {
-        skipRowStart();
-        JSONUtils::skipRowForJSONEachRow(*in);
-        ++num_rows;
-        is_first_row = false;
-        skipWhitespaceIfAny(*in);
-    }
-
-    return num_rows;
-}
-
 JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : IRowWithNamesSchemaReader(in_, format_settings_)
 {
@@ -365,14 +346,9 @@ void JSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTyp
     transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
 }
 
-void JSONEachRowSchemaReader::transformTypesFromDifferentFilesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
-{
-    transformInferredJSONTypesFromDifferentFilesIfNeeded(type, new_type, format_settings);
-}
-
 void JSONEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
 {
-    transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
+    transformJSONTupleToArrayIfPossible(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONEachRow(FormatFactory & factory)

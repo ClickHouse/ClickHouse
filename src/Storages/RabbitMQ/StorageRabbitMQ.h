@@ -34,14 +34,14 @@ public:
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
     /// actions require an open connection. Therefore there needs to be a way inside shutdown() method to know whether it is called
     /// because of drop query. And drop() method is not suitable at all, because it will not only require to reopen connection, but also
     /// it can be called considerable time after table is dropped (for example, in case of Atomic database), which is not appropriate for the case.
-    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { drop_table = true; }
+    void checkTableCanBeDropped() const override { drop_table = true; }
 
     /// Always return virtual columns in addition to required columns
     void read(
@@ -57,8 +57,7 @@ public:
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
-        bool async_insert) override;
+        ContextPtr context) override;
 
     /// We want to control the number of rows in a chunk inserted into RabbitMQ
     bool prefersLargeBlocks() const override { return false; }
@@ -73,7 +72,9 @@ public:
     String getExchange() const { return exchange_name; }
     void unbindExchange();
 
-    RabbitMQConnection & getConnection() { return *connection; }
+    bool updateChannel(ChannelPtr & channel);
+    void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
+    void prepareChannelForConsumer(RabbitMQConsumerPtr consumer);
 
     void incrementReader();
     void decrementReader();
@@ -128,7 +129,7 @@ private:
     std::mutex task_mutex;
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder looping_task;
-    BackgroundSchedulePool::TaskHolder init_task;
+    BackgroundSchedulePool::TaskHolder connection_task;
 
     uint64_t milliseconds_to_wait;
 
@@ -141,6 +142,9 @@ private:
     /// Counter for producers, needed for channel id.
     /// Needed to generate unique producer identifiers.
     std::atomic<size_t> producer_id = 1;
+    /// Has connection background task completed successfully?
+    /// It is started only once -- in constructor.
+    std::atomic<bool> rabbit_is_ready = false;
     /// Allow to remove exchange only once.
     std::atomic<bool> exchange_removed = false;
     /// For select query we must be aware of the end of streaming
@@ -161,6 +165,7 @@ private:
     bool is_attach;
 
     RabbitMQConsumerPtr createConsumer();
+    void initializeBuffers();
     bool initialized = false;
 
     /// Functions working in the background
@@ -187,7 +192,6 @@ private:
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
-    void streamToViewsImpl();
     /// Return true on successful stream attempt.
     bool tryStreamToViews();
     bool hasDependencies(const StorageID & table_id);

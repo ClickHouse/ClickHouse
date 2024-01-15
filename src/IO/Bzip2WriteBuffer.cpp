@@ -15,25 +15,40 @@ namespace ErrorCodes
 }
 
 
-Bzip2WriteBuffer::Bzip2StateWrapper::Bzip2StateWrapper(int compression_level)
+class Bzip2WriteBuffer::Bzip2StateWrapper
 {
-    memset(&stream, 0, sizeof(stream));
+public:
+    explicit Bzip2StateWrapper(int compression_level)
+    {
+        memset(&stream, 0, sizeof(stream));
 
-    int ret = BZ2_bzCompressInit(&stream, compression_level, 0, 0);
+        int ret = BZ2_bzCompressInit(&stream, compression_level, 0, 0);
 
-    if (ret != BZ_OK)
-        throw Exception(
-            ErrorCodes::BZIP2_STREAM_ENCODER_FAILED,
-            "bzip2 stream encoder init failed: error code: {}",
-            ret);
+        if (ret != BZ_OK)
+            throw Exception(
+                ErrorCodes::BZIP2_STREAM_ENCODER_FAILED,
+                "bzip2 stream encoder init failed: error code: {}",
+                ret);
+    }
+
+    ~Bzip2StateWrapper()
+    {
+        BZ2_bzCompressEnd(&stream);
+    }
+
+    bz_stream stream;
+};
+
+Bzip2WriteBuffer::Bzip2WriteBuffer(std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
+    , bz(std::make_unique<Bzip2StateWrapper>(compression_level))
+{
 }
 
-Bzip2WriteBuffer::Bzip2StateWrapper::~Bzip2StateWrapper()
+Bzip2WriteBuffer::~Bzip2WriteBuffer()
 {
-    BZ2_bzCompressEnd(&stream);
+    finalize();
 }
-
-Bzip2WriteBuffer::~Bzip2WriteBuffer() = default;
 
 void Bzip2WriteBuffer::nextImpl()
 {
@@ -65,8 +80,6 @@ void Bzip2WriteBuffer::nextImpl()
 
         }
         while (bz->stream.avail_in > 0);
-
-        total_in += offset();
     }
     catch (...)
     {
@@ -79,10 +92,6 @@ void Bzip2WriteBuffer::nextImpl()
 void Bzip2WriteBuffer::finalizeBefore()
 {
     next();
-
-    /// Don't write out if no data was ever compressed
-    if (!compress_empty && total_in == 0)
-        return;
 
     out->nextIfAtEnd();
     bz->stream.next_out = out->position();

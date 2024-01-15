@@ -17,13 +17,12 @@ ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
     SortDescription description_,
     const String & is_deleted_column,
     const String & version_column,
-    size_t max_block_size_rows,
-    size_t max_block_size_bytes,
+    size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes,
     bool cleanup_)
     : IMergingAlgorithmWithSharedChunks(header_, num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
-    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size_rows, max_block_size_bytes), cleanup(cleanup_)
+    , merged_data(header_.cloneEmptyColumns(), use_average_block_sizes, max_block_size), cleanup(cleanup_)
 {
     if (!is_deleted_column.empty())
         is_deleted_column_number = header_.getPositionByName(is_deleted_column);
@@ -64,7 +63,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         RowRef current_row;
         setRowRef(current_row, current);
 
-        bool key_differs = selected_row.empty() || rowsHaveDifferentSortColumns(selected_row, current_row);
+        bool key_differs = selected_row.empty() || !current_row.hasEqualSortColumnsWith(selected_row);
         if (key_differs)
         {
             /// if there are enough rows and the last one is calculated completely

@@ -36,18 +36,6 @@ def process_result(file_path: Path) -> Tuple[bool, TestResults]:
     test_results = []  # type: TestResults
     state, report_url, description = post_commit_status_from_file(file_path)
     prefix = file_path.parent.name
-    if description.strip() in [
-        "Invalid check_status.tsv",
-        "Not found test_results.tsv",
-        "Empty test_results.tsv",
-    ]:
-        status = (
-            f'Check failed (<a href="{report_url}">Report</a>)'
-            if report_url != "null"
-            else "Check failed"
-        )
-        return False, [TestResult(f"{prefix}: {description}", status)]
-
     is_ok = state == "success"
     if is_ok and report_url == "null":
         return is_ok, test_results
@@ -82,21 +70,19 @@ def main():
 
     is_ok, test_results = process_all_results(status_files)
 
-    pr_info = PRInfo()
     if not test_results:
-        description = "No results to upload"
-        report_url = ""
         logging.info("No results to upload")
-    else:
-        description = "" if is_ok else "Changed tests don't reproduce the bug"
-        report_url = upload_results(
-            S3Helper(),
-            pr_info.number,
-            pr_info.sha,
-            test_results,
-            status_files,
-            check_name_with_group,
-        )
+        return
+
+    pr_info = PRInfo()
+    report_url = upload_results(
+        S3Helper(),
+        pr_info.number,
+        pr_info.sha,
+        test_results,
+        status_files,
+        check_name_with_group,
+    )
 
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
@@ -104,10 +90,9 @@ def main():
         commit,
         "success" if is_ok else "error",
         report_url,
-        description,
+        "" if is_ok else "Changed tests don't reproduce the bug",
         check_name_with_group,
         pr_info,
-        dump_to_file=True,
     )
 
 

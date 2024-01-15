@@ -133,20 +133,8 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
     if (!optimize_move_to_prewhere)
         return;
 
-    const auto & storage_snapshot = read_from_merge_tree->getStorageSnapshot();
-
-    if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
-    {
-        const auto & sampling_key = storage_snapshot->getMetadataForQuery()->getSamplingKey();
-        const auto & sampling_source_columns = sampling_key.expression->getRequiredColumnsWithTypes();
-        for (const auto & column : sampling_source_columns)
-            required_columns_after_filter.push_back(ColumnWithTypeAndName(column.type, column.name));
-        const auto & sampling_result_columns = sampling_key.sample_block.getColumnsWithTypeAndName();
-        required_columns_after_filter.insert(required_columns_after_filter.end(), sampling_result_columns.begin(), sampling_result_columns.end());
-    }
-
-    const auto & storage = storage_snapshot->storage;
-    const auto & storage_metadata = storage_snapshot->metadata;
+    const auto & storage = read_from_merge_tree->getStorageSnapshot()->storage;
+    const auto & storage_metadata = read_from_merge_tree->getStorageSnapshot()->metadata;
     auto column_sizes = storage.getColumnSizes();
     if (column_sizes.empty())
         return;
@@ -161,7 +149,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_metadata,
-        storage.getConditionEstimatorByPredicate(read_from_merge_tree->getQueryInfo(), storage_snapshot, context),
         queried_columns,
         storage.supportedPrewhereColumns(),
         &Poco::Logger::get("QueryPlanOptimizePrewhere")};

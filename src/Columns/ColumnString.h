@@ -19,8 +19,6 @@ class Collator;
 namespace DB
 {
 
-class Arena;
-
 /** Column for String values.
   */
 class ColumnString final : public COWHelper<IColumn, ColumnString>
@@ -170,7 +168,7 @@ public:
         offsets.resize_assume_reserved(offsets.size() - n);
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 

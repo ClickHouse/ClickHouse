@@ -5,13 +5,12 @@
 
 namespace DB
 {
-void NotFoundHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void NotFoundHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        *response.send() << "There is no handle " << request.getURI()
-                         << (!hints.empty() ? fmt::format(". Maybe you meant {}.", hints.front()) : "") << "\n\n"
+        *response.send() << "There is no handle " << request.getURI() << "\n\n"
                          << "Use / or /ping for health checks.\n"
                          << "Or /replicas_status for more sophisticated health checks.\n\n"
                          << "Send queries from your program with POST method or GET /?query=...\n\n"

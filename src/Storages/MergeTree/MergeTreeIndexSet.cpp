@@ -146,7 +146,7 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
-                "Position: {}, Block rows: {}.", *pos, block.rows());
+                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -247,7 +247,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     const String & index_name_,
     const Block & index_sample_block,
     size_t max_rows_,
-    const ActionsDAGPtr & filter_dag,
+    const SelectQueryInfo & query_info,
     ContextPtr context)
     : index_name(index_name_)
     , max_rows(max_rows_)
@@ -256,20 +256,42 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
-    if (!filter_dag)
+    ASTPtr ast_filter_node = buildFilterNode(query_info.query);
+    if (!ast_filter_node)
         return;
 
-    if (checkDAGUseless(*filter_dag->getOutputs().at(0), context))
-        return;
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        if (!query_info.filter_actions_dag)
+            return;
 
-    auto filter_actions_dag = filter_dag->clone();
-    const auto * filter_actions_dag_node = filter_actions_dag->getOutputs().at(0);
+        if (checkDAGUseless(*query_info.filter_actions_dag->getOutputs().at(0), context))
+            return;
 
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
-    filter_actions_dag->getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
+        const auto * filter_node = query_info.filter_actions_dag->getOutputs().at(0);
+        auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG({filter_node}, {}, context);
+        const auto * filter_actions_dag_node = filter_actions_dag->getOutputs().at(0);
 
-    filter_actions_dag->removeUnusedActions();
-    actions = std::make_shared<ExpressionActions>(filter_actions_dag);
+        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
+        filter_actions_dag->getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
+
+        filter_actions_dag->removeUnusedActions();
+        actions = std::make_shared<ExpressionActions>(filter_actions_dag);
+    }
+    else
+    {
+        if (checkASTUseless(ast_filter_node))
+            return;
+
+        auto expression_ast = ast_filter_node->clone();
+
+        /// Replace logical functions with bit functions.
+        /// Working with UInt8: last bit = can be true, previous = can be false (Like src/Storages/MergeTree/BoolMask.h).
+        traverseAST(expression_ast);
+
+        auto syntax_analyzer_result = TreeRewriter(context).analyze(expression_ast, index_sample_block.getNamesAndTypesList());
+        actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
+    }
 }
 
 bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
@@ -435,10 +457,8 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         if (arguments_size != 1)
             return nullptr;
 
-        const ActionsDAG::Node * argument = &traverseDAG(*arguments[0], result_dag, context, node_to_result_node);
-
         auto bit_swap_last_two_function = FunctionFactory::instance().get("__bitSwapLastTwo", context);
-        return &result_dag->addFunction(bit_swap_last_two_function, {argument}, {});
+        return &result_dag->addFunction(bit_swap_last_two_function, {arguments[0]}, {});
     }
     else if (function_name == "and" || function_name == "indexHint" || function_name == "or")
     {
@@ -534,10 +554,7 @@ void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
     if (atomFromAST(node))
     {
         if (node->as<ASTIdentifier>() || node->as<ASTFunction>())
-            /// __bitWrapperFunc* uses default implementation for Nullable types
-            /// Here we additionally convert Null to 0,
-            /// otherwise condition 'something OR NULL' will always return Null and filter everything.
-            node = makeASTFunction("__bitWrapperFunc", makeASTFunction("ifNull", node, std::make_shared<ASTLiteral>(Field(0))));
+            node = makeASTFunction("__bitWrapperFunc", node);
     }
     else
         node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
@@ -592,9 +609,6 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
     }
     else if (func->name == "and" || func->name == "indexHint")
     {
-        if (args.size() < 2)
-            return false;
-
         auto last_arg = args.back();
         args.pop_back();
 
@@ -614,9 +628,6 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
     }
     else if (func->name == "or")
     {
-        if (args.size() < 2)
-            return false;
-
         auto last_arg = args.back();
         args.pop_back();
 
@@ -676,15 +687,20 @@ MergeTreeIndexGranulePtr MergeTreeIndexSet::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleSet>(index.name, index.sample_block, max_rows);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorSet>(index.name, index.sample_block, max_rows);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
-    const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
+    const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, filter_actions_dag, context);
+    return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, query, context);
+}
+
+bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
+{
+    return false;
 }
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)

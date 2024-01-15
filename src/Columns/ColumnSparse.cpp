@@ -1,12 +1,11 @@
-#include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/SipHash.h>
+#include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/WeakHash.h>
-#include <Common/iota.h>
+#include <Common/SipHash.h>
+#include <Common/HashTable/Hash.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <algorithm>
 #include <bit>
@@ -151,7 +150,7 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 *) const
+StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
 }
@@ -500,7 +499,8 @@ void ColumnSparse::getPermutationImpl(IColumn::PermutationSortDirection directio
     res.resize(_size);
     if (offsets->empty())
     {
-        iota(res.data(), _size, IColumn::Permutation::value_type(0));
+        for (size_t i = 0; i < _size; ++i)
+            res[i] = i;
         return;
     }
 
@@ -738,9 +738,9 @@ ColumnPtr ColumnSparse::compress() const
     size_t byte_size = values_compressed->byteSize() + offsets_compressed->byteSize();
 
     return ColumnCompressed::create(size(), byte_size,
-        [my_values_compressed = std::move(values_compressed), my_offsets_compressed = std::move(offsets_compressed), size = size()]
+        [values_compressed = std::move(values_compressed), offsets_compressed = std::move(offsets_compressed), size = size()]
         {
-            return ColumnSparse::create(my_values_compressed->decompress(), my_offsets_compressed->decompress(), size);
+            return ColumnSparse::create(values_compressed->decompress(), offsets_compressed->decompress(), size);
         });
 }
 
@@ -751,13 +751,13 @@ bool ColumnSparse::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnSparse::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnSparse::forEachSubcolumn(ColumnCallback callback) const
 {
     callback(values);
     callback(offsets);
 }
 
-void ColumnSparse::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnSparse::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
     callback(*values);
     values->forEachSubcolumnRecursively(callback);

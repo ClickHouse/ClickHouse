@@ -43,6 +43,7 @@
 
 #include <Interpreters/StorageID.h>
 
+
 namespace DB
 {
 
@@ -239,38 +240,6 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     }
     return false;
-}
-
-
-bool ParserTableAsStringLiteralIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (pos->type != TokenType::StringLiteral)
-        return false;
-
-    ReadBufferFromMemory in(pos->begin, pos->size());
-    String s;
-
-    if (!tryReadQuotedStringInto(s, in))
-    {
-        expected.add(pos, "string literal");
-        return false;
-    }
-
-    if (in.count() != pos->size())
-    {
-        expected.add(pos, "string literal");
-        return false;
-    }
-
-    if (s.empty())
-    {
-        expected.add(pos, "non-empty string literal");
-        return false;
-    }
-
-    node = std::make_shared<ASTTableIdentifier>(s);
-    ++pos;
-    return true;
 }
 
 
@@ -678,33 +647,6 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = "CODEC";
     function_node->arguments = expr_list_args;
-    function_node->children.push_back(function_node->arguments);
-
-    node = function_node;
-    return true;
-}
-
-bool ParserStatisticType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserList stat_type_parser(std::make_unique<ParserIdentifierWithOptionalParameters>(),
-        std::make_unique<ParserToken>(TokenType::Comma), false);
-
-    if (pos->type != TokenType::OpeningRoundBracket)
-        return false;
-    ASTPtr stat_type;
-
-    ++pos;
-
-    if (!stat_type_parser.parse(pos, stat_type, expected))
-        return false;
-
-    if (pos->type != TokenType::ClosingRoundBracket)
-        return false;
-    ++pos;
-
-    auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = "STATISTIC";
-    function_node->arguments = stat_type;
     function_node->children.push_back(function_node->arguments);
 
     node = function_node;
@@ -1495,12 +1437,10 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!allow_alias_without_as_keyword && !has_as_word)
         return false;
 
-    bool is_quoted = pos->type == TokenType::QuotedIdentifier;
-
     if (!id_p.parse(pos, node, expected))
         return false;
 
-    if (!has_as_word && !is_quoted)
+    if (!has_as_word)
     {
         /** In this case, the alias can not match the keyword -
           *  so that in the query "SELECT x FROM t", the word FROM was not considered an alias,

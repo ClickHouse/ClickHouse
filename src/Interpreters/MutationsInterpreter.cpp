@@ -1,13 +1,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
-#include <Storages/BlockNumberColumn.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -26,22 +25,20 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/queryToString.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/LightweightDeleteDescription.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Parsers/makeASTForLogicalFunction.h>
-#include <Common/logger_useful.h>
-#include <Storages/MergeTree/MergeTreeDataPartType.h>
+
 
 namespace DB
 {
@@ -55,13 +52,89 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_UPDATE_COLUMN;
     extern const int UNEXPECTED_EXPRESSION;
-    extern const int THERE_IS_NO_COLUMN;
-    extern const int ILLEGAL_STATISTIC;
 }
-
 
 namespace
 {
+
+/// Helps to detect situations, where non-deterministic functions may be used in mutations of Replicated*MergeTree.
+class FirstNonDeterministicFunctionMatcher
+{
+public:
+    struct Data
+    {
+        ContextPtr context;
+        std::optional<String> nondeterministic_function_name;
+        bool subquery = false;
+    };
+
+    static bool needChildVisit(const ASTPtr & /*node*/, const ASTPtr & /*child*/)
+    {
+        return true;
+    }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (data.nondeterministic_function_name || data.subquery)
+            return;
+
+        if (node->as<ASTSelectQuery>())
+        {
+            /// We cannot determine if subquery is deterministic or not,
+            /// so we do not allow to use subqueries in mutation without allow_nondeterministic_mutations=1
+            data.subquery = true;
+        }
+        else if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
+        {
+            /// Property of being deterministic for lambda expression is completely determined
+            /// by the contents of its definition, so we just proceed to it.
+            if (function->name != "lambda")
+            {
+                /// NOTE It may be an aggregate function, so get(...) may throw.
+                /// However, an aggregate function can be used only in subquery and we do not go into subquery.
+                const auto func = FunctionFactory::instance().get(function->name, data.context);
+                if (!func->isDeterministic())
+                    data.nondeterministic_function_name = func->getName();
+            }
+        }
+    }
+};
+
+using FirstNonDeterministicFunctionFinder = InDepthNodeVisitor<FirstNonDeterministicFunctionMatcher, true>;
+using FirstNonDeterministicFunctionData = FirstNonDeterministicFunctionMatcher::Data;
+
+FirstNonDeterministicFunctionData findFirstNonDeterministicFunctionName(const MutationCommand & command, ContextPtr context)
+{
+    FirstNonDeterministicFunctionMatcher::Data finder_data{context, std::nullopt, false};
+
+    switch (command.type)
+    {
+        case MutationCommand::UPDATE:
+        {
+            auto update_assignments_ast = command.ast->as<const ASTAlterCommand &>().update_assignments->clone();
+            FirstNonDeterministicFunctionFinder(finder_data).visit(update_assignments_ast);
+
+            if (finder_data.nondeterministic_function_name)
+                return finder_data;
+
+            /// Currently UPDATE and DELETE both always have predicates so we can use fallthrough
+            [[fallthrough]];
+        }
+
+        case MutationCommand::DELETE:
+        {
+            auto predicate_ast = command.predicate->clone();
+            FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
+
+            return finder_data;
+        }
+
+        default:
+            break;
+    }
+
+    return {};
+}
 
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
@@ -114,17 +187,13 @@ QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand
     return query_tree;
 }
 
-ColumnDependencies getAllColumnDependencies(
-    const StorageMetadataPtr & metadata_snapshot,
-    const NameSet & updated_columns,
-    const StorageInMemoryMetadata::HasDependencyCallback & has_dependency)
+ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns)
 {
     NameSet new_updated_columns = updated_columns;
     ColumnDependencies dependencies;
-
     while (!new_updated_columns.empty())
     {
-        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true, has_dependency);
+        auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
         new_updated_columns.clear();
         for (const auto & dependency : new_dependencies)
         {
@@ -154,29 +223,19 @@ bool isStorageTouchedByMutations(
         return false;
 
     bool all_commands_can_be_skipped = true;
-    for (const auto & command : commands)
+    for (const MutationCommand & command : commands)
     {
-        if (command.type == MutationCommand::APPLY_DELETED_MASK)
+        if (!command.predicate) /// The command touches all rows.
+            return true;
+
+        if (command.partition)
         {
-            if (source_part->hasLightweightDelete())
-                return true;
+            const String partition_id = storage.getPartitionIDFromQuery(command.partition, context);
+            if (partition_id == source_part->info.partition_id)
+                all_commands_can_be_skipped = false;
         }
         else
-        {
-            if (!command.predicate) /// The command touches all rows.
-                return true;
-
-            if (command.partition)
-            {
-                const String partition_id = storage.getPartitionIDFromQuery(command.partition, context);
-                if (partition_id == source_part->info.partition_id)
-                    all_commands_can_be_skipped = false;
-            }
-            else
-            {
-                all_commands_can_be_skipped = false;
-            }
-        }
+            all_commands_can_be_skipped = false;
     }
 
     if (all_commands_can_be_skipped)
@@ -190,7 +249,7 @@ bool isStorageTouchedByMutations(
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
         auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage.shared_from_this(), context);
-        InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
+        InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits().ignoreProjections());
         io = interpreter.execute();
     }
     else
@@ -200,7 +259,7 @@ bool isStorageTouchedByMutations(
         /// For some reason it may copy context and give it into ExpressionTransform
         /// after that we will use context from destroyed stack frame in our stream.
         interpreter_select_query.emplace(
-            select_query, context, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits());
+            select_query, context, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
 
         io = interpreter_select_query->execute();
     }
@@ -221,6 +280,7 @@ bool isStorageTouchedByMutations(
     auto count = (*block.getByName("count()").column)[0].get<UInt64>();
     return count != 0;
 }
+
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const MutationCommand & command,
@@ -254,32 +314,6 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
         return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
 }
 
-
-MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command)
-{
-    if (command.type != MutationCommand::APPLY_DELETED_MASK)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected APPLY_DELETED_MASK mutation command, got: {}", magic_enum::enum_name(command.type));
-
-    auto alter_command = std::make_shared<ASTAlterCommand>();
-    alter_command->type = ASTAlterCommand::DELETE;
-    alter_command->partition = command.partition;
-
-    auto row_exists_predicate = makeASTFunction("equals",
-        std::make_shared<ASTIdentifier>(LightweightDeleteDescription::FILTER_COLUMN.name),
-        std::make_shared<ASTLiteral>(Field(0)));
-
-    if (command.predicate)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutation command APPLY DELETED MASK does not support WHERE clause");
-
-    alter_command->predicate = row_exists_predicate;
-
-    auto mutation_command = MutationCommand::parse(alter_command.get());
-    if (!mutation_command)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}. It's a bug", queryToString(alter_command));
-
-    return *mutation_command;
-}
-
 MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(std::move(storage_))
 {
 }
@@ -291,10 +325,10 @@ MutationsInterpreter::Source::Source(MergeTreeData & storage_, MergeTreeData::Da
 
 StorageSnapshotPtr MutationsInterpreter::Source::getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_) const
 {
-    if (const auto * merge_tree = getMergeTreeData())
-        return merge_tree->getStorageSnapshotWithoutData(snapshot_, context_);
+    if (data)
+        return data->getStorageSnapshot(snapshot_, context_);
 
-    return storage->getStorageSnapshotWithoutData(snapshot_, context_);
+    return storage->getStorageSnapshot(snapshot_, context_);
 }
 
 StoragePtr MutationsInterpreter::Source::getStorage() const
@@ -332,42 +366,20 @@ bool MutationsInterpreter::Source::materializeTTLRecalculateOnly() const
     return data && data->getSettings()->materialize_ttl_recalculate_only;
 }
 
-bool MutationsInterpreter::Source::hasSecondaryIndex(const String & name) const
-{
-    return part && part->hasSecondaryIndex(name);
-}
-
-bool MutationsInterpreter::Source::hasProjection(const String & name) const
-{
-    return part && part->hasProjection(name);
-}
-
-bool MutationsInterpreter::Source::isCompactPart() const
-{
-    return part && part->getType() == MergeTreeDataPartType::Compact;
-}
-
-static Names getAvailableColumnsWithVirtuals(StorageMetadataPtr metadata_snapshot, const IStorage & storage)
-{
-    auto all_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
-    for (const auto & column : storage.getVirtuals())
-        all_columns.push_back(column.name);
-    return all_columns;
-}
-
 MutationsInterpreter::MutationsInterpreter(
     StoragePtr storage_,
-    StorageMetadataPtr metadata_snapshot_,
+    const StorageMetadataPtr & metadata_snapshot_,
     MutationCommands commands_,
     ContextPtr context_,
-    Settings settings_)
+    bool can_execute_,
+    bool return_all_columns_,
+    bool return_deleted_rows_)
     : MutationsInterpreter(
-        Source(storage_),
-        metadata_snapshot_, std::move(commands_),
-        getAvailableColumnsWithVirtuals(metadata_snapshot_, *storage_),
-        std::move(context_), std::move(settings_))
+        Source(std::move(storage_)),
+        metadata_snapshot_, std::move(commands_), std::move(context_),
+        can_execute_, return_all_columns_, return_deleted_rows_)
 {
-    if (settings.can_execute && dynamic_cast<const MergeTreeData *>(source.getStorage().get()))
+    if (can_execute_ && dynamic_cast<const MergeTreeData *>(source.getStorage().get()))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -379,34 +391,37 @@ MutationsInterpreter::MutationsInterpreter(
 MutationsInterpreter::MutationsInterpreter(
     MergeTreeData & storage_,
     MergeTreeData::DataPartPtr source_part_,
-    StorageMetadataPtr metadata_snapshot_,
+    const StorageMetadataPtr & metadata_snapshot_,
     MutationCommands commands_,
-    Names available_columns_,
     ContextPtr context_,
-    Settings settings_)
+    bool can_execute_,
+    bool return_all_columns_,
+    bool return_deleted_rows_)
     : MutationsInterpreter(
         Source(storage_, std::move(source_part_)),
-        std::move(metadata_snapshot_), std::move(commands_),
-        std::move(available_columns_), std::move(context_), std::move(settings_))
+        metadata_snapshot_, std::move(commands_), std::move(context_),
+        can_execute_, return_all_columns_, return_deleted_rows_)
 {
 }
 
 MutationsInterpreter::MutationsInterpreter(
     Source source_,
-    StorageMetadataPtr metadata_snapshot_,
+    const StorageMetadataPtr & metadata_snapshot_,
     MutationCommands commands_,
-    Names available_columns_,
     ContextPtr context_,
-    Settings settings_)
+    bool can_execute_,
+    bool return_all_columns_,
+    bool return_deleted_rows_)
     : source(std::move(source_))
     , metadata_snapshot(metadata_snapshot_)
     , commands(std::move(commands_))
-    , available_columns(std::move(available_columns_))
     , context(Context::createCopy(context_))
-    , settings(std::move(settings_))
-    , select_limits(SelectQueryOptions().analyze(!settings.can_execute).ignoreLimits())
+    , can_execute(can_execute_)
+    , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits().ignoreProjections())
+    , return_all_columns(return_all_columns_)
+    , return_deleted_rows(return_deleted_rows_)
 {
-    prepare(!settings.can_execute);
+    prepare(!can_execute);
 }
 
 static NameSet getKeyColumns(const MutationsInterpreter::Source & source, const StorageMetadataPtr & metadata_snapshot)
@@ -458,12 +473,6 @@ static void validateUpdateColumns(
             if (!source.supportsLightweightDelete())
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
             found = true;
-        }
-
-        /// Dont allow to override value of block number virtual column
-        if (!found && column_name == BlockNumberColumn::name)
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
         }
 
         if (!found)
@@ -532,44 +541,27 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (commands.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty mutation commands list");
 
-    /// TODO Should we get columns, indices and projections from the part itself? Table metadata may be different
     const ColumnsDescription & columns_desc = metadata_snapshot->getColumns();
     const IndicesDescription & indices_desc = metadata_snapshot->getSecondaryIndices();
     const ProjectionsDescription & projections_desc = metadata_snapshot->getProjections();
-
-    auto storage_snapshot = std::make_shared<StorageSnapshot>(*source.getStorage(), metadata_snapshot);
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals();
-
-    auto all_columns = storage_snapshot->getColumnsByNames(options, available_columns);
-    NameSet available_columns_set(available_columns.begin(), available_columns.end());
+    NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     /// Add _row_exists column if it is physically present in the part
     if (source.hasLightweightDeleteMask())
-    {
         all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
-        available_columns_set.insert(LightweightDeleteDescription::FILTER_COLUMN.name);
-    }
 
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
 
-    for (auto & command : commands)
+    for (const MutationCommand & command : commands)
     {
-        if (command.type == MutationCommand::Type::APPLY_DELETED_MASK)
-            command = createCommandToApplyDeletedMask(command);
-
-        if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::DELETE)
+        if (command.type == MutationCommand::Type::UPDATE
+            || command.type == MutationCommand::Type::DELETE)
             materialize_ttl_recalculate_only = false;
 
-        for (const auto & [name, _] : command.column_to_update_expression)
+        for (const auto & kv : command.column_to_update_expression)
         {
-            if (!available_columns_set.contains(name)
-                && name != LightweightDeleteDescription::FILTER_COLUMN.name
-                && name != BlockNumberColumn::name)
-                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
-                    "Column {} is updated but not requested to read", name);
-
-            updated_columns.insert(name);
+            updated_columns.insert(kv.first);
         }
     }
 
@@ -580,43 +572,29 @@ void MutationsInterpreter::prepare(bool dry_run)
     {
         for (const auto & column : columns_desc)
         {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized && available_columns_set.contains(column.name))
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized)
             {
                 auto query = column.default_desc.expression->clone();
                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
-                for (const auto & dependency : syntax_result->requiredSourceColumns())
+                for (const String & dependency : syntax_result->requiredSourceColumns())
+                {
                     if (updated_columns.contains(dependency))
                         column_to_affected_materialized[dependency].push_back(column.name);
+                }
             }
         }
 
         validateUpdateColumns(source, metadata_snapshot, updated_columns, column_to_affected_materialized);
     }
 
-    StorageInMemoryMetadata::HasDependencyCallback has_dependency =
-        [&](const String & name, ColumnDependency::Kind kind)
-    {
-        if (kind == ColumnDependency::PROJECTION)
-            return source.hasProjection(name);
+    dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
-        if (kind == ColumnDependency::SKIP_INDEX)
-            return source.hasSecondaryIndex(name);
-
-        return true;
-    };
-
-    if (settings.recalculate_dependencies_of_updated_columns)
-        dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns, has_dependency);
-
-    bool need_rebuild_indexes = false;
-    bool need_rebuild_projections = false;
     std::vector<String> read_columns;
-
     /// First, break a sequence of commands into stages.
-    for (const auto & command : commands)
+    for (auto & command : commands)
     {
         // we can return deleted rows only if it's the only present command
-        assert(command.type == MutationCommand::DELETE || command.type == MutationCommand::UPDATE || !settings.return_mutated_rows);
+        assert(command.type == MutationCommand::DELETE || !return_deleted_rows);
 
         if (command.type == MutationCommand::DELETE)
         {
@@ -624,15 +602,12 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (stages.empty() || !stages.back().column_to_updated.empty())
                 stages.emplace_back(context);
 
-            auto predicate = getPartitionAndPredicateExpressionForMutationCommand(command);
+            auto predicate  = getPartitionAndPredicateExpressionForMutationCommand(command);
 
-            if (!settings.return_mutated_rows)
+            if (!return_deleted_rows)
                 predicate = makeASTFunction("isZeroOrNull", predicate);
 
             stages.back().filters.push_back(predicate);
-            /// ALTER DELETE can changes number of rows in the part, so we need to rebuild indexes and projection
-            need_rebuild_indexes = true;
-            need_rebuild_projections = true;
         }
         else if (command.type == MutationCommand::UPDATE)
         {
@@ -644,12 +619,16 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             NameSet affected_materialized;
 
-            for (const auto & [column_name, update_expr] : command.column_to_update_expression)
+            for (const auto & kv : command.column_to_update_expression)
             {
-                auto materialized_it = column_to_affected_materialized.find(column_name);
+                const String & column = kv.first;
+
+                auto materialized_it = column_to_affected_materialized.find(column);
                 if (materialized_it != column_to_affected_materialized.end())
-                    for (const auto & mat_column : materialized_it->second)
+                {
+                    for (const String & mat_column : materialized_it->second)
                         affected_materialized.emplace(mat_column);
+                }
 
                 /// When doing UPDATE column = expression WHERE condition
                 /// we will replace column to the result of the following expression:
@@ -662,39 +641,31 @@ void MutationsInterpreter::prepare(bool dry_run)
                 /// Outer CAST is added just in case if we don't trust the returning type of 'if'.
 
                 DataTypePtr type;
-                if (auto physical_column = columns_desc.tryGetPhysical(column_name))
-                {
+                if (auto physical_column = columns_desc.tryGetPhysical(column))
                     type = physical_column->type;
-                }
-                else if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name)
-                {
+                else if (column == LightweightDeleteDescription::FILTER_COLUMN.name)
                     type = LightweightDeleteDescription::FILTER_COLUMN.type;
-                    deleted_mask_updated = true;
-                }
-                else if (column_name == BlockNumberColumn::name)
-                {
-                    type = BlockNumberColumn::type;
-                }
                 else
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column_name);
-                }
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column);
 
                 auto type_literal = std::make_shared<ASTLiteral>(type->getName());
+
+                const auto & update_expr = kv.second;
+
                 ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command);
 
                 /// And new check validateNestedArraySizes for Nested subcolumns
-                if (isArray(type) && !Nested::splitName(column_name).second.empty())
+                if (isArray(type) && !Nested::splitName(column).second.empty())
                 {
                     std::shared_ptr<ASTFunction> function = nullptr;
 
-                    auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column_name, all_columns, command.column_to_update_expression);
+                    auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column, all_columns, command.column_to_update_expression);
                     if (!nested_update_exprs)
                     {
                         function = makeASTFunction("validateNestedArraySizes",
                             condition,
                             update_expr->clone(),
-                            std::make_shared<ASTIdentifier>(column_name));
+                            std::make_shared<ASTIdentifier>(column));
                         condition = makeASTFunction("and", condition, function);
                     }
                     else if (nested_update_exprs->size() > 1)
@@ -716,13 +687,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                         makeASTFunction("_CAST",
                             update_expr->clone(),
                             type_literal),
-                        std::make_shared<ASTIdentifier>(column_name)),
+                        std::make_shared<ASTIdentifier>(column)),
                     type_literal);
 
-                stages.back().column_to_updated.emplace(column_name, updated_column);
-
-                if (condition && settings.return_mutated_rows)
-                    stages.back().filters.push_back(condition);
+                stages.back().column_to_updated.emplace(column, updated_column);
             }
 
             if (!affected_materialized.empty())
@@ -744,11 +712,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                     }
                 }
             }
-
-            /// If the part is compact and adaptive index granularity is enabled, modify data in one column via ALTER UPDATE can change
-            /// the part granularity, so we need to rebuild indexes
-            if (source.isCompactPart() && source.getMergeTreeData() && source.getMergeTreeData()->getSettings()->index_granularity_bytes > 0)
-                need_rebuild_indexes = true;
         }
         else if (command.type == MutationCommand::MATERIALIZE_COLUMN)
         {
@@ -772,7 +735,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
             auto it = std::find_if(
                     std::cbegin(indices_desc), std::end(indices_desc),
                     [&](const IndexDescription & index)
@@ -782,52 +745,29 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (it == std::cend(indices_desc))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown index: {}", command.index_name);
 
-            if (!source.hasSecondaryIndex(it->name))
-            {
-                auto query = (*it).expression_list_ast->clone();
-                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
-                const auto required_columns = syntax_result->requiredSourceColumns();
-                for (const auto & column : required_columns)
-                    dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
-                materialized_indices.emplace(command.index_name);
-            }
-        }
-        else if (command.type == MutationCommand::MATERIALIZE_STATISTIC)
-        {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
-            for (const auto & stat_column_name: command.statistic_columns)
-            {
-                if (!columns_desc.has(stat_column_name) || !columns_desc.get(stat_column_name).stat)
-                    throw Exception(ErrorCodes::ILLEGAL_STATISTIC, "Unknown statistic column: {}", stat_column_name);
-                dependencies.emplace(stat_column_name, ColumnDependency::STATISTIC);
-                materialized_statistics.emplace(stat_column_name);
-            }
+            auto query = (*it).expression_list_ast->clone();
+            auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
+            const auto required_columns = syntax_result->requiredSourceColumns();
+            for (const auto & column : required_columns)
+                dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
+            materialized_indices.emplace(command.index_name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
             const auto & projection = projections_desc.get(command.projection_name);
-            if (!source.hasProjection(projection.name))
-            {
-                for (const auto & column : projection.required_columns)
-                    dependencies.emplace(column, ColumnDependency::PROJECTION);
-                materialized_projections.emplace(command.projection_name);
-            }
+            for (const auto & column : projection.required_columns)
+                dependencies.emplace(column, ColumnDependency::PROJECTION);
+            materialized_projections.emplace(command.projection_name);
         }
         else if (command.type == MutationCommand::DROP_INDEX)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
             materialized_indices.erase(command.index_name);
-        }
-        else if (command.type == MutationCommand::DROP_STATISTIC)
-        {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
-            for (const auto & stat_column_name: command.statistic_columns)
-                materialized_statistics.erase(stat_column_name);
         }
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {
-            mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION);
+            mutation_kind.set(MutationKind::MUTATE_INDEX_PROJECTION);
             materialized_projections.erase(command.projection_name);
         }
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
@@ -837,9 +777,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
-                auto all_columns_set = NameSet(all_columns_vec.begin(), all_columns_vec.end());
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(all_columns_set, false, has_dependency);
-
+                auto new_dependencies = metadata_snapshot->getColumnDependencies(NameSet(all_columns_vec.begin(), all_columns_vec.end()), false);
                 for (const auto & dependency : new_dependencies)
                 {
                     if (dependency.kind == ColumnDependency::TTL_EXPRESSION)
@@ -864,8 +802,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 auto all_columns_vec = all_columns.getNames();
-                auto all_columns_set = NameSet(all_columns_vec.begin(), all_columns_vec.end());
-                auto all_dependencies = getAllColumnDependencies(metadata_snapshot, all_columns_set, has_dependency);
+                auto all_dependencies = getAllColumnDependencies(metadata_snapshot, NameSet(all_columns_vec.begin(), all_columns_vec.end()));
 
                 for (const auto & dependency : all_dependencies)
                 {
@@ -874,12 +811,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 /// Recalc only skip indices and projections of columns which could be updated by TTL.
-                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true, has_dependency);
+                auto new_dependencies = metadata_snapshot->getColumnDependencies(new_updated_columns, true);
                 for (const auto & dependency : new_dependencies)
                 {
-                    if (dependency.kind == ColumnDependency::SKIP_INDEX
-                        || dependency.kind == ColumnDependency::PROJECTION
-                        || dependency.kind == ColumnDependency::STATISTIC)
+                    if (dependency.kind == ColumnDependency::SKIP_INDEX || dependency.kind == ColumnDependency::PROJECTION)
                         dependencies.insert(dependency);
                 }
             }
@@ -914,10 +849,10 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// We care about affected indices and projections because we also need to rewrite them
     /// when one of index columns updated or filtered with delete.
     /// The same about columns, that are needed for calculation of TTL expressions.
-    NameSet changed_columns;
-    NameSet unchanged_columns;
     if (!dependencies.empty())
     {
+        NameSet changed_columns;
+        NameSet unchanged_columns;
         for (const auto & dependency : dependencies)
         {
             if (dependency.isReadOnly())
@@ -968,101 +903,39 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
-    for (const auto & index : metadata_snapshot->getSecondaryIndices())
-    {
-        if (!source.hasSecondaryIndex(index.name))
-            continue;
-
-        if (need_rebuild_indexes)
-        {
-            materialized_indices.insert(index.name);
-            continue;
-        }
-
-        const auto & index_cols = index.expression->getRequiredColumns();
-        bool changed = std::any_of(
-            index_cols.begin(),
-            index_cols.end(),
-            [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
-
-        if (changed)
-            materialized_indices.insert(index.name);
-    }
-
-    for (const auto & projection : metadata_snapshot->getProjections())
-    {
-        if (!source.hasProjection(projection.name))
-            continue;
-
-        if (need_rebuild_projections)
-        {
-            materialized_projections.insert(projection.name);
-            continue;
-        }
-
-        const auto & projection_cols = projection.required_columns;
-        bool changed = std::any_of(
-            projection_cols.begin(),
-            projection_cols.end(),
-            [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
-
-        if (changed)
-            materialized_projections.insert(projection.name);
-    }
-
-    /// Stages might be empty when we materialize skip indices or projections which don't add any
-    /// column dependencies.
-    if (stages.empty())
-        stages.emplace_back(context);
-
     is_prepared = true;
+
     prepareMutationStages(stages, dry_run);
 }
 
 void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context);
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects().withVirtuals();
-
-    auto all_columns = storage_snapshot->getColumnsByNames(options, available_columns);
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects();
+    auto all_columns = storage_snapshot->getColumns(options);
 
     /// Add _row_exists column if it is present in the part
-    if (source.hasLightweightDeleteMask() || deleted_mask_updated)
-        all_columns.push_back(LightweightDeleteDescription::FILTER_COLUMN);
+    if (source.hasLightweightDeleteMask())
+        all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
 
-    bool has_filters = false;
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
     {
-        if (settings.return_all_columns || !prepared_stages[i].filters.empty())
+        if (return_all_columns || !prepared_stages[i].filters.empty())
         {
             for (const auto & column : all_columns)
-            {
-                if (column.name == LightweightDeleteDescription::FILTER_COLUMN.name && !deleted_mask_updated)
-                    continue;
-
                 prepared_stages[i].output_columns.insert(column.name);
-            }
-
-            has_filters = true;
-            settings.apply_deleted_mask = true;
+            continue;
         }
-        else
-        {
-            if (i > 0)
-                prepared_stages[i].output_columns = prepared_stages[i - 1].output_columns;
 
-            /// Make sure that all updated columns are included into output_columns set.
-            /// This is important for a "hidden" column like _row_exists gets because it is a virtual column
-            /// and so it is not in the list of AllPhysical columns.
-            for (const auto & [column_name, _] : prepared_stages[i].column_to_updated)
-            {
-                if (column_name == LightweightDeleteDescription::FILTER_COLUMN.name && has_filters && !deleted_mask_updated)
-                    continue;
+        if (i > 0)
+            prepared_stages[i].output_columns = prepared_stages[i - 1].output_columns;
 
-                prepared_stages[i].output_columns.insert(column_name);
-            }
-        }
+        /// Make sure that all updated columns are included into output_columns set.
+        /// This is important for a "hidden" column like _row_exists gets because it is a virtual column
+        /// and so it is not in the list of AllPhysical columns.
+        for (const auto & kv : prepared_stages[i].column_to_updated)
+            prepared_stages[i].output_columns.insert(kv.first);
     }
 
     /// Now, calculate `expressions_chain` for each stage except the first.
@@ -1080,7 +953,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             all_asts->children.push_back(kv.second);
 
         /// Add all output columns to prevent ExpressionAnalyzer from deleting them from source columns.
-        for (const auto & column : stage.output_columns)
+        for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
         /// Executing scalar subquery on that stage can lead to deadlock
@@ -1090,19 +963,18 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             all_asts, all_columns, source.getStorage(), storage_snapshot,
             false, true, execute_scalar_subqueries);
 
+        if (execute_scalar_subqueries && context->hasQueryContext())
+            for (const auto & it : syntax_result->getScalars())
+                context->getQueryContext()->addScalar(it.first, it.second);
+
         stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, syntax_result, context);
 
         ExpressionActionsChain & actions_chain = stage.expressions_chain;
 
-        if (!stage.filters.empty())
+        for (const auto & ast : stage.filters)
         {
-            auto ast = stage.filters.front();
-            if (stage.filters.size() > 1)
-                ast = makeASTForLogicalAnd(std::move(stage.filters));
-
             if (!actions_chain.steps.empty())
                 actions_chain.addStep();
-
             stage.analyzer->appendExpression(actions_chain, ast, dry_run);
             stage.filter_column_names.push_back(ast->getColumnName());
         }
@@ -1137,6 +1009,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             actions_chain.getLastStep().addRequiredOutput(name);
 
         actions_chain.getLastActions();
+
         actions_chain.finalize();
 
         if (i)
@@ -1169,7 +1042,8 @@ struct VirtualColumns
         {
             if (columns_to_read[i] == LightweightDeleteDescription::FILTER_COLUMN.name)
             {
-                if (!part->getColumns().contains(LightweightDeleteDescription::FILTER_COLUMN.name))
+                LoadedMergeTreeDataPartInfoForReader part_info_reader(part);
+                if (!part_info_reader.getColumns().contains(LightweightDeleteDescription::FILTER_COLUMN.name))
                 {
                     ColumnWithTypeAndName mask_column;
                     mask_column.type = LightweightDeleteDescription::FILTER_COLUMN.type;
@@ -1187,18 +1061,6 @@ struct VirtualColumns
                 column.name = std::move(columns_to_read[i]);
 
                 virtuals.emplace_back(ColumnAndPosition{.column = std::move(column), .position = i});
-            }
-            else if (columns_to_read[i] == BlockNumberColumn::name)
-            {
-                if (!part->getColumns().contains(BlockNumberColumn::name))
-                {
-                    ColumnWithTypeAndName block_number_column;
-                    block_number_column.type = BlockNumberColumn::type;
-                    block_number_column.column = block_number_column.type->createColumnConst(0, part->info.min_block);
-                    block_number_column.name = std::move(columns_to_read[i]);
-
-                    virtuals.emplace_back(ColumnAndPosition{.column = std::move(block_number_column), .position = i});
-                }
             }
         }
 
@@ -1270,6 +1132,7 @@ void MutationsInterpreter::Source::read(
         ActionsDAGPtr filter;
         if (!first_stage.filter_column_names.empty())
         {
+
             ActionsDAG::NodeRawConstPtrs nodes(num_filters);
             for (size_t i = 0; i < num_filters; ++i)
                 nodes[i] = &steps[i]->actions()->findInOutputs(names[i]);
@@ -1279,11 +1142,8 @@ void MutationsInterpreter::Source::read(
 
         VirtualColumns virtual_columns(std::move(required_columns), part);
 
-        createReadFromPartStep(
-            MergeTreeSequentialSourceType::Mutation,
-            plan, *data, storage_snapshot, part,
-            std::move(virtual_columns.columns_to_read),
-            apply_deleted_mask_, filter, context_,
+        createMergeTreeSequentialSource(
+            plan, *data, storage_snapshot, part, std::move(virtual_columns.columns_to_read), apply_deleted_mask_, filter, context_,
             &Poco::Logger::get("MutationsInterpreter"));
 
         virtual_columns.addVirtuals(plan);
@@ -1336,7 +1196,7 @@ void MutationsInterpreter::Source::read(
 
 void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
 {
-    source.read(first_stage, plan, metadata_snapshot, context, settings.apply_deleted_mask, settings.can_execute);
+    source.read(first_stage, plan, metadata_snapshot, context, apply_deleted_mask, can_execute);
     addCreatingSetsStep(plan, first_stage.analyzer->getPreparedSets(), context);
 }
 
@@ -1349,7 +1209,6 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             const auto & step = stage.expressions_chain.steps[i];
             if (step->actions()->hasArrayJoin())
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "arrayJoin is not allowed in mutations");
-
             if (i < stage.filter_column_names.size())
             {
                 /// Execute DELETEs.
@@ -1382,13 +1241,15 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
 
 void MutationsInterpreter::validate()
 {
+    const Settings & settings = context->getSettingsRef();
+
     /// For Replicated* storages mutations cannot employ non-deterministic functions
     /// because that produces inconsistencies between replicas
-    if (startsWith(source.getStorage()->getName(), "Replicated") && !context->getSettingsRef().allow_nondeterministic_mutations)
+    if (startsWith(source.getStorage()->getName(), "Replicated") && !settings.allow_nondeterministic_mutations)
     {
         for (const auto & command : commands)
         {
-            const auto nondeterministic_func_data = findFirstNonDeterministicFunction(command, context);
+            const auto nondeterministic_func_data = findFirstNonDeterministicFunctionName(command, context);
             if (nondeterministic_func_data.subquery)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER UPDATE/ALTER DELETE statement with subquery may be nondeterministic, "
                                                            "see allow_nondeterministic_mutations setting");
@@ -1401,14 +1262,13 @@ void MutationsInterpreter::validate()
     }
 
     QueryPlan plan;
-
     initQueryPlan(stages.front(), plan);
     auto pipeline = addStreamsForLaterStages(stages, plan);
 }
 
 QueryPipelineBuilder MutationsInterpreter::execute()
 {
-    if (!settings.can_execute)
+    if (!can_execute)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot execute mutations interpreter because can_execute flag set to false");
 
     QueryPlan plan;
@@ -1434,7 +1294,7 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 Block MutationsInterpreter::getUpdatedHeader() const
 {
     // If it's an index/projection materialization, we don't write any data columns, thus empty header is used
-    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_STATISTIC_PROJECTION ? Block{} : *updated_header;
+    return mutation_kind.mutation_kind == MutationKind::MUTATE_INDEX_PROJECTION ? Block{} : *updated_header;
 }
 
 const ColumnDependencies & MutationsInterpreter::getColumnDependencies() const

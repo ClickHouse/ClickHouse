@@ -1,20 +1,32 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
--- Start with empty query cache QC
-SYSTEM DROP QUERY CACHE;
+SET allow_experimental_query_cache = true;
 
-SELECT 1 SETTINGS use_query_cache = true;
+-- Start with empty query cache QC and query log
+SYSTEM DROP QUERY CACHE;
+DROP TABLE system.query_log SYNC;
+
+-- Run a query with QC on. The first execution is a QC miss.
+SELECT '---';
 SELECT 1 SETTINGS use_query_cache = true;
 
 SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses']
 FROM system.query_log
 WHERE type = 'QueryFinish'
-  AND current_database = currentDatabase()
-  AND query = 'SELECT 1 SETTINGS use_query_cache = true;'
-ORDER BY event_time_microseconds;
+  AND query = 'SELECT 1 SETTINGS use_query_cache = true;';
 
--- (The 1st execution was a cache miss, the 2nd execution was a cache hit)
+
+-- Run previous query again with query cache on
+SELECT '---';
+SELECT 1 SETTINGS use_query_cache = true;
+
+DROP TABLE system.query_log SYNC;
+SYSTEM FLUSH LOGS;
+SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses']
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND query = 'SELECT 1 SETTINGS use_query_cache = true;';
 
 SYSTEM DROP QUERY CACHE;

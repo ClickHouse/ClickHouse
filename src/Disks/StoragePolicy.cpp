@@ -7,9 +7,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
-#include <Common/logger_useful.h>
 
-#include <algorithm>
 #include <set>
 
 
@@ -72,8 +70,7 @@ StoragePolicy::StoragePolicy(
             /* max_data_part_size_= */ 0,
             /* are_merges_avoided_= */ false,
             /* perform_ttl_move_on_insert_= */ true,
-            VolumeLoadBalancing::ROUND_ROBIN,
-            /* least_used_ttl_ms_= */ 60'000);
+            VolumeLoadBalancing::ROUND_ROBIN);
         volumes.emplace_back(std::move(default_volume));
     }
 
@@ -211,17 +208,10 @@ DiskPtr StoragePolicy::tryGetDiskByName(const String & disk_name) const
 
 UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 {
-    std::optional<UInt64> res;
+    UInt64 res = 0;
     for (const auto & volume : volumes)
-    {
-        auto volume_unreserved_space = volume->getMaxUnreservedFreeSpace();
-        if (!volume_unreserved_space)
-            return -1ULL; /// There is at least one unlimited disk.
-
-        if (!res || *volume_unreserved_space > *res)
-            res = volume_unreserved_space;
-    }
-    return res.value_or(-1ULL);
+        res = std::max(res, volume->getMaxUnreservedFreeSpace());
+    return res;
 }
 
 
@@ -257,37 +247,22 @@ ReservationPtr StoragePolicy::reserveAndCheck(UInt64 bytes) const
 ReservationPtr StoragePolicy::makeEmptyReservationOnLargestDisk() const
 {
     UInt64 max_space = 0;
-    bool found_bottomless_disk = false;
     DiskPtr max_disk;
-
     for (const auto & volume : volumes)
     {
         for (const auto & disk : volume->getDisks())
         {
-            auto available_space = disk->getAvailableSpace();
-
-            if (!available_space)
+            auto avail_space = disk->getAvailableSpace();
+            if (avail_space > max_space)
             {
-                max_disk = disk;
-                found_bottomless_disk = true;
-                break;
-            }
-
-            if (*available_space > max_space)
-            {
-                max_space = *available_space;
+                max_space = avail_space;
                 max_disk = disk;
             }
         }
-
-        if (found_bottomless_disk)
-            break;
     }
-
     if (!max_disk)
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "There is no space on any disk in storage policy: {}. "
             "It's likely all disks are broken", name);
-
     auto reservation = max_disk->reserve(0);
     if (!reservation)
     {
@@ -326,11 +301,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
     for (const auto & volume : getVolumes())
     {
         if (!new_volume_names.contains(volume->getName()))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "New storage policy {} shall contain volumes of the old storage policy {}",
-                backQuote(new_storage_policy->getName()),
-                backQuote(name));
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "New storage policy {} shall contain volumes of old one", backQuote(name));
 
         std::unordered_set<String> new_disk_names;
         for (const auto & disk : new_storage_policy->getVolumeByName(volume->getName())->getDisks())
@@ -338,11 +309,7 @@ void StoragePolicy::checkCompatibleWith(const StoragePolicyPtr & new_storage_pol
 
         for (const auto & disk : volume->getDisks())
             if (!new_disk_names.contains(disk->getName()))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "New storage policy {} shall contain disks of the old storage policy {}",
-                    backQuote(new_storage_policy->getName()),
-                    backQuote(name));
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "New storage policy {} shall contain disks of old one", backQuote(name));
     }
 }
 
@@ -430,11 +397,10 @@ StoragePolicySelector::StoragePolicySelector(
 }
 
 
-StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks, Strings & new_disks) const
+StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks) const
 {
     std::shared_ptr<StoragePolicySelector> result = std::make_shared<StoragePolicySelector>(config, config_prefix, disks);
-    std::set<String> disks_before_reload;
-    std::set<String> disks_after_reload;
+
     /// First pass, check.
     for (const auto & [name, policy] : policies)
     {
@@ -445,8 +411,6 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage policy {} is missing in new configuration", backQuote(name));
 
         policy->checkCompatibleWith(result->policies[name]);
-        for (const auto & disk : policy->getDisks())
-            disks_before_reload.insert(disk->getName());
     }
 
     /// Second pass, load.
@@ -457,17 +421,7 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
             result->policies[name] = policy;
         else
             result->policies[name] = std::make_shared<StoragePolicy>(policy, config, config_prefix + "." + name, disks);
-
-        for (const auto & disk : result->policies[name]->getDisks())
-            disks_after_reload.insert(disk->getName());
     }
-
-    std::set_difference(
-        disks_after_reload.begin(),
-        disks_after_reload.end(),
-        disks_before_reload.begin(),
-        disks_before_reload.end(),
-        std::back_inserter(new_disks));
 
     return result;
 }

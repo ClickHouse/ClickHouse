@@ -29,9 +29,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
-#include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
 
 
 namespace DB
@@ -58,7 +56,6 @@ struct RangeHashedDictionaryConfiguration
     bool convert_null_range_bound_to_open;
     RangeHashedDictionaryLookupStrategy lookup_strategy;
     bool require_nonempty;
-    bool use_async_executor = false;
 };
 
 template <DictionaryKeyType dictionary_key_type>
@@ -227,7 +224,9 @@ private:
     struct KeyAttribute final
     {
         RangeStorageTypeContainer<KeyAttributeContainerType> container;
+
         RangeStorageTypeContainer<InvalidIntervalsContainerType> invalid_intervals_container;
+
     };
 
     void createAttributes();
@@ -656,7 +655,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
     if (!source_ptr->hasUpdateField())
     {
         QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        PullingPipelineExecutor executor(pipeline);
         Block block;
 
         while (executor.pull(block))
@@ -683,7 +682,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
-            "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
+            "{}: dictionary source is empty and 'require_nonempty' property is set.");
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -727,7 +726,7 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
 
-    bytes_allocated += string_arena.allocatedBytes();
+    bytes_allocated += string_arena.size();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -920,17 +919,11 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        update_field_loaded_block.reset();
-        Block block;
 
+        PullingPipelineExecutor executor(pipeline);
+        Block block;
         while (executor.pull(block))
         {
-            if (!block.rows())
-                continue;
-
-            convertToFullIfSparse(block);
-
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
                 update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
@@ -1234,7 +1227,7 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
     DictionarySourceCoordinator::ReadColumnsFunc read_keys_func = [dictionary_copy = dictionary](
         const Strings & attribute_names,
         const DataTypes & result_types,
-        const Columns & key_columns_,
+        const Columns & key_columns,
         const DataTypes,
         const Columns &)
     {
@@ -1245,15 +1238,15 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
         Columns result;
         result.reserve(attribute_names_size);
 
-        const ColumnPtr & key_column = key_columns_.back();
+        const ColumnPtr & key_column = key_columns.back();
 
-        const auto * key_to_index_column_ = typeid_cast<const ColumnUInt64 *>(key_column.get());
-        if (!key_to_index_column_)
+        const auto * key_to_index_column = typeid_cast<const ColumnUInt64 *>(key_column.get());
+        if (!key_to_index_column)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Dictionary {} read expect indexes column with type UInt64",
                 range_dictionary_ptr->getFullName());
 
-        const auto & data = key_to_index_column_->getData();
+        const auto & data = key_to_index_column->getData();
 
         for (size_t i = 0; i < attribute_names_size; ++i)
         {

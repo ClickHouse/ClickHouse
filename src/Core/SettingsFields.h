@@ -6,11 +6,9 @@
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <boost/range/adaptor/map.hpp>
-#include <cctz/time_zone.h>
 #include <chrono>
 #include <unordered_map>
 #include <string_view>
-#include <magic_enum.hpp>
 
 
 namespace DB
@@ -247,12 +245,6 @@ struct SettingFieldString
     void readBinary(ReadBuffer & in);
 };
 
-#ifdef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-#define NORETURN [[noreturn]]
-#else
-#define NORETURN
-#endif
-
 struct SettingFieldMap
 {
 public:
@@ -269,14 +261,12 @@ public:
     operator const Map &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
 
-    NORETURN String toString() const;
-    NORETURN void parseFromString(const String & str);
+    String toString() const;
+    void parseFromString(const String & str);
 
-    NORETURN void writeBinary(WriteBuffer & out) const;
-    NORETURN void readBinary(ReadBuffer & in);
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
 };
-
-#undef NORETURN
 
 struct SettingFieldChar
 {
@@ -381,26 +371,19 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
     *this = Traits::fromString(SettingFieldEnumHelpers::readBinary(in));
 }
 
-template <typename Type>
-constexpr auto getEnumValues()
-{
-    std::array<std::pair<std::string_view, Type>, magic_enum::enum_count<Type>()> enum_values{};
-    size_t index = 0;
-    for (auto value : magic_enum::enum_values<Type>())
-        enum_values[index++] = std::pair{magic_enum::enum_name(value), value};
-    return enum_values;
-}
-
 /// NOLINTNEXTLINE
 #define DECLARE_SETTING_ENUM(ENUM_TYPE) \
     DECLARE_SETTING_ENUM_WITH_RENAME(ENUM_TYPE, ENUM_TYPE)
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTING_ENUM(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
+    IMPLEMENT_SETTING_ENUM_WITH_RENAME(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)
 
 /// NOLINTNEXTLINE
 #define DECLARE_SETTING_ENUM_WITH_RENAME(NEW_NAME, ENUM_TYPE) \
     struct SettingField##NEW_NAME##Traits \
     { \
         using EnumType = ENUM_TYPE; \
-        using EnumValuePairs = std::pair<const char *, EnumType>[]; \
         static const String & toString(EnumType value); \
         static EnumType fromString(std::string_view str); \
     }; \
@@ -408,42 +391,37 @@ constexpr auto getEnumValues()
     using SettingField##NEW_NAME = SettingFieldEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
 
 /// NOLINTNEXTLINE
-#define IMPLEMENT_SETTING_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
-    IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, EnumValuePairs, __VA_ARGS__)
-
-/// NOLINTNEXTLINE
-#define IMPLEMENT_SETTING_AUTO_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME) \
-    IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, , getEnumValues<EnumType>())
-
-/// NOLINTNEXTLINE
-#define IMPLEMENT_SETTING_ENUM_IMPL(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, PAIRS_TYPE, ...) \
+#define IMPLEMENT_SETTING_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
     const String & SettingField##NEW_NAME##Traits::toString(typename SettingField##NEW_NAME::EnumType value) \
     { \
         static const std::unordered_map<EnumType, String> map = [] { \
             std::unordered_map<EnumType, String> res; \
-            for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
+            constexpr std::pair<const char *, EnumType> pairs[] = __VA_ARGS__; \
+            for (const auto & [name, val] : pairs) \
                 res.emplace(val, name); \
             return res; \
         }(); \
         auto it = map.find(value); \
         if (it != map.end()) \
             return it->second; \
-        throw Exception(ERROR_CODE_FOR_UNEXPECTED_NAME, \
-            "Unexpected value of " #NEW_NAME ":{}", std::to_string(std::underlying_type_t<EnumType>(value))); \
+        throw Exception::createDeprecated( \
+            "Unexpected value of " #NEW_NAME ":" + std::to_string(std::underlying_type<EnumType>::type(value)), \
+            ERROR_CODE_FOR_UNEXPECTED_NAME); \
     } \
     \
     typename SettingField##NEW_NAME::EnumType SettingField##NEW_NAME##Traits::fromString(std::string_view str) \
     { \
         static const std::unordered_map<std::string_view, EnumType> map = [] { \
             std::unordered_map<std::string_view, EnumType> res; \
-            for (const auto & [name, val] : PAIRS_TYPE __VA_ARGS__) \
+            constexpr std::pair<const char *, EnumType> pairs[] = __VA_ARGS__; \
+            for (const auto & [name, val] : pairs) \
                 res.emplace(name, val); \
             return res; \
         }(); \
         auto it = map.find(str); \
         if (it != map.end()) \
             return it->second; \
-        String msg; \
+        String msg = "Unexpected value of " #NEW_NAME ": '" + String{str} + "'. Must be one of ["; \
         bool need_comma = false; \
         for (auto & name : map | boost::adaptors::map_keys) \
         { \
@@ -451,7 +429,8 @@ constexpr auto getEnumValues()
                 msg += ", "; \
             msg += "'" + String{name} + "'"; \
         } \
-        throw Exception(ERROR_CODE_FOR_UNEXPECTED_NAME, "Unexpected value of " #NEW_NAME ": '{}'. Must be one of [{}]", String{str}, msg); \
+        msg += "]"; \
+        throw Exception::createDeprecated(msg, ERROR_CODE_FOR_UNEXPECTED_NAME); \
     }
 
 // Mostly like SettingFieldEnum, but can have multiple enum values (or none) set at once.
@@ -459,36 +438,37 @@ template <typename Enum, typename Traits>
 struct SettingFieldMultiEnum
 {
     using EnumType = Enum;
-    using ValueType = std::vector<Enum>;
+    using ValueType = MultiEnum<Enum>;
+    using StorageType = typename ValueType::StorageType;
 
     ValueType value;
     bool changed = false;
 
     explicit SettingFieldMultiEnum(ValueType v = ValueType{}) : value{v} {}
     explicit SettingFieldMultiEnum(EnumType e) : value{e} {}
+    explicit SettingFieldMultiEnum(StorageType s) : value(s) {}
     explicit SettingFieldMultiEnum(const Field & f) : value(parseValueFromString(f.safeGet<const String &>())) {}
 
     operator ValueType() const { return value; } /// NOLINT
+    explicit operator StorageType() const { return value.getValue(); }
     explicit operator Field() const { return toString(); }
-    operator MultiEnum<EnumType>() const /// NOLINT
-    {
-        MultiEnum<EnumType> res;
-        for (const auto & v : value)
-            res.set(v);
-        return res;
-    }
 
-    SettingFieldMultiEnum & operator= (ValueType x) { changed = true; value = x; return *this; }
+    SettingFieldMultiEnum & operator= (StorageType x) { changed = x != value.getValue(); value.setValue(x); return *this; }
+    SettingFieldMultiEnum & operator= (ValueType x) { changed = !(x == value); value = x; return *this; }
     SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<const String &>()); return *this; }
 
     String toString() const
     {
         static const String separator = ",";
         String result;
-        for (const auto & v : value)
+        for (StorageType i = 0; i < Traits::getEnumSize(); ++i)
         {
-            result += Traits::toString(v);
-            result += separator;
+            const auto v = static_cast<Enum>(i);
+            if (value.isSet(v))
+            {
+                result += Traits::toString(v);
+                result += separator;
+            }
         }
 
         if (!result.empty())
@@ -507,7 +487,6 @@ private:
         static const String separators=", ";
 
         ValueType result;
-        std::unordered_set<EnumType> values_set;
 
         //to avoid allocating memory on substr()
         const std::string_view str_view{str};
@@ -519,12 +498,7 @@ private:
             if (value_end == std::string::npos)
                 value_end = str_view.size();
 
-            auto value = Traits::fromString(str_view.substr(value_start, value_end - value_start));
-            /// Deduplicate values
-            auto [_, inserted] = values_set.emplace(value);
-            if (inserted)
-                result.push_back(value);
-
+            result.set(Traits::fromString(str_view.substr(value_start, value_end - value_start)));
             value_start = str_view.find_first_not_of(separators, value_end);
         }
 
@@ -553,14 +527,12 @@ void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
     struct SettingField##NEW_NAME##Traits \
     { \
         using EnumType = ENUM_TYPE; \
-        using EnumValuePairs = std::pair<const char *, EnumType>[]; \
         static size_t getEnumSize(); \
         static const String & toString(EnumType value); \
         static EnumType fromString(std::string_view str); \
     }; \
     \
-    using SettingField##NEW_NAME = SettingFieldMultiEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>; \
-    using NEW_NAME##List = typename SettingField##NEW_NAME::ValueType;
+    using SettingField##NEW_NAME = SettingFieldMultiEnum<ENUM_TYPE, SettingField##NEW_NAME##Traits>;
 
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTING_MULTI_ENUM(ENUM_TYPE, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
@@ -568,53 +540,10 @@ void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
 
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTING_MULTI_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, ...) \
-    IMPLEMENT_SETTING_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)\
+    IMPLEMENT_SETTING_ENUM_WITH_RENAME(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME, __VA_ARGS__)\
     size_t SettingField##NEW_NAME##Traits::getEnumSize() {\
         return std::initializer_list<std::pair<const char*, NEW_NAME>> __VA_ARGS__ .size();\
     }
-
-/// NOLINTNEXTLINE
-#define IMPLEMENT_SETTING_MULTI_AUTO_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME) \
-    IMPLEMENT_SETTING_AUTO_ENUM(NEW_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME)\
-    size_t SettingField##NEW_NAME##Traits::getEnumSize() {\
-        return getEnumValues<EnumType>().size();\
-    }
-
-/// Setting field for specifying user-defined timezone. It is basically a string, but it needs validation.
-struct SettingFieldTimezone
-{
-    String value;
-    bool changed = false;
-
-    explicit SettingFieldTimezone(std::string_view str = {}) { validateTimezone(std::string(str)); value = str; }
-    explicit SettingFieldTimezone(const String & str) { validateTimezone(str); value = str; }
-    explicit SettingFieldTimezone(String && str) { validateTimezone(str); value = std::move(str); }
-    explicit SettingFieldTimezone(const char * str) { validateTimezone(str); value = str; }
-    explicit SettingFieldTimezone(const Field & f) { const String & str = f.safeGet<const String &>(); validateTimezone(str); value = str; }
-
-    SettingFieldTimezone & operator =(std::string_view str) { validateTimezone(std::string(str)); value = str; changed = true; return *this; }
-    SettingFieldTimezone & operator =(const String & str) { *this = std::string_view{str}; return *this; }
-    SettingFieldTimezone & operator =(String && str) { validateTimezone(str); value = std::move(str); changed = true; return *this; }
-    SettingFieldTimezone & operator =(const char * str) { *this = std::string_view{str}; return *this; }
-    SettingFieldTimezone & operator =(const Field & f) { *this = f.safeGet<const String &>(); return *this; }
-
-    operator const String &() const { return value; } /// NOLINT
-    explicit operator Field() const { return value; }
-
-    const String & toString() const { return value; }
-    void parseFromString(const String & str) { *this = str; }
-
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
-
-private:
-    void validateTimezone(const std::string & tz_str)
-    {
-        cctz::time_zone validated_tz;
-        if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
-    }
-};
 
 /// Can keep a value of any type. Used for user-defined settings.
 struct SettingFieldCustom

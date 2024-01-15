@@ -4,7 +4,7 @@ create table t (i int, j int, k int, projection p (select * order by j)) engine 
 
 insert into t select number, number, number from numbers(10);
 
-set optimize_use_projections = 1, max_rows_to_read = 3;
+set allow_experimental_projection_optimization = 1, max_rows_to_read = 3;
 
 select * from t where i < 5 and j in (1, 2);
 

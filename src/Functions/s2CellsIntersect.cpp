@@ -100,12 +100,10 @@ public:
             const UInt64 id_second = data_id_second[row];
 
             auto first_cell = S2CellId(id_first);
-            if (!first_cell.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "First cell (id {}) is not valid in function {}", id_first, getName());
-
             auto second_cell = S2CellId(id_second);
-            if (!second_cell.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second cell (id {}) is not valid in function {}", id_second, getName());
+
+            if (!first_cell.is_valid() || !second_cell.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cell is not valid");
 
             dst_data.emplace_back(S2CellId(id_first).intersects(S2CellId(id_second)));
         }

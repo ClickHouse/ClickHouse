@@ -17,7 +17,7 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and pe
 
 **Engine Parameters**
 
-- `db_path` — Path to a file with SQLite database.
+-   `db_path` — Path to a file with SQLite database.
 
 ## Data Types Support {#data_types-support}
 
@@ -30,7 +30,7 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and pe
 
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
-SQLite stores the entire database (definitions, tables, indices, and the data itself) as a single cross-platform file on a host machine. During writing SQLite locks the entire database file, therefore write operations are performed sequentially. Read operations can be multi-tasked.
+SQLite stores the entire database (definitions, tables, indices, and the data itself) as a single cross-platform file on a host machine. During writing SQLite locks the entire database file, therefore write operations are performed sequentially. Read operations can be multitasked.
 SQLite does not require service management (such as startup scripts) or access control based on `GRANT` and passwords. Access control is handled by means of file-system permissions given to the database file itself.
 
 ## Usage Example {#usage-example}
