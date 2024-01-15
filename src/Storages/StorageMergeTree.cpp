@@ -2076,32 +2076,13 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
         if (is_partition_exp_different)
         {
-            auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
-            IMergeTreeDataPart::MinMaxIndex min_max_index;
-
-            min_max_index.load(src_data, metadata_manager);
-
-            MergeTreePartition new_partition;
-
-            new_partition.create(my_metadata_snapshot, min_max_index.getBlock(src_data), 0u, getContext());
-
-            /// This will generate unique name in scope of current server process.
-            Int64 temp_index = insert_increment.get();
-
-            partition_id = new_partition.getID(*this);
-
-            MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
-
             auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
                 src_part,
                 TMP_PREFIX,
-                dst_part_info,
                 my_metadata_snapshot,
-                new_partition,
-                min_max_index,
                 clone_params,
-                local_context->getReadSettings(),
-                local_context->getWriteSettings());
+                local_context,
+                insert_increment.get());
 
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));

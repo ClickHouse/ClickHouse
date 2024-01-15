@@ -7093,26 +7093,39 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
     const MergeTreeData::DataPartPtr & src_part,
     const String & tmp_part_prefix,
-    const MergeTreePartInfo & dst_part_info,
-    const StorageMetadataPtr & metadata_snapshot,
-    const MergeTreePartition & new_partition,
-    const IMergeTreeDataPart::MinMaxIndex & new_min_max_index,
-    const IDataPartStorage::ClonePartParams & params,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings)
+    const StorageMetadataPtr & my_metadata_snapshot,
+    const IDataPartStorage::ClonePartParams & clone_params,
+    ContextPtr local_context,
+    Int64 temp_index
+)
 {
+    const auto & src_data = src_part->storage;
+
+    auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
+    IMergeTreeDataPart::MinMaxIndex min_max_index;
+
+    min_max_index.load(src_data, metadata_manager);
+
+    MergeTreePartition new_partition;
+
+    new_partition.create(my_metadata_snapshot, min_max_index.getBlock(src_data), 0u, getContext());
+
+    auto partition_id = new_partition.getID(*this);
+
+    MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+
     return MergeTreeDataPartCloner::cloneWithDistinctPartitionExpression(
         this,
         src_part,
-        metadata_snapshot,
+        my_metadata_snapshot,
         dst_part_info,
         tmp_part_prefix,
-        read_settings,
-        write_settings,
+        local_context->getReadSettings(),
+        local_context->getWriteSettings(),
         new_partition,
-        new_min_max_index,
+        min_max_index,
         false,
-        params);
+        clone_params);
 }
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const

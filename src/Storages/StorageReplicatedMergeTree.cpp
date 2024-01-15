@@ -2717,35 +2717,13 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
             if (part_desc->src_table_part->info.partition_id != part_desc->new_part_info.partition_id)
             {
-                auto src_part = part_desc->src_table_part;
-                const auto & src_storage = src_part->storage;
-
-                auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
-                IMergeTreeDataPart::MinMaxIndex min_max_index;
-
-                min_max_index.load(src_part->storage, metadata_manager);
-
-                MergeTreePartition new_partition;
-
-                new_partition.create(metadata_snapshot, min_max_index.getBlock(src_storage), 0u, getContext());
-
-                /// This will generate unique name in scope of current server process.
-                Int64 temp_index = insert_increment.get();
-
-                auto partition_id = new_partition.getID(*this);
-
-                MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
-
                 auto [res_part, temporary_part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
-                    src_part,
+                    part_desc->src_table_part,
                     TMP_PREFIX + "clone_",
-                    part_desc->new_part_info,
                     metadata_snapshot,
-                    new_partition,
-                    min_max_index,
                     clone_params,
-                    getContext()->getReadSettings(),
-                    getContext()->getWriteSettings());
+                    getContext(),
+                    insert_increment.get());
 
                 part_desc->res_part = std::move(res_part);
                 part_desc->temporary_part_lock = std::move(temporary_part_lock);
@@ -7996,29 +7974,13 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
             if (is_partition_exp_different)
             {
-                auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
-                IMergeTreeDataPart::MinMaxIndex min_max_index;
-
-                min_max_index.load(src_data, metadata_manager);
-
-                MergeTreePartition new_partition;
-
-                new_partition.create(metadata_snapshot, min_max_index.getBlock(src_data), 0u, getContext());
-
-                partition_id = new_partition.getID(*this);
-
-                MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
-
                 auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
                     src_part,
                     TMP_PREFIX,
-                    dst_part_info,
                     metadata_snapshot,
-                    new_partition,
-                    min_max_index,
                     clone_params,
-                    query_context->getReadSettings(),
-                    query_context->getWriteSettings());
+                    query_context,
+                    index);
 
                 dst_parts.emplace_back(dst_part);
                 dst_parts_locks.emplace_back(std::move(part_lock));
