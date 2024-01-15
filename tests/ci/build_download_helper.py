@@ -89,7 +89,7 @@ def get_gh_api(
             )
             try_auth = e.response.status_code == 404
             if (ratelimit_exceeded or try_auth) and not token_is_set:
-                logging.warning(
+                print(
                     "Received rate limit exception, setting the auth header and retry"
                 )
                 set_auth_header()
@@ -100,7 +100,7 @@ def get_gh_api(
             exc = e
 
         if try_cnt < retries:
-            logging.info("Exception '%s' while getting, retry %i", exc, try_cnt)
+            print("Exception '%s' while getting, retry %i", exc, try_cnt)
             time.sleep(sleep)
 
     raise exc

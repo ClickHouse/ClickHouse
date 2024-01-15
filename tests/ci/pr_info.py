@@ -61,11 +61,13 @@ def get_pr_for_commit(sha, ref):
             if pr["head"]["ref"] in ref:
                 return pr
             our_prs.append(pr)
-        print("Cannot find PR with required ref", ref, "returning first one")
+        print(
+            f"WARNING: Cannot find PR with required ref {ref} {sha} - returning first one"
+        )
         first_pr = our_prs[0]
         return first_pr
     except Exception as ex:
-        print("Cannot fetch PR info from commit", ex)
+        print(f"ERROR: Cannot fetch PR info from commit {ref}, {sha}, {ex}")
     return None
 
 
@@ -265,7 +267,7 @@ class PRInfo:
 
     @property
     def is_master(self) -> bool:
-        return self.number == 0 and self.base_ref == "master"
+        return self.base_ref == "master_test_for_move_out_ci_specifics_to_ci_py"
 
     def compare_pr_url(self, pr_object: dict) -> str:
         return self.compare_url(pr_object["base"]["label"], pr_object["head"]["label"])

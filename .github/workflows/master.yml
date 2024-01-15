@@ -9,6 +9,7 @@ on: # yamllint disable-line rule:truthy
   push:
     branches:
       - 'master'
+      - 'master_test_for_move_out_ci_specifics_to_ci_py'
 jobs:
   RunConfig:
     runs-on: [self-hosted, style-checker]
@@ -254,9 +255,9 @@ jobs:
       checkout_depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
       run_command: |
         cd "$GITHUB_WORKSPACE/tests/ci"
-        python3 docker_server.py --release-type head \
+        python3 docker_server.py --release-type head --no-push-images \
           --image-repo clickhouse/clickhouse-server --image-path docker/server --allow-build-reuse
-        python3 docker_server.py --release-type head \
+        python3 docker_server.py --release-type head --no-push-images \
           --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper --allow-build-reuse
 ############################################################################################
 ##################################### BUILD REPORTER #######################################

@@ -664,17 +664,22 @@ def _upload_build_artifacts(
 
     # Upload head master binaries
     static_bin_name = CI_CONFIG.build_config[build_name].static_binary_name
+    print("TEST PRINT: ", pr_info.is_master, static_bin_name)
     if pr_info.is_master and static_bin_name:
         # Full binary with debug info:
         s3_path_full = "/".join((pr_info.base_ref, static_bin_name, "clickhouse-full"))
         binary_full = Path(job_report.build_dir_for_upload) / "clickhouse"
-        url_full = s3.upload_build_file_to_s3(binary_full, s3_path_full)
+        url_full = s3.copy_file_to_local(
+            S3_BUILDS_BUCKET, binary_full, str(s3_path_full)
+        )
         print(f"::notice ::Binary static URL (with debug info): {url_full}")
 
         # Stripped binary without debug info:
         s3_path_compact = "/".join((pr_info.base_ref, static_bin_name, "clickhouse"))
         binary_compact = Path(job_report.build_dir_for_upload) / "clickhouse-stripped"
-        url_compact = s3.upload_build_file_to_s3(binary_compact, s3_path_compact)
+        url_compact = s3.copy_file_to_local(
+            S3_BUILDS_BUCKET, binary_compact, str(s3_path_compact)
+        )
         print(f"::notice ::Binary static URL (compact): {url_compact}")
 
     return log_url
@@ -863,7 +868,7 @@ def main() -> int:
     s3 = S3Helper()
     pr_info = PRInfo()
     git_runner = GitRunner(set_cwd_to_git_root=True)
-
+    print(f"TEST: {pr_info.head_ref} {pr_info.sha}]")
     ### CONFIGURE action: start
     if args.configure:
         docker_data = {}
@@ -958,15 +963,13 @@ def main() -> int:
         )
         # for release/master branches reports must be created on the same branches
         files = []
-        if pr_info.number == 0:
-            for file in reports_files:
-                if pr_info.head_ref not in file:
-                    (report_path / file).unlink()
-                else:
-                    files.append(file)
-            reports_files = files
+        for file in reports_files:
+            if pr_info.head_ref not in file:
+                (report_path / file).unlink()
+            else:
+                files.append(file)
         print(
-            f"Pre action done. Report files [{reports_files}] have been downloaded from [{path}] to [{report_path}]"
+            f"Pre action done. Report files [{files}] have been downloaded from [{path}] to [{report_path}]"
         )
     ### PRE action: end
 

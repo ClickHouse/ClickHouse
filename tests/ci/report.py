@@ -404,7 +404,7 @@ class BuildResult:
             if f"_{head_ref}_" in file.name:
                 file_path = file
                 break
-            if "_master_" in file.name:
+            if "master_test_for_move_out_ci_specifics_to_ci_py" in file.name:
                 file_path = file
                 break
         return cls.load_from_file(file_path or reports[-1])
@@ -549,7 +549,10 @@ class BuildResult:
 
     def write_json(self, directory: Union[Path, str] = REPORT_PATH) -> Path:
         path = Path(directory) / self.get_report_name(
-            self.build_name, self.pr_number or self.head_ref
+            self.build_name,
+            self.head_ref
+            if self.pr_number and self.pr_number == 58836
+            else self.pr_number,
         )
         path.write_text(
             json.dumps(

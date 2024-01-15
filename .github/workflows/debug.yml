@@ -7,7 +7,6 @@ name: Debug
       # 22.1 and 22.10
       - '2[1-9].[1-9][0-9]'
       - '2[1-9].[1-9]'
-  pull_request_review:
   workflow_dispatch:
   workflow_call:
 
