@@ -1072,6 +1072,7 @@ void Aggregator::executeImpl(
 
 template <typename Method>
 void NO_INLINE Aggregator::executeImpl(
+    AggregatedDataVariants & result,
     Method & method,
     Arena * aggregates_pool,
     size_t row_begin,
@@ -1089,13 +1090,13 @@ void NO_INLINE Aggregator::executeImpl(
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, reinterpret_cast<UInt64>(&result));
         executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, reinterpret_cast<UInt64>(&result));
         executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
     }
 }
@@ -1106,7 +1107,6 @@ void NO_INLINE Aggregator::executeImpl(
   */
 template <typename Method, typename State>
 void NO_INLINE Aggregator::executeImpl(
-    AggregatedDataVariants & result,
     Method & method,
     State & state,
     Arena * aggregates_pool,
@@ -2947,7 +2947,6 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
 template <bool no_more_keys, typename State, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImplCase(
     Arena * aggregates_pool,
-    AggregatedDataVariants & result,
     State & state,
     Table & data,
     AggregateDataPtr overflow_row,
@@ -3045,23 +3044,23 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, reinterpret_cast<UInt64>(&result));
 
         if (!no_more_keys)
-            mergeStreamsImplCase<false>(aggregates_pool, result, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
+            mergeStreamsImplCase<false>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
         else
-            mergeStreamsImplCase<true>(aggregates_pool, result, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
+            mergeStreamsImplCase<true>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
 
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, reinterpret_cast<UInt64>(&result));
 
         if (!no_more_keys)
-            mergeStreamsImplCase<false>(aggregates_pool, result, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
+            mergeStreamsImplCase<false>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
         else
-            mergeStreamsImplCase<true>(aggregates_pool, result, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
+            mergeStreamsImplCase<true>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
     }
 }
 

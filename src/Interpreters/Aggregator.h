@@ -619,6 +619,7 @@ struct AggregationMethodAdaptive
     }
 
     using State = ColumnsHashing::HashMethodKeysAdaptive<typename Data::value_type, Mapped>;
+    using StateNoCache = ColumnsHashing::HashMethodKeysAdaptive<typename Data::value_type, Mapped>;
 
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = false;
@@ -1557,7 +1558,6 @@ private:
     template <bool no_more_keys, typename State, typename Table>
     void mergeStreamsImplCase(
         Arena * aggregates_pool,
-        AggregatedDataVariants & result,
         State & state,
         Table & data,
         AggregateDataPtr overflow_row,
