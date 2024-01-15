@@ -536,8 +536,7 @@ CNF CNF::toCNF(const QueryTreeNodePtr & node, ContextPtr context, size_t max_gro
     if (!cnf)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
             "Cannot convert expression '{}' to CNF, because it produces to many clauses."
-            "Size of boolean formula in CNF can be exponential of size of source formula.",
-            node->formatConvertedASTForErrorMessage());
+            "Size of boolean formula in CNF can be exponential of size of source formula.");
 
     return *cnf;
 }

@@ -55,6 +55,9 @@ struct UsefulSkipIndexes
     std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
 };
 
+struct MergeTreeDataSelectAnalysisResult;
+using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
+
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public SourceStepWithFilter
@@ -105,8 +108,6 @@ public:
         void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
 
-    using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
-
     ReadFromMergeTree(
         MergeTreeData::DataPartsVector parts_,
         std::vector<AlterConversionsPtr> alter_conversions_,
@@ -121,8 +122,9 @@ public:
         bool sample_factor_column_queried_,
         std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
         Poco::Logger * log_,
-        AnalysisResultPtr analyzed_result_ptr_,
-        bool enable_parallel_reading);
+        MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_,
+        bool enable_parallel_reading
+    );
 
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
@@ -149,17 +151,17 @@ public:
         KeyCondition key_condition;
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
-        std::optional<KeyCondition> part_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         std::optional<std::unordered_set<String>> part_values;
     };
 
-    static AnalysisResultPtr selectRangesToRead(
+    static MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions,
         const PrewhereInfoPtr & prewhere_info,
         const ActionDAGNodes & added_filter_nodes,
+        const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -171,7 +173,7 @@ public:
         Poco::Logger * log,
         std::optional<Indexes> & indexes);
 
-    AnalysisResultPtr selectRangesToRead(
+    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions) const;
 
@@ -188,16 +190,20 @@ public:
     bool isQueryWithFinal() const;
     bool isQueryWithSampling() const;
 
-    /// Returns true if the optimization is applicable (and applies it then).
+    /// Returns true if the optimisation is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePort();
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
     bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
-    void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
+    void setAnalyzedResult(MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
+
+    void resetParts(MergeTreeData::DataPartsVector parts)
+    {
+        prepared_parts = std::move(parts);
+        alter_conversions_for_parts = {};
+    }
 
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
-    const std::vector<AlterConversionsPtr> & getAlterConvertionsForParts() const { return alter_conversions_for_parts; }
-
     const MergeTreeData & getMergeTreeData() const { return data; }
     size_t getMaxBlockSize() const { return block_size.max_block_size_rows; }
     size_t getNumStreams() const { return requested_num_streams; }
@@ -206,9 +212,10 @@ public:
     void applyFilters() override;
 
 private:
-    static AnalysisResultPtr selectRangesToReadImpl(
+    static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions,
+        const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -222,8 +229,9 @@ private:
 
     int getSortDirection() const
     {
-        if (query_info.input_order_info)
-            return query_info.input_order_info->direction;
+        const InputOrderInfoPtr & order_info = query_info.getInputOrderInfo();
+        if (order_info)
+            return order_info->direction;
 
         return 1;
     }
@@ -251,7 +259,7 @@ private:
     size_t output_streams_limit = 0;
     const bool sample_factor_column_queried;
 
-    /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
+    /// Used for aggregation optimisation (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
 
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read;
@@ -284,17 +292,24 @@ private:
         ActionsDAGPtr & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
-    bool doNotMergePartsAcrossPartitionsFinal() const;
-
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts, size_t num_streams, const Names & origin_column_names, const Names & column_names, ActionsDAGPtr & out_projection);
 
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
-    AnalysisResultPtr analyzed_result_ptr;
+    MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
 
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
+};
+
+struct MergeTreeDataSelectAnalysisResult
+{
+    std::variant<std::exception_ptr, ReadFromMergeTree::AnalysisResult> result;
+
+    bool error() const;
+    size_t marks() const;
+    UInt64 rows() const;
 };
 
 }

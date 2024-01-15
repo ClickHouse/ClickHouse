@@ -2,14 +2,10 @@
 
 #include <tuple>
 #include <Core/ColumnWithTypeAndName.h>
-#include <Functions/CastOverloadResolver.h>
-
+#include <Functions/FunctionsConversion.h>
 
 namespace DB
 {
-
-class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 struct InternalCastFunctionCache
 {
@@ -19,7 +15,7 @@ private:
     std::map<std::tuple<CastType, String, String>, FunctionBasePtr> impl;
     mutable std::mutex mutex;
 public:
-    template <typename Getter>
+    template<typename Getter>
     FunctionBasePtr getOrSet(CastType cast_type, const String & from, const String & to, Getter && getter)
     {
         std::lock_guard lock{mutex};

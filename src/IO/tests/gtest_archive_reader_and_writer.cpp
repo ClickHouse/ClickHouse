@@ -102,8 +102,7 @@ TEST_P(ArchiveReaderAndWriterTest, EmptyArchive)
 {
     /// Make an archive.
     {
-        auto writer = createArchiveWriter(getPathToArchive());
-        writer->finalize();
+        createArchiveWriter(getPathToArchive());
     }
 
     /// The created archive can be found in the local filesystem.
@@ -133,9 +132,7 @@ TEST_P(ArchiveReaderAndWriterTest, SingleFileInArchive)
         {
             auto out = writer->writeFile("a.txt");
             writeString(contents, *out);
-            out->finalize();
         }
-        writer->finalize();
     }
 
     /// Read the archive.
@@ -201,14 +198,11 @@ TEST_P(ArchiveReaderAndWriterTest, TwoFilesInArchive)
         {
             auto out = writer->writeFile("a.txt");
             writeString(a_contents, *out);
-            out->finalize();
         }
         {
             auto out = writer->writeFile("b/c.txt");
             writeString(c_contents, *out);
-            out->finalize();
         }
-        writer->finalize();
     }
 
     /// Read the archive.
@@ -287,14 +281,11 @@ TEST_P(ArchiveReaderAndWriterTest, InMemory)
         {
             auto out = writer->writeFile("a.txt");
             writeString(a_contents, *out);
-            out->finalize();
         }
         {
             auto out = writer->writeFile("b.txt");
             writeString(b_contents, *out);
-            out->finalize();
         }
-        writer->finalize();
     }
 
     /// The created archive is really in memory.
@@ -344,9 +335,7 @@ TEST_P(ArchiveReaderAndWriterTest, Password)
         {
             auto out = writer->writeFile("a.txt");
             writeString(contents, *out);
-            out->finalize();
         }
-        writer->finalize();
     }
 
     /// Read the archive.

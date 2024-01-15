@@ -54,19 +54,13 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     int update_period_seconds,
     int heavy_metrics_update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
-    : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
+    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_)
+    , WithContext(global_context_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
     /// sanity check
     if (update_period_seconds == 0 || heavy_metrics_update_period_seconds == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting asynchronous_metrics_update_period_s and asynchronous_heavy_metrics_update_period_s must not be zero");
-}
-
-ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
-{
-    /// NOTE: stop() from base class is not enough, since this leads to leak on vptr
-    stop();
 }
 
 void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time)
@@ -255,9 +249,6 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
         size_t total_number_of_rows_system = 0;
         size_t total_number_of_parts_system = 0;
 
-        size_t total_primary_key_bytes_memory = 0;
-        size_t total_primary_key_bytes_memory_allocated = 0;
-
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
@@ -295,15 +286,6 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
                         total_number_of_bytes_system += bytes;
                         total_number_of_rows_system += rows;
                         total_number_of_parts_system += parts;
-                    }
-
-                    // only fetch the parts which are in active state
-                    auto all_parts = table_merge_tree->getDataPartsVectorForInternalUsage();
-
-                    for (const auto & part : all_parts)
-                    {
-                        total_primary_key_bytes_memory += part->getIndexSizeInBytes();
-                        total_primary_key_bytes_memory_allocated += part->getIndexSizeInAllocatedBytes();
                     }
                 }
 
@@ -359,14 +341,11 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
         new_values["TotalPartsOfMergeTreeTables"] = { total_number_of_parts, "Total amount of data parts in all tables of MergeTree family."
             " Numbers larger than 10 000 will negatively affect the server startup time and it may indicate unreasonable choice of the partition key." };
 
-        new_values["NumberOfTablesSystem"] = { total_number_of_tables_system, "Total number of tables in the system database on the server stored in tables of MergeTree family." };
+        new_values["NumberOfTablesSystem"] = { total_number_of_tables_system, "Total number of tables in the system database on the server stored in tables of MergeTree family."};
 
         new_values["TotalBytesOfMergeTreeTablesSystem"] = { total_number_of_bytes_system, "Total amount of bytes (compressed, including data and indices) stored in tables of MergeTree family in the system database." };
         new_values["TotalRowsOfMergeTreeTablesSystem"] = { total_number_of_rows_system, "Total amount of rows (records) stored in tables of MergeTree family in the system database." };
         new_values["TotalPartsOfMergeTreeTablesSystem"] = { total_number_of_parts_system, "Total amount of data parts in tables of MergeTree family in the system database." };
-
-        new_values["TotalPrimaryKeyBytesInMemory"] = { total_primary_key_bytes_memory, "The total amount of memory (in bytes) used by primary key values (only takes active parts into account)." };
-        new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account)." };
     }
 
 #if USE_NURAFT

@@ -61,12 +61,19 @@ RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     rustup target add aarch64-unknown-linux-musl && \
     rustup target add riscv64gc-unknown-linux-gnu
 
+# NOTE: Seems like gcc-11 is too new for ubuntu20 repository
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
     && apt-get install --yes \
         binutils-riscv64-linux-gnu \
         build-essential \
+        g++-11 \
+        gcc-11 \
+        gcc-aarch64-linux-gnu \
+        libc6 \
+        libc6-dev \
+        libc6-dev-arm64-cross \
         python3-boto3 \
         yasm \
         zstd \

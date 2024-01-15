@@ -37,15 +37,11 @@ void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr 
     std::vector<QueryCache::Cache::KeyMapped> content = query_cache->dump();
 
     const String & user_name = context->getUserName();
-    std::optional<UUID> user_id = context->getUserID();
-    std::vector<UUID> current_user_roles = context->getCurrentRoles();
 
     for (const auto & [key, query_result] : content)
     {
         /// Showing other user's queries is considered a security risk
-        const bool is_same_user_id = ((!key.user_id.has_value() && !user_id.has_value()) || (key.user_id.has_value() && user_id.has_value() && *key.user_id == *user_id));
-        const bool is_same_current_user_roles = (key.current_user_roles == current_user_roles);
-        if (!key.is_shared && (!is_same_user_id || !is_same_current_user_roles))
+        if (!key.is_shared && key.user_name != user_name)
             continue;
 
         res_columns[0]->insert(key.query_string); /// approximates the original query string
@@ -54,7 +50,7 @@ void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr 
         res_columns[3]->insert(key.is_shared);
         res_columns[4]->insert(key.is_compressed);
         res_columns[5]->insert(std::chrono::system_clock::to_time_t(key.expires_at));
-        res_columns[6]->insert(key.ast->getTreeHash(/*ignore_aliases=*/ false).low64); /// query cache considers aliases (issue #56258)
+        res_columns[6]->insert(key.ast->getTreeHash().low64);
     }
 }
 

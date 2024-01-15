@@ -8,8 +8,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/AsyncLoader.h>
-#include <Common/PoolId.h>
 #include <Common/ThreadPool_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 
@@ -77,17 +75,12 @@ private:
     Tables tables;
     Tables::iterator it;
 
-    // Tasks to wait before returning a table
-    using Tasks = std::unordered_map<String, LoadTaskPtr>;
-    Tasks tasks;
-
 protected:
     DatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && other) noexcept
     : IDatabaseTablesIterator(std::move(other.database_name))
     {
         size_t idx = std::distance(other.tables.begin(), other.it);
         std::swap(tables, other.tables);
-        std::swap(tasks, other.tasks);
         other.it = other.tables.end();
         it = tables.begin();
         std::advance(it, idx);
@@ -110,17 +103,7 @@ public:
 
     const String & name() const override { return it->first; }
 
-    const StoragePtr & table() const override
-    {
-        if (auto task = tasks.find(it->first); task != tasks.end())
-            waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), task->second);
-        return it->second;
-    }
-
-    void setLoadTasks(const Tasks & tasks_)
-    {
-        tasks = tasks_;
-    }
+    const StoragePtr & table() const override { return it->second; }
 };
 
 using DatabaseTablesIteratorPtr = std::unique_ptr<IDatabaseTablesIterator>;
@@ -139,7 +122,7 @@ class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
     IDatabase() = delete;
-    explicit IDatabase(String database_name_);
+    explicit IDatabase(String database_name_) : database_name(std::move(database_name_)) {}
 
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
@@ -168,59 +151,13 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    virtual void loadTableFromMetadata(
-        ContextMutablePtr /*local_context*/,
-        const String & /*file_path*/,
-        const QualifiedTableName & /*name*/,
-        const ASTPtr & /*ast*/,
+    virtual void loadTableFromMetadata(ContextMutablePtr /*local_context*/, const String & /*file_path*/, const QualifiedTableName & /*name*/, const ASTPtr & /*ast*/,
         LoadingStrictnessLevel /*mode*/)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
     }
 
-    /// Create a task to load table `name` after specified dependencies `startup_after` using `async_loader`.
-    /// `load_after` must contain the tasks returned by `loadTableFromMetadataAsync()` for dependent tables (see TablesLoader).
-    /// The returned task is also stored inside the database for cancellation on destruction.
-    virtual LoadTaskPtr loadTableFromMetadataAsync(
-        AsyncLoader & /*async_loader*/,
-        LoadJobSet /*load_after*/,
-        ContextMutablePtr /*local_context*/,
-        const String & /*file_path*/,
-        const QualifiedTableName & /*name*/,
-        const ASTPtr & /*ast*/,
-        LoadingStrictnessLevel /*mode*/)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-    }
-
-    /// Create a task to startup table `name` after specified dependencies `startup_after` using `async_loader`.
-    /// The returned task is also stored inside the database for cancellation on destruction.
-    [[nodiscard]] virtual LoadTaskPtr startupTableAsync(
-        AsyncLoader & /*async_loader*/,
-        LoadJobSet /*startup_after*/,
-        const QualifiedTableName & /*name*/,
-        LoadingStrictnessLevel /*mode*/)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-    }
-
-    /// Create a task to startup database after specified dependencies `startup_after` using `async_loader`.
-    /// `startup_after` must contain all the tasks returned by `startupTableAsync()` for every table (see TablesLoader).
-    /// The returned task is also stored inside the database for cancellation on destruction.
-    [[nodiscard]] virtual LoadTaskPtr startupDatabaseAsync(
-        AsyncLoader & /*async_loader*/,
-        LoadJobSet /*startup_after*/,
-        LoadingStrictnessLevel /*mode*/)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
-    }
-
-    /// Waits for specific table to be started up, i.e. task returned by `startupTableAsync()` is done
-    virtual void waitTableStarted(const String & /*name*/) const {}
-
-    /// Waits for the database to be started up, i.e. task returned by `startupDatabaseAsync()` is done
-    /// NOTE: `no_throw` wait should be used during shutdown to (1) prevent race with startup and (2) avoid exceptions if startup failed
-    virtual void waitDatabaseStarted(bool /*no_throw*/) const {}
+    virtual void startupTables(ThreadPool & /*thread_pool*/, LoadingStrictnessLevel /*mode*/) {}
 
     /// Check the existence of the table in memory (attached).
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
@@ -420,7 +357,7 @@ public:
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
 
-    virtual ~IDatabase();
+    virtual ~IDatabase() = default;
 
 protected:
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const

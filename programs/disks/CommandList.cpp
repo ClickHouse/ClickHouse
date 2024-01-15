@@ -33,7 +33,7 @@ public:
 
     void execute(
         const std::vector<String> & command_arguments,
-        std::shared_ptr<DiskSelector> & disk_selector,
+        DB::ContextMutablePtr & global_context,
         Poco::Util::LayeredConfiguration & config) override
     {
         if (command_arguments.size() != 1)
@@ -46,7 +46,7 @@ public:
 
         const String & path =  command_arguments[0];
 
-        DiskPtr disk = disk_selector->get(disk_name);
+        DiskPtr disk = global_context->getDisk(disk_name);
 
         String relative_path = validatePathAndGetAsRelative(path);
 

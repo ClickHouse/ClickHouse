@@ -30,9 +30,11 @@ public:
         S3QueueKeyWithInfo(
                 const std::string & key_,
                 std::optional<S3::ObjectInfo> info_,
-                Metadata::ProcessingNodeHolderPtr processing_holder_);
+                Metadata::ProcessingNodeHolderPtr processing_holder_,
+                FileStatusPtr file_status_);
 
         Metadata::ProcessingNodeHolderPtr processing_holder;
+        FileStatusPtr file_status;
     };
 
     class FileIterator : public IIterator
@@ -64,10 +66,8 @@ public:
         const NamesAndTypesList & requested_virtual_columns_,
         ContextPtr context_,
         const std::atomic<bool> & shutdown_called_,
-        const std::atomic<bool> & table_is_being_dropped_,
         std::shared_ptr<S3QueueLog> s3_queue_log_,
-        const StorageID & storage_id_,
-        Poco::Logger * log_);
+        const StorageID & storage_id_);
 
     ~StorageS3QueueSource() override;
 
@@ -84,7 +84,6 @@ private:
     const std::shared_ptr<StorageS3Source> internal_source;
     const NamesAndTypesList requested_virtual_columns;
     const std::atomic<bool> & shutdown_called;
-    const std::atomic<bool> & table_is_being_dropped;
     const std::shared_ptr<S3QueueLog> s3_queue_log;
     const StorageID storage_id;
 

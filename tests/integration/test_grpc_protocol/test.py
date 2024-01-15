@@ -388,6 +388,8 @@ def test_progress():
                 rows=8,
                 blocks=4,
                 allocated_bytes=1092,
+                applied_limit=True,
+                rows_before_limit=8,
             )
         ),
     ]

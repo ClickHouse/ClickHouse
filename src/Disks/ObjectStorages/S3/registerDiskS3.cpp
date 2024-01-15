@@ -91,60 +91,6 @@ private:
     }
 };
 
-std::pair<String, ObjectStorageKeysGeneratorPtr> getPrefixAndKeyGenerator(
-    String type, const S3::URI & uri, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-{
-    if (type == "s3_plain")
-        return {uri.key, createObjectStorageKeysGeneratorAsIsWithPrefix(uri.key)};
-
-    chassert(type == "s3");
-
-    bool storage_metadata_write_full_object_key = DiskObjectStorageMetadata::getWriteFullObjectKeySetting();
-    bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
-
-    if (send_metadata && storage_metadata_write_full_object_key)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Wrong configuration in {}. "
-                        "s3 does not supports feature 'send_metadata' with feature 'storage_metadata_write_full_object_key'.",
-                        config_prefix);
-
-    String object_key_compatibility_prefix = config.getString(config_prefix + ".key_compatibility_prefix", String());
-    String object_key_template = config.getString(config_prefix + ".key_template", String());
-
-    if (object_key_template.empty())
-    {
-        if (!object_key_compatibility_prefix.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Wrong configuration in {}. "
-                            "Setting 'key_compatibility_prefix' can be defined only with setting 'key_template'.",
-                            config_prefix);
-
-        return {uri.key, createObjectStorageKeysGeneratorByPrefix(uri.key)};
-    }
-
-    if (send_metadata)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Wrong configuration in {}. "
-                        "s3 does not supports send_metadata with setting 'key_template'.",
-                        config_prefix);
-
-    if (!storage_metadata_write_full_object_key)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Wrong configuration in {}. "
-                        "Feature 'storage_metadata_write_full_object_key' has to be enabled in order to use setting 'key_template'.",
-                        config_prefix);
-
-    if (!uri.key.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Wrong configuration in {}. "
-                        "URI.key is forbidden with settings 'key_template', use setting 'key_compatibility_prefix' instead'. "
-                        "URI.key: '{}', bucket: '{}'. ",
-                        config_prefix,
-                        uri.key, uri.bucket);
-
-    return {object_key_compatibility_prefix, createObjectStorageKeysGeneratorByTemplate(object_key_template)};
-}
-
 }
 
 void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
@@ -158,8 +104,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
     {
         String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         S3::URI uri(endpoint);
-        // an empty key remains empty
-        if (!uri.key.empty() && !uri.key.ends_with('/'))
+        if (!uri.key.ends_with('/'))
             uri.key.push_back('/');
 
         S3Capabilities s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
@@ -168,12 +113,9 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
         String type = config.getString(config_prefix + ".type");
         chassert(type == "s3" || type == "s3_plain");
 
-        auto [object_key_compatibility_prefix, object_key_generator] = getPrefixAndKeyGenerator(type, uri, config, config_prefix);
-
         MetadataStoragePtr metadata_storage;
         auto settings = getSettings(config, config_prefix, context);
         auto client = getClient(config, config_prefix, context, *settings);
-
         if (type == "s3_plain")
         {
             /// send_metadata changes the filenames (includes revision), while
@@ -184,19 +126,14 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
             if (config.getBool(config_prefix + ".send_metadata", false))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "s3_plain does not supports send_metadata");
 
-            s3_storage = std::make_shared<S3PlainObjectStorage>(
-                std::move(client), std::move(settings), uri.version_id, s3_capabilities, uri.bucket, uri.endpoint, object_key_generator, name);
-
-            metadata_storage = std::make_shared<MetadataStorageFromPlainObjectStorage>(s3_storage, object_key_compatibility_prefix);
+            s3_storage = std::make_shared<S3PlainObjectStorage>(std::move(client), std::move(settings), uri.version_id, s3_capabilities, uri.bucket, uri.endpoint);
+            metadata_storage = std::make_shared<MetadataStorageFromPlainObjectStorage>(s3_storage, uri.key);
         }
         else
         {
-            s3_storage = std::make_shared<S3ObjectStorage>(
-                std::move(client), std::move(settings), uri.version_id, s3_capabilities, uri.bucket, uri.endpoint, object_key_generator, name);
-
+            s3_storage = std::make_shared<S3ObjectStorage>(std::move(client), std::move(settings), uri.version_id, s3_capabilities, uri.bucket, uri.endpoint);
             auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
-
-            metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, object_key_compatibility_prefix);
+            metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, uri.key);
         }
 
         /// NOTE: should we still perform this check for clickhouse-disks?
@@ -219,7 +156,7 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
 
         DiskObjectStoragePtr s3disk = std::make_shared<DiskObjectStorage>(
             name,
-            uri.key, /// might be empty
+            uri.key,
             type == "s3" ? "DiskS3" : "DiskS3Plain",
             std::move(metadata_storage),
             std::move(s3_storage),

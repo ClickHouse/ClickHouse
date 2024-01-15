@@ -125,7 +125,6 @@
             "docker/test/server-jepsen",
             "docker/test/sqllogic",
             "docker/test/sqltest",
-            "docker/test/clickbench",
             "docker/test/stateless"
          ]
     },
@@ -144,10 +143,6 @@
     },
     "docker/test/server-jepsen": {
         "name": "clickhouse/server-jepsen-test",
-        "dependent": []
-    },
-    "docker/test/clickbench": {
-        "name": "clickhouse/clickbench",
         "dependent": []
     },
     "docker/test/install/deb": {

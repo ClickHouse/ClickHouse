@@ -15,7 +15,7 @@
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
-#include <Common/transformEndianness.h>
+#include <Common/TransformEndianness.hpp>
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
 #include <base/DecomposedFloat.h>
@@ -63,7 +63,9 @@ namespace ErrorCodes
 
 inline void writeChar(char x, WriteBuffer & buf)
 {
-    buf.write(x);
+    buf.nextIfAtEnd();
+    *buf.position() = x;
+    ++buf.position();
 }
 
 /// Write the same character n times.

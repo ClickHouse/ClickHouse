@@ -357,7 +357,6 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr & query_node,
     const ContextPtr & context,
-    //PlannerContext & planner_context,
     ResultReplacementMap * result_replacement_map)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
@@ -407,13 +406,6 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr &
         if (result_replacement_map)
             result_replacement_map->emplace(table_expression, dummy_table_node);
 
-        dummy_table_node->setAlias(table_expression->getAlias());
-
-        // auto & src_table_expression_data = planner_context.getOrCreateTableExpressionData(table_expression);
-        // auto & dst_table_expression_data = planner_context.getOrCreateTableExpressionData(dummy_table_node);
-
-        // dst_table_expression_data = src_table_expression_data;
-
         replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
     }
 
@@ -444,8 +436,8 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 
     auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
 
-    query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
     query_node->resolveProjectionColumns(projection_columns);
+    query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
     query_node->getJoinTree() = table_expression;
     query_node->setIsSubquery(true);
 
@@ -455,7 +447,8 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
 {
     SelectQueryInfo select_query_info;
-    select_query_info.query = queryNodeToSelectQuery(query_tree);
+    select_query_info.original_query = queryNodeToSelectQuery(query_tree);
+    select_query_info.query = select_query_info.original_query;
     select_query_info.query_tree = query_tree;
     select_query_info.planner_context = planner_context;
     return select_query_info;

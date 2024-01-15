@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/PODArray.h>
 #include <Common/levenshteinDistance.h>
 
 #include <algorithm>

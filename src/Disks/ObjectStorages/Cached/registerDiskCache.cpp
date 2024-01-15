@@ -4,10 +4,10 @@
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/NamedCollections/NamedCollections.h>
 #include <Disks/DiskFactory.h>
+#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
-
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -39,11 +39,7 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
         }
 
         FileCacheSettings file_cache_settings;
-        auto predefined_configuration = config.has("cache_name") ? NamedCollectionFactory::instance().tryGet(config.getString("cache_name")) : nullptr;
-        if (predefined_configuration)
-            file_cache_settings.loadFromCollection(*predefined_configuration);
-        else
-            file_cache_settings.loadFromConfig(config, config_prefix);
+        file_cache_settings.loadFromConfig(config, config_prefix);
 
         auto config_fs_caches_dir = context->getFilesystemCachesPath();
         if (config_fs_caches_dir.empty())
@@ -64,7 +60,7 @@ void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check *
             }
         }
 
-        auto cache = FileCacheFactory::instance().getOrCreate(name, file_cache_settings, predefined_configuration ? "" : config_prefix);
+        auto cache = FileCacheFactory::instance().getOrCreate(name, file_cache_settings);
         auto disk = disk_it->second;
         if (!dynamic_cast<const DiskObjectStorage *>(disk.get()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

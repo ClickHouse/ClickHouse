@@ -21,7 +21,6 @@ def get_options(i: int, upgrade_check: bool) -> str:
         options.append(f'''--db-engine="Replicated('/test/db/test_{i}', 's1', 'r1')"''')
         client_options.append("allow_experimental_database_replicated=1")
         client_options.append("enable_deflate_qpl_codec=1")
-        client_options.append("enable_zstd_qat_codec=1")
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
@@ -61,10 +60,13 @@ def get_options(i: int, upgrade_check: bool) -> str:
         client_options.append("throw_on_unsupported_query_inside_transaction=0")
 
     if random.random() < 0.1:
-        client_options.append("optimize_trivial_approximate_count_query=1")
+        client_options.append("allow_experimental_partial_result=1")
+        client_options.append(
+            f"partial_result_update_duration_ms={random.randint(10, 1000)}"
+        )
 
-    if random.random() < 0.3:
-        client_options.append(f"http_make_head_request={random.randint(0, 1)}")
+    if random.random() < 0.1:
+        client_options.append("optimize_trivial_approximate_count_query=1")
 
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
@@ -123,7 +125,7 @@ def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None
 def make_query_command(query: str) -> str:
     return (
         f'clickhouse client -q "{query}" --max_untracked_memory=1Gi '
-        "--memory_profiler_step=1Gi --max_memory_usage_for_user=0 --max_memory_usage_in_client=1000000000"
+        "--memory_profiler_step=1Gi --max_memory_usage_for_user=0"
     )
 
 
@@ -135,10 +137,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # However, it obstructs checking for hung queries.
     logging.info("Will terminate gdb (if any)")
     call_with_retry("kill -TERM $(pidof gdb)")
-    call_with_retry(
-        "timeout 50s tail --pid=$(pidof gdb) -f /dev/null || kill -9 $(pidof gdb) ||:",
-        timeout=60,
-    )
+    call_with_retry("tail --pid=$(pidof gdb) -f /dev/null")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
         "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client -q 'SELECT 1 FORMAT Null'"
@@ -360,7 +359,7 @@ def main():
         )
         hung_check_log = args.output_folder / "hung_check.log"  # type: Path
         tee = Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE)
-        res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600)
+        res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT)
         if tee.stdin is not None:
             tee.stdin.close()
         if res != 0 and have_long_running_queries and not suppress_hung_check:

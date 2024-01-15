@@ -21,8 +21,6 @@ public:
     void wait() override;
 
 private:
-    IAsynchronousReader::Result execute(Request request, bool seek_performed);
-
     std::unique_ptr<ThreadPool> pool;
 };
 

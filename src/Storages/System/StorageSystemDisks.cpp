@@ -78,7 +78,7 @@ Pipe StorageSystemDisks::read(
 
         String cache_path;
         if (disk_ptr->supportsCache())
-            cache_path = FileCacheFactory::instance().getByName(disk_ptr->getCacheName())->getSettings().base_path;
+            cache_path = FileCacheFactory::instance().getByName(disk_ptr->getCacheName()).settings.base_path;
 
         col_cache_path->insert(cache_path);
     }

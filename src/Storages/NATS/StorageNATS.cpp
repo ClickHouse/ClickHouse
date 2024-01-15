@@ -347,11 +347,11 @@ void StorageNATS::read(
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), local_context, query_info);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info, local_context);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }
@@ -419,7 +419,7 @@ void StorageNATS::startup()
 }
 
 
-void StorageNATS::shutdown(bool /* is_drop */)
+void StorageNATS::shutdown()
 {
     shutdown_called = true;
 

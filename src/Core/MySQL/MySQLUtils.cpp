@@ -12,7 +12,8 @@ namespace MySQLProtocol
 namespace MySQLUtils
 {
 
-DecimalUtils::DecimalComponents<DateTime64> getNormalizedDateTime64Components(DataTypePtr data_type, ColumnPtr col, size_t row_num)
+DecimalUtils::DecimalComponents<DateTime64>
+getNormalizedDateTime64Components(DataTypePtr data_type, ColumnPtr col, size_t row_num)
 {
     const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(data_type.get());
 
@@ -50,6 +51,14 @@ DecimalUtils::DecimalComponents<DateTime64> getNormalizedDateTime64Components(Da
     }
 
     return components;
+};
+
+ColumnPtr getBaseColumn(const DB::Columns & columns, size_t i)
+{
+    ColumnPtr col = columns[i]->convertToFullIfNeeded();
+    if (col->isNullable())
+        return assert_cast<const ColumnNullable &>(*col).getNestedColumnPtr();
+    return col;
 };
 }
 }

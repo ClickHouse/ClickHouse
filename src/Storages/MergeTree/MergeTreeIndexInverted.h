@@ -64,7 +64,7 @@ class MergeTreeConditionInverted final : public IMergeTreeIndexCondition, WithCo
 {
 public:
     MergeTreeConditionInverted(
-            const ActionsDAGPtr & filter_actions_dag,
+            const SelectQueryInfo & query_info,
             ContextPtr context,
             const Block & index_sample_block,
             const GinFilterParameters & params_,
@@ -169,7 +169,9 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const override;
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const override;
+
+    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
     GinFilterParameters params;
     /// Function for selecting next token.

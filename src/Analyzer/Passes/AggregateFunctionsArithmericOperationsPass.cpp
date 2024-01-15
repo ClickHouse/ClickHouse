@@ -184,9 +184,10 @@ private:
         auto function_aggregate_function = function_node.getAggregateFunction();
 
         AggregateFunctionProperties properties;
-        auto action = NullsAction::EMPTY;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(
-            aggregate_function_name, action, {argument->getResultType()}, function_aggregate_function->getParameters(), properties);
+        auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name,
+            { argument->getResultType() },
+            function_aggregate_function->getParameters(),
+            properties);
 
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }

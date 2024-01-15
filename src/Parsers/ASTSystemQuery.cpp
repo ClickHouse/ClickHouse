@@ -179,8 +179,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             || type == Type::RELOAD_DICTIONARY
             || type == Type::RELOAD_MODEL
             || type == Type::RELOAD_FUNCTION
-            || type == Type::RESTART_DISK
-            || type == Type::DROP_DISK_METADATA_CACHE)
+            || type == Type::RESTART_DISK)
     {
         if (table)
         {

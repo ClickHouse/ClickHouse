@@ -9,7 +9,6 @@
 #include <memory>
 #include <Storages/StorageS3Settings.h>
 #include <Common/MultiVersion.h>
-#include <Common/ObjectStorageKeyGenerator.h>
 
 
 namespace DB
@@ -23,13 +22,11 @@ struct S3ObjectStorageSettings
         const S3Settings::RequestSettings & request_settings_,
         uint64_t min_bytes_for_seek_,
         int32_t list_object_keys_size_,
-        int32_t objects_chunk_size_to_delete_,
-        bool read_only_)
+        int32_t objects_chunk_size_to_delete_)
         : request_settings(request_settings_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , list_object_keys_size(list_object_keys_size_)
         , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
-        , read_only(read_only_)
     {}
 
     S3Settings::RequestSettings request_settings;
@@ -37,11 +34,21 @@ struct S3ObjectStorageSettings
     uint64_t min_bytes_for_seek;
     int32_t list_object_keys_size;
     int32_t objects_chunk_size_to_delete;
-    bool read_only;
 };
+
 
 class S3ObjectStorage : public IObjectStorage
 {
+public:
+    struct Clients
+    {
+        std::shared_ptr<S3::Client> client;
+        std::shared_ptr<S3::Client> client_with_long_timeout;
+
+        Clients() = default;
+        Clients(std::shared_ptr<S3::Client> client, const S3ObjectStorageSettings & settings);
+    };
+
 private:
     friend class S3PlainObjectStorage;
 
@@ -52,13 +59,9 @@ private:
         String version_id_,
         const S3Capabilities & s3_capabilities_,
         String bucket_,
-        String connection_string,
-        ObjectStorageKeysGeneratorPtr key_generator_,
-        const String & disk_name_)
-        : bucket(std::move(bucket_))
-        , key_generator(std::move(key_generator_))
-        , disk_name(disk_name_)
-        , client(std::move(client_))
+        String connection_string)
+        : bucket(bucket_)
+        , clients(std::make_unique<Clients>(std::move(client_), *s3_settings_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , version_id(std::move(version_id_))
@@ -167,22 +170,15 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
-
-    bool isReadOnly() const override { return s3_settings.get()->read_only; }
-
 private:
     void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
 
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
-private:
     std::string bucket;
-    ObjectStorageKeysGeneratorPtr key_generator;
-    std::string disk_name;
 
-    MultiVersion<S3::Client> client;
+    MultiVersion<Clients> clients;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
 
@@ -199,6 +195,7 @@ private:
 class S3PlainObjectStorage : public S3ObjectStorage
 {
 public:
+    std::string generateBlobNameForPath(const std::string & path) override { return path; }
     std::string getName() const override { return "S3PlainObjectStorage"; }
 
     template <class ...Args>

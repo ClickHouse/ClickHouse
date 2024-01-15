@@ -58,11 +58,11 @@
 #   include <Poco/Net/SecureStreamSocketImpl.h>
 #endif
 
-#include <Core/Protocol.h>
-#include <Storages/MergeTree/RequestResponse.h>
+#include "Core/Protocol.h"
+#include "Storages/MergeTree/RequestResponse.h"
 #include "TCPHandler.h"
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 using namespace std::literals;
 using namespace DB;
@@ -184,27 +184,23 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
 namespace DB
 {
 
-TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
     , log(&Poco::Logger::get("TCPHandler"))
-    , read_event(read_event_)
-    , write_event(write_event_)
     , server_display_name(std::move(server_display_name_))
 {
 }
 
-TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_)
 : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(&Poco::Logger::get("TCPHandler"))
     , forwarded_for(stack_data.forwarded_for)
     , certificate(stack_data.certificate)
-    , read_event(read_event_)
-    , write_event(write_event_)
     , default_database(stack_data.default_database)
     , server_display_name(std::move(server_display_name_))
 {
@@ -237,8 +233,8 @@ void TCPHandler::runImpl()
     socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
 
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
+    in = std::make_shared<ReadBufferFromPocoSocket>(socket());
+    out = std::make_shared<WriteBufferFromPocoSocket>(socket());
 
     /// Support for PROXY protocol
     if (parse_proxy_protocol && !receiveProxyHeader())
@@ -661,7 +657,7 @@ void TCPHandler::runImpl()
         catch (...)
         {
             state.io.onException();
-            exception = std::make_unique<DB::Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+            exception = std::make_unique<DB::Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
         }
 
         try
@@ -1456,11 +1452,8 @@ void TCPHandler::receiveHello()
                     getClientAddress(client_info));
                 return;
             }
-            catch (const Exception & e)
+            catch (...)
             {
-                if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED)
-                    throw;
-
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication");
             }
         }
@@ -2027,7 +2020,7 @@ void TCPHandler::initBlockOutput(const Block & block)
 
             if (state.compression == Protocol::Compression::Enable)
             {
-                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs, query_settings.enable_deflate_qpl_codec, query_settings.enable_zstd_qat_codec);
+                CompressionCodecFactory::instance().validateCodec(method, level, !query_settings.allow_suspicious_codecs, query_settings.allow_experimental_codecs, query_settings.enable_deflate_qpl_codec);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
                     *out, CompressionCodecFactory::instance().get(method, level));

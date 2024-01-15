@@ -20,9 +20,9 @@ from commit_status_helper import (
     get_commit,
     update_mergeable_check,
 )
-from docker_images_helper import DockerImage, pull_image, get_docker_image
+from docker_pull_helper import DockerImage, get_image_with_version
 
-from env_helper import REPORT_PATH, TEMP_PATH, REPO_COPY
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from report import TestResults
@@ -47,7 +47,6 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
         result.append("USE_PARALLEL_REPLICAS=1")
     if "s3 storage" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
-        result.append("RANDOMIZE_OBJECT_KEY_TYPE=1")
     if "analyzer" in check_name:
         result.append("USE_NEW_ANALYZER=1")
 
@@ -108,9 +107,8 @@ def main():
     stopwatch = Stopwatch()
 
     temp_path = Path(TEMP_PATH)
-    reports_path = Path(REPORT_PATH)
-    temp_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(REPO_COPY)
+    reports_path = REPORTS_PATH
 
     args = parse_args()
     check_name = args.check_name
@@ -119,7 +117,7 @@ def main():
     gh = Github(get_best_robot_token(), per_page=100)
     pr_info = PRInfo()
     commit = get_commit(gh, pr_info.sha)
-    atexit.register(update_mergeable_check, commit, pr_info, check_name)
+    atexit.register(update_mergeable_check, gh, pr_info, check_name)
 
     temp_path.mkdir(parents=True, exist_ok=True)
 
@@ -139,7 +137,7 @@ def main():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = pull_image(get_docker_image("clickhouse/libfuzzer"))
+    docker_image = get_image_with_version(reports_path, "clickhouse/libfuzzer")
 
     fuzzers_path = temp_path / "fuzzers"
     fuzzers_path.mkdir(parents=True, exist_ok=True)

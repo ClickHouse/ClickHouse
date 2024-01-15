@@ -65,26 +65,8 @@ chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
-
 stop
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
-
-# Randomize cache policies.
-cache_policy=""
-if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
-    cache_policy="SLRU"
-else
-    cache_policy="LRU"
-fi
-
-echo "Using cache policy: $cache_policy"
-
-if [ "$cache_policy" = "SLRU" ]; then
-    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
-    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
-    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
-    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
-fi
 
 start
 
@@ -193,7 +175,6 @@ stop
 
 # Let's enable S3 storage by default
 export USE_S3_STORAGE_FOR_MERGE_TREE=1
-export RANDOMIZE_OBJECT_KEY_TYPE=1
 export ZOOKEEPER_FAULT_INJECTION=1
 configure
 
@@ -209,19 +190,6 @@ sudo cat /etc/clickhouse-server/config.d/logger_trace.xml \
    | sed "s|<level>trace</level>|<level>test</level>|" \
    > /etc/clickhouse-server/config.d/logger_trace.xml.tmp
 mv /etc/clickhouse-server/config.d/logger_trace.xml.tmp /etc/clickhouse-server/config.d/logger_trace.xml
-
-if [ "$cache_policy" = "SLRU" ]; then
-    sudo cat /etc/clickhouse-server/config.d/storage_conf.xml \
-    | sed "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" \
-    > /etc/clickhouse-server/config.d/storage_conf.xml.tmp
-    mv /etc/clickhouse-server/config.d/storage_conf.xml.tmp /etc/clickhouse-server/config.d/storage_conf.xml
-fi
-
-# Randomize async_load_databases
-if [ $(( $(date +%-d) % 2 )) -eq 1 ]; then
-    sudo echo "<clickhouse><async_load_databases>true</async_load_databases></clickhouse>" \
-        > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
-fi
 
 start
 

@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class ServerAsynchronousMetrics : WithContext, public AsynchronousMetrics
+class ServerAsynchronousMetrics : public AsynchronousMetrics, WithContext
 {
 public:
     ServerAsynchronousMetrics(
@@ -15,8 +15,6 @@ public:
         int update_period_seconds,
         int heavy_metrics_update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
-    ~ServerAsynchronousMetrics() override;
-
 private:
     void updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time) override;
     void logImpl(AsynchronousMetricValues & new_values) override;

@@ -41,7 +41,7 @@ Optional parameters:
 
 - `poll_timeout_ms` - Timeout for single poll from log file. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
 - `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
-- `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
+- `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#setting-max_insert_block_size).
 - `max_threads` - Number of max threads to parse files, default is 0, which means the number will be max(1, physical_cpu_cores / 4).
 - `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.
 - `poll_directory_watch_events_backoff_max` - The max sleep value for watch directory thread. Default: `32000`.
@@ -94,12 +94,12 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 ## Virtual Columns {#virtual-columns}
 
-- `_filename` - Name of the log file. Data type: `LowCardinality(String)`.
-- `_offset` - Offset in the log file. Data type: `UInt64`.
+- `_filename` - Name of the log file.
+- `_offset` - Offset in the log file.
 
 Additional virtual columns when `kafka_handle_error_mode='stream'`:
 
-- `_raw_record` - Raw record that couldn't be parsed successfully. Data type: `Nullable(String)`.
-- `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
+- `_raw_record` - Raw record that couldn't be parsed successfully.
+- `_error` - Exception message happened during failed parsing.
 
-Note: `_raw_record` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
+Note: `_raw_record` and `_error` virtual columns are filled only in case of exception during parsing, they are always empty when message was parsed successfully.

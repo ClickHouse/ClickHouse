@@ -4,7 +4,6 @@
     <profiles>
         <default>
             <s3_retry_attempts>1000000</s3_retry_attempts>
-            <s3_use_adaptive_timeouts>1</s3_use_adaptive_timeouts>
         </default>
     </profiles>
 </clickhouse>

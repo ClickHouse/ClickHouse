@@ -5,7 +5,6 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -25,7 +24,6 @@ namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
-    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB
@@ -61,7 +59,7 @@ void ClusterCopier::init()
     getContext()->setClustersConfig(task_cluster_current_config, false, task_cluster->clusters_prefix);
 
     /// Set up shards and their priority
-    task_cluster->random_engine.seed(randomSeed());
+    task_cluster->random_engine.seed(task_cluster->random_device());
     for (auto & task_table : task_cluster->table_tasks)
     {
         task_table.cluster_pull = getContext()->getCluster(task_table.cluster_pull_name);
@@ -201,7 +199,7 @@ void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts,
 {
     /// Fetch partitions list from a shard
     {
-        ThreadPool thread_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
+        ThreadPool thread_pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, num_threads ? num_threads : 2 * getNumberOfPhysicalCPUCores());
 
         for (const TaskShardPtr & task_shard : task_table.all_shards)
             thread_pool.scheduleOrThrowOnError([this, timeouts, task_shard]()
@@ -1408,7 +1406,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         /// 3) Create helping table on the whole destination cluster
         auto & settings_push = task_cluster->settings_push;
 
-        auto connection = task_table.cluster_push->getAnyShardInfo().pool->get(timeouts, settings_push, true);
+        auto connection = task_table.cluster_push->getAnyShardInfo().pool->get(timeouts, &settings_push, true);
         String create_query = getRemoteCreateTable(task_shard.task_table.table_push, *connection, settings_push);
 
         ParserCreateQuery parser_create_query;
@@ -1559,7 +1557,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             QueryPipeline input;
             QueryPipeline output;
             {
-                BlockIO io_insert = InterpreterFactory::instance().get(query_insert_ast, context_insert)->execute();
+                BlockIO io_insert = InterpreterFactory::get(query_insert_ast, context_insert)->execute();
 
                 InterpreterSelectWithUnionQuery select(query_select_ast, context_select, SelectQueryOptions{});
                 QueryPlan plan;
@@ -1786,7 +1784,7 @@ String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, C
 ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
 {
     /// Fetch and parse (possibly) new definition
-    auto connection_entry = task_shard.info.pool->get(timeouts, task_cluster->settings_pull, true);
+    auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull, true);
     String create_query_pull_str = getRemoteCreateTable(
             task_shard.task_table.table_pull,
             *connection_entry,
@@ -1944,7 +1942,7 @@ bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts,
 
     auto local_context = Context::createCopy(context);
     local_context->setSettings(task_cluster->settings_pull);
-    auto pipeline = InterpreterFactory::instance().get(query_ast, local_context)->execute().pipeline;
+    auto pipeline = InterpreterFactory::get(query_ast, local_context)->execute().pipeline;
     PullingPipelineExecutor executor(pipeline);
     Block block;
     executor.pull(block);
@@ -1989,7 +1987,7 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
 
     auto local_context = Context::createCopy(context);
     local_context->setSettings(task_cluster->settings_pull);
-    auto pipeline = InterpreterFactory::instance().get(query_ast, local_context)->execute().pipeline;
+    auto pipeline = InterpreterFactory::get(query_ast, local_context)->execute().pipeline;
     PullingPipelineExecutor executor(pipeline);
     Block result;
     executor.pull(result);

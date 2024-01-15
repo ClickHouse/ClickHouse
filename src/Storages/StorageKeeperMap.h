@@ -10,9 +10,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
-#include <Backups/IBackup.h>
-#include <Backups/WithRetries.h>
-
 #include <span>
 
 namespace DB
@@ -67,10 +64,13 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     bool supportsParallelInsert() const override { return true; }
+    bool supportsIndexForIn() const override { return true; }
+    bool mayBenefitFromIndexForIn(
+        const ASTPtr & node, ContextPtr /*query_context*/, const StorageMetadataPtr & /*metadata_snapshot*/) const override
+    {
+        return node->getColumnName() == primary_key;
+    }
     bool supportsDelete() const override { return true; }
-
-    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
-    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     zkutil::ZooKeeperPtr getClient() const;
     const std::string & dataPath() const;
@@ -114,25 +114,18 @@ private:
 
     std::optional<bool> isTableValid() const;
 
-    void restoreDataImpl(
-        const BackupPtr & backup,
-        const String & data_path_in_backup,
-        std::shared_ptr<WithRetries> with_retries,
-        bool allow_non_empty_tables,
-        const DiskPtr & temporary_disk);
-
-    std::string zk_root_path;
+    std::string root_path;
     std::string primary_key;
 
-    std::string zk_data_path;
+    std::string data_path;
 
-    std::string zk_metadata_path;
+    std::string metadata_path;
 
-    std::string zk_tables_path;
-    std::string zk_table_path;
+    std::string tables_path;
+    std::string table_path;
 
-    std::string zk_dropped_path;
-    std::string zk_dropped_lock_path;
+    std::string dropped_path;
+    std::string dropped_lock_path;
 
     std::string zookeeper_name;
 

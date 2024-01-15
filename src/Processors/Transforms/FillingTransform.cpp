@@ -1,6 +1,5 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/IDataType.h>
@@ -227,7 +226,7 @@ FillingTransform::FillingTransform(
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "Incompatible types of WITH FILL expression values with column type {}", type->getName());
 
-        if (isUInt(type) &&
+        if (isUnsignedInteger(type) &&
             ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
              (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
         {

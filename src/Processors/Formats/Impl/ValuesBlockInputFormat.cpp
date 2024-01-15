@@ -98,7 +98,7 @@ bool ValuesBlockInputFormat::skipToNextRow(ReadBuffer * buf, size_t min_chunk_by
     return true;
 }
 
-Chunk ValuesBlockInputFormat::read()
+Chunk ValuesBlockInputFormat::generate()
 {
     if (total_rows == 0)
         readPrefix();
@@ -705,11 +705,6 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
     }
 
     return data_types;
-}
-
-void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatValues(FormatFactory & factory)

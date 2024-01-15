@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -110,10 +109,6 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
         }
     }
 
-    /// Don't replace storage if table name differs
-    if (auto * table_node = table_expression_to_replace->as<TableNode>(); table_node && table_node->getStorageID().getFullNameNotQuoted() != storage->getStorageID().getFullNameNotQuoted())
-        return;
-
     auto replacement_table_expression = std::make_shared<TableNode>(storage, context);
     std::optional<TableExpressionModifiers> table_expression_modifiers;
 
@@ -210,7 +205,7 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & qu
 {
     auto select_query_options_copy = select_query_options;
     select_query_options_copy.only_analyze = true;
-    InterpreterSelectQueryAnalyzer interpreter(query_tree, context, select_query_options_copy);
+    InterpreterSelectQueryAnalyzer interpreter(query_tree, context, select_query_options);
 
     return interpreter.getSampleBlock();
 }
@@ -260,21 +255,6 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)
 {
     planner.addStorageLimits(storage_limits);
-}
-
-void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const
-{
-    for (const auto & used_row_policy : planner.getUsedRowPolicies())
-        elem.used_row_policies.emplace(used_row_policy);
-}
-
-void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterSelectQueryAnalyzer>(args.query, args.context, args.options);
-    };
-    factory.registerInterpreter("InterpreterSelectQueryAnalyzer", create_fn);
 }
 
 }

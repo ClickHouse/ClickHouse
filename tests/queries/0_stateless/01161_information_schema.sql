@@ -39,9 +39,6 @@ SELECT * FROM information_schema.key_column_usage WHERE table_schema = currentDa
 
 SELECT '-- information_schema.referential_constraints';
 SELECT * FROM information_schema.referential_constraints;
-
-SELECT '-- information_schema.statistics';
-SELECT * FROM information_schema.statistics;
 --
 -- mixed upper/lowercase schema and table name:
 SELECT count() FROM information_schema.TABLES WHERE table_schema = currentDatabase() AND table_name = 't';

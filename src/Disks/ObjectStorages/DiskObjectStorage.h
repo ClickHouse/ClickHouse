@@ -5,7 +5,15 @@
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
-#include <Common/re2.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 namespace CurrentMetrics
 {
@@ -29,7 +37,7 @@ friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 public:
     DiskObjectStorage(
         const String & name_,
-        const String & object_key_prefix_,
+        const String & object_storage_root_path_,
         const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
@@ -155,9 +163,7 @@ public:
         IDisk & to_disk,
         const String & to_file_path,
         const ReadSettings & read_settings = {},
-        const WriteSettings & write_settings = {},
-        const std::function<void()> & cancellation_hook = {}
-        ) override;
+        const WriteSettings & write_settings = {}) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
@@ -214,12 +220,11 @@ private:
     /// Create actual disk object storage transaction for operations
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
-    DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
 
     String getReadResourceName() const;
     String getWriteResourceName() const;
 
-    const String object_key_prefix;
+    const String object_storage_root_path;
     Poco::Logger * log;
 
     MetadataStoragePtr metadata_storage;

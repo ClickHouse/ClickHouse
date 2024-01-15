@@ -35,8 +35,7 @@ public:
         const Params & params_,
         const ProtobufSchemaInfo & schema_info_,
         bool with_length_delimiter_,
-        bool flatten_google_wrappers_,
-        const String & google_protos_path);
+        bool flatten_google_wrappers_);
 
     String getName() const override { return "ProtobufRowInputFormat"; }
 
@@ -72,7 +71,6 @@ public:
 private:
     const FormatSchemaInfo schema_info;
     bool skip_unsupported_fields;
-    String google_protos_path;
 };
 
 }

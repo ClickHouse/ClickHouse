@@ -1,6 +1,5 @@
 #include <Interpreters/SessionLog.h>
 
-#include <base/getFQDNOrHostName.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
@@ -121,7 +120,6 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
 
     return
     {
-        {"hostname", lc_string_datatype},
         {"type", std::move(event_type)},
         {"auth_id", std::make_shared<DataTypeUUID>()},
         {"session_id", std::make_shared<DataTypeString>()},
@@ -158,7 +156,6 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
 
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(type);
     columns[i++]->insert(auth_id);
     columns[i++]->insert(session_id);

@@ -77,7 +77,7 @@
 #include <memory>
 #include <unordered_map>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 #include "config.h"
 
 namespace fs = std::filesystem;
@@ -108,7 +108,6 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
 }
 
 }
@@ -318,14 +317,14 @@ void ClientBase::setupSignalHandler()
     sigemptyset(&new_act.sa_mask);
 #else
     if (sigemptyset(&new_act.sa_mask))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 #endif
 
     if (sigaction(SIGINT, &new_act, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
     if (sigaction(SIGQUIT, &new_act, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 }
 
 
@@ -543,16 +542,16 @@ try
         if (!pager.empty())
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
-                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
+                throwFromErrno("Cannot set signal handler for SIGPIPE.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
             /// We need to reset signals that had been installed in the
             /// setupSignalHandler() since terminal will send signals to both
             /// processes and so signals will be delivered to the
             /// clickhouse-client/local as well, which will be terminated when
             /// signal will be delivered second time.
             if (SIG_ERR == signal(SIGINT, SIG_IGN))
-                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGINT");
+                throwFromErrno("Cannot set signal handler for SIGINT.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
             if (SIG_ERR == signal(SIGQUIT, SIG_IGN))
-                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
+                throwFromErrno("Cannot set signal handler for SIGQUIT.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
@@ -722,7 +721,7 @@ void ClientBase::adjustSettings()
     global_context->setSettings(settings);
 }
 
-void ClientBase::initTTYBuffer(ProgressOption progress)
+void ClientBase::initTtyBuffer(ProgressOption progress)
 {
     if (tty_buf)
         return;
@@ -1306,11 +1305,11 @@ void ClientBase::resetOutput()
         pager_cmd->wait();
 
         if (SIG_ERR == signal(SIGPIPE, SIG_DFL))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
+            throwFromErrno("Cannot set signal handler for SIIGPIEP.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
         if (SIG_ERR == signal(SIGINT, SIG_DFL))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGINT");
+            throwFromErrno("Cannot set signal handler for SIGINT.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
         if (SIG_ERR == signal(SIGQUIT, SIG_DFL))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
+            throwFromErrno("Cannot set signal handler for SIGQUIT.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
         setupSignalHandler();
     }
@@ -1385,23 +1384,6 @@ void ClientBase::addMultiquery(std::string_view query, Arguments & common_argume
     common_arguments.emplace_back(query);
 }
 
-namespace
-{
-bool isStdinNotEmptyAndValid(ReadBufferFromFileDescriptor & std_in)
-{
-    try
-    {
-        return !std_in.eof();
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR)
-            return false;
-        throw;
-    }
-}
-}
-
 
 void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
@@ -1421,7 +1403,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
     /// Process the query that requires transferring data blocks to the server.
     const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
-    if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && !isStdinNotEmptyAndValid(std_in))))
+    if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
     {
         const auto & settings = global_context->getSettingsRef();
         if (settings.throw_if_no_data_to_insert)
@@ -1478,7 +1460,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!parsed_insert_query)
         return;
 
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
+    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
 
     if (need_render_progress)
     {
@@ -1797,12 +1779,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     {
         const auto * logs_level_field = set_query->changes.tryGet(std::string_view{"send_logs_level"});
         if (logs_level_field)
-        {
-            auto logs_level = logs_level_field->safeGet<String>();
-            /// Check that setting value is correct before updating logger level.
-            SettingFieldLogsLevelTraits::fromString(logs_level);
-            updateLoggerLevel(logs_level);
-        }
+            updateLoggerLevel(logs_level_field->safeGet<String>());
     }
 
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
@@ -1874,7 +1851,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
         if (is_async_insert_with_inlined_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(std_in);
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && !std_in.eof();
             bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
@@ -2566,14 +2543,6 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
 
-    if (!has_log_comment)
-    {
-        Settings settings = global_context->getSettings();
-        /// NOTE: cannot use even weakly_canonical() since it fails for /dev/stdin due to resolving of "pipe:[X]"
-        settings.log_comment = fs::absolute(fs::path(file_name));
-        global_context->setSettings(settings);
-    }
-
     return executeMultiQuery(queries_from_file);
 }
 
@@ -2861,7 +2830,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
-        ("max_memory_usage_in_client", po::value<std::string>(), "Set memory limit in client/local server")
+        ("max_memory_usage_in_client", po::value<int>(), "Set memory limit in client/local server")
     ;
 
     addOptions(options_description);
@@ -2996,17 +2965,13 @@ void ClientBase::init(int argc, char ** argv)
     clearPasswordFromCommandLine(argc, argv);
 
     /// Limit on total memory usage
-    std::string max_client_memory_usage = config().getString("max_memory_usage_in_client", "0" /*default value*/);
-    if (max_client_memory_usage != "0")
+    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
+    if (max_client_memory_usage != 0)
     {
-        UInt64 max_client_memory_usage_int = parseWithSizeSuffix<UInt64>(max_client_memory_usage.c_str(), max_client_memory_usage.length());
-
-        total_memory_tracker.setHardLimit(max_client_memory_usage_int);
+        total_memory_tracker.setHardLimit(max_client_memory_usage);
         total_memory_tracker.setDescription("(total)");
         total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
     }
-
-    has_log_comment = config().has("log_comment");
 }
 
 }

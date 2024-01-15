@@ -109,7 +109,7 @@ void JSONColumnsBlockInputFormatBase::setReadBuffer(ReadBuffer & in_)
     IInputFormat::setReadBuffer(in_);
 }
 
-Chunk JSONColumnsBlockInputFormatBase::read()
+Chunk JSONColumnsBlockInputFormatBase::generate()
 {
     MutableColumns columns = getPort().getHeader().cloneEmptyColumns();
     block_missing_values.clear();
@@ -228,11 +228,6 @@ void JSONColumnsSchemaReaderBase::setContext(ContextPtr & ctx)
 void JSONColumnsSchemaReaderBase::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
     transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
-}
-
-void JSONColumnsSchemaReaderBase::transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
-{
-    transformInferredJSONTypesFromDifferentFilesIfNeeded(type, new_type, format_settings);
 }
 
 NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()

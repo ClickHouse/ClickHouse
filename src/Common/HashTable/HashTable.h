@@ -853,7 +853,7 @@ public:
 
     private:
         DB::ReadBuffer & in;
-        Cell cell{};
+        Cell cell;
         size_t read_count = 0;
         size_t size = 0;
         bool is_eof = false;

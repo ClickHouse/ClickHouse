@@ -291,23 +291,9 @@ void StackTrace::tryCapture()
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
 
-// Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
-// information but pollute stack traces).
-// Replace parts from @c replacements with shorter aliases
-String demangleAndCollapseNames(std::string_view file, const char * const symbol_name)
+String collapseNames(String && haystack)
 {
-    if (!symbol_name)
-        return "?";
-
-    std::string_view file_copy = file;
-    if (auto trim_pos = file.find_last_of('/'); trim_pos != file.npos)
-        file_copy.remove_suffix(file.size() - trim_pos);
-    if (file_copy.ends_with("functional"))
-        return "?";
-
-    String haystack = demangle(symbol_name);
-
-    // TODO myrrc surely there is a written version already for better in place search&replace
+    // TODO: surely there is a written version already for better in place search&replace
     for (auto [needle, to] : replacements)
     {
         size_t pos = 0;
@@ -368,7 +354,6 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         DB::WriteBufferFromOwnString out;
         out << i << ". ";
 
-        String file;
         if (std::error_code ec; object && std::filesystem::exists(object->name, ec) && !ec)
         {
             auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
@@ -376,14 +361,11 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
             DB::Dwarf::LocationInfo location;
 
             if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, mode, inline_frames))
-            {
-                file = location.file.toString();
-                out << file << ":" << location.line << ": ";
-            }
+                out << location.file.toString() << ":" << location.line << ": ";
         }
 
         if (const auto * const symbol = symbol_index.findSymbol(virtual_addr))
-            out << demangleAndCollapseNames(file, symbol->name);
+            out << collapseNames(demangle(symbol->name));
         else
             out << "?";
 
@@ -398,14 +380,13 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         for (size_t j = 0; j < inline_frames.size(); ++j)
         {
             const auto & frame = inline_frames[j];
-            const String file_for_inline_frame = frame.location.file.toString();
             callback(fmt::format(
                 "{}.{}. inlined from {}:{}: {}",
                 i,
                 j + 1,
-                file_for_inline_frame,
+                frame.location.file.toString(),
                 frame.location.line,
-                demangleAndCollapseNames(file_for_inline_frame, frame.name)));
+                collapseNames(demangle(frame.name))));
         }
 
         callback(out.str());
