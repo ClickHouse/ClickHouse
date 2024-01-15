@@ -5,12 +5,13 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemDashboards::getNamesAndTypes()
+ColumnsDescription StorageSystemDashboards::getColumnsDescription()
 {
-    return {
-        {"dashboard", std::make_shared<DataTypeString>()},
-        {"title", std::make_shared<DataTypeString>()},
-        {"query", std::make_shared<DataTypeString>()},
+    return ColumnsDescription
+    {
+        {"dashboard", std::make_shared<DataTypeString>(), "The dashboard name."},
+        {"title", std::make_shared<DataTypeString>(), "The title of a chart."},
+        {"query", std::make_shared<DataTypeString>(), "The query to obtain data to be displayed."},
     };
 }
 

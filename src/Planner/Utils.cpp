@@ -398,7 +398,7 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr &
                     storage_dummy_columns.emplace_back(projection_column);
             }
 
-            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription(storage_dummy_columns));
+            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription::fromNamesAndTypes(storage_dummy_columns));
             ++subquery_index;
         }
 
