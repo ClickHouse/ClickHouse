@@ -36,7 +36,7 @@ public:
         ContextPtr context_,
         bool with_marks_)
         : ISource(header_)
-        , WithContext(std::move(context_))
+        , WithContext(context_)
         , header(std::move(header_))
         , index_header(std::move(index_header_))
         , data_parts(std::move(data_parts_))
