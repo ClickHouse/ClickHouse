@@ -296,6 +296,9 @@ constexpr std::pair<std::string_view, std::string_view> replacements[]
 // Replace parts from @c replacements with shorter aliases
 String demangleAndCollapseNames(std::string_view file, const char * const symbol_name)
 {
+    if (!symbol_name)
+        return "?";
+
     std::string_view file_copy = file;
     if (auto trim_pos = file.find_last_of('/'); trim_pos != file.npos)
         file_copy.remove_suffix(file.size() - trim_pos);

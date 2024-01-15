@@ -44,6 +44,9 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
     # It is not needed, we will explicitly create tables on s3.
     # We do not have statefull tests with s3 storage run in public repository, but this is needed for another repository.
     rm /etc/clickhouse-server/config.d/s3_storage_policy_for_merge_tree_by_default.xml
+
+    rm /etc/clickhouse-server/config.d/storage_metadata_with_full_object_key.xml
+    rm /etc/clickhouse-server/config.d/s3_storage_policy_with_template_object_key.xml
 fi
 
 function start()
@@ -94,21 +97,9 @@ start
 
 setup_logs_replication
 
-# shellcheck disable=SC2086 # No quotes because I want to split it into words.
-/s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
-chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"
-
-clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
-
-service clickhouse-server restart
-
-# Wait for server to start accepting connections
-for _ in {1..120}; do
-    clickhouse-client --query "SELECT 1" && break
-    sleep 1
-done
-
+clickhouse-client --query "CREATE DATABASE datasets"
+clickhouse-client --multiquery < create.sql
 clickhouse-client --query "SHOW TABLES FROM datasets"
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

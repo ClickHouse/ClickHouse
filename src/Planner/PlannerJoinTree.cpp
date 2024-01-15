@@ -809,9 +809,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     else
                     {
                         if (auto * distributed = typeid_cast<StorageDistributed *>(storage.get());
-                            distributed && canUseCustomKey(settings, *distributed->getCluster(), *query_context))
+                            distributed && query_context->canUseParallelReplicasCustomKey(*distributed->getCluster()))
                         {
-                            table_expression_query_info.use_custom_key = true;
                             planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
                         }
                     }
@@ -846,9 +845,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     query_context->getQueryContext()->addQueryAccessInfo(
                         backQuoteIfNeed(local_storage_id.getDatabaseName()),
                         local_storage_id.getFullTableName(),
-                        columns_names,
-                        {},
-                        {});
+                        columns_names);
                 }
             }
 
