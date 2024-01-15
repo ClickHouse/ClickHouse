@@ -132,7 +132,8 @@ CREATE DICTIONARY ssd_cache_dictionary
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'dictionary_source_table'))
 LIFETIME(MIN 0 MAX 0)
-LAYOUT(SSD_CACHE(PATH '/fasttest-workspace/db-fasttest/user_files/test_dict'));
+LAYOUT(SSD_CACHE(PATH '/var/lib/clickhouse/user_files/test_dict'));
+-- LAYOUT(SSD_CACHE(PATH '/fasttest-workspace/db-fasttest/user_files/test_dict'));
 -- LAYOUT(SSD_CACHE(PATH '/home/ubuntu/custom/user_files/test_dict'));
 
 SELECT 'SSD Cache dictionary';
@@ -161,4 +162,37 @@ SELECT dictGetOrDefault('direct_dictionary', 'v2', id+1, intDiv(NULL, id))
 FROM dictionary_source_table;
 DROP DICTIONARY direct_dictionary;
 
+
 DROP TABLE dictionary_source_table;
+
+
+DROP TABLE IF EXISTS ip_dictionary_source_table;
+CREATE TABLE ip_dictionary_source_table
+(
+    id UInt64,
+    prefix String,
+    asn UInt32,
+    cca2 String
+) ENGINE=TinyLog;
+
+INSERT INTO ip_dictionary_source_table VALUES (0, '202.79.32.0/20', 17501, 'NP'), (1, '2620:0:870::/48', 3856, 'US'), (2, '2a02:6b8:1::/48', 13238, 'RU');
+
+DROP DICTIONARY IF EXISTS ip_dictionary;
+CREATE DICTIONARY ip_dictionary
+(
+    id UInt64,
+    prefix String,
+    asn UInt32,
+    cca2 String
+)
+PRIMARY KEY prefix
+SOURCE(CLICKHOUSE(TABLE 'ip_dictionary_source_table'))
+LAYOUT(IP_TRIE)
+LIFETIME(3600);
+
+SELECT 'IP TRIE dictionary';
+SELECT dictGetOrDefault('ip_dictionary', 'cca2', toIPv4('202.79.32.10'), intDiv(0, id))
+FROM ip_dictionary_source_table;
+SELECT dictGetOrDefault('ip_dictionary', ('asn', 'cca2'), IPv6StringToNum('2a02:6b8:1::1'), 
+(intDiv(1, id), intDiv(1, id))) FROM ip_dictionary_source_table;
+DROP DICTIONARY ip_dictionary;

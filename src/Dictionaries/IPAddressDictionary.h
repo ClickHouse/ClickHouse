@@ -84,6 +84,13 @@ public:
         const DataTypes & key_types,
         const ColumnPtr & default_values_column) const override;
 
+    ColumnPtr getColumnOrDefaultShortCircuit(
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        IColumn::Filter & default_mask) const override;
+
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
@@ -179,12 +186,26 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
+    template <typename AttributeType, typename ValueSetter>
+    void getItemsByTwoKeyColumnsShortCircuitImpl(
+        const Attribute & attribute,
+        const Columns & key_columns,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask) const;
+
     template <typename AttributeType,typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
+
+    template <typename AttributeType,typename ValueSetter>
+    void getItemsShortCircuitImpl(
+        const Attribute & attribute,
+        const Columns & key_columns,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask) const;
 
     template <typename T>
     void setAttributeValueImpl(Attribute & attribute, const T value); /// NOLINT
