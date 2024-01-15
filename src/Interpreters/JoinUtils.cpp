@@ -345,27 +345,6 @@ ColumnRawPtrs getRawPointers(const Columns & columns)
     return ptrs;
 }
 
-void convertToFullColumnsInplace(Block & block)
-{
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        auto & col = block.getByPosition(i);
-        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
-        col.type = recursiveRemoveLowCardinality(col.type);
-    }
-}
-
-void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type)
-{
-    for (const String & column_name : names)
-    {
-        auto & col = block.getByName(column_name);
-        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
-        if (change_type)
-            col.type = recursiveRemoveLowCardinality(col.type);
-    }
-}
-
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys)
 {
     for (const auto & column_name : lowcard_keys)
@@ -495,8 +474,8 @@ void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
 {
-    DataTypePtr left_type_strict = removeNullable(recursiveRemoveLowCardinality(left_type));
-    DataTypePtr right_type_strict = removeNullable(recursiveRemoveLowCardinality(right_type));
+    DataTypePtr left_type_strict = removeNullable(removeLowCardinality(left_type));
+    DataTypePtr right_type_strict = removeNullable(removeLowCardinality(right_type));
     return left_type_strict->equals(*right_type_strict);
 }
 
@@ -768,15 +747,8 @@ void NotJoinedBlocks::extractColumnChanges(size_t right_pos, size_t result_pos)
 
 void NotJoinedBlocks::correctLowcardAndNullability(Block & block)
 {
-    for (auto & [pos, added] : right_nullability_changes)
-    {
-        auto & col = block.getByPosition(pos);
-        if (added)
-            JoinCommon::convertColumnToNullable(col);
-        else
-            JoinCommon::removeColumnNullability(col);
-    }
-
+    /// First correct LowCardinality, then Nullability,
+    /// because LowCardinality(Nullable(T)) is possible, but not Nullable(LowCardinality(T))
     for (auto & [pos, added] : right_lowcard_changes)
     {
         auto & col = block.getByPosition(pos);
@@ -791,6 +763,15 @@ void NotJoinedBlocks::correctLowcardAndNullability(Block & block)
             col.column = recursiveRemoveLowCardinality(col.column);
             col.type = recursiveRemoveLowCardinality(col.type);
         }
+    }
+
+    for (auto & [pos, added] : right_nullability_changes)
+    {
+        auto & col = block.getByPosition(pos);
+        if (added)
+            JoinCommon::convertColumnToNullable(col);
+        else
+            JoinCommon::removeColumnNullability(col);
     }
 }
 

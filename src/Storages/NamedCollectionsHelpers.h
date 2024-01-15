@@ -3,10 +3,11 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 #include <unordered_set>
 #include <string_view>
 #include <fmt/format.h>
-#include <regex>
+
 
 namespace ErrorCodes
 {
@@ -102,7 +103,7 @@ void validateNamedCollection(
     const NamedCollection & collection,
     const Keys & required_keys,
     const Keys & optional_keys,
-    const std::vector<std::regex> & optional_regex_keys = {})
+    const std::vector<std::shared_ptr<re2::RE2>> & optional_regex_keys = {})
 {
     NamedCollection::Keys keys = collection.getKeys();
     auto required_keys_copy = required_keys;
@@ -125,7 +126,7 @@ void validateNamedCollection(
 
         auto match = std::find_if(
             optional_regex_keys.begin(), optional_regex_keys.end(),
-            [&](const std::regex & regex) { return std::regex_search(key, regex); })
+            [&](const std::shared_ptr<re2::RE2> & regex) { return re2::RE2::PartialMatch(key, *regex); })
             != optional_regex_keys.end();
 
         if (!match)

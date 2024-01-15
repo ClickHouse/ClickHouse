@@ -436,7 +436,6 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     AggregateProjectionCandidates candidates;
 
     const auto & parts = reading.getParts();
-    const auto & query_info = reading.getQueryInfo();
 
     const auto metadata = reading.getStorageMetadata();
     ContextPtr context = reading.getContext();
@@ -481,8 +480,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             auto block = reading.getMergeTreeData().getMinMaxCountProjectionBlock(
                 metadata,
                 candidate.dag->getRequiredColumnsNames(),
-                dag.filter_node != nullptr,
-                query_info,
+                (dag.filter_node ? dag.dag : nullptr),
                 parts,
                 max_added_blocks.get(),
                 context);
@@ -592,7 +590,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
     else if (!candidates.real.empty())
     {
         auto ordinary_reading_select_result = reading->selectRangesToRead(parts, alter_conversions);
-        size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
+        size_t ordinary_reading_marks = ordinary_reading_select_result->selected_marks;
 
         /// Nothing to read. Ignore projections.
         if (ordinary_reading_marks == 0)
@@ -601,7 +599,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
             return false;
         }
 
-        const auto & parts_with_ranges = ordinary_reading_select_result->partsWithRanges();
+        const auto & parts_with_ranges = ordinary_reading_select_result->parts_with_ranges;
 
         /// Selecting best candidate.
         for (auto & candidate : candidates.real)
@@ -617,7 +615,6 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
                 reader,
                 required_column_names,
                 parts_with_ranges,
-                metadata,
                 query_info,
                 context,
                 max_added_blocks,
@@ -644,6 +641,7 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         return false;
     }
 
+    Context::QualifiedProjectionName projection_name;
     chassert(best_candidate != nullptr);
 
     QueryPlanStepPtr projection_reading;
@@ -656,23 +654,19 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         //           candidates.minmax_projection->block.dumpStructure());
 
         Pipe pipe(std::make_shared<SourceFromSingleChunk>(std::move(candidates.minmax_projection->block)));
-        projection_reading = std::make_unique<ReadFromPreparedSource>(
-            std::move(pipe),
-            context,
-            query_info.is_internal
-                ? Context::QualifiedProjectionName{}
-                : Context::QualifiedProjectionName
-                  {
-                      .storage_id = reading->getMergeTreeData().getStorageID(),
-                      .projection_name = candidates.minmax_projection->candidate.projection->name,
-                  });
+        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_ordinary_parts = false;
+
+        projection_name = Context::QualifiedProjectionName
+        {
+            .storage_id = reading->getMergeTreeData().getStorageID(),
+            .projection_name = candidates.minmax_projection->candidate.projection->name,
+        };
     }
     else
     {
         auto storage_snapshot = reading->getStorageSnapshot();
-        auto proj_snapshot = std::make_shared<StorageSnapshot>(
-            storage_snapshot->storage, storage_snapshot->metadata, storage_snapshot->object_columns);
+        auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, storage_snapshot->metadata);
         proj_snapshot->addProjection(best_candidate->projection);
 
         auto query_info_copy = query_info;
@@ -695,21 +689,27 @@ bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & 
         {
             auto header = proj_snapshot->getSampleBlockForColumns(best_candidate->dag->getRequiredColumnsNames());
             Pipe pipe(std::make_shared<NullSource>(std::move(header)));
-            projection_reading = std::make_unique<ReadFromPreparedSource>(
-                std::move(pipe),
-                context,
-                query_info.is_internal
-                    ? Context::QualifiedProjectionName{}
-                    : Context::QualifiedProjectionName
-                      {
-                          .storage_id = reading->getMergeTreeData().getStorageID(),
-                          .projection_name = best_candidate->projection->name,
-                      });
+            projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         }
+
+        projection_name = Context::QualifiedProjectionName
+        {
+            .storage_id = reading->getMergeTreeData().getStorageID(),
+            .projection_name = best_candidate->projection->name,
+        };
 
         has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;
         if (has_ordinary_parts)
             reading->setAnalyzedResult(std::move(best_candidate->merge_tree_ordinary_select_result_ptr));
+    }
+
+    if (!query_info.is_internal && context->hasQueryContext())
+    {
+        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
+        {
+            .storage_id = reading->getMergeTreeData().getStorageID(),
+            .projection_name = best_candidate->projection->name,
+        });
     }
 
     // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection reading header {}",

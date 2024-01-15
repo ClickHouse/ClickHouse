@@ -20,14 +20,13 @@ namespace ErrorCodes
 void DiskObjectStorageMetadata::deserialize(ReadBuffer & buf)
 {
     readIntText(version, buf);
+    assertChar('\n', buf);
 
     if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_FULL_OBJECT_KEY)
         throw Exception(
             ErrorCodes::UNKNOWN_FORMAT,
             "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
             metadata_file_path, toString(version), toString(VERSION_FULL_OBJECT_KEY));
-
-    assertChar('\n', buf);
 
     UInt32 keys_count;
     readIntText(keys_count, buf);
@@ -122,6 +121,7 @@ void DiskObjectStorageMetadata::serialize(WriteBuffer & buf, bool sync) const
 
     chassert(write_version >= VERSION_ABSOLUTE_PATHS && write_version <= VERSION_FULL_OBJECT_KEY);
     writeIntText(write_version, buf);
+
     writeChar('\n', buf);
 
     writeIntText(keys_with_meta.size(), buf);

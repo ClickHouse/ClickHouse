@@ -74,7 +74,6 @@ private:
 
     using BlockIDsType = std::conditional_t<async_insert, std::vector<String>, String>;
 
-    ZooKeeperRetriesInfo zookeeper_retries_info;
     struct QuorumInfo
     {
         String status_path;
@@ -105,6 +104,7 @@ private:
         const std::string & part_name,
         const std::string & quorum_path,
         int is_active_node_version,
+        int host_node_version,
         size_t replicas_num) const;
 
     StorageReplicatedMergeTree & storage;
