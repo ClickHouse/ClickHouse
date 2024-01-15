@@ -122,6 +122,8 @@ struct FormatSettings
     {
         UInt64 row_group_size = 1000000;
         bool low_cardinality_as_dictionary = false;
+        bool use_signed_indexes_for_dictionary = false;
+        bool use_64_bit_indexes_for_dictionary = false;
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;

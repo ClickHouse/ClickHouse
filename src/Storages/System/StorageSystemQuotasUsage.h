@@ -14,7 +14,7 @@ class StorageSystemQuotasUsage final : public IStorageSystemOneBlock<StorageSyst
 {
 public:
     std::string getName() const override { return "SystemQuotasUsage"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
