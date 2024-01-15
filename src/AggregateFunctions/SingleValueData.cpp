@@ -530,19 +530,24 @@ void SingleValueDataFixed<T>::compileMinMax(llvm::IRBuilderBase & builder, llvm:
     auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
     auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
 
-    auto is_signed = std::numeric_limits<T>::is_signed;
+    constexpr auto is_signed = std::numeric_limits<T>::is_signed;
 
     llvm::Value * should_change_after_comparison = nullptr;
 
     if constexpr (isMin)
+    {
         if (value_to_check->getType()->isIntegerTy())
             should_change_after_comparison = is_signed ? b.CreateICmpSLT(value_to_check, value) : b.CreateICmpULT(value_to_check, value);
         else
             should_change_after_comparison = b.CreateFCmpOLT(value_to_check, value);
-    else if (value_to_check->getType()->isIntegerTy())
-        should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_to_check, value) : b.CreateICmpUGT(value_to_check, value);
+    }
     else
-        should_change_after_comparison = b.CreateFCmpOGT(value_to_check, value);
+    {
+        if (value_to_check->getType()->isIntegerTy())
+            should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_to_check, value) : b.CreateICmpUGT(value_to_check, value);
+        else
+            should_change_after_comparison = b.CreateFCmpOGT(value_to_check, value);
+    }
 
     b.CreateCondBr(b.CreateOr(b.CreateNot(has_value_value), should_change_after_comparison), if_should_change, if_should_not_change);
 
@@ -576,19 +581,25 @@ void SingleValueDataFixed<T>::compileMinMaxMerge(
     auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
     auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
 
-    auto is_signed = std::numeric_limits<T>::is_signed;
+    constexpr auto is_signed = std::numeric_limits<T>::is_signed;
 
     llvm::Value * should_change_after_comparison = nullptr;
 
     if constexpr (isMin)
+    {
         if (value_src->getType()->isIntegerTy())
             should_change_after_comparison = is_signed ? b.CreateICmpSLT(value_src, value_dst) : b.CreateICmpULT(value_src, value_dst);
         else
             should_change_after_comparison = b.CreateFCmpOLT(value_src, value_dst);
-    else if (value_src->getType()->isIntegerTy())
-        should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_src, value_dst) : b.CreateICmpUGT(value_src, value_dst);
+    }
     else
-        should_change_after_comparison = b.CreateFCmpOGT(value_src, value_dst);
+    {
+        if (value_src->getType()->isIntegerTy())
+            should_change_after_comparison = is_signed ? b.CreateICmpSGT(value_src, value_dst) : b.CreateICmpUGT(
+                    value_src, value_dst);
+        else
+            should_change_after_comparison = b.CreateFCmpOGT(value_src, value_dst);
+    }
 
     b.CreateCondBr(
         b.CreateAnd(has_value_src, b.CreateOr(b.CreateNot(has_value_dst), should_change_after_comparison)),
