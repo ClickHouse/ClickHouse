@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -448,6 +449,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    format_settings.is_writing_to_terminal = isWritingToTerminal(buf);
 
     const Settings & settings = context->getSettingsRef();
 
@@ -489,6 +491,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     format_settings.max_threads = context->getSettingsRef().max_threads;
+    format_settings.is_writing_to_terminal = format_settings.is_writing_to_terminal = isWritingToTerminal(buf);
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.

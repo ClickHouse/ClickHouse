@@ -4,7 +4,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
-#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -73,7 +72,7 @@ void registerPrettyFormatWithNoEscapesAndMonoBlock(FormatFactory & factory, cons
             const Block & sample,
             const FormatSettings & format_settings)
         {
-            bool color = !no_escapes && format_settings.pretty.color.valueOr(isWritingToTerminal(buf));
+            bool color = !no_escapes && format_settings.pretty.color.valueOr(format_settings.is_writing_to_terminal);
             return std::make_shared<OutputFormat>(buf, sample, format_settings, mono_block, color);
         });
         if (!mono_block)
