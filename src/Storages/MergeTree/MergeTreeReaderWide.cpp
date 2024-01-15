@@ -356,7 +356,8 @@ void MergeTreeReaderWide::readData(
         else
         {
             serialization->deserializeBinaryBulkWithMultipleStreams(column, offset + max_rows_to_read, deserialize_settings, deserialize_state, &cache);
-            column = column->cut(offset, column->size() - offset);
+            if (!column->empty())
+                column = column->cut(offset, column->size() - offset);
         }
     }
     else
