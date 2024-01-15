@@ -849,6 +849,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::applyLimitForRangesInDataParts(
         if (remaining_limit == 0)
             break;
 
+        if (part_with_ranges.data_part->hasLightweightDelete())
+        {
+            result_parts_with_ranges.push_back(std::move(part_with_ranges));
+            continue;
+        }
+
         size_t part_ranges_total_rows = part_with_ranges.getRowsCount();
         result_parts_with_ranges.push_back(std::move(part_with_ranges));
         if (part_ranges_total_rows <= remaining_limit)
@@ -876,22 +882,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::applyLimitForRangesInDataParts(
             }
 
             const auto & marks_rows_partial_sums = part_index_granularity.getMarksRowsPartialSums();
-            size_t mark_range_partial_sum_start = range.begin > 0 ? marks_rows_partial_sums[range.begin - 1] : 0;
-            size_t left = range.begin;
-            size_t right = range.end;
-
-            while (left < right)
+            auto range_begin_it = marks_rows_partial_sums.begin() + range.begin;
+            auto range_end_it = marks_rows_partial_sums.begin() + range.end;
+            auto it = std::lower_bound(range_begin_it, range_end_it, remaining_limit, [&](size_t limit_value, size_t partial_sum_value)
             {
-                size_t middle = left + (right - left) / 2;
-                size_t middle_value = marks_rows_partial_sums[middle] - mark_range_partial_sum_start;
+                return limit_value < (partial_sum_value - *range_begin_it);
+            });
 
-                if (remaining_limit > middle_value)
-                    left = middle + 1;
-                else
-                    right = middle;
-            }
-
-            size_t new_range_end = left + 1;
+            size_t new_range_end = it - range_begin_it;
             chassert(new_range_end <= range.end);
 
             MarkRange new_range{range.begin, new_range_end};
