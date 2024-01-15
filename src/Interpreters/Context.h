@@ -96,6 +96,7 @@ class QueryViewsLog;
 class PartLog;
 class TextLog;
 class TraceLog;
+class MemoryDumpLog;
 class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
@@ -1040,16 +1041,22 @@ public:
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
 
+    /// Call after initialization before using memory dump collector.
+    void initializeMemoryDumpCollector(UInt64 memory_dump_interval_ms);
+
     /// Call after unexpected crash happen.
     void handleCrash() const;
 
     bool hasTraceCollector() const;
+
+    bool hasMemoryDumpCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog() const;
     std::shared_ptr<QueryThreadLog> getQueryThreadLog() const;
     std::shared_ptr<QueryViewsLog> getQueryViewsLog() const;
     std::shared_ptr<TraceLog> getTraceLog() const;
+    std::shared_ptr<MemoryDumpLog> getMemoryDumpLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;

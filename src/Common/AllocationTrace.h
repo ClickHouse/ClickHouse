@@ -1,4 +1,5 @@
 #pragma once
+
 #include <cstddef>
 #include <base/defines.h>
 
@@ -8,11 +9,12 @@
 struct AllocationTrace
 {
     AllocationTrace() = default;
-    explicit AllocationTrace(double sample_probability_) : sample_probability(sample_probability_) {}
+
+    explicit AllocationTrace(double sample_probability_);
 
     ALWAYS_INLINE void onAlloc(void * ptr, size_t size) const
     {
-        if (likely(sample_probability <= 0))
+        if (likely(sample_probability <= 0 && memory_dumper_enabled == false))
             return;
 
         onAllocImpl(ptr, size);
@@ -20,15 +22,18 @@ struct AllocationTrace
 
     ALWAYS_INLINE void onFree(void * ptr, size_t size) const
     {
-        if (likely(sample_probability <= 0))
+        if (likely(sample_probability <= 0 && memory_dumper_enabled == false))
             return;
 
         onFreeImpl(ptr, size);
     }
 
 private:
+    void onAllocImpl(void * ptr, size_t size) const;
+
+    void onFreeImpl(void * ptr, size_t size) const;
+
     double sample_probability = 0;
 
-    void onAllocImpl(void * ptr, size_t size) const;
-    void onFreeImpl(void * ptr, size_t size) const;
+    bool memory_dumper_enabled = false;
 };

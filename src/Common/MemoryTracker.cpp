@@ -14,6 +14,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <Common/MemoryDumper.h>
 
 #include "config.h"
 
@@ -91,8 +92,24 @@ bool shouldTrackAllocation(Float64 probability, void * ptr)
 
 }
 
+AllocationTrace::AllocationTrace(double sample_probability_)
+    : sample_probability(sample_probability_)
+    , memory_dumper_enabled(MemoryDumper::instance().isEnabled())
+{}
+
 void AllocationTrace::onAllocImpl(void * ptr, size_t size) const
 {
+    if (MemoryTrackerBlockerInThread::isBlocked(VariableContext::Global))
+        return;
+
+    if (memory_dumper_enabled)
+    {
+        MemoryDumper::instance().onAllocation(ptr, size);
+
+        if (sample_probability <= 0)
+            return;
+    }
+
     if (sample_probability < 1 && !shouldTrackAllocation(sample_probability, ptr))
         return;
 
@@ -102,6 +119,17 @@ void AllocationTrace::onAllocImpl(void * ptr, size_t size) const
 
 void AllocationTrace::onFreeImpl(void * ptr, size_t size) const
 {
+    if (MemoryTrackerBlockerInThread::isBlocked(VariableContext::Global))
+        return;
+
+    if (memory_dumper_enabled)
+    {
+        MemoryDumper::instance().onDeallocation(ptr, size);
+
+        if (sample_probability <= 0)
+            return;
+    }
+
     if (sample_probability < 1 && !shouldTrackAllocation(sample_probability, ptr))
         return;
 

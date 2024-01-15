@@ -1084,6 +1084,21 @@
         <flush_on_crash>false</flush_on_crash>
     </trace_log>
 
+    <!-- MemoryDump log. Stores allocations from whole process collected by memory dumper.
+        See enable_memory_dump_collector and memory_dump_interval_ms settings. -->
+    <memory_dump_log>
+        <database>system</database>
+        <table>memory_dump_log</table>
+
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
+        <flush_on_crash>false</flush_on_crash>
+    </memory_dump_log>
+
     <!-- Query thread log. Has information about all threads participated in query execution.
          Used only for queries with setting log_query_threads = 1. -->
     <query_thread_log>

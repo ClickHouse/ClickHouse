@@ -44,6 +44,7 @@
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
+#include <Common/MemoryDumper.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/ServerUUID.h>
@@ -620,6 +621,9 @@ try
 
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
+
+    if (server_settings.enable_memory_dump_collector)
+        MemoryDumper::instance().enable();
 
     StackTrace::setShowAddresses(server_settings.show_addresses_in_stack_traces);
 
@@ -1828,6 +1832,11 @@ try
     }
 #endif
 
+    LOG_INFO(log, "Enable memory dump collector: {}", server_settings.enable_memory_dump_collector);
+
+    if (server_settings.enable_memory_dump_collector)
+        global_context->initializeMemoryDumpCollector(server_settings.memory_dump_interval_ms);
+
     /// Describe multiple reasons when query profiler cannot work.
 
 #if WITH_COVERAGE
@@ -2037,6 +2046,7 @@ try
                 LOG_INFO(log, "Closed connections.");
 
             dns_cache_updater.reset();
+            MemoryDumper::instance().disable();
 
             if (current_connections)
             {

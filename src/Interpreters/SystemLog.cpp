@@ -23,6 +23,7 @@
 #include <Interpreters/S3QueueLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/BackupLog.h>
+#include <Interpreters/MemoryDumpLog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -300,6 +301,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     backup_log = createSystemLog<BackupLog>(global_context, "system", "backup_log", config, "backup_log", "Contains logging entries with the information about BACKUP and RESTORE operations.");
     s3_queue_log = createSystemLog<S3QueueLog>(global_context, "system", "s3queue_log", config, "s3queue_log", "Contains logging entries with the information files processes by S3Queue engine.");
     blob_storage_log = createSystemLog<BlobStorageLog>(global_context, "system", "blob_storage_log", config, "blob_storage_log", "Contains logging entries with information about various blob storage operations such as uploads and deletes.");
+    memory_dump_log = createSystemLog<MemoryDumpLog>(global_context, "system", "memory_dump_log", config, "memory_dump_log", "Contains memory dumps collected by memory dump collector.");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -344,6 +346,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(s3_queue_log.get());
     if (blob_storage_log)
         logs.emplace_back(blob_storage_log.get());
+    if (memory_dump_log)
+        logs.emplace_back(memory_dump_log.get());
 
     try
     {
