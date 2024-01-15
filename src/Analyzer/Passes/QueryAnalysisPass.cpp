@@ -3149,6 +3149,17 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
           * So, `t` in USING list is resolved from JOIN itself and has supertype of columns from left and right table.
           * But `t` in `getSubcolumn` argument is still resolved from table and we need to update its type.
           *
+          * Example:
+          *
+          * SELECT t.t FROM (
+          *     SELECT ((1, 's'), 's') :: Tuple(t Tuple(t UInt32, s1 String), s1 String) as t
+          * ) AS a FULL JOIN (
+          *     SELECT ((1, 's'), 's') :: Tuple(t Tuple(t Int32, s2 String), s2 String) as t
+          * ) AS b USING t;
+          *
+          * Result type of `t` is `Tuple(Tuple(Int64, String), String)` (different type and no names for subcolumns),
+          * so it may be tricky to have a correct type for `t.t` that is resolved into getSubcolumn(t, 't').
+          *
           * It can be more complicated in case of Nested subcolumns, in that case in query:
           *     SELECT t FROM ... JOIN ... USING (t.t)
           * Here, `t` is resolved into function `nested(['t', 's'], t.t, t.s) so, `t.t` should be from JOIN and `t.s` should be from table.
