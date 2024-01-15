@@ -18,6 +18,7 @@
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Parsers/ASTFunction.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -162,10 +163,10 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         try
         {
             if (my_table_func_ptr)
-                try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, &current_settings, PoolMode::GET_MANY);
+                try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, current_settings, PoolMode::GET_MANY);
             else
                 try_results = my_shard.shard_info.pool->getManyChecked(
-                    timeouts, &current_settings, PoolMode::GET_MANY,
+                    timeouts, current_settings, PoolMode::GET_MANY,
                     my_shard.main_table ? my_shard.main_table.getQualifiedName() : my_main_table.getQualifiedName());
         }
         catch (const Exception & ex)
@@ -231,50 +232,102 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
         add_extremes = context->getSettingsRef().extremes;
     }
 
-    String query_string = formattedAST(shard.query);
-
     scalars["_shard_num"]
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
-    if (context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS)
+    if (context->canUseTaskBasedParallelReplicas())
     {
         if (context->getSettingsRef().cluster_for_parallel_replicas.changed)
         {
             const String cluster_for_parallel_replicas = context->getSettingsRef().cluster_for_parallel_replicas;
             if (cluster_for_parallel_replicas != cluster_name)
-                LOG_INFO(log, "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is used: {}",
-                         cluster_for_parallel_replicas, cluster_name);
+                LOG_INFO(
+                    log,
+                    "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is "
+                    "used: {}",
+                    cluster_for_parallel_replicas,
+                    cluster_name);
         }
 
-        LOG_TRACE(&Poco::Logger::get("ReadFromRemote"), "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
+        LOG_TRACE(log, "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
         context->setSetting("cluster_for_parallel_replicas", cluster_name);
     }
 
-    std::shared_ptr<RemoteQueryExecutor> remote_query_executor;
-
-    remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard.shard_info.pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage);
-
-    remote_query_executor->setLogger(log);
-
-    if (context->getParallelReplicasMode() == Context::ParallelReplicasMode::READ_TASKS)
+    /// parallel replicas custom key case
+    if (shard.shard_filter_generator)
     {
-        // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
-        // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
-        // The coordinator will return query result from the shard.
-        // Only one coordinator per shard is necessary. Therefore using PoolMode::GET_ONE to establish only one connection per shard.
-        // Using PoolMode::GET_MANY for this mode will(can) lead to instantiation of several coordinators (depends on max_parallel_replicas setting)
-        // each will execute parallel reading from replicas, so the query result will be multiplied by the number of created coordinators
-        remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+        for (size_t i = 0; i < shard.shard_info.per_replica_pools.size(); ++i)
+        {
+            auto query = shard.query->clone();
+            auto & select_query = query->as<ASTSelectQuery &>();
+            auto shard_filter = shard.shard_filter_generator(i + 1);
+            if (shard_filter)
+            {
+                auto where_expression = select_query.where();
+                if (where_expression)
+                    shard_filter = makeASTFunction("and", where_expression, shard_filter);
+
+                select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
+            }
+
+            const String query_string = formattedAST(query);
+
+            if (!priority_func_factory.has_value())
+                priority_func_factory = GetPriorityForLoadBalancing(LoadBalancing::ROUND_ROBIN, randomSeed());
+
+            GetPriorityForLoadBalancing::Func priority_func
+                = priority_func_factory->getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, shard.shard_info.pool->getPoolSize());
+
+            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+                shard.shard_info.pool,
+                query_string,
+                output_stream->header,
+                context,
+                throttler,
+                scalars,
+                external_tables,
+                stage,
+                std::nullopt,
+                priority_func);
+            remote_query_executor->setLogger(log);
+            remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+
+            if (!table_func_ptr)
+                remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
+
+            pipes.emplace_back(
+                createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
+            addConvertingActions(pipes.back(), output_stream->header);
+        }
     }
     else
-        remote_query_executor->setPoolMode(PoolMode::GET_MANY);
+    {
+        const String query_string = formattedAST(shard.query);
 
-    if (!table_func_ptr)
-        remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
+        auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+            shard.shard_info.pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage);
+        remote_query_executor->setLogger(log);
 
-    pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
-    addConvertingActions(pipes.back(), output_stream->header);
+        if (context->canUseTaskBasedParallelReplicas())
+        {
+            // when doing parallel reading from replicas (ParallelReplicasMode::READ_TASKS) on a shard:
+            // establish a connection to a replica on the shard, the replica will instantiate coordinator to manage parallel reading from replicas on the shard.
+            // The coordinator will return query result from the shard.
+            // Only one coordinator per shard is necessary. Therefore using PoolMode::GET_ONE to establish only one connection per shard.
+            // Using PoolMode::GET_MANY for this mode will(can) lead to instantiation of several coordinators (depends on max_parallel_replicas setting)
+            // each will execute parallel reading from replicas, so the query result will be multiplied by the number of created coordinators
+            remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+        }
+        else
+            remote_query_executor->setPoolMode(PoolMode::GET_MANY);
+
+        if (!table_func_ptr)
+            remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
+
+        pipes.emplace_back(
+            createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending));
+        addConvertingActions(pipes.back(), output_stream->header);
+    }
 }
 
 void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -305,7 +358,6 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     Block header_,
     QueryProcessingStage::Enum stage_,
     StorageID main_table_,
-    ASTPtr table_func_ptr_,
     ContextMutablePtr context_,
     ThrottlerPtr throttler_,
     Scalars scalars_,
@@ -318,7 +370,6 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
     , main_table(std::move(main_table_))
-    , table_func_ptr(table_func_ptr_)
     , context(context_)
     , throttler(throttler_)
     , scalars(scalars_)
@@ -367,7 +418,9 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             IConnections::ReplicaInfo replica_info
             {
                 .all_replicas_count = all_replicas_count,
-                .number_of_current_replica = 0
+                /// `shard_num` will be equal to the number of the given replica in the cluster (set by `Cluster::getClusterWithReplicasAsShards`).
+                /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
+                .number_of_current_replica = shard.shard_num - 1,
             };
 
             addPipeForSingeReplica(pipes, shard.pool, replica_info);
@@ -386,7 +439,9 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         IConnections::ReplicaInfo replica_info
         {
             .all_replicas_count = all_replicas_count,
-            .number_of_current_replica = pipes.size()
+            /// `shard_num` will be equal to the number of the given replica in the cluster (set by `Cluster::getClusterWithReplicasAsShards`).
+            /// we should use this number specifically because efficiency of data distribution by consistent hash depends on it.
+            .number_of_current_replica = current_shard->shard_num - 1,
         };
 
         addPipeForSingeReplica(pipes, current_shard->pool, replica_info);

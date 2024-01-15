@@ -14,7 +14,10 @@ public:
     ~MySQLCharset();
     String getCharsetFromId(UInt32 id);
     Int32 convertFromId(UInt32 id, String & to, const String & from);
+    Int32 convert(const String & charset, String & to, const String & from);
     bool needConvert(UInt32 id);
+    static bool needConvert(const String & charset);
+    static bool isCharsetAvailable(const String & name);
 private:
     std::mutex mutex;
     std::unordered_map<String, UConverter *> conv_cache;

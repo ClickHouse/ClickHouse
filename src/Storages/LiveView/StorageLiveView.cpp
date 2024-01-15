@@ -253,7 +253,7 @@ StorageLiveView::StorageLiveView(
 
 StorageLiveView::~StorageLiveView()
 {
-    shutdown();
+    shutdown(false);
 }
 
 NamesAndTypesList StorageLiveView::getVirtuals() const
@@ -289,7 +289,7 @@ void StorageLiveView::startup()
         periodic_refresh_task->activate();
 }
 
-void StorageLiveView::shutdown()
+void StorageLiveView::shutdown(bool)
 {
     shutdown_called = true;
 

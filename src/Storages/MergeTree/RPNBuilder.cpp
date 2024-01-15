@@ -314,7 +314,7 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet() const
 
     if (ast_node && prepared_sets)
     {
-        auto key = ast_node->getTreeHash();
+        auto key = ast_node->getTreeHash(/*ignore_aliases=*/ true);
         const auto & sets = prepared_sets->getSetsFromTuple();
         auto it = sets.find(key);
         if (it != sets.end() && !it->second.empty())
@@ -338,72 +338,14 @@ FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(const DataTypes & data_types)
     if (prepared_sets && ast_node)
     {
         if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->findSubquery(ast_node->getTreeHash());
+            return prepared_sets->findSubquery(ast_node->getTreeHash(/*ignore_aliases=*/ true));
 
-        return prepared_sets->findTuple(ast_node->getTreeHash(), data_types);
+        return prepared_sets->findTuple(ast_node->getTreeHash(/*ignore_aliases=*/ true), data_types);
     }
     else if (dag_node)
     {
         const auto * node_without_alias = getNodeWithoutAlias(dag_node);
         return tryGetSetFromDAGNode(node_without_alias);
-    }
-
-    return nullptr;
-}
-
-FutureSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
-    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    const DataTypes & data_types) const
-{
-    const auto & prepared_sets = getTreeContext().getPreparedSets();
-
-    /// We have `PreparedSetKey::forLiteral` but it is useless here as we don't have enough information
-    /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
-    /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
-    /// that the types it was prepared with are compatible with the types of the primary key.
-    auto types_match = [&indexes_mapping, &data_types](const DataTypes & set_types)
-    {
-        assert(indexes_mapping.size() == data_types.size());
-
-        for (size_t i = 0; i < indexes_mapping.size(); ++i)
-        {
-            if (indexes_mapping[i].tuple_index >= set_types.size())
-                return false;
-
-            auto lhs = removeNullable(recursiveRemoveLowCardinality(data_types[i]));
-            auto rhs = removeNullable(recursiveRemoveLowCardinality(set_types[indexes_mapping[i].tuple_index]));
-
-            if (!lhs->equals(*rhs))
-                return false;
-        }
-
-        return true;
-    };
-
-    if (prepared_sets && ast_node)
-    {
-        if (ast_node->as<ASTSubquery>() || ast_node->as<ASTTableIdentifier>())
-            return prepared_sets->findSubquery(ast_node->getTreeHash());
-
-        auto tree_hash = ast_node->getTreeHash();
-        const auto & sets = prepared_sets->getSetsFromTuple();
-        auto it = sets.find(tree_hash);
-        if (it == sets.end())
-            return nullptr;
-
-        for (const auto & future_set : it->second)
-            if (types_match(future_set->getTypes()))
-                return future_set;
-    }
-    else
-    {
-        const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-        if (node_without_alias->column)
-        {
-            auto future_set = tryGetSetFromDAGNode(node_without_alias);
-            if (types_match(future_set->getTypes()))
-                return future_set;
-        }
     }
 
     return nullptr;
@@ -454,6 +396,12 @@ size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
 
 RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
 {
+    const size_t total_arguments = getArgumentsSize();
+    if (index >= total_arguments) /// Bug #52632
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "RPNBuilderFunctionTreeNode has {} arguments, attempted to get argument at index {}",
+                total_arguments, index);
+
     if (ast_node)
     {
         const auto * ast_function = assert_cast<const ASTFunction *>(ast_node);

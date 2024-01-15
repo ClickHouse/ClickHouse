@@ -1,8 +1,5 @@
 {"id":"1","obj":{"k1":1,"k2":{"k3":"2","k4":[{"k5":3,"k6":null},{"k5":4,"k6":null}]},"some":null},"s":"foo"}
 {"id":"2","obj":{"k1":null,"k2":{"k3":"str","k4":[{"k5":null,"k6":55}]},"some":42},"s":"bar"}
-Tuple(k1 Nullable(Int8), k2 Tuple(k3 Nullable(String), k4 Nested(k5 Nullable(Int8), k6 Nullable(Int8))), some Nullable(Int8))
+Tuple(\n    k1 Nullable(Int8),\n    k2 Tuple(\n        k3 Nullable(String),\n        k4 Nested(k5 Nullable(Int8), k6 Nullable(Int8))),\n    some Nullable(Int8))
 {"id":"1","obj":"aaa","s":"foo"}
 {"id":"2","obj":"bbb","s":"bar"}
-{"map":{"k1":"1","k2":"2"},"obj":{"k1":1,"k2.k3":2},"map_type":"Map(String, Nullable(Int64))","obj_type":"Object(Nullable('json'))"}
-{"obj":{"k1":"1","k2":"2"},"map":{"k1":"1","k2":"2"}}
-Tuple(k1 Int64, k2 Int64)

@@ -18,6 +18,7 @@
 #include <Storages/MergeTree/PartMetadataManagerOrdinary.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ColumnsDescription.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
@@ -381,11 +382,6 @@ void IMergeTreeDataPart::setState(MergeTreeDataPartState new_state) const
     incrementStateMetric(state);
 }
 
-MergeTreeDataPartState IMergeTreeDataPart::getState() const
-{
-    return state;
-}
-
 
 std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 {
@@ -633,6 +629,31 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(bool with_subc
     return *minimum_size_column;
 }
 
+Statistics IMergeTreeDataPart::loadStatistics() const
+{
+    const auto & metadata_snaphost = storage.getInMemoryMetadata();
+
+    auto total_statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snaphost.getColumns());
+
+    Statistics result;
+    for (auto & stat : total_statistics)
+    {
+        String file_name = stat->getFileName() + STAT_FILE_SUFFIX;
+        String file_path = fs::path(getDataPartStorage().getRelativePath()) / file_name;
+
+        if (!metadata_manager->exists(file_name))
+        {
+            LOG_INFO(storage.log, "Cannot find stats file {}", file_path);
+            continue;
+        }
+        auto stat_file = metadata_manager->read(file_name);
+        CompressedReadBuffer compressed_buffer(*stat_file);
+        stat->deserialize(compressed_buffer);
+        result.push_back(stat);
+    }
+    return result;
+}
+
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {
     assertOnDisk();
@@ -667,6 +688,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     {
         // There could be conditions that data part to be loaded is broken, but some of meta infos are already written
         // into meta data before exception, need to clean them all.
+        LOG_ERROR(storage.log, "Part {} is broken and need manual correction", getDataPartStorage().getFullPath());
         metadata_manager->deleteAll(/*include_projection*/ true);
         metadata_manager->assertAllDeleted(/*include_projection*/ true);
         throw;
@@ -1032,11 +1054,14 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
             {
                 if (path_to_data_file.empty())
                 {
-                    String candidate_path = /*fs::path(getRelativePath()) */ (ISerialization::getFileNameForStream(part_column, substream_path) + ".bin");
+                    auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage());
+                    if (!stream_name)
+                        return;
 
+                    auto file_name = *stream_name + ".bin";
                     /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
-                    if (getDataPartStorage().exists(candidate_path) && getDataPartStorage().getFileSize(candidate_path) != 0)
-                        path_to_data_file = candidate_path;
+                    if (getDataPartStorage().getFileSize(file_name) != 0)
+                        path_to_data_file = file_name;
                 }
             });
 
@@ -1117,6 +1142,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         {
             assertEOF(*buf);
             bytes_on_disk = checksums.getTotalSizeOnDisk();
+            bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
         }
         else
             bytes_on_disk = getDataPartStorage().calculateTotalSizeOnDisk();
@@ -1134,6 +1160,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         writeChecksums(checksums, {});
 
         bytes_on_disk = checksums.getTotalSizeOnDisk();
+        bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
     }
 }
 
@@ -1321,8 +1348,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (parent_part)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
-    NamesAndTypesList loaded_columns;
 
+    NamesAndTypesList loaded_columns;
     bool is_readonly_storage = getDataPartStorage().isReadonly();
 
     if (!metadata_manager->exists("columns.txt"))
@@ -1334,7 +1361,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
 
         /// If there is no file with a list of columns, write it down.
         for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAllPhysical())
-            if (getDataPartStorage().exists(getFileNameForColumn(column) + ".bin"))
+            if (getFileNameForColumn(column))
                 loaded_columns.push_back(column);
 
         if (columns.empty())
@@ -1793,12 +1820,18 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
     return getDataPartStorage().freeze(
         storage.relative_data_path,
         *maybe_path_in_detached,
+        Context::getGlobalContextInstance()->getReadSettings(),
         Context::getGlobalContextInstance()->getWriteSettings(),
         /* save_metadata_callback= */ {},
         params);
 }
 
-MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & directory_name, const WriteSettings & write_settings) const
+MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
+    const DiskPtr & disk,
+    const String & directory_name,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook) const
 {
     assertOnDisk();
 
@@ -1808,7 +1841,7 @@ MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & di
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not clone data part {} to empty directory.", name);
 
     String path_to_clone = fs::path(storage.relative_data_path) / directory_name / "";
-    return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, write_settings, storage.log);
+    return getDataPartStorage().clonePart(path_to_clone, getDataPartStorage().getPartDirectory(), disk, read_settings, write_settings, storage.log, cancellation_hook);
 }
 
 UInt64 IMergeTreeDataPart::getIndexSizeFromFile() const
@@ -2061,6 +2094,73 @@ String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 
     const auto hash_value = hash.get128();
     return info.partition_id + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
+}
+
+std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
+    const String & stream_name,
+    const Checksums & checksums_)
+{
+    if (checksums_.files.contains(stream_name + ".bin"))
+        return stream_name;
+
+    auto hash = sipHash128String(stream_name);
+    if (checksums_.files.contains(hash + ".bin"))
+        return hash;
+
+    return {};
+}
+
+std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
+    const String & stream_name,
+    const String & extension,
+    const IDataPartStorage & storage_)
+{
+    if (storage_.exists(stream_name + extension))
+        return stream_name;
+
+    auto hash = sipHash128String(stream_name);
+    if (storage_.exists(hash + extension))
+        return hash;
+
+    return {};
+}
+
+std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
+    const String & column_name,
+    const ISerialization::SubstreamPath & substream_path,
+    const Checksums & checksums_)
+{
+    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
+    return getStreamNameOrHash(stream_name, checksums_);
+}
+
+std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
+    const NameAndTypePair & column,
+    const ISerialization::SubstreamPath & substream_path,
+    const Checksums & checksums_)
+{
+    auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
+    return getStreamNameOrHash(stream_name, checksums_);
+}
+
+std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
+    const String & column_name,
+    const ISerialization::SubstreamPath & substream_path,
+    const String & extension,
+    const IDataPartStorage & storage_)
+{
+    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
+    return getStreamNameOrHash(stream_name, extension, storage_);
+}
+
+std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
+    const NameAndTypePair & column,
+    const ISerialization::SubstreamPath & substream_path,
+    const String & extension,
+    const IDataPartStorage & storage_)
+{
+    auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
+    return getStreamNameOrHash(stream_name, extension, storage_);
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)

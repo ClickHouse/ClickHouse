@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Databases/IDatabase.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -19,7 +18,10 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <DataTypes/DataTypeUUID.h>
 
 
@@ -31,46 +33,79 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription({
-        {"database", std::make_shared<DataTypeString>()},
-        {"name", std::make_shared<DataTypeString>()},
-        {"uuid", std::make_shared<DataTypeUUID>()},
-        {"engine", std::make_shared<DataTypeString>()},
-        {"is_temporary", std::make_shared<DataTypeUInt8>()},
-        {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"metadata_path", std::make_shared<DataTypeString>()},
-        {"metadata_modification_time", std::make_shared<DataTypeDateTime>()},
-        {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"create_table_query", std::make_shared<DataTypeString>()},
-        {"engine_full", std::make_shared<DataTypeString>()},
-        {"as_select", std::make_shared<DataTypeString>()},
-        {"partition_key", std::make_shared<DataTypeString>()},
-        {"sorting_key", std::make_shared<DataTypeString>()},
-        {"primary_key", std::make_shared<DataTypeString>()},
-        {"sampling_key", std::make_shared<DataTypeString>()},
-        {"storage_policy", std::make_shared<DataTypeString>()},
-        {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+
+    auto description = ColumnsDescription{
+        {"database", std::make_shared<DataTypeString>(), "The name of the database the table is in."},
+        {"name", std::make_shared<DataTypeString>(), "Table name."},
+        {"uuid", std::make_shared<DataTypeUUID>(), "Table uuid (Atomic database)."},
+        {"engine", std::make_shared<DataTypeString>(), "Table engine name (without parameters)."},
+        {"is_temporary", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the table is temporary."},
+        {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Paths to the table data in the file systems."},
+        {"metadata_path", std::make_shared<DataTypeString>(), "Path to the table metadata in the file system."},
+        {"metadata_modification_time", std::make_shared<DataTypeDateTime>(), "Time of latest modification of the table metadata."},
+        {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Database dependencies."},
+        {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Table dependencies (materialized views the current table)."},
+        {"create_table_query", std::make_shared<DataTypeString>(), "The query that was used to create the table."},
+        {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the table engine."},
+        {"as_select", std::make_shared<DataTypeString>(), "SELECT query for view."},
+        {"partition_key", std::make_shared<DataTypeString>(), "The partition key expression specified in the table."},
+        {"sorting_key", std::make_shared<DataTypeString>(), "The sorting key expression specified in the table."},
+        {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
+        {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
+        {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy."},
+        {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
+        },
+        {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "Total number of bytes, if it is possible to quickly determine exact number "
+            "of bytes for the table on storage, otherwise NULL (does not includes any underlying storage). "
+            "If the table stores data on disk, returns used space on disk (i.e. compressed). "
+            "If the table stores data in memory, returns approximated number of used bytes in memory."
+        },
+        {"total_bytes_uncompressed", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "Total number of uncompressed bytes, if it's possible to quickly determine the exact number "
+            "of bytes from the part checksums for the table on storage, otherwise NULL (does not take underlying storage (if any) into account)."
+        },
         {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"comment", std::make_shared<DataTypeString>()},
-        {"has_own_data", std::make_shared<DataTypeUInt8>()},
-        {"loading_dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"loading_dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"loading_dependent_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-    }, {
+        {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "Total number of rows INSERTed since server start (only for Buffer tables)."
+        },
+        {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "Total number of bytes INSERTed since server start (only for Buffer tables)."
+        },
+        {"comment", std::make_shared<DataTypeString>(), "The comment for the table."},
+        {"has_own_data", std::make_shared<DataTypeUInt8>(),
+            "Flag that indicates whether the table itself stores some data on disk or only accesses some other source."
+        },
+        {"loading_dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Database loading dependencies (list of objects which should be loaded before the current object)."
+        },
+        {"loading_dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Table loading dependencies (list of objects which should be loaded before the current object)."
+        },
+        {"loading_dependent_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Dependent loading database."
+        },
+        {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Dependent loading table."
+        },
+    };
+
+    description.setAliases({
         {"table", std::make_shared<DataTypeString>(), "name"}
-    }));
+    });
+
+    storage_metadata.setColumns(std::move(description));
     setInMemoryMetadata(storage_metadata);
 }
 
 
-static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, ContextPtr context)
+namespace
+{
+
+ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context)
 {
     MutableColumnPtr column = ColumnString::create();
 
@@ -84,13 +119,31 @@ static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, Contex
     }
 
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
-    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
     return block.getByPosition(0).column;
 }
 
-static ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filtered_databases_column, ContextPtr context)
+ColumnPtr getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr & filtered_databases_column, ContextPtr context)
 {
-    MutableColumnPtr column = ColumnString::create();
+    Block sample {
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")
+    };
+
+    MutableColumnPtr database_column = ColumnString::create();
+    MutableColumnPtr engine_column;
+
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
+    if (dag)
+    {
+        bool filter_by_engine = false;
+        for (const auto * input : dag->getInputs())
+            if (input->result_name == "engine")
+                filter_by_engine = true;
+
+        if (filter_by_engine)
+            engine_column= ColumnString::create();
+    }
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
     {
@@ -100,17 +153,26 @@ static ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filte
             continue;
 
         for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-            column->insert(table_it->name());
+        {
+            database_column->insert(table_it->name());
+            if (engine_column)
+                engine_column->insert(table_it->table()->getName());
+        }
     }
 
-    Block block {ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "name")};
-    VirtualColumnUtils::filterBlockWithQuery(query, block, context);
+    Block block {ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "name")};
+    if (engine_column)
+        block.insert(ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"));
+
+    if (dag)
+        VirtualColumnUtils::filterBlockWithDAG(dag, block, context);
+
     return block.getByPosition(0).column;
 }
 
 /// Avoid heavy operation on tables if we only queried columns that we can get without table object.
 /// Otherwise it will require table initialization for Lazy database.
-static bool needTable(const DatabasePtr & database, const Block & header)
+bool needTable(const DatabasePtr & database, const Block & header)
 {
     if (database->getEngineName() != "Lazy")
         return true;
@@ -486,6 +548,15 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
+                if (columns_mask[src_index++])
+                {
+                    auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
+                    if (total_bytes_uncompressed)
+                        res_columns[res_index++]->insert(*total_bytes_uncompressed);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
                 auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
                 if (columns_mask[src_index++])
                 {
@@ -602,11 +673,37 @@ private:
     std::string database_name;
 };
 
+}
 
-Pipe StorageSystemTables::read(
+class ReadFromSystemTables : public SourceStepWithFilter
+{
+public:
+    std::string getName() const override { return "ReadFromSystemTables"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    ReadFromSystemTables(
+        Block sample_block,
+        ContextPtr context_,
+        std::vector<UInt8> columns_mask_,
+        size_t max_block_size_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        , context(std::move(context_))
+        , columns_mask(std::move(columns_mask_))
+        , max_block_size(max_block_size_)
+    {
+    }
+
+private:
+    ContextPtr context;
+    std::vector<UInt8> columns_mask;
+    size_t max_block_size;
+};
+
+void StorageSystemTables::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
+    SelectQueryInfo & /*query_info*/,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
@@ -617,11 +714,28 @@ Pipe StorageSystemTables::read(
 
     auto [columns_mask, res_block] = getQueriedColumnsMaskAndHeader(sample_block, column_names);
 
-    ColumnPtr filtered_databases_column = getFilteredDatabases(query_info, context);
-    ColumnPtr filtered_tables_column = getFilteredTables(query_info.query, filtered_databases_column, context);
+    auto reading = std::make_unique<ReadFromSystemTables>(
+        std::move(res_block),
+        context,
+        std::move(columns_mask),
+        max_block_size);
 
-    return Pipe(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
+    query_plan.addStep(std::move(reading));
+}
+
+void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    const ActionsDAG::Node * predicate = nullptr;
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
+
+    ColumnPtr filtered_databases_column = getFilteredDatabases(predicate, context);
+    ColumnPtr filtered_tables_column = getFilteredTables(predicate, filtered_databases_column, context);
+
+    Pipe pipe(std::make_shared<TablesBlockSource>(
+        std::move(columns_mask), getOutputStream().header, max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
+    pipeline.init(std::move(pipe));
 }
 
 }

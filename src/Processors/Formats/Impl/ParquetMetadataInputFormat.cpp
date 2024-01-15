@@ -130,7 +130,7 @@ static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
     const FormatSettings & format_settings,
     std::atomic<int> & is_stopped)
 {
-    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES);
+    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
     return parquet::ReadMetaData(arrow_file);
 }
 
@@ -140,7 +140,7 @@ ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, Block h
     checkHeader(getPort().getHeader());
 }
 
-Chunk ParquetMetadataInputFormat::generate()
+Chunk ParquetMetadataInputFormat::read()
 {
     Chunk res;
     if (done)
@@ -495,12 +495,15 @@ NamesAndTypesList ParquetMetadataSchemaReader::readSchema()
 
 void registerInputFormatParquetMetadata(FormatFactory & factory)
 {
-    factory.registerInputFormat(
+    factory.registerRandomAccessInputFormat(
         "ParquetMetadata",
-        [](ReadBuffer &buf,
-           const Block &sample,
-           const RowInputFormatParams &,
-           const FormatSettings & settings)
+        [](ReadBuffer & buf,
+            const Block & sample,
+            const FormatSettings & settings,
+            const ReadSettings &,
+            bool /* is_remote_fs */,
+            size_t /* max_download_threads */,
+            size_t /* max_parsing_threads */)
         {
             return std::make_shared<ParquetMetadataInputFormat>(buf, sample, settings);
         });

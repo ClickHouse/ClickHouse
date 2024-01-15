@@ -63,7 +63,7 @@ public:
     void resetParser() override;
 
 private:
-    Chunk generate() override;
+    Chunk read() override;
 
     void onCancel() override
     {

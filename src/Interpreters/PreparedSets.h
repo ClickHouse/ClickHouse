@@ -47,7 +47,7 @@ public:
     /// Returns set if set is ready (created and filled) or nullptr if not.
     virtual SetPtr get() const = 0;
     /// Returns set->getElementsTypes(), even if set is not created yet.
-    virtual const DataTypes & getTypes() const = 0;
+    virtual DataTypes getTypes() const = 0;
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 };
@@ -59,15 +59,17 @@ using FutureSetPtr = std::shared_ptr<FutureSet>;
 class FutureSetFromStorage final : public FutureSet
 {
 public:
-    FutureSetFromStorage(SetPtr set_);
+    explicit FutureSetFromStorage(SetPtr set_);
 
     SetPtr get() const override;
-    const DataTypes & getTypes() const override;
+    DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
 
 private:
     SetPtr set;
 };
+
+using FutureSetFromStoragePtr = std::shared_ptr<FutureSetFromStorage>;
 
 /// Set from tuple is filled as well as set from storage.
 /// Additionally, it can be converted to set useful for PK.
@@ -79,12 +81,14 @@ public:
     SetPtr get() const override { return set; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
-    const DataTypes & getTypes() const override;
+    DataTypes getTypes() const override;
 
 private:
     SetPtr set;
     SetKeyColumns set_key_columns;
 };
+
+using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
 
 /// Set from subquery can be built inplace for PK or in CreatingSet step.
 /// If use_index_for_in_with_subqueries_max_values is reached, set for PK won't be created,
@@ -96,8 +100,9 @@ public:
         String key,
         std::unique_ptr<QueryPlan> source_,
         StoragePtr external_table_,
-        FutureSetPtr external_table_set_,
-        const Settings & settings);
+        std::shared_ptr<FutureSetFromSubquery> external_table_set_,
+        const Settings & settings,
+        bool in_subquery_);
 
     FutureSetFromSubquery(
         String key,
@@ -105,22 +110,32 @@ public:
         const Settings & settings);
 
     SetPtr get() const override;
-    const DataTypes & getTypes() const override;
+    DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     std::unique_ptr<QueryPlan> build(const ContextPtr & context);
+    void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
+    void markAsINSubquery() { in_subquery = true; }
+    bool isINSubquery() const { return in_subquery; }
 
 private:
     SetAndKeyPtr set_and_key;
     StoragePtr external_table;
-    FutureSetPtr external_table_set;
+    std::shared_ptr<FutureSetFromSubquery> external_table_set;
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
+    bool in_subquery = false; // subquery used in IN operator
+                              // the flag can be removed after enabling new analyzer and removing interpreter
+                              // or after enabling support IN operator with subqueries in parallel replicas
+                              // Note: it's necessary with interpreter since prepared sets used also for GLOBAL JOINs,
+                              //       with new analyzer it's not a case
 };
+
+using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
 /// Container for all the sets used in query.
 class PreparedSets
@@ -133,31 +148,34 @@ public:
         UInt64 operator()(const Hash & key) const { return key.low64 ^ key.high64; }
     };
 
-    using SetsFromTuple = std::unordered_map<Hash, std::vector<std::shared_ptr<FutureSetFromTuple>>, Hashing>;
-    using SetsFromStorage = std::unordered_map<Hash, std::shared_ptr<FutureSetFromStorage>, Hashing>;
-    using SetsFromSubqueries = std::unordered_map<Hash, std::shared_ptr<FutureSetFromSubquery>, Hashing>;
+    using SetsFromTuple = std::unordered_map<Hash, std::vector<FutureSetFromTuplePtr>, Hashing>;
+    using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
+    using SetsFromSubqueries = std::unordered_map<Hash, FutureSetFromSubqueryPtr, Hashing>;
 
-    FutureSetPtr addFromStorage(const Hash & key, SetPtr set_);
-    FutureSetPtr addFromTuple(const Hash & key, Block block, const Settings & settings);
+    FutureSetFromStoragePtr addFromStorage(const Hash & key, SetPtr set_);
+    FutureSetFromTuplePtr addFromTuple(const Hash & key, Block block, const Settings & settings);
 
-    FutureSetPtr addFromSubquery(
+    FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,
         std::unique_ptr<QueryPlan> source,
         StoragePtr external_table,
-        FutureSetPtr external_table_set,
-        const Settings & settings);
+        FutureSetFromSubqueryPtr external_table_set,
+        const Settings & settings,
+        bool in_subquery = false);
 
-    FutureSetPtr addFromSubquery(
+    FutureSetFromSubqueryPtr addFromSubquery(
         const Hash & key,
         QueryTreeNodePtr query_tree,
         const Settings & settings);
 
-    FutureSetPtr findTuple(const Hash & key, const DataTypes & types) const;
-    std::shared_ptr<FutureSetFromStorage> findStorage(const Hash & key) const;
-    std::shared_ptr<FutureSetFromSubquery> findSubquery(const Hash & key) const;
+    FutureSetFromTuplePtr findTuple(const Hash & key, const DataTypes & types) const;
+    FutureSetFromStoragePtr findStorage(const Hash & key) const;
+    FutureSetFromSubqueryPtr findSubquery(const Hash & key) const;
+    void markAsINSubquery(const Hash & key);
 
-    using Subqueries = std::vector<std::shared_ptr<FutureSetFromSubquery>>;
-    Subqueries getSubqueries();
+    using Subqueries = std::vector<FutureSetFromSubqueryPtr>;
+    Subqueries getSubqueries() const;
+    bool hasSubqueries() const { return !sets_from_subqueries.empty(); }
 
     const SetsFromTuple & getSetsFromTuple() const { return sets_from_tuple; }
     // const SetsFromStorage & getSetsFromStorage() const { return sets_from_storage; }

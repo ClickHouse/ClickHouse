@@ -1,5 +1,6 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/LightweightDeleteDescription.h>
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
@@ -17,6 +18,16 @@ namespace ErrorCodes
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
 }
 
+std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
+{
+    auto res = std::make_shared<StorageSnapshot>(storage, metadata, object_columns);
+
+    res->projection = projection;
+    res->data = std::move(data_);
+
+    return res;
+}
+
 void StorageSnapshot::init()
 {
     for (const auto & [name, type] : storage.getVirtuals())
@@ -24,6 +35,8 @@ void StorageSnapshot::init()
 
     if (storage.hasLightweightDeletedMask())
         system_columns[LightweightDeleteDescription::FILTER_COLUMN.name] = LightweightDeleteDescription::FILTER_COLUMN.type;
+
+    system_columns[BlockNumberColumn::name] = BlockNumberColumn::type;
 }
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const

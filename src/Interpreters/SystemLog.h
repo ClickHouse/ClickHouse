@@ -25,9 +25,9 @@ namespace DB
         /// fields
 
         static std::string name();
-        static NamesAndTypesList getNamesAndTypes();
+        static ColumnsDescription getColumnsDescription();
+        /// TODO: Remove this method, we can return aliases directly from getColumnsDescription().
         static NamesAndAliases getNamesAndAliases();
-        static const char * getCustomColumnList();
         void appendToBlock(MutableColumns & columns) const;
     };
     */
@@ -50,6 +50,8 @@ class FilesystemCacheLog;
 class FilesystemReadPrefetchesLog;
 class AsynchronousInsertLog;
 class BackupLog;
+class S3QueueLog;
+class BlobStorageLog;
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
@@ -70,6 +72,7 @@ struct SystemLogs
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
     std::shared_ptr<FilesystemCacheLog> filesystem_cache_log;
     std::shared_ptr<FilesystemReadPrefetchesLog> filesystem_read_prefetches_log;
+    std::shared_ptr<S3QueueLog> s3_queue_log;
     /// Metrics from system.asynchronous_metrics.
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
     /// OpenTelemetry trace spans.
@@ -87,6 +90,8 @@ struct SystemLogs
     std::shared_ptr<AsynchronousInsertLog> asynchronous_insert_log;
     /// Backup and restore events
     std::shared_ptr<BackupLog> backup_log;
+    /// Log blob storage operations
+    std::shared_ptr<BlobStorageLog> blob_storage_log;
 
     std::vector<ISystemLog *> logs;
 };
@@ -137,7 +142,7 @@ private:
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;
-    String create_query;
+    const String create_query;
     String old_create_query;
     bool is_prepared = false;
 

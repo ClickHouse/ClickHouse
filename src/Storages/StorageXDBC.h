@@ -19,7 +19,8 @@ namespace DB
 class StorageXDBC : public IStorageURLBase
 {
 public:
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -68,7 +69,7 @@ private:
 
     Block getHeaderBlock(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const override;
 
-    bool supportsSubsetOfColumns() const override;
+    bool supportsSubsetOfColumns(const ContextPtr &) const override;
 };
 
 }

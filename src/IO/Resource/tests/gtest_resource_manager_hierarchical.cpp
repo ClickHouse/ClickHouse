@@ -24,10 +24,10 @@ TEST(IOResourceDynamicResourceManager, Smoke)
                     <node path="/fair/B"><type>fifo</type><weight>3</weight></node>
                 </res1>
             </resources>
-            <classifiers>
+            <workload_classifiers>
                 <A><res1>/fair/A</res1></A>
                 <B><res1>/fair/B</res1></B>
-            </classifiers>
+            </workload_classifiers>
         </clickhouse>
     )CONFIG");
 
@@ -71,11 +71,11 @@ TEST(IOResourceDynamicResourceManager, Fairness)
                     <node path="/fair/leader"><type>fifo</type></node>
                 </res1>
             </resources>
-            <classifiers>
+            <workload_classifiers>
                 <A><res1>/fair/A</res1></A>
                 <B><res1>/fair/B</res1></B>
                 <leader><res1>/fair/leader</res1></leader>
-            </classifiers>
+            </workload_classifiers>
         </clickhouse>
     )CONFIG");
 

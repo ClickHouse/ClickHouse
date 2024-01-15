@@ -45,10 +45,16 @@ public:
         bool is_ready = false;
     };
 
-    HedgedConnectionsFactory(const ConnectionPoolWithFailoverPtr & pool_,
-                        const Settings * settings_,
-                        const ConnectionTimeouts & timeouts_,
-                        std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr);
+    HedgedConnectionsFactory(
+        const ConnectionPoolWithFailoverPtr & pool_,
+        const Settings & settings_,
+        const ConnectionTimeouts & timeouts_,
+        UInt64 max_tries_,
+        bool fallback_to_stale_replicas_,
+        UInt64 max_parallel_replicas_,
+        bool skip_unavailable_shards_,
+        std::shared_ptr<QualifiedTableName> table_to_check_ = nullptr,
+        GetPriorityForLoadBalancing::Func priority_func = {});
 
     /// Create and return active connections according to pool_mode.
     std::vector<Connection *> getManyConnections(PoolMode pool_mode, AsyncCallback async_callback = {});
@@ -109,7 +115,6 @@ private:
     bool isTwoLevelAggregationIncompatible(Connection * connection);
 
     const ConnectionPoolWithFailoverPtr pool;
-    const Settings * settings;
     const ConnectionTimeouts timeouts;
 
     std::vector<ShuffledPool> shuffled_pools;
@@ -127,13 +132,13 @@ private:
 
     std::shared_ptr<QualifiedTableName> table_to_check;
     int last_used_index = -1;
-    bool fallback_to_stale_replicas;
     Epoll epoll;
     Poco::Logger * log;
     std::string fail_messages;
 
     /// The maximum number of attempts to connect to replicas.
-    size_t max_tries;
+    const size_t max_tries;
+    const bool fallback_to_stale_replicas;
     /// Total number of established connections.
     size_t entries_count = 0;
     /// The number of established connections that are usable.
@@ -152,6 +157,9 @@ private:
     /// The number of requested in startNewConnection replicas (it's needed for
     /// checking the number of requested replicas that are still in process).
     size_t requested_connections_count = 0;
+
+    const size_t max_parallel_replicas = 0;
+    const bool skip_unavailable_shards = 0;
 };
 
 }

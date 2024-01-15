@@ -74,7 +74,7 @@ The maximum number of threads that will be used for fetching data parts from ano
 
 Type: UInt64
 
-Default: 8
+Default: 16
 
 ## background_merges_mutations_concurrency_ratio
 
@@ -88,7 +88,7 @@ Default: 2
 
 ## background_merges_mutations_scheduling_policy
 
-The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`. 
+The policy on how to perform a scheduling for background merges and mutations. Possible values are: `round_robin` and `shortest_task_first`.
 
 ## background_merges_mutations_scheduling_policy
 
@@ -136,7 +136,7 @@ The maximum number of threads that will be used for constantly executing some li
 
 Type: UInt64
 
-Default: 128
+Default: 512
 
 ## backup_threads
 
@@ -214,7 +214,7 @@ Max consecutive resolving failures before dropping a host from ClickHouse DNS ca
 
 Type: UInt32
 
-Default: 1024
+Default: 10
 
 
 ## index_mark_cache_policy
@@ -472,6 +472,39 @@ The value 0 means that you can delete all tables without any restrictions.
 ``` xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
+  
+
+## max\_database\_num\_to\_warn {#max-database-num-to-warn}  
+If the number of attached databases exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.    
+Default value: 1000
+
+**Example**
+
+``` xml
+<max_database_num_to_warn>50</max_database_num_to_warn>
+```
+  
+## max\_table\_num\_to\_warn {#max-table-num-to-warn}   
+If the number of attached tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
+Default value: 5000    
+
+**Example**
+
+``` xml
+<max_table_num_to_warn>400</max_table_num_to_warn>
+```
+
+
+## max\_part\_num\_to\_warn {#max-part-num-to-warn}  
+If the number of active parts exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.  
+Default value: 100000  
+
+**Example**
+
+``` xml
+<max_part_num_to_warn>400</max_part_num_to_warn>
+```
+
 
 ## max_temporary_data_on_disk_size
 
@@ -569,7 +602,6 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
                 <max_size_rows>10M</max_size_rows>
                 <max_file_segment_size>1M</max_file_segment_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
-                <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
             </tiny_local_cache>
             <!-- highlight-end -->
         </disks>
@@ -583,7 +615,7 @@ Both the cache for `local_disk`, and temporary data will be stored in `/tiny_loc
 
 Type: String
 
-Default: 
+Default:
 
 ## thread_pool_queue_size
 
@@ -640,7 +672,7 @@ When `/disk1` is full, temporary data will be stored on `/disk2`.
 ```
 Type: String
 
-Default: 
+Default:
 
 ## uncompressed_cache_policy
 
@@ -835,7 +867,7 @@ List of prefixes for [custom settings](../../operations/settings/index.md#custom
 
 - [Custom settings](../../operations/settings/index.md#custom_settings)
 
-## core_dump {#server_configuration_parameters-core_dump}
+## core_dump {#core_dump}
 
 Configures soft limit for core dump file size.
 
@@ -924,7 +956,7 @@ The path to the table in ZooKeeper.
 <default_replica_name>{replica}</default_replica_name>
 ```
 
-## dictionaries_config {#server_configuration_parameters-dictionaries_config}
+## dictionaries_config {#dictionaries_config}
 
 The path to the config file for dictionaries.
 
@@ -941,7 +973,7 @@ See also “[Dictionaries](../../sql-reference/dictionaries/index.md)”.
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## user_defined_executable_functions_config {#server_configuration_parameters-user_defined_executable_functions_config}
+## user_defined_executable_functions_config {#user_defined_executable_functions_config}
 
 The path to the config file for executable user defined functions.
 
@@ -958,13 +990,15 @@ See also “[Executable User Defined Functions](../../sql-reference/functions/in
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
-## dictionaries_lazy_load {#server_configuration_parameters-dictionaries_lazy_load}
+## dictionaries_lazy_load {#dictionaries_lazy_load}
 
 Lazy loading of dictionaries.
 
-If `true`, then each dictionary is created on first use. If dictionary creation failed, the function that was using the dictionary throws an exception.
+If `true`, then each dictionary is loaded on the first use. If the loading is failed, the function that was using the dictionary throws an exception.
 
-If `false`, all dictionaries are created when the server starts, if the dictionary or dictionaries are created too long or are created with errors, then the server boots without of these dictionaries and continues to try to create these dictionaries.
+If `false`, then the server loads all dictionaries at startup.
+The server will wait at startup until all the dictionaries finish their loading before receiving any connections
+(exception: if `wait_dictionaries_load_at_startup` is set to `false` - see below).
 
 The default is `true`.
 
@@ -974,7 +1008,7 @@ The default is `true`.
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-## format_schema_path {#server_configuration_parameters-format_schema_path}
+## format_schema_path {#format_schema_path}
 
 The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
 
@@ -985,7 +1019,7 @@ The path to the directory with the schemes for the input data, such as schemas f
   <format_schema_path>format_schemas/</format_schema_path>
 ```
 
-## graphite {#server_configuration_parameters-graphite}
+## graphite {#graphite}
 
 Sending data to [Graphite](https://github.com/graphite-project).
 
@@ -1019,7 +1053,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 </graphite>
 ```
 
-## graphite_rollup {#server_configuration_parameters-graphite-rollup}
+## graphite_rollup {#graphite-rollup}
 
 Settings for thinning data for Graphite.
 
@@ -1051,7 +1085,7 @@ For more details, see [GraphiteMergeTree](../../engines/table-engines/mergetree-
 
 The port for connecting to the server over HTTP(s).
 
-If `https_port` is specified, [openSSL](#server_configuration_parameters-openssl) must be configured.
+If `https_port` is specified, [openSSL](#openssl) must be configured.
 
 If `http_port` is specified, the OpenSSL configuration is ignored even if it is set.
 
@@ -1061,7 +1095,7 @@ If `http_port` is specified, the OpenSSL configuration is ignored even if it is 
 <https_port>9999</https_port>
 ```
 
-## http_server_default_response {#server_configuration_parameters-http_server_default_response}
+## http_server_default_response {#http_server_default_response}
 
 The page that is shown by default when you access the ClickHouse HTTP(s) server.
 The default value is “Ok.” (with a line feed at the end)
@@ -1086,7 +1120,7 @@ Expired time for HSTS in seconds. The default value is 0 means clickhouse disabl
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-## include_from {#server_configuration_parameters-include_from}
+## include_from {#include_from}
 
 The path to the file with substitutions.
 
@@ -1222,7 +1256,7 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 <keep_alive_timeout>10</keep_alive_timeout>
 ```
 
-## listen_host {#server_configuration_parameters-listen_host}
+## listen_host {#listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
 
@@ -1233,7 +1267,7 @@ Examples:
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## listen_backlog {#server_configuration_parameters-listen_backlog}
+## listen_backlog {#listen_backlog}
 
 Backlog (queue size of pending connections) of the listen socket.
 
@@ -1253,7 +1287,7 @@ Examples:
 <listen_backlog>4096</listen_backlog>
 ```
 
-## logger {#server_configuration_parameters-logger}
+## logger {#logger}
 
 Logging settings.
 
@@ -1357,7 +1391,7 @@ Keys for syslog:
     Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON` otherwise.
 - format – Message format. Possible values: `bsd` and `syslog.`
 
-## send_crash_reports {#server_configuration_parameters-send_crash_reports}
+## send_crash_reports {#send_crash_reports}
 
 Settings for opt-in sending crash reports to the ClickHouse core developers team via [Sentry](https://sentry.io).
 Enabling it, especially in pre-production environments, is highly appreciated.
@@ -1395,6 +1429,23 @@ For more information, see the section [Creating replicated tables](../../engines
 ``` xml
 <macros incl="macros" optional="true" />
 ```
+
+## replica_group_name {#replica_group_name}
+
+Replica group name for database Replicated.
+
+The cluster created by Replicated database will consist of replicas in the same group.
+DDL queries will only wait for the replicas in the same group.
+
+Empty by default.
+
+**Example**
+
+``` xml
+<replica_group_name>backups</replica_group_name>
+```
+
+Default value: ``.
 
 ## max_open_files {#max-open-files}
 
@@ -1628,8 +1679,47 @@ Default value: `0.5`.
 
 
 
+## async_load_databases {#async_load_databases}
 
-## merge_tree {#server_configuration_parameters-merge_tree}
+Asynchronous loading of databases and tables.
+
+If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up.
+
+If `false`, all databases are loaded when the server starts.
+
+The default is `false`.
+
+**Example**
+
+``` xml
+<async_load_databases>true</async_load_databases>
+```
+
+## tables_loader_foreground_pool_size {#tables_loader_foreground_pool_size}
+
+Sets the number of threads performing load jobs in foreground pool. The foreground pool is used for loading table synchronously before server start listening on a port and for loading tables that are waited for. Foreground pool has higher priority than background pool. It means that no job starts in background pool while there are jobs running in foreground pool.
+
+Possible values:
+
+-   Any positive integer.
+-   Zero. Use all available CPUs.
+
+Default value: 0.
+
+
+## tables_loader_background_pool_size {#tables_loader_background_pool_size}
+
+Sets the number of threads performing asynchronous load jobs in background pool. The background pool is used for loading tables asynchronously after server start in case there are no queries waiting for the table. It could be beneficial to keep low number of threads in background pool if there are a lot of tables. It will reserve CPU resources for concurrent query execution.
+
+Possible values:
+
+-   Any positive integer.
+-   Zero. Use all available CPUs.
+
+Default value: 0.
+
+
+## merge_tree {#merge_tree}
 
 Fine tuning for tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
@@ -1676,7 +1766,7 @@ To disable `metric_log` setting, you should create the following file `/etc/clic
 </clickhouse>
 ```
 
-## replicated_merge_tree {#server_configuration_parameters-replicated_merge_tree}
+## replicated_merge_tree {#replicated_merge_tree}
 
 Fine tuning for tables in the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
@@ -1692,7 +1782,7 @@ For more information, see the MergeTreeSettings.h header file.
 </replicated_merge_tree>
 ```
 
-## openSSL {#server_configuration_parameters-openssl}
+## openSSL {#openssl}
 
 SSL client/server configuration.
 
@@ -1751,7 +1841,7 @@ Keys for server/client settings:
 </openSSL>
 ```
 
-## part_log {#server_configuration_parameters-part-log}
+## part_log {#part-log}
 
 Logging events that are associated with [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
@@ -1791,7 +1881,7 @@ Default: false.
 </part_log>
 ```
 
-## path {#server_configuration_parameters-path}
+## path {#path}
 
 The path to the directory containing data.
 
@@ -1805,7 +1895,11 @@ The trailing slash is mandatory.
 <path>/var/lib/clickhouse/</path>
 ```
 
-## Prometheus {#server_configuration_parameters-prometheus}
+## Prometheus {#prometheus}
+
+:::note
+ClickHouse Cloud does not currently support connecting to Prometheus. To be notified when this feature is supported, please contact support@clickhouse.com.
+:::
 
 Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
@@ -1813,9 +1907,10 @@ Settings:
 
 - `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from ‘/’.
 - `port` – Port for `endpoint`.
-- `metrics` – Flag that sets to expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
-- `events` – Flag that sets to expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
-- `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
+- `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
+- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
 
 **Example**
 
@@ -1831,6 +1926,7 @@ Settings:
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
     </prometheus>
     <!-- highlight-end -->
 </clickhouse>
@@ -1841,7 +1937,7 @@ Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse serve
 curl 127.0.0.1:9363/metrics
 ```
 
-## query_log {#server_configuration_parameters-query-log}
+## query_log {#query-log}
 
 Setting for logging queries received with the [log_queries=1](../../operations/settings/settings.md) setting.
 
@@ -1911,9 +2007,9 @@ Data for the query cache is allocated in DRAM. If memory is scarce, make sure to
 </query_cache>
 ```
 
-## query_thread_log {#server_configuration_parameters-query_thread_log}
+## query_thread_log {#query_thread_log}
 
-Setting for logging threads of queries received with the [log_query_threads=1](../../operations/settings/settings.md#settings-log-query-threads) setting.
+Setting for logging threads of queries received with the [log_query_threads=1](../../operations/settings/settings.md#log-query-threads) setting.
 
 Queries are logged in the [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -1948,14 +2044,14 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     <max_size_rows>1048576</max_size_rows>
     <reserved_size_rows>8192</reserved_size_rows>
-    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>  
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </query_thread_log>
 ```
 
-## query_views_log {#server_configuration_parameters-query_views_log}
+## query_views_log {#query_views_log}
 
-Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views) setting.
+Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#log-query-views) setting.
 
 Queries are logged in the [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -1995,7 +2091,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_views_log>
 ```
 
-## text_log {#server_configuration_parameters-text_log}
+## text_log {#text_log}
 
 Settings for the [text_log](../../operations/system-tables/text_log.md#system_tables-text_log) system table for logging text messages.
 
@@ -2037,7 +2133,7 @@ Default: false.
 </clickhouse>
 ```
 
-## trace_log {#server_configuration_parameters-trace_log}
+## trace_log {#trace_log}
 
 Settings for the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
 
@@ -2073,7 +2169,7 @@ The default server configuration file `config.xml` contains the following settin
 </trace_log>
 ```
 
-## asynchronous_insert_log {#server_configuration_parameters-asynchronous_insert_log}
+## asynchronous_insert_log {#asynchronous_insert_log}
 
 Settings for the [asynchronous_insert_log](../../operations/system-tables/asynchronous_insert_log.md#system_tables-asynchronous_insert_log) system table for logging async inserts.
 
@@ -2112,7 +2208,7 @@ Default: false.
 </clickhouse>
 ```
 
-## crash_log {#server_configuration_parameters-crash_log}
+## crash_log {#crash_log}
 
 Settings for the [crash_log](../../operations/system-tables/crash-log.md) system table operation.
 
@@ -2150,7 +2246,7 @@ The default server configuration file `config.xml` contains the following settin
 </crash_log>
 ```
 
-## backup_log {#server_configuration_parameters-backup_log}
+## backup_log {#backup_log}
 
 Settings for the [backup_log](../../operations/system-tables/backup_log.md) system table for logging `BACKUP` and `RESTORE` operations.
 
@@ -2235,9 +2331,11 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 
 **See Also**
 
-- [skip_unavailable_shards](../../operations/settings/settings.md#settings-skip_unavailable_shards)
+- [skip_unavailable_shards](../../operations/settings/settings.md#skip_unavailable_shards)
+- [Cluster Discovery](../../operations/cluster-discovery.md)
+- [Replicated database engine](../../engines/database-engines/replicated.md)
 
-## timezone {#server_configuration_parameters-timezone}
+## timezone {#timezone}
 
 The server’s time zone.
 
@@ -2255,7 +2353,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 
 - [session_timezone](../settings/settings.md#session_timezone)
 
-## tcp_port {#server_configuration_parameters-tcp_port}
+## tcp_port {#tcp_port}
 
 Port for communicating with clients over the TCP protocol.
 
@@ -2265,9 +2363,9 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp_port_secure {#server_configuration_parameters-tcp_port_secure}
+## tcp_port_secure {#tcp_port_secure}
 
-TCP port for secure communication with clients. Use it with [OpenSSL](#server_configuration_parameters-openssl) settings.
+TCP port for secure communication with clients. Use it with [OpenSSL](#openssl) settings.
 
 **Possible values**
 
@@ -2279,7 +2377,7 @@ Positive integer.
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql_port {#server_configuration_parameters-mysql_port}
+## mysql_port {#mysql_port}
 
 Port for communicating with clients over MySQL protocol.
 
@@ -2293,7 +2391,7 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
-## postgresql_port {#server_configuration_parameters-postgresql_port}
+## postgresql_port {#postgresql_port}
 
 Port for communicating with clients over PostgreSQL protocol.
 
@@ -2324,9 +2422,9 @@ Path on the local filesystem to store temporary data for processing large querie
 ```
 
 
-## user_files_path {#server_configuration_parameters-user_files_path}
+## user_files_path {#user_files_path}
 
-The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md).
+The directory with user files. Used in the table function [file()](../../sql-reference/table-functions/file.md), [fileCluster()](../../sql-reference/table-functions/fileCluster.md).
 
 **Example**
 
@@ -2334,7 +2432,7 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
-## user_scripts_path {#server_configuration_parameters-user_scripts_path}
+## user_scripts_path {#user_scripts_path}
 
 The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).
 
@@ -2344,7 +2442,7 @@ The directory with user scripts files. Used for Executable user defined function
 <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
 ```
 
-## user_defined_path {#server_configuration_parameters-user_defined_path}
+## user_defined_path {#user_defined_path}
 
 The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
 
@@ -2367,6 +2465,28 @@ Path to the file that contains:
 
 ``` xml
 <users_config>users.xml</users_config>
+```
+
+## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
+
+This setting allows to specify behavior if `dictionaries_lazy_load` is `false`.
+(If `dictionaries_lazy_load` is `true` this setting doesn't affect anything.)
+
+If `wait_dictionaries_load_at_startup` is `false`, then the server
+will start loading all the dictionaries at startup and it will receive connections in parallel with that loading.
+When a dictionary is used in a query for the first time then the query will wait until the dictionary is loaded if it's not loaded yet.
+Setting `wait_dictionaries_load_at_startup` to `false` can make ClickHouse start faster, however some queries can be executed slower
+(because they will have to wait for some dictionaries to be loaded).
+
+If `wait_dictionaries_load_at_startup` is `true`, then the server will wait at startup
+until all the dictionaries finish their loading (successfully or not) before receiving any connections.
+
+The default is `true`.
+
+**Example**
+
+``` xml
+<wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
 ```
 
 ## zookeeper {#server-settings_zookeeper}
@@ -2401,10 +2521,13 @@ This section contains the following parameters:
 - zookeeper_load_balancing - Specifies the algorithm of ZooKeeper node selection.
   * random - randomly selects one of ZooKeeper nodes.
   * in_order - selects the first ZooKeeper node, if it's not available then the second, and so on.
-  * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname.
+  * nearest_hostname - selects a ZooKeeper node with a hostname that is most similar to the server’s hostname, hostname is compared with name prefix.
+  * hostname_levenshtein_distance - just like nearest_hostname, but it compares hostname in a levenshtein distance manner.
   * first_or_random - selects the first ZooKeeper node, if it's not available then randomly selects one of remaining ZooKeeper nodes.
   * round_robin - selects the first ZooKeeper node, if reconnection happens selects the next.
-    
+- `use_compression` — If set to true, enables compression in Keeper protocol.
+
+
 **Example configuration**
 
 ``` xml
@@ -2423,7 +2546,7 @@ This section contains the following parameters:
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
-    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
 </zookeeper>
 ```
@@ -2440,7 +2563,7 @@ Storage method for data part headers in ZooKeeper.
 
 This setting only applies to the `MergeTree` family. It can be specified:
 
-- Globally in the [merge_tree](#server_configuration_parameters-merge_tree) section of the `config.xml` file.
+- Globally in the [merge_tree](#merge_tree) section of the `config.xml` file.
 
     ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behaviour when the setting changes.
 
@@ -2628,3 +2751,118 @@ Possible values:
 -   1 — Enabled.
 
 Default value: 0.
+
+## proxy {#proxy}
+
+Define proxy servers for HTTP and HTTPS requests, currently supported by S3 storage, S3 table functions, and URL functions.
+
+There are three ways to define proxy servers: environment variables, proxy lists, and remote proxy resolvers.
+
+### Environment variables
+
+The `http_proxy` and `https_proxy` environment variables allow you to specify a
+proxy server for a given protocol. If you have it set on your system, it should work seamlessly.
+
+This is the simplest approach if a given protocol has
+only one proxy server and that proxy server doesn't change.
+
+### Proxy lists
+
+This approach allows you to specify one or more
+proxy servers for a protocol. If more than one proxy server is defined,
+ClickHouse uses the different proxies on a round-robin basis, balancing the
+load across the servers. This is the simplest approach if there is more than
+one proxy server for a protocol and the list of proxy servers doesn't change.
+
+### Configuration template
+
+``` xml
+<proxy>
+    <http>
+        <uri>http://proxy1</uri>
+        <uri>http://proxy2:3128</uri>
+    </http>
+    <https>
+        <uri>http://proxy1:3128</uri>
+    </https>
+</proxy>
+```
+
+`<proxy>` fields
+
+* `<http>` - A list of one or more HTTP proxies
+* `<https>` - A list of one or more HTTPS proxies
+
+`<http>` and `<https>` fields
+
+* `<uri>` - The URI of the proxy
+
+### Remote proxy resolvers
+
+It's possible that the proxy servers change dynamically. In that
+case, you can define the endpoint of a resolver. ClickHouse sends
+an empty GET request to that endpoint, the remote resolver should return the proxy host.
+ClickHouse will use it to form the proxy URI using the following template: `{proxy_scheme}://{proxy_host}:{proxy_port}`
+
+### Configuration template
+
+``` xml
+<proxy>
+    <http>
+        <resolver>
+            <endpoint>http://resolver:8080/hostname</endpoint>
+            <proxy_scheme>http</proxy_scheme>
+            <proxy_port>80</proxy_port>
+            <proxy_cache_time>10</proxy_cache_time>
+        </resolver>
+    </http>
+
+    <https>
+        <resolver>
+            <endpoint>http://resolver:8080/hostname</endpoint>
+            <proxy_scheme>http</proxy_scheme>
+            <proxy_port>3128</proxy_port>
+            <proxy_cache_time>10</proxy_cache_time>
+        </resolver>
+    </https>
+
+</proxy>
+```
+
+`<proxy>` fields
+
+* `<http>` - A list of one or more resolvers*
+* `<https>` - A list of one or more resolvers*
+
+`<http>` and `<https>` fields
+
+* `<resolver>` - The endpoint and other details for a resolver.
+  You can have multiple `<resolver>` elements, but only the first
+  `<resolver>` for a given protocol is used. Any other `<resolver>`
+  elements for that protocol are ignored. That means load balancing
+  (if needed) should be implemented by the remote resolver.
+
+`<resolver>` fields
+
+* `<endpoint>` - The URI of the proxy resolver
+* `<proxy_scheme>` - The protocol of the final proxy URI. This can be either `http` or `https`.
+* `<proxy_port>` - The port number of the proxy resolver
+* `<proxy_cache_time>` - The time in seconds that values from the resolver
+  should be cached by ClickHouse. Setting this value to `0` causes ClickHouse
+  to contact the resolver for every HTTP or HTTPS request.
+
+### Precedence
+
+Proxy settings are determined in the following order:
+
+1. Remote proxy resolvers
+2. Proxy lists
+3. Environment variables
+
+ClickHouse will check the highest priority resolver type for the request protocol. If it is not defined,
+it will check the next highest priority resolver type, until it reaches the environment resolver.
+This also allows a mix of resolver types can be used.
+
+### disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
+
+By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.

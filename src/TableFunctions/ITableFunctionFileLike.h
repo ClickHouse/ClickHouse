@@ -27,7 +27,7 @@ public:
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
-    bool supportsReadingSubsetOfColumns() override;
+    bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
 
     static size_t getMaxNumberOfArguments() { return 4; }
 

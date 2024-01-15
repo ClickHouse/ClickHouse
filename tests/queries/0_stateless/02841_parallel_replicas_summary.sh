@@ -9,7 +9,7 @@ function involved_parallel_replicas () {
     $CLICKHOUSE_CLIENT --query "
         SELECT
             initial_query_id,
-            (count() - 2) / 2 as number_of_parallel_replicas
+            countIf(initial_query_id != query_id) != 0  as parallel_replicas_were_used
         FROM system.query_log
     WHERE event_date >= yesterday()
       AND initial_query_id LIKE '$1%'
@@ -34,9 +34,8 @@ echo "
     SETTINGS
         max_parallel_replicas = 2,
         cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-        allow_experimental_parallel_reading_from_replicas = 1,
+        allow_experimental_parallel_reading_from_replicas = 2,
         parallel_replicas_for_non_replicated_merge_tree = 1,
-        use_hedged_requests = 0,
         interactive_delay=0
     "\
     | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&wait_end_of_query=1&query_id=${query_id_base}_interactive_0" --data-binary @- -vvv 2>&1 \
@@ -49,9 +48,8 @@ echo "
     SETTINGS
         max_parallel_replicas = 2,
         cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-        allow_experimental_parallel_reading_from_replicas = 1,
+        allow_experimental_parallel_reading_from_replicas = 2,
         parallel_replicas_for_non_replicated_merge_tree = 1,
-        use_hedged_requests = 0,
         interactive_delay=99999999999
     "\
     | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&wait_end_of_query=1&query_id=${query_id_base}_interactive_high" --data-binary @- -vvv 2>&1 \

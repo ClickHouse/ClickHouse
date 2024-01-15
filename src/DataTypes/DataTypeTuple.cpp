@@ -94,6 +94,45 @@ std::string DataTypeTuple::doGetName() const
     return s.str();
 }
 
+std::string DataTypeTuple::doGetPrettyName(size_t indent) const
+{
+    size_t size = elems.size();
+    WriteBufferFromOwnString s;
+
+    /// If the Tuple is named, we will output it in multiple lines with indentation.
+    if (have_explicit_names)
+    {
+        s << "Tuple(\n";
+
+        for (size_t i = 0; i != size; ++i)
+        {
+            if (i != 0)
+                s << ",\n";
+
+            s << fourSpaceIndent(indent + 1)
+                << backQuoteIfNeed(names[i]) << ' '
+                << elems[i]->getPrettyName(indent + 1);
+        }
+
+        s << ')';
+    }
+    else
+    {
+        s << "Tuple(";
+
+        for (size_t i = 0; i != size; ++i)
+        {
+            if (i != 0)
+                s << ", ";
+            s << elems[i]->getPrettyName(indent);
+        }
+
+        s << ')';
+    }
+
+    return s.str();
+}
+
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {

@@ -9,8 +9,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <re2/re2.h>
-
 namespace DB
 {
 

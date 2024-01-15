@@ -1,9 +1,9 @@
 #pragma once
 
-#include <re2_st/re2.h>
 #include <string>
 #include <vector>
 #include <Core/Block.h>
+#include <Common/re2.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -11,7 +11,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/ParsedTemplateFormatString.h>
 #include <Formats/SchemaInferenceUtils.h>
-
 
 namespace DB
 {
@@ -32,12 +31,12 @@ public:
     size_t getNumberOfGroups() const { return regexp.NumberOfCapturingGroups(); }
 
 private:
-    const re2_st::RE2 regexp;
+    const re2::RE2 regexp;
     // The vector of fields extracted from line using regexp.
     std::vector<std::string_view> matched_fields;
     // These two vectors are needed to use RE2::FullMatchN (function for extracting fields).
-    std::vector<re2_st::RE2::Arg> re2_arguments;
-    std::vector<re2_st::RE2::Arg *> re2_arguments_ptrs;
+    std::vector<re2::RE2::Arg> re2_arguments;
+    std::vector<re2::RE2::Arg *> re2_arguments_ptrs;
     bool skip_unmatched;
 };
 
@@ -54,8 +53,8 @@ public:
     RegexpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "RegexpRowInputFormat"; }
-    void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
 private:
     RegexpRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_);
@@ -82,7 +81,6 @@ private:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
-
 
     using EscapingRule = FormatSettings::EscapingRule;
     RegexpFieldExtractor field_extractor;

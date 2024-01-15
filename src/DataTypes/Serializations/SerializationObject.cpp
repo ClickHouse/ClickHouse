@@ -517,7 +517,7 @@ template <typename Parser>
 void SerializationObject<Parser>::serializeTextMarkdown(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (settings.output_format_markdown_escape_special_characters)
+    if (settings.markdown.escape_special_characters)
     {
         WriteBufferFromOwnString ostr_str;
         serializeTextImpl(column, row_num, ostr_str, settings);

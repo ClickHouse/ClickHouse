@@ -47,6 +47,8 @@ public:
     const String & shortName() const { return name_parts.back(); }
     const String & name() const;
 
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_alias) const override;
+
     void restoreTable();  // TODO(ilezhankin): get rid of this
     std::shared_ptr<ASTTableIdentifier> createTable() const;  // returns |nullptr| if identifier is not table.
 
@@ -91,7 +93,7 @@ public:
     // FIXME: used only when it's needed to rewrite distributed table name to real remote table name.
     void resetTable(const String & database_name, const String & table_name);  // TODO(ilezhankin): get rid of this
 
-    void updateTreeHashImpl(SipHash & hash_state) const override;
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 };
 
 }

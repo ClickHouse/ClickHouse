@@ -1,6 +1,6 @@
 QUERY id: 0
   PROJECTION COLUMNS
-    uniqCombined(tuple(\'\')) UInt64
+    uniqCombined((\'\')) UInt64
   PROJECTION
     LIST id: 1, nodes: 1
       FUNCTION id: 2, function_name: uniqCombined, function_type: aggregate, result_type: UInt64
@@ -13,7 +13,7 @@ QUERY id: 0
                     LIST id: 6, nodes: 1
                       CONSTANT id: 7, constant_value: \'\', constant_value_type: String
   JOIN TREE
-    TABLE_FUNCTION id: 8, table_function_name: numbers
+    TABLE_FUNCTION id: 8, alias: __table1, table_function_name: numbers
       ARGUMENTS
         LIST id: 9, nodes: 1
           CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8

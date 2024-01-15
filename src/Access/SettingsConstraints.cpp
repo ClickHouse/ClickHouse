@@ -340,7 +340,12 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
     if (!min_value.isNull() && !max_value.isNull() && less_or_cannot_compare(max_value, min_value))
     {
         if (reaction == THROW_ON_VIOLATION)
-            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
+            throw Exception(
+                ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
+                "The maximum ({}) value is less than the minimum ({}) value for setting {}",
+                max_value,
+                min_value,
+                setting_name);
         else
             return false;
     }

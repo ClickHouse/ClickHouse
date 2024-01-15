@@ -2,8 +2,8 @@
 # If the image is built from Dockerfile.alpine, then the `-alpine` suffix is added automatically,
 # so the only purpose of Dockerfile.ubuntu is to push `latest`, `head` and so on w/o suffixes
 FROM ubuntu:20.04 AS glibc-donor
-
 ARG TARGETARCH
+
 RUN arch=${TARGETARCH:-amd64} \
     && case $arch in \
         amd64) rarch=x86_64 ;; \
@@ -31,9 +31,12 @@ RUN arch=${TARGETARCH:-amd64} \
         arm64) ln -sf /lib/ld-2.31.so /lib/ld-linux-aarch64.so.1 ;; \
     esac
 
-ARG REPOSITORY="https://s3.amazonaws.com/clickhouse-builds/22.4/31c367d3cd3aefd316778601ff6565119fe36682/package_release"
-ARG VERSION="23.8.2.7"
+# lts / testing / prestable / etc
+ARG REPO_CHANNEL="stable"
+ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
+ARG VERSION="23.12.2.59"
 ARG PACKAGES="clickhouse-keeper"
+ARG DIRECT_DOWNLOAD_URLS=""
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
 # It is especially important for rootless containers: in that case entrypoint
@@ -45,17 +48,27 @@ ARG PACKAGES="clickhouse-keeper"
 
 ARG TARGETARCH
 RUN arch=${TARGETARCH:-amd64} \
-    && for package in ${PACKAGES}; do \
-        { \
-            { echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
-                && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" -O "/tmp/${package}-${VERSION}-${arch}.tgz" \
-                && tar xvzf "/tmp/${package}-${VERSION}-${arch}.tgz" --strip-components=1 -C / ; \
-            } || \
-            { echo "Fallback to ${REPOSITORY}/${package}-${VERSION}.tgz" \
-                && wget -c -q "${REPOSITORY}/${package}-${VERSION}.tgz" -O "/tmp/${package}-${VERSION}.tgz" \
-                && tar xvzf "/tmp/${package}-${VERSION}.tgz" --strip-components=2 -C / ; \
-            } ; \
-        } || exit 1 \
+    && cd /tmp && rm -f /tmp/*tgz && rm -f /tmp/*tgz.sha512 |: \
+    && if [ -n "${DIRECT_DOWNLOAD_URLS}" ]; then \
+        echo "installing from provided urls with tgz packages: ${DIRECT_DOWNLOAD_URLS}" \
+        && for url in $DIRECT_DOWNLOAD_URLS; do \
+            echo "Get ${url}" \
+            && wget -c -q "$url" \
+        ; done \
+    else \
+        for package in ${PACKAGES}; do \
+            cd /tmp \
+            && echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
+            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
+            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz.sha512" \
+        ; done \
+    fi \
+    && cat *.tgz.sha512 | sha512sum -c \
+    && for file in *.tgz; do \
+        if [ -f "$file" ]; then \
+            echo "Unpacking $file"; \
+            tar xvzf "$file" --strip-components=1 -C /; \
+        fi \
     ; done \
     && rm /tmp/*.tgz /install -r \
     && addgroup -S -g 101 clickhouse \

@@ -154,6 +154,17 @@ public:
         data.push_back(assert_cast<const Self &>(src).getData()[n]);
     }
 
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override
+    {
+        ValueType v = assert_cast<const Self &>(src).getData()[position];
+        data.resize_fill(data.size() + length, v);
+    }
+
+    void insertMany(const Field & field, size_t length) override
+    {
+        data.resize_fill(data.size() + length, static_cast<T>(field.get<T>()));
+    }
+
     void insertData(const char * pos, size_t) override
     {
         data.emplace_back(unalignedLoad<T>(pos));

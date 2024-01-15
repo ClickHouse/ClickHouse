@@ -4,6 +4,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 
+#include <Common/ErrorHandlers.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -140,7 +141,7 @@ void IBridge::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
 
         /// Disable buffering for stdout.
-        setbuf(stdout, nullptr);
+        setbuf(stdout, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
     }
     const auto stderr_path = config().getString("logger.stderr", "");
     if (!stderr_path.empty())
@@ -149,7 +150,7 @@ void IBridge::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr.
-        setbuf(stderr, nullptr);
+        setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
     }
 
     buildLoggers(config(), logger(), self.commandName());
@@ -208,6 +209,9 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
 {
     if (is_help)
         return Application::EXIT_OK;
+
+    static ServerErrorHandler error_handler;
+    Poco::ErrorHandler::set(&error_handler);
 
     registerFormats();
     LOG_INFO(log, "Starting up {} on host: {}, port: {}", bridgeName(), hostname, port);

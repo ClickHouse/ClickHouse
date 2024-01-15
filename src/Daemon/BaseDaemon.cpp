@@ -60,7 +60,7 @@
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if defined(OS_DARWIN)
 #   pragma clang diagnostic ignored "-Wunused-macros"
@@ -92,10 +92,10 @@ PipeFDs signal_pipe;
 static void call_default_signal_handler(int sig)
 {
     if (SIG_ERR == signal(sig, SIG_DFL))
-        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
 
     if (0 != raise(sig))
-        throwFromErrno("Cannot send signal.", ErrorCodes::CANNOT_SEND_SIGNAL);
+        throw ErrnoException(ErrorCodes::CANNOT_SEND_SIGNAL, "Cannot send signal");
 }
 
 static const size_t signal_pipe_buf_size =
@@ -103,6 +103,7 @@ static const size_t signal_pipe_buf_size =
     + sizeof(siginfo_t)
     + sizeof(ucontext_t*)
     + sizeof(StackTrace)
+    + sizeof(UInt64)
     + sizeof(UInt32)
     + sizeof(void*);
 
@@ -179,6 +180,15 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     }
 
     errno = saved_errno;
+}
+
+static bool getenvBool(const char * name)
+{
+    bool res = false;
+    const char * env_var = getenv(name); // NOLINT(concurrency-mt-unsafe)
+    if (env_var && 0 == strcmp(env_var, "1"))
+        res = true;
+    return res;
 }
 
 
@@ -475,10 +485,8 @@ private:
         {
             SentryWriter::onFault(sig, error_message, stack_trace);
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
             /// Advice the user to send it manually.
-            if constexpr (std::string_view(VERSION_OFFICIAL).contains("official build"))
+            if (std::string_view(VERSION_OFFICIAL).contains("official build"))
             {
                 const auto & date_lut = DateLUT::instance();
 
@@ -496,8 +504,6 @@ private:
             {
                 LOG_FATAL(log, "This ClickHouse version is not official and should be upgraded to the official build.");
             }
-#pragma clang diagnostic pop
-
         }
 
         /// ClickHouse Keeper does not link to some part of Settings.
@@ -653,7 +659,17 @@ BaseDaemon::~BaseDaemon()
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
     for (int sig : handled_signals)
         if (SIG_ERR == signal(sig, SIG_DFL))
-            throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        {
+            try
+            {
+                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+            }
+            catch (ErrnoException &)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
     signal_pipe.close();
 }
 
@@ -843,7 +859,7 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr
-        setbuf(stderr, nullptr);
+        setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
@@ -961,7 +977,7 @@ static void blockSignals(const std::vector<int> & signals)
         throw Poco::Exception("Cannot block signal.");
 }
 
-extern String getGitHash();
+extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
@@ -1001,7 +1017,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     build_id = "";
 #endif
 
-    git_hash = getGitHash();
+    git_hash = GIT_HASH;
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -1110,10 +1126,8 @@ void BaseDaemon::setupWatchdog()
     if (argv0)
         original_process_name = argv0;
 
-    bool restart = false;
-    const char * env_watchdog_restart = getenv("CLICKHOUSE_WATCHDOG_RESTART"); // NOLINT(concurrency-mt-unsafe)
-    if (env_watchdog_restart && 0 == strcmp(env_watchdog_restart, "1"))
-        restart = true;
+    bool restart = getenvBool("CLICKHOUSE_WATCHDOG_RESTART");
+    bool forward_signals = !getenvBool("CLICKHOUSE_WATCHDOG_NO_FORWARD");
 
     while (true)
     {
@@ -1125,7 +1139,7 @@ void BaseDaemon::setupWatchdog()
         pid = fork();
 
         if (-1 == pid)
-            throwFromErrno("Cannot fork", ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork");
 
         if (0 == pid)
         {
@@ -1194,23 +1208,37 @@ void BaseDaemon::setupWatchdog()
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
 
         /// Forward signals to the child process.
-        addSignalHandler(
-            {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
-            [](int sig, siginfo_t *, void *)
-            {
-                /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,
-                /// and we process double delivery of this signal as immediate termination.
-                if (sig == SIGINT)
-                    return;
-
-                const char * error_message = "Cannot forward signal to the child process.\n";
-                if (0 != ::kill(pid, sig))
+        if (forward_signals)
+        {
+            addSignalHandler(
+                {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
+                [](int sig, siginfo_t *, void *)
                 {
-                    auto res = write(STDERR_FILENO, error_message, strlen(error_message));
-                    (void)res;
+                    /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,
+                    /// and we process double delivery of this signal as immediate termination.
+                    if (sig == SIGINT)
+                        return;
+
+                    const char * error_message = "Cannot forward signal to the child process.\n";
+                    if (0 != ::kill(pid, sig))
+                    {
+                        auto res = write(STDERR_FILENO, error_message, strlen(error_message));
+                        (void)res;
+                    }
+                },
+                nullptr);
+        }
+        else
+        {
+            for (const auto & sig : {SIGHUP, SIGINT, SIGQUIT, SIGTERM})
+            {
+                if (SIG_ERR == signal(sig, SIG_IGN))
+                {
+                    char * signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe)
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot ignore {}", signal_description);
                 }
-            },
-            nullptr);
+            }
+        }
 
         int status = 0;
         do
@@ -1297,7 +1325,7 @@ void systemdNotify(const std::string_view & command)
     int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 
     if (s == -1)
-        throwFromErrno("Can't create UNIX socket for systemd notify.", ErrorCodes::SYSTEM_ERROR);
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Can't create UNIX socket for systemd notify");
 
     SCOPE_EXIT({ close(s); });
 
@@ -1333,7 +1361,7 @@ void systemdNotify(const std::string_view & command)
             if (errno == EINTR)
                 continue;
             else
-                throwFromErrno("Failed to notify systemd, sendto returned error.", ErrorCodes::SYSTEM_ERROR);
+                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd, sendto returned error");
         }
         else
             sent_bytes_total += sent_bytes;

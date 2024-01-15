@@ -46,6 +46,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 namespace DB
 {
@@ -384,6 +385,39 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     // the generic recursion into IAST.children.
 }
 
+void QueryFuzzer::fuzzNullsAction(NullsAction & action)
+{
+    /// If it's not using actions, then it's a high change it doesn't support it to begin with
+    if ((action == NullsAction::EMPTY) && (fuzz_rand() % 100 == 0))
+    {
+        if (fuzz_rand() % 2 == 0)
+            action = NullsAction::RESPECT_NULLS;
+        else
+            action = NullsAction::IGNORE_NULLS;
+    }
+    else if (fuzz_rand() % 20 == 0)
+    {
+        switch (fuzz_rand() % 3)
+        {
+            case 0:
+            {
+                action = NullsAction::EMPTY;
+                break;
+            }
+            case 1:
+            {
+                action = NullsAction::RESPECT_NULLS;
+                break;
+            }
+            default:
+            {
+                action = NullsAction::IGNORE_NULLS;
+                break;
+            }
+        }
+    }
+}
+
 void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
 {
     switch (fuzz_rand() % 40)
@@ -517,9 +551,9 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     SipHash sip_hash;
     sip_hash.update(original_name);
     if (create.columns_list)
-        create.columns_list->updateTreeHash(sip_hash);
+        create.columns_list->updateTreeHash(sip_hash, /*ignore_aliases=*/ true);
     if (create.storage)
-        create.storage->updateTreeHash(sip_hash);
+        create.storage->updateTreeHash(sip_hash, /*ignore_aliases=*/ true);
 
     const auto hash = getSipHash128AsPair(sip_hash);
 
@@ -965,6 +999,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
+
+        if (AggregateUtils::isAggregateFunction(*fn))
+            fuzzNullsAction(fn->nulls_action);
 
         if (fn->is_window_function && fn->window_definition)
         {

@@ -9,8 +9,6 @@
 #include <thread>
 #include <filesystem>
 
-#include <re2/re2.h>
-
 #include <boost/program_options.hpp>
 
 #include <Common/TerminalSize.h>
@@ -18,6 +16,7 @@
 #include <Common/SipHash.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ShellCommand.h>
+#include <Common/re2.h>
 #include <base/find_symbols.h>
 
 #include <IO/copyData.h>
@@ -25,7 +24,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-
 
 static constexpr auto documentation = R"(
 A tool to extract information from Git repository for analytics.
