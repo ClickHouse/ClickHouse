@@ -521,9 +521,8 @@ int main(int argc_, char ** argv_)
     /// This is useful for non-server applications such as clickhouse-format or clickhouse-client,
     /// that cannot introspect it with SQL functions at runtime.
 
-    /// The CLICKHOUSE_WRITE_COVERAGE environment variable defines a prefix for two filenames:
-    /// 'prefix.covered' and 'prefix.all' which will contain
-    /// the list of addresses of covered and all instrumented addresses, respectively.
+    /// The CLICKHOUSE_WRITE_COVERAGE environment variable defines a prefix for a filename 'prefix.pid'
+    /// containing the list of addresses of covered .
 
     /// The format is even simpler than Clang's "sancov": an array of 64-bit addresses, native byte order, no header.
 
@@ -552,8 +551,7 @@ int main(int argc_, char ** argv_)
             }
         };
 
-        dumpCoverage(coverage_filename_prefix + std::string(".covered"), getCumulativeCoverage());
-        dumpCoverage(coverage_filename_prefix + std::string(".all"), getAllInstrumentedAddresses());
+        dumpCoverage(fmt::format("{}.{}", coverage_filename_prefix, getpid()), getCumulativeCoverage());
     }
 #endif
 
