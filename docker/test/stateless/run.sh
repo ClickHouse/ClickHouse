@@ -213,7 +213,7 @@ function run_tests()
     if [[ -f "setup_fdb.sh" ]] && [[ "$(uname -m)" == "x86_64" ]]; then
         clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
         --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" \
-        --skip 02911_backup_restore_keeper_map 02908_many_requests_to_system_replicas 01158_zookeeper_log_long 2>&1 \
+        --skip 02911_backup_restore_keeper_map 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee -a test_output/test_result.txt
     else
