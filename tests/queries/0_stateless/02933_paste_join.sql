@@ -43,4 +43,4 @@ SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(6
 SELECT * FROM (SELECT number FROM test PASTE JOIN (Select number FROM numbers(7))) PASTE JOIN (SELECT number FROM numbers(6) PASTE JOIN (SELECT number FROM test)) SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM (SELECT number FROM test PASTE JOIN (Select number FROM numbers(7))) PASTE JOIN (SELECT number FROM numbers(6) CROSS JOIN (SELECT number FROM test)) SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM (SELECT number FROM test PASTE JOIN (SELECT number FROM test PASTE JOIN (Select number FROM numbers(7)))) PASTE JOIN (SELECT number FROM numbers(6) CROSS JOIN (SELECT number FROM test)) SETTINGS joined_subquery_requires_alias = 0;
-
+SELECT * FROM (SELECT 1 AS a) PASTE JOIN (SELECT 1 AS b) PASTE JOIN (SELECT 1 AS c) SETTINGS allow_experimental_analyzer = 1;
