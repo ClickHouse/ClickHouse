@@ -75,10 +75,12 @@ def stringhash(s):
     # only during process invocation https://stackoverflow.com/a/42089311
     return zlib.crc32(s.encode("utf-8"))
 
+
 def read_file_as_binary_string(file_path):
-    with open(file_path, 'rb') as file:
+    with open(file_path, "rb") as file:
         binary_data = file.read()
     return binary_data
+
 
 # First and last lines of the log
 def trim_for_log(s):
@@ -146,7 +148,7 @@ def clickhouse_execute_http(
             client.request(
                 "POST",
                 f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
-                body=body
+                body=body,
             )
             res = client.getresponse()
             data = res.read()
