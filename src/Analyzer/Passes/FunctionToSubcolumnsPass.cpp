@@ -64,6 +64,9 @@ public:
 
     void enterImpl(const QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_functions_to_subcolumns)
+            return;
+
         if (data.has_final)
             return;
 
@@ -202,6 +205,9 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node) const
     {
+        if (!getSettings().optimize_functions_to_subcolumns)
+            return;
+
         auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node);
         if (!function_node || !first_argument_column_node || !table_node)
             return;
@@ -358,9 +364,6 @@ private:
 
 void FunctionToSubcolumnsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    if (!context->getSettingsRef().optimize_functions_to_subcolumns)
-        return;
-
     FunctionToSubcolumnsVisitorFirstPass first_visitor(context);
     first_visitor.visit(query_tree_node);
     auto data = first_visitor.getData();
