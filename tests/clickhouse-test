@@ -12,6 +12,7 @@ import itertools
 import sys
 import os
 import os.path
+import glob
 import platform
 import signal
 import re
@@ -74,6 +75,10 @@ def stringhash(s):
     # only during process invocation https://stackoverflow.com/a/42089311
     return zlib.crc32(s.encode("utf-8"))
 
+def read_file_as_binary_string(file_path):
+    with open(file_path, 'rb') as file:
+        binary_data = file.read()
+    return binary_data
 
 # First and last lines of the log
 def trim_for_log(s):
@@ -101,6 +106,7 @@ class HTTPError(Exception):
 def clickhouse_execute_http(
     base_args,
     query,
+    body=None,
     timeout=30,
     settings=None,
     default_format=None,
@@ -140,6 +146,7 @@ def clickhouse_execute_http(
             client.request(
                 "POST",
                 f"/?{base_args.client_options_query_str}{urllib.parse.urlencode(params)}",
+                body=body
             )
             res = client.getresponse()
             data = res.read()
@@ -160,6 +167,7 @@ def clickhouse_execute_http(
 def clickhouse_execute(
     base_args,
     query,
+    body=None,
     timeout=30,
     settings=None,
     max_http_retries=5,
@@ -168,6 +176,7 @@ def clickhouse_execute(
     return clickhouse_execute_http(
         base_args,
         query,
+        body,
         timeout,
         settings,
         max_http_retries=max_http_retries,
@@ -181,6 +190,7 @@ def clickhouse_execute_json(
     data = clickhouse_execute_http(
         base_args,
         query,
+        None,
         timeout,
         settings,
         "JSONEachRow",
@@ -1252,6 +1262,19 @@ class TestCase:
                 f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', coverageCurrent()",
                 retry_error_codes=True,
             )
+
+            # Check for dumped coverage files
+            file_pattern = "coverage.*"
+            matching_files = glob.glob(file_pattern)
+            for file_path in matching_files:
+                body = read_file_as_binary_string(file_path)
+                clickhouse_execute(
+                    args,
+                    f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
+                    body=body,
+                    retry_error_codes=True,
+                )
+                os.remove(file_path)
 
             coverage = clickhouse_execute(
                 args,
