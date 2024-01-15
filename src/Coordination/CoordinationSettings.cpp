@@ -1,5 +1,6 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Common/logger_useful.h>
+#include <filesystem>
 #include <Coordination/Defines.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
