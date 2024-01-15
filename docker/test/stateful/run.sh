@@ -101,21 +101,9 @@ start
 
 setup_logs_replication
 
-# shellcheck disable=SC2086 # No quotes because I want to split it into words.
-/s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
-chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"
-
-clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
-
-service clickhouse-server restart
-
-# Wait for server to start accepting connections
-for _ in {1..120}; do
-    clickhouse-client --query "SELECT 1" && break
-    sleep 1
-done
-
+clickhouse-client --query "CREATE DATABASE datasets"
+clickhouse-client --multiquery < create.sql
 clickhouse-client --query "SHOW TABLES FROM datasets"
 
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
