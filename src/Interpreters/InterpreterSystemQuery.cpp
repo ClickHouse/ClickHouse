@@ -63,6 +63,10 @@
 #include <IO/S3/Client.h>
 #endif
 
+#if USE_JEMALLOC
+#include <Common/Jemalloc.h>
+#endif
+
 #include "config.h"
 
 namespace CurrentMetrics
@@ -83,7 +87,6 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
 }
-
 
 namespace ActionLocks
 {
@@ -581,6 +584,32 @@ BlockIO InterpreterSystemQuery::execute()
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
+#if USE_JEMALLOC
+        case Type::JEMALLOC_PURGE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            purgeJemallocArenas();
+            break;
+        }
+        case Type::JEMALLOC_ENABLE_PROFILE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            setJemallocProfileActive(true);
+            break;
+        }
+        case Type::JEMALLOC_DISABLE_PROFILE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            setJemallocProfileActive(false);
+            break;
+        }
+        case Type::JEMALLOC_FLUSH_PROFILE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            flushJemallocProfile("/tmp/jemalloc_clickhouse");
+            break;
+        }
+#endif
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
     }
@@ -1168,6 +1197,16 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SYNC_FILE_CACHE);
             break;
         }
+#if USE_JEMALLOC
+        case Type::JEMALLOC_PURGE:
+        case Type::JEMALLOC_ENABLE_PROFILE:
+        case Type::JEMALLOC_DISABLE_PROFILE:
+        case Type::JEMALLOC_FLUSH_PROFILE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
+            break;
+        }
+#endif
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
         case Type::STOP_THREAD_FUZZER:

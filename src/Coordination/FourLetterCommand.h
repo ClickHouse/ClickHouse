@@ -401,4 +401,55 @@ struct CleanResourcesCommand : public IFourLetterCommand
     ~CleanResourcesCommand() override = default;
 };
 
+#if USE_JEMALLOC
+struct JemallocDumpStats : public IFourLetterCommand
+{
+    explicit JemallocDumpStats(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmst"; }
+    String run() override;
+    ~JemallocDumpStats() override = default;
+
+};
+
+struct JemallocFlushProfile : public IFourLetterCommand
+{
+    explicit JemallocFlushProfile(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmfp"; }
+    String run() override;
+    ~JemallocFlushProfile() override = default;
+};
+
+struct JemallocEnableProfile : public IFourLetterCommand
+{
+    explicit JemallocEnableProfile(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmep"; }
+    String run() override;
+    ~JemallocEnableProfile() override = default;
+};
+
+struct JemallocDisableProfile : public IFourLetterCommand
+{
+    explicit JemallocDisableProfile(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "jmdp"; }
+    String run() override;
+    ~JemallocDisableProfile() override = default;
+};
+#endif
+
 }
