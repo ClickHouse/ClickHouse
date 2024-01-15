@@ -143,7 +143,7 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-        query_tree_pass_manager.run(query_tree, 1 /*up_to_pass_index*/);
+        query_tree_pass_manager.runOnlyResolve(query_tree);
     else
         query_tree_pass_manager.run(query_tree);
 
