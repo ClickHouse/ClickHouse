@@ -23,7 +23,7 @@
 #include <Functions/FunctionIfBase.h>
 #include <Interpreters/castColumn.h>
 #include <Functions/FunctionFactory.h>
-
+#include <type_traits>
 
 namespace DB
 {
@@ -42,7 +42,8 @@ using namespace GatherUtils;
 /** Selection function by condition: if(cond, then, else).
   * cond - UInt8
   * then, else - numeric types for which there is a general type, or dates, datetimes, or strings, or arrays of these types.
-  */
+  * For better performance, try to use branch free code for numeric types(i.e. cond ? a : b --> !!cond * a + !cond * b), except floating point types because of Inf or NaN.
+*/
 
 template <typename ArrayCond, typename ArrayA, typename ArrayB, typename ArrayResult, typename ResultType>
 inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, ArrayResult & res)
@@ -55,24 +56,48 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
     {
         size_t a_index = 0, b_index = 0;
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[b_index++]);
+        {
+            if constexpr (std::is_integral_v<ResultType>)
+            {
+                res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
+                a_index += !!cond[i];
+                b_index += !cond[i];
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[b_index++]);
+        }
     }
     else if (a_is_short)
     {
         size_t a_index = 0;
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[i]);
+            if constexpr (std::is_integral_v<ResultType>)
+            {
+                res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[i]);
+                a_index += !!cond[i];
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[i]);
     }
     else if (b_is_short)
     {
         size_t b_index = 0;
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[b_index++]);
+            if constexpr (std::is_integral_v<ResultType>)
+            {
+                res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
+                b_index += !cond[i];
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[b_index++]);
     }
     else
     {
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
+            if constexpr (std::is_integral_v<ResultType>)
+                res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[i]);
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
     }
 }
 
@@ -85,12 +110,21 @@ inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Ar
     {
         size_t a_index = 0;
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b);
+            if constexpr (std::is_integral_v<ResultType>)
+            {
+                res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b);
+                a_index += !!cond[i];
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b);
     }
     else
     {
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
+            if constexpr (std::is_integral_v<ResultType>)
+                res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b);
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
     }
 }
 
@@ -103,12 +137,21 @@ inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, Ar
     {
         size_t b_index = 0;
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[b_index++]);
+            if constexpr (std::is_integral_v<ResultType>)
+            {
+                res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
+                b_index += !cond[i];
+            }
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[b_index++]);
     }
     else
     {
         for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
+            if constexpr (std::is_integral_v<ResultType>)
+                res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[i]);
+            else
+                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
     }
 }
 
@@ -1096,14 +1139,25 @@ public:
             return res != nullptr;
         };
 
-        TypeIndex left_id = arg_then.type->getTypeId();
-        TypeIndex right_id = arg_else.type->getTypeId();
+        DataTypePtr left_type = arg_then.type;
+        DataTypePtr right_type = arg_else.type;
 
         if (const auto * left_array = checkAndGetDataType<DataTypeArray>(arg_then.type.get()))
-            left_id = left_array->getNestedType()->getTypeId();
+            left_type = left_array->getNestedType();
 
         if (const auto * right_array = checkAndGetDataType<DataTypeArray>(arg_else.type.get()))
-            right_id = right_array->getNestedType()->getTypeId();
+            right_type = right_array->getNestedType();
+
+        /// Special case when one column is Integer and another is UInt64 that can be actually Int64.
+        /// The result type for this case is Int64 and we need to change UInt64 type to Int64
+        /// so the NumberTraits::ResultOfIf will return Int64 instead if Int128.
+        if (isNativeInteger(left_type) && isUInt64ThatCanBeInt64(right_type))
+            right_type = std::make_shared<DataTypeInt64>();
+        else if (isNativeInteger(right_type) && isUInt64ThatCanBeInt64(left_type))
+            left_type = std::make_shared<DataTypeInt64>();
+
+        TypeIndex left_id = left_type->getTypeId();
+        TypeIndex right_id = right_type->getTypeId();
 
         if (!(callOnBasicTypes<true, true, true, false>(left_id, right_id, call)
             || (res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count))

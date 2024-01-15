@@ -93,8 +93,9 @@ class PRInfo:
                 github_event = PRInfo.default_event.copy()
         self.event = github_event
         self.changed_files = set()  # type: Set[str]
+        self.changed_files_requested = False
         self.body = ""
-        self.diff_urls = []
+        self.diff_urls = []  # type: List[str]
         # release_pr and merged_pr are used for docker images additional cache
         self.release_pr = 0
         self.merged_pr = 0
@@ -104,7 +105,7 @@ class PRInfo:
 
         # workflow completed event, used for PRs only
         if "action" in github_event and github_event["action"] == "completed":
-            self.sha = github_event["workflow_run"]["head_sha"]
+            self.sha = github_event["workflow_run"]["head_sha"]  # type: str
             prs_for_sha = get_gh_api(
                 f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{self.sha}"
                 "/pulls",
@@ -114,7 +115,7 @@ class PRInfo:
                 github_event["pull_request"] = prs_for_sha[0]
 
         if "pull_request" in github_event:  # pull request and other similar events
-            self.number = github_event["pull_request"]["number"]
+            self.number = github_event["pull_request"]["number"]  # type: int
             if pr_event_from_api:
                 try:
                     response = get_gh_api(
@@ -144,20 +145,24 @@ class PRInfo:
             self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
 
             # master or backport/xx.x/xxxxx - where the PR will be merged
-            self.base_ref = github_event["pull_request"]["base"]["ref"]
+            self.base_ref = github_event["pull_request"]["base"]["ref"]  # type: str
             # ClickHouse/ClickHouse
-            self.base_name = github_event["pull_request"]["base"]["repo"]["full_name"]
+            self.base_name = github_event["pull_request"]["base"]["repo"][
+                "full_name"
+            ]  # type: str
             # any_branch-name - the name of working branch name
-            self.head_ref = github_event["pull_request"]["head"]["ref"]
+            self.head_ref = github_event["pull_request"]["head"]["ref"]  # type: str
             # UserName/ClickHouse or ClickHouse/ClickHouse
-            self.head_name = github_event["pull_request"]["head"]["repo"]["full_name"]
+            self.head_name = github_event["pull_request"]["head"]["repo"][
+                "full_name"
+            ]  # type: str
             self.body = github_event["pull_request"]["body"]
             self.labels = {
                 label["name"] for label in github_event["pull_request"]["labels"]
             }  # type: Set[str]
 
-            self.user_login = github_event["pull_request"]["user"]["login"]
-            self.user_orgs = set([])
+            self.user_login = github_event["pull_request"]["user"]["login"]  # type: str
+            self.user_orgs = set()  # type: Set[str]
             if need_orgs:
                 user_orgs_response = get_gh_api(
                     github_event["pull_request"]["user"]["organizations_url"],
@@ -167,10 +172,11 @@ class PRInfo:
                     response_json = user_orgs_response.json()
                     self.user_orgs = set(org["id"] for org in response_json)
 
-            self.diff_urls.append(github_event["pull_request"]["diff_url"])
+            self.diff_urls.append(self.compare_pr_url(github_event["pull_request"]))
+
         elif "commits" in github_event:
             # `head_commit` always comes with `commits`
-            commit_message = github_event["head_commit"]["message"]
+            commit_message = github_event["head_commit"]["message"]  # type: str
             if commit_message.startswith("Merge pull request #"):
                 merged_pr = commit_message.split(maxsplit=4)[3]
                 try:
@@ -193,8 +199,7 @@ class PRInfo:
                 self.head_ref = ref
                 self.head_name = self.repo_full_name
                 self.diff_urls.append(
-                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                    f"compare/{github_event['before']}...{self.sha}"
+                    self.compare_url(github_event["before"], self.sha)
                 )
             else:
                 self.number = pull_request["number"]
@@ -211,30 +216,38 @@ class PRInfo:
                     # files changed in upstream AND master...{self.head_ref}
                     # to get files, changed in current HEAD
                     self.diff_urls.append(
-                        f"https://github.com/{GITHUB_REPOSITORY}/"
-                        f"compare/master...{self.head_ref}.diff"
+                        self.compare_url(
+                            pull_request["base"]["repo"]["default_branch"],
+                            pull_request["head"]["label"],
+                        )
                     )
                     self.diff_urls.append(
-                        f"https://github.com/{GITHUB_REPOSITORY}/"
-                        f"compare/{self.head_ref}...master.diff"
+                        self.compare_url(
+                            pull_request["head"]["label"],
+                            pull_request["base"]["repo"]["default_branch"],
+                        )
                     )
                     # Get release PR number.
                     self.release_pr = get_pr_for_commit(self.base_ref, self.base_ref)[
                         "number"
                     ]
                 else:
-                    self.diff_urls.append(pull_request["diff_url"])
+                    self.diff_urls.append(self.compare_pr_url(pull_request))
                 if "release" in self.labels:
                     # For release PRs we must get not only files changed in the PR
                     # itself, but as well files changed since we branched out
                     self.diff_urls.append(
-                        f"https://github.com/{GITHUB_REPOSITORY}/"
-                        f"compare/{self.head_ref}...master.diff"
+                        self.compare_url(
+                            pull_request["head"]["label"],
+                            pull_request["base"]["repo"]["default_branch"],
+                        )
                     )
         else:
             print("event.json does not match pull_request or push:")
             print(json.dumps(github_event, sort_keys=True, indent=4))
-            self.sha = os.getenv("GITHUB_SHA")
+            self.sha = os.getenv(
+                "GITHUB_SHA", "0000000000000000000000000000000000000000"
+            )
             self.number = 0
             self.labels = set()
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
@@ -250,6 +263,16 @@ class PRInfo:
         if need_changed_files:
             self.fetch_changed_files()
 
+    def compare_pr_url(self, pr_object: dict) -> str:
+        return self.compare_url(pr_object["base"]["label"], pr_object["head"]["label"])
+
+    @staticmethod
+    def compare_url(first: str, second: str) -> str:
+        return (
+            "https://api.github.com/repos/"
+            f"{GITHUB_REPOSITORY}/compare/{first}...{second}"
+        )
+
     def fetch_changed_files(self):
         if not getattr(self, "diff_urls", False):
             raise TypeError("The event does not have diff URLs")
@@ -258,16 +281,12 @@ class PRInfo:
             response = get_gh_api(
                 diff_url,
                 sleep=RETRY_SLEEP,
+                headers={"Accept": "application/vnd.github.v3.diff"},
             )
             response.raise_for_status()
-            if "commits" in self.event and self.number == 0:
-                diff = response.json()
-
-                if "files" in diff:
-                    self.changed_files = {f["filename"] for f in diff["files"]}
-            else:
-                diff_object = PatchSet(response.text)
-                self.changed_files.update({f.path for f in diff_object})
+            diff_object = PatchSet(response.text)
+            self.changed_files.update({f.path for f in diff_object})
+        self.changed_files_requested = True
         print(f"Fetched info about {len(self.changed_files)} changed files")
 
     def get_dict(self):
@@ -279,83 +298,57 @@ class PRInfo:
             "user_orgs": self.user_orgs,
         }
 
-    def has_changes_in_documentation(self):
-        # If the list wasn't built yet the best we can do is to
-        # assume that there were changes.
-        if self.changed_files is None or not self.changed_files:
+    def has_changes_in_documentation(self) -> bool:
+        if not self.changed_files_requested:
+            self.fetch_changed_files()
+
+        if not self.changed_files:
             return True
 
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
-            path_in_docs = "docs" in f
-            path_in_website = "website" in f
+            path_in_docs = f.startswith("docs/")
             if (
-                ext in DIFF_IN_DOCUMENTATION_EXT and (path_in_docs or path_in_website)
+                ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs
             ) or "docker/docs" in f:
                 return True
         return False
 
+    def has_changes_in_documentation_only(self) -> bool:
+        """
+        checks if changes are docs related without other changes
+        FIXME: avoid hardcoding filenames here
+        """
+        if not self.changed_files_requested:
+            self.fetch_changed_files()
+
+        if not self.changed_files:
+            # if no changes at all return False
+            return False
+
+        for f in self.changed_files:
+            _, ext = os.path.splitext(f)
+            path_in_docs = f.startswith("docs/")
+            if not (
+                (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
+                or "docker/docs" in f
+                or "docs_check.py" in f
+                or ext == ".md"
+            ):
+                return False
+        return True
+
     def has_changes_in_submodules(self):
-        if self.changed_files is None or not self.changed_files:
+        if not self.changed_files_requested:
+            self.fetch_changed_files()
+
+        if not self.changed_files:
             return True
 
         for f in self.changed_files:
             if "contrib/" in f:
                 return True
         return False
-
-    def can_skip_builds_and_use_version_from_master(self):
-        # TODO: See a broken loop
-        if FORCE_TESTS_LABEL in self.labels:
-            return False
-
-        if self.changed_files is None or not self.changed_files:
-            return False
-
-        for f in self.changed_files:
-            # TODO: this logic is broken, should be fixed before using
-            if (
-                not f.startswith("tests/queries")
-                or not f.startswith("tests/integration")
-                or not f.startswith("tests/performance")
-            ):
-                return False
-
-        return True
-
-    def can_skip_integration_tests(self):
-        # TODO: See a broken loop
-        if FORCE_TESTS_LABEL in self.labels:
-            return False
-
-        if self.changed_files is None or not self.changed_files:
-            return False
-
-        for f in self.changed_files:
-            # TODO: this logic is broken, should be fixed before using
-            if not f.startswith("tests/queries") or not f.startswith(
-                "tests/performance"
-            ):
-                return False
-
-        return True
-
-    def can_skip_functional_tests(self):
-        # TODO: See a broken loop
-        if FORCE_TESTS_LABEL in self.labels:
-            return False
-
-        if self.changed_files is None or not self.changed_files:
-            return False
-
-        for f in self.changed_files:
-            # TODO: this logic is broken, should be fixed before using
-            if not f.startswith("tests/integration") or not f.startswith(
-                "tests/performance"
-            ):
-                return False
-
-        return True
 
 
 class FakePRInfo:

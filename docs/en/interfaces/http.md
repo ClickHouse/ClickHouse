@@ -18,6 +18,8 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
+Also see: [HTTP response codes caveats](#http_response_codes_caveats).
+
 Sometimes, `curl` command is not available on user operating systems. On Ubuntu or Debian, run `sudo apt install curl`. Please refer this [documentation](https://curl.se/download.html) to install it before running the examples.
 
 Web UI can be accessed here: `http://localhost:8123/play`.
@@ -56,7 +58,7 @@ Connection: Close
 Content-Type: text/tab-separated-values; charset=UTF-8
 X-ClickHouse-Server-Display-Name: clickhouse.ru-central1.internal
 X-ClickHouse-Query-Id: 5abe861c-239c-467f-b955-8a201abb8b7f
-X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 
 1
 ```
@@ -165,7 +167,7 @@ For successful requests that do not return a data table, an empty response body 
 
 You can use compression to reduce network traffic when transmitting a large amount of data or for creating dumps that are immediately compressed.
 
-You can use the internal ClickHouse compression format when transmitting data. The compressed data has a non-standard format, and you need `clickhouse-compressor` program to work with it. It is installed with the `clickhouse-client` package. To increase the efficiency of data insertion, you can disable server-side checksum verification by using the [http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) setting.
+You can use the internal ClickHouse compression format when transmitting data. The compressed data has a non-standard format, and you need `clickhouse-compressor` program to work with it. It is installed with the `clickhouse-client` package. To increase the efficiency of data insertion, you can disable server-side checksum verification by using the [http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#http_native_compression_disable_checksumming_on_decompress) setting.
 
 If you specify `compress=1` in the URL, the server will compress the data it sends to you. If you specify `decompress=1` in the URL, the server will decompress the data which you pass in the `POST` method.
 
@@ -181,7 +183,7 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 - `snappy`
 
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
-In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level) setting for all compression methods.
+In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#http_zlib_compression_level) setting for all compression methods.
 
 :::info
 Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
@@ -283,12 +285,12 @@ For information about other parameters, see the section “SET”.
 
 Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout, modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
-You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send_progress_in_http_headers](../operations/settings/settings.md#settings-send_progress_in_http_headers). Example of the header sequence:
+You can receive information about the progress of a query in `X-ClickHouse-Progress` response headers. To do this, enable [send_progress_in_http_headers](../operations/settings/settings.md#send_progress_in_http_headers). Example of the header sequence:
 
 ``` text
-X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128"}
-X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128"}
-X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128"}
+X-ClickHouse-Progress: {"read_rows":"2752512","read_bytes":"240570816","total_rows_to_read":"8880128","elapsed_ns":"662334"}
+X-ClickHouse-Progress: {"read_rows":"5439488","read_bytes":"482285394","total_rows_to_read":"8880128","elapsed_ns":"992334"}
+X-ClickHouse-Progress: {"read_rows":"8783786","read_bytes":"819092887","total_rows_to_read":"8880128","elapsed_ns":"1232334"}
 ```
 
 Possible header fields:
@@ -322,6 +324,27 @@ $ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&
 ```
 
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client-side, the error can only be detected at the parsing stage.
+
+## HTTP response codes caveats {#http_response_codes_caveats}
+
+Because of limitation of HTTP protocol, HTTP 200 response code does not guarantee that a query was successful.
+
+Here is an example:
+
+```
+curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)"
+*   Trying 127.0.0.1:8123...
+...
+< HTTP/1.1 200 OK
+...
+Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(number, 2) :: 1) -> throwIf(equals(number, 2))
+```
+
+The reason for this behavior is the nature of the HTTP protocol. The HTTP header is sent first with an HTTP code of 200, followed by the HTTP body, and then the error is injected into the body as plain text.
+This behavior is independent of the format used, whether it's `Native`, `TSV`, or `JSON`; the error message will always be in the middle of the response stream.
+You can mitigate this problem by enabling `wait_end_of_query=1` ([Response Buffering](#response-buffering)). In this case, the sending of the HTTP header is delayed until the entire query is resolved.
+However, this does not completely solve the problem because the result must still fit within the `http_response_buffer_size`, and other settings like `send_progress_in_http_headers` can interfere with the delay of the header.
+The only way to catch all errors is to analyze the HTTP body before parsing it using the required format.
 
 ### Queries with Parameters {#cli-queries-with-parameters}
 
@@ -415,8 +438,8 @@ $ curl -v 'http://localhost:8123/predefined_query'
 < X-ClickHouse-Query-Id: 96fe0052-01e6-43ce-b12a-6b7370de6e8a
 < X-ClickHouse-Format: Template
 < X-ClickHouse-Timezone: Asia/Shanghai
-< Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 # HELP "Query" "Number of executing queries"
 # TYPE "Query" counter
@@ -473,7 +496,7 @@ Next are the configuration methods for different `type`.
 
 `query` value is a predefined query of `predefined_query_handler`, which is executed by ClickHouse when an HTTP request is matched and the result of the query is returned. It is a must configuration.
 
-The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` settings, then queries the system table to check whether these settings were set successfully.
+The following example defines the values of [max_threads](../operations/settings/settings.md#max_threads) and `max_final_threads` settings, then queries the system table to check whether these settings were set successfully.
 
 :::note
 To keep the default `handlers` such as` query`, `play`,` ping`, add the `<defaults/>` rule.
@@ -516,7 +539,7 @@ In `dynamic_query_handler`, the query is written in the form of parameter of the
 
 ClickHouse extracts and executes the value corresponding to the `query_param_name` value in the URL of the HTTP request. The default value of `query_param_name` is `/query` . It is an optional configuration. If there is no definition in the configuration file, the parameter is not passed in.
 
-To experiment with this functionality, the example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_final_threads` and `queries` whether the settings were set successfully.
+To experiment with this functionality, the example defines the values of [max_threads](../operations/settings/settings.md#max_threads) and `max_final_threads` and `queries` whether the settings were set successfully.
 
 Example:
 
@@ -580,8 +603,8 @@ $ curl -vv  -H 'XXX:xxx' 'http://localhost:8123/hi'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
 Say Hi!%
@@ -620,8 +643,8 @@ $ curl -v  -H 'XXX:xxx' 'http://localhost:8123/get_config_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/plain; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 * Connection #0 to host localhost left intact
 <html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>%
@@ -672,8 +695,8 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_absolute_path_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Absolute Path File</body></html>
 * Connection #0 to host localhost left intact
@@ -691,9 +714,89 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 < Connection: Keep-Alive
 < Content-Type: text/html; charset=UTF-8
 < Transfer-Encoding: chunked
-< Keep-Alive: timeout=3
-< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0"}
+< Keep-Alive: timeout=10
+< X-ClickHouse-Summary: {"read_rows":"0","read_bytes":"0","written_rows":"0","written_bytes":"0","total_rows_to_read":"0","elapsed_ns":"662334"}
 <
 <html><body>Relative Path File</body></html>
 * Connection #0 to host localhost left intact
+```
+
+## Valid JSON/XML response on exception during HTTP streaming {valid-output-on-exception-http-streaming} 
+
+While query execution over HTTP an exception can happen when part of the data has already been sent. Usually an exception is sent to the client in plain text
+even if some specific data format was used to output data and the output may become invalid in terms of specified data format.
+To prevent it, you can use setting `http_write_exception_in_output_format` (enabled by default) that will tell ClickHouse to write an exception in specified format (currently supported for XML and JSON* formats).
+
+Examples:
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>3)+from+system.numbers+format+JSON+settings+max_block_size=1&http_write_exception_in_output_format=1'
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "throwIf(greater(number, 2))",
+			"type": "UInt8"
+		}
+	],
+
+	"data":
+	[
+		{
+			"number": "0",
+			"throwIf(greater(number, 2))": 0
+		},
+		{
+			"number": "1",
+			"throwIf(greater(number, 2))": 0
+		},
+		{
+			"number": "2",
+			"throwIf(greater(number, 2))": 0
+		}
+	],
+
+	"rows": 3,
+
+	"exception": "Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)"
+}
+```
+
+```bash
+$ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>2)+from+system.numbers+format+XML+settings+max_block_size=1&http_write_exception_in_output_format=1'
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+			<column>
+				<name>throwIf(greater(number, 2))</name>
+				<type>UInt8</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+		<row>
+			<number>0</number>
+			<field>0</field>
+		</row>
+		<row>
+			<number>1</number>
+			<field>0</field>
+		</row>
+		<row>
+			<number>2</number>
+			<field>0</field>
+		</row>
+	</data>
+	<rows>3</rows>
+	<exception>Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)</exception>
+</result>
 ```

@@ -1,5 +1,6 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/LightweightDeleteDescription.h>
+#include <Storages/BlockNumberColumn.h>
 #include <Storages/IStorage.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
@@ -17,6 +18,16 @@ namespace ErrorCodes
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
 }
 
+std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
+{
+    auto res = std::make_shared<StorageSnapshot>(storage, metadata, object_columns);
+
+    res->projection = projection;
+    res->data = std::move(data_);
+
+    return res;
+}
+
 void StorageSnapshot::init()
 {
     for (const auto & [name, type] : storage.getVirtuals())
@@ -24,6 +35,8 @@ void StorageSnapshot::init()
 
     if (storage.hasLightweightDeletedMask())
         system_columns[LightweightDeleteDescription::FILTER_COLUMN.name] = LightweightDeleteDescription::FILTER_COLUMN.type;
+
+    system_columns[BlockNumberColumn::name] = BlockNumberColumn::type;
 }
 
 NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
@@ -113,22 +126,15 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
     return *column;
 }
 
-Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names, const NameToNameMap & parameter_values) const
+Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;
 
     const auto & columns = getMetadataForQuery()->getColumns();
     for (const auto & column_name : column_names)
     {
-        std::string substituted_column_name = column_name;
-
-        /// substituted_column_name is used for parameterized view (which are created using query parameters
-        /// and SELECT is used with substitution of these query parameters )
-        if (!parameter_values.empty())
-            substituted_column_name = StorageView::replaceValueWithQueryParameter(column_name, parameter_values);
-
-        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, substituted_column_name);
-        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, substituted_column_name);
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+        auto object_column = object_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
         if (column && !object_column)
         {
             res.insert({column->type->createColumn(), column->type, column_name});
@@ -147,7 +153,7 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names, cons
         else
         {
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                "Column {} not found in table {}", backQuote(substituted_column_name), storage.getStorageID().getNameForLogs());
+                "Column {} not found in table {}", backQuote(column_name), storage.getStorageID().getNameForLogs());
         }
     }
     return res;

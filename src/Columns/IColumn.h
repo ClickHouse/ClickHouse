@@ -218,7 +218,7 @@ public:
       *  For example, to obtain unambiguous representation of Array of strings, strings data should be interleaved with their sizes.
       * Parameter begin should be used with Arena::allocContinue.
       */
-    virtual StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const = 0;
+    virtual StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const UInt8 * null_bit = nullptr) const = 0;
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns pointer to the position after the read data.
@@ -396,6 +396,13 @@ public:
     /// Reserves memory for specified amount of elements. If reservation isn't possible, does nothing.
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
+
+    /// Requests the removal of unused capacity.
+    /// It is a non-binding request to reduce the capacity of the underlying container to its size.
+    virtual MutablePtr shrinkToFit() const
+    {
+        return cloneResized(size());
+    }
 
     /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
     virtual void ensureOwnership() {}

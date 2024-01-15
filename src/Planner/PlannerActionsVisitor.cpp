@@ -8,16 +8,13 @@
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/WindowNode.h>
-#include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/ConstantValue.h>
 
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeSet.h>
 
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -32,6 +29,7 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/TableExpressionData.h>
 #include <Planner/Utils.h>
+
 
 namespace DB
 {
@@ -100,8 +98,9 @@ public:
 
                 if (isNameOfInFunction(function_node.getFunctionName()))
                 {
+                    const auto & in_first_argument_node = function_node.getArguments().getNodes().at(0);
                     const auto & in_second_argument_node = function_node.getArguments().getNodes().at(1);
-                    in_function_second_argument_node_name = planner_context.createSetKey(in_second_argument_node);
+                    in_function_second_argument_node_name = planner_context.createSetKey(in_first_argument_node->getResultType(), in_second_argument_node);
                 }
 
                 WriteBufferFromOwnString buffer;
@@ -165,7 +164,7 @@ public:
             case QueryTreeNodeType::LAMBDA:
             {
                 auto lambda_hash = node->getTreeHash();
-                result = "__lambda_" + toString(lambda_hash.first) + '_' + toString(lambda_hash.second);
+                result = "__lambda_" + toString(lambda_hash);
                 break;
             }
             default:
@@ -628,8 +627,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     auto in_first_argument = function_node.getArguments().getNodes().at(0);
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
 
-    //auto set_key = planner_context->createSetKey(in_second_argument);
-
     DataTypes set_element_types;
 
     auto in_second_argument_node_type = in_second_argument->getNodeType();
@@ -665,7 +662,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             PreparedSets::toString(set_key, set_element_types));
 
     ColumnWithTypeAndName column;
-    column.name = planner_context->createSetKey(in_second_argument);
+    column.name = planner_context->createSetKey(in_first_argument->getResultType(), in_second_argument);
     column.type = std::make_shared<DataTypeSet>();
 
     bool set_is_created = set->get() != nullptr;

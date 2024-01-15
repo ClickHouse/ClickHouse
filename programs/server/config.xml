@@ -91,16 +91,27 @@
         </formatting> -->
     </logger>
 
+    <url_scheme_mappers>
+        <s3>
+            <to>https://{bucket}.s3.amazonaws.com</to>
+        </s3>
+        <gs>
+            <to>https://{bucket}.storage.googleapis.com</to>
+        </gs>
+        <oss>
+            <to>https://{bucket}.oss.aliyuncs.com</to>
+        </oss>
+    </url_scheme_mappers>
+
     <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
-    <!-- It is off by default. Next headers are obligate for CORS.-->
-    <!-- http_options_response>
+    <http_options_response>
         <header>
             <name>Access-Control-Allow-Origin</name>
             <value>*</value>
         </header>
         <header>
             <name>Access-Control-Allow-Headers</name>
-            <value>origin, x-requested-with</value>
+            <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
         </header>
         <header>
             <name>Access-Control-Allow-Methods</name>
@@ -110,7 +121,7 @@
             <name>Access-Control-Max-Age</name>
             <value>86400</value>
         </header>
-    </http_options_response -->
+    </http_options_response>
 
     <!-- It is the name that will be shown in the clickhouse-client.
          By default, anything with "production" will be highlighted in red in query prompt.
@@ -233,7 +244,7 @@
     <max_connections>4096</max_connections>
 
     <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
-    <keep_alive_timeout>3</keep_alive_timeout>
+    <keep_alive_timeout>10</keep_alive_timeout>
 
     <!-- gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API) -->
     <!-- <grpc_port>9100</grpc_port> -->
@@ -314,10 +325,10 @@
          Query can upscale to desired number of threads during execution if more threads become available.
     -->
     <concurrent_threads_soft_limit_num>0</concurrent_threads_soft_limit_num>
-    <concurrent_threads_soft_limit_ratio_to_cores>0</concurrent_threads_soft_limit_ratio_to_cores>
+    <concurrent_threads_soft_limit_ratio_to_cores>2</concurrent_threads_soft_limit_ratio_to_cores>
 
     <!-- Maximum number of concurrent queries. -->
-    <max_concurrent_queries>100</max_concurrent_queries>
+    <max_concurrent_queries>1000</max_concurrent_queries>
 
     <!-- Maximum memory usage (resident set size) for server process.
          Zero value or unset means default. Default is "max_server_memory_usage_to_ram_ratio" of available physical RAM.
@@ -353,7 +364,14 @@
     <background_schedule_pool_size>128</background_schedule_pool_size>
     <background_message_broker_schedule_pool_size>16</background_message_broker_schedule_pool_size>
     <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
+    <tables_loader_foreground_pool_size>0</tables_loader_foreground_pool_size>
+    <tables_loader_background_pool_size>0</tables_loader_background_pool_size>
     -->
+
+    <!-- Enables asynchronous loading of databases and tables to speedup server startup.
+         Queries to not yet loaded entity will be blocked until load is finished.
+      -->
+    <!-- <async_load_databases>true</async_load_databases> -->
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
@@ -394,6 +412,9 @@
       -->
     <mark_cache_size>5368709120</mark_cache_size>
 
+    <!-- For marks of secondary indices.
+      -->
+    <index_mark_cache_size>5368709120</index_mark_cache_size>
 
     <!-- If you enable the `min_bytes_to_use_mmap_io` setting,
          the data in MergeTree tables can be read with mmap to avoid copying from kernel to userspace.
@@ -418,6 +439,8 @@
 
     <!-- Cache size in elements for compiled expressions.-->
     <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
+
+    <validate_tcp_client_information>false</validate_tcp_client_information>
 
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
@@ -446,8 +469,6 @@
                 <account_name>account</account_name>
                 <account_key>pass123</account_key>
                 <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-                <cache_enabled>true</cache_enabled>
-                <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
                 <skip_access_check>false</skip_access_check>
             </blob_storage_disk>
         </disks>
@@ -464,7 +485,6 @@
                         <max_data_part_size_bytes></max_data_part_size_bytes>
                         <max_data_part_size_ratio></max_data_part_size_ratio>
                         <perform_ttl_move_on_insert>true</perform_ttl_move_on_insert>
-                        <prefer_not_to_merge>false</prefer_not_to_merge>
                         <load_balancing>round_robin</load_balancing>
                     </main>
                 </volumes>
@@ -693,11 +713,11 @@
              For example, if there two users A, B and a row policy is defined only for A, then
              if this setting is true the user B will see all rows, and if this setting is false the user B will see no rows.
              By default this setting is false for compatibility with earlier access configurations. -->
-        <users_without_row_policies_can_read_rows>false</users_without_row_policies_can_read_rows>
+        <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
 
         <!-- By default, for backward compatibility ON CLUSTER queries ignore CLUSTER grant,
              however you can change this behaviour by setting this to true -->
-        <on_cluster_queries_require_cluster_grant>false</on_cluster_queries_require_cluster_grant>
+        <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
 
         <!-- By default, for backward compatibility "SELECT * FROM system.<table>" doesn't require any grants and can be executed
              by any user. You can change this behaviour by setting this to true.
@@ -705,19 +725,19 @@
              Exceptions: a few system tables ("tables", "columns", "databases", and some constant tables like "one", "contributors")
              are still accessible for everyone; and if there is a SHOW privilege (e.g. "SHOW USERS") granted the corresponding system
              table (i.e. "system.users") will be accessible. -->
-        <select_from_system_db_requires_grant>false</select_from_system_db_requires_grant>
+        <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
 
         <!-- By default, for backward compatibility "SELECT * FROM information_schema.<table>" doesn't require any grants and can be
              executed by any user. You can change this behaviour by setting this to true.
              If it's set to true then this query requires "GRANT SELECT ON information_schema.<table>" just like as for ordinary tables. -->
-        <select_from_information_schema_requires_grant>false</select_from_information_schema_requires_grant>
+        <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
 
         <!-- By default, for backward compatibility a settings profile constraint for a specific setting inherit every not set field from
              previous profile. You can change this behaviour by setting this to true.
              If it's set to true then if settings profile has a constraint for a specific setting, then this constraint completely cancels all
              actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
              It also enables 'changeable_in_readonly' constraint type -->
-        <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
+        <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
 
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
@@ -816,13 +836,13 @@
                  And also (and which is more important), the initial_user will
                  be used as current user for the query.
 
-                 Right now the protocol is pretty simple and it only takes into account:
+                 Right now the protocol is pretty simple, and it only takes into account:
                  - cluster name
                  - query
 
-                 Also it will be nice if the following will be implemented:
-                 - source hostname (see interserver_http_host), but then it will depends from DNS,
-                   it can use IP address instead, but then the you need to get correct on the initiator node.
+                 Also, it will be nice if the following will be implemented:
+                 - source hostname (see interserver_http_host), but then it will depend on DNS,
+                   it can use IP address instead, but then you need to get correct on the initiator node.
                  - target hostname / ip address (same notes as for source hostname)
                  - time-based security tokens
             -->
@@ -866,6 +886,14 @@
         -->
     <!--</remote_url_allow_hosts>-->
 
+    <!-- The list of HTTP headers forbidden to use in HTTP-related storage engines and table functions.
+        If this section is not present in configuration, all headers are allowed.
+    -->
+    <!-- <http_forbid_headers>
+        <header>exact_header</header>
+        <header_regexp>(?i)(case_insensitive_header)</header_regexp>
+    </http_forbid_headers> -->
+
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
          By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
          Values for substitutions are specified in /clickhouse/name_of_substitution elements in that file.
@@ -904,6 +932,15 @@
         <shard>01</shard>
         <replica>example01-01-1</replica>
     </macros>
+    -->
+
+    <!-- Replica group name for database Replicated.
+          The cluster created by Replicated database will consist of replicas in the same group.
+          DDL queries will only wail for the replicas in the same group.
+          Empty by default.
+    -->
+    <!--
+    <replica_group_name><replica_group_name>
     -->
 
 
@@ -961,7 +998,6 @@
         metrics - send data from table system.metrics
         events - send data from table system.events
         asynchronous_metrics - send data from table system.asynchronous_metrics
-        status_info - send data from different component from CH, ex: Dictionaries status
     -->
     <!--
     <prometheus>
@@ -971,7 +1007,6 @@
         <metrics>true</metrics>
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
-        <status_info>true</status_info>
     </prometheus>
     -->
 
@@ -1018,6 +1053,14 @@
 
         <!-- Interval of flushing data. -->
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <!-- Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk. -->
+        <max_size_rows>1048576</max_size_rows>
+        <!-- Pre-allocated size in lines for the logs. -->
+        <reserved_size_rows>8192</reserved_size_rows>
+        <!-- Lines amount threshold, reaching it launches flushing logs to the disk in background. -->
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
+        <flush_on_crash>false</flush_on_crash>
 
         <!-- example of using a different storage policy for a system table -->
         <!-- storage_policy>local_ssd</storage_policy -->
@@ -1031,6 +1074,11 @@
 
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
+        <flush_on_crash>false</flush_on_crash>
     </trace_log>
 
     <!-- Query thread log. Has information about all threads participated in query execution.
@@ -1040,6 +1088,10 @@
         <table>query_thread_log</table>
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </query_thread_log>
 
     <!-- Query views log. Has information about all dependent views associated with a query.
@@ -1058,6 +1110,10 @@
         <table>part_log</table>
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </part_log>
 
     <!-- Uncomment to write text log into table.
@@ -1067,6 +1123,10 @@
         <database>system</database>
         <table>text_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
         <level></level>
     </text_log>
     -->
@@ -1076,7 +1136,11 @@
         <database>system</database>
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
     </metric_log>
 
     <!--
@@ -1087,6 +1151,10 @@
         <database>system</database>
         <table>asynchronous_metric_log</table>
         <flush_interval_milliseconds>7000</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </asynchronous_metric_log>
 
     <!--
@@ -1111,6 +1179,10 @@
         <database>system</database>
         <table>opentelemetry_span_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </opentelemetry_span_log>
 
 
@@ -1122,6 +1194,10 @@
 
         <partition_by />
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+        <max_size_rows>1024</max_size_rows>
+        <reserved_size_rows>1024</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
+        <flush_on_crash>true</flush_on_crash>
     </crash_log>
 
     <!-- Session log. Stores user log in (successful or not) and log out events.
@@ -1134,6 +1210,10 @@
 
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </session_log> -->
 
     <!-- Profiling on Processors level. -->
@@ -1143,6 +1223,10 @@
 
         <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
     </processors_profile_log>
 
     <!-- Log of asynchronous inserts. It allows to check status
@@ -1153,9 +1237,41 @@
         <table>asynchronous_insert_log</table>
 
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
         <partition_by>event_date</partition_by>
         <ttl>event_date + INTERVAL 3 DAY</ttl>
     </asynchronous_insert_log>
+
+    <!-- Backup/restore log.
+    -->
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </backup_log>
+
+    <!-- Storage S3Queue log.
+    -->
+    <s3queue_log>
+        <database>system</database>
+        <table>s3queue_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </s3queue_log>
+
+    <!-- Blob storage object operations log.
+    -->
+    <blob_storage_log>
+        <database>system</database>
+        <table>blob_storage_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+    </blob_storage_log>
 
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
@@ -1174,6 +1290,17 @@
          https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
     -->
     <dictionaries_config>*_dictionary.*ml</dictionaries_config>
+
+    <!-- Load dictionaries lazily, i.e. a dictionary will be loaded when it's used for the first time.
+         "false" means ClickHouse will start loading dictionaries immediately at startup.
+    -->
+    <dictionaries_lazy_load>true</dictionaries_lazy_load>
+
+    <!-- Wait at startup until all the dictionaries finish their loading (successfully or not)
+         before receiving any connections. Affects dictionaries only if "dictionaries_lazy_load" is false.
+         Setting this to false can make ClickHouse start faster, however some queries can be executed slower.
+    -->
+    <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
 
     <!-- Configuration of user defined executable functions -->
     <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>
@@ -1252,6 +1379,9 @@
 
         <!-- Controls how many tasks could be in the queue -->
         <!-- <max_tasks_in_queue>1000</max_tasks_in_queue> -->
+
+        <!-- Host name of the current node. If specified, will only compare and not resolve hostnames inside the DDL tasks -->
+        <!-- <host_name>replica</host_name> -->
     </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
@@ -1306,6 +1436,10 @@
          The directory will be created if it doesn't exist.
       -->
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+
+    <!-- Directory containing the proto files for the well-known Protobuf types.
+      -->
+    <google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
 
     <!-- Default query masking rules, matching lines would be replaced with something else in the logs
         (both text logs and system.query_log).
@@ -1380,6 +1514,15 @@
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
 
     <!-- You can also configure rocksdb like this: -->
+    <!-- Full list of options:
+         - options:
+           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/include/rocksdb/options.h#L1452
+         - column_family_options:
+           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/include/rocksdb/options.h#L66
+         - block_based_table_options:
+           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/table/block_based/block_based_table_factory.cc#L228
+           - https://github.com/facebook/rocksdb/blob/4b013dcbed2df84fde3901d7655b9b91c557454d/include/rocksdb/table.h#L129
+    -->
     <!--
     <rocksdb>
         <options>
@@ -1388,6 +1531,9 @@
         <column_family_options>
             <num_levels>2</num_levels>
         </column_family_options>
+        <block_based_table_options>
+            <block_size>1024</block_size>
+        </block_based_table_options>
         <tables>
             <table>
                 <name>TABLE</name>
@@ -1397,6 +1543,9 @@
                 <column_family_options>
                     <num_levels>2</num_levels>
                 </column_family_options>
+                <block_based_table_options>
+                    <block_size>1024</block_size>
+                </block_based_table_options>
             </table>
         </tables>
     </rocksdb>
@@ -1410,12 +1559,6 @@
         <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
     </query_cache>
 
-    <!-- Uncomment if enable merge tree metadata cache -->
-    <!--merge_tree_metadata_cache>
-        <lru_cache_size>268435456</lru_cache_size>
-        <continue_if_corrupted>true</continue_if_corrupted>
-    </merge_tree_metadata_cache-->
-
     <!-- This allows to disable exposing addresses in stack traces for security reasons.
          Please be aware that it does not improve security much, but makes debugging much harder.
          The addresses that are small offsets from zero will be displayed nevertheless to show nullptr dereferences.
@@ -1428,4 +1571,10 @@
     <!-- On Linux systems this can control the behavior of OOM killer.
     <oom_score>-1000</oom_score>
     -->
+
+    <!-- Delay (in seconds) to wait for unfinished queries before force exit -->
+    <!-- <shutdown_wait_unfinished>5</shutdown_wait_unfinished> -->
+
+    <!-- If set true ClickHouse will wait for running queries finish before shutdown. -->
+    <!-- <shutdown_wait_unfinished_queries>false</shutdown_wait_unfinished_queries> -->
 </clickhouse>

@@ -7,6 +7,7 @@
 #include <Client/LocalConnection.h>
 #include <Client/LineReader.h>
 #include <IO/ConnectionTimeouts.h>
+#include <atomic>
 #include <thread>
 
 
@@ -28,8 +29,14 @@ public:
     template <typename ConnectionType>
     void load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
 
+    void load(IServerConnection & connection,
+              const ConnectionTimeouts & timeouts,
+              Int32 suggestion_limit);
+
     /// Older server versions cannot execute the query loading suggestions.
     static constexpr int MIN_SERVER_REVISION = DBMS_MIN_PROTOCOL_VERSION_WITH_VIEW_IF_PERMITTED;
+
+    int getLastError() const { return last_error.load(); }
 
 private:
     void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query);
@@ -38,6 +45,8 @@ private:
 
     /// Words are fetched asynchronously.
     std::thread loading_thread;
+
+    std::atomic<int> last_error { -1 };
 };
 
 }

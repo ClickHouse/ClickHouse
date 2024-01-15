@@ -177,6 +177,14 @@ private:
         if (function.name == "lambda")
             return;
 
+        /// Parsing of INTERVALs is quite hacky. Expressions are rewritten during parsing like this:
+        /// "now() + interval 1 day" -> "now() + toIntervalDay(1)"
+        /// "select now() + INTERVAL '1 day 1 hour 1 minute'" -> "now() + (toIntervalDay(1), toIntervalHour(1), toIntervalMinute(1))"
+        /// so the AST is completely different from the original expression .
+        /// Avoid extracting these literals and simply compare tokens. It makes the template less flexible but much simpler.
+        if (function.name.starts_with("toInterval"))
+            return;
+
         FunctionOverloadResolverPtr builder = FunctionFactory::instance().get(function.name, context);
         /// Do not replace literals which must be constant
         ColumnNumbers dont_visit_children = builder->getArgumentsThatAreAlwaysConstant();
@@ -350,6 +358,31 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
 
 }
 
+String ConstantExpressionTemplate::TemplateStructure::dumpTemplate() const
+{
+    WriteBufferFromOwnString res;
+
+    size_t cur_column = 0;
+    size_t cur_token = 0;
+    size_t num_columns = literals.columns();
+    while (cur_column < num_columns)
+    {
+        size_t skip_tokens_until = token_after_literal_idx[cur_column];
+        while (cur_token < skip_tokens_until)
+            res << quote << tokens[cur_token++] << ", ";
+
+        const DataTypePtr & type = literals.getByPosition(cur_column).type;
+        res << type->getName() << ", ";
+        ++cur_column;
+    }
+
+    while (cur_token < tokens.size())
+        res << quote << tokens[cur_token++] << ", ";
+
+    res << "eof";
+    return res.str();
+}
+
 size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
                                                                       const LiteralsInfo & replaced_literals,
                                                                       const DataTypePtr & result_column_type,
@@ -360,7 +393,7 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     SipHash hash_state;
     hash_state.update(result_column_type->getName());
 
-    expression->updateTreeHash(hash_state);
+    expression->updateTreeHash(hash_state, /*ignore_aliases=*/ true);
 
     for (const auto & info : replaced_literals)
         hash_state.update(info.type->getName());
@@ -369,11 +402,10 @@ size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
     /// Allows distinguish expression in the last column in Values format
     hash_state.update(salt);
 
-    IAST::Hash res128;
-    hash_state.get128(res128);
+    const auto res128 = getSipHash128AsPair(hash_state);
     size_t res = 0;
-    boost::hash_combine(res, res128.first);
-    boost::hash_combine(res, res128.second);
+    boost::hash_combine(res, res128.low64);
+    boost::hash_combine(res, res128.high64);
     return res;
 }
 
@@ -571,18 +603,21 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
             memcpy(buf, istr.position(), bytes_to_copy);
             buf[bytes_to_copy] = 0;
 
-            char * pos_double = buf;
+            /// Skip leading zeroes - we don't want any funny octal business
+            char * non_zero_buf = find_first_not_symbols<'0'>(buf, buf + bytes_to_copy);
+
+            char * pos_double = non_zero_buf;
             errno = 0;
-            Float64 float_value = std::strtod(buf, &pos_double);
-            if (pos_double == buf || errno == ERANGE || float_value < 0)
+            Float64 float_value = std::strtod(non_zero_buf, &pos_double);
+            if (pos_double == non_zero_buf || errno == ERANGE || float_value < 0)
                 return false;
 
             if (negative)
                 float_value = -float_value;
 
-            char * pos_integer = buf;
+            char * pos_integer = non_zero_buf;
             errno = 0;
-            UInt64 uint_value = std::strtoull(buf, &pos_integer, 0);
+            UInt64 uint_value = std::strtoull(non_zero_buf, &pos_integer, 0);
             if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
             {
                 istr.position() += pos_integer - buf;

@@ -20,6 +20,12 @@
 
 namespace fs = std::filesystem;
 
+namespace ProfileEvents
+{
+    extern const Event BackupEntriesCollectorMicroseconds;
+    extern const Event BackupEntriesCollectorForTablesDataMicroseconds;
+    extern const Event BackupEntriesCollectorRunPostTasksMicroseconds;
+}
 
 namespace DB
 {
@@ -37,14 +43,6 @@ namespace Stage = BackupCoordinationStage;
 
 namespace
 {
-    /// Uppercases the first character of a passed string.
-    String toUpperFirst(const String & str)
-    {
-        String res = str;
-        res[0] = std::toupper(res[0]);
-        return res;
-    }
-
     /// Outputs "table <name>" or "temporary table <name>"
     String tableNameWithTypeToString(const String & database_name, const String & table_name, bool first_upper)
     {
@@ -58,17 +56,21 @@ namespace
         return str;
     }
 
-    /// How long we should sleep after finding an inconsistency error.
-    std::chrono::milliseconds getSleepTimeAfterInconsistencyError(size_t pass)
+    String tableNameWithTypeToString(const QualifiedTableName & table_name, bool first_upper)
     {
-        size_t ms;
-        if (pass == 1) /* pass is 1-based */
-            ms = 0;
-        else if ((pass % 10) != 1)
-            ms = 0;
-        else
-            ms = 1000;
-        return std::chrono::milliseconds{ms};
+        return tableNameWithTypeToString(table_name.database, table_name.table, first_upper);
+    }
+
+    /// How long we should sleep after finding an inconsistency error.
+    std::chrono::milliseconds getSleepTimeAfterInconsistencyError(int attempt_no, unsigned int attempts_before_sleep, std::chrono::milliseconds min_sleep, std::chrono::milliseconds max_sleep)
+    {
+        attempts_before_sleep = std::max(attempts_before_sleep, 1U);
+        if (((attempt_no + 1) % attempts_before_sleep) != 0)
+            return std::chrono::milliseconds::zero(); /// no sleep
+
+        int sleep_counter = attempt_no / attempts_before_sleep;
+        std::chrono::milliseconds sleep_time = intExp2(std::min(sleep_counter, 10)) * min_sleep;
+        return std::min(sleep_time, max_sleep);
     }
 }
 
@@ -77,20 +79,29 @@ BackupEntriesCollector::BackupEntriesCollector(
     const ASTBackupQuery::Elements & backup_query_elements_,
     const BackupSettings & backup_settings_,
     std::shared_ptr<IBackupCoordination> backup_coordination_,
-    const ContextPtr & context_)
+    const ReadSettings & read_settings_,
+    const ContextPtr & context_,
+    ThreadPool & threadpool_)
     : backup_query_elements(backup_query_elements_)
     , backup_settings(backup_settings_)
     , backup_coordination(backup_coordination_)
+    , read_settings(read_settings_)
     , context(context_)
     , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
-    , consistent_metadata_snapshot_timeout(context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000))
+    , collect_metadata_timeout(context->getConfigRef().getUInt64(
+          "backups.collect_metadata_timeout", context->getConfigRef().getUInt64("backups.consistent_metadata_snapshot_timeout", 600000)))
+    , attempts_to_collect_metadata_before_sleep(context->getConfigRef().getUInt("backups.attempts_to_collect_metadata_before_sleep", 2))
+    , min_sleep_before_next_attempt_to_collect_metadata(
+          context->getConfigRef().getUInt64("backups.min_sleep_before_next_attempt_to_collect_metadata", 100))
+    , max_sleep_before_next_attempt_to_collect_metadata(
+          context->getConfigRef().getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
+    , compare_collected_metadata(context->getConfigRef().getBool("backups.compare_collected_metadata", true))
     , log(&Poco::Logger::get("BackupEntriesCollector"))
     , global_zookeeper_retries_info(
-        "BackupEntriesCollector",
-        log,
-        context->getSettingsRef().backup_restore_keeper_max_retries,
-        context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
-        context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms)
+          context->getSettingsRef().backup_restore_keeper_max_retries,
+          context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
+          context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms)
+    , threadpool(threadpool_)
 {
 }
 
@@ -98,6 +109,8 @@ BackupEntriesCollector::~BackupEntriesCollector() = default;
 
 BackupEntries BackupEntriesCollector::run()
 {
+    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupEntriesCollectorMicroseconds);
+
     /// run() can be called onle once.
     if (!current_stage.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Already making backup entries");
@@ -123,11 +136,19 @@ BackupEntries BackupEntriesCollector::run()
 
     /// Make backup entries for the data of the found tables.
     setStage(Stage::EXTRACTING_DATA_FROM_TABLES);
-    makeBackupEntriesForTablesData();
+
+    {
+        auto timer2 = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupEntriesCollectorForTablesDataMicroseconds);
+        makeBackupEntriesForTablesData();
+    }
 
     /// Run all the tasks added with addPostCollectingTask().
     setStage(Stage::RUNNING_POST_TASKS);
-    runPostTasks();
+
+    {
+        auto timer2 = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupEntriesCollectorRunPostTasksMicroseconds);
+        runPostTasks();
+    }
 
     /// No more backup entries or tasks are allowed after this point.
 
@@ -136,19 +157,19 @@ BackupEntries BackupEntriesCollector::run()
 
 Strings BackupEntriesCollector::setStage(const String & new_stage, const String & message)
 {
-    LOG_TRACE(log, fmt::runtime(toUpperFirst(new_stage)));
+    LOG_TRACE(log, "Setting stage: {}", new_stage);
     current_stage = new_stage;
 
     backup_coordination->setStage(new_stage, message);
 
-    if (new_stage == Stage::formatGatheringMetadata(1))
+    if (new_stage == Stage::formatGatheringMetadata(0))
     {
         return backup_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
     }
     else if (new_stage.starts_with(Stage::GATHERING_METADATA))
     {
         auto current_time = std::chrono::steady_clock::now();
-        auto end_of_timeout = std::max(current_time, consistent_metadata_snapshot_end_time);
+        auto end_of_timeout = std::max(current_time, collect_metadata_end_time);
         return backup_coordination->waitForStage(
             new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
     }
@@ -175,64 +196,55 @@ void BackupEntriesCollector::calculateRootPathInBackup()
 /// Finds databases and tables which we will put to the backup.
 void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
 {
-    setStage(Stage::formatGatheringMetadata(1));
+    /// With the default values the metadata collecting works in the following way:
+    /// 1) it tries to collect the metadata for the first time; then
+    /// 2) it tries to collect it again, and compares the results from the first and the second collecting; if they match, it's done; otherwise
+    /// 3) it sleeps 100 millisecond and tries to collect again, then compares the results from the second and the third collecting; if they match, it's done; otherwise
+    /// 4) it tries to collect again, then compares the results from the third and the fourth collecting; if they match, it's done; otherwise
+    /// 5) it sleeps 200 milliseconds and tries to collect again, then compares the results from the fourth and the fifth collecting; if they match, it's done;
+    /// ...
+    /// and so on, the sleep time is doubled each time until it reaches 5000 milliseconds.
+    /// And such attempts will be continued until 600000 milliseconds pass.
 
-    consistent_metadata_snapshot_end_time = std::chrono::steady_clock::now() + consistent_metadata_snapshot_timeout;
+    setStage(Stage::formatGatheringMetadata(0));
 
-    for (size_t pass = 1;; ++pass)
+    collect_metadata_end_time = std::chrono::steady_clock::now() + collect_metadata_timeout;
+
+    for (int attempt_no = 0;; ++attempt_no)
     {
-        String next_stage = Stage::formatGatheringMetadata(pass + 1);
         std::optional<Exception> inconsistency_error;
-        if (tryGatherMetadataAndCompareWithPrevious(inconsistency_error))
-        {
-            /// Gathered metadata and checked consistency, cool! But we have to check that other hosts cope with that too.
-            auto all_hosts_results = setStage(next_stage, "consistent");
+        bool need_another_attempt = false;
+        tryGatherMetadataAndCompareWithPrevious(attempt_no, inconsistency_error, need_another_attempt);
+        syncMetadataGatheringWithOtherHosts(attempt_no, inconsistency_error, need_another_attempt);
 
-            std::optional<String> host_with_inconsistency;
-            std::optional<String> inconsistency_error_on_other_host;
-            for (size_t i = 0; i != all_hosts.size(); ++i)
+        if (inconsistency_error && (std::chrono::steady_clock::now() > collect_metadata_end_time))
+            inconsistency_error->rethrow();
+
+        /// Rethrow or just log the inconsistency error.
+        if (!need_another_attempt)
+            break;
+
+        /// It's going to be another attempt, we need to sleep a bit.
+        if (inconsistency_error)
+        {
+            auto sleep_time = getSleepTimeAfterInconsistencyError(
+                attempt_no,
+                attempts_to_collect_metadata_before_sleep,
+                min_sleep_before_next_attempt_to_collect_metadata,
+                max_sleep_before_next_attempt_to_collect_metadata);
+            if (sleep_time.count())
             {
-                if ((i < all_hosts_results.size()) && (all_hosts_results[i] != "consistent"))
-                {
-                    host_with_inconsistency = all_hosts[i];
-                    inconsistency_error_on_other_host = all_hosts_results[i];
-                    break;
-                }
+                LOG_TRACE(log, "Sleeping {} before next attempt to collect metadata", to_string(sleep_time));
+                sleepForMilliseconds(std::chrono::duration_cast<std::chrono::milliseconds>(sleep_time).count());
             }
-
-            if (!host_with_inconsistency)
-                break; /// All hosts managed to gather metadata and everything is consistent, so we can go further to writing the backup.
-
-            inconsistency_error = Exception{
-                ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                "Found inconsistency on host {}: {}",
-                *host_with_inconsistency,
-                *inconsistency_error_on_other_host};
         }
-        else
-        {
-            /// Failed to gather metadata or something wasn't consistent. We'll let other hosts know that and try again.
-            setStage(next_stage, inconsistency_error->displayText());
-        }
-
-        /// Two passes is minimum (we need to compare with table names with previous ones to be sure we don't miss anything).
-        if (pass >= 2)
-        {
-            if (std::chrono::steady_clock::now() > consistent_metadata_snapshot_end_time)
-                inconsistency_error->rethrow();
-            else
-                LOG_WARNING(log, getExceptionMessageAndPattern(*inconsistency_error, /* with_stacktrace */ false));
-        }
-
-        auto sleep_time = getSleepTimeAfterInconsistencyError(pass);
-        if (sleep_time.count() > 0)
-            sleepForNanoseconds(std::chrono::duration_cast<std::chrono::nanoseconds>(sleep_time).count());
     }
 
+    /// All hosts managed to gather metadata and everything is consistent, so we can go further to writing the backup.
     LOG_INFO(log, "Will backup {} databases and {} tables", database_infos.size(), table_infos.size());
 }
 
-bool BackupEntriesCollector::tryGatherMetadataAndCompareWithPrevious(std::optional<Exception> & inconsistency_error)
+void BackupEntriesCollector::tryGatherMetadataAndCompareWithPrevious(int attempt_no, std::optional<Exception> & inconsistency_error, bool & need_another_attempt)
 {
     try
     {
@@ -248,13 +260,75 @@ bool BackupEntriesCollector::tryGatherMetadataAndCompareWithPrevious(std::option
         if (e.code() != ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP)
             throw;
 
+        /// If gatherDatabasesMetadata() or gatherTablesMetadata() threw a INCONSISTENT_METADATA_FOR_BACKUP error then the metadata is not consistent by itself,
+        /// for example a CREATE QUERY could contain a wrong table name if the table has been just renamed. We need another attempt in that case.
         inconsistency_error = e;
-        return false;
+        need_another_attempt = true;
+        return;
     }
+
+    if (!compare_collected_metadata)
+        return;
 
     /// We have to check consistency of collected information to protect from the case when some table or database is
     /// renamed during this collecting making the collected information invalid.
-    return compareWithPrevious(inconsistency_error);
+    String mismatch_description;
+    if (!compareWithPrevious(mismatch_description))
+    {
+        /// Usually two passes is minimum.
+        /// (Because we need to compare with table names from the previous pass to be sure we are not going to miss anything).
+        if (attempt_no >= 1)
+            inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{}", mismatch_description};
+        need_another_attempt = true;
+    }
+}
+
+void BackupEntriesCollector::syncMetadataGatheringWithOtherHosts(int attempt_no, std::optional<Exception> & inconsistency_error, bool & need_another_attempt)
+{
+    String next_stage = Stage::formatGatheringMetadata(attempt_no + 1);
+
+    if (inconsistency_error)
+    {
+        /// Failed to gather metadata or something wasn't consistent. We'll let other hosts know that and try again.
+        LOG_WARNING(log, "Found inconsistency: {}", inconsistency_error->displayText());
+        setStage(next_stage, inconsistency_error->displayText());
+        return;
+    }
+
+    /// We've gathered metadata, cool! But we have to check that other hosts coped with that too.
+    auto all_hosts_results = setStage(next_stage, need_another_attempt ? "need_another_attempt" : "consistent");
+    size_t count = std::min(all_hosts.size(), all_hosts_results.size());
+
+    for (size_t i = 0; i != count; ++i)
+    {
+        const auto & other_host = all_hosts[i];
+        const auto & other_host_result = all_hosts_results[i];
+        if ((other_host_result != "consistent") && (other_host_result != "need_another_attempt"))
+        {
+            LOG_WARNING(log, "Found inconsistency on host {}: {}", other_host, other_host_result);
+            inconsistency_error = Exception{ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Found inconsistency on host {}: {}", other_host, other_host_result};
+            need_another_attempt = true;
+            return;
+        }
+    }
+
+    if (need_another_attempt)
+    {
+        LOG_TRACE(log, "Needs another attempt of collecting metadata");
+        return;
+    }
+
+    for (size_t i = 0; i != count; ++i)
+    {
+        const auto & other_host = all_hosts[i];
+        const auto & other_host_result = all_hosts_results[i];
+        if (other_host_result == "need_another_attempt")
+        {
+            LOG_TRACE(log, "Host {} needs another attempt of collecting metadata", other_host);
+            need_another_attempt = true;
+            return;
+        }
+    }
 }
 
 void BackupEntriesCollector::gatherDatabasesMetadata()
@@ -370,17 +444,25 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
         }
         catch (...)
         {
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Couldn't get a create query for database {}", database_name);
+            /// Probably the database has been just removed.
+            if (throw_if_database_not_found)
+                throw;
+            LOG_WARNING(log, "Couldn't get a create query for database {}", backQuoteIfNeed(database_name));
+            return;
+        }
+
+        auto * create = create_database_query->as<ASTCreateQuery>();
+        if (create->getDatabase() != database_name)
+        {
+            /// Probably the database has been just renamed. Use the older name for backup to keep the backup consistent.
+            LOG_WARNING(log, "Got a create query with unexpected name {} for database {}",
+                        backQuoteIfNeed(create->getDatabase()), backQuoteIfNeed(database_name));
+            create_database_query = create_database_query->clone();
+            create = create_database_query->as<ASTCreateQuery>();
+            create->setDatabase(database_name);
         }
 
         database_info.create_database_query = create_database_query;
-        const auto & create = create_database_query->as<const ASTCreateQuery &>();
-
-        if (create.getDatabase() != database_name)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                            "Got a create query with unexpected name {} for database {}",
-                            backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(database_name));
-
         String new_database_name = renaming_map.getNewDatabaseName(database_name);
         database_info.metadata_path_in_backup = root_path_in_backup / "metadata" / (escapeForFileName(new_database_name) + ".sql");
     }
@@ -491,7 +573,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     {
         /// Database or table could be replicated - so may use ZooKeeper. We need to retry.
         auto zookeeper_retries_info = global_zookeeper_retries_info;
-        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", zookeeper_retries_info, nullptr);
+        ZooKeeperRetriesControl retries_ctl("getTablesForBackup", log, zookeeper_retries_info, nullptr);
         retries_ctl.retryLoop([&](){ db_tables = database->getTablesForBackup(filter_by_table_name, context); });
     }
     catch (Exception & e)
@@ -501,26 +583,34 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
     }
 
     std::unordered_set<String> found_table_names;
-    for (const auto & db_table : db_tables)
+    for (auto & db_table : db_tables)
     {
-        const auto & create_table_query = db_table.first;
-        const auto & create = create_table_query->as<const ASTCreateQuery &>();
-        found_table_names.emplace(create.getTable());
+        auto create_table_query = db_table.first;
+        auto * create = create_table_query->as<ASTCreateQuery>();
+        found_table_names.emplace(create->getTable());
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
         {
-            if (!create.temporary)
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+            if (!create->temporary)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Got a non-temporary create query for {}",
-                                tableNameWithTypeToString(database_name, create.getTable(), false));
+                                tableNameWithTypeToString(database_name, create->getTable(), false));
+            }
         }
         else
         {
-            if (create.getDatabase() != database_name)
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                                "Got a create query with unexpected database name {} for {}",
-                                backQuoteIfNeed(create.getDatabase()),
-                                tableNameWithTypeToString(database_name, create.getTable(), false));
+            if (create->getDatabase() != database_name)
+            {
+                /// Probably the table has been just renamed. Use the older name for backup to keep the backup consistent.
+                LOG_WARNING(log, "Got a create query with unexpected database name {} for {}",
+                            backQuoteIfNeed(create->getDatabase()),
+                            tableNameWithTypeToString(database_name, create->getTable(), false));
+                create_table_query = create_table_query->clone();
+                create = create_table_query->as<ASTCreateQuery>();
+                create->setDatabase(database_name);
+                db_table.first = create_table_query;
+            }
         }
     }
 
@@ -540,27 +630,29 @@ void BackupEntriesCollector::lockTablesForReading()
     {
         auto storage = table_info.storage;
         if (storage)
-        {
             table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
-            if (table_info.table_lock == nullptr)
-            {
-                // Table was dropped while acquiring the lock
-                throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "{} was dropped during scanning",
-                                tableNameWithTypeToString(table_name.database, table_name.table, true));
-            }
-        }
     }
+
+    std::erase_if(
+        table_infos,
+        [](const std::pair<QualifiedTableName, TableInfo> & key_value)
+        {
+            const auto & table_info = key_value.second;
+            return table_info.storage && !table_info.table_lock; /// Table was dropped while acquiring the lock.
+        });
 }
 
 /// Check consistency of collected information about databases and tables.
-bool BackupEntriesCollector::compareWithPrevious(std::optional<Exception> & inconsistency_error)
+bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
 {
     /// We need to scan tables at least twice to be sure that we haven't missed any table which could be renamed
     /// while we were scanning.
     std::vector<std::pair<String, String>> databases_metadata;
     std::vector<std::pair<QualifiedTableName, String>> tables_metadata;
+
     databases_metadata.reserve(database_infos.size());
     tables_metadata.reserve(table_infos.size());
+
     for (const auto & [database_name, database_info] : database_infos)
         databases_metadata.emplace_back(database_name, database_info.create_database_query ? serializeAST(*database_info.create_database_query) : "");
     for (const auto & [table_name, table_info] : table_infos)
@@ -575,68 +667,59 @@ bool BackupEntriesCollector::compareWithPrevious(std::optional<Exception> & inco
         previous_tables_metadata = std::move(tables_metadata);
     });
 
-    /// Databases must be the same as during the previous scan.
-    if (databases_metadata != previous_databases_metadata)
+    enum class MismatchType { ADDED, REMOVED, CHANGED, NONE };
+
+    /// Helper function - used to compare the metadata of databases and tables.
+    auto find_mismatch = [](const auto & metadata, const auto & previous_metadata)
+        -> std::pair<MismatchType, typename std::remove_cvref_t<decltype(metadata)>::value_type::first_type>
     {
-        std::vector<std::pair<String, String>> difference;
-        difference.reserve(databases_metadata.size());
-        std::set_difference(databases_metadata.begin(), databases_metadata.end(), previous_databases_metadata.begin(),
-                            previous_databases_metadata.end(), std::back_inserter(difference));
+        auto [mismatch, p_mismatch] = std::mismatch(metadata.begin(), metadata.end(), previous_metadata.begin(), previous_metadata.end());
 
-        if (!difference.empty())
+        if ((mismatch != metadata.end()) && (p_mismatch != previous_metadata.end()))
         {
-            inconsistency_error = Exception{
-                ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                "Database {} were created or changed its definition during scanning",
-                backQuoteIfNeed(difference[0].first)};
-            return false;
+            if (mismatch->first == p_mismatch->first)
+                return {MismatchType::CHANGED, mismatch->first};
+            else if (mismatch->first < p_mismatch->first)
+                return {MismatchType::ADDED, mismatch->first};
+            else
+                return {MismatchType::REMOVED, mismatch->first};
         }
-
-        difference.clear();
-        difference.reserve(previous_databases_metadata.size());
-        std::set_difference(previous_databases_metadata.begin(), previous_databases_metadata.end(), databases_metadata.begin(),
-                            databases_metadata.end(), std::back_inserter(difference));
-
-        if (!difference.empty())
+        else if (mismatch != metadata.end())
         {
-            inconsistency_error = Exception{
-                ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                "Database {} were removed or changed its definition during scanning",
-                backQuoteIfNeed(difference[0].first)};
-            return false;
+            return {MismatchType::ADDED, mismatch->first};
         }
+        else if (p_mismatch != previous_metadata.end())
+        {
+            return {MismatchType::REMOVED, p_mismatch->first};
+        }
+        else
+        {
+            return {MismatchType::NONE, {}};
+        }
+    };
+
+    /// Databases must be the same as during the previous scan.
+    if (auto mismatch = find_mismatch(databases_metadata, previous_databases_metadata); mismatch.first != MismatchType::NONE)
+    {
+        if (mismatch.first == MismatchType::ADDED)
+            mismatch_description = fmt::format("Database {} was added during scanning", backQuoteIfNeed(mismatch.second));
+        else if (mismatch.first == MismatchType::REMOVED)
+            mismatch_description = fmt::format("Database {} was removed during scanning", backQuoteIfNeed(mismatch.second));
+        else
+            mismatch_description = fmt::format("Database {} changed its definition during scanning", backQuoteIfNeed(mismatch.second));
+        return false;
     }
 
     /// Tables must be the same as during the previous scan.
-    if (tables_metadata != previous_tables_metadata)
+    if (auto mismatch = find_mismatch(tables_metadata, previous_tables_metadata); mismatch.first != MismatchType::NONE)
     {
-        std::vector<std::pair<QualifiedTableName, String>> difference;
-        difference.reserve(tables_metadata.size());
-        std::set_difference(tables_metadata.begin(), tables_metadata.end(), previous_tables_metadata.begin(),
-                            previous_tables_metadata.end(), std::back_inserter(difference));
-
-        if (!difference.empty())
-        {
-            inconsistency_error = Exception{
-                ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                "{} were created or changed its definition during scanning",
-                tableNameWithTypeToString(difference[0].first.database, difference[0].first.table, true)};
-            return false;
-        }
-
-        difference.clear();
-        difference.reserve(previous_tables_metadata.size());
-        std::set_difference(previous_tables_metadata.begin(), previous_tables_metadata.end(), tables_metadata.begin(),
-                            tables_metadata.end(), std::back_inserter(difference));
-
-        if (!difference.empty())
-        {
-            inconsistency_error = Exception{
-                ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                "{} were removed or changed its definition during scanning",
-                tableNameWithTypeToString(difference[0].first.database, difference[0].first.table, true)};
-            return false;
-        }
+        if (mismatch.first == MismatchType::ADDED)
+            mismatch_description = fmt::format("{} was added during scanning", tableNameWithTypeToString(mismatch.second, true));
+        else if (mismatch.first == MismatchType::REMOVED)
+            mismatch_description = fmt::format("{} was removed during scanning", tableNameWithTypeToString(mismatch.second, true));
+        else
+            mismatch_description = fmt::format("{} changed its definition during scanning", tableNameWithTypeToString(mismatch.second, true));
+        return false;
     }
 
     return true;
@@ -682,8 +765,20 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
+    std::vector<std::future<void>> futures;
     for (const auto & table_name : table_infos | boost::adaptors::map_keys)
-        makeBackupEntriesForTableData(table_name);
+    {
+        futures.push_back(scheduleFromThreadPool<void>([&]()
+        {
+            makeBackupEntriesForTableData(table_name);
+        }, threadpool, "BackupCollect"));
+    }
+    /// Wait for all tasks.
+    for (auto & future : futures)
+        future.wait();
+    /// Make sure there is no exception.
+    for (auto & future : futures)
+        future.get();
 }
 
 void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)
@@ -719,20 +814,28 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
     }
 }
 
-void BackupEntriesCollector::addBackupEntry(const String & file_name, BackupEntryPtr backup_entry)
+void BackupEntriesCollector::addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry)
 {
     if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding backup entries is not allowed");
     backup_entries.emplace_back(file_name, backup_entry);
 }
 
+void BackupEntriesCollector::addBackupEntry(const String & file_name, BackupEntryPtr backup_entry)
+{
+    std::lock_guard lock(mutex);
+    addBackupEntryUnlocked(file_name, backup_entry);
+}
+
 void BackupEntriesCollector::addBackupEntry(const std::pair<String, BackupEntryPtr> & backup_entry)
 {
-    addBackupEntry(backup_entry.first, backup_entry.second);
+    std::lock_guard lock(mutex);
+    addBackupEntryUnlocked(backup_entry.first, backup_entry.second);
 }
 
 void BackupEntriesCollector::addBackupEntries(const BackupEntries & backup_entries_)
 {
+    std::lock_guard lock(mutex);
     if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of backup entries is not allowed");
     insertAtEnd(backup_entries, backup_entries_);
@@ -740,6 +843,7 @@ void BackupEntriesCollector::addBackupEntries(const BackupEntries & backup_entri
 
 void BackupEntriesCollector::addBackupEntries(BackupEntries && backup_entries_)
 {
+    std::lock_guard lock(mutex);
     if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of backup entries is not allowed");
     insertAtEnd(backup_entries, std::move(backup_entries_));
@@ -747,6 +851,7 @@ void BackupEntriesCollector::addBackupEntries(BackupEntries && backup_entries_)
 
 void BackupEntriesCollector::addPostTask(std::function<void()> task)
 {
+    std::lock_guard lock(mutex);
     if (current_stage == Stage::WRITING_BACKUP)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of post tasks is not allowed");
     post_tasks.push(std::move(task));
@@ -768,6 +873,7 @@ void BackupEntriesCollector::runPostTasks()
 
 size_t BackupEntriesCollector::getAccessCounter(AccessEntityType type)
 {
+    std::lock_guard lock(mutex);
     access_counters.resize(static_cast<size_t>(AccessEntityType::MAX));
     return access_counters[static_cast<size_t>(type)]++;
 }

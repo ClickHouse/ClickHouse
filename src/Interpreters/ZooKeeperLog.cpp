@@ -1,3 +1,4 @@
+#include <base/getFQDNOrHostName.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -5,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -51,10 +53,11 @@ DataTypePtr getCoordinationErrorCodesEnumType()
                 {"ZCLOSING",                    static_cast<Int8>(Coordination::Error::ZCLOSING)},
                 {"ZNOTHING",                    static_cast<Int8>(Coordination::Error::ZNOTHING)},
                 {"ZSESSIONMOVED",               static_cast<Int8>(Coordination::Error::ZSESSIONMOVED)},
+                {"ZNOTREADONLY",                static_cast<Int8>(Coordination::Error::ZNOTREADONLY)},
             });
 }
 
-NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
+ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
 {
     auto type_enum = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -73,6 +76,7 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"Create",              static_cast<Int16>(Coordination::OpNum::Create)},
                 {"Remove",              static_cast<Int16>(Coordination::OpNum::Remove)},
                 {"Exists",              static_cast<Int16>(Coordination::OpNum::Exists)},
+                {"Reconfig",            static_cast<Int16>(Coordination::OpNum::Reconfig)},
                 {"Get",                 static_cast<Int16>(Coordination::OpNum::Get)},
                 {"Set",                 static_cast<Int16>(Coordination::OpNum::Set)},
                 {"GetACL",              static_cast<Int16>(Coordination::OpNum::GetACL)},
@@ -88,6 +92,7 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"SessionID",           static_cast<Int16>(Coordination::OpNum::SessionID)},
                 {"FilteredList",        static_cast<Int16>(Coordination::OpNum::FilteredList)},
                 {"CheckNotExists",      static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
+                {"CreateIfNotExists",   static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
             });
 
     auto error_enum = getCoordinationErrorCodesEnumType();
@@ -111,11 +116,13 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"CONNECTING",              static_cast<Int16>(Coordination::State::CONNECTING)},
                 {"ASSOCIATING",             static_cast<Int16>(Coordination::State::ASSOCIATING)},
                 {"CONNECTED",               static_cast<Int16>(Coordination::State::CONNECTED)},
+                {"READONLY",                static_cast<Int16>(Coordination::State::READONLY)},
                 {"NOTCONNECTED",            static_cast<Int16>(Coordination::State::NOTCONNECTED)},
             });
 
-    return
+    return ColumnsDescription
     {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"type", std::move(type_enum)},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime64>(6)},
@@ -166,6 +173,7 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     assert(type != UNKNOWN);
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(type);
     auto event_time_seconds = event_time / 1000000;
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());

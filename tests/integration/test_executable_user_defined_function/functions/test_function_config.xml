@@ -322,4 +322,76 @@
         <command>input_parameter.py {test_parameter:UInt64}</command>
     </function>
 
+    <function>
+        <type>executable</type>
+        <name>test_function_always_error_throw_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_always_error.py</command>
+        <stderr_reaction>throw</stderr_reaction>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_always_error_log_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_always_error.py</command>
+        <stderr_reaction>log</stderr_reaction>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_always_error_log_first_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_log_error.py</command>
+        <stderr_reaction>log_first</stderr_reaction>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_always_error_log_last_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_log_error.py</command>
+        <stderr_reaction>log_last</stderr_reaction>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_exit_error_ignore_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_exit_error.py</command>
+        <check_exit_code>0</check_exit_code>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_exit_error_fail_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>input_exit_error.py</command>
+        <!-- default -->
+        <!-- <check_exit_code>1</check_exit_code> -->
+    </function>
 </functions>

@@ -40,7 +40,21 @@ ExpressionTransform × 2
               (Expression)
               ExpressionTransform
                 (ReadFromMergeTree)
-                MergeTreeInOrder 0 → 1
+                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+(Expression)
+ExpressionTransform × 2
+  (Filter)
+  FilterTransform × 2
+    (Aggregating)
+    ExpressionTransform × 2
+      AggregatingTransform × 2
+        Copy 1 → 2
+          (Expression)
+          ExpressionTransform
+            (Expression)
+            ExpressionTransform
+              (ReadFromMergeTree)
+              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 
 ---Result---
 2023-01-05	all
@@ -59,4 +73,14 @@ ExpressionTransform × 2
             (Filter)
             FilterTransform
               (ReadFromMergeTree)
-              MergeTreeInOrder 0 → 1
+              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+(Expression)
+ExpressionTransform × 2
+  (Aggregating)
+  ExpressionTransform × 2
+    AggregatingTransform × 2
+      Copy 1 → 2
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1

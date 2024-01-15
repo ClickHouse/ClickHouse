@@ -1,7 +1,7 @@
-#include "Storages/IStorageCluster.h"
+#include <Storages/IStorageCluster.h>
 
-#include "Common/Exception.h"
-#include "Core/QueryProcessingStage.h"
+#include <Common/Exception.h>
+#include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Context.h>
@@ -11,11 +11,14 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Parsers/queryToString.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/RemoteSource.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
-#include <Parsers/queryToString.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDictionary.h>
@@ -38,9 +41,66 @@ IStorageCluster::IStorageCluster(
 {
 }
 
+class ReadFromCluster : public SourceStepWithFilter
+{
+public:
+    std::string getName() const override { return "ReadFromCluster"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void applyFilters() override;
+
+    ReadFromCluster(
+        Block sample_block,
+        std::shared_ptr<IStorageCluster> storage_,
+        ASTPtr query_to_send_,
+        QueryProcessingStage::Enum processed_stage_,
+        ClusterPtr cluster_,
+        Poco::Logger * log_,
+        ContextPtr context_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        , storage(std::move(storage_))
+        , query_to_send(std::move(query_to_send_))
+        , processed_stage(processed_stage_)
+        , cluster(std::move(cluster_))
+        , log(log_)
+        , context(std::move(context_))
+    {
+    }
+
+private:
+    std::shared_ptr<IStorageCluster> storage;
+    ASTPtr query_to_send;
+    QueryProcessingStage::Enum processed_stage;
+    ClusterPtr cluster;
+    Poco::Logger * log;
+    ContextPtr context;
+
+    std::optional<RemoteQueryExecutor::Extension> extension;
+
+    void createExtension(const ActionsDAG::Node * predicate);
+    ContextPtr updateSettings(const Settings & settings);
+};
+
+void ReadFromCluster::applyFilters()
+{
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    const ActionsDAG::Node * predicate = nullptr;
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
+
+    createExtension(predicate);
+}
+
+void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
+{
+    if (extension)
+        return;
+
+    extension = storage->getTaskIteratorExtension(predicate, context);
+}
 
 /// The code executes on initiator
-Pipe IStorageCluster::read(
+void IStorageCluster::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -49,10 +109,10 @@ Pipe IStorageCluster::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    updateBeforeRead(context);
+    storage_snapshot->check(column_names);
 
+    updateBeforeRead(context);
     auto cluster = getCluster(context);
-    auto extension = getTaskIteratorExtension(query_info.query, context);
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
 
@@ -70,14 +130,8 @@ Pipe IStorageCluster::read(
         query_to_send = interpreter.getQueryInfo().query->clone();
     }
 
-    const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
-
-    Pipes pipes;
-
-    const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
-
     if (!structure_argument_was_provided)
-        addColumnsStructureToQuery(query_to_send, StorageDictionary::generateNamesAndTypesDescription(storage_snapshot->metadata->getColumns().getAll()), context);
+        addColumnsStructureToQuery(query_to_send, storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(), context);
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
@@ -89,18 +143,40 @@ Pipe IStorageCluster::read(
                                       /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);
 
-    auto new_context = updateSettings(context, context->getSettingsRef());
+    auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
+
+    auto reading = std::make_unique<ReadFromCluster>(
+        sample_block,
+        std::move(this_ptr),
+        std::move(query_to_send),
+        processed_stage,
+        cluster,
+        log,
+        context);
+
+    query_plan.addStep(std::move(reading));
+}
+
+void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
+    createExtension(nullptr);
+
+    const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+    const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
+
+    Pipes pipes;
+    auto new_context = updateSettings(context->getSettingsRef());
     const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
     for (const auto & shard_info : cluster->getShardsInfo())
     {
-        auto try_results = shard_info.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
+        auto try_results = shard_info.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY);
         for (auto & try_result : try_results)
         {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 std::vector<IConnectionPool::Entry>{try_result},
                 queryToString(query_to_send),
-                sample_block,
+                getOutputStream().header,
                 new_context,
                 /*throttler=*/nullptr,
                 scalars,
@@ -113,8 +189,14 @@ Pipe IStorageCluster::read(
         }
     }
 
-    storage_snapshot->check(column_names);
-    return Pipe::unitePipes(std::move(pipes));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    if (pipe.empty())
+        pipe = Pipe(std::make_shared<NullSource>(getOutputStream().header));
+
+    for (const auto & processor : pipe.getProcessors())
+        processors.emplace_back(processor);
+
+    pipeline.init(std::move(pipe));
 }
 
 QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
@@ -129,7 +211,7 @@ QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
     return QueryProcessingStage::Enum::FetchColumns;
 }
 
-ContextPtr IStorageCluster::updateSettings(ContextPtr context, const Settings & settings)
+ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 {
     Settings new_settings = settings;
 

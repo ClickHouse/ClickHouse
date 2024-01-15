@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 String ASTAlterCommand::getID(char delim) const
 {
-    return String("AlterCommand") + delim + typeToString(type);
+    return fmt::format("AlterCommand{}{}", delim, type);
 }
 
 ASTPtr ASTAlterCommand::clone() const
@@ -78,53 +78,6 @@ ASTPtr ASTAlterCommand::clone() const
     }
 
     return res;
-}
-
-const char * ASTAlterCommand::typeToString(ASTAlterCommand::Type type)
-{
-    switch (type)
-    {
-        case ADD_COLUMN: return "ADD_COLUMN";
-        case DROP_COLUMN: return "DROP_COLUMN";
-        case MODIFY_COLUMN: return "MODIFY_COLUMN";
-        case COMMENT_COLUMN: return "COMMENT_COLUMN";
-        case RENAME_COLUMN: return "RENAME_COLUMN";
-        case MATERIALIZE_COLUMN: return "MATERIALIZE_COLUMN";
-        case MODIFY_ORDER_BY: return "MODIFY_ORDER_BY";
-        case MODIFY_SAMPLE_BY: return "MODIFY_SAMPLE_BY";
-        case MODIFY_TTL: return "MODIFY_TTL";
-        case MATERIALIZE_TTL: return "MATERIALIZE_TTL";
-        case MODIFY_SETTING: return "MODIFY_SETTING";
-        case RESET_SETTING: return "RESET_SETTING";
-        case MODIFY_QUERY: return "MODIFY_QUERY";
-        case REMOVE_TTL: return "REMOVE_TTL";
-        case REMOVE_SAMPLE_BY: return "REMOVE_SAMPLE_BY";
-        case ADD_INDEX: return "ADD_INDEX";
-        case DROP_INDEX: return "DROP_INDEX";
-        case MATERIALIZE_INDEX: return "MATERIALIZE_INDEX";
-        case ADD_CONSTRAINT: return "ADD_CONSTRAINT";
-        case DROP_CONSTRAINT: return "DROP_CONSTRAINT";
-        case ADD_PROJECTION: return "ADD_PROJECTION";
-        case DROP_PROJECTION: return "DROP_PROJECTION";
-        case MATERIALIZE_PROJECTION: return "MATERIALIZE_PROJECTION";
-        case DROP_PARTITION: return "DROP_PARTITION";
-        case DROP_DETACHED_PARTITION: return "DROP_DETACHED_PARTITION";
-        case ATTACH_PARTITION: return "ATTACH_PARTITION";
-        case MOVE_PARTITION: return "MOVE_PARTITION";
-        case REPLACE_PARTITION: return "REPLACE_PARTITION";
-        case FETCH_PARTITION: return "FETCH_PARTITION";
-        case FREEZE_PARTITION: return "FREEZE_PARTITION";
-        case FREEZE_ALL: return "FREEZE_ALL";
-        case UNFREEZE_PARTITION: return "UNFREEZE_PARTITION";
-        case UNFREEZE_ALL: return "UNFREEZE_ALL";
-        case DELETE: return "DELETE";
-        case UPDATE: return "UPDATE";
-        case NO_TYPE: return "NO_TYPE";
-        case LIVE_VIEW_REFRESH: return "LIVE_VIEW_REFRESH";
-        case MODIFY_DATABASE_SETTING: return "MODIFY_DATABASE_SETTING";
-        case MODIFY_COMMENT: return "MODIFY_COMMENT";
-    }
-    UNREACHABLE();
 }
 
 void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -242,6 +195,33 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE INDEX " << (settings.hilite ? hilite_none : "");
         index->formatImpl(settings, state, frame);
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::ADD_STATISTIC)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD STATISTIC " << (if_not_exists ? "IF NOT EXISTS " : "")
+                      << (settings.hilite ? hilite_none : "");
+        statistic_decl->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::DROP_STATISTIC)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (clear_statistic ? "CLEAR " : "DROP ") << "STATISTIC "
+                      << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
+        statistic_decl->formatImpl(settings, state, frame);
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+    }
+    else if (type == ASTAlterCommand::MATERIALIZE_STATISTIC)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MATERIALIZE STATISTIC " << (settings.hilite ? hilite_none : "");
+        statistic_decl->formatImpl(settings, state, frame);
         if (partition)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
@@ -473,6 +453,12 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
                       << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::MODIFY_REFRESH)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY REFRESH " << settings.nl_or_ws
+                      << (settings.hilite ? hilite_none : "");
+        refresh->formatImpl(settings, state, frame);
+    }
     else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "REFRESH " << (settings.hilite ? hilite_none : "");
@@ -485,6 +471,16 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO ";
         rename_to->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::APPLY_DELETED_MASK)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "APPLY DELETED MASK" << (settings.hilite ? hilite_none : "");
+
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
     }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
@@ -531,6 +527,11 @@ bool ASTAlterQuery::isFetchAlter() const
 bool ASTAlterQuery::isDropPartitionAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::DROP_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::DROP_DETACHED_PARTITION);
+}
+
+bool ASTAlterQuery::isCommentAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::COMMENT_COLUMN) || isOneCommandTypeOnly(ASTAlterCommand::MODIFY_COMMENT);
 }
 
 bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const

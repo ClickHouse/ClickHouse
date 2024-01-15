@@ -28,10 +28,10 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int NETWORK_ERROR;
+    extern const int FILE_DOESNT_EXIST;
 }
 
-void WebObjectStorage::initialize(const String & uri_path) const
+void WebObjectStorage::initialize(const String & uri_path, const std::unique_lock<std::shared_mutex> & lock) const
 {
     std::vector<String> directories_to_load;
     LOG_TRACE(log, "Loading metadata for directory: {}", uri_path);
@@ -40,14 +40,13 @@ void WebObjectStorage::initialize(const String & uri_path) const
     {
         Poco::Net::HTTPBasicCredentials credentials{};
 
-
         ReadWriteBufferFromHTTP metadata_buf(
             Poco::URI(fs::path(uri_path) / ".index"),
             Poco::Net::HTTPRequest::HTTP_GET,
             ReadWriteBufferFromHTTP::OutStreamCallback(),
             ConnectionTimeouts::getHTTPTimeouts(
                 getContext()->getSettingsRef(),
-                {getContext()->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
+                getContext()->getServerSettings().keep_alive_timeout),
             credentials,
             /* max_redirects= */ 0,
             /* buffer_size_= */ DBMS_DEFAULT_BUFFER_SIZE,
@@ -81,8 +80,9 @@ void WebObjectStorage::initialize(const String & uri_path) const
             }
 
             file_path = file_path.substr(url.size());
-            files.emplace(std::make_pair(file_path, file_data));
             LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding file: {}, size: {}", file_path, file_data.size);
+
+            files.emplace(std::make_pair(file_path, file_data));
         }
 
         files.emplace(std::make_pair(dir_name, FileData({ .type = FileType::Directory })));
@@ -103,14 +103,14 @@ void WebObjectStorage::initialize(const String & uri_path) const
     }
 
     for (const auto & directory_path : directories_to_load)
-        initialize(directory_path);
+        initialize(directory_path, lock);
 }
 
 
 WebObjectStorage::WebObjectStorage(
     const String & url_,
     ContextPtr context_)
-    : WithContext(context_->getBufferContext())
+    : WithContext(context_->getGlobalContext())
     , url(url_)
     , log(&Poco::Logger::get("WebObjectStorage"))
 {
@@ -118,33 +118,75 @@ WebObjectStorage::WebObjectStorage(
 
 bool WebObjectStorage::exists(const StoredObject & object) const
 {
-    const auto & path = object.remote_path;
+    return exists(object.remote_path);
+}
 
+bool WebObjectStorage::exists(const std::string & path) const
+{
     LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Checking existence of path: {}", path);
+    return tryGetFileInfo(path) != std::nullopt;
+}
 
-    if (files.find(path) != files.end())
-        return true;
+WebObjectStorage::FileData WebObjectStorage::getFileInfo(const String & path) const
+{
+    auto file_info = tryGetFileInfo(path);
+    if (!file_info)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No such file: {}", path);
+    return file_info.value();
+}
 
-    if (path.ends_with(MergeTreeData::FORMAT_VERSION_FILE_NAME) && files.find(fs::path(path).parent_path() / "") == files.end())
+std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const String & path) const
+{
+    std::shared_lock shared_lock(metadata_mutex);
+
+    if (files.find(path) == files.end())
     {
-        try
+        shared_lock.unlock();
+        std::unique_lock unique_lock(metadata_mutex);
+        if (files.find(path) == files.end())
         {
-            initialize(fs::path(url) / fs::path(path).parent_path());
-            return files.find(path) != files.end();
-        }
-        catch (...)
-        {
-            const auto message = getCurrentExceptionMessage(false);
-            bool can_throw = CurrentThread::isInitialized() && CurrentThread::get().getQueryContext();
-            if (can_throw)
-                throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot load disk metadata. Error: {}", message);
+            fs::path index_file_dir = fs::path(url) / path;
+            if (index_file_dir.has_extension())
+                index_file_dir = index_file_dir.parent_path();
 
-            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Cannot load disk metadata. Error: {}", message);
-            return false;
+            initialize(index_file_dir, unique_lock);
         }
+        /// Files are never deleted from `files` as disk is read only, so no worry that we unlock now.
+        unique_lock.unlock();
+        shared_lock.lock();
     }
 
-    return false;
+    if (files.empty())
+        return std::nullopt;
+
+    if (auto it = files.find(path); it != files.end())
+        return it->second;
+
+    /// `object_storage.files` contains files + directories only inside `metadata_path / uuid_3_digit / uuid /`
+    /// (specific table files only), but we need to be able to also tell if `exists(<metadata_path>)`, for example.
+    auto it = std::lower_bound(
+        files.begin(), files.end(), path,
+        [](const auto & file, const std::string & path_) { return file.first < path_; }
+    );
+
+    if (it == files.end())
+        return std::nullopt;
+
+    if (startsWith(it->first, path)
+        || (it != files.begin() && startsWith(std::prev(it)->first, path)))
+    {
+        shared_lock.unlock();
+        std::unique_lock unique_lock(metadata_mutex);
+
+        /// Add this directory path not files cache to simplify further checks for this path.
+        files.emplace(std::make_pair(path, FileData({.type = FileType::Directory})));
+
+        unique_lock.unlock();
+        shared_lock.lock();
+
+        return FileData{ .type = FileType::Directory };
+    }
+    return std::nullopt;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObjects( /// NOLINT
@@ -211,7 +253,7 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
 
 void WebObjectStorage::throwNotAllowed()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only read-only operations are supported");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only read-only operations are supported in WebObjectStorage");
 }
 
 std::unique_ptr<WriteBufferFromFileBase> WebObjectStorage::writeObject( /// NOLINT
@@ -244,7 +286,7 @@ void WebObjectStorage::removeObjectsIfExist(const StoredObjects &)
     throwNotAllowed();
 }
 
-void WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, std::optional<ObjectAttributes>) // NOLINT
+void WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, const ReadSettings &, const WriteSettings &, std::optional<ObjectAttributes>) // NOLINT
 {
     throwNotAllowed();
 }

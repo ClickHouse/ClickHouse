@@ -13,25 +13,36 @@ from multiprocessing.dummy import Pool
 from helpers.test_tools import assert_eq_with_retry
 
 
-def check_query(clickhouse_node, query, result_set, retry_count=10, interval_seconds=3):
-    lastest_result = ""
+def check_query(
+    clickhouse_node,
+    query,
+    result_set,
+    retry_count=30,
+    interval_seconds=1,
+    on_failure=None,
+):
+    latest_result = ""
 
+    if "/* expect: " not in query:
+        query = "/* expect: " + result_set.rstrip("\n") + "*/ " + query
     for i in range(retry_count):
         try:
-            lastest_result = clickhouse_node.query(query)
-            if result_set == lastest_result:
+            latest_result = clickhouse_node.query(query)
+            if result_set == latest_result:
                 return
 
-            logging.debug(f"latest_result {lastest_result}")
+            logging.debug(f"latest_result {latest_result}")
             time.sleep(interval_seconds)
         except Exception as e:
             logging.debug(f"check_query retry {i+1} exception {e}")
             time.sleep(interval_seconds)
     else:
-        result_got = clickhouse_node.query(query)
+        latest_result = clickhouse_node.query(query)
+        if on_failure is not None and latest_result != result_set:
+            on_failure(latest_result, result_set)
         assert (
-            result_got == result_set
-        ), f"Got result {result_got}, while expected result {result_set}"
+            latest_result == result_set
+        ), f"Got result '{latest_result}', expected result '{result_set}'"
 
 
 def dml_with_materialized_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -980,6 +991,89 @@ def query_event_with_empty_transaction(clickhouse_node, mysql_node, service_name
     mysql_node.query("DROP DATABASE test_database_event")
 
 
+def text_blob_with_charset_test(clickhouse_node, mysql_node, service_name):
+    db = "text_blob_with_charset_test"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db} DEFAULT CHARACTER SET 'utf8'")
+
+    mysql_node.query(
+        f"CREATE TABLE {db}.test_table_1 (a INT NOT NULL PRIMARY KEY, b text CHARACTER SET gbk, c tinytext CHARSET big5, d longtext, e varchar(256), f char(4)) ENGINE = InnoDB DEFAULT CHARSET=gbk"
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.test_table_2 (a INT NOT NULL PRIMARY KEY, b blob, c longblob) ENGINE = InnoDB DEFAULT CHARSET=gbk"
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.test_table_3 (a INT NOT NULL PRIMARY KEY, b text CHARACTER SET gbk, c tinytext CHARSET gbk, d tinytext CHARSET big5, e varchar(256), f char(4)) ENGINE = InnoDB"
+    )
+
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_1 VALUES (1, '你好', '世界', '哈罗', '您Hi您', '您Hi您')"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_2 VALUES (1, '你好', 0xFAAA00000000000DDCC)"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_3 VALUES (1, '你好', '世界', 'hello', '您Hi您', '您Hi您')"
+    )
+
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    assert db in clickhouse_node.query("SHOW DATABASES")
+
+    # from full replication
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "test_table_1\ntest_table_2\ntest_table_3\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT b, c, d, e, f FROM {db}.test_table_1 WHERE a = 1 FORMAT TSV",
+        "你好\t世界\t哈罗\t您Hi您\t您Hi您\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT hex(b), hex(c) FROM {db}.test_table_2 WHERE a = 1 FORMAT TSV",
+        "E4BDA0E5A5BD\t0FAAA00000000000DDCC\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT b, c, d, e, f FROM {db}.test_table_3 WHERE a = 1 FORMAT TSV",
+        "你好\t世界\thello\t您Hi您\t您Hi您\n",
+    )
+
+    # from increment replication
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_1 VALUES (2, '你好', '世界', '哈罗', '您Hi您', '您Hi您')"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_2 VALUES (2, '你好', 0xFAAA00000000000DDCC)"
+    )
+    mysql_node.query(
+        f"INSERT INTO {db}.test_table_3 VALUES (2, '你好', '世界', 'hello', '您Hi您', '您Hi您')"
+    )
+
+    check_query(
+        clickhouse_node,
+        f"SELECT b, c, d, e, f FROM {db}.test_table_1 WHERE a = 2 FORMAT TSV",
+        "你好\t世界\t哈罗\t您Hi您\t您Hi您\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT hex(b), hex(c) FROM {db}.test_table_2 WHERE a = 2 FORMAT TSV",
+        "E4BDA0E5A5BD\t0FAAA00000000000DDCC\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"SELECT b, c, d, e, f FROM {db}.test_table_3 WHERE a = 2 FORMAT TSV",
+        "你好\t世界\thello\t您Hi您\t您Hi您\n",
+    )
+    clickhouse_node.query(f"DROP DATABASE {db}")
+    mysql_node.query(f"DROP DATABASE {db}")
+
+
 def select_without_columns(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS db")
     clickhouse_node.query("DROP DATABASE IF EXISTS db")
@@ -992,6 +1086,7 @@ def select_without_columns(clickhouse_node, mysql_node, service_name):
     )
     check_query(clickhouse_node, "SHOW TABLES FROM db FORMAT TSV", "t\n")
     clickhouse_node.query("SYSTEM STOP MERGES db.t")
+    clickhouse_node.query("DROP VIEW IF EXISTS v")
     clickhouse_node.query("CREATE VIEW v AS SELECT * FROM db.t")
     mysql_node.query("INSERT INTO db.t VALUES (1, 1), (2, 2)")
     mysql_node.query("DELETE FROM db.t WHERE a = 2;")
@@ -1154,7 +1249,7 @@ def err_sync_user_privs_with_materialized_mysql_database(
     )
     assert "priv_err_db" in clickhouse_node.query("SHOW DATABASES")
     assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM priv_err_db")
-    clickhouse_node.query_with_retry("DETACH DATABASE priv_err_db")
+    clickhouse_node.query_with_retry("DETACH DATABASE priv_err_db SYNC")
 
     mysql_node.query("REVOKE SELECT ON priv_err_db.* FROM 'test'@'%'")
     time.sleep(3)
@@ -1347,7 +1442,7 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
             time.sleep(sleep_time)
             clickhouse_node.query("SELECT * FROM test_database.test_table")
 
-    clickhouse_node.query_with_retry("DETACH DATABASE test_database")
+    clickhouse_node.query_with_retry("DETACH DATABASE test_database SYNC")
     clickhouse_node.query("ATTACH DATABASE test_database")
     check_query(
         clickhouse_node,
@@ -1411,7 +1506,7 @@ def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
 
         mysql_node.alloc_connection()
 
-        clickhouse_node.query_with_retry("DETACH DATABASE kill_mysql_while_insert")
+        clickhouse_node.query_with_retry("DETACH DATABASE kill_mysql_while_insert SYNC")
         clickhouse_node.query("ATTACH DATABASE kill_mysql_while_insert")
 
         result = mysql_node.query_and_get_data(
@@ -1495,6 +1590,134 @@ def utf8mb4_test(clickhouse_node, mysql_node, service_name):
 
     clickhouse_node.query("DROP DATABASE utf8mb4_test")
     mysql_node.query("DROP DATABASE utf8mb4_test")
+
+
+def utf8mb4_column_test(clickhouse_node, mysql_node, service_name):
+    db = "utf8mb4_column_test"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+
+    # Full sync
+    mysql_node.query(f"CREATE TABLE {db}.unquoted (id INT primary key, 日期 DATETIME)")
+    mysql_node.query(f"CREATE TABLE {db}.quoted (id INT primary key, `日期` DATETIME)")
+    mysql_node.query(f"INSERT INTO {db}.unquoted VALUES(1, now())")
+    mysql_node.query(f"INSERT INTO {db}.quoted VALUES(1, now())")
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+
+    # Full sync replicated unquoted columns names since they use SHOW CREATE TABLE
+    # which returns quoted column names
+    check_query(
+        clickhouse_node,
+        f"/* expect: quoted unquoted */ SHOW TABLES FROM {db}",
+        "quoted\nunquoted\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM {db}.unquoted",
+        "1\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM {db}.quoted",
+        "1\n",
+    )
+
+    # Inc sync
+    mysql_node.query(
+        f"CREATE TABLE {db}.unquoted_new (id INT primary key, 日期 DATETIME)"
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.quoted_new (id INT primary key, `日期` DATETIME)"
+    )
+    mysql_node.query(f"INSERT INTO {db}.unquoted_new VALUES(1, now())")
+    mysql_node.query(f"INSERT INTO {db}.quoted_new VALUES(1, now())")
+    mysql_node.query(f"INSERT INTO {db}.unquoted VALUES(2, now())")
+    mysql_node.query(f"INSERT INTO {db}.quoted VALUES(2, now())")
+    check_query(
+        clickhouse_node,
+        f"/* expect: 2 */ SELECT COUNT() FROM {db}.quoted",
+        "2\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM {db}.quoted_new",
+        "1\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 2 */ SELECT COUNT() FROM {db}.unquoted",
+        "2\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM {db}.unquoted_new",
+        "1\n",
+    )
+
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS `{db}`")
+    mysql_node.query(f"DROP DATABASE IF EXISTS `{db}`")
+
+
+def utf8mb4_name_test(clickhouse_node, mysql_node, service_name):
+    db = "您Hi您"
+    table = "日期"
+    mysql_node.query(f"DROP DATABASE IF EXISTS `{db}`")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS `{db}`")
+    mysql_node.query(f"CREATE DATABASE `{db}`")
+    mysql_node.query(
+        f"CREATE TABLE `{db}`.`{table}` (id INT(11) NOT NULL PRIMARY KEY, `{table}` DATETIME) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4"
+    )
+    mysql_node.query(f"INSERT INTO `{db}`.`{table}` VALUES(1, now())")
+    mysql_node.query(f"INSERT INTO `{db}`.`{table}`(id, `{table}`) VALUES(2, now())")
+    mysql_node.query(
+        f"CREATE TABLE {db}.{table}_unquoted (id INT(11) NOT NULL PRIMARY KEY, {table} DATETIME) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4"
+    )
+    mysql_node.query(f"INSERT INTO {db}.{table}_unquoted VALUES(1, now())")
+    mysql_node.query(f"INSERT INTO {db}.{table}_unquoted(id, {table}) VALUES(2, now())")
+    clickhouse_node.query(
+        f"CREATE DATABASE `{db}` ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 2 */ SELECT COUNT() FROM `{db}`.`{table}`",
+        "2\n",
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 2 */ SELECT COUNT() FROM `{db}`.`{table}_unquoted`",
+        "2\n",
+    )
+
+    # Inc sync
+    mysql_node.query(
+        f"CREATE TABLE `{db}`.`{table}2` (id INT(11) NOT NULL PRIMARY KEY, `{table}` DATETIME) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4"
+    )
+    mysql_node.query(f"INSERT INTO `{db}`.`{table}2` VALUES(1, now())")
+    mysql_node.query(f"INSERT INTO `{db}`.`{table}2`(id, `{table}`) VALUES(2, now())")
+    check_query(
+        clickhouse_node,
+        f"/* expect: 2 */ SELECT COUNT() FROM `{db}`.`{table}2`",
+        "2\n",
+    )
+
+    mysql_node.query(
+        f"CREATE TABLE {db}.{table}2_unquoted (id INT(11) NOT NULL PRIMARY KEY, {table} DATETIME) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4"
+    )
+    mysql_node.query(f"INSERT INTO {db}.{table}2_unquoted VALUES(1, now())")
+    mysql_node.query(
+        f"INSERT INTO {db}.{table}2_unquoted(id, {table}) VALUES(2, now())"
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 2 */ SELECT COUNT() FROM `{db}`.`{table}2_unquoted`",
+        "2\n",
+    )
+
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS `{db}`")
+    mysql_node.query(f"DROP DATABASE IF EXISTS `{db}`")
 
 
 def system_parts_test(clickhouse_node, mysql_node, service_name):
@@ -1615,6 +1838,84 @@ def materialized_with_column_comments_test(clickhouse_node, mysql_node, service_
     )
     clickhouse_node.query("DROP DATABASE materialized_with_column_comments_test")
     mysql_node.query("DROP DATABASE materialized_with_column_comments_test")
+
+
+def double_quoted_comment(clickhouse_node, mysql_node, service_name):
+    db = "comment_db"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    mysql_node.query(
+        f'CREATE TABLE {db}.t1 (i INT PRIMARY KEY, id VARCHAR(255) COMMENT "ID")'
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.t2 (i INT PRIMARY KEY, id VARCHAR(255) COMMENT 'ID')"
+    )
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "t1\nt2\n",
+    )
+
+    # incremental
+    mysql_node.query(
+        f'CREATE TABLE {db}.t3 (i INT PRIMARY KEY, id VARCHAR(255) COMMENT "ID")'
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.t4 (i INT PRIMARY KEY, id VARCHAR(255) COMMENT 'ID')"
+    )
+    check_query(
+        clickhouse_node, f"SHOW TABLES FROM {db} FORMAT TSV", "t1\nt2\nt3\nt4\n"
+    )
+
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
+def default_values(clickhouse_node, mysql_node, service_name):
+    db = "default_values"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    columns = f"""
+        id INT PRIMARY KEY,
+        -- literal defaults
+        i INT             DEFAULT 0,
+        c1 VARCHAR(10)    DEFAULT '',
+        c1_2 VARCHAR(10)  DEFAULT 'abc',
+        c2 VARCHAR(10)    DEFAULT "",
+        c2_2 VARCHAR(10)  DEFAULT "abc",
+        -- expression defaults
+        c3 VARCHAR(10)    DEFAULT (CONCAT('1', '2', RAND())),
+        c4 VARCHAR(10)    DEFAULT (CONCAT('', RAND())),
+        c5 VARCHAR(10)    DEFAULT (CONCAT("1", "2", RAND())),
+        c6 VARCHAR(10)    DEFAULT (CONCAT("", RAND())),
+        c7 VARCHAR(10)    DEFAULT (CONCAT(CONCAT('', "", '1', "2", RAND()), RAND() * CURRENT_DATE)),
+        c8 VARCHAR(10)    DEFAULT (CONCAT('1', "2", '', "", RAND(), CONCAT(RAND(), CONCAT('1', "2", '', "", RAND(), RAND() * CURRENT_DATE)))),
+        c9 VARCHAR(10)    DEFAULT (""),
+        c10 VARCHAR(10)   DEFAULT (''),
+        f FLOAT           DEFAULT (RAND() * RAND()),
+        f_2 FLOAT         DEFAULT 0.0,
+        b BINARY(16)      DEFAULT (UUID_TO_BIN(UUID())),
+        d DATE            DEFAULT (CURRENT_DATE + INTERVAL 1 YEAR)
+    """
+    mysql_node.query(f"CREATE TABLE {db}.full_t1({columns})")
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializedMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    # incremental
+    mysql_node.query(f"CREATE TABLE {db}.inc_t1({columns})")
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db}",
+        "full_t1\ninc_t1\n",
+    )
+
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
 
 
 def materialized_with_enum8_test(clickhouse_node, mysql_node, service_name):
@@ -2334,5 +2635,777 @@ def named_collections(clickhouse_node, mysql_node, service_name):
         f"/* expect: (1, 'a', 1), (2, 'b', 2) */ SELECT * FROM {db}.t1",
         "1\ta\t1\n2\tb\t2\n",
     )
+    clickhouse_node.query(f"ALTER NAMED COLLECTION {db} SET port=9999")
+    clickhouse_node.query_with_retry(f"DETACH DATABASE {db} SYNC")
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (3, 'c', 3)")
+    assert "ConnectionFailed:" in clickhouse_node.query_and_get_error(
+        f"ATTACH DATABASE {db}"
+    )
+    clickhouse_node.query(f"ALTER NAMED COLLECTION {db} SET port=3306")
+    clickhouse_node.query(f"ATTACH DATABASE {db}")
+    check_query(
+        clickhouse_node,
+        f"/* expect: (1, 'a', 1), (2, 'b', 2), (3, 'c', 3) */ SELECT * FROM {db}.t1",
+        "1\ta\t1\n2\tb\t2\n3\tc\t3\n",
+    )
+
     clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
     mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
+def create_table_as_select(clickhouse_node, mysql_node, service_name):
+    db = "create_table_as_select"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+    clickhouse_node.query(
+        f"CREATE DATABASE {db} ENGINE = MaterializeMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')"
+    )
+    mysql_node.query(
+        f"CREATE TABLE {db}.t1(a INT NOT NULL PRIMARY KEY) ENGINE = InnoDB"
+    )
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES (1)")
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "t1\n",
+    )
+
+    mysql_node.query(f"CREATE TABLE {db}.t2(PRIMARY KEY(a)) AS SELECT * FROM {db}.t1")
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "t1\nt2\n",
+    )
+
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
+def table_with_indexes(clickhouse_node, mysql_node, service_name):
+    db = "table_with_indexes"
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+    mysql_node.query(f"CREATE DATABASE {db}")
+
+    mysql_node.query(
+        f"CREATE TABLE {db}.t1(id INT NOT NULL PRIMARY KEY,"
+        f"data varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL) ENGINE = InnoDB"
+    )
+
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES(1, 'some test string 1')")
+    mysql_node.query(f"INSERT INTO {db}.t1 VALUES(2, 'some test string 2')")
+
+    clickhouse_node.query(
+        f"""
+        CREATE DATABASE {db} ENGINE = MaterializeMySQL('{service_name}:3306', '{db}', 'root', 'clickhouse')
+        TABLE OVERRIDE t1 (COLUMNS (
+            INDEX data_idx data TYPE ngrambf_v1(5, 65536, 4, 0) GRANULARITY 1
+        ))
+        """
+    )
+
+    check_query(
+        clickhouse_node,
+        "SELECT data_uncompressed_bytes FROM system.data_skipping_indices WHERE "
+        "database = 'table_with_indexes' and table = 't1' and name = 'data_idx'",
+        "65536\n",
+    )
+
+    mysql_node.query(f"DROP DATABASE IF EXISTS {db}")
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
+def binlog_client_test(clickhouse_node, mysql_node, replication):
+    db = "binlog_client_test"
+    replication.create_db_mysql(db)
+
+    mysql_node.query(
+        f"CREATE TABLE {db}.t(id INT PRIMARY KEY AUTO_INCREMENT, score int, create_time DATETIME DEFAULT NOW())"
+    )
+    replication.insert_data(db, "t", 100000, column="score")
+    replication.create_db_ch(f"{db}1", from_mysql_db=db, settings="use_binlog_client=1")
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db}1 FORMAT TSV",
+        "t\n",
+    )
+
+    replication.insert_data(db, "t", 100000, column="score")
+
+    num_rows = replication.inserted_rows
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}1.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+    replication.create_db_ch(f"{db}2", from_mysql_db=db, settings="use_binlog_client=1")
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db}2 FORMAT TSV",
+        "t\n",
+    )
+
+    replication.insert_data(db, "t", 100000, column="score")
+    num_rows = replication.inserted_rows
+
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT count() FROM system.mysql_binlogs WHERE name = '{db}1'",
+        "1\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT count() FROM system.mysql_binlogs WHERE name = '{db}2'",
+        "1\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}1.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=60,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}2.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=60,
+    )
+    # Catch up
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT(DISTINCT(dispatcher_name)) FROM system.mysql_binlogs WHERE name LIKE '{db}%'",
+        "1\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+    replication.drop_dbs_ch()
+    replication.create_db_ch(
+        f"{db}1",
+        from_mysql_db=db,
+        settings="use_binlog_client=1, max_bytes_in_binlog_queue=10",
+    )
+    replication.create_db_ch(
+        f"{db}2",
+        from_mysql_db=db,
+        settings="use_binlog_client=1, max_bytes_in_binlog_queue=10",
+    )
+    replication.insert_data(db, "t", 10000, column="score")
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db}1 FORMAT TSV",
+        "t\n",
+    )
+
+    replication.insert_data(db, "t", 100000, column="score")
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db}2 FORMAT TSV",
+        "t\n",
+    )
+
+    replication.insert_data(db, "t", 10000, column="score")
+
+    num_rows = replication.inserted_rows
+
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT count() FROM system.mysql_binlogs WHERE name = '{db}1'",
+        "1\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT count() FROM system.mysql_binlogs WHERE name = '{db}2'",
+        "1\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}1.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=60,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}2.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=60,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT(DISTINCT(dispatcher_name)) FROM system.mysql_binlogs WHERE name LIKE '{db}%'",
+        "1\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+    replication.create_db_ch(
+        f"{db}3",
+        from_mysql_db=db,
+        settings="use_binlog_client=1",
+    )
+
+    mysql_node.query(f"UPDATE {db}.t SET score = score + 1")
+
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT(DISTINCT(dispatcher_name)) FROM system.mysql_binlogs WHERE name LIKE '{db}%'",
+        "1\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT size FROM system.mysql_binlogs WHERE name = '{db}1'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT size FROM system.mysql_binlogs WHERE name = '{db}2'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT size FROM system.mysql_binlogs WHERE name = '{db}3'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}1.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}2.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}3.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+    mysql_crc32 = mysql_node.query_and_get_data(
+        f"SELECT bit_xor(cast(crc32(concat(id, score, create_time)) AS unsigned)) AS checksum FROM {db}.t"
+    )[0][0]
+    column = "bit_xor(cast(crc32(concat(toString(assumeNotNull(id)), toString(assumeNotNull(score)), toString(assumeNotNull(create_time)))) AS UInt32)) AS checksum"
+    check_query(
+        clickhouse_node,
+        f"/* expect: {mysql_crc32} */ SELECT {column} FROM {db}1.t",
+        f"{mysql_crc32}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {mysql_crc32} */ SELECT {column} FROM {db}2.t",
+        f"{mysql_crc32}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {mysql_crc32} */ SELECT {column} FROM {db}3.t",
+        f"{mysql_crc32}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+    clickhouse_node.query(f"DROP DATABASE IF EXISTS {db}1")
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT COUNT() FROM system.mysql_binlogs WHERE name = '{db}1'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=10,
+    )
+
+
+def binlog_client_timeout_test(clickhouse_node, mysql_node, replication):
+    db = "binlog_client_timeout_test"
+    replication.create_db_mysql(db)
+    mysql_node.query(
+        f"CREATE TABLE {db}.t(id INT PRIMARY KEY AUTO_INCREMENT, score int, create_time DATETIME DEFAULT NOW())"
+    )
+    replication.insert_data(db, "t", 10000, column="score")
+    num_rows = replication.inserted_rows
+
+    replication.create_db_ch(
+        f"{db}1",
+        from_mysql_db=db,
+        settings="use_binlog_client=1, max_bytes_in_binlog_queue=100000000, max_milliseconds_to_wait_in_binlog_queue=60000",
+    )
+    replication.create_db_ch(
+        f"{db}2",
+        from_mysql_db=db,
+        settings="use_binlog_client=1, max_bytes_in_binlog_queue=10",
+    )
+    replication.create_db_ch(
+        f"{db}3",
+        from_mysql_db=db,
+        settings="use_binlog_client=1, max_bytes_in_binlog_queue=10, max_milliseconds_to_wait_in_binlog_queue=100",
+    )
+    replication.create_db_ch(
+        f"{db}4",
+        from_mysql_db=db,
+        settings="use_binlog_client=1, max_bytes_in_binlog_queue=10, max_milliseconds_to_wait_in_binlog_queue=10",
+    )
+
+    # After incremental sync
+    check_query(
+        clickhouse_node,
+        f"/* expect: 100000000, 60000 */ SELECT max_bytes, max_waiting_ms FROM system.mysql_binlogs WHERE name = '{db}1'",
+        f"100000000\t60000\n",
+        interval_seconds=1,
+        retry_count=10,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 10 */ SELECT max_bytes FROM system.mysql_binlogs WHERE name = '{db}2'",
+        f"10\n",
+        interval_seconds=2,
+        retry_count=10,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}1.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}2.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}3.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}4.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+    clickhouse_node.query(f"DROP DATABASE {db}3")
+    replication.create_db_ch(
+        f"{db}3",
+        from_mysql_db=db,
+        settings="use_binlog_client=1, max_bytes_in_binlog_queue=10, max_milliseconds_to_wait_in_binlog_queue=10",
+    )
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db}3 FORMAT TSV",
+        "t\n",
+    )
+
+    clickhouse_node.query(f"DROP DATABASE {db}4")
+    replication.create_db_ch(
+        f"{db}4",
+        from_mysql_db=db,
+        settings="use_binlog_client=1, max_bytes_in_binlog_queue=10, max_milliseconds_to_wait_in_binlog_queue=50",
+    )
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db}4 FORMAT TSV",
+        "t\n",
+    )
+
+    mysql_node.query(
+        f"UPDATE {db}.t SET create_time='2021-01-01' WHERE id > 1000 AND id < 100000"
+    )
+    mysql_node.query(f"UPDATE {db}.t SET create_time='2021-11-11' WHERE score > 1000")
+    mysql_node.query(
+        f"UPDATE {db}.t SET create_time=now() WHERE create_time='2021-01-01'"
+    )
+
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT COUNT() FROM {db}1.t WHERE toDate(create_time)='2021-01-01'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=300,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT COUNT() FROM {db}2.t WHERE toDate(create_time)='2021-01-01'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=300,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT COUNT() FROM {db}3.t WHERE toDate(create_time)='2021-01-01'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=300,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT COUNT() FROM {db}4.t WHERE toDate(create_time)='2021-01-01'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=300,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT size FROM system.mysql_binlogs WHERE name = '{db}1'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=300,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT size FROM system.mysql_binlogs WHERE name = '{db}2'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=300,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT size FROM system.mysql_binlogs WHERE name = '{db}3'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=300,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT size FROM system.mysql_binlogs WHERE name = '{db}4'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=300,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}1.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}2.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}3.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {num_rows} */ SELECT count() FROM {db}4.t",
+        f"{num_rows}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+    mysql_crc32 = mysql_node.query_and_get_data(
+        f"SELECT bit_xor(cast(crc32(concat(id, score, create_time)) AS unsigned)) AS checksum FROM {db}.t"
+    )[0][0]
+    column = "bit_xor(cast(crc32(concat(toString(assumeNotNull(id)), toString(assumeNotNull(score)), toString(assumeNotNull(create_time)))) AS UInt32)) AS checksum"
+    check_query(
+        clickhouse_node,
+        f"/* expect: {mysql_crc32} */ SELECT {column} FROM {db}1.t",
+        f"{mysql_crc32}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {mysql_crc32} */ SELECT {column} FROM {db}2.t",
+        f"{mysql_crc32}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {mysql_crc32} */ SELECT {column} FROM {db}3.t",
+        f"{mysql_crc32}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {mysql_crc32} */ SELECT {column} FROM {db}4.t",
+        f"{mysql_crc32}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+
+def wrong_password_test(clickhouse_node, mysql_node, replication):
+    db = "wrong_password_test"
+    replication.create_db_mysql(db)
+    mysql_node.query(
+        f"CREATE TABLE {db}.t(id INT PRIMARY KEY AUTO_INCREMENT, score int, create_time DATETIME DEFAULT NOW())"
+    )
+    replication.insert_data(db, "t", 100, column="score")
+    with pytest.raises(Exception) as exc:
+        clickhouse_node.query(
+            f"CREATE DATABASE {db} ENGINE = MaterializedMySQL('{replication.mysql_host}:3306', '{db}', 'root', 'wrong_password') SETTINGS use_binlog_client=1"
+        )
+
+    replication.create_db_ch(db, settings="use_binlog_client=1")
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "t\n",
+    )
+
+    replication.insert_data(db, "t", 100, column="score")
+    check_query(
+        clickhouse_node,
+        f"/* expect: 200 */ SELECT COUNT() FROM {db}.t ",
+        "200\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: root@{replication.mysql_host}:3306 */ SELECT binlog_client_name FROM system.mysql_binlogs WHERE name = '{db}'",
+        f"root@{replication.mysql_host}:3306\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+
+def dispatcher_buffer_test(clickhouse_node, mysql_node, replication):
+    db = "dispatcher_buffer_test"
+    replication.create_db_mysql(db)
+    mysql_node.query(
+        f"CREATE TABLE {db}.t(id INT PRIMARY KEY AUTO_INCREMENT, score int, create_time DATETIME DEFAULT NOW())"
+    )
+    replication.insert_data(db, "t", 100, column="score")
+    rows_count = 100
+    replication.create_db_ch(
+        db,
+        settings="use_binlog_client=1, max_bytes_in_binlog_dispatcher_buffer=0, max_flush_milliseconds_in_binlog_dispatcher=0",
+    )
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "t\n",
+    )
+
+    replication.insert_data(db, "t", 100000, column="score")
+    rows_count += 100000
+
+    mysql_node.query(
+        f"UPDATE {db}.t SET create_time='2021-01-01' WHERE id > 10000 AND id < 50000"
+    )
+    mysql_node.query(
+        f"UPDATE {db}.t SET create_time=now() WHERE create_time='2021-01-01'"
+    )
+
+    mysql_crc32 = mysql_node.query_and_get_data(
+        f"SELECT bit_xor(cast(crc32(concat(id, score, create_time)) AS unsigned)) AS checksum FROM {db}.t"
+    )[0][0]
+    column = "bit_xor(cast(crc32(concat(toString(assumeNotNull(id)), toString(assumeNotNull(score)), toString(assumeNotNull(create_time)))) AS UInt32)) AS checksum"
+    check_query(
+        clickhouse_node,
+        f"/* expect: {mysql_crc32} */ SELECT {column} FROM {db}.t",
+        f"{mysql_crc32}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {rows_count} */ SELECT COUNT() FROM {db}.t",
+        f"{rows_count}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT COUNT() FROM {db}.t WHERE toDate(create_time)='2021-01-01'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+    clickhouse_node.query(f"DROP DATABASE {db}")
+    replication.create_db_ch(
+        f"{db}",
+        from_mysql_db=db,
+        settings="use_binlog_client=1, max_bytes_in_binlog_dispatcher_buffer=1000, max_flush_milliseconds_in_binlog_dispatcher=1000",
+    )
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "t\n",
+    )
+
+    replication.insert_data(db, "t", 10000, column="score")
+    rows_count += 10000
+
+    mysql_node.query(f"UPDATE {db}.t SET create_time='2021-11-11' WHERE score > 10000")
+    mysql_node.query(
+        f"UPDATE {db}.t SET create_time='2021-01-01' WHERE id > 10000 AND id < 50000"
+    )
+    mysql_node.query(
+        f"UPDATE {db}.t SET create_time=now() WHERE create_time='2021-01-01'"
+    )
+    mysql_node.query(
+        f"UPDATE {db}.t SET create_time=now() WHERE create_time='2021-11-01'"
+    )
+
+    mysql_crc32 = mysql_node.query_and_get_data(
+        f"SELECT bit_xor(cast(crc32(concat(id, score, create_time)) AS unsigned)) AS checksum FROM {db}.t"
+    )[0][0]
+    check_query(
+        clickhouse_node,
+        f"/* expect: {mysql_crc32} */ SELECT {column} FROM {db}.t",
+        f"{mysql_crc32}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {rows_count} */ SELECT COUNT() FROM {db}.t",
+        f"{rows_count}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT COUNT() FROM {db}.t WHERE toDate(create_time)='2021-11-01'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+    replication.create_db_ch(
+        db,
+        settings="use_binlog_client=1, max_bytes_in_binlog_dispatcher_buffer=100000000, max_flush_milliseconds_in_binlog_dispatcher=1000",
+    )
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db} FORMAT TSV",
+        "t\n",
+    )
+
+    replication.insert_data(db, "t", 100000, column="score")
+    rows_count += 100000
+
+    mysql_node.query(f"UPDATE {db}.t SET create_time='2021-11-11' WHERE score > 10000")
+    mysql_node.query(
+        f"UPDATE {db}.t SET create_time='2021-01-01' WHERE id > 10000 AND id < 50000"
+    )
+    mysql_node.query(
+        f"UPDATE {db}.t SET create_time=now() WHERE create_time='2021-01-01'"
+    )
+    mysql_node.query(
+        f"UPDATE {db}.t SET create_time=now() WHERE create_time='2021-11-01'"
+    )
+
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT() FROM system.mysql_binlogs WHERE name = '{db}' AND (dispatcher_events_read_per_sec > 0 OR dispatcher_bytes_read_per_sec > 0 OR dispatcher_events_flush_per_sec > 0 OR dispatcher_bytes_flush_per_sec > 0)",
+        f"1\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+    mysql_crc32 = mysql_node.query_and_get_data(
+        f"SELECT bit_xor(cast(crc32(concat(id, score, create_time)) AS unsigned)) AS checksum FROM {db}.t"
+    )[0][0]
+    check_query(
+        clickhouse_node,
+        f"/* expect: {mysql_crc32} */ SELECT {column} FROM {db}.t",
+        f"{mysql_crc32}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: {rows_count} */ SELECT COUNT() FROM {db}.t",
+        f"{rows_count}\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+    check_query(
+        clickhouse_node,
+        f"/* expect: 0 */ SELECT COUNT() FROM {db}.t WHERE toDate(create_time)='2021-11-01'",
+        "0\n",
+        interval_seconds=1,
+        retry_count=30,
+    )
+
+
+def gtid_after_attach_test(clickhouse_node, mysql_node, replication):
+    db = "gtid_after_attach_test"
+    replication.create_db_mysql(db)
+    mysql_node.query(
+        f"CREATE TABLE {db}.t(id INT PRIMARY KEY AUTO_INCREMENT, score int, create_time DATETIME DEFAULT NOW())"
+    )
+
+    db_count = 6
+    for i in range(db_count):
+        replication.create_db_ch(
+            f"{db}{i}",
+            from_mysql_db=db,
+            settings="use_binlog_client=1",
+        )
+    check_query(
+        clickhouse_node,
+        f"SHOW TABLES FROM {db}0 FORMAT TSV",
+        "t\n",
+    )
+    for i in range(int(db_count / 2)):
+        clickhouse_node.query(f"DETACH DATABASE {db}{i}")
+
+    mysql_node.query(f"USE {db}")
+    rows = 10000
+    for i in range(100):
+        mysql_node.query(f"ALTER TABLE t ADD COLUMN (e{i} INT)")
+        replication.insert_data(db, "t", rows, column="score")
+
+    clickhouse_node.restart_clickhouse(stop_start_wait_sec=120)
+
+    check_query(
+        clickhouse_node,
+        f"/* expect: 1 */ SELECT COUNT(DISTINCT(dispatcher_name)) FROM system.mysql_binlogs WHERE name LIKE '{db}%'",
+        "1\n",
+        interval_seconds=1,
+        retry_count=300,
+    )

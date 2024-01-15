@@ -2,12 +2,15 @@
 
 #include <sys/resource.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
+#include <base/getMemoryAmount.h>
 #include <base/errnoToString.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
 #include <Poco/SimpleFileChannel.h>
+#include <Databases/registerDatabases.h>
 #include <Databases/DatabaseFilesystem.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesOverlay.h>
@@ -17,10 +20,12 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/registerInterpreters.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/scope_guard_safe.h>
 #include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
+#include <Common/PoolId.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -30,6 +35,8 @@
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <Loggers/Loggers.h>
+#include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -38,7 +45,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -266,6 +273,10 @@ void LocalServer::tryInitPath()
 
     global_context->setUserFilesPath(""); // user's files are everywhere
 
+    std::string user_scripts_path = config().getString("user_scripts_path", fs::path(path) / "user_scripts/");
+    global_context->setUserScriptsPath(user_scripts_path);
+    fs::create_directories(user_scripts_path);
+
     /// top_level_domains_lists
     const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
     if (!top_level_domains_path.empty())
@@ -313,7 +324,7 @@ static bool checkIfStdinIsRegularFile()
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || !config().has("query")))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format") && (!checkIfStdinIsRegularFile() || queries.empty()))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
@@ -416,7 +427,7 @@ void LocalServer::setupUsers()
 
 void LocalServer::connect()
 {
-    connection_parameters = ConnectionParameters(config());
+    connection_parameters = ConnectionParameters(config(), "localhost");
     connection = LocalConnection::createConnection(
         connection_parameters, global_context, need_render_progress, need_render_profile_events, server_display_name);
 }
@@ -455,7 +466,7 @@ try
     if (first_time)
     {
 
-    if (queries_files.empty() && !config().has("query"))
+    if (queries_files.empty() && queries.empty())
     {
         std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode." << "\033[0m" << std::endl;
         std::cerr << "\033[31m" << "You have to provide a query with --query or --queries-file option." << "\033[0m" << std::endl;
@@ -467,7 +478,7 @@ try
 #else
     is_interactive = stdin_is_a_tty
         && (config().hasOption("interactive")
-            || (!config().has("query") && !config().has("table-structure") && queries_files.empty() && !config().has("table-file")));
+            || (queries.empty() && !config().has("table-structure") && queries_files.empty() && !config().has("table-file")));
 #endif
     if (!is_interactive)
     {
@@ -476,19 +487,33 @@ try
         Poco::ErrorHandler::set(&error_handler);
     }
 
+    registerInterpreters();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
+    registerDatabases();
     registerStorages();
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
     processConfig();
-    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+    adjustSettings();
+    initTTYBuffer(toProgressOption(config().getString("progress", "default")));
 
     applyCmdSettings(global_context);
+
+    /// try to load user defined executable functions, throw on error and die
+    try
+    {
+        global_context->loadOrReloadUserDefinedExecutableFunctions(config());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(&logger(), "Caught exception while loading user defined executable functions.");
+        throw;
+    }
 
     if (is_interactive)
     {
@@ -543,33 +568,31 @@ catch (...)
 
 void LocalServer::updateLoggerLevel(const String & logs_level)
 {
-    if (!logging_initialized)
-        return;
-
     config().setString("logger.level", logs_level);
     updateLevels(config(), logger());
 }
 
 void LocalServer::processConfig()
 {
-    if (config().has("query") && config().has("queries-file"))
+    if (!queries.empty() && config().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
-    delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
-    if (is_interactive && !delayed_interactive)
-    {
-        if (config().has("multiquery"))
-            is_multiquery = true;
-    }
-    else
+    if (config().has("multiquery"))
+        is_multiquery = true;
+
+    pager = config().getString("pager", "");
+
+    delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
+    if (!is_interactive || delayed_interactive)
     {
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
-        is_multiquery = true;
     }
 
     print_stack_trace = config().getBool("stacktrace", false);
-    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false);
+    const std::string clickhouse_dialect{"clickhouse"};
+    load_suggestions = (is_interactive || delayed_interactive) && !config().getBool("disable_suggestion", false)
+        && config().getString("dialect", clickhouse_dialect) == clickhouse_dialect;
 
     auto logging = (config().has("logger.console")
                     || config().has("logger.level")
@@ -583,22 +606,16 @@ void LocalServer::processConfig()
     {
         auto poco_logs_level = Poco::Logger::parseLevel(level);
         Poco::Logger::root().setLevel(poco_logs_level);
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::SimpleFileChannel>(new Poco::SimpleFileChannel(server_logs_file)));
-        logging_initialized = true;
-    }
-    else if (logging || is_interactive)
-    {
-        config().setString("logger", "logger");
-        auto log_level_default = is_interactive && !logging ? "none" : level;
-        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
-        buildLoggers(config(), logger(), "clickhouse-local");
-        logging_initialized = true;
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::SimpleFileChannel(server_logs_file));
+        Poco::Logger::root().setChannel(log);
     }
     else
     {
-        Poco::Logger::root().setLevel("none");
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
-        logging_initialized = false;
+        config().setString("logger", "logger");
+        auto log_level_default = logging ? level : "fatal";
+        config().setString("logger.level", config().getString("log-level", config().getString("send_logs_level", log_level_default)));
+        buildLoggers(config(), logger(), "clickhouse-local");
     }
 
     shared_context = Context::createShared();
@@ -638,43 +655,67 @@ void LocalServer::processConfig()
     /// There is no need for concurrent queries, override max_concurrent_queries.
     global_context->getProcessList().setMaxSize(0);
 
-    /// Size of cache for uncompressed blocks. Zero means disabled.
-    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
-    size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
-    if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
+    const size_t physical_server_memory = getMemoryAmount();
+    const double cache_size_to_ram_max_ratio = config().getDouble("cache_size_to_ram_max_ratio", 0.5);
+    const size_t max_cache_size = static_cast<size_t>(physical_server_memory * cache_size_to_ram_max_ratio);
 
-    /// Size of cache for marks (index of MergeTree family of tables).
-    String mark_cache_policy = config().getString("mark_cache_policy", "");
-    size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
-    if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_policy, mark_cache_size);
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", DEFAULT_UNCOMPRESSED_CACHE_POLICY);
+    size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
+    double uncompressed_cache_size_ratio = config().getDouble("uncompressed_cache_size_ratio", DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO);
+    if (uncompressed_cache_size > max_cache_size)
+    {
+        uncompressed_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
+    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
-    /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
-    size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
-    if (index_uncompressed_cache_size)
-        global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
+    String mark_cache_policy = config().getString("mark_cache_policy", DEFAULT_MARK_CACHE_POLICY);
+    size_t mark_cache_size = config().getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
+    double mark_cache_size_ratio = config().getDouble("mark_cache_size_ratio", DEFAULT_MARK_CACHE_SIZE_RATIO);
+    if (!mark_cache_size)
+        LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
+    if (mark_cache_size > max_cache_size)
+    {
+        mark_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
+    }
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
-    /// Size of cache for index marks (index of MergeTree skip indices).
-    size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
-    if (index_mark_cache_size)
-        global_context->setIndexMarkCache(index_mark_cache_size);
+    String index_uncompressed_cache_policy = config().getString("index_uncompressed_cache_policy", DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY);
+    size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
+    double index_uncompressed_cache_size_ratio = config().getDouble("index_uncompressed_cache_size_ratio", DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO);
+    if (index_uncompressed_cache_size > max_cache_size)
+    {
+        index_uncompressed_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
+    global_context->setIndexUncompressedCache(index_uncompressed_cache_policy, index_uncompressed_cache_size, index_uncompressed_cache_size_ratio);
 
-    /// A cache for mmapped files.
-    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
-    if (mmap_cache_size)
-        global_context->setMMappedFileCache(mmap_cache_size);
+    String index_mark_cache_policy = config().getString("index_mark_cache_policy", DEFAULT_INDEX_MARK_CACHE_POLICY);
+    size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
+    double index_mark_cache_size_ratio = config().getDouble("index_mark_cache_size_ratio", DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO);
+    if (index_mark_cache_size > max_cache_size)
+    {
+        index_mark_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
+    global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
+
+    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
+    if (mmap_cache_size > max_cache_size)
+    {
+        mmap_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
+    }
+    global_context->setMMappedFileCache(mmap_cache_size);
+
+    /// Initialize a dummy query cache.
+    global_context->setQueryCache(0, 0, 0, 0);
 
 #if USE_EMBEDDED_COMPILER
-    /// 128 MB
-    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
-    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
-
-    constexpr size_t compiled_expression_cache_elements_size_default = 10000;
-    size_t compiled_expression_cache_elements_size
-        = config().getUInt64("compiled_expression_cache_elements_size", compiled_expression_cache_elements_size_default);
-
-    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
+    size_t compiled_expression_cache_max_size_in_bytes = config().getUInt64("compiled_expression_cache_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE);
+    size_t compiled_expression_cache_max_elements = config().getUInt64("compiled_expression_cache_elements_size", DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES);
+    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
     /// NOTE: it is important to apply any overrides before
@@ -689,12 +730,7 @@ void LocalServer::processConfig()
     /// We load temporary database first, because projections need it.
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
-    /** Init dummy default DB
-      * NOTE: We force using isolated default database to avoid conflicts with default database from server environment
-      * Otherwise, metadata of temporary File(format, EXPLICIT_PATH) tables will pollute metadata/ directory;
-      *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
-      */
-    std::string default_database = config().getString("default_database", "_local");
+    std::string default_database = config().getString("default_database", "default");
     DatabaseCatalog::instance().attachDatabase(default_database, createClickHouseLocalDatabaseOverlay(default_database, global_context));
     global_context->setCurrentDatabase(default_database);
 
@@ -706,27 +742,27 @@ void LocalServer::processConfig()
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
-        loadMetadataSystem(global_context);
-        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        auto startup_system_tasks = loadMetadataSystem(global_context);
+        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        startupSystemTables();
+        waitLoad(TablesLoaderForegroundPoolId, startup_system_tasks);
 
         if (!config().has("only-system-tables"))
         {
             DatabaseCatalog::instance().createBackgroundTasks();
-            loadMetadata(global_context);
-            DatabaseCatalog::instance().startupBackgroundCleanup();
+            waitLoad(loadMetadata(global_context));
+            DatabaseCatalog::instance().startupBackgroundTasks();
         }
 
         /// For ClickHouse local if path is not set the loader will be disabled.
-        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
+        global_context->getUserDefinedSQLObjectsStorage().loadObjects();
 
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else if (!config().has("no-system-tables"))
     {
-        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesServer(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE), false);
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
@@ -737,9 +773,9 @@ void LocalServer::processConfig()
     for (const auto & [key, value] : prompt_substitutions)
         boost::replace_all(prompt_by_server_display_name, "{" + key + "}", value);
 
-    ClientInfo & client_info = global_context->getClientInfo();
-    client_info.setInitialQuery();
-    client_info.query_kind = query_kind;
+    global_context->setQueryKindInitial();
+    global_context->setQueryKind(query_kind);
+    global_context->setQueryParameters(query_parameters);
 }
 
 
@@ -786,6 +822,7 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
     std::cout << getHelpFooter() << "\n";
+    std::cout << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
 #endif
 }
 
@@ -839,6 +876,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setBool("no-system-tables", true);
     if (options.count("only-system-tables"))
         config().setBool("only-system-tables", true);
+    if (options.count("database"))
+        config().setString("default_database", options["database"].as<std::string>());
 
     if (options.count("input-format"))
         config().setString("table-data-format", options["input-format"].as<std::string>());
@@ -860,7 +899,31 @@ void LocalServer::readArguments(int argc, char ** argv, Arguments & common_argum
     for (int arg_num = 1; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
-        if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
+        /// Parameter arg after underline.
+        if (arg.starts_with("--param_"))
+        {
+            auto param_continuation = arg.substr(strlen("--param_"));
+            auto equal_pos = param_continuation.find_first_of('=');
+
+            if (equal_pos == std::string::npos)
+            {
+                /// param_name value
+                ++arg_num;
+                if (arg_num >= argc)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter requires value");
+                arg = argv[arg_num];
+                query_parameters.emplace(String(param_continuation), String(arg));
+            }
+            else
+            {
+                if (equal_pos == 0)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter name cannot be empty");
+
+                /// param_name=value
+                query_parameters.emplace(param_continuation.substr(0, equal_pos), param_continuation.substr(equal_pos + 1));
+            }
+        }
+        else if (arg == "--multiquery" && (arg_num + 1) < argc && !std::string_view(argv[arg_num + 1]).starts_with('-'))
         {
             /// Transform the abbreviated syntax '--multiquery <SQL>' into the full syntax '--multiquery -q <SQL>'
             ++arg_num;
@@ -906,48 +969,66 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
 
 #if defined(FUZZING_MODE)
 
+// linked from programs/main.cpp
+bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv);
+
 std::optional<DB::LocalServer> fuzz_app;
 
 extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
 {
-    int & argc = *pargc;
-    char ** argv = *pargv;
+    std::vector<char *> argv(*pargv, *pargv + (*pargc + 1));
+
+    if (!isClickhouseApp("local", argv))
+    {
+        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode, only clickhouse local is available." << "\033[0m" << std::endl;
+        exit(1);
+    }
 
     /// As a user you can add flags to clickhouse binary in fuzzing mode as follows
-    /// clickhouse <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
+    /// clickhouse local <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
 
-    /// Calculate the position of delimiter "--" that separates arguments
-    /// of clickhouse-local and libfuzzer
-    int pos_delim = argc;
-    for (int i = 0; i < argc; ++i)
-    {
-        if (strcmp(argv[i], "--") == 0)
+    char **p = &(*pargv)[1];
+
+    auto it = argv.begin() + 1;
+    for (; *it; ++it)
+        if (strcmp(*it, "--") == 0)
         {
-            pos_delim = i;
+            ++it;
             break;
         }
-    }
+
+    while (*it)
+        if (strncmp(*it, "--", 2) != 0)
+        {
+            *(p++) = *it;
+            it = argv.erase(it);
+        }
+        else
+            ++it;
+
+    *pargc = static_cast<int>(p - &(*pargv)[0]);
+    *p = nullptr;
 
     /// Initialize clickhouse-local app
     fuzz_app.emplace();
-    fuzz_app->init(pos_delim, argv);
+    fuzz_app->init(static_cast<int>(argv.size() - 1), argv.data());
 
-    /// We will leave clickhouse-local specific arguments as is, because libfuzzer will ignore
-    /// all keys starting with --
     return 0;
 }
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
-try
 {
-    auto input = String(reinterpret_cast<const char *>(data), size);
-    DB::FunctionGetFuzzerData::update(input);
-    fuzz_app->run();
+    try
+    {
+        auto input = String(reinterpret_cast<const char *>(data), size);
+        DB::FunctionGetFuzzerData::update(input);
+        fuzz_app->run();
+    }
+    catch (...)
+    {
+    }
+
     return 0;
-}
-catch (...)
-{
-    return 1;
 }
 #endif

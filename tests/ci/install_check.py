@@ -25,11 +25,11 @@ from commit_status_helper import (
     update_mergeable_check,
 )
 from compress_files import compress_fast
-from docker_pull_helper import get_image_with_version, DockerImage
-from env_helper import CI, TEMP_PATH as TEMP, REPORTS_PATH
+from docker_images_helper import DockerImage, pull_image, get_docker_image
+from env_helper import CI, REPORT_PATH, TEMP_PATH as TEMP
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResults, TestResult
+from report import TestResults, TestResult, FAILURE, FAIL, OK, SUCCESS
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -40,18 +40,25 @@ RPM_IMAGE = "clickhouse/install-rpm-test"
 DEB_IMAGE = "clickhouse/install-deb-test"
 TEMP_PATH = Path(TEMP)
 LOGS_PATH = TEMP_PATH / "tests_logs"
-SUCCESS = "success"
-FAILURE = "failure"
-OK = "OK"
-FAIL = "FAIL"
 
 
 def prepare_test_scripts():
     server_test = r"""#!/bin/bash
 set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
+test_env='TEST_THE_DEFAULT_PARAMETER=15'
+echo "$test_env" >> /etc/default/clickhouse
 systemctl start clickhouse-server
-clickhouse-client -q 'SELECT version()'"""
+clickhouse-client -q 'SELECT version()'
+grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
+    initd_test = r"""#!/bin/bash
+set -e
+trap "bash -ex /packages/preserve_logs.sh" ERR
+test_env='TEST_THE_DEFAULT_PARAMETER=15'
+echo "$test_env" >> /etc/default/clickhouse
+/etc/init.d/clickhouse-server start
+clickhouse-client -q 'SELECT version()'
+grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
     keeper_test = r"""#!/bin/bash
 set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
@@ -102,6 +109,7 @@ chmod a+rw -R /tests_logs
 exit 1
 """
     (TEMP_PATH / "server_test.sh").write_text(server_test, encoding="utf-8")
+    (TEMP_PATH / "initd_test.sh").write_text(initd_test, encoding="utf-8")
     (TEMP_PATH / "keeper_test.sh").write_text(keeper_test, encoding="utf-8")
     (TEMP_PATH / "binary_test.sh").write_text(binary_test, encoding="utf-8")
     (TEMP_PATH / "preserve_logs.sh").write_text(preserve_logs, encoding="utf-8")
@@ -112,6 +120,9 @@ def test_install_deb(image: DockerImage) -> TestResults:
         "Install server deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common}*deb
 bash -ex /packages/server_test.sh""",
+        "Run server init.d": r"""#!/bin/bash -ex
+apt-get install /packages/clickhouse-{server,client,common}*deb
+bash -ex /packages/initd_test.sh""",
         "Install keeper deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-keeper*deb
 bash -ex /packages/keeper_test.sh""",
@@ -140,7 +151,7 @@ def test_install_tgz(image: DockerImage) -> TestResults:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
     tests = {
-        f"Install server tgz in {image.name}": r"""#!/bin/bash -ex
+        f"Install server tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
 for pkg in /packages/clickhouse-{common,client,server}*tgz; do
     package=${pkg%-*}
@@ -150,7 +161,7 @@ for pkg in /packages/clickhouse-{common,client,server}*tgz; do
 done
 [ -f /etc/yum.conf ] && echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
 bash -ex /packages/server_test.sh""",
-        f"Install keeper tgz in {image.name}": r"""#!/bin/bash -ex
+        f"Install keeper tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
 for pkg in /packages/clickhouse-keeper*tgz; do
     package=${pkg%-*}
@@ -191,18 +202,18 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> TestResults:
                 retcode = process.wait()
                 if retcode == 0:
                     status = OK
+                    subprocess.check_call(
+                        f"docker kill -s 9 {container_id}", shell=True
+                    )
                     break
 
                 status = FAIL
             copy2(log_file, LOGS_PATH)
             archive_path = TEMP_PATH / f"{container_name}-{retry}.tar.gz"
-            compress_fast(
-                LOGS_PATH.as_posix(),
-                archive_path.as_posix(),
-            )
+            compress_fast(LOGS_PATH, archive_path)
             logs.append(archive_path)
+            subprocess.check_call(f"docker kill -s 9 {container_id}", shell=True)
 
-        subprocess.check_call(f"docker kill -s 9 {container_id}", shell=True)
         test_results.append(TestResult(name, status, stopwatch.duration_seconds, logs))
 
     return test_results
@@ -213,7 +224,6 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="The script to check if the packages are able to install",
     )
-
     parser.add_argument(
         "check_name",
         help="check name, used to download the packages",
@@ -269,7 +279,7 @@ def main():
     if CI:
         gh = Github(get_best_robot_token(), per_page=100)
         commit = get_commit(gh, pr_info.sha)
-        atexit.register(update_mergeable_check, gh, pr_info, args.check_name)
+        atexit.register(update_mergeable_check, commit, pr_info, args.check_name)
 
         rerun_helper = RerunHelper(commit, args.check_name)
         if rerun_helper.is_already_finished_by_status():
@@ -278,10 +288,9 @@ def main():
             )
             sys.exit(0)
 
-    docker_images = {
-        name: get_image_with_version(REPORTS_PATH, name)
-        for name in (RPM_IMAGE, DEB_IMAGE)
-    }
+    deb_image = pull_image(get_docker_image(DEB_IMAGE))
+    rpm_image = pull_image(get_docker_image(RPM_IMAGE))
+
     prepare_test_scripts()
 
     if args.download:
@@ -296,10 +305,12 @@ def main():
                 is_match = is_match or path.endswith(".rpm")
             if args.tgz:
                 is_match = is_match or path.endswith(".tgz")
+            # We don't need debug packages, so let's filter them out
+            is_match = is_match and "-dbg" not in path
             return is_match
 
         download_builds_filter(
-            args.check_name, REPORTS_PATH, TEMP_PATH, filter_artifacts
+            args.check_name, REPORT_PATH, TEMP_PATH, filter_artifacts
         )
 
     test_results = []  # type: TestResults
@@ -312,12 +323,12 @@ def main():
         subprocess.check_output(f"{ch_copy.absolute()} local -q 'SELECT 1'", shell=True)
 
     if args.deb:
-        test_results.extend(test_install_deb(docker_images[DEB_IMAGE]))
+        test_results.extend(test_install_deb(deb_image))
     if args.rpm:
-        test_results.extend(test_install_rpm(docker_images[RPM_IMAGE]))
+        test_results.extend(test_install_rpm(rpm_image))
     if args.tgz:
-        test_results.extend(test_install_tgz(docker_images[DEB_IMAGE]))
-        test_results.extend(test_install_tgz(docker_images[RPM_IMAGE]))
+        test_results.extend(test_install_tgz(deb_image))
+        test_results.extend(test_install_tgz(rpm_image))
 
     state = SUCCESS
     test_status = OK
@@ -347,7 +358,15 @@ def main():
 
     description = format_description(description)
 
-    post_commit_status(commit, state, report_url, description, args.check_name, pr_info)
+    post_commit_status(
+        commit,
+        state,
+        report_url,
+        description,
+        args.check_name,
+        pr_info,
+        dump_to_file=True,
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

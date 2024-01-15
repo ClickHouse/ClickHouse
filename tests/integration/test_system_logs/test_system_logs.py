@@ -88,3 +88,53 @@ def test_system_logs_settings_expr(start_cluster):
     assert expected in node3.query(
         "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
     )
+
+
+def test_max_size_0(start_cluster):
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""echo "
+        <clickhouse>
+            <query_log>
+                <max_size_rows replace=\\"replace\\">0</max_size_rows> 
+                <reserved_size_rows replace=\\"replace\\">0</reserved_size_rows>
+            </query_log>
+        </clickhouse>
+        " > /etc/clickhouse-server/config.d/yyy-override-query_log.xml
+        """,
+        ]
+    )
+    with pytest.raises(Exception):
+        node1.restart_clickhouse()
+
+    node1.exec_in_container(
+        ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
+    )
+    node1.restart_clickhouse()
+
+
+def test_reserved_size_greater_max_size(start_cluster):
+    node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""echo "
+        <clickhouse>
+            <query_log>
+                <max_size_rows replace=\\"replace\\">10</max_size_rows>
+                <reserved_size_rows replace=\\"replace\\">11</reserved_size_rows> 
+            </query_log>
+        </clickhouse>
+        " > /etc/clickhouse-server/config.d/yyy-override-query_log.xml
+        """,
+        ]
+    )
+    with pytest.raises(Exception):
+        node1.restart_clickhouse()
+
+    node1.exec_in_container(
+        ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
+    )
+    node1.restart_clickhouse()

@@ -13,7 +13,7 @@ CREATE TABLE fx_1m (
 )
 ENGINE = MergeTree()
 PARTITION BY toYear(dt_close)
-ORDER BY (symbol, dt_close);
+ORDER BY (symbol, dt_close) SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 -- add projection
 ALTER TABLE fx_1m

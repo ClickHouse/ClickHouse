@@ -198,6 +198,35 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
     return {};
 }
 
+/// Check if we can convert UInt64 to Int64 to avoid error "There is no supertype for types UInt64, Int64"
+/// during inferring field types.
+/// Example:
+/// [-3236599669630092879, 5607475129431807682]
+/// First field is inferred as Int64, but second one as UInt64, although it also can be Int64.
+/// We don't support Int128 as supertype for Int64 and UInt64, because Int128 is inefficient.
+/// But in this case the result type can be inferred as Array(Int64).
+void convertUInt64toInt64IfPossible(const DataTypes & types, TypeIndexSet & types_set)
+{
+    /// Check if we have UInt64 and at least one Integer type.
+    if (!types_set.contains(TypeIndex::UInt64)
+        || (!types_set.contains(TypeIndex::Int8) && !types_set.contains(TypeIndex::Int16) && !types_set.contains(TypeIndex::Int32)
+            && !types_set.contains(TypeIndex::Int64)))
+        return;
+
+    bool all_uint64_can_be_int64 = true;
+    for (const auto & type : types)
+    {
+        if (const auto * uint64_type = typeid_cast<const DataTypeUInt64 *>(type.get()))
+            all_uint64_can_be_int64 &= uint64_type->canUnsignedBeSigned();
+    }
+
+    if (all_uint64_can_be_int64)
+    {
+        types_set.erase(TypeIndex::UInt64);
+        types_set.insert(TypeIndex::Int64);
+    }
+}
+
 }
 
 template <LeastSupertypeOnError on_error>
@@ -592,6 +621,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// For numeric types, the most complicated part.
     {
+        /// First, if we have signed integers, try to convert all UInt64 to Int64 if possible.
+        convertUInt64toInt64IfPossible(types, type_ids);
         auto numeric_type = getNumericType<on_error>(type_ids);
         if (numeric_type)
             return numeric_type;

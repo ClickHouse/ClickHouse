@@ -27,10 +27,12 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <cppkafka/configuration.h>
 #include <librdkafka/rdkafka.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
@@ -41,11 +43,12 @@
 #include <Common/setThreadName.h>
 #include <Formats/FormatFactory.h>
 
-#include "Storages/ColumnDefault.h"
-#include "config_version.h"
-
+#include <Storages/ColumnDefault.h>
+#include <Common/config_version.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <base/sleep.h>
+
 #if USE_KRB5
 #include <Access/KerberosInit.h>
 #endif // USE_KRB5
@@ -76,6 +79,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int QUERY_NOT_ALLOWED;
+    extern const int ABORTED;
 }
 
 struct StorageKafkaInterceptors
@@ -172,10 +176,6 @@ struct StorageKafkaInterceptors
 
 namespace
 {
-    const auto RESCHEDULE_MS = 500;
-    const auto CLEANUP_TIMEOUT_MS = 3000;
-    const auto MAX_THREAD_WORK_DURATION_MS = 60000;  // once per minute leave do reschedule (we can't lock threads in pool forever)
-
     const String CONFIG_KAFKA_TAG = "kafka";
     const String CONFIG_KAFKA_TOPIC_TAG = "kafka_topic";
     const String CONFIG_NAME_TAG = "name";
@@ -250,28 +250,31 @@ StorageKafka::StorageKafka(
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
-    , topics(parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value)))
-    , brokers(getContext()->getMacros()->expand(kafka_settings->kafka_broker_list.value))
-    , group(getContext()->getMacros()->expand(kafka_settings->kafka_group_name.value))
+    , macros_info{.table_id = table_id_}
+    , topics(parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value, macros_info)))
+    , brokers(getContext()->getMacros()->expand(kafka_settings->kafka_broker_list.value, macros_info))
+    , group(getContext()->getMacros()->expand(kafka_settings->kafka_group_name.value, macros_info))
     , client_id(
           kafka_settings->kafka_client_id.value.empty() ? getDefaultClientId(table_id_)
-                                                        : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value))
+                                                        : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value, macros_info))
     , format_name(getContext()->getMacros()->expand(kafka_settings->kafka_format.value))
     , max_rows_per_message(kafka_settings->kafka_max_rows_per_message.value)
-    , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value))
+    , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value, macros_info))
     , num_consumers(kafka_settings->kafka_num_consumers.value)
     , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
-    , semaphore(0, static_cast<int>(num_consumers))
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
     , collection_name(collection_name_)
 {
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    kafka_settings->sanityCheck();
+
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         kafka_settings->input_format_allow_errors_num = 0;
         kafka_settings->input_format_allow_errors_ratio = 0;
     }
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
@@ -282,6 +285,18 @@ StorageKafka::StorageKafka(
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
+
+    consumers.resize(num_consumers);
+    for (size_t i = 0; i < num_consumers; ++i)
+        consumers[i] = createKafkaConsumer(i);
+
+    cleanup_thread = std::make_unique<ThreadFromGlobalPool>([this]()
+    {
+        const auto & table = getStorageID().getTableName();
+        const auto & thread_name = std::string("KfkCln:") + table;
+        setThreadName(thread_name.c_str(), /*truncate=*/ true);
+        cleanConsumers();
+    });
 }
 
 SettingsChanges StorageKafka::createSettingsAdjustments()
@@ -342,8 +357,8 @@ Pipe StorageKafka::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    if (num_created_consumers == 0)
-        return {};
+    if (shutdown_called)
+        throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
@@ -356,12 +371,12 @@ Pipe StorageKafka::read(
 
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     Pipes pipes;
-    pipes.reserve(num_created_consumers);
+    pipes.reserve(num_consumers);
     auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
 
     // Claim as many consumers as requested, but don't block
-    for (size_t i = 0; i < num_created_consumers; ++i)
+    for (size_t i = 0; i < num_consumers; ++i)
     {
         /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
         /// TODO: probably that leads to awful performance.
@@ -411,19 +426,6 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
 
 void StorageKafka::startup()
 {
-    for (size_t i = 0; i < num_consumers; ++i)
-    {
-        try
-        {
-            pushConsumer(createConsumer(i));
-            ++num_created_consumers;
-        }
-        catch (const cppkafka::Exception &)
-        {
-            tryLogCurrentException(log);
-        }
-    }
-
     // Start the reader thread
     for (auto & task : tasks)
     {
@@ -432,31 +434,58 @@ void StorageKafka::startup()
 }
 
 
-void StorageKafka::shutdown()
+void StorageKafka::shutdown(bool)
 {
-    for (auto & task : tasks)
-    {
-        // Interrupt streaming thread
-        task->stream_cancelled = true;
+    shutdown_called = true;
+    cleanup_cv.notify_one();
 
-        LOG_TRACE(log, "Waiting for cleanup");
-        task->holder->deactivate();
+    {
+        LOG_TRACE(log, "Waiting for consumers cleanup thread");
+        Stopwatch watch;
+        if (cleanup_thread)
+        {
+            cleanup_thread->join();
+            cleanup_thread.reset();
+        }
+        LOG_TRACE(log, "Consumers cleanup thread finished in {} ms.", watch.elapsedMilliseconds());
     }
 
-    LOG_TRACE(log, "Closing consumers");
-    for (size_t i = 0; i < num_created_consumers; ++i)
-        auto consumer = popConsumer();
-    LOG_TRACE(log, "Consumers closed");
+    {
+        LOG_TRACE(log, "Waiting for streaming jobs");
+        Stopwatch watch;
+        for (auto & task : tasks)
+        {
+            // Interrupt streaming thread
+            task->stream_cancelled = true;
 
-    rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
+            LOG_TEST(log, "Waiting for cleanup of a task");
+            task->holder->deactivate();
+        }
+        LOG_TRACE(log, "Streaming jobs finished in {} ms.", watch.elapsedMilliseconds());
+    }
+
+    {
+        std::lock_guard lock(mutex);
+        LOG_TRACE(log, "Closing {} consumers", consumers.size());
+        Stopwatch watch;
+        consumers.clear();
+        LOG_TRACE(log, "Consumers closed. Took {} ms.", watch.elapsedMilliseconds());
+    }
+
+    {
+        LOG_TRACE(log, "Waiting for final cleanup");
+        Stopwatch watch;
+        rd_kafka_wait_destroyed(KAFKA_CLEANUP_TIMEOUT_MS);
+        LOG_TRACE(log, "Final cleanup finished in {} ms (timeout {} ms).", watch.elapsedMilliseconds(), KAFKA_CLEANUP_TIMEOUT_MS);
+    }
 }
 
 
 void StorageKafka::pushConsumer(KafkaConsumerPtr consumer)
 {
     std::lock_guard lock(mutex);
-    consumers.push_back(consumer);
-    semaphore.set();
+    consumer->notInUse();
+    cv.notify_one();
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse, 1);
 }
 
@@ -469,25 +498,88 @@ KafkaConsumerPtr StorageKafka::popConsumer()
 
 KafkaConsumerPtr StorageKafka::popConsumer(std::chrono::milliseconds timeout)
 {
-    // Wait for the first free buffer
-    if (timeout == std::chrono::milliseconds::zero())
-        semaphore.wait();
-    else
+    std::unique_lock lock(mutex);
+
+    KafkaConsumerPtr ret_consumer_ptr;
+    std::optional<size_t> closed_consumer_index;
+    for (size_t i = 0; i < consumers.size(); ++i)
     {
-        if (!semaphore.tryWait(timeout.count()))
-            return nullptr;
+        auto & consumer_ptr = consumers[i];
+
+        if (consumer_ptr->isInUse())
+            continue;
+
+        if (consumer_ptr->hasConsumer())
+        {
+            ret_consumer_ptr = consumer_ptr;
+            break;
+        }
+
+        if (!closed_consumer_index.has_value() && !consumer_ptr->hasConsumer())
+        {
+            closed_consumer_index = i;
+        }
     }
 
-    // Take the first available buffer from the list
-    std::lock_guard lock(mutex);
-    auto consumer = consumers.back();
-    consumers.pop_back();
-    CurrentMetrics::add(CurrentMetrics::KafkaConsumersInUse, 1);
-    return consumer;
+    /// 1. There is consumer available - return it.
+    if (ret_consumer_ptr)
+    {
+        /// Noop
+    }
+    /// 2. There is no consumer, but we can create a new one.
+    else if (!ret_consumer_ptr && closed_consumer_index.has_value())
+    {
+        ret_consumer_ptr = consumers[*closed_consumer_index];
+
+        cppkafka::Configuration consumer_config = getConsumerConfiguration(*closed_consumer_index);
+        /// It should be OK to create consumer under lock, since it should be fast (without subscribing).
+        ret_consumer_ptr->createConsumer(consumer_config);
+        LOG_TRACE(log, "Created #{} consumer", *closed_consumer_index);
+    }
+    /// 3. There is no free consumer and num_consumers already created, waiting @timeout.
+    else
+    {
+        cv.wait_for(lock, timeout, [&]()
+        {
+            /// Note we are waiting only opened, free, consumers, since consumer cannot be closed right now
+            auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr)
+            {
+                return !ptr->isInUse() && ptr->hasConsumer();
+            });
+            if (it != consumers.end())
+            {
+                ret_consumer_ptr = *it;
+                return true;
+            }
+            return false;
+        });
+    }
+
+    if (ret_consumer_ptr)
+    {
+        CurrentMetrics::add(CurrentMetrics::KafkaConsumersInUse, 1);
+        ret_consumer_ptr->inUse();
+    }
+    return ret_consumer_ptr;
 }
 
 
-KafkaConsumerPtr StorageKafka::createConsumer(size_t consumer_number)
+KafkaConsumerPtr StorageKafka::createKafkaConsumer(size_t consumer_number)
+{
+    /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
+    auto & stream_cancelled = thread_per_consumer ? tasks[consumer_number]->stream_cancelled : tasks.back()->stream_cancelled;
+
+    KafkaConsumerPtr kafka_consumer_ptr = std::make_shared<KafkaConsumer>(
+        log,
+        getPollMaxBatchSize(),
+        getPollTimeoutMillisecond(),
+        intermediate_commit,
+        stream_cancelled,
+        topics);
+    return kafka_consumer_ptr;
+}
+
+cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number)
 {
     cppkafka::Configuration conf;
 
@@ -508,8 +600,9 @@ KafkaConsumerPtr StorageKafka::createConsumer(size_t consumer_number)
     // that allows to prevent fast draining of the librdkafka queue
     // during building of single insert block. Improves performance
     // significantly, but may lead to bigger memory consumption.
-    size_t default_queued_min_messages = 100000; // we don't want to decrease the default
-    conf.set("queued.min.messages", std::max(getMaxBlockSize(),default_queued_min_messages));
+    size_t default_queued_min_messages = 100000; // must be greater than or equal to default
+    size_t max_allowed_queued_min_messages = 10000000; // must be less than or equal to max allowed value
+    conf.set("queued.min.messages", std::min(std::max(getMaxBlockSize(), default_queued_min_messages), max_allowed_queued_min_messages));
 
     updateConfiguration(conf);
 
@@ -518,17 +611,59 @@ KafkaConsumerPtr StorageKafka::createConsumer(size_t consumer_number)
     conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
     conf.set("enable.partition.eof", "false");     // Ignore EOF messages
 
-    // Create a consumer and subscribe to topics
-    auto consumer_impl = std::make_shared<cppkafka::Consumer>(conf);
-    consumer_impl->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
+    return conf;
+}
 
-    /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
-    if (thread_per_consumer)
+void StorageKafka::cleanConsumers()
+{
+    UInt64 ttl_usec = kafka_settings->kafka_consumers_pool_ttl_ms * 1'000;
+
+    std::unique_lock lock(mutex);
+    std::chrono::milliseconds timeout(KAFKA_RESCHEDULE_MS);
+    while (!cleanup_cv.wait_for(lock, timeout, [this]() { return shutdown_called == true; }))
     {
-        auto& stream_cancelled = tasks[consumer_number]->stream_cancelled;
-        return std::make_shared<KafkaConsumer>(consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, stream_cancelled, topics);
+        /// Copy consumers for closing to a new vector to close them without a lock
+        std::vector<ConsumerPtr> consumers_to_close;
+
+        UInt64 now_usec = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        {
+            for (size_t i = 0; i < consumers.size(); ++i)
+            {
+                auto & consumer_ptr = consumers[i];
+
+                UInt64 consumer_last_used_usec = consumer_ptr->getLastUsedUsec();
+                chassert(consumer_last_used_usec <= now_usec);
+
+                if (!consumer_ptr->hasConsumer())
+                    continue;
+                if (consumer_ptr->isInUse())
+                    continue;
+
+                if (now_usec - consumer_last_used_usec > ttl_usec)
+                {
+                    LOG_TRACE(log, "Closing #{} consumer (id: {})", i, consumer_ptr->getMemberId());
+                    consumers_to_close.push_back(consumer_ptr->moveConsumer());
+                }
+            }
+        }
+
+        if (!consumers_to_close.empty())
+        {
+            lock.unlock();
+
+            Stopwatch watch;
+            size_t closed = consumers_to_close.size();
+            consumers_to_close.clear();
+            LOG_TRACE(log, "{} consumers had been closed (due to {} usec timeout). Took {} ms.",
+                closed, ttl_usec, watch.elapsedMilliseconds());
+
+            lock.lock();
+        }
+
+        ttl_usec = kafka_settings->kafka_consumers_pool_ttl_ms * 1'000;
     }
-    return std::make_shared<KafkaConsumer>(consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), intermediate_commit, tasks.back()->stream_cancelled, topics);
+
+    LOG_TRACE(log, "Consumers cleanup thread finished");
 }
 
 size_t StorageKafka::getMaxBlockSize() const
@@ -641,6 +776,14 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
         LOG_IMPL(log, client_logs_level, poco_level, "[rdk:{}] {}", facility, message);
     });
 
+    /// NOTE: statistics should be consumed, otherwise it creates too much
+    /// entries in the queue, that leads to memory leak and slow shutdown.
+    if (!config.has(config_prefix + "." + "statistics_interval_ms"))
+    {
+        // every 3 seconds by default. set to 0 to disable.
+        kafka_config.set("statistics.interval.ms", "3000");
+    }
+
     // Configure interceptor to change thread name
     //
     // TODO: add interceptors support into the cppkafka.
@@ -695,6 +838,8 @@ void StorageKafka::threadFunc(size_t idx)
 {
     assert(idx < tasks.size());
     auto task = tasks[idx];
+    std::string exception_str;
+
     try
     {
         auto table_id = getStorageID();
@@ -707,7 +852,7 @@ void StorageKafka::threadFunc(size_t idx)
             mv_attached.store(true);
 
             // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!task->stream_cancelled && num_created_consumers > 0)
+            while (!task->stream_cancelled)
             {
                 if (!checkDependencies(table_id))
                     break;
@@ -724,7 +869,7 @@ void StorageKafka::threadFunc(size_t idx)
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts-start_time);
-                if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+                if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
                 {
                     LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
                     break;
@@ -734,14 +879,28 @@ void StorageKafka::threadFunc(size_t idx)
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// do bare minimum in catch block
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        exception_str = getCurrentExceptionMessage(true /* with_stacktrace */);
+    }
+
+    if (!exception_str.empty())
+    {
+        LOG_ERROR(log, "{} {}", __PRETTY_FUNCTION__, exception_str);
+
+        auto safe_consumers = getSafeConsumers();
+        for (auto const & consumer_ptr : safe_consumers.consumers)
+        {
+            /// propagate materialized view exception to all consumers
+            consumer_ptr->setExceptionInfo(exception_str, false /* no stacktrace, reuse passed one */);
+        }
     }
 
     mv_attached.store(false);
 
     // Wait for attached views
     if (!task->stream_cancelled)
-        task->holder->scheduleAfter(RESCHEDULE_MS);
+        task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS);
 }
 
 
@@ -778,7 +937,7 @@ bool StorageKafka::streamToViews()
     std::vector<std::shared_ptr<KafkaSource>> sources;
     Pipes pipes;
 
-    auto stream_count = thread_per_consumer ? 1 : num_created_consumers;
+    auto stream_count = thread_per_consumer ? 1 : num_consumers;
     sources.reserve(stream_count);
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
@@ -809,6 +968,7 @@ bool StorageKafka::streamToViews()
         // we need to read all consumers in parallel (sequential read may lead to situation
         // when some of consumers are not used, and will break some Kafka consumer invariants)
         block_io.pipeline.setNumThreads(stream_count);
+        block_io.pipeline.setConcurrencyControl(kafka_context->getSettingsRef().use_concurrency_control);
 
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
         CompletedPipelineExecutor executor(block_io.pipeline);
@@ -951,7 +1111,7 @@ void registerStorageKafka(StorageFactory & factory)
                             "of getting data from Kafka, consider using a setting kafka_thread_per_consumer=1, "
                             "and ensure you have enough threads "
                             "in MessageBrokerSchedulePool (background_message_broker_schedule_pool_size). "
-                            "See also https://clickhouse.com/docs/integrations/kafka/kafka-table-engine#tuning-performance", max_consumers);
+                            "See also https://clickhouse.com/docs/en/integrations/kafka#tuning-performance", max_consumers);
         }
         else if (num_consumers < 1)
         {
@@ -999,7 +1159,7 @@ NamesAndTypesList StorageKafka::getVirtuals() const
         {"_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3))},
         {"_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}};
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         result.push_back({"_raw_message", std::make_shared<DataTypeString>()});
         result.push_back({"_error", std::make_shared<DataTypeString>()});
@@ -1019,7 +1179,7 @@ Names StorageKafka::getVirtualColumnNames() const
         "_headers.name",
         "_headers.value",
     };
-    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    if (kafka_settings->kafka_handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
         result.push_back({"_raw_message"});
         result.push_back({"_error"});

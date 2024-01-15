@@ -7,7 +7,10 @@ sidebar_position: 70
 # [experimental] MaterializedMySQL 
 
 :::note
-This is an experimental feature that should not be used in production.
+This database engine is experimental. To use it, set `allow_experimental_database_materialized_mysql` to 1 in your configuration files or by using the `SET` command:
+```sql
+SET allow_experimental_database_materialized_mysql=1
+```
 :::
 
 Creates a ClickHouse database with all the tables existing in MySQL, and all the data in those tables. The ClickHouse server works as MySQL replica. It reads `binlog` and performs DDL and DML queries.
@@ -190,7 +193,7 @@ These are the schema conversion manipulations you can do with table overrides fo
  * Modify [column TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
  * Modify [column compression codec](/docs/en/sql-reference/statements/create/table.md/#codecs).
  * Add [ALIAS columns](/docs/en/sql-reference/statements/create/table.md/#alias).
- * Add [skipping indexes](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-data_skipping-indexes)
+ * Add [skipping indexes](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-data_skipping-indexes). Note that you need to enable `use_skip_indexes_if_final` setting to make them work (MaterializedMySQL is using `SELECT ... FINAL` by default)
  * Add [projections](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#projections). Note that projection optimizations are
    disabled when using `SELECT ... FINAL` (which MaterializedMySQL does by default), so their utility is limited here.
    `INDEX ... TYPE hypothesis` as [described in the v21.12 blog post]](https://clickhouse.com/blog/en/2021/clickhouse-v21.12-released/)

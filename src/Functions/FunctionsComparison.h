@@ -1183,15 +1183,9 @@ public:
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
         {
-            try
-            {
-                getLeastSupertype(arguments);
-            }
-            catch (const Exception &)
-            {
+            if (!tryGetLeastSupertype(arguments))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
                     " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
-            }
         }
 
         if (left_tuple && right_tuple)
@@ -1285,8 +1279,15 @@ public:
         bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
             && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
 
+        /// Interval data types can be compared only when having equal units.
+        bool left_is_interval = which_left.isInterval();
+        bool right_is_interval = which_right.isInterval();
+
+        bool types_equal = left_type->equals(*right_type);
+
         ColumnPtr res;
-        if (left_is_num && right_is_num && !date_and_datetime)
+        if (left_is_num && right_is_num && !date_and_datetime
+            && (!left_is_interval || !right_is_interval || types_equal))
         {
             if (!((res = executeNumLeftType<UInt8>(col_left_untyped, col_right_untyped))
                 || (res = executeNumLeftType<UInt16>(col_left_untyped, col_right_untyped))
@@ -1378,7 +1379,7 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Date related common types can only be UInt32/UInt64/Int32/Decimal");
             return res;
         }
-        else if (left_type->equals(*right_type))
+        else if (types_equal)
         {
             return executeGenericIdenticalTypes(col_left_untyped, col_right_untyped);
         }

@@ -4,9 +4,11 @@
 #include <Access/AuthenticationData.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SessionTracker.h>
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <optional>
 
 namespace Poco::Net { class SocketAddress; }
@@ -54,9 +56,22 @@ public:
     /// Writes a row about login failure into session log (if enabled)
     void onAuthenticationFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address_, const Exception & e);
 
-    /// Returns a reference to session ClientInfo.
-    ClientInfo & getClientInfo();
+    /// Returns a reference to the session's ClientInfo.
     const ClientInfo & getClientInfo() const;
+
+    /// Modify the session's ClientInfo.
+    void setClientInfo(const ClientInfo & client_info);
+    void setClientName(const String & client_name);
+    void setClientInterface(ClientInfo::Interface interface);
+    void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
+    void setClientConnectionId(uint32_t connection_id);
+    void setHttpClientInfo(ClientInfo::HTTPMethod http_method, const String & http_user_agent, const String & http_referer);
+    void setForwardedFor(const String & forwarded_for);
+    void setQuotaClientKey(const String & quota_key);
+    void setConnectionClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
+
+    const OpenTelemetry::TracingContext & getClientTraceContext() const;
+    OpenTelemetry::TracingContext & getClientTraceContext();
 
     /// Makes a session context, can be used one or zero times.
     /// The function also assigns an user to this context.
@@ -83,6 +98,8 @@ public:
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
+    void recordLoginSucess(ContextPtr login_context) const;
+
 
     mutable bool notified_session_log_about_login = false;
     const UUID auth_id;
@@ -99,6 +116,12 @@ private:
 
     std::shared_ptr<NamedSessionData> named_session;
     bool named_session_created = false;
+
+    SessionTracker::SessionTrackerHandle session_tracker_handle;
+
+    /// Settings received from authentication server during authentication process
+    /// to set when creating a session context
+    SettingsChanges settings_from_auth_server;
 
     Poco::Logger * log = nullptr;
 };

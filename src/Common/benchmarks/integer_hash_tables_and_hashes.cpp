@@ -1,7 +1,6 @@
 #include <benchmark/benchmark.h>
 
 #include <iomanip>
-#include <iostream>
 #include <random>
 #include <vector>
 
@@ -189,12 +188,17 @@ namespace Hashes
     #include <nmmintrin.h>
     #endif
 
+    #if defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    #include <crc32-s390x.h>
+    #endif
     struct CRC32Hash
     {
         size_t operator()(Key x) const
         {
     #ifdef __SSE4_2__
             return _mm_crc32_u64(-1ULL, x);
+    #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+           return s390x_crc32c(-1ULL, x);
     #else
             /// On other platforms we do not have CRC32. NOTE This can be confusing.
             return intHash64(x);

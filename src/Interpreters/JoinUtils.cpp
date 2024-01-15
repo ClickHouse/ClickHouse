@@ -120,19 +120,11 @@ bool canBecomeNullable(const DataTypePtr & type)
     return can_be_inside;
 }
 
-bool isNullable(const DataTypePtr & type)
-{
-    bool is_nullable = type->isNullable();
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-        is_nullable |= low_cardinality_type->getDictionaryType()->isNullable();
-    return is_nullable;
-}
-
 /// Add nullability to type.
 /// Note: LowCardinality(T) transformed to LowCardinality(Nullable(T))
 DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 {
-    if (isNullable(type))
+    if (isNullableOrLowCardinalityNullable(type))
         return type;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
@@ -303,6 +295,11 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
     return column->cloneEmpty();
 }
 
+ColumnPtr materializeColumn(const ColumnPtr & column)
+{
+    return recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
+}
+
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
 {
     ColumnRawPtrs ptrs;
@@ -311,27 +308,8 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     for (const auto & column_name : names)
     {
         auto & column = block.getByName(column_name).column;
-        column = recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
+        column = materializeColumn(column);
         ptrs.push_back(column.get());
-    }
-
-    return ptrs;
-}
-
-ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & names)
-{
-    ColumnPtrMap ptrs;
-    ptrs.reserve(names.size());
-
-    for (const auto & column_name : names)
-    {
-        ColumnPtr column = block.getByName(column_name).column;
-
-        column = column->convertToFullColumnIfConst();
-        column = recursiveRemoveLowCardinality(column);
-        column = recursiveRemoveSparse(column);
-
-        ptrs[column_name] = column;
     }
 
     return ptrs;
@@ -340,8 +318,7 @@ ColumnPtrMap materializeColumnsInplaceMap(const Block & block, const Names & nam
 ColumnPtr materializeColumn(const Block & block, const String & column_name)
 {
     const auto & src_column = block.getByName(column_name).column;
-    return recursiveRemoveLowCardinality(
-        recursiveRemoveSparse(src_column->convertToFullColumnIfConst()));
+    return materializeColumn(src_column);
 }
 
 Columns materializeColumns(const Block & block, const Names & names)
@@ -366,27 +343,6 @@ ColumnRawPtrs getRawPointers(const Columns & columns)
         ptrs.push_back(column.get());
 
     return ptrs;
-}
-
-void convertToFullColumnsInplace(Block & block)
-{
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        auto & col = block.getByPosition(i);
-        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
-        col.type = recursiveRemoveLowCardinality(col.type);
-    }
-}
-
-void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type)
-{
-    for (const String & column_name : names)
-    {
-        auto & col = block.getByName(column_name);
-        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
-        if (change_type)
-            col.type = recursiveRemoveLowCardinality(col.type);
-    }
 }
 
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys)
@@ -518,8 +474,8 @@ void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
 
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
 {
-    DataTypePtr left_type_strict = removeNullable(recursiveRemoveLowCardinality(left_type));
-    DataTypePtr right_type_strict = removeNullable(recursiveRemoveLowCardinality(right_type));
+    DataTypePtr left_type_strict = removeNullable(removeLowCardinality(left_type));
+    DataTypePtr right_type_strict = removeNullable(removeLowCardinality(right_type));
     return left_type_strict->equals(*right_type_strict);
 }
 
@@ -539,7 +495,7 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
         return JoinMask(const_cond->getBool(0), block.rows());
     }
 
-    ColumnPtr join_condition_col = recursiveRemoveLowCardinality(src_col.column->convertToFullColumnIfConst());
+    ColumnPtr join_condition_col = materializeColumn(src_col.column);
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(join_condition_col.get()))
     {
         if (isNothing(assert_cast<const DataTypeNullable &>(*col_type).getNestedType()))
@@ -791,15 +747,8 @@ void NotJoinedBlocks::extractColumnChanges(size_t right_pos, size_t result_pos)
 
 void NotJoinedBlocks::correctLowcardAndNullability(Block & block)
 {
-    for (auto & [pos, added] : right_nullability_changes)
-    {
-        auto & col = block.getByPosition(pos);
-        if (added)
-            JoinCommon::convertColumnToNullable(col);
-        else
-            JoinCommon::removeColumnNullability(col);
-    }
-
+    /// First correct LowCardinality, then Nullability,
+    /// because LowCardinality(Nullable(T)) is possible, but not Nullable(LowCardinality(T))
     for (auto & [pos, added] : right_lowcard_changes)
     {
         auto & col = block.getByPosition(pos);
@@ -814,6 +763,15 @@ void NotJoinedBlocks::correctLowcardAndNullability(Block & block)
             col.column = recursiveRemoveLowCardinality(col.column);
             col.type = recursiveRemoveLowCardinality(col.type);
         }
+    }
+
+    for (auto & [pos, added] : right_nullability_changes)
+    {
+        auto & col = block.getByPosition(pos);
+        if (added)
+            JoinCommon::convertColumnToNullable(col);
+        else
+            JoinCommon::removeColumnNullability(col);
     }
 }
 

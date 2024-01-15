@@ -7,6 +7,7 @@
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
+#include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
 
 #include <boost/multi_index/member.hpp>
@@ -83,11 +84,14 @@ struct ColumnDescription
     String comment;
     ASTPtr codec;
     ASTPtr ttl;
+    std::optional<StatisticDescription> stat;
 
     ColumnDescription() = default;
     ColumnDescription(ColumnDescription &&) = default;
     ColumnDescription(const ColumnDescription &) = default;
     ColumnDescription(String name_, DataTypePtr type_);
+    ColumnDescription(String name_, DataTypePtr type_, String comment_);
+    ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_);
 
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
@@ -98,13 +102,20 @@ struct ColumnDescription
 
 
 /// Description of multiple table columns (in CREATE TABLE for example).
-class ColumnsDescription : public IHints<1, ColumnsDescription>
+class ColumnsDescription : public IHints<>
 {
 public:
     ColumnsDescription() = default;
+
+    static ColumnsDescription fromNamesAndTypes(NamesAndTypes ordinary);
+
     explicit ColumnsDescription(NamesAndTypesList ordinary);
 
+    explicit ColumnsDescription(std::initializer_list<ColumnDescription> ordinary);
+
     explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
+
+    void setAliases(NamesAndAliases aliases);
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true);
@@ -160,9 +171,8 @@ public:
         auto it = columns.get<1>().find(column_name);
         if (it == columns.get<1>().end())
         {
-            String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_name);
-            appendHintsMessage(exception_message, column_name);
-            throw Exception::createDeprecated(exception_message, ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find column {} in ColumnsDescription{}",
+                            column_name, getHintsMessage(column_name));
         }
 
         removeSubcolumns(it->name);
@@ -176,9 +186,12 @@ public:
     Names getNamesOfPhysical() const;
 
     bool hasPhysical(const String & column_name) const;
+    bool hasNotAlias(const String & column_name) const;
     bool hasAlias(const String & column_name) const;
     bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     bool hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const;
+
+    bool hasOnlyOrdinary() const;
 
     NameAndTypePair getPhysical(const String & column_name) const;
     NameAndTypePair getColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;

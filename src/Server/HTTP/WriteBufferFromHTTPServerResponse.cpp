@@ -1,16 +1,15 @@
+#include "Common/StackTrace.h"
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
-
+#include <IO/WriteHelpers.h>
+#include <memory>
+#include <sstream>
+#include <string>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-}
 
 
 void WriteBufferFromHTTPServerResponse::startSendHeaders()
@@ -19,68 +18,74 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
     {
         headers_started_sending = true;
 
+        if (response.getChunkedTransferEncoding())
+            setChunked();
+
         if (add_cors_header)
             response.set("Access-Control-Allow-Origin", "*");
 
         setResponseDefaultHeaders(response, keep_alive_timeout);
 
-        if (!is_http_method_head)
-            std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
+        std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        response.beginWrite(header);
+        auto header_str = header.str();
+        socketSendBytes(header_str.data(), header_str.size());
     }
+}
+
+void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * header_name)
+{
+    if (is_http_method_head || headers_finished_sending || !headers_started_sending)
+        return;
+
+    WriteBufferFromOwnString progress_string_writer;
+
+    accumulated_progress.writeJSON(progress_string_writer);
+
+    socketSendBytes(header_name, strlen(header_name));
+    socketSendBytes(progress_string_writer.str().data(), progress_string_writer.str().size());
+    socketSendBytes("\r\n", 2);
 }
 
 void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 {
-    if (headers_finished_sending)
-        return;
-
-    WriteBufferFromOwnString progress_string_writer;
-    accumulated_progress.writeJSON(progress_string_writer);
-
-    if (response_header_ostr)
-        *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
+    accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
+    writeHeaderProgressImpl("X-ClickHouse-Summary: ");
 }
 
 void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
 {
-    if (headers_finished_sending)
-        return;
-
-    WriteBufferFromOwnString progress_string_writer;
-    accumulated_progress.writeJSON(progress_string_writer);
-
-    if (response_header_ostr)
-        *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
+    writeHeaderProgressImpl("X-ClickHouse-Progress: ");
 }
 
 void WriteBufferFromHTTPServerResponse::writeExceptionCode()
 {
     if (headers_finished_sending || !exception_code)
         return;
-    if (response_header_ostr)
-        *response_header_ostr << "X-ClickHouse-Exception-Code: " << exception_code << "\r\n" << std::flush;
+    if (headers_started_sending)
+    {
+        socketSendBytes("X-ClickHouse-Exception-Code: ", sizeof("X-ClickHouse-Exception-Code: ") - 1);
+        auto str_code = std::to_string(exception_code);
+        socketSendBytes(str_code.data(), str_code.size());
+        socketSendBytes("\r\n", 2);
+    }
 }
 
 void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 {
-    if (!headers_finished_sending)
-    {
-        writeHeaderSummary();
-        writeExceptionCode();
-        headers_finished_sending = true;
+    if (headers_finished_sending)
+        return;
 
-        if (!is_http_method_head)
-        {
-            /// Send end of headers delimiter.
-            if (response_header_ostr)
-                *response_header_ostr << "\r\n" << std::flush;
-        }
-        else
-        {
-            if (!response_body_ostr)
-                response_body_ostr = response.send();
-        }
-    }
+    if (!headers_started_sending)
+        startSendHeaders();
+
+    writeHeaderSummary();
+    writeExceptionCode();
+
+    headers_finished_sending = true;
+
+    /// Send end of headers delimiter.
+    socketSendBytes("\r\n", 2);
 }
 
 
@@ -89,62 +94,31 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
     if (!initialized)
     {
         std::lock_guard lock(mutex);
-
         /// Initialize as early as possible since if the code throws,
         /// next() should not be called anymore.
         initialized = true;
 
+        if (compression_method != CompressionMethod::None)
+            response.set("Content-Encoding", toContentEncodingName(compression_method));
+
         startSendHeaders();
-
-        if (!out && !is_http_method_head)
-        {
-            if (compress)
-            {
-                auto content_encoding_name = toContentEncodingName(compression_method);
-
-                *response_header_ostr << "Content-Encoding: " << content_encoding_name << "\r\n";
-            }
-
-            /// We reuse our buffer in "out" to avoid extra allocations and copies.
-
-            if (compress)
-                out = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromOStream>(*response_body_ostr),
-                    compress ? compression_method : CompressionMethod::None,
-                    compression_level,
-                    working_buffer.size(),
-                    working_buffer.begin());
-            else
-                out = std::make_unique<WriteBufferFromOStream>(
-                    *response_body_ostr,
-                    working_buffer.size(),
-                    working_buffer.begin());
-        }
-
         finishSendHeaders();
     }
 
-    if (out)
-    {
-        out->buffer() = buffer();
-        out->position() = position();
-        out->next();
-    }
+    if (!is_http_method_head)
+        HTTPWriteBuffer::nextImpl();
 }
 
 
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
-    size_t keep_alive_timeout_,
-    bool compress_,
-    CompressionMethod compression_method_)
-    : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE)
+    UInt64 keep_alive_timeout_,
+    const ProfileEvents::Event & write_event_)
+    : HTTPWriteBuffer(response_.getSocket(), write_event_)
     , response(response_)
     , is_http_method_head(is_http_method_head_)
     , keep_alive_timeout(keep_alive_timeout_)
-    , compress(compress_)
-    , compression_method(compression_method_)
 {
 }
 
@@ -158,9 +132,9 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         return;
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
-
     if (send_progress && progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
     {
+        accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
         progress_watch.restart();
 
         /// Send all common headers before our special progress headers.
@@ -169,37 +143,43 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
     }
 }
 
+void WriteBufferFromHTTPServerResponse::setExceptionCode(int exception_code_)
+{
+    std::lock_guard lock(mutex);
+    if (headers_started_sending)
+        exception_code = exception_code_;
+    else
+        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code_));
+}
+
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
-    finalize();
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void WriteBufferFromHTTPServerResponse::finalizeImpl()
 {
-    try
+    if (!headers_finished_sending)
     {
-        next();
-        if (out)
-            out->finalize();
-        out.reset();
-        /// Catch write-after-finalize bugs.
-        set(nullptr, 0);
-    }
-    catch (...)
-    {
-        /// Avoid calling WriteBufferFromOStream::next() from dtor
-        /// (via WriteBufferFromHTTPServerResponse::next())
-        out.reset();
-        throw;
-    }
-
-    if (!offset())
-    {
-        /// If no remaining data, just send headers.
         std::lock_guard lock(mutex);
+        /// If no body data just send header
         startSendHeaders();
+
+        if (!initialized && offset() && compression_method != CompressionMethod::None)
+            socketSendStr("Content-Encoding: " + toContentEncodingName(compression_method) + "\r\n");
+
         finishSendHeaders();
     }
+
+    if (!is_http_method_head)
+        HTTPWriteBuffer::finalizeImpl();
 }
 
 

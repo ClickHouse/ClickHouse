@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "drop table if exists mt"
 
-$CLICKHOUSE_CLIENT -q "create table mt (n int) engine=MergeTree order by n settings parts_to_throw_insert=1000"
+$CLICKHOUSE_CLIENT -q "create table mt (n int) engine=MergeTree order by n settings parts_to_throw_insert=5000"
 $CLICKHOUSE_CLIENT -q "insert into mt values (1)"
 $CLICKHOUSE_CLIENT -q "insert into mt values (2)"
 $CLICKHOUSE_CLIENT -q "insert into mt values (3)"

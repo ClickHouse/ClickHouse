@@ -7,7 +7,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <random>
+#include <pcg_random.hpp>
 
 namespace DB
 {
@@ -45,7 +45,6 @@ struct TaskCluster
     /// Subtasks
     TasksTable table_tasks;
 
-    std::random_device random_device;
     pcg64 random_engine;
 };
 

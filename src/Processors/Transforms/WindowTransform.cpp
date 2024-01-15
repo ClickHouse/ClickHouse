@@ -67,7 +67,7 @@ public:
 
     // Must insert the result for current_row.
     virtual void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) = 0;
+        size_t function_index) const = 0;
 
     virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
 };
@@ -148,7 +148,7 @@ static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
     const auto offset = _offset.get<typename ColumnType::ValueType>();
-    assert(offset >= 0);
+    chassert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
     assert(compared_value_data.size == sizeof(typename ColumnType::ValueType));
@@ -257,6 +257,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
                 window_description.frame = *custom_default_frame;
         }
 
+        workspace.is_aggregate_function_state = workspace.aggregate_function->isState();
         workspace.aggregate_function_state.reset(
             aggregate_function->sizeOfData(),
             aggregate_function->alignOfData());
@@ -957,10 +958,7 @@ void WindowTransform::updateAggregationState()
             auto * columns = ws.argument_columns.data();
             // Removing arena.get() from the loop makes it faster somehow...
             auto * arena_ptr = arena.get();
-            for (auto row = first_row; row < past_the_end_row; ++row)
-            {
-                a->add(buf, columns, row, arena_ptr);
-            }
+            a->addBatchSinglePlace(first_row, past_the_end_row, buf, columns, arena_ptr);
         }
     }
 }
@@ -987,9 +985,16 @@ void WindowTransform::writeOutCurrentRow()
             // FIXME does it also allocate the result on the arena?
             // We'll have to pass it out with blocks then...
 
-            /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
-            /// correctly if result contains AggregateFunction's states
-            a->insertMergeResultInto(buf, *result_column, arena.get());
+            if (ws.is_aggregate_function_state)
+            {
+                /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
+                /// correctly if result contains AggregateFunction's states
+                a->insertMergeResultInto(buf, *result_column, arena.get());
+            }
+            else
+            {
+                a->insertResultInto(buf, *result_column, arena.get());
+            }
         }
     }
 }
@@ -1066,7 +1071,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         auto columns = chunk.detachColumns();
         block.original_input_columns = columns;
         for (auto & column : columns)
-            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfConst());
+            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
         block.input_columns = std::move(columns);
 
         // Initialize output columns.
@@ -1458,7 +1463,7 @@ struct WindowFunctionRank final : public WindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         IColumn & to = *transform->blockAt(transform->current_row)
             .output_columns[function_index];
@@ -1477,7 +1482,7 @@ struct WindowFunctionDenseRank final : public WindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         IColumn & to = *transform->blockAt(transform->current_row)
             .output_columns[function_index];
@@ -1556,7 +1561,7 @@ struct StatefulWindowFunction : public WindowFunction
 
     bool hasTrivialDestructor() const override { return std::is_trivially_destructible_v<State>; }
 
-    State & getState(const WindowFunctionWorkspace & workspace)
+    State & getState(const WindowFunctionWorkspace & workspace) const
     {
         return *static_cast<State *>(static_cast<void *>(workspace.aggregate_function_state.data()));
     }
@@ -1580,17 +1585,21 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
 
-    WindowFunctionExponentialTimeDecayedSum(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+    static Float64 getDecayLength(const Array & parameters_, const std::string & name_)
     {
         if (parameters_.size() != 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly one parameter", name_);
         }
-        decay_length = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
+        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
+    }
 
+    WindowFunctionExponentialTimeDecayedSum(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+        , decay_length(getDecayLength(parameters_, name_))
+    {
         if (argument_types.size() != 2)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1617,7 +1626,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         const auto & workspace = transform->workspaces[function_index];
         auto & state = getState(workspace);
@@ -1665,7 +1674,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunc
     }
 
     private:
-        Float64 decay_length;
+        const Float64 decay_length;
 };
 
 struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
@@ -1673,17 +1682,21 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
 
-    WindowFunctionExponentialTimeDecayedMax(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+    static Float64 getDecayLength(const Array & parameters_, const std::string & name_)
     {
         if (parameters_.size() != 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly one parameter", name_);
         }
-        decay_length = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
+        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
+    }
 
+    WindowFunctionExponentialTimeDecayedMax(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+        , decay_length(getDecayLength(parameters_, name_))
+    {
         if (argument_types.size() != 2)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1710,7 +1723,7 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         Float64 result = std::numeric_limits<Float64>::quiet_NaN();
 
@@ -1737,24 +1750,28 @@ struct WindowFunctionExponentialTimeDecayedMax final : public WindowFunction
     }
 
     private:
-        Float64 decay_length;
+        const Float64 decay_length;
 };
 
 struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFunction<ExponentialTimeDecayedSumState>
 {
     static constexpr size_t ARGUMENT_TIME = 0;
 
-    WindowFunctionExponentialTimeDecayedCount(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+    static Float64 getDecayLength(const Array & parameters_, const std::string & name_)
     {
         if (parameters_.size() != 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly one parameter", name_);
         }
-        decay_length = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
+        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
+    }
 
+    WindowFunctionExponentialTimeDecayedCount(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+        , decay_length(getDecayLength(parameters_, name_))
+    {
         if (argument_types.size() != 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1773,7 +1790,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         const auto & workspace = transform->workspaces[function_index];
         auto & state = getState(workspace);
@@ -1818,7 +1835,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFu
     }
 
     private:
-        Float64 decay_length;
+        const Float64 decay_length;
 };
 
 struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunction<ExponentialTimeDecayedAvgState>
@@ -1826,17 +1843,21 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
 
-    WindowFunctionExponentialTimeDecayedAvg(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+    static Float64 getDecayLength(const Array & parameters_, const std::string & name_)
     {
         if (parameters_.size() != 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Function {} takes exactly one parameter", name_);
         }
-        decay_length = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
+        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
+    }
 
+    WindowFunctionExponentialTimeDecayedAvg(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+        , decay_length(getDecayLength(parameters_, name_))
+    {
         if (argument_types.size() != 2)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1863,7 +1884,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         const auto & workspace = transform->workspaces[function_index];
         auto & state = getState(workspace);
@@ -1928,7 +1949,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunc
     }
 
     private:
-        Float64 decay_length;
+        const Float64 decay_length;
 };
 
 struct WindowFunctionRowNumber final : public WindowFunction
@@ -1941,7 +1962,7 @@ struct WindowFunctionRowNumber final : public WindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         IColumn & to = *transform->blockAt(transform->current_row)
             .output_columns[function_index];
@@ -1950,12 +1971,30 @@ struct WindowFunctionRowNumber final : public WindowFunction
     }
 };
 
+namespace
+{
+    struct NtileState
+    {
+        UInt64 buckets = 0;
+        RowNumber start_row;
+        UInt64 current_partition_rows = 0;
+        UInt64 current_partition_inserted_row = 0;
+
+        void windowInsertResultInto(
+            const WindowTransform * transform,
+            size_t function_index,
+            const DataTypes & argument_types);
+
+        static void checkWindowFrameType(const WindowTransform * transform);
+    };
+}
+
 // Usage: ntile(n). n is the number of buckets.
-struct WindowFunctionNtile final : public WindowFunction
+struct WindowFunctionNtile final : public StatefulWindowFunction<NtileState>
 {
     WindowFunctionNtile(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
-        : WindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
+        : StatefulWindowFunction<NtileState>(name_, argument_types_, parameters_, std::make_shared<DataTypeUInt64>())
     {
         if (argument_types.size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} takes exactly one argument", name_);
@@ -1976,7 +2015,20 @@ struct WindowFunctionNtile final : public WindowFunction
     }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
+    {
+        const auto & workspace = transform->workspaces[function_index];
+        auto & state = getState(workspace);
+        state.windowInsertResultInto(transform, function_index, argument_types);
+    }
+};
+
+namespace
+{
+    void NtileState::windowInsertResultInto(
+        const WindowTransform * transform,
+        size_t function_index,
+        const DataTypes & argument_types)
     {
         if (!buckets) [[unlikely]]
         {
@@ -2067,13 +2119,8 @@ struct WindowFunctionNtile final : public WindowFunction
             bucket_num += 1;
         }
     }
-private:
-    UInt64 buckets = 0;
-    RowNumber start_row;
-    UInt64 current_partition_rows = 0;
-    UInt64 current_partition_inserted_row = 0;
 
-    static void checkWindowFrameType(const WindowTransform * transform)
+    void NtileState::checkWindowFrameType(const WindowTransform * transform)
     {
         if (transform->order_by_indices.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for 'ntile' function must have ORDER BY clause");
@@ -2088,7 +2135,7 @@ private:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame for function 'ntile' should be 'ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING'");
         }
     }
-};
+}
 
 // ClickHouse-specific variant of lag/lead that respects the window frame.
 template <bool is_lead>
@@ -2160,7 +2207,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         const auto & current_block = transform->blockAt(transform->current_row);
         IColumn & to = *current_block.output_columns[function_index];
@@ -2250,7 +2297,7 @@ struct WindowFunctionNthValue final : public WindowFunction
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
+        size_t function_index) const override
     {
         const auto & current_block = transform->blockAt(transform->current_row);
         IColumn & to = *current_block.output_columns[function_index];
@@ -2293,16 +2340,18 @@ struct NonNegativeDerivativeState
     Float64 previous_timestamp = 0;
 };
 
-// nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL 1 SECOND])
-struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction<NonNegativeDerivativeState>
+struct NonNegativeDerivativeParams
 {
     static constexpr size_t ARGUMENT_METRIC = 0;
     static constexpr size_t ARGUMENT_TIMESTAMP = 1;
     static constexpr size_t ARGUMENT_INTERVAL = 2;
 
-    WindowFunctionNonNegativeDerivative(const std::string & name_,
-                                            const DataTypes & argument_types_, const Array & parameters_)
-        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+    Float64 interval_length = 1;
+    bool interval_specified = false;
+    Int64 ts_scale_multiplier = 0;
+
+    NonNegativeDerivativeParams(
+        const std::string & name_, const DataTypes & argument_types, const Array & parameters)
     {
         if (!parameters.empty())
         {
@@ -2360,11 +2409,23 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
             interval_specified = true;
         }
     }
+};
+
+// nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL 1 SECOND])
+struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction<NonNegativeDerivativeState>, public NonNegativeDerivativeParams
+{
+    using Params = NonNegativeDerivativeParams;
+
+    WindowFunctionNonNegativeDerivative(const std::string & name_,
+                                            const DataTypes & argument_types_, const Array & parameters_)
+        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+        , NonNegativeDerivativeParams(name, argument_types, parameters)
+    {}
 
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
-                                size_t function_index) override
+                                size_t function_index) const override
     {
         const auto & current_block = transform->blockAt(transform->current_row);
         const auto & workspace = transform->workspaces[function_index];
@@ -2400,10 +2461,6 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
 
         WindowFunctionHelpers::setValueToOutputColumn<Float64>(transform, function_index, result >= 0 ? result : 0);
     }
-private:
-    Float64 interval_length = 1;
-    bool interval_specified = false;
-    Int64 ts_scale_multiplier = 0;
 };
 
 

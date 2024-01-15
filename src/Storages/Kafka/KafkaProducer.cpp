@@ -27,7 +27,7 @@ KafkaProducer::KafkaProducer(
     if (header.has("_key"))
     {
         auto column_index = header.getPositionByName("_key");
-        auto column_info = header.getByPosition(column_index);
+        const auto & column_info = header.getByPosition(column_index);
         if (isString(column_info.type))
             key_column_index = column_index;
         // else ? (not sure it's a good place to report smth to user)
@@ -36,7 +36,7 @@ KafkaProducer::KafkaProducer(
     if (header.has("_timestamp"))
     {
         auto column_index = header.getPositionByName("_timestamp");
-        auto column_info = header.getByPosition(column_index);
+        const auto & column_info = header.getByPosition(column_index);
         if (isDateTime(column_info.type))
             timestamp_column_index = column_index;
     }

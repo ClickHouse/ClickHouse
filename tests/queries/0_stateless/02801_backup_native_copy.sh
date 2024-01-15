@@ -10,7 +10,7 @@ set -e
 
 $CLICKHOUSE_CLIENT -nm -q "
     drop table if exists data;
-    create table data (key Int) engine=MergeTree() order by tuple() settings disk='s3_common_disk';
+    create table data (key Int) engine=MergeTree() order by tuple() settings disk='s3_disk';
     insert into data select * from numbers(10);
 "
 
@@ -29,14 +29,14 @@ $CLICKHOUSE_CLIENT -nm -q "
 "
 
 query_id=$(random_str 10)
-$CLICKHOUSE_CLIENT --send_logs_level=error --format Null --query_id $query_id -q "RESTORE TABLE data AS data_native_copy FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_native_copy') SETTINGS allow_s3_native_copy=true"
+$CLICKHOUSE_CLIENT --format Null --query_id $query_id -q "RESTORE TABLE data AS data_native_copy FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_native_copy') SETTINGS allow_s3_native_copy=true"
 $CLICKHOUSE_CLIENT -nm -q "
     SYSTEM FLUSH LOGS;
     SELECT query, ProfileEvents['S3CopyObject']>0 FROM system.query_log WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id'
 "
 
 query_id=$(random_str 10)
-$CLICKHOUSE_CLIENT --send_logs_level=error --format Null --query_id $query_id -q "RESTORE TABLE data AS data_no_native_copy FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_no_native_copy') SETTINGS allow_s3_native_copy=false"
+$CLICKHOUSE_CLIENT --format Null --query_id $query_id -q "RESTORE TABLE data AS data_no_native_copy FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_no_native_copy') SETTINGS allow_s3_native_copy=false"
 $CLICKHOUSE_CLIENT -nm -q "
     SYSTEM FLUSH LOGS;
     SELECT query, ProfileEvents['S3CopyObject']>0 FROM system.query_log WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id'

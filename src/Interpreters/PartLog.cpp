@@ -1,3 +1,5 @@
+#include <base/getFQDNOrHostName.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -55,7 +57,7 @@ PartLogElement::PartMergeAlgorithm PartLogElement::getMergeAlgorithm(MergeAlgori
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown MergeAlgorithm {}", static_cast<UInt64>(merge_algorithm_));
 }
 
-NamesAndTypesList PartLogElement::getNamesAndTypes()
+ColumnsDescription PartLogElement::getColumnsDescription()
 {
     auto event_type_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -90,42 +92,57 @@ NamesAndTypesList PartLogElement::getNamesAndTypes()
 
     ColumnsWithTypeAndName columns_with_type_and_name;
 
-    return {
-        {"query_id", std::make_shared<DataTypeString>()},
-        {"event_type", std::move(event_type_datatype)},
-        {"merge_reason", std::move(merge_reason_datatype)},
-        {"merge_algorithm", std::move(merge_algorithm_datatype)},
-        {"event_date", std::make_shared<DataTypeDate>()},
+    return ColumnsDescription
+    {
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"query_id", std::make_shared<DataTypeString>(), "Identifier of the INSERT query that created this data part."},
+        {"event_type", std::move(event_type_datatype),
+            "Type of the event that occurred with the data part. "
+            "Can have one of the following values: "
+            "NewPart — Inserting of a new data part, "
+            "MergeParts — Merging of data parts, "
+            "DownloadParts — Downloading a data part, "
+            "RemovePart — Removing or detaching a data part using DETACH PARTITION, "
+            "MutatePart — Mutating of a data part, "
+            "MovePart — Moving the data part from the one disk to another one."},
+        {"merge_reason", std::move(merge_reason_datatype),
+            "The reason for the event with type MERGE_PARTS. Can have one of the following values: "
+            "NotAMerge — The current event has the type other than MERGE_PARTS, "
+            "RegularMerge — Some regular merge, "
+            "TTLDeleteMerge — Cleaning up expired data. "
+            "TTLRecompressMerge — Recompressing data part with the. "},
+        {"merge_algorithm", std::move(merge_algorithm_datatype), "Merge algorithm for the event with type MERGE_PARTS. Can have one of the following values: Undecided, Horizontal, Vertical"},
+        {"event_date", std::make_shared<DataTypeDate>(), "Event date."},
+        {"event_time", std::make_shared<DataTypeDateTime>(), "Event time."},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Event time with microseconds precision."},
 
-        {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
+        {"duration_ms", std::make_shared<DataTypeUInt64>(), "Duration of this operation."},
 
-        {"duration_ms", std::make_shared<DataTypeUInt64>()},
+        {"database", std::make_shared<DataTypeString>(), "Name of the database the data part is in."},
+        {"table", std::make_shared<DataTypeString>(), "Name of the table the data part is in."},
+        {"table_uuid", std::make_shared<DataTypeUUID>(), "UUID of the table the data part belongs to."},
+        {"part_name", std::make_shared<DataTypeString>(), "Name of the data part."},
+        {"partition_id", std::make_shared<DataTypeString>(), "ID of the partition that the data part was inserted to. The column takes the `all` value if the partitioning is by `tuple()`."},
+        {"partition", std::make_shared<DataTypeString>()},
+        {"part_type", std::make_shared<DataTypeString>(), "The type of the part. Possible values: Wide and Compact."},
+        {"disk_name", std::make_shared<DataTypeString>(), "The disk name data part lies on."},
+        {"path_on_disk", std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},
 
-        {"database", std::make_shared<DataTypeString>()},
-        {"table", std::make_shared<DataTypeString>()},
-        {"table_uuid", std::make_shared<DataTypeUUID>()},
-        {"part_name", std::make_shared<DataTypeString>()},
-        {"partition_id", std::make_shared<DataTypeString>()},
-        {"part_type", std::make_shared<DataTypeString>()},
-        {"disk_name", std::make_shared<DataTypeString>()},
-        {"path_on_disk", std::make_shared<DataTypeString>()},
-
-        {"rows", std::make_shared<DataTypeUInt64>()},
-        {"size_in_bytes", std::make_shared<DataTypeUInt64>()}, // On disk
+        {"rows", std::make_shared<DataTypeUInt64>(), "The number of rows in the data part."},
+        {"size_in_bytes", std::make_shared<DataTypeUInt64>(), "Size of the data part on disk in bytes."},
 
         /// Merge-specific info
-        {"merged_from", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"bytes_uncompressed", std::make_shared<DataTypeUInt64>()}, // Result bytes
-        {"read_rows", std::make_shared<DataTypeUInt64>()},
-        {"read_bytes", std::make_shared<DataTypeUInt64>()},
-        {"peak_memory_usage", std::make_shared<DataTypeUInt64>()},
+        {"merged_from", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of the source parts names which the current part was made up from."},
+        {"bytes_uncompressed", std::make_shared<DataTypeUInt64>(), "Uncompressed size of the resulting part in bytes."},
+        {"read_rows", std::make_shared<DataTypeUInt64>(), "The number of rows was read during the merge."},
+        {"read_bytes", std::make_shared<DataTypeUInt64>(), "The number of bytes was read during the merge."},
+        {"peak_memory_usage", std::make_shared<DataTypeUInt64>(), "The maximum amount of used during merge RAM"},
 
         /// Is there an error during the execution or commit
-        {"error", std::make_shared<DataTypeUInt16>()},
-        {"exception", std::make_shared<DataTypeString>()},
+        {"error", std::make_shared<DataTypeUInt16>(), "The error code of the occurred exception."},
+        {"exception", std::make_shared<DataTypeString>(), "Text message of the occurred error."},
 
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
     };
 }
 
@@ -143,6 +160,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
+    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(query_id);
     columns[i++]->insert(event_type);
     columns[i++]->insert(merge_reason);
@@ -157,6 +175,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(table_uuid);
     columns[i++]->insert(part_name);
     columns[i++]->insert(partition_id);
+    columns[i++]->insert(partition);
     columns[i++]->insert(part_type.toString());
     columns[i++]->insert(disk_name);
     columns[i++]->insert(path_on_disk);
@@ -229,12 +248,17 @@ bool PartLog::addNewParts(
             elem.table_name = table_id.table_name;
             elem.table_uuid = table_id.uuid;
             elem.partition_id = part->info.partition_id;
+            {
+                WriteBufferFromString out(elem.partition);
+                part->partition.serializeText(part->storage, out, {});
+            }
             elem.part_name = part->name;
             elem.disk_name = part->getDataPartStorage().getDiskName();
             elem.path_on_disk = part->getDataPartStorage().getFullPath();
             elem.part_type = part->getType();
 
             elem.bytes_compressed_on_disk = part->getBytesOnDisk();
+            elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
             elem.rows = part->rows_count;
 
             elem.error = static_cast<UInt16>(execution_status.code);
@@ -242,7 +266,7 @@ bool PartLog::addNewParts(
 
             elem.profile_counters = part_log_entry.profile_counters;
 
-            part_log->add(elem);
+            part_log->add(std::move(elem));
         }
     }
     catch (...)

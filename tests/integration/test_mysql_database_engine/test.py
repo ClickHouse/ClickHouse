@@ -1021,3 +1021,24 @@ def test_memory_leak(started_cluster):
 
         clickhouse_node.query("DROP DATABASE test_database")
         clickhouse_node.restart_clickhouse()
+
+
+def test_password_leak(started_cluster):
+    with contextlib.closing(
+        MySQLNodeInstance(
+            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_database")
+        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
+        )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+        clickhouse_node.query(
+            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse') SETTINGS connection_auto_close = 1"
+        )
+        assert "clickhouse" not in clickhouse_node.query(
+            "SHOW CREATE test_database.test_table"
+        )

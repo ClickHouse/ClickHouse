@@ -772,9 +772,9 @@ CREATE TABLE IF NOT EXISTS example_table
 -   Если `input_format_defaults_for_omitted_fields = 0`, то значение по умолчанию для `x` и `a` равняется `0` (поскольку это значение по умолчанию для типа данных `UInt32`.)
 -   Если `input_format_defaults_for_omitted_fields = 1`, то значение по умолчанию для `x` равно `0`, а значение по умолчанию `a` равно `x * 2`.
 
-    :::note "Предупреждение"
-    При добавлении данных с помощью `input_format_defaults_for_omitted_fields = 1`, ClickHouse потребляет больше вычислительных ресурсов по сравнению с `input_format_defaults_for_omitted_fields = 0`.
-    :::
+:::note Предупреждение
+При добавлении данных с помощью `input_format_defaults_for_omitted_fields = 1`, ClickHouse потребляет больше вычислительных ресурсов по сравнению с `input_format_defaults_for_omitted_fields = 0`.
+:::
 ### Выборка данных {#vyborka-dannykh}
 
 Рассмотрим в качестве примера таблицу `UserActivity`:
@@ -795,9 +795,10 @@ CREATE TABLE IF NOT EXISTS example_table
 
 В отличие от формата [JSON](#json), для `JSONEachRow` ClickHouse не заменяет невалидные UTF-8 последовательности. Значения экранируются так же, как и для формата `JSON`.
 
-    :::note "Примечание"
-    В строках может выводиться произвольный набор байт. Используйте формат `JSONEachRow`, если вы уверены, что данные в таблице могут быть представлены в формате JSON без потери информации.
-    :::
+:::note Примечание
+В строках может выводиться произвольный набор байт. Используйте формат `JSONEachRow`, если вы уверены, что данные в таблице могут быть представлены в формате JSON без потери информации.
+:::
+
 ### Использование вложенных структур {#jsoneachrow-nested}
 
 Если у вас есть таблица со столбцами типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md), то в неё можно вставить данные из JSON-документа с такой же структурой. Функциональность включается настройкой [input_format_import_nested_json](../operations/settings/settings.md#settings-input_format_import_nested_json).
@@ -1305,9 +1306,9 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 
 SELECT * FROM topic1_stream;
 ```
-    :::note "Внимание"
-    `format_avro_schema_registry_url` необходимо настроить в `users.xml`, чтобы сохранить значение после перезапуска. Также можно использовать настройку `format_avro_schema_registry_url` табличного движка `Kafka`.
-    :::
+:::note Внимание
+`format_avro_schema_registry_url` необходимо настроить в `users.xml`, чтобы сохранить значение после перезапуска. Также можно использовать настройку `format_avro_schema_registry_url` табличного движка `Kafka`.
+:::
 ## Parquet {#data-format-parquet}
 
 [Apache Parquet](https://parquet.apache.org/) — формат поколоночного хранения данных, который распространён в экосистеме Hadoop. Для формата `Parquet` ClickHouse поддерживает операции чтения и записи.
@@ -1352,8 +1353,6 @@ ClickHouse поддерживает настраиваемую точность 
 ``` bash
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
-
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested).
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Parquet, используйте команду следующего вида:
 
@@ -1413,8 +1412,6 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested).
-
 ### Вывод данных {#selecting-data-arrow}
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Arrow, используйте команду следующего вида:
@@ -1470,8 +1467,6 @@ ClickHouse поддерживает настраиваемую точность 
 ``` bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
-
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_orc_import_nested](../operations/settings/settings.md#input_format_orc_import_nested).
 
 ### Вывод данных {#selecting-data-2}
 

@@ -37,6 +37,7 @@ SELECT a, b, c FROM (SELECT ...)
 ```
 
 ## Parameterized View
+
 Parametrized views are similar to normal views, but can be created with parameters which are not resolved immediately. These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
 
 ``` sql
@@ -62,11 +63,11 @@ Materialized views store data transformed by the corresponding [SELECT](../../..
 
 When creating a materialized view without `TO [db].[table]`, you must specify `ENGINE` – the table engine for storing data.
 
-When creating a materialized view with `TO [db].[table]`, you must not use `POPULATE`.
+When creating a materialized view with `TO [db].[table]`, you can't also use `POPULATE`.
 
 A materialized view is implemented as follows: when inserting data to the table specified in `SELECT`, part of the inserted data is converted by this `SELECT` query, and the result is inserted in the view.
 
-:::note    
+:::note
 Materialized views in ClickHouse use **column names** instead of column order during insertion into destination table. If some column names are not present in the `SELECT` query result, ClickHouse uses a default value, even if the column is not [Nullable](../../data-types/nullable.md). A safe practice would be to add aliases for every column when using Materialized views.
 
 Materialized views in ClickHouse are implemented more like insert triggers. If there’s some aggregation in the view query, it’s applied only to the batch of freshly inserted data. Any changes to existing data of source table (like update, delete, drop partition, etc.) does not change the materialized view.
@@ -90,156 +91,122 @@ Views look the same as normal tables. For example, they are listed in the result
 
 To delete a view, use [DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). Although `DROP TABLE` works for VIEWs as well.
 
-## Live View [Experimental]
+## Live View [Deprecated]
 
-:::note    
-This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of live views and `WATCH` query using [allow_experimental_live_view](../../../operations/settings/settings.md#allow-experimental-live-view) setting. Input the command `set allow_experimental_live_view = 1`.
+This feature is deprecated and will be removed in the future.
+
+For your convenience, the old documentation is located [here](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
+
+## Refreshable Materialized View {#refreshable-materialized-view}
+
+```sql
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name
+REFRESH EVERY|AFTER interval [OFFSET interval]
+RANDOMIZE FOR interval
+DEPENDS ON [db.]name [, [db.]name [, ...]]
+[TO[db.]name] [(columns)] [ENGINE = engine] [EMPTY]
+AS SELECT ...
+```
+where `interval` is a sequence of simple intervals:
+```sql
+number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
+```
+
+Periodically runs the corresponding query and stores its result in a table, atomically replacing the table's previous contents.
+
+Differences from regular non-refreshable materialized views:
+ * No insert trigger. I.e. when new data is inserted into the table specified in SELECT, it's *not* automatically pushed to the refreshable materialized view. The periodic refresh runs the entire query and replaces the entire table.
+ * No restrictions on the SELECT query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed.
+
+:::note
+Refreshable materialized views are a work in progress. Setting `allow_experimental_refreshable_materialized_view = 1` is required for creating one. Current limitations:
+ * not compatible with Replicated database or table engines,
+ * require [Atomic database engine](../../../engines/database-engines/atomic.md),
+ * no retries for failed refresh - we just skip to the next scheduled refresh time,
+ * no limit on number of concurrent refreshes.
 :::
 
+### Refresh Schedule
+
+Example refresh schedules:
 ```sql
-CREATE LIVE VIEW [IF NOT EXISTS] [db.]table_name [WITH [TIMEOUT [value_in_sec] [AND]] [REFRESH [value_in_sec]]] AS SELECT ...
+REFRESH EVERY 1 DAY -- every day, at midnight (UTC)
+REFRESH EVERY 1 MONTH -- on 1st day of every month, at midnight
+REFRESH EVERY 1 MONTH OFFSET 5 DAY 2 HOUR -- on 6th day of every month, at 2:00 am
+REFRESH EVERY 2 WEEK OFFSET 5 DAY 15 HOUR 10 MINUTE -- every other Saturday, at 3:10 pm
+REFRESH EVERY 30 MINUTE -- at 00:00, 00:30, 01:00, 01:30, etc
+REFRESH AFTER 30 MINUTE -- 30 minutes after the previous refresh completes, no alignment with time of day
+-- REFRESH AFTER 1 HOUR OFFSET 1 MINUTE -- syntax errror, OFFSET is not allowed with AFTER
 ```
 
-Live views store result of the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query and are updated any time the result of the query changes. Query result as well as partial result needed to combine with new data are stored in memory providing increased performance for repeated queries. Live views can provide push notifications when query result changes using the [WATCH](../../../sql-reference/statements/watch.md) query.
+`RANDOMIZE FOR` randomly adjusts the time of each refresh, e.g.:
+```sql
+REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random time between 01:30 and 02:30
+```
 
-Live views are triggered by insert into the innermost table specified in the query.
+At most one refresh may be running at a time, for a given view. E.g. if a view with `REFRESH EVERY 1 MINUTE` takes 2 minutes to refresh, it'll just be refreshing every 2 minutes. If it then becomes faster and starts refreshing in 10 seconds, it'll go back to refreshing every minute. (In particular, it won't refresh every 10 seconds to catch up with a backlog of missed refreshes - there's no such backlog.)
 
-Live views work similarly to how a query in a distributed table works. But instead of combining partial results from different servers they combine partial result from current data with partial result from the new data. When a live view query includes a subquery then the cached partial result is only stored for the innermost subquery.
+Additionally, a refresh is started immediately after the materialized view is created, unless `EMPTY` is specified in the `CREATE` query. If `EMPTY` is specified, the first refresh happens according to schedule.
 
-:::info    
-- [Table function](../../../sql-reference/table-functions/index.md) is not supported as the innermost table.
-- Tables that do not have inserts such as a [dictionary](../../../sql-reference/dictionaries/index.md), [system table](../../../operations/system-tables/index.md), a [normal view](#normal), or a [materialized view](#materialized) will not trigger a live view.
-- Only queries where one can combine partial result from the old data plus partial result from the new data will work. Live view will not work for queries that require the complete data set to compute the final result or aggregations where the state of the aggregation must be preserved.
-- Does not work with replicated or distributed tables where inserts are performed on different nodes.
-- Can't be triggered by multiple tables.
+### Dependencies {#refresh-dependencies}
 
-See [WITH REFRESH](#live-view-with-refresh) to force periodic updates of a live view that in some cases can be used as a workaround.
+`DEPENDS ON` synchronizes refreshes of different tables. By way of example, suppose there's a chain of two refreshable materialized views:
+```sql
+CREATE MATERIALIZED VIEW source REFRESH EVERY 1 DAY AS SELECT * FROM url(...)
+CREATE MATERIALIZED VIEW destination REFRESH EVERY 1 DAY AS SELECT ... FROM source
+```
+Without `DEPENDS ON`, both views will start a refresh at midnight, and `destination` typically will see yesterday's data in `source`. If we add dependency:
+```
+CREATE MATERIALIZED VIEW destination REFRESH EVERY 1 DAY DEPENDS ON source AS SELECT ... FROM source
+```
+then `destination`'s refresh will start only after `source`'s refresh finished for that day, so `destination` will be based on fresh data.
+
+Alternatively, the same result can be achieved with:
+```
+CREATE MATERIALIZED VIEW destination REFRESH AFTER 1 HOUR DEPENDS ON source AS SELECT ... FROM source
+```
+where `1 HOUR` can be any duration less than `source`'s refresh period. The dependent table won't be refreshed more frequently than any of its dependencies. This is a valid way to set up a chain of refreshable views without specifying the real refresh period more than once.
+
+A few more examples:
+ * `REFRESH EVERY 1 DAY OFFSET 10 MINUTE` (`destination`) depends on `REFRESH EVERY 1 DAY` (`source`)<br/>
+   If `source` refresh takes more than 10 minutes, `destination` will wait for it.
+ * `REFRESH EVERY 1 DAY OFFSET 1 HOUR` depends on `REFRESH EVERY 1 DAY OFFSET 23 HOUR`<br/>
+   Similar to the above, even though the corresponding refreshes happen on different calendar days.
+   `destination`'s refresh on day X+1 will wait for `source`'s refresh on day X (if it takes more than 2 hours).
+ * `REFRESH EVERY 2 HOUR` depends on `REFRESH EVERY 1 HOUR`<br/>
+   The 2 HOUR refresh happens after the 1 HOUR refresh for every other hour, e.g. after the midnight
+   refresh, then after the 2am refresh, etc.
+ * `REFRESH EVERY 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
+   `REFRESH AFTER 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
+   `REFRESH AFTER 1 MINUTE` depends on `REFRESH AFTER 2 HOUR`<br/>
+   `destination` is refreshed once after every `source` refresh, i.e. every 2 hours. The `1 MINUTE` is effectively ignored.
+ * `REFRESH AFTER 1 HOUR` depends on `REFRESH AFTER 1 HOUR`<br/>
+   Currently this is not recommended.
+
+:::note
+`DEPENDS ON` only works between refreshable materialized views. Listing a regular table in the `DEPENDS ON` list will prevent the view from ever refreshing (dependencies can be removed with `ALTER`, see below).
 :::
 
-### Monitoring Live View Changes
+### Changing Refresh Parameters {#changing-refresh-parameters}
 
-You can monitor changes in the `LIVE VIEW` query result using [WATCH](../../../sql-reference/statements/watch.md) query.
-
-```sql
-WATCH [db.]live_view
+To change refresh parameters:
+```
+ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...]
 ```
 
-**Example:**
+:::note
+This replaces refresh schedule *and* dependencies. If the table had a `DEPENDS ON`, doing a `MODIFY REFRESH` without `DEPENDS ON` will remove the dependencies.
+:::
 
-```sql
-CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
-CREATE LIVE VIEW lv AS SELECT sum(x) FROM mt;
-```
-Watch a live view while doing a parallel insert into the source table.
+### Other operations
 
-```sql
-WATCH lv;
-```
+The status of all refreshable materialized views is available in table [`system.view_refreshes`](../../../operations/system-tables/view_refreshes.md). In particular, it contains refresh progress (if running), last and next refresh time, exception message if a refresh failed.
 
-```bash
-┌─sum(x)─┬─_version─┐
-│      1 │        1 │
-└────────┴──────────┘
-┌─sum(x)─┬─_version─┐
-│      3 │        2 │
-└────────┴──────────┘
-┌─sum(x)─┬─_version─┐
-│      6 │        3 │
-└────────┴──────────┘
-```
-
-```sql
-INSERT INTO mt VALUES (1);
-INSERT INTO mt VALUES (2);
-INSERT INTO mt VALUES (3);
-```
-
-Or add [EVENTS](../../../sql-reference/statements/watch.md#events-clause) clause to just get change events.
-
-```sql
-WATCH [db.]live_view EVENTS;
-```
-
-**Example:**
-
-```sql
-WATCH lv EVENTS;
-```
-
-```bash
-┌─version─┐
-│       1 │
-└─────────┘
-┌─version─┐
-│       2 │
-└─────────┘
-┌─version─┐
-│       3 │
-└─────────┘
-```
-
-You can execute [SELECT](../../../sql-reference/statements/select/index.md) query on a live view in the same way as for any regular view or a table. If the query result is cached it will return the result immediately without running the stored query on the underlying tables.
-
-```sql
-SELECT * FROM [db.]live_view WHERE ...
-```
-
-### Force Live View Refresh
-
-You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRESH` statement.
-
-### WITH REFRESH Clause
-
-When a live view is created with a `WITH REFRESH` clause then it will be automatically refreshed after the specified number of seconds elapse since the last refresh or trigger.
-
-```sql
-CREATE LIVE VIEW [db.]table_name WITH REFRESH [value_in_sec] AS SELECT ...
-```
-
-If the refresh value is not specified then the value specified by the [periodic_live_view_refresh](../../../operations/settings/settings.md#periodic-live-view-refresh) setting is used.
-
-**Example:**
-
-```sql
-CREATE LIVE VIEW lv WITH REFRESH 5 AS SELECT now();
-WATCH lv
-```
-
-```bash
-┌───────────────now()─┬─_version─┐
-│ 2021-02-21 08:47:05 │        1 │
-└─────────────────────┴──────────┘
-┌───────────────now()─┬─_version─┐
-│ 2021-02-21 08:47:10 │        2 │
-└─────────────────────┴──────────┘
-┌───────────────now()─┬─_version─┐
-│ 2021-02-21 08:47:15 │        3 │
-└─────────────────────┴──────────┘
-```
-
-```sql
-WATCH lv
-```
-
-```
-Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv does not exist..
-```
-
-### Live View Usage
-
-Most common uses of live view tables include:
-
-- Providing push notifications for query result changes to avoid polling.
-- Caching results of most frequent queries to provide immediate query results.
-- Watching for table changes and triggering a follow-up select queries.
-- Watching metrics from system tables using periodic refresh.
-
-**See Also**
-- [ALTER LIVE VIEW](../alter/view.md#alter-live-view)
+To manually stop, start, trigger, or cancel refreshes use [`SYSTEM STOP|START|REFRESH|CANCEL VIEW`](../system.md#refreshable-materialized-views).
 
 ## Window View [Experimental]
 
-:::info    
+:::info
 This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view) setting. Input the command `set allow_experimental_window_view = 1`.
 :::
 

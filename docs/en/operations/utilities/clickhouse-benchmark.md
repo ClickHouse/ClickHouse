@@ -53,7 +53,6 @@ clickhouse-benchmark [keys] < queries_file;
 - `--confidence=N` — Level of confidence for T-test. Possible values: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Default value: 5. In the [comparison mode](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` performs the [Independent two-sample Student’s t-test](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) to determine whether the two distributions aren’t different with the selected level of confidence.
 - `--cumulative` — Printing cumulative data instead of data per interval.
 - `--database=DATABASE_NAME` — ClickHouse database name. Default value: `default`.
-- `--json=FILEPATH` — `JSON` output. When the key is set, `clickhouse-benchmark` outputs a report to the specified JSON-file.
 - `--user=USERNAME` — ClickHouse user name. Default value: `default`.
 - `--password=PSWD` — ClickHouse user password. Default value: empty string.
 - `--stacktrace` — Stack traces output. When the key is set, `clickhouse-bencmark` outputs stack traces of exceptions.

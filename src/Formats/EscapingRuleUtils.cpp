@@ -303,8 +303,8 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
                 /// Try to determine the type of value inside quotes
                 auto type = tryInferDataTypeForSingleField(data, format_settings);
 
-                /// If we couldn't infer any type or it's a number or tuple in quotes, we determine it as a string.
-                if (!type || isNumber(removeNullable(type)) || isTuple(type))
+                /// If we couldn't infer any type or it's tuple in quotes or it's a number and csv.try_infer_numbers_from_strings = 0, we determine it as a string.
+                if (!type || isTuple(type) || (isNumber(type) && !format_settings.csv.try_infer_numbers_from_strings))
                     return std::make_shared<DataTypeString>();
 
                 return type;
@@ -450,11 +450,16 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
             break;
         case FormatSettings::EscapingRule::JSON:
             result += fmt::format(
-                ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_objects_as_strings={}, read_numbers_as_strings={}, try_infer_objects={}",
+                ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_bools_as_strings={}, read_objects_as_strings={}, read_numbers_as_strings={}, "
+                "read_arrays_as_strings={}, try_infer_objects_as_tuples={}, infer_incomplete_types_as_strings={}, try_infer_objects={}",
                 settings.json.try_infer_numbers_from_strings,
                 settings.json.read_bools_as_numbers,
+                settings.json.read_bools_as_strings,
                 settings.json.read_objects_as_strings,
                 settings.json.read_numbers_as_strings,
+                settings.json.read_arrays_as_strings,
+                settings.json.try_infer_objects_as_tuples,
+                settings.json.infer_incomplete_types_as_strings,
                 settings.json.allow_object_type);
             break;
         default:

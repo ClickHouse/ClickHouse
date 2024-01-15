@@ -10,7 +10,7 @@ A set of queries that allow changing the table structure.
 Syntax:
 
 ``` sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
+ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
 ```
 
 In the query, specify a list of one or more comma-separated actions.
@@ -213,7 +213,7 @@ Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC
 Syntax:
 
 ```sql
-ALTER TABLE table_name MODIFY column_name REMOVE property;
+ALTER TABLE table_name MODIFY COLUMN column_name REMOVE property;
 ```
 
 **Example**

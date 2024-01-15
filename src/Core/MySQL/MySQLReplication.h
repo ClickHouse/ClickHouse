@@ -2,6 +2,7 @@
 #include <Core/Field.h>
 #include <Core/MySQL/PacketsReplication.h>
 #include <Core/MySQL/MySQLGtid.h>
+#include <Core/MySQL/MySQLCharset.h>
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -32,8 +33,10 @@ namespace MySQLReplication
     inline void readBigEndianStrict(ReadBuffer & payload, char * to, size_t n)
     {
         payload.readStrict(to, n);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
         char *start = to, *end = to + n;
         std::reverse(start, end);
+#endif
     }
 
     inline void readTimeFractionalPart(ReadBuffer & payload, UInt32 & factional, UInt16 meta)
@@ -120,22 +123,6 @@ namespace MySQLReplication
         BINLOG_CHECKSUM_ALG_UNDEF = 255
     };
 
-    inline String to_string(BinlogChecksumAlg type)
-    {
-        switch (type)
-        {
-            case BINLOG_CHECKSUM_ALG_OFF:
-                return "BINLOG_CHECKSUM_ALG_OFF";
-            case BINLOG_CHECKSUM_ALG_CRC32:
-                return "BINLOG_CHECKSUM_ALG_CRC32";
-            case BINLOG_CHECKSUM_ALG_ENUM_END:
-                return "BINLOG_CHECKSUM_ALG_ENUM_END";
-            case BINLOG_CHECKSUM_ALG_UNDEF:
-                return "BINLOG_CHECKSUM_ALG_UNDEF";
-        }
-        return std::string("Unknown checksum alg: ") + std::to_string(static_cast<int>(type));
-    }
-
     /// http://dev.mysql.com/doc/internals/en/binlog-event-type.html
     enum EventType
     {
@@ -187,102 +174,6 @@ namespace MySQLReplication
         MARIA_START_ENCRYPTION_EVENT = 164,
     };
 
-    inline String to_string(EventType type)
-    {
-        switch (type)
-        {
-            case START_EVENT_V3:
-                return "StartEventV3";
-            case QUERY_EVENT:
-                return "QueryEvent";
-            case STOP_EVENT:
-                return "StopEvent";
-            case ROTATE_EVENT:
-                return "RotateEvent";
-            case INT_VAR_EVENT:
-                return "IntVarEvent";
-            case LOAD_EVENT:
-                return "LoadEvent";
-            case SLAVE_EVENT:
-                return "SlaveEvent";
-            case CREATE_FILE_EVENT:
-                return "CreateFileEvent";
-            case APPEND_BLOCK_EVENT:
-                return "AppendBlockEvent";
-            case EXEC_LOAD_EVENT:
-                return "ExecLoadEvent";
-            case DELETE_FILE_EVENT:
-                return "DeleteFileEvent";
-            case NEW_LOAD_EVENT:
-                return "NewLoadEvent";
-            case RAND_EVENT:
-                return "RandEvent";
-            case USER_VAR_EVENT:
-                return "UserVarEvent";
-            case FORMAT_DESCRIPTION_EVENT:
-                return "FormatDescriptionEvent";
-            case XID_EVENT:
-                return "XIDEvent";
-            case BEGIN_LOAD_QUERY_EVENT:
-                return "BeginLoadQueryEvent";
-            case EXECUTE_LOAD_QUERY_EVENT:
-                return "ExecuteLoadQueryEvent";
-            case TABLE_MAP_EVENT:
-                return "TableMapEvent";
-            case WRITE_ROWS_EVENT_V0:
-                return "WriteRowsEventV0";
-            case UPDATE_ROWS_EVENT_V0:
-                return "UpdateRowsEventV0";
-            case DELETE_ROWS_EVENT_V0:
-                return "DeleteRowsEventV0";
-            case WRITE_ROWS_EVENT_V1:
-                return "WriteRowsEventV1";
-            case UPDATE_ROWS_EVENT_V1:
-                return "UpdateRowsEventV1";
-            case DELETE_ROWS_EVENT_V1:
-                return "DeleteRowsEventV1";
-            case INCIDENT_EVENT:
-                return "IncidentEvent";
-            case HEARTBEAT_EVENT:
-                return "HeartbeatEvent";
-            case IGNORABLE_EVENT:
-                return "IgnorableEvent";
-            case ROWS_QUERY_EVENT:
-                return "RowsQueryEvent";
-            case WRITE_ROWS_EVENT_V2:
-                return "WriteRowsEventV2";
-            case UPDATE_ROWS_EVENT_V2:
-                return "UpdateRowsEventV2";
-            case DELETE_ROWS_EVENT_V2:
-                return "DeleteRowsEventV2";
-            case GTID_EVENT:
-                return "GTIDEvent";
-            case ANONYMOUS_GTID_EVENT:
-                return "AnonymousGTIDEvent";
-            case PREVIOUS_GTIDS_EVENT:
-                return "PreviousGTIDsEvent";
-            case TRANSACTION_CONTEXT_EVENT:
-                return "TransactionContextEvent";
-            case VIEW_CHANGE_EVENT:
-                return "ViewChangeEvent";
-            case XA_PREPARE_LOG_EVENT:
-                return "XAPrepareLogEvent";
-            case MARIA_ANNOTATE_ROWS_EVENT:
-                return "MariaAnnotateRowsEvent";
-            case MARIA_BINLOG_CHECKPOINT_EVENT:
-                return "MariaBinlogCheckpointEvent";
-            case MARIA_GTID_EVENT:
-                return "MariaGTIDEvent";
-            case MARIA_GTID_LIST_EVENT:
-                return "MariaGTIDListEvent";
-            case MARIA_START_ENCRYPTION_EVENT:
-                return "MariaStartEncryptionEvent";
-            default:
-                break;
-        }
-        return std::string("Unknown event: ") + std::to_string(static_cast<int>(type));
-    }
-
     enum MySQLEventType
     {
         MYSQL_UNHANDLED_EVENT = 0,
@@ -290,6 +181,7 @@ namespace MySQLReplication
         MYSQL_WRITE_ROWS_EVENT = 2,
         MYSQL_UPDATE_ROWS_EVENT = 3,
         MYSQL_DELETE_ROWS_EVENT = 4,
+        MYSQL_UNPARSED_ROWS_EVENT = 100,
     };
 
     class ReplicationError : public DB::Exception
@@ -383,6 +275,8 @@ namespace MySQLReplication
         String status;
         String schema;
         String query;
+        String query_database_name;
+        String query_table_name;
         QueryType typ = QUERY_EVENT_DDL;
         bool transaction_complete = true;
 
@@ -436,9 +330,24 @@ namespace MySQLReplication
         UInt32 column_count;
         std::vector<UInt8> column_type;
         std::vector<UInt16> column_meta;
+        /// Character set of string columns
+        std::vector<UInt32> column_charset;
+        /// Character set of string columns,
+        /// optimized to minimize space when many
+        /// columns have the same charset
+        UInt32 default_charset = 255; /// utf8mb4_0900_ai_ci
+        std::unordered_map<UInt32, UInt32> default_charset_pairs;
+        /// Points to flavor_charset object
+        MySQLCharsetPtr charset_ptr;
         Bitmap null_bitmap;
 
-        TableMapEvent(EventHeader && header_, const TableMapEventHeader & map_event_header) : EventBase(std::move(header_)), column_count(0)
+        TableMapEvent(
+            EventHeader && header_,
+            const TableMapEventHeader & map_event_header,
+            const MySQLCharsetPtr & charset_ptr_)
+            : EventBase(std::move(header_))
+            , column_count(0)
+            , charset_ptr(charset_ptr_)
         {
             table_id = map_event_header.table_id;
             flags = map_event_header.flags;
@@ -448,10 +357,52 @@ namespace MySQLReplication
             table = map_event_header.table;
         }
         void dump(WriteBuffer & out) const override;
+        UInt32 getColumnCharsetId(UInt32 column_index);
+        /// https://mysqlhighavailability.com/more-metadata-is-written-into-binary-log/
+        /// https://github.com/mysql/mysql-server/blob/8.0/libbinlogevents/include/rows_event.h#L50
+        /// DEFAULT_CHARSET and COLUMN_CHARSET don't appear together, and
+        /// ENUM_AND_SET_DEFAULT_CHARSET and ENUM_AND_SET_COLUMN_CHARSET don't appear together.
+        enum OptionalMetaType : char
+        {
+            /// UNSIGNED flag of numeric columns
+            SIGNEDNESS = 1,
+            /// Character set of string columns, optimized to
+            /// minimize space when many columns have the
+            /// same charset
+            DEFAULT_CHARSET,
+            /// Character set of string columns, optimized to
+            /// minimize space when columns have many
+            /// different charsets
+            COLUMN_CHARSET,
+            COLUMN_NAME,
+            /// String value of SET columns
+            SET_STR_VALUE,
+            /// String value of ENUM columns
+            ENUM_STR_VALUE,
+            /// Real type of geometry columns
+            GEOMETRY_TYPE,
+            /// Primary key without prefix
+            SIMPLE_PRIMARY_KEY,
+            /// Primary key with prefix
+            PRIMARY_KEY_WITH_PREFIX,
+            /// Character set of enum and set
+            /// columns, optimized to minimize
+            /// space when many columns have the
+            /// same charset
+            ENUM_AND_SET_DEFAULT_CHARSET,
+            /// Character set of enum and set
+            /// columns, optimized to minimize
+            /// space when many columns have the
+            /// same charset
+            ENUM_AND_SET_COLUMN_CHARSET,
+            /// Flag to indicate column visibility attribute
+            COLUMN_VISIBILITY
+        };
 
     protected:
         void parseImpl(ReadBuffer & payload) override;
         void parseMeta(String meta);
+        void parseOptionalMetaField(ReadBuffer & payload);
     };
 
     enum RowsEventFlags
@@ -498,7 +449,6 @@ namespace MySQLReplication
         void parseImpl(ReadBuffer & payload) override;
         void parseRow(ReadBuffer & payload, Bitmap & bitmap);
 
-    private:
         std::shared_ptr<TableMapEvent> table_map;
     };
 
@@ -549,17 +499,38 @@ namespace MySQLReplication
         void parseImpl(ReadBuffer & payload) override;
     };
 
+    class UnparsedRowsEvent : public RowsEvent
+    {
+    public:
+        UnparsedRowsEvent(const std::shared_ptr<TableMapEvent> & table_map_, EventHeader && header_, const RowsEventHeader & rows_header)
+            : RowsEvent(table_map_, std::move(header_), rows_header)
+        {
+        }
+
+        void dump(WriteBuffer & out) const override;
+        MySQLEventType type() const override { return MYSQL_UNPARSED_ROWS_EVENT; }
+        std::shared_ptr<RowsEvent> parse();
+
+    protected:
+        void parseImpl(ReadBuffer & payload) override;
+        std::vector<uint8_t> unparsed_data;
+        std::shared_ptr<RowsEvent> parsed_event;
+        mutable std::mutex mutex;
+    };
+
     class Position
     {
     public:
         UInt64 binlog_pos;
         String binlog_name;
         GTIDSets gtid_sets;
+        UInt32 timestamp;
 
-        Position() : binlog_pos(0) { }
+        Position() : binlog_pos(0), timestamp(0) { }
         void update(BinlogEventPtr event);
-        void update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_);
+        void update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_, UInt32 binlog_time_);
         void dump(WriteBuffer & out) const;
+        void resetPendingGTID() { pending_gtid.reset(); }
 
     private:
         std::optional<GTID> pending_gtid;
@@ -598,6 +569,7 @@ namespace MySQLReplication
         std::unordered_set<String> replicate_tables;
         std::map<UInt64, std::shared_ptr<TableMapEvent> > table_maps;
         size_t checksum_signature_length = 4;
+        MySQLCharsetPtr flavor_charset = std::make_shared<MySQLCharset>();
 
         bool doReplicate(UInt64 table_id);
         bool doReplicate(const String & db, const String & table_name);

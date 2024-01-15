@@ -1,26 +1,20 @@
 #pragma once
 
+#include <Common/Allocator.h>
+#include <Common/BitHelpers.h>
+#include <Common/memcpySmall.h>
+#include <Common/PODArray_fwd.h>
+#include <base/getPageSize.h>
+#include <boost/noncopyable.hpp>
 #include <cstring>
 #include <cstddef>
 #include <cassert>
 #include <algorithm>
 #include <memory>
 
-#include <boost/noncopyable.hpp>
-
-#include <base/strong_typedef.h>
-#include <base/getPageSize.h>
-
-#include <Common/Allocator.h>
-#include <Common/Exception.h>
-#include <Common/BitHelpers.h>
-#include <Common/memcpySmall.h>
-
 #ifndef NDEBUG
-    #include <sys/mman.h>
+#include <sys/mman.h>
 #endif
-
-#include <Common/PODArray_fwd.h>
 
 /** Whether we can use memcpy instead of a loop with assignment to T from U.
   * It is Ok if types are the same. And if types are integral and of the same size,
@@ -34,12 +28,6 @@ constexpr bool memcpy_can_be_used_for_assignment = std::is_same_v<T, U>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_MPROTECT;
-    extern const int CANNOT_ALLOCATE_MEMORY;
-}
 
 /** A dynamic array for POD types.
   * Designed for a small number of large arrays (rather than a lot of small ones).
@@ -77,6 +65,19 @@ namespace ErrorCodes
 static constexpr size_t empty_pod_array_size = 1024;
 extern const char empty_pod_array[empty_pod_array_size];
 
+namespace PODArrayDetails
+{
+
+void protectMemoryRegion(void * addr, size_t len, int prot);
+
+/// The amount of memory occupied by the num_elements of the elements.
+size_t byte_size(size_t num_elements, size_t element_size); /// NOLINT
+
+/// Minimum amount of memory to allocate for num_elements, including padding.
+size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right); /// NOLINT
+
+};
+
 /** Base class that depend only on size of element, not on element itself.
   * You can static_cast to this class if you want to insert some data regardless to the actual type T.
   */
@@ -102,27 +103,9 @@ protected:
     char * c_end            = null;
     char * c_end_of_storage = null;    /// Does not include pad_right.
 
-    /// The amount of memory occupied by the num_elements of the elements.
-    static size_t byte_size(size_t num_elements) /// NOLINT
-    {
-        size_t amount;
-        if (__builtin_mul_overflow(num_elements, ELEMENT_SIZE, &amount))
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
-        return amount;
-    }
-
-    /// Minimum amount of memory to allocate for num_elements, including padding.
-    static size_t minimum_memory_for_elements(size_t num_elements)
-    {
-        size_t amount;
-        if (__builtin_add_overflow(byte_size(num_elements), pad_left + pad_right, &amount))
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
-        return amount;
-    }
-
     void alloc_for_num_elements(size_t num_elements) /// NOLINT
     {
-        alloc(minimum_memory_for_elements(num_elements));
+        alloc(PODArrayDetails::minimum_memory_for_elements(num_elements, ELEMENT_SIZE, pad_left, pad_right));
     }
 
     template <typename ... TAllocatorParams>
@@ -188,7 +171,7 @@ protected:
             // The allocated memory should be multiplication of ELEMENT_SIZE to hold the element, otherwise,
             // memory issue such as corruption could appear in edge case.
             realloc(std::max(integerRoundUp(initial_bytes, ELEMENT_SIZE),
-                             minimum_memory_for_elements(1)),
+                             PODArrayDetails::minimum_memory_for_elements(1, ELEMENT_SIZE, pad_left, pad_right)),
                     std::forward<TAllocatorParams>(allocator_params)...);
         }
         else
@@ -208,8 +191,7 @@ protected:
         if (right_rounded_down > left_rounded_up)
         {
             size_t length = right_rounded_down - left_rounded_up;
-            if (0 != mprotect(left_rounded_up, length, prot))
-                throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+            PODArrayDetails::protectMemoryRegion(left_rounded_up, length, prot);
         }
     }
 
@@ -232,14 +214,14 @@ public:
     void reserve(size_t n, TAllocatorParams &&... allocator_params)
     {
         if (n > capacity())
-            realloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(n)), std::forward<TAllocatorParams>(allocator_params)...);
+            realloc(roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(n, ELEMENT_SIZE, pad_left, pad_right)), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     template <typename ... TAllocatorParams>
     void reserve_exact(size_t n, TAllocatorParams &&... allocator_params) /// NOLINT
     {
         if (n > capacity())
-            realloc(minimum_memory_for_elements(n), std::forward<TAllocatorParams>(allocator_params)...);
+            realloc(PODArrayDetails::minimum_memory_for_elements(n, ELEMENT_SIZE, pad_left, pad_right), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     template <typename ... TAllocatorParams>
@@ -258,7 +240,7 @@ public:
 
     void resize_assume_reserved(const size_t n) /// NOLINT
     {
-        c_end = c_start + byte_size(n);
+        c_end = c_start + PODArrayDetails::byte_size(n, ELEMENT_SIZE);
     }
 
     const char * raw_data() const /// NOLINT
@@ -339,7 +321,7 @@ public:
     explicit PODArray(size_t n)
     {
         this->alloc_for_num_elements(n);
-        this->c_end += this->byte_size(n);
+        this->c_end += PODArrayDetails::byte_size(n, sizeof(T));
     }
 
     PODArray(size_t n, const T & x)
@@ -411,9 +393,9 @@ public:
         if (n > old_size)
         {
             this->reserve(n);
-            memset(this->c_end, 0, this->byte_size(n - old_size));
+            memset(this->c_end, 0, PODArrayDetails::byte_size(n - old_size, sizeof(T)));
         }
-        this->c_end = this->c_start + this->byte_size(n);
+        this->c_end = this->c_start + PODArrayDetails::byte_size(n, sizeof(T));
     }
 
     void resize_fill(size_t n, const T & value) /// NOLINT
@@ -424,7 +406,7 @@ public:
             this->reserve(n);
             std::fill(t_end(), t_end() + n - old_size, value);
         }
-        this->c_end = this->c_start + this->byte_size(n);
+        this->c_end = this->c_start + PODArrayDetails::byte_size(n, sizeof(T));
     }
 
     template <typename U, typename ... TAllocatorParams>
@@ -487,7 +469,7 @@ public:
         if (required_capacity > this->capacity())
             this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
-        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        size_t bytes_to_copy = PODArrayDetails::byte_size(from_end - from_begin, sizeof(T));
         if (bytes_to_copy)
         {
             memcpy(this->c_end, reinterpret_cast<const void *>(rhs.begin() + from_begin), bytes_to_copy);
@@ -502,7 +484,7 @@ public:
         static_assert(pad_right_ >= PADDING_FOR_SIMD - 1);
         static_assert(sizeof(T) == sizeof(*from_begin));
         insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
-        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        size_t bytes_to_copy = PODArrayDetails::byte_size(from_end - from_begin, sizeof(T));
         memcpySmallAllowReadWriteOverflow15(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
         this->c_end += bytes_to_copy;
     }
@@ -513,11 +495,11 @@ public:
     {
         static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
 
-        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        size_t bytes_to_copy = PODArrayDetails::byte_size(from_end - from_begin, sizeof(T));
         if (!bytes_to_copy)
             return;
 
-        size_t bytes_to_move = this->byte_size(end() - it);
+        size_t bytes_to_move = PODArrayDetails::byte_size(end() - it, sizeof(T));
 
         insertPrepare(from_begin, from_end);
 
@@ -545,10 +527,10 @@ public:
         if (required_capacity > this->capacity())
             this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
-        size_t bytes_to_copy = this->byte_size(copy_size);
+        size_t bytes_to_copy = PODArrayDetails::byte_size(copy_size, sizeof(T));
         if (bytes_to_copy)
         {
-            auto begin = this->c_start + this->byte_size(start_index);
+            auto begin = this->c_start + PODArrayDetails::byte_size(start_index, sizeof(T));
             memcpy(this->c_end, reinterpret_cast<const void *>(&*begin), bytes_to_copy);
             this->c_end += bytes_to_copy;
         }
@@ -560,7 +542,7 @@ public:
         static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
         this->assertNotIntersects(from_begin, from_end);
 
-        size_t bytes_to_copy = this->byte_size(from_end - from_begin);
+        size_t bytes_to_copy = PODArrayDetails::byte_size(from_end - from_begin, sizeof(T));
         if (bytes_to_copy)
         {
             memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
@@ -593,13 +575,13 @@ public:
             /// arr1 takes ownership of the heap memory of arr2.
             arr1.c_start = arr2.c_start;
             arr1.c_end_of_storage = arr1.c_start + heap_allocated - arr2.pad_right - arr2.pad_left;
-            arr1.c_end = arr1.c_start + this->byte_size(heap_size);
+            arr1.c_end = arr1.c_start + PODArrayDetails::byte_size(heap_size, sizeof(T));
 
             /// Allocate stack space for arr2.
             arr2.alloc(stack_allocated, std::forward<TAllocatorParams>(allocator_params)...);
             /// Copy the stack content.
-            memcpy(arr2.c_start, stack_c_start, this->byte_size(stack_size));
-            arr2.c_end = arr2.c_start + this->byte_size(stack_size);
+            memcpy(arr2.c_start, stack_c_start, PODArrayDetails::byte_size(stack_size, sizeof(T)));
+            arr2.c_end = arr2.c_start + PODArrayDetails::byte_size(stack_size, sizeof(T));
         };
 
         auto do_move = [&](PODArray & src, PODArray & dest)
@@ -608,8 +590,8 @@ public:
             {
                 dest.dealloc();
                 dest.alloc(src.allocated_bytes(), std::forward<TAllocatorParams>(allocator_params)...);
-                memcpy(dest.c_start, src.c_start, this->byte_size(src.size()));
-                dest.c_end = dest.c_start + this->byte_size(src.size());
+                memcpy(dest.c_start, src.c_start, PODArrayDetails::byte_size(src.size(), sizeof(T)));
+                dest.c_end = dest.c_start + PODArrayDetails::byte_size(src.size(), sizeof(T));
 
                 src.c_start = Base::null;
                 src.c_end = Base::null;
@@ -666,8 +648,8 @@ public:
             this->c_end_of_storage = this->c_start + rhs_allocated - Base::pad_right - Base::pad_left;
             rhs.c_end_of_storage = rhs.c_start + lhs_allocated - Base::pad_right - Base::pad_left;
 
-            this->c_end = this->c_start + this->byte_size(rhs_size);
-            rhs.c_end = rhs.c_start + this->byte_size(lhs_size);
+            this->c_end = this->c_start + PODArrayDetails::byte_size(rhs_size, sizeof(T));
+            rhs.c_end = rhs.c_start + PODArrayDetails::byte_size(lhs_size, sizeof(T));
         }
         else if (this->isAllocatedFromStack() && !rhs.isAllocatedFromStack())
         {
@@ -702,7 +684,7 @@ public:
         if (required_capacity > this->capacity())
             this->reserve_exact(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
-        size_t bytes_to_copy = this->byte_size(required_capacity);
+        size_t bytes_to_copy = PODArrayDetails::byte_size(required_capacity, sizeof(T));
         if (bytes_to_copy)
             memcpy(this->c_start, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
 
@@ -783,4 +765,15 @@ extern template class PODArray<Int8, 4096, Allocator<false>, PADDING_FOR_SIMD - 
 extern template class PODArray<Int16, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
 extern template class PODArray<Int32, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
 extern template class PODArray<Int64, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+
+extern template class PODArray<UInt8, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<UInt16, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<UInt32, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<UInt64, 4096, Allocator<false>, 0, 0>;
+
+extern template class PODArray<Int8, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<Int16, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<Int32, 4096, Allocator<false>, 0, 0>;
+extern template class PODArray<Int64, 4096, Allocator<false>, 0, 0>;
+
 }

@@ -173,6 +173,28 @@ public:
         }
     }
 
+    void process(EventQueue::TimePoint now, size_t count_limit = size_t(-1), ResourceCost cost_limit = ResourceCostMax)
+    {
+        event_queue.setManualTime(now);
+
+        while (count_limit > 0 && cost_limit > 0)
+        {
+            processEvents();
+            if (!root_node->isActive())
+                return;
+            if (auto [request, _] = root_node->dequeueRequest(); request)
+            {
+                count_limit--;
+                cost_limit -= request->cost;
+                handle(static_cast<Request *>(request));
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+
     void handle(Request * request)
     {
         consumed_cost[request->name] += request->cost;
@@ -181,8 +203,8 @@ public:
 
     void consumed(const String & name, ResourceCost value, ResourceCost error = 0)
     {
-        EXPECT_TRUE(consumed_cost[name] >= value - error);
-        EXPECT_TRUE(consumed_cost[name] <= value + error);
+        EXPECT_GE(consumed_cost[name], value - error);
+        EXPECT_LE(consumed_cost[name], value + error);
         consumed_cost[name] -= value;
     }
 

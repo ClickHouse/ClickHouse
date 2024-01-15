@@ -355,28 +355,64 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
     return function_node;
 }
 
-QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
+QueryTreeNodePtr replaceTableExpressionsWithDummyTables(const QueryTreeNodePtr & query_node,
     const ContextPtr & context,
+    //PlannerContext & planner_context,
     ResultReplacementMap * result_replacement_map)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
     auto table_expressions = extractTableExpressions(query_node_typed.getJoinTree());
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+    size_t subquery_index = 0;
 
     for (auto & table_expression : table_expressions)
     {
         auto * table_node = table_expression->as<TableNode>();
         auto * table_function_node = table_expression->as<TableFunctionNode>();
-        if (!table_node && !table_function_node)
-            continue;
+        auto * subquery_node = table_expression->as<QueryNode>();
+        auto * union_node = table_expression->as<UnionNode>();
 
-        const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-        auto storage_dummy = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
-            storage_snapshot->metadata->getColumns());
+        StoragePtr storage_dummy;
+
+        if (table_node || table_function_node)
+        {
+            const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+
+            storage_dummy
+                = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), ColumnsDescription(storage_snapshot->getColumns(get_column_options)));
+        }
+        else if (subquery_node || union_node)
+        {
+            const auto & subquery_projection_columns
+                = subquery_node ? subquery_node->getProjectionColumns() : union_node->computeProjectionColumns();
+
+            NameSet unique_column_names;
+            NamesAndTypes storage_dummy_columns;
+            storage_dummy_columns.reserve(subquery_projection_columns.size());
+
+            for (const auto & projection_column : subquery_projection_columns)
+            {
+                auto [_, inserted] = unique_column_names.insert(projection_column.name);
+                if (inserted)
+                    storage_dummy_columns.emplace_back(projection_column);
+            }
+
+            storage_dummy = std::make_shared<StorageDummy>(StorageID{"dummy", "subquery_" + std::to_string(subquery_index)}, ColumnsDescription::fromNamesAndTypes(storage_dummy_columns));
+            ++subquery_index;
+        }
+
         auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
 
         if (result_replacement_map)
             result_replacement_map->emplace(table_expression, dummy_table_node);
+
+        dummy_table_node->setAlias(table_expression->getAlias());
+
+        // auto & src_table_expression_data = planner_context.getOrCreateTableExpressionData(table_expression);
+        // auto & dst_table_expression_data = planner_context.getOrCreateTableExpressionData(dummy_table_node);
+
+        // dst_table_expression_data = src_table_expression_data;
 
         replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
     }
@@ -408,8 +444,8 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 
     auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
 
-    query_node->resolveProjectionColumns(projection_columns);
     query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
+    query_node->resolveProjectionColumns(projection_columns);
     query_node->getJoinTree() = table_expression;
     query_node->setIsSubquery(true);
 
@@ -419,8 +455,7 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
 {
     SelectQueryInfo select_query_info;
-    select_query_info.original_query = queryNodeToSelectQuery(query_tree);
-    select_query_info.query = select_query_info.original_query;
+    select_query_info.query = queryNodeToSelectQuery(query_tree);
     select_query_info.query_tree = query_tree;
     select_query_info.planner_context = planner_context;
     return select_query_info;

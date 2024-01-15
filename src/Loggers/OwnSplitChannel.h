@@ -10,7 +10,9 @@
 #ifndef WITHOUT_TEXT_LOG
 namespace DB
 {
-    class TextLog;
+    template <typename> class SystemLogQueue;
+    struct TextLogElement;
+    using TextLogQueue = SystemLogQueue<TextLogElement>;
 }
 #endif
 
@@ -31,7 +33,7 @@ public:
     void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name);
 
 #ifndef WITHOUT_TEXT_LOG
-    void addTextLog(std::shared_ptr<DB::TextLog> log, int max_priority);
+    void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority);
 #endif
 
     void setLevel(const std::string & name, int level);
@@ -45,10 +47,8 @@ private:
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
     std::map<std::string, ExtendedChannelPtrPair> channels;
 
-    std::mutex text_log_mutex;
-
 #ifndef WITHOUT_TEXT_LOG
-    std::weak_ptr<DB::TextLog> text_log;
+    std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = -1;
 #endif
 };

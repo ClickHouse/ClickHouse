@@ -24,6 +24,14 @@
 
 namespace DB
 {
+
+struct CacheDictionaryConfiguration
+{
+    const bool allow_read_expired_keys;
+    const DictionaryLifetime lifetime;
+    const bool use_async_executor = false;
+};
+
 /** CacheDictionary store keys in cache storage and can asynchronous and synchronous updates during keys fetch.
 
     If keys are not found in storage during fetch, dictionary start update operation with update queue.
@@ -58,8 +66,7 @@ public:
         DictionarySourcePtr source_ptr_,
         CacheDictionaryStoragePtr cache_storage_ptr_,
         CacheDictionaryUpdateQueueConfiguration update_queue_configuration_,
-        DictionaryLifetime dict_lifetime_,
-        bool allow_read_expired_keys_);
+        CacheDictionaryConfiguration configuration_);
 
     ~CacheDictionary() override;
 
@@ -99,13 +106,12 @@ public:
                 getSourceAndUpdateIfNeeded()->clone(),
                 cache_storage_ptr,
                 update_queue.getConfiguration(),
-                dict_lifetime,
-                allow_read_expired_keys);
+                configuration);
     }
 
     DictionarySourcePtr getSource() const override;
 
-    const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
+    const DictionaryLifetime & getLifetime() const override { return configuration.lifetime; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
@@ -194,11 +200,9 @@ private:
     CacheDictionaryStoragePtr cache_storage_ptr;
     mutable CacheDictionaryUpdateQueue<dictionary_key_type> update_queue;
 
-    const DictionaryLifetime dict_lifetime;
+    const CacheDictionaryConfiguration configuration;
 
     Poco::Logger * log;
-
-    const bool allow_read_expired_keys;
 
     mutable pcg64 rnd_engine;
 

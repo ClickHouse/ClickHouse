@@ -1,9 +1,11 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateIndexQuery.h>
 
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -16,14 +18,25 @@ namespace ErrorCodes
 {
     extern const int TABLE_IS_READ_ONLY;
     extern const int INCORRECT_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
 BlockIO InterpreterCreateIndexQuery::execute()
 {
+    FunctionNameNormalizer().visit(query_ptr.get());
     auto current_context = getContext();
     const auto & create_index = query_ptr->as<ASTCreateIndexQuery &>();
 
+    if (create_index.unique)
+    {
+        if (!current_context->getSettingsRef().create_index_ignore_unique)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CREATE UNIQUE INDEX is not supported."
+                " SET create_index_ignore_unique=1 to ignore this UNIQUE keyword.");
+        }
+
+    }
     // Noop if allow_create_index_without_type = true. throw otherwise
     if (!create_index.index_decl->as<ASTIndexDeclaration>()->type)
     {
@@ -85,6 +98,15 @@ BlockIO InterpreterCreateIndexQuery::execute()
     table->alter(alter_commands, current_context, alter_lock);
 
     return {};
+}
+
+void registerInterpreterCreateIndexQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCreateIndexQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCreateIndexQuery", create_fn);
 }
 
 }

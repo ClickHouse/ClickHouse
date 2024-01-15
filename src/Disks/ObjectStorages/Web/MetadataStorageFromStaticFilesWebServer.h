@@ -13,13 +13,11 @@ class MetadataStorageFromStaticFilesWebServer final : public IMetadataStorage
 {
 private:
     friend class MetadataStorageFromStaticFilesWebServerTransaction;
+    using FileType = WebObjectStorage::FileType;
 
     const WebObjectStorage & object_storage;
-    std::string root_path;
 
     void assertExists(const std::string & path) const;
-
-    void initializeIfNeeded(const std::string & path) const;
 
 public:
     explicit MetadataStorageFromStaticFilesWebServer(const WebObjectStorage & object_storage_);
@@ -41,8 +39,6 @@ public:
     DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
 
     StoredObjects getStorageObjects(const std::string & path) const override;
-
-    std::string getObjectStorageRootPath() const override { return ""; }
 
     struct stat stat(const String & /* path */) const override { return {}; }
 
@@ -79,7 +75,7 @@ public:
         /// No metadata, no need to create anything.
     }
 
-    void createMetadataFile(const std::string & /* path */, const std::string & /* blob_name */, uint64_t /* size_in_bytes */) override
+    void createMetadataFile(const std::string & /* path */, ObjectStorageKey /* object_key */, uint64_t /* size_in_bytes */) override
     {
         /// Noop
     }

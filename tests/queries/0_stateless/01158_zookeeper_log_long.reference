@@ -1,9 +1,9 @@
 log
-::1	Response	0	Watch	/test/01158/default/rmt/log	0	0	\N	0	0	ZOK	CHILD	CONNECTED		0	0	0	0
-::1	Request	0	Create	/test/01158/default/rmt/log	0	0	\N	0	4	\N	\N	\N		0	0	0	0
-::1	Response	0	Create	/test/01158/default/rmt/log	0	0	\N	0	4	ZOK	\N	\N	/test/01158/default/rmt/log	0	0	0	0
-::1	Request	0	Create	/test/01158/default/rmt/log/log-	0	1	\N	0	1	\N	\N	\N		0	0	0	0
-::1	Response	0	Create	/test/01158/default/rmt/log/log-	0	1	\N	0	1	ZOK	\N	\N	/test/01158/default/rmt/log/log-0000000000	0	0	0	0
+::ffff:127.0.0.1	Response	0	Watch	/test/01158/default/rmt/log	0	0	\N	0	0	ZOK	CHILD	CONNECTED		0	0	0	0
+::ffff:127.0.0.1	Request	0	Create	/test/01158/default/rmt/log	0	0	\N	0	4	\N	\N	\N		0	0	0	0
+::ffff:127.0.0.1	Response	0	Create	/test/01158/default/rmt/log	0	0	\N	0	4	ZOK	\N	\N	/test/01158/default/rmt/log	0	0	0	0
+::ffff:127.0.0.1	Request	0	Create	/test/01158/default/rmt/log/log-	0	1	\N	0	1	\N	\N	\N		0	0	0	0
+::ffff:127.0.0.1	Response	0	Create	/test/01158/default/rmt/log/log-	0	1	\N	0	1	ZOK	\N	\N	/test/01158/default/rmt/log/log-0000000000	0	0	0	0
 parts
 Request	0	Multi		0	0	\N	4	0	\N	\N	\N		0	0	0	0
 Request	0	Create	/test/01158/default/rmt/log/log-	0	1	\N	0	1	\N	\N	\N		0	0	0	0

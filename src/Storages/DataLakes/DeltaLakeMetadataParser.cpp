@@ -157,16 +157,12 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
             if (json.has("add"))
             {
                 const auto path = json["add"]["path"].getString();
-                const auto [_, inserted] = result.insert(fs::path(configuration.getPath()) / path);
-                if (!inserted)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
+                result.insert(fs::path(configuration.getPath()) / path);
             }
             else if (json.has("remove"))
             {
                 const auto path = json["remove"]["path"].getString();
-                const bool erase = result.erase(fs::path(configuration.getPath()) / path);
-                if (!erase)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "File doesn't exist {}", path);
+                result.erase(fs::path(configuration.getPath()) / path);
             }
         }
     }
@@ -281,9 +277,9 @@ struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
 
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
-            format_settings.parquet.import_nested,
             format_settings.parquet.allow_missing_columns,
             /* null_as_default */true,
+            format_settings.date_time_overflow_behavior,
             /* case_insensitive_column_matching */false);
 
         Chunk res;
