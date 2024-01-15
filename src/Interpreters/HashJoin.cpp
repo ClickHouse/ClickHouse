@@ -2202,23 +2202,23 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
+    size_t left_columns_count = left_sample_block.columns();
 
     bool multiple_disjuncts = !table_join->oneDisjunct();
+    if (!multiple_disjuncts)
+    {
+        /// With multiple disjuncts, all keys are in sample_block_with_columns_to_add, so invariant is not held
+        size_t expected_columns_count = left_columns_count + required_right_keys.columns() + sample_block_with_columns_to_add.columns();
+        if (expected_columns_count != result_sample_block.columns())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of columns in result sample block: {} instead of {} ({} + {} + {})",
+                            result_sample_block.columns(), expected_columns_count,
+                            left_columns_count, required_right_keys.columns(), sample_block_with_columns_to_add.columns());
+        }
+    }
 
-    if (multiple_disjuncts)
-    {
-        /// ... calculate `left_columns_count` ...
-        size_t left_columns_count = left_sample_block.columns();
-        auto non_joined = std::make_unique<NotJoinedHash>(*this, max_block_size, multiple_disjuncts);
-        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
-    }
-    else
-    {
-        size_t left_columns_count = left_sample_block.columns();
-        chassert(left_columns_count + required_right_keys.columns() + sample_block_with_columns_to_add.columns() == result_sample_block.columns());
-        auto non_joined = std::make_unique<NotJoinedHash>(*this, max_block_size, multiple_disjuncts);
-        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
-    }
+    auto non_joined = std::make_unique<NotJoinedHash>(*this, max_block_size, multiple_disjuncts);
+    return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
 }
 
 void HashJoin::reuseJoinedData(const HashJoin & join)
