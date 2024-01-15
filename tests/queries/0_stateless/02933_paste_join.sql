@@ -40,3 +40,7 @@ SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(1
 TRUNCATE TABLE test;
 INSERT INTO test SELECT number from numbers(6);
 SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(6) ORDER BY number) SETTINGS joined_subquery_requires_alias = 0;
+SELECT * FROM (SELECT number FROM test PASTE JOIN (Select number FROM numbers(7))) PASTE JOIN (SELECT number FROM numbers(6) PASTE JOIN (SELECT number FROM test)) SETTINGS joined_subquery_requires_alias = 0;
+SELECT * FROM (SELECT number FROM test PASTE JOIN (Select number FROM numbers(7))) PASTE JOIN (SELECT number FROM numbers(6) CROSS JOIN (SELECT number FROM test)) SETTINGS joined_subquery_requires_alias = 0;
+SELECT * FROM (SELECT number FROM test PASTE JOIN (SELECT number FROM test PASTE JOIN (Select number FROM numbers(7)))) PASTE JOIN (SELECT number FROM numbers(6) CROSS JOIN (SELECT number FROM test)) SETTINGS joined_subquery_requires_alias = 0;
+
