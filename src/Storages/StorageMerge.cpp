@@ -278,8 +278,6 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     size_t selected_table_size = 0;
 
-    /// TODO: Find a way to support projections for StorageMerge
-    query_info.ignore_projections = true;
     for (const auto & iterator : database_table_iterators)
     {
         while (iterator->isValid())
@@ -854,7 +852,8 @@ QueryPlan ReadFromMerge::createPlanForTable(
         {
             InterpreterSelectQueryAnalyzer interpreter(modified_query_info.query_tree,
                 modified_context,
-                SelectQueryOptions(processed_stage).ignoreProjections());
+                SelectQueryOptions(processed_stage));
+
             auto & planner = interpreter.getPlanner();
             planner.buildQueryPlanIfNeeded();
             plan = std::move(planner).extractQueryPlan();
@@ -865,7 +864,8 @@ QueryPlan ReadFromMerge::createPlanForTable(
             /// TODO: Find a way to support projections for StorageMerge
             InterpreterSelectQuery interpreter{modified_query_info.query,
                 modified_context,
-                SelectQueryOptions(processed_stage).ignoreProjections()};
+                SelectQueryOptions(processed_stage)};
+
             interpreter.buildQueryPlan(plan);
         }
     }
