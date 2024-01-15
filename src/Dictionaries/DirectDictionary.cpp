@@ -44,7 +44,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     const Strings & attribute_names,
     const DataTypes & result_types,
     const Columns & key_columns,
-    const DataTypes & key_types [[maybe_unused]],
+    const DataTypes & key_types,
     const Columns & default_values_columns) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
@@ -165,6 +165,138 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 }
 
 template <DictionaryKeyType dictionary_key_type>
+Columns DirectDictionary<dictionary_key_type>::getColumnsOrDefaultShortCircuit(
+    const Strings & attribute_names,
+    const DataTypes & attribute_types,
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    IColumn::Filter & default_mask) const
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
+        dict_struct.validateKeyTypes(key_types);
+
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+    DictionaryKeysExtractor<dictionary_key_type> extractor(
+        key_columns, arena_holder.getComplexKeyArena());
+    const auto requested_keys = extractor.extractAllKeys();
+
+    DictionaryStorageFetchRequest request(dict_struct, attribute_names, attribute_types);
+
+    HashMap<KeyType, size_t> key_to_fetched_index;
+    key_to_fetched_index.reserve(requested_keys.size());
+
+    auto fetched_columns_from_storage = request.makeAttributesResultColumns();
+    for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
+    {
+        if (!request.shouldFillResultColumnWithIndex(attribute_index))
+            continue;
+
+        auto & fetched_column_from_storage = fetched_columns_from_storage[attribute_index];
+        fetched_column_from_storage->reserve(requested_keys.size());
+    }
+
+    size_t fetched_key_index = 0;
+
+    Columns block_key_columns;
+    size_t dictionary_keys_size = dict_struct.getKeysNames().size();
+    block_key_columns.reserve(dictionary_keys_size);
+
+    QueryPipeline pipeline(getSourcePipe(key_columns, requested_keys));
+
+    PullingPipelineExecutor executor(pipeline);
+
+    Stopwatch watch;
+    Block block;
+    size_t block_num = 0;
+    size_t rows_num = 0;
+    while (executor.pull(block))
+    {
+        if (!block)
+            continue;
+
+        ++block_num;
+        rows_num += block.rows();
+        convertToFullIfSparse(block);
+
+        /// Split into keys columns and attribute columns
+        for (size_t i = 0; i < dictionary_keys_size; ++i)
+            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
+
+        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(
+            block_key_columns, arena_holder.getComplexKeyArena());
+        auto block_keys = block_keys_extractor.extractAllKeys();
+
+        for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
+        {
+            if (!request.shouldFillResultColumnWithIndex(attribute_index))
+                continue;
+
+            const auto & block_column = block.safeGetByPosition(
+                dictionary_keys_size + attribute_index).column;
+            fetched_columns_from_storage[attribute_index]->insertRangeFrom(
+                *block_column, 0, block_keys.size());
+        }
+
+        for (size_t block_key_index = 0; block_key_index < block_keys.size(); ++block_key_index)
+        {
+            auto block_key = block_keys[block_key_index];
+            key_to_fetched_index[block_key] = fetched_key_index;
+            ++fetched_key_index;
+        }
+
+        block_key_columns.clear();
+    }
+
+    LOG_DEBUG(&Poco::Logger::get("DirectDictionary"),
+        "read {} blocks with {} rows from pipeline in {} ms",
+        block_num, rows_num, watch.elapsedMilliseconds());
+
+    Field value_to_insert;
+
+    size_t requested_keys_size = requested_keys.size();
+
+    auto result_columns = request.makeAttributesResultColumns();
+
+    size_t keys_found = 0;
+
+    for (size_t attribute_index = 0; attribute_index < result_columns.size(); ++attribute_index)
+    {
+        if (!request.shouldFillResultColumnWithIndex(attribute_index))
+            continue;
+
+        auto & result_column = result_columns[attribute_index];
+
+        const auto & fetched_column_from_storage = fetched_columns_from_storage[attribute_index];
+
+        result_column->reserve(requested_keys_size);
+        default_mask.resize(requested_keys_size);
+
+        for (size_t requested_key_index = 0; requested_key_index < requested_keys_size;
+             ++requested_key_index)
+        {
+            const auto requested_key = requested_keys[requested_key_index];
+            const auto * it = key_to_fetched_index.find(requested_key);
+
+            if (it)
+            {
+                fetched_column_from_storage->get(it->getMapped(), value_to_insert);
+                ++keys_found;
+
+                default_mask[requested_key_index] = 1;
+                result_column->insert(value_to_insert);
+            }
+            else
+                default_mask[requested_key_index] = 0;
+        }
+    }
+
+    query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
+
+    return request.filterRequestedColumns(result_columns);
+}
+
+template <DictionaryKeyType dictionary_key_type>
 ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
     const std::string & attribute_name,
     const DataTypePtr & result_type,
@@ -173,6 +305,18 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
     const ColumnPtr & default_values_column) const
 {
     return getColumns({ attribute_name }, { result_type }, key_columns, key_types, { default_values_column }).front();
+}
+
+template <DictionaryKeyType dictionary_key_type>
+ColumnPtr DirectDictionary<dictionary_key_type>::getColumnOrDefaultShortCircuit(
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        IColumn::Filter & default_mask) const
+{
+    return getColumnsOrDefaultShortCircuit({ attribute_name }, { attribute_type },
+        key_columns, key_types, default_mask).front();
 }
 
 template <DictionaryKeyType dictionary_key_type>

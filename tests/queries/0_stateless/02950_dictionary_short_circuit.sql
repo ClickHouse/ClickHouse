@@ -132,7 +132,7 @@ CREATE DICTIONARY ssd_cache_dictionary
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'dictionary_source_table'))
 LIFETIME(MIN 0 MAX 0)
-LAYOUT(SSD_CACHE(PATH '/var/lib/clickhouse/user_files/test_dict'));
+LAYOUT(SSD_CACHE(PATH '/fasttest-workspace/db-fasttest/user_files/test_dict'));
 -- LAYOUT(SSD_CACHE(PATH '/home/ubuntu/custom/user_files/test_dict'));
 
 SELECT 'SSD Cache dictionary';
@@ -142,5 +142,23 @@ SELECT dictGetOrDefault('ssd_cache_dictionary', 'v2', id+1, intDiv(NULL, id))
 FROM dictionary_source_table;
 DROP DICTIONARY ssd_cache_dictionary;
 
+
+DROP DICTIONARY IF EXISTS direct_dictionary;
+CREATE DICTIONARY direct_dictionary
+(
+    id UInt64,
+    v1 String,
+    v2 Nullable(String) DEFAULT NULL
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'dictionary_source_table'))
+LAYOUT(DIRECT());
+
+SELECT 'Direct dictionary';
+SELECT dictGetOrDefault('direct_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), intDiv(1, id)))
+FROM dictionary_source_table;
+SELECT dictGetOrDefault('direct_dictionary', 'v2', id+1, intDiv(NULL, id))
+FROM dictionary_source_table;
+DROP DICTIONARY direct_dictionary;
 
 DROP TABLE dictionary_source_table;

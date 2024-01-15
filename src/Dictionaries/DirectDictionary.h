@@ -75,12 +75,26 @@ public:
         const DataTypes & key_types,
         const Columns & default_values_columns) const override;
 
+    Columns getColumnsOrDefaultShortCircuit(
+        const Strings & attribute_names,
+        const DataTypes & attribute_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        IColumn::Filter & default_mask) const override;
+
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
         const ColumnPtr & default_values_column) const override;
+
+    ColumnPtr getColumnOrDefaultShortCircuit(
+        const std::string& attribute_name,
+        const DataTypePtr & attribute_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        IColumn::Filter & default_mask) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
