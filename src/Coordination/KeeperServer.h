@@ -44,7 +44,7 @@ private:
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
 
-    uint64_t last_log_idx_on_disk = 0;
+    std::atomic<uint64_t> last_log_idx_on_disk = 0;
 
     nuraft::ptr<nuraft::cluster_config> last_local_config;
 

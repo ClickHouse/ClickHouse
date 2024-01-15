@@ -203,6 +203,11 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         return std::unique_lock(lock_);
     }
 
+    bool isCommitInProgress() const
+    {
+        return sm_commit_exec_in_progress_;
+    }
+
     using nuraft::raft_server::raft_server;
 
     // peers are initially marked as responding because at least one cycle
@@ -669,15 +674,24 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 /// until we preprocess all stored logs
                 return nuraft::cb_func::ReturnCode::ReturnNull;
             }
+            case nuraft::cb_func::ProcessReq:
+            {
+                auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
+
+                if (req.get_type() != nuraft::msg_type::append_entries_request)
+                    break;
+
+                /// maybe we got snapshot installed
+                if (state_machine->last_commit_index() >= last_log_idx_on_disk && !raft_instance->isCommitInProgress())
+                    preprocess_logs();
+                /// we don't want to append new logs if we are committing local logs
+                else if (raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk)
+                    keeper_context->local_logs_preprocessed.wait(false);
+
+                break;
+            }
             case nuraft::cb_func::GotAppendEntryReqFromLeader:
             {
-                /// maybe we got snapshot installed
-                if (state_machine->last_commit_index() >= last_log_idx_on_disk)
-                {
-                    preprocess_logs();
-                    break;
-                }
-
                 auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
 
                 if (req.log_entries().empty())
@@ -685,11 +699,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 if (req.get_last_log_idx() < last_log_idx_on_disk)
                     last_log_idx_on_disk = req.get_last_log_idx();
-                /// we don't want to accept too many new logs before we preprocess all the local logs
-                /// because the next log index is decreased on each failure we need to also accept requests when it's near last_log_idx_on_disk
-                /// so the counter is reset on the leader side
-                else if (raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk && req.get_last_log_idx() > last_log_idx_on_disk)
-                    return nuraft::cb_func::ReturnNull;
 
                 break;
             }
