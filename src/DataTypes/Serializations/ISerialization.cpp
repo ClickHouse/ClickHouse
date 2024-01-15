@@ -59,7 +59,7 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
 String ISerialization::Substream::toString() const
 {
     if (named_types.contains(type))
-        return fmt::format("{}({}))", type, name_of_substream);
+        return fmt::format("{}({})", type, name_of_substream);
 
     return String(magic_enum::enum_name(type));
 }

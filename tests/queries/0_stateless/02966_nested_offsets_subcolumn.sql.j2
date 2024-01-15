@@ -1,3 +1,8 @@
+
+{% for engine in ['Memory', 'Log', 'TinyLog', 'MergeTree ORDER BY (a) SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 2000'] -%}
+
+SELECT '--- {{ engine }} ---';
+
 DROP TABLE IF EXISTS t_nested_offsets;
 
 CREATE TABLE t_nested_offsets
@@ -6,11 +11,9 @@ CREATE TABLE t_nested_offsets
     `e.n` Array(String),
     `e.t` Array(Int64)
 )
-ENGINE = MergeTree
-ORDER BY (a)
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 2000;
+ENGINE = Log;
 
-SYSTEM STOP MERGES;
+SYSTEM STOP MERGES t_nested_offsets;
 
 INSERT INTO t_nested_offsets SELECT number, range(number % 10), range(number % 10) FROM numbers(1000);
 
@@ -29,3 +32,5 @@ SELECT sum(length(e.n)) FROM t_nested_offsets SETTINGS optimize_functions_to_sub
 SELECT sum(length(e.n)), sum(length(e.t)) FROM t_nested_offsets SETTINGS optimize_functions_to_subcolumns = 1;
 
 DROP TABLE t_nested_offsets;
+
+{% endfor -%}

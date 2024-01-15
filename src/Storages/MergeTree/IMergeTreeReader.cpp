@@ -147,8 +147,7 @@ bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage
     if (!data_part_info_for_read->isWidePart() || subcolumn_name != "size0")
         return false;
 
-    auto nested_subcolumn = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_storage);
-    return nested_subcolumn && isNested(nested_subcolumn->getTypeInStorage()) && nested_subcolumn->isSubcolumn() && isArray(nested_subcolumn->type);
+    return Nested::isSubcolumnOfNested(name_in_storage, part_columns);
 }
 
 String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
@@ -159,10 +158,12 @@ String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_co
     if (alter_conversions->isColumnRenamed(name_in_storage))
         name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
 
+    /// A special case when we read subcolumn of shared offsets of Nested.
+    /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
     if (isSubcolumnOffsetsOfNested(name_in_storage, subcolumn_name))
         name_in_storage = Nested::splitName(name_in_storage).first;
 
-    return Nested::concatenateName(name_in_storage, required_column.getSubcolumnName());
+    return Nested::concatenateName(name_in_storage, subcolumn_name);
 }
 
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
