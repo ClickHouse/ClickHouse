@@ -415,7 +415,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 }
 
 
-std::optional<AuthResult>
+std::optional<UUID>
 MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address,
                                         const ExternalAuthenticators & external_authenticators,
                                         bool throw_if_user_not_exists,
@@ -426,14 +426,14 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
     {
         const auto & storage = (*storages)[i];
         bool is_last_storage = (i == storages->size() - 1);
-        auto auth_result = storage->authenticate(credentials, address, external_authenticators,
+        auto id = storage->authenticate(credentials, address, external_authenticators,
                                         (throw_if_user_not_exists && is_last_storage),
                                         allow_no_password, allow_plaintext_password);
-        if (auth_result)
+        if (id)
         {
             std::lock_guard lock{mutex};
-            ids_cache.set(auth_result->user_id, storage);
-            return auth_result;
+            ids_cache.set(*id, storage);
+            return id;
         }
     }
 

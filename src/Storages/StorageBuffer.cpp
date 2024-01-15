@@ -1,6 +1,7 @@
 #include <boost/range/algorithm_ext/erase.hpp>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
@@ -165,8 +166,7 @@ public:
         : ISource(storage_snapshot->getSampleBlockForColumns(column_names_))
         , column_names_and_types(storage_snapshot->getColumnsByNames(
             GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
-        , buffer(buffer_)
-        , metadata_version(storage_snapshot->metadata->metadata_version) {}
+        , buffer(buffer_) {}
 
     String getName() const override { return "Buffer"; }
 
@@ -181,7 +181,7 @@ protected:
 
         std::unique_lock lock(buffer.lockForReading());
 
-        if (!buffer.data.rows() || buffer.metadata_version != metadata_version)
+        if (!buffer.data.rows())
             return res;
 
         Columns columns;
@@ -199,7 +199,6 @@ protected:
 private:
     NamesAndTypesList column_names_and_types;
     StorageBuffer::Buffer & buffer;
-    int32_t metadata_version;
     bool has_been_read = false;
 };
 
@@ -212,6 +211,8 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
+        /// TODO: Find a way to support projections for StorageBuffer
+        query_info.ignore_projections = true;
         const auto & destination_metadata = destination->getInMemoryMetadataPtr();
         return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
     }
@@ -335,12 +336,12 @@ void StorageBuffer::read(
             pipes_from_buffers.emplace_back(std::make_shared<BufferSource>(column_names, buf, storage_snapshot));
 
         pipe_from_buffers = Pipe::unitePipes(std::move(pipes_from_buffers));
-        if (query_info.input_order_info)
+        if (query_info.getInputOrderInfo())
         {
             /// Each buffer has one block, and it not guaranteed that rows in each block are sorted by order keys
             pipe_from_buffers.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<PartialSortingTransform>(header, query_info.input_order_info->sort_description_for_merging, 0);
+                return std::make_shared<PartialSortingTransform>(header, query_info.getInputOrderInfo()->sort_description_for_merging, 0);
             });
         }
     }
@@ -358,7 +359,7 @@ void StorageBuffer::read(
         /// TODO: Find a way to support projections for StorageBuffer
         auto interpreter = InterpreterSelectQuery(
                 query_info.query, local_context, std::move(pipe_from_buffers),
-                SelectQueryOptions(processed_stage));
+                SelectQueryOptions(processed_stage).ignoreProjections());
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(buffers_plan);
     }
@@ -615,7 +616,7 @@ public:
             least_busy_buffer = &storage.buffers[start_shard_num];
             least_busy_lock = least_busy_buffer->lockForWriting();
         }
-        insertIntoBuffer(block, *least_busy_buffer, metadata_snapshot->metadata_version);
+        insertIntoBuffer(block, *least_busy_buffer);
         least_busy_lock.unlock();
 
         storage.reschedule();
@@ -624,15 +625,14 @@ private:
     StorageBuffer & storage;
     StorageMetadataPtr metadata_snapshot;
 
-    void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, int32_t metadata_version)
+    void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer)
     {
         time_t current_time = time(nullptr);
 
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
 
-        if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()) ||
-            buffer.metadata_version != metadata_version)
+        if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()))
         {
             /** If, after inserting the buffer, the constraints are exceeded, then we will reset the buffer.
               * This also protects against unlimited consumption of RAM, since if it is impossible to write to the table,
@@ -640,7 +640,6 @@ private:
               */
 
             storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
-            buffer.metadata_version = metadata_version;
         }
 
         if (!buffer.first_write_time)
@@ -660,6 +659,15 @@ private:
 SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
 {
     return std::make_shared<BufferSink>(*this, metadata_snapshot);
+}
+
+
+bool StorageBuffer::mayBenefitFromIndexForIn(
+    const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
+{
+    if (auto destination = getDestinationTable())
+        return destination->mayBenefitFromIndexForIn(left_in_operand, query_context, destination->getInMemoryMetadataPtr());
+    return false;
 }
 
 
@@ -1055,12 +1063,13 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     checkAlterIsPossible(params, local_context);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    /// Flush buffers to the storage because BufferSource skips buffers with old metadata_version.
+    /// Flush all buffers to storages, so that no non-empty blocks of the old
+    /// structure remain. Structure of empty blocks will be updated during first
+    /// insert.
     optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
-    new_metadata.metadata_version += 1;
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }

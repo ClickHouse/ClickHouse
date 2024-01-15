@@ -89,7 +89,7 @@ void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
     else
         out << " before: " << quote << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
-    throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected {}", out.str());
+    throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected {}", out.str());
 }
 
 
@@ -562,7 +562,7 @@ static ReturnType readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
     if (buf.eof() || *buf.position() != quote)
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
+            throw ParsingException(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
                 "Cannot parse quoted string: expected opening quote '{}', got '{}'",
                 std::string{quote}, buf.eof() ? "EOF" : std::string{*buf.position()});
         else
@@ -608,7 +608,7 @@ static ReturnType readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
     }
 
     if constexpr (throw_exception)
-        throw Exception(ErrorCodes::CANNOT_PARSE_QUOTED_STRING, "Cannot parse quoted string: expected closing quote");
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_QUOTED_STRING, "Cannot parse quoted string: expected closing quote");
     else
         return ReturnType(false);
 }
@@ -784,7 +784,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             return;
         }
 
-        /// Unquoted case. Look for delimiter or \r (followed by '\n') or \n.
+        /// Unquoted case. Look for delimiter or \r or \n.
         while (!buf.eof())
         {
             char * next_pos = buf.position();
@@ -832,18 +832,6 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             if (!buf.hasPendingData())
                 continue;
-
-            /// Check for single '\r' not followed by '\n'
-            /// We should not stop in this case.
-            if (*buf.position() == '\r' && !settings.allow_cr_end_of_line)
-            {
-                ++buf.position();
-                if (!buf.eof() && *buf.position() != '\n')
-                {
-                    s.push_back('\r');
-                    continue;
-                }
-            }
 
             if constexpr (WithResize<Vector>)
             {
@@ -958,7 +946,7 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
     auto error = [](FormatStringHelper<> message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw Exception(code, std::move(message));
+            throw ParsingException(code, std::move(message));
         return ReturnType(false);
     };
 
@@ -1001,20 +989,20 @@ template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 template bool readJSONStringInto<String, bool>(String & s, ReadBuffer & buf);
 
-template <typename Vector, typename ReturnType, char opening_bracket, char closing_bracket>
-ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
+template <typename Vector, typename ReturnType>
+ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     auto error = [](FormatStringHelper<> message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw Exception(code, std::move(message));
+            throw ParsingException(code, std::move(message));
         return ReturnType(false);
     };
 
-    if (buf.eof() || *buf.position() != opening_bracket)
-        return error("JSON object/array should start with corresponding opening bracket", ErrorCodes::INCORRECT_DATA);
+    if (buf.eof() || *buf.position() != '{')
+        return error("JSON should start from opening curly bracket", ErrorCodes::INCORRECT_DATA);
 
     s.push_back(*buf.position());
     ++buf.position();
@@ -1024,7 +1012,7 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\\', opening_bracket, closing_bracket, '"'>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<'\\', '{', '}', '"'>(buf.position(), buf.buffer().end());
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
@@ -1047,37 +1035,22 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
 
         if (*buf.position() == '"')
             quotes = !quotes;
-        else if (!quotes) // can be only opening_bracket or closing_bracket
-            balance += *buf.position() == opening_bracket ? 1 : -1;
+        else if (!quotes) // can be only '{' or '}'
+            balance += *buf.position() == '{' ? 1 : -1;
 
         ++buf.position();
 
         if (balance == 0)
             return ReturnType(true);
 
-        if (balance < 0)
+        if (balance <    0)
             break;
     }
 
-    return error("JSON object/array should have equal number of opening and closing brackets", ErrorCodes::INCORRECT_DATA);
-}
-
-template <typename Vector, typename ReturnType>
-ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
-{
-    return readJSONObjectOrArrayPossiblyInvalid<Vector, ReturnType, '{', '}'>(s, buf);
+    return error("JSON should have equal number of opening and closing brackets", ErrorCodes::INCORRECT_DATA);
 }
 
 template void readJSONObjectPossiblyInvalid<String>(String & s, ReadBuffer & buf);
-template void readJSONObjectPossiblyInvalid<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-
-template <typename Vector>
-void readJSONArrayInto(Vector & s, ReadBuffer & buf)
-{
-    readJSONObjectOrArrayPossiblyInvalid<Vector, void, '[', ']'>(s, buf);
-}
-
-template void readJSONArrayInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
@@ -1151,7 +1124,7 @@ template void readDateTextFallback<void>(LocalDate &, ReadBuffer &);
 template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &);
 
 
-template <typename ReturnType, bool dt64_mode>
+template <typename ReturnType>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -1167,29 +1140,10 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     char * s_pos = s;
 
     /** Read characters, that could represent unix timestamp.
-      * Only unix timestamp of at least 5 characters is supported by default, exception is thrown for a shorter one
-      * (unless parsing a string like '1.23' or '-12': there is no ambiguity, it is a DT64 timestamp).
+      * Only unix timestamp of at least 5 characters is supported.
       * Then look at 5th character. If it is a number - treat whole as unix timestamp.
       * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
       */
-
-    int negative_multiplier = 1;
-
-    if (!buf.eof() && *buf.position() == '-')
-    {
-        if constexpr (dt64_mode)
-        {
-            negative_multiplier = -1;
-            ++buf.position();
-        }
-        else
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
-            else
-                return false;
-        }
-    }
 
     /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
     while (s_pos < s + date_time_broken_down_length && !buf.eof() && isNumericASCII(*buf.position()))
@@ -1200,8 +1154,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     }
 
     /// 2015-01-01 01:02:03 or 2015-01-01
-    /// if negative, it is a timestamp with no ambiguity
-    if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
+    if (s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
         const auto already_read_length = s_pos - s;
         const size_t remaining_date_size = date_broken_down_length - already_read_length;
@@ -1212,7 +1165,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             s_pos[size] = 0;
 
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", s);
+                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", s);
             else
                 return false;
         }
@@ -1235,7 +1188,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
                 s_pos[size] = 0;
 
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", s);
+                    throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", s);
                 else
                     return false;
             }
@@ -1252,34 +1205,27 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     }
     else
     {
-        datetime = 0;
-        bool too_short = s_pos - s <= 4;
-
-        if (!too_short || dt64_mode)
+        if (s_pos - s >= 5)
         {
             /// Not very efficient.
+            datetime = 0;
             for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
                 datetime = datetime * 10 + *digit_pos - '0';
         }
-        datetime *= negative_multiplier;
-
-        if (too_short && negative_multiplier != -1)
+        else
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse datetime");
             else
                 return false;
         }
-
     }
 
     return ReturnType(true);
 }
 
-template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &);
-template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &);
+template void readDateTimeTextFallback<void>(time_t &, ReadBuffer &, const DateLUTImpl &);
+template bool readDateTimeTextFallback<bool>(time_t &, ReadBuffer &, const DateLUTImpl &);
 
 
 void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
@@ -1382,12 +1328,8 @@ void skipJSONField(ReadBuffer & buf, StringRef name_of_field)
     }
     else
     {
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Cannot read JSON field here: '{}'. Unexpected symbol '{}'{}",
-            String(buf.position(), std::min(buf.available(), size_t(10))),
-            std::string(1, *buf.position()),
-            name_of_field.empty() ? "" : " for key " + name_of_field.toString());
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol '{}' for key '{}'",
+                        std::string(*buf.position(), 1), name_of_field.toString());
     }
 }
 
@@ -1595,7 +1537,7 @@ void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delim
         if (skip_spaces)
             skipWhitespaceIfAny(buf);
 
-        if (buf.eof() || checkString(row_between_delimiter, buf))
+        if (checkString(row_between_delimiter, buf))
             break;
     }
 }
@@ -1757,7 +1699,7 @@ void readQuotedField(String & s, ReadBuffer & buf)
 void readJSONField(String & s, ReadBuffer & buf)
 {
     s.clear();
-    auto parse_func = [](ReadBuffer & in) { skipJSONField(in, ""); };
+    auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
     readParsedValueInto(s, buf, parse_func);
 }
 

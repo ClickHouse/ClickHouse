@@ -1,5 +1,3 @@
-#include <base/getFQDNOrHostName.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -93,7 +91,6 @@ NamesAndTypesList PartLogElement::getNamesAndTypes()
     ColumnsWithTypeAndName columns_with_type_and_name;
 
     return {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"query_id", std::make_shared<DataTypeString>()},
         {"event_type", std::move(event_type_datatype)},
         {"merge_reason", std::move(merge_reason_datatype)},
@@ -147,7 +144,6 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
     columns[i++]->insert(query_id);
     columns[i++]->insert(event_type);
     columns[i++]->insert(merge_reason);
@@ -245,7 +241,6 @@ bool PartLog::addNewParts(
             elem.part_type = part->getType();
 
             elem.bytes_compressed_on_disk = part->getBytesOnDisk();
-            elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
             elem.rows = part->rows_count;
 
             elem.error = static_cast<UInt16>(execution_status.code);

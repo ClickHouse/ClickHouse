@@ -53,12 +53,10 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
-    const ConditionEstimator & estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
     Poco::Logger * log_)
-    : estimator(estimator_)
-    , table_columns{collections::map<std::unordered_set>(
+    : table_columns{collections::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
@@ -92,7 +90,6 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
     where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = select.final();
-    where_optimizer_context.use_statistic = context->getSettingsRef().allow_statistic_optimize;
 
     RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
     RPNBuilderTreeNode node(select.where().get(), tree_context);
@@ -123,7 +120,6 @@ std::optional<MergeTreeWhereOptimizer::FilterActionsOptimizeResult> MergeTreeWhe
     where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
     where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = is_final;
-    where_optimizer_context.use_statistic = context->getSettingsRef().allow_statistic_optimize;
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode node(&filter_dag->findInOutputs(filter_column_name), tree_context);
@@ -267,16 +263,6 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
 
         if (cond.viable)
             cond.good = isConditionGood(node, table_columns);
-
-        if (where_optimizer_context.use_statistic)
-        {
-            cond.good = cond.viable;
-
-            cond.selectivity = estimator.estimateSelectivity(node);
-
-            if (node.getASTNode() != nullptr)
-                LOG_TEST(log, "Condition {} has selectivity {}", node.getASTNode()->dumpTree(), cond.selectivity);
-        }
 
         if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
         {

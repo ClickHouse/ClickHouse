@@ -29,7 +29,6 @@ public:
         bool use_average_block_sizes = false,
         bool cleanup = false);
 
-    const char * getName() const override { return "ReplacingSortedAlgorithm"; }
     Status merge() override;
 
 private:

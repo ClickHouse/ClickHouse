@@ -160,12 +160,9 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
 }
 
 template <typename DecimalType>
-static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type, bool is_fixed)
+static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type)
 {
     auto logical_type = root_node->logicalType();
-    size_t fixed_size = 0;
-    if (is_fixed)
-        fixed_size = root_node->fixedSize();
     const auto & decimal_type = assert_cast<const DecimalType &>(*target_type);
     if (decimal_type.getScale() != static_cast<UInt32>(logical_type.scale()) || decimal_type.getPrecision() != static_cast<UInt32>(logical_type.precision()))
         throw Exception(
@@ -177,18 +174,14 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
             decimal_type.getScale(),
             decimal_type.getPrecision());
 
-    return [tmp = std::vector<uint8_t>(), target_type, fixed_size](IColumn & column, avro::Decoder & decoder) mutable
+    return [tmp = std::string(), target_type](IColumn & column, avro::Decoder & decoder) mutable
     {
         static constexpr size_t field_type_size = sizeof(typename DecimalType::FieldType);
-        if (fixed_size)
-            tmp = decoder.decodeFixed(fixed_size);
-        else
-            tmp = decoder.decodeBytes();
-
-        if (tmp.size() > field_type_size || tmp.empty())
-            throw Exception(
+        decoder.decodeString(tmp);
+        if (tmp.size() > field_type_size)
+            throw ParsingException(
                 ErrorCodes::CANNOT_PARSE_UUID,
-                "Cannot parse type {}, expected non-empty binary data with size equal to or less than {}, got {}",
+                "Cannot parse type {}, expected binary data with size equal to or less than {}, got {}",
                 target_type->getName(),
                 field_type_size,
                 tmp.size());
@@ -196,12 +189,10 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
         {
             /// Extent value to required size by adding padding.
             /// Check if value is negative or positive.
-            std::vector<uint8_t> padding;
             if (tmp[0] & 128)
-                padding = std::vector<uint8_t>(field_type_size - tmp.size(), 0xff);
+                tmp = std::string(field_type_size - tmp.size(), 0xff) + tmp;
             else
-                padding = std::vector<uint8_t>(field_type_size - tmp.size(), 0);
-            tmp.insert(tmp.begin(), padding.begin(), padding.end());
+                tmp = std::string(field_type_size - tmp.size(), 0) + tmp;
         }
 
         typename DecimalType::FieldType field;
@@ -274,7 +265,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 {
                     decoder.decodeString(tmp);
                     if (tmp.length() != 36)
-                        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", tmp);
+                        throw ParsingException(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", tmp);
 
                     const UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.length()});
                     assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
@@ -291,15 +282,15 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 };
             }
             if (target.isDecimal32())
-                return createDecimalDeserializeFn<DataTypeDecimal32>(root_node, target_type, false);
+                return createDecimalDeserializeFn<DataTypeDecimal32>(root_node, target_type);
             if (target.isDecimal64())
-                return createDecimalDeserializeFn<DataTypeDecimal64>(root_node, target_type, false);
+                return createDecimalDeserializeFn<DataTypeDecimal64>(root_node, target_type);
             if (target.isDecimal128())
-                return createDecimalDeserializeFn<DataTypeDecimal128>(root_node, target_type, false);
+                return createDecimalDeserializeFn<DataTypeDecimal128>(root_node, target_type);
             if (target.isDecimal256())
-                return createDecimalDeserializeFn<DataTypeDecimal256>(root_node, target_type, false);
+                return createDecimalDeserializeFn<DataTypeDecimal256>(root_node, target_type);
             if (target.isDateTime64())
-                return createDecimalDeserializeFn<DataTypeDateTime64>(root_node, target_type, false);
+                return createDecimalDeserializeFn<DataTypeDateTime64>(root_node, target_type);
             break;
         case avro::AVRO_INT:
             if (target_type->isValueRepresentedByNumber())
@@ -524,29 +515,6 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     return true;
                 };
             }
-            if (target.isUUID())
-            {
-                return [tmp = std::vector<uint8_t>(), fixed_size](IColumn & column, avro::Decoder & decoder) mutable
-                {
-                    decoder.decodeFixed(fixed_size, tmp);
-                    if (tmp.size() != 36)
-                        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse UUID from type Fixed, because it's size ({}) is not equal to the size of UUID (36)", fixed_size);
-
-                    const UUID uuid = parseUUID({reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size()});
-                    assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
-                    return true;
-                };
-            }
-            if (target.isDecimal32())
-                return createDecimalDeserializeFn<DataTypeDecimal32>(root_node, target_type, true);
-            if (target.isDecimal64())
-                return createDecimalDeserializeFn<DataTypeDecimal64>(root_node, target_type, true);
-            if (target.isDecimal128())
-                return createDecimalDeserializeFn<DataTypeDecimal128>(root_node, target_type, true);
-            if (target.isDecimal256())
-                return createDecimalDeserializeFn<DataTypeDecimal256>(root_node, target_type, true);
-            if (target.isDateTime64())
-                return createDecimalDeserializeFn<DataTypeDateTime64>(root_node, target_type, true);
             break;
         }
         case avro::AVRO_SYMBOLIC:
@@ -983,8 +951,8 @@ private:
         {
             try
             {
-                Poco::URI url(base_url, base_url.getPath() + "/schemas/ids/" + std::to_string(id));
-                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Fetching schema id = {} from url {}", id, url.toString());
+                Poco::URI url(base_url, "/schemas/ids/" + std::to_string(id));
+                LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Fetching schema id = {}", id);
 
                 /// One second for connect/send/receive. Just in case.
                 ConnectionTimeouts timeouts({1, 0}, {1, 0}, {1, 0});
@@ -1242,16 +1210,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ClickHouse supports only 8 and 16-bit Enum.");
         }
         case avro::Type::AVRO_FIXED:
-        {
-            auto logical_type = node->logicalType();
-            if (logical_type.type() == avro::LogicalType::UUID)
-                return std::make_shared<DataTypeUUID>();
-
-            if (logical_type.type() == avro::LogicalType::DECIMAL)
-                return createDecimal<DataTypeDecimal>(logical_type.precision(), logical_type.scale());
-
             return std::make_shared<DataTypeFixedString>(node->fixedSize());
-        }
         case avro::Type::AVRO_ARRAY:
             return std::make_shared<DataTypeArray>(avroNodeToDataType(node->leafAt(0)));
         case avro::Type::AVRO_NULL:
@@ -1289,7 +1248,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
         case avro::Type::AVRO_MAP:
             return std::make_shared<DataTypeMap>(avroNodeToDataType(node->leafAt(0)), avroNodeToDataType(node->leafAt(1)));
         default:
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.", nodeName(node));
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.");
     }
 }
 
@@ -1303,8 +1262,6 @@ void registerInputFormatAvro(FormatFactory & factory)
     {
         return std::make_shared<AvroRowInputFormat>(sample, buf, params, settings);
     });
-
-    factory.markFormatSupportsSubsetOfColumns("Avro");
 
     factory.registerInputFormat("AvroConfluent",[](
         ReadBuffer & buf,

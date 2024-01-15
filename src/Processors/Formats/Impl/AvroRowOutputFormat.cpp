@@ -27,13 +27,12 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 
-#include <Common/re2.h>
-
 #include <DataFile.hh>
 #include <Encoder.hh>
 #include <Node.hh>
 #include <Schema.hh>
 
+#include <re2/re2.h>
 #include <boost/algorithm/string.hpp>
 
 namespace DB

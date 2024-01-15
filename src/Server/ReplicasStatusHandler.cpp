@@ -22,22 +22,16 @@ ReplicasStatusHandler::ReplicasStatusHandler(IServer & server) : WithContext(ser
 {
 }
 
-void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
         HTMLForm params(getContext()->getSettingsRef(), request);
 
-        const auto & config = getContext()->getConfigRef();
+        /// Even if lag is small, output detailed information about the lag.
+        bool verbose = params.get("verbose", "") == "1";
 
         const MergeTreeSettings & settings = getContext()->getReplicatedMergeTreeSettings();
-
-        /// Even if lag is small, output detailed information about the lag.
-        bool verbose = false;
-        bool enable_verbose = config.getBool("enable_verbose_replicas_status", true);
-
-        if (params.get("verbose", "") == "1" && enable_verbose)
-            verbose = true;
 
         bool ok = true;
         WriteBufferFromOwnString message;
@@ -84,14 +78,13 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
         }
 
-        const auto & server_settings = getContext()->getServerSettings();
-        setResponseDefaultHeaders(response, server_settings.keep_alive_timeout.totalSeconds());
+        const auto & config = getContext()->getConfigRef();
+        setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", 10));
 
         if (!ok)
         {
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
-            if (enable_verbose)
-                verbose = true;
+            verbose = true;
         }
 
         if (verbose)
@@ -113,7 +106,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             if (!response.sent())
             {
                 /// We have not sent anything yet and we don't even know if we need to compress response.
-                *response.send() << getCurrentExceptionMessage(false) << '\n';
+                *response.send() << getCurrentExceptionMessage(false) << std::endl;
             }
         }
         catch (...)

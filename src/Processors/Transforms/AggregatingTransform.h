@@ -13,7 +13,6 @@ namespace CurrentMetrics
 {
     extern const Metric DestroyAggregatesThreads;
     extern const Metric DestroyAggregatesThreadsActive;
-    extern const Metric DestroyAggregatesThreadsScheduled;
 }
 
 namespace DB
@@ -96,7 +95,6 @@ struct ManyAggregatedData
             const auto pool = std::make_unique<ThreadPool>(
                 CurrentMetrics::DestroyAggregatesThreads,
                 CurrentMetrics::DestroyAggregatesThreadsActive,
-                CurrentMetrics::DestroyAggregatesThreadsScheduled,
                 variants.size());
 
             for (auto && variant : variants)
@@ -205,7 +203,7 @@ private:
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
 
-    std::atomic<bool> is_generate_initialized = false;
+    bool is_generate_initialized = false;
     bool is_consume_finished = false;
     bool is_pipeline_created = false;
 

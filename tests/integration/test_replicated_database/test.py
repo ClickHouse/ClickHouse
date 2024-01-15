@@ -507,7 +507,7 @@ def test_alters_from_different_replicas(started_cluster):
 
     settings = {"distributed_ddl_task_timeout": 5}
     assert (
-        "There are 1 unfinished hosts (0 of them are currently executing the task"
+        "There are 1 unfinished hosts (0 of them are currently active)"
         in competing_node.query_and_get_error(
             "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added0 UInt32;",
             settings=settings,
@@ -799,7 +799,7 @@ def test_recover_staled_replica(started_cluster):
             settings=settings,
         )
         main_node.query_with_retry(
-            "ALTER TABLE recover.mv1 MODIFY QUERY SELECT m as n FROM recover.rmt1",
+            "ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1",
             settings=settings,
         )
         main_node.query_with_retry(
@@ -1351,48 +1351,3 @@ def test_replicated_table_structure_alter(started_cluster):
     assert "1\t2\t3\t0\n1\t2\t3\t4\n" == dummy_node.query(
         "SELECT * FROM table_structure.rmt ORDER BY k"
     )
-
-
-def test_modify_comment(started_cluster):
-    main_node.query(
-        "CREATE DATABASE modify_comment_db ENGINE = Replicated('/test/modify_comment', 'shard1', 'replica' || '1');"
-    )
-
-    dummy_node.query(
-        "CREATE DATABASE modify_comment_db ENGINE = Replicated('/test/modify_comment', 'shard1', 'replica' || '2');"
-    )
-
-    main_node.query(
-        "CREATE TABLE modify_comment_db.modify_comment_table (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree ORDER BY k PARTITION BY toYYYYMM(d);"
-    )
-
-    def restart_verify_not_readonly():
-        main_node.restart_clickhouse()
-        assert (
-            main_node.query(
-                "SELECT is_readonly FROM system.replicas WHERE table = 'modify_comment_table'"
-            )
-            == "0\n"
-        )
-        dummy_node.restart_clickhouse()
-        assert (
-            dummy_node.query(
-                "SELECT is_readonly FROM system.replicas WHERE table = 'modify_comment_table'"
-            )
-            == "0\n"
-        )
-
-    main_node.query(
-        "ALTER TABLE modify_comment_db.modify_comment_table COMMENT COLUMN d 'Some comment'"
-    )
-
-    restart_verify_not_readonly()
-
-    main_node.query(
-        "ALTER TABLE modify_comment_db.modify_comment_table MODIFY COMMENT 'Some error comment'"
-    )
-
-    restart_verify_not_readonly()
-
-    main_node.query("DROP DATABASE modify_comment_db SYNC")
-    dummy_node.query("DROP DATABASE modify_comment_db SYNC")

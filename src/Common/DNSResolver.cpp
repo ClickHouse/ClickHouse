@@ -310,8 +310,8 @@ static String cacheElemToString(const Poco::Net::IPAddress & addr) { return addr
 
 template <typename UpdateF, typename ElemsT>
 bool DNSResolver::updateCacheImpl(
-    UpdateF && update_func, // NOLINT(cppcoreguidelines-missing-std-forward)
-    ElemsT && elems, // NOLINT(cppcoreguidelines-missing-std-forward)
+    UpdateF && update_func,
+    ElemsT && elems,
     UInt32 max_consecutive_failures,
     FormatStringHelper<String> notfound_log_msg,
     FormatStringHelper<String> dropped_log_msg)

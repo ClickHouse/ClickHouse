@@ -93,7 +93,7 @@ public:
     ClusterConfigPtr getLatestConfigFromLogStore() const;
 
     // TODO (myrrc) This should be removed once "reconfig" is stabilized
-    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettingsPtr & coordination_settings) const;
+    ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const;
 
 private:
     const String & getOldServerStatePath();
@@ -121,7 +121,6 @@ private:
     mutable std::mutex configuration_wrapper_mutex;
     KeeperConfigurationWrapper configuration_wrapper TSA_GUARDED_BY(configuration_wrapper_mutex);
 
-    bool log_store_initialized = false;
     nuraft::ptr<KeeperLogStore> log_store;
 
     const String server_state_file_name;
@@ -132,7 +131,7 @@ private:
 
 public:
     /// Parse configuration from xml config.
-    KeeperConfigurationWrapper parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us, bool enable_async_replication) const;
+    KeeperConfigurationWrapper parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const;
 };
 
 }

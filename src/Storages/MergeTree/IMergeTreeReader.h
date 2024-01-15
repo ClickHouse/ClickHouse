@@ -3,6 +3,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
@@ -45,7 +46,7 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows, size_t block_number = 0) const;
+    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
@@ -86,13 +87,13 @@ protected:
     /// Actual serialization of columns in part.
     Serializations serializations;
 
-    UncompressedCache * const uncompressed_cache;
-    MarkCache * const mark_cache;
+    UncompressedCache * uncompressed_cache;
+    MarkCache * mark_cache;
 
     MergeTreeReaderSettings settings;
 
-    const StorageSnapshotPtr storage_snapshot;
-    const MarkRanges all_mark_ranges;
+    StorageSnapshotPtr storage_snapshot;
+    MarkRanges all_mark_ranges;
 
     /// Position and level (of nesting).
     using ColumnNameLevel = std::optional<std::pair<String, size_t>>;

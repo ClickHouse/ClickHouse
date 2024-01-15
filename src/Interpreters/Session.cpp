@@ -112,7 +112,8 @@ public:
                 throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session {} not found", session_id);
 
             /// Create a new session from current context.
-            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, global_context, timeout, *this))).first;
+            auto context = Context::createCopy(global_context);
+            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, context, timeout, *this))).first;
             const auto & session = it->second;
 
             if (!thread.joinable())
@@ -127,7 +128,7 @@ public:
             /// Use existing session.
             const auto & session = it->second;
 
-            LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
+            LOG_TEST(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
             if (!session.unique())
                 throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
@@ -349,10 +350,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host());
-        user_id = auth_result.user_id;
-        settings_from_auth_server = auth_result.settings;
-
+        user_id = global_context->getAccessControl().authenticate(credentials_, address.host());
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
     }
@@ -522,10 +520,6 @@ ContextMutablePtr Session::makeSessionContext()
         *user_id,
         {},
         session_context->getSettingsRef().max_sessions_for_user);
-
-    // Use QUERY source as for SET query for a session
-    session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
-    session_context->applySettingsChanges(settings_from_auth_server);
 
     recordLoginSucess(session_context);
 
@@ -702,10 +696,6 @@ void Session::releaseSessionID()
 {
     if (!named_session)
         return;
-
-    prepared_client_info = getClientInfo();
-    session_context.reset();
-
     named_session->release();
     named_session = nullptr;
 }

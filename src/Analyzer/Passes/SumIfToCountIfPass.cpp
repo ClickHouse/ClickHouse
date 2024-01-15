@@ -157,8 +157,10 @@ private:
     static inline void resolveAsCountIfAggregateFunction(FunctionNode & function_node, const DataTypePtr & argument_type)
     {
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(
-            "countIf", NullsAction::EMPTY, {argument_type}, function_node.getAggregateFunction()->getParameters(), properties);
+        auto aggregate_function = AggregateFunctionFactory::instance().get("countIf",
+            {argument_type},
+            function_node.getAggregateFunction()->getParameters(),
+            properties);
 
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
     }

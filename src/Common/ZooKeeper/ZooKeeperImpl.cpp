@@ -1,5 +1,3 @@
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/thread_local_rng.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 
 #include <IO/Operators.h>
@@ -18,9 +16,6 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 
 #include "Coordination/KeeperConstants.h"
 #include "config.h"
@@ -279,34 +274,13 @@ using namespace DB;
 template <typename T>
 void ZooKeeper::write(const T & x)
 {
-    Coordination::write(x, getWriteBuffer());
+    Coordination::write(x, *out);
 }
 
 template <typename T>
 void ZooKeeper::read(T & x)
 {
-    Coordination::read(x, getReadBuffer());
-}
-
-WriteBuffer & ZooKeeper::getWriteBuffer()
-{
-    if (compressed_out)
-        return *compressed_out;
-    return *out;
-}
-
-void ZooKeeper::flushWriteBuffer()
-{
-    if (compressed_out)
-         compressed_out->next();
-    out->next();
-}
-
-ReadBuffer & ZooKeeper::getReadBuffer()
-{
-    if (compressed_in)
-        return *compressed_in;
-    return *in;
+    Coordination::read(x, *in);
 }
 
 static void removeRootPath(String & path, const String & chroot)
@@ -339,8 +313,8 @@ ZooKeeper::~ZooKeeper()
 ZooKeeper::ZooKeeper(
     const Nodes & nodes,
     const zkutil::ZooKeeperArgs & args_,
-    std::shared_ptr<ZooKeeperLog> zk_log_)
-    : args(args_)
+    std::shared_ptr<ZooKeeperLog> zk_log_, std::optional<ConnectedCallback> && connected_callback_)
+    : args(args_), connected_callback(std::move(connected_callback_))
 {
     log = &Poco::Logger::get("ZooKeeperClient");
     std::atomic_store(&zk_log, std::move(zk_log_));
@@ -371,23 +345,7 @@ ZooKeeper::ZooKeeper(
     if (args.enable_fault_injections_during_startup)
         setupFaultDistributions();
 
-    try
-    {
-        use_compression = args.use_compression;
-        connect(nodes, args.connection_timeout_ms * 1000);
-    }
-    catch (...)
-    {
-        /// If we get exception & compression is enabled, then its possible that keeper does not support compression,
-        /// try without compression
-        if (use_compression)
-        {
-            use_compression = false;
-            connect(nodes, args.connection_timeout_ms * 1000);
-        }
-        else
-            throw;
-    }
+    connect(nodes, args.connection_timeout_ms * 1000);
 
     if (!args.auth_scheme.empty())
         sendAuth(args.auth_scheme, args.identity);
@@ -466,8 +424,6 @@ void ZooKeeper::connect(
 
                 in.emplace(socket);
                 out.emplace(socket);
-                compressed_in.reset();
-                compressed_out.reset();
 
                 try
                 {
@@ -488,15 +444,10 @@ void ZooKeeper::connect(
                     e.addMessage("while receiving handshake from ZooKeeper");
                     throw;
                 }
-
                 connected = true;
-                if (use_compression)
-                {
-                    compressed_in.emplace(*in);
-                    compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4", {}));
-                }
 
-                original_index = static_cast<Int8>(node.original_index);
+                if (connected_callback.has_value())
+                    (*connected_callback)(i, node);
 
                 if (i != 0)
                 {
@@ -554,26 +505,23 @@ void ZooKeeper::connect(
 
 void ZooKeeper::sendHandshake()
 {
-    int32_t handshake_length = 45;
+    int32_t handshake_length = 44;
     int64_t last_zxid_seen = 0;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     constexpr int32_t passwd_len = 16;
     std::array<char, passwd_len> passwd {};
-    bool read_only = true;
 
     write(handshake_length);
-    if (use_compression)
-        write(ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION);
-    else
-        write(ZOOKEEPER_PROTOCOL_VERSION);
+    write(ZOOKEEPER_PROTOCOL_VERSION);
     write(last_zxid_seen);
     write(timeout);
     write(previous_session_id);
     write(passwd);
-    write(read_only);
-    flushWriteBuffer();
+
+    out->next();
 }
+
 
 void ZooKeeper::receiveHandshake()
 {
@@ -581,29 +529,24 @@ void ZooKeeper::receiveHandshake()
     int32_t protocol_version_read;
     int32_t timeout;
     std::array<char, PASSWORD_LENGTH> passwd;
-    bool read_only;
 
     read(handshake_length);
-    if (handshake_length != SERVER_HANDSHAKE_LENGTH && handshake_length != SERVER_HANDSHAKE_LENGTH_WITH_READONLY)
+    if (handshake_length != SERVER_HANDSHAKE_LENGTH)
         throw Exception(Error::ZMARSHALLINGERROR, "Unexpected handshake length received: {}", handshake_length);
 
     read(protocol_version_read);
-
-    /// Special way to tell a client that server is not ready to serve it.
-    /// It's better for faster failover than just connection drop.
-    /// Implemented in clickhouse-keeper.
-    if (protocol_version_read == KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT)
-        throw Exception::fromMessage(Error::ZCONNECTIONLOSS,
-                                     "Keeper server rejected the connection during the handshake. "
-                                     "Possibly it's overloaded, doesn't see leader or stale");
-
-    if (use_compression)
+    if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION)
     {
-        if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
-            throw Exception(Error::ZMARSHALLINGERROR,"Unexpected protocol version with compression: {}", protocol_version_read);
+        /// Special way to tell a client that server is not ready to serve it.
+        /// It's better for faster failover than just connection drop.
+        /// Implemented in clickhouse-keeper.
+        if (protocol_version_read == KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT)
+            throw Exception::fromMessage(Error::ZCONNECTIONLOSS,
+                            "Keeper server rejected the connection during the handshake. "
+                            "Possibly it's overloaded, doesn't see leader or stale");
+        else
+            throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version: {}", protocol_version_read);
     }
-    else if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION)
-        throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version: {}", protocol_version_read);
 
     read(timeout);
     if (timeout != args.session_timeout_ms)
@@ -612,8 +555,6 @@ void ZooKeeper::receiveHandshake()
 
     read(session_id);
     read(passwd);
-    if (handshake_length == SERVER_HANDSHAKE_LENGTH_WITH_READONLY)
-        read(read_only);
 }
 
 
@@ -623,8 +564,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.scheme = scheme;
     request.data = data;
     request.xid = AUTH_XID;
-    request.write(getWriteBuffer());
-    flushWriteBuffer();
+    request.write(*out);
 
     int32_t length;
     XID read_xid;
@@ -640,13 +580,9 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     if (read_xid != AUTH_XID)
         throw Exception(Error::ZMARSHALLINGERROR, "Unexpected event received in reply to auth request: {}", read_xid);
 
-    if (!use_compression)
-    {
-        int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
-        if (length != actual_length)
+    int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
+    if (length != actual_length)
         throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}", length, actual_length);
-
-    }
 
     if (err != Error::ZOK)
         throw Exception(Error::ZMARSHALLINGERROR, "Error received in reply to auth request. Code: {}. Message: {}",
@@ -703,8 +639,7 @@ void ZooKeeper::sendThread()
                     info.request->addRootPath(args.chroot);
 
                     info.request->probably_sent = true;
-                    info.request->write(getWriteBuffer());
-                    flushWriteBuffer();
+                    info.request->write(*out);
 
                     logOperationIfNeeded(info.request);
 
@@ -720,8 +655,7 @@ void ZooKeeper::sendThread()
 
                 ZooKeeperHeartbeatRequest request;
                 request.xid = PING_XID;
-                request.write(getWriteBuffer());
-                flushWriteBuffer();
+                request.write(*out);
             }
 
             ProfileEvents::increment(ProfileEvents::ZooKeeperBytesSent, out->count() - prev_bytes_sent);
@@ -767,7 +701,7 @@ void ZooKeeper::receiveThread()
 
             if (in->poll(max_wait_us))
             {
-                if (finalization_started.test())
+                if (requests_queue.isFinished())
                     break;
 
                 receiveEvent();
@@ -893,7 +827,7 @@ void ZooKeeper::receiveEvent()
         }
         else
         {
-            response->readImpl(getReadBuffer());
+            response->readImpl(*in);
             response->removeRootPath(args.chroot);
         }
         /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
@@ -926,14 +860,9 @@ void ZooKeeper::receiveEvent()
             }
         }
 
-        if (!use_compression)
-        {
-            int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
-
-            if (length != actual_length)
-                throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}",
-                                length, actual_length);
-        }
+        int32_t actual_length = static_cast<int32_t>(in->count() - count_before_event);
+        if (length != actual_length)
+            throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}", length, actual_length);
 
         logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
     }
@@ -982,9 +911,6 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
-
-    /// Reset the original index.
-    original_index = -1;
 
     auto expire_session_if_not_expired = [&]
     {
@@ -1154,8 +1080,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
     {
         checkSessionDeadline();
         info.time = clock::now();
-        auto maybe_zk_log = std::atomic_load(&zk_log);
-        if (maybe_zk_log)
+        if (zk_log)
         {
             info.request->thread_id = getThreadId();
             info.request->query_id = String(CurrentThread::getQueryId());

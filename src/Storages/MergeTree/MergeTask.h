@@ -15,7 +15,6 @@
 
 #include <QueryPipeline/QueryPipeline.h>
 
-#include <Storages/BlockNumberColumn.h>
 #include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/IExecutableTask.h>
@@ -24,6 +23,13 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Common/filesystemHelpers.h>
+
 
 
 namespace DB
@@ -111,13 +117,6 @@ public:
     std::future<MergeTreeData::MutableDataPartPtr> getFuture()
     {
         return global_ctx->promise.get_future();
-    }
-
-    MergeTreeData::MutableDataPartPtr getUnfinishedPart()
-    {
-        if (global_ctx)
-            return global_ctx->new_data_part;
-        return nullptr;
     }
 
     bool execute();
@@ -400,12 +399,6 @@ private:
     };
 
     Stages::iterator stages_iterator = stages.begin();
-
-    /// Check for persisting block number column
-    static bool supportsBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
-    {
-        return global_ctx->data->getSettings()->allow_experimental_block_number_column && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
-    }
 
 };
 

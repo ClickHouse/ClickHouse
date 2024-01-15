@@ -73,11 +73,11 @@ void MergeTreeIndexGranuleInverted::deserializeBinary(ReadBuffer & istr, MergeTr
     {
         size_serialization->deserializeBinary(field_rows, istr, {});
         size_t filter_size = field_rows.get<size_t>();
-        gin_filter.getFilter().resize(filter_size);
 
         if (filter_size == 0)
             continue;
 
+        gin_filter.getFilter().assign(filter_size, {});
         istr.readStrict(reinterpret_cast<char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
     }
     has_elems = true;
@@ -109,14 +109,14 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorInverted::getGranuleAndReset()
     return new_granule;
 }
 
-void MergeTreeIndexAggregatorInverted::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter)
+void MergeTreeIndexAggregatorInverted::addToGinFilter(UInt32 rowID, const char * data, size_t length, GinFilter & gin_filter, UInt64 limit)
 {
     size_t cur = 0;
     size_t token_start = 0;
     size_t token_len = 0;
 
     while (cur < length && token_extractor->nextInStringPadded(data, length, &cur, &token_start, &token_len))
-        gin_filter.add(data + token_start, token_len, rowID, store);
+        gin_filter.add(data + token_start, token_len, rowID, store, limit);
 }
 
 void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos, size_t limit)
@@ -150,7 +150,7 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
-                    addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
+                    addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col], rows_read);
                     store->incrementCurrentSizeBy(ref.size);
                 }
                 current_position += 1;
@@ -165,7 +165,7 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
             for (size_t i = 0; i < rows_read; ++i)
             {
                 auto ref = column->getDataAt(current_position + i);
-                addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col]);
+                addToGinFilter(row_id, ref.data, ref.size, granule->gin_filters[col], rows_read);
                 store->incrementCurrentSizeBy(ref.size);
                 row_id++;
                 if (store->needToWrite())
@@ -184,7 +184,7 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
 }
 
 MergeTreeConditionInverted::MergeTreeConditionInverted(
-    const ActionsDAGPtr & filter_actions_dag,
+    const SelectQueryInfo & query_info,
     ContextPtr context_,
     const Block & index_sample_block,
     const GinFilterParameters & params_,
@@ -192,20 +192,41 @@ MergeTreeConditionInverted::MergeTreeConditionInverted(
     :  WithContext(context_), header(index_sample_block)
     , params(params_)
     , token_extractor(token_extactor_)
+    , prepared_sets(query_info.prepared_sets)
 {
-    if (!filter_actions_dag)
+    if (context_->getSettingsRef().allow_experimental_analyzer)
+    {
+        if (!query_info.filter_actions_dag)
+        {
+            rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
+            return;
+        }
+
+        rpn = std::move(
+                RPNBuilder<RPNElement>(
+                        query_info.filter_actions_dag->getOutputs().at(0), context_,
+                        [&](const RPNBuilderTreeNode & node, RPNElement & out)
+                        {
+                            return this->traverseAtomAST(node, out);
+                        }).extractRPN());
+        return;
+    }
+
+    ASTPtr filter_node = buildFilterNode(query_info.query);
+    if (!filter_node)
     {
         rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
 
-    rpn = std::move(
-            RPNBuilder<RPNElement>(
-                    filter_actions_dag->getOutputs().at(0), context_,
-                    [&](const RPNBuilderTreeNode & node, RPNElement & out)
-                    {
-                        return this->traverseAtomAST(node, out);
-                    }).extractRPN());
+    auto block_with_constants = KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context_);
+    RPNBuilder<RPNElement> builder(
+        filter_node,
+        context_,
+        std::move(block_with_constants),
+        query_info.prepared_sets,
+        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return traverseAtomAST(node, out); });
+    rpn = std::move(builder).extractRPN();
 }
 
 /// Keep in-sync with MergeTreeConditionFullText::alwaysUnknownOrTrue
@@ -356,21 +377,15 @@ bool MergeTreeConditionInverted::traverseAtomAST(const RPNBuilderTreeNode & node
         if (node.tryGetConstant(const_value, const_type))
         {
             /// Check constant like in KeyCondition
-            if (const_value.getType() == Field::Types::UInt64)
+            if (const_value.getType() == Field::Types::UInt64
+                || const_value.getType() == Field::Types::Int64
+                || const_value.getType() == Field::Types::Float64)
             {
-                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-                return true;
-            }
+                /// Zero in all types is represented in memory the same way as in UInt64.
+                out.function = const_value.get<UInt64>()
+                            ? RPNElement::ALWAYS_TRUE
+                            : RPNElement::ALWAYS_FALSE;
 
-            if (const_value.getType() == Field::Types::Int64)
-            {
-                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
-                return true;
-            }
-
-            if (const_value.getType() == Field::Types::Float64)
-            {
-                out.function = const_value.get<Float64>() != 0.00 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -687,30 +702,35 @@ MergeTreeIndexGranulePtr MergeTreeIndexInverted::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleInverted>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregator() const
 {
     /// should not be called: createIndexAggregatorForPart should be used
     assert(false);
     return nullptr;
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregatorForPart(const GinIndexStorePtr & store, const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregatorForPart(const GinIndexStorePtr & store) const
 {
     return std::make_shared<MergeTreeIndexAggregatorInverted>(store, index.column_names, index.name, params, token_extractor.get());
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexInverted::createIndexCondition(
-        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
+        const SelectQueryInfo & query, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionInverted>(filter_actions_dag, context, index.sample_block, params, token_extractor.get());
+    return std::make_shared<MergeTreeConditionInverted>(query, context, index.sample_block, params, token_extractor.get());
 };
+
+bool MergeTreeIndexInverted::mayBenefitFromIndexForIn(const ASTPtr & node) const
+{
+    return std::find(std::cbegin(index.column_names), std::cend(index.column_names), node->getColumnName()) != std::cend(index.column_names);
+}
 
 MergeTreeIndexPtr invertedIndexCreator(
     const IndexDescription & index)
 {
     size_t n = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
-    UInt64 max_rows = index.arguments.size() < 2 ? DEFAULT_MAX_ROWS_PER_POSTINGS_LIST : index.arguments[1].get<UInt64>();
-    GinFilterParameters params(n, max_rows);
+    Float64 density = index.arguments.size() < 2 ? 1.0 : index.arguments[1].get<Float64>();
+    GinFilterParameters params(n, density);
 
     /// Use SplitTokenExtractor when n is 0, otherwise use NgramTokenExtractor
     if (n > 0)
@@ -754,16 +774,13 @@ void invertedIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The first Inverted index argument must be positive integer.");
 
-    if (index.arguments.size() == 2)
-    {
-        if (index.arguments[1].getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "The second Inverted index argument must be UInt64");
-        if (index.arguments[1].get<UInt64>() != UNLIMITED_ROWS_PER_POSTINGS_LIST && index.arguments[1].get<UInt64>() < MIN_ROWS_PER_POSTINGS_LIST)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "The maximum rows per postings list must be no less than {}", MIN_ROWS_PER_POSTINGS_LIST);
-    }
+    if (index.arguments.size() == 2 && (index.arguments[1].getType() != Field::Types::Float64 || index.arguments[1].get<Float64>() <= 0 || index.arguments[1].get<Float64>() > 1))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The second Inverted index argument must be a float between 0 and 1.");
+
     /// Just validate
     size_t ngrams = index.arguments.empty() ? 0 : index.arguments[0].get<size_t>();
-    UInt64 max_rows_per_postings_list = index.arguments.size() < 2 ? DEFAULT_MAX_ROWS_PER_POSTINGS_LIST : index.arguments[1].get<UInt64>();
-    GinFilterParameters params(ngrams, max_rows_per_postings_list);
+    Float64 density = index.arguments.size() < 2 ? 1.0 : index.arguments[1].get<Float64>();
+    GinFilterParameters params(ngrams, density);
 }
+
 }

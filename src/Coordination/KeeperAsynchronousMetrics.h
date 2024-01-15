@@ -14,7 +14,6 @@ class KeeperAsynchronousMetrics : public AsynchronousMetrics
 public:
     KeeperAsynchronousMetrics(
         ContextPtr context_, int update_period_seconds, const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
-    ~KeeperAsynchronousMetrics() override;
 
 private:
     ContextPtr context;

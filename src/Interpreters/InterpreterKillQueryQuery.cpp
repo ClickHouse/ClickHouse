@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/queryToString.h>
@@ -421,7 +420,7 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 
-    auto io = executeQuery(select_query, getContext(), QueryFlags{ .internal = true }).second;
+    auto io = executeQuery(select_query, getContext(), true);
     PullingPipelineExecutor executor(io.pipeline);
     Block res;
     while (!res && executor.pull(res));
@@ -451,15 +450,6 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
                 | AccessType::ALTER_MATERIALIZE_TTL
             );
     return required_access;
-}
-
-void registerInterpreterKillQueryQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterKillQueryQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterKillQueryQuery", create_fn);
 }
 
 }

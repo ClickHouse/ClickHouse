@@ -19,16 +19,17 @@ class ASTStorage;
       0) \
     M(S3QueueAction, after_processing, S3QueueAction::KEEP, "Delete or keep file in S3 after successful processing", 0) \
     M(String, keeper_path, "", "Zookeeper node path", 0) \
-    M(UInt32, s3queue_loading_retries, 0, "Retry loading up to specified number of times", 0) \
-    M(UInt32, s3queue_processing_threads_num, 1, "Number of processing threads", 0) \
-    M(UInt32, s3queue_enable_logging_to_s3queue_log, 1, "Enable logging to system table system.s3queue_log", 0) \
-    M(UInt32, s3queue_tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", 0) \
-    M(UInt32, s3queue_polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
-    M(UInt32, s3queue_polling_max_timeout_ms, 10000, "Maximum timeout before next polling", 0) \
-    M(UInt32, s3queue_polling_backoff_ms, 1000, "Polling backoff", 0) \
-    M(UInt32, s3queue_tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
-    M(UInt32, s3queue_cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
-    M(UInt32, s3queue_cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
+    M(UInt64, s3queue_loading_retries, 0, "Retry loading up to specified number of times", 0) \
+    M(UInt64, s3queue_polling_min_timeout_ms, 1000, "Minimal timeout before next polling", 0) \
+    M(UInt64, s3queue_polling_max_timeout_ms, 10000, "Maximum timeout before next polling", 0) \
+    M(UInt64, s3queue_polling_backoff_ms, 0, "Polling backoff", 0) \
+    M(UInt64, s3queue_tracked_files_limit, 1000, "Max set size for tracking processed files in unordered mode in ZooKeeper", 0) \
+    M(UInt64, \
+      s3queue_tracked_file_ttl_sec, \
+      0, \
+      "Maximum number of seconds to store processed files in ZooKeeper node (store forever by default)", \
+      0) \
+    M(UInt64, s3queue_polling_size, 50, "Maximum files to fetch from S3 with SELECT", 0)
 
 #define LIST_OF_S3QUEUE_SETTINGS(M, ALIAS) \
     S3QUEUE_RELATED_SETTINGS(M, ALIAS) \

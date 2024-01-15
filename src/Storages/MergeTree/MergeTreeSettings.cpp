@@ -212,14 +212,4 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             merge_selecting_sleep_slowdown_factor);
     }
 }
-
-
-std::vector<String> MergeTreeSettings::getAllRegisteredNames() const
-{
-    std::vector<String> all_settings;
-    for (const auto & setting_field : all())
-        all_settings.push_back(setting_field.getName());
-    return all_settings;
-}
-
 }

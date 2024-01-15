@@ -39,12 +39,6 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->codec);
     }
 
-    if (stat_type)
-    {
-        res->stat_type = stat_type->clone();
-        res->children.push_back(res->stat_type);
-    }
-
     if (ttl)
     {
         res->ttl = ttl->clone();
@@ -83,6 +77,10 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
                       << (*null_modifier ? "" : "NOT ") << "NULL" << (settings.hilite ? hilite_none : "");
     }
 
+    if (primary_key_specifier)
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "")
+                      << "PRIMARY KEY" << (settings.hilite ? hilite_none : "");
+
     if (default_expression)
     {
         settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << default_specifier << (settings.hilite ? hilite_none : "");
@@ -103,12 +101,6 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
     {
         settings.ostr << ' ';
         codec->formatImpl(settings, state, frame);
-    }
-
-    if (stat_type)
-    {
-        settings.ostr << ' ';
-        stat_type->formatImpl(settings, state, frame);
     }
 
     if (ttl)

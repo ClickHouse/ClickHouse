@@ -34,7 +34,7 @@ public:
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
-    void shutdown(bool is_drop) override;
+    void shutdown() override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
@@ -187,7 +187,6 @@ private:
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
-    void streamToViewsImpl();
     /// Return true on successful stream attempt.
     bool tryStreamToViews();
     bool hasDependencies(const StorageID & table_id);

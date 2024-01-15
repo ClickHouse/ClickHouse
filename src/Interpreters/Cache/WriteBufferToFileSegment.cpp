@@ -7,7 +7,6 @@
 #include <base/scope_guard.h>
 
 #include <Common/logger_useful.h>
-#include <Common/formatReadable.h>
 
 namespace DB
 {

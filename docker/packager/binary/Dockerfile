@@ -51,26 +51,28 @@ RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     rustup default nightly-2023-07-04 && \
     rustup toolchain remove stable && \
     rustup component add rust-src && \
-    rustup target add x86_64-unknown-linux-gnu && \
     rustup target add aarch64-unknown-linux-gnu && \
     rustup target add x86_64-apple-darwin && \
     rustup target add x86_64-unknown-freebsd && \
     rustup target add aarch64-apple-darwin && \
-    rustup target add powerpc64le-unknown-linux-gnu && \
-    rustup target add x86_64-unknown-linux-musl && \
-    rustup target add aarch64-unknown-linux-musl && \
-    rustup target add riscv64gc-unknown-linux-gnu
+    rustup target add powerpc64le-unknown-linux-gnu
 
+# NOTE: Seems like gcc-11 is too new for ubuntu20 repository
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
     && apt-get install --yes \
         binutils-riscv64-linux-gnu \
         build-essential \
+        g++-11 \
+        gcc-11 \
+        gcc-aarch64-linux-gnu \
+        libc6 \
+        libc6-dev \
+        libc6-dev-arm64-cross \
         python3-boto3 \
         yasm \
         zstd \
-        zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists
 

@@ -95,7 +95,8 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     {
         int result = hdfsSync(fs.get(), fout);
         if (result < 0)
-            throw ErrnoException(ErrorCodes::CANNOT_FSYNC, "Cannot HDFS sync {} {}", hdfs_uri, std::string(hdfsGetLastError()));
+            throwFromErrno("Cannot HDFS sync" + hdfs_uri + " " + std::string(hdfsGetLastError()),
+                ErrorCodes::CANNOT_FSYNC);
     }
 };
 

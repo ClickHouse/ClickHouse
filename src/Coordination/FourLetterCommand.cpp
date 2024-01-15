@@ -177,9 +177,6 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
         factory.registerCommand(feature_flags_command);
 
-        FourLetterCommandPtr yield_leadership_command = std::make_shared<YieldLeadershipCommand>(keeper_dispatcher);
-        factory.registerCommand(yield_leadership_command);
-
 #if USE_JEMALLOC
         FourLetterCommandPtr jemalloc_dump_stats = std::make_shared<JemallocDumpStats>(keeper_dispatcher);
         factory.registerCommand(jemalloc_dump_stats);
@@ -599,12 +596,6 @@ String FeatureFlagsCommand::run()
     }
 
     return ret.str();
-}
-
-String YieldLeadershipCommand::run()
-{
-    keeper_dispatcher.yieldLeadership();
-    return "Sent yield leadership request to leader.";
 }
 
 #if USE_JEMALLOC
