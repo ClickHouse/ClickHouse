@@ -71,6 +71,10 @@
 #include <IO/S3/Client.h>
 #endif
 
+#if USE_JEMALLOC
+#include <Common/Jemalloc.h>
+#endif
+
 #include "config.h"
 
 namespace CurrentMetrics
@@ -93,7 +97,6 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int ABORTED;
 }
-
 
 namespace ActionLocks
 {
@@ -696,6 +699,33 @@ BlockIO InterpreterSystemQuery::execute()
             resetCoverage();
             break;
         }
+
+#if USE_JEMALLOC
+        case Type::JEMALLOC_PURGE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            purgeJemallocArenas();
+            break;
+        }
+        case Type::JEMALLOC_ENABLE_PROFILE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            setJemallocProfileActive(true);
+            break;
+        }
+        case Type::JEMALLOC_DISABLE_PROFILE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            setJemallocProfileActive(false);
+            break;
+        }
+        case Type::JEMALLOC_FLUSH_PROFILE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
+            flushJemallocProfile("/tmp/jemalloc_clickhouse");
+            break;
+        }
+#endif
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of SYSTEM query");
     }
@@ -1306,6 +1336,16 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_LISTEN);
             break;
         }
+#if USE_JEMALLOC
+        case Type::JEMALLOC_PURGE:
+        case Type::JEMALLOC_ENABLE_PROFILE:
+        case Type::JEMALLOC_DISABLE_PROFILE:
+        case Type::JEMALLOC_FLUSH_PROFILE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
+            break;
+        }
+#endif
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
