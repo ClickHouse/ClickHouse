@@ -402,12 +402,28 @@ llvm::Value * SingleValueDataFixed<T>::getHasValueFromAggregateDataPtr(llvm::IRB
     return b.CreateLoad(b.getInt1Ty(), has_value_ptr);
 }
 
+namespace
+{
+/// We create a helper function to be able to the constructor to initialize the value in JIT
+/// We do this instead of initializing the values directly because we must initialize the vtable too
+/// and there is no easy way to do that except calling the constructor
 template <typename T>
-void SingleValueDataFixed<T>::compileCreate(
-    llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, size_t size_of_data, size_t alignof_data)
+void build_SingleValueDataFixed(SingleValueDataFixed<T> * single)
+{
+    new (single) SingleValueDataFixed<T>();
+}
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
 {
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-    b.CreateMemSet(aggregate_data_ptr, llvm::ConstantInt::get(b.getInt8Ty(), 0), size_of_data, llvm::assumeAligned(alignof_data));
+    auto ft = llvm::FunctionType::get(b.getVoidTy(), {aggregate_data_ptr->getType()}, false);
+    auto f = b.CreateIntToPtr(
+        llvm::ConstantInt::get(b.getInt64Ty(), uintptr_t(::DB::build_SingleValueDataFixed<T>)), llvm::PointerType::getUnqual(ft));
+    llvm::FunctionCallee fc(ft, f);
+    llvm::ArrayRef<llvm::Value *> args{aggregate_data_ptr};
+    b.CreateCall(fc, args);
 }
 
 template <typename T>

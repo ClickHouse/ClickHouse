@@ -239,7 +239,7 @@ struct SingleValueDataFixed final : public SingleValueDataBase
     static llvm::Value * getHasValuePtrFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr);
     static llvm::Value * getHasValueFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr);
 
-    static void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, size_t size_of_data, size_t alignof_data);
+    static void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr);
     static llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr);
 
     static void compileSetValueFromNumber(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, llvm::Value * value_to_check);

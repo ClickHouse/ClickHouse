@@ -146,7 +146,7 @@ public:
     void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
     {
         if constexpr (Data::is_compilable)
-            Data::compileCreate(builder, aggregate_data_ptr, this->sizeOfData(), this->alignOfData());
+            Data::compileCreate(builder, aggregate_data_ptr);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
     }
