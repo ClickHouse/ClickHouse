@@ -454,9 +454,18 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
     assert(output_stream);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-        pool, query_string, output_stream->header, context, throttler, scalars, external_tables, stage,
-        RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)});
-
+        pool,
+        query_string,
+        output_stream->header,
+        context,
+        throttler,
+        scalars,
+        external_tables,
+        stage,
+        RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)},
+        GetPriorityForLoadBalancing(LoadBalancing::ROUND_ROBIN, randomSeed())
+            .getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, replica_info.all_replicas_count));
+    remote_query_executor->setPoolMode(PoolMode::GET_ONE);
     remote_query_executor->setLogger(log);
 
     pipes.emplace_back(createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending));

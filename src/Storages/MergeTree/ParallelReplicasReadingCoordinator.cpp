@@ -419,6 +419,14 @@ void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnno
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
 
+    const auto number_of_requests = stats[replica_num].number_of_requests;
+    if (number_of_requests > 0)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Initial request should be first request received. Replica {} : request number {}",
+            replica_num,
+            number_of_requests);
+
     ++stats[replica_num].number_of_requests;
     replica_status[replica_num].is_announcement_received = true;
 
