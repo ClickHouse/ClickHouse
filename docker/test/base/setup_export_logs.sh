@@ -194,7 +194,7 @@ function setup_logs_replication
         echo "Creating table system.${table}_sender" >&2
 
         # Create Distributed table and materialized view to watch on the original table:
-        clickhouse-client --asterisk_include_materialized_columns 1 --query "
+        clickhouse-client --query "
             CREATE TABLE system.${table}_sender
             ENGINE = Distributed(${CLICKHOUSE_CI_LOGS_CLUSTER}, default, ${table}_${hash})
             SETTINGS flush_on_detach=0
@@ -205,7 +205,7 @@ function setup_logs_replication
 
         echo "Creating materialized view system.${table}_watcher" >&2
 
-        clickhouse-client --asterisk_include_materialized_columns 1 --query "
+        clickhouse-client --query "
             CREATE MATERIALIZED VIEW system.${table}_watcher TO system.${table}_sender AS
             SELECT ${EXTRA_COLUMNS_EXPRESSION_FOR_TABLE}, *
             FROM system.${table}
