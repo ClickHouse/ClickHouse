@@ -61,7 +61,7 @@ def check_on_cluster(
         print(f"Retry {retry}/{retries} unsuccessful, result: {node_results}")
 
         if retry != retries:
-            time.sleep(2 ** retry)
+            time.sleep(2**retry)
     else:
         msg = msg or f"Wrong '{what}' result"
         raise Exception(

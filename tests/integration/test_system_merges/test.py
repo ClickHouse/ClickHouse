@@ -204,33 +204,36 @@ def test_mutation_simple(started_cluster, replicated):
             sleep_time=0.1,
         )
 
-        assert split_tsv(
-            node_check.query(
-                """
+        assert (
+            split_tsv(
+                node_check.query(
+                    """
             SELECT database, table, num_parts, source_part_names, source_part_paths, result_part_name, result_part_path, partition_id, is_mutation
                 FROM system.merges
                 WHERE table = '{name}'
         """.format(
-                    name=table_name
+                        name=table_name
+                    )
                 )
             )
-        ) == [
-            [
-                db_name,
-                table_name,
-                "1",
-                "['{}']".format(part),
-                "['{clickhouse}/{table_path}/{}/']".format(
-                    part, clickhouse=clickhouse_path, table_path=table_path
-                ),
-                result_part,
-                "{clickhouse}/{table_path}/{}/".format(
-                    result_part, clickhouse=clickhouse_path, table_path=table_path
-                ),
-                "all",
-                "1",
-            ],
-        ]
+            == [
+                [
+                    db_name,
+                    table_name,
+                    "1",
+                    "['{}']".format(part),
+                    "['{clickhouse}/{table_path}/{}/']".format(
+                        part, clickhouse=clickhouse_path, table_path=table_path
+                    ),
+                    result_part,
+                    "{clickhouse}/{table_path}/{}/".format(
+                        result_part, clickhouse=clickhouse_path, table_path=table_path
+                    ),
+                    "all",
+                    "1",
+                ],
+            ]
+        )
         t.join()
 
         assert (

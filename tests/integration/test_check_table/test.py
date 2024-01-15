@@ -95,25 +95,15 @@ def test_check_normal_table_corruption(started_cluster, merge_tree_settings):
         node1, "non_replicated_mt", "201902_1_1_0", database="default"
     )
 
-    assert (
-        node1.query(
-            "CHECK TABLE non_replicated_mt",
-            settings={"check_query_single_value_result": 0, "max_threads": 1},
-        )
-        .strip()
-        .split("\t")[0:2]
-        == ["201902_1_1_0", "0"]
-    )
+    assert node1.query(
+        "CHECK TABLE non_replicated_mt",
+        settings={"check_query_single_value_result": 0, "max_threads": 1},
+    ).strip().split("\t")[0:2] == ["201902_1_1_0", "0"]
 
-    assert (
-        node1.query(
-            "CHECK TABLE non_replicated_mt",
-            settings={"check_query_single_value_result": 0, "max_threads": 1},
-        )
-        .strip()
-        .split("\t")[0:2]
-        == ["201902_1_1_0", "0"]
-    )
+    assert node1.query(
+        "CHECK TABLE non_replicated_mt",
+        settings={"check_query_single_value_result": 0, "max_threads": 1},
+    ).strip().split("\t")[0:2] == ["201902_1_1_0", "0"]
 
     node1.query(
         "INSERT INTO non_replicated_mt VALUES (toDate('2019-01-01'), 1, 10), (toDate('2019-01-01'), 2, 12)"
@@ -133,15 +123,10 @@ def test_check_normal_table_corruption(started_cluster, merge_tree_settings):
 
     remove_checksums_on_disk(node1, "default", "non_replicated_mt", "201901_2_2_0")
 
-    assert (
-        node1.query(
-            "CHECK TABLE non_replicated_mt PARTITION 201901",
-            settings={"check_query_single_value_result": 0, "max_threads": 1},
-        )
-        .strip()
-        .split("\t")[0:2]
-        == ["201901_2_2_0", "0"]
-    )
+    assert node1.query(
+        "CHECK TABLE non_replicated_mt PARTITION 201901",
+        settings={"check_query_single_value_result": 0, "max_threads": 1},
+    ).strip().split("\t")[0:2] == ["201901_2_2_0", "0"]
 
 
 @pytest.mark.parametrize("merge_tree_settings, zk_path_suffix", [("", "_0")])
@@ -209,15 +194,12 @@ def test_check_replicated_table_simple(
         == "201901_0_0_0\t1\t\n"
     )
 
-    assert (
-        sorted(
-            node2.query(
-                "CHECK TABLE replicated_mt",
-                settings={"check_query_single_value_result": 0},
-            ).split("\n")
-        )
-        == ["", "201901_0_0_0\t1\t", "201902_0_0_0\t1\t"]
-    )
+    assert sorted(
+        node2.query(
+            "CHECK TABLE replicated_mt",
+            settings={"check_query_single_value_result": 0},
+        ).split("\n")
+    ) == ["", "201901_0_0_0\t1\t", "201902_0_0_0\t1\t"]
 
     with pytest.raises(QueryRuntimeException) as exc:
         node2.query(
@@ -291,13 +273,10 @@ def test_check_replicated_table_corruption(
     )
 
     node1.query_with_retry("SYSTEM SYNC REPLICA replicated_mt_1")
-    assert (
-        node1.query(
-            "CHECK TABLE replicated_mt_1 PARTITION 201901",
-            settings={"check_query_single_value_result": 0, "max_threads": 1},
-        )
-        == "{}\t1\t\n".format(part_name)
-    )
+    assert node1.query(
+        "CHECK TABLE replicated_mt_1 PARTITION 201901",
+        settings={"check_query_single_value_result": 0, "max_threads": 1},
+    ) == "{}\t1\t\n".format(part_name)
     assert node1.query("SELECT count() from replicated_mt_1") == "4\n"
 
     remove_part_from_disk(node2, "replicated_mt_1", part_name)
@@ -309,13 +288,10 @@ def test_check_replicated_table_corruption(
     )
 
     node1.query("SYSTEM SYNC REPLICA replicated_mt_1")
-    assert (
-        node1.query(
-            "CHECK TABLE replicated_mt_1 PARTITION 201901",
-            settings={"check_query_single_value_result": 0, "max_threads": 1},
-        )
-        == "{}\t1\t\n".format(part_name)
-    )
+    assert node1.query(
+        "CHECK TABLE replicated_mt_1 PARTITION 201901",
+        settings={"check_query_single_value_result": 0, "max_threads": 1},
+    ) == "{}\t1\t\n".format(part_name)
     assert node1.query("SELECT count() from replicated_mt_1") == "4\n"
 
 
