@@ -12,7 +12,7 @@ class StorageSystemQuotaLimits final : public IStorageSystemOneBlock<StorageSyst
 {
 public:
     std::string getName() const override { return "SystemQuotaLimits"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

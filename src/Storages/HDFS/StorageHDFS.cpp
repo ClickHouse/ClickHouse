@@ -687,7 +687,7 @@ Chunk HDFSSource::generate()
     return {};
 }
 
-void HDFSSource::addNumRowsToCache(const DB::String & path, size_t num_rows)
+void HDFSSource::addNumRowsToCache(const String & path, size_t num_rows)
 {
     auto cache_key = getKeyForSchemaCache(path, storage->format_name, std::nullopt, getContext());
     StorageHDFS::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);

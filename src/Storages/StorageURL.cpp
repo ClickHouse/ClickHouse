@@ -498,13 +498,13 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
 }
 
-void StorageURLSource::addNumRowsToCache(const DB::String & uri, size_t num_rows)
+void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
-std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const DB::String & uri, std::optional<time_t> last_mod_time)
+std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
