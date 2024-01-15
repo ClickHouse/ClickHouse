@@ -40,7 +40,6 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
     {
         Poco::Net::HTTPBasicCredentials credentials{};
 
-
         ReadWriteBufferFromHTTP metadata_buf(
             Poco::URI(fs::path(uri_path) / ".index"),
             Poco::Net::HTTPRequest::HTTP_GET,
@@ -254,7 +253,7 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
 
 void WebObjectStorage::throwNotAllowed()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only read-only operations are supported");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only read-only operations are supported in WebObjectStorage");
 }
 
 std::unique_ptr<WriteBufferFromFileBase> WebObjectStorage::writeObject( /// NOLINT
