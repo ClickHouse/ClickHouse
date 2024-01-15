@@ -38,12 +38,12 @@ public:
     bool approveWrite(const UUID & user_id, size_t entry_size_in_bytes) const override
     {
         auto it_actual = actual.find(user_id);
-        Resources actual_for_user{.size_in_bytes = 0, .num_items = 0}; /// default if no user is found is no resource consumption
+        Resources actual_for_user{.size_in_bytes = 0, .num_items = 0}; /// if no user is found, the default is no resource consumption
         if (it_actual != actual.end())
             actual_for_user = it_actual->second;
 
         auto it_quota = quotas.find(user_id);
-        Resources quota_for_user{.size_in_bytes = std::numeric_limits<size_t>::max(), .num_items = std::numeric_limits<size_t>::max()}; /// default if no user is found is no threshold
+        Resources quota_for_user{.size_in_bytes = std::numeric_limits<size_t>::max(), .num_items = std::numeric_limits<size_t>::max()}; /// if no user is found, the default is no threshold
         if (it_quota != quotas.end())
             quota_for_user = it_quota->second;
 
