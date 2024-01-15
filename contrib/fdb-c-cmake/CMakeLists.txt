@@ -6,6 +6,7 @@ target_link_libraries(fdbdeps INTERFACE
     OpenSSL::SSL
     OpenSSL::Crypto
     absl::debugging
+    ch_contrib::re2
 )
 target_include_directories(fdbdeps INTERFACE "${ClickHouse_SOURCE_DIR}/contrib/boost")
 
