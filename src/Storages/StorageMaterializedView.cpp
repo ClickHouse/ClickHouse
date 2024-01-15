@@ -89,12 +89,15 @@ StorageMaterializedView::StorageMaterializedView(
                         "either ENGINE or an existing table in a TO clause");
 
     auto select = SelectQueryDescription::getSelectQueryFromASTForMatView(query.select->clone(), query.refresh_strategy != nullptr, local_context);
-    auto select_table_dependent_views = DatabaseCatalog::instance().getDependentViews(select.select_table_id);
+    if (select.select_table_id)
+    {
+        auto select_table_dependent_views = DatabaseCatalog::instance().getDependentViews(select.select_table_id);
 
-    auto max_materialized_views_count_for_table = getContext()->getServerSettings().max_materialized_views_count_for_table;
-    if (max_materialized_views_count_for_table && select_table_dependent_views.size() >= max_materialized_views_count_for_table)
-        throw Exception(ErrorCodes::TOO_MANY_MATERIALIZED_VIEWS,
-                        "Too many materialized views, maximum: {}", max_materialized_views_count_for_table);
+        auto max_materialized_views_count_for_table = getContext()->getServerSettings().max_materialized_views_count_for_table;
+        if (max_materialized_views_count_for_table && select_table_dependent_views.size() >= max_materialized_views_count_for_table)
+            throw Exception(ErrorCodes::TOO_MANY_MATERIALIZED_VIEWS,
+                            "Too many materialized views, maximum: {}", max_materialized_views_count_for_table);
+    }
 
     storage_metadata.setSelectQuery(select);
     if (!comment.empty())

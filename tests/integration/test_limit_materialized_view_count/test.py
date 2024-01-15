@@ -6,6 +6,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/max_num_limit.xml"],
+    stay_alive=True,
 )
 
 config = """<clickhouse>
@@ -38,7 +39,7 @@ def test_limit_materialized_view_count(started_cluster):
     )
 
     node.replace_config("/etc/clickhouse-server/config.d/max_num_limit.xml", config)
-    node.query("SYSTEM RELOAD CONFIG;")
+    node.restart_clickhouse()
 
     node.query(
         "CREATE MATERIALIZED VIEW test_view2 ENGINE = MergeTree ORDER BY a AS SELECT * FROM test_tb;"
