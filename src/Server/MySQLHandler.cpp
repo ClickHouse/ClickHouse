@@ -1,6 +1,5 @@
 #include "MySQLHandler.h"
 
-#include <iterator>
 #include <limits>
 #include <optional>
 #include <Core/MySQL/Authentication.h>
