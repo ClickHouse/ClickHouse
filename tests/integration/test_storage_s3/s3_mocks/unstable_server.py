@@ -9,7 +9,7 @@ import time
 
 def gen_n_digit_number(n):
     assert 0 < n < 19
-    return random.randint(10 ** (n - 1), 10**n - 1)
+    return random.randint(10 ** (n - 1), 10 ** n - 1)
 
 
 sum_in_4_column = 0

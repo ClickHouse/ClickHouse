@@ -76,11 +76,14 @@ def test_role_mapping(ldap_cluster):
         "select currentUser()", user="johndoe", password="qwertz"
     ) == TSV([["johndoe"]])
 
-    assert instance.query(
-        "select role_name from system.current_roles ORDER BY role_name",
-        user="johndoe",
-        password="qwertz",
-    ) == TSV([["role_1"], ["role_2"]])
+    assert (
+        instance.query(
+            "select role_name from system.current_roles ORDER BY role_name",
+            user="johndoe",
+            password="qwertz",
+        )
+        == TSV([["role_1"], ["role_2"]])
+    )
 
     instance.query("CREATE ROLE role_3")
     add_ldap_group(ldap_cluster, group_cn="clickhouse-role_3", member_cn="johndoe")
@@ -88,8 +91,11 @@ def test_role_mapping(ldap_cluster):
     # See https://github.com/ClickHouse/ClickHouse/issues/54318
     add_ldap_group(ldap_cluster, group_cn="clickhouse-role_4", member_cn="johndoe")
 
-    assert instance.query(
-        "select role_name from system.current_roles ORDER BY role_name",
-        user="johndoe",
-        password="qwertz",
-    ) == TSV([["role_1"], ["role_2"], ["role_3"]])
+    assert (
+        instance.query(
+            "select role_name from system.current_roles ORDER BY role_name",
+            user="johndoe",
+            password="qwertz",
+        )
+        == TSV([["role_1"], ["role_2"], ["role_3"]])
+    )

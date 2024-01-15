@@ -79,15 +79,21 @@ def test_table_function_url_access_rights():
         f"SELECT * FROM url('http://nginx:80/test_1', 'TSV')", user="u1"
     )
 
-    assert node1.query(
-        f"DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')",
-        user="u1",
-    ) == TSV([["column1", "UInt32"], ["column2", "UInt32"], ["column3", "UInt32"]])
+    assert (
+        node1.query(
+            f"DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')",
+            user="u1",
+        )
+        == TSV([["column1", "UInt32"], ["column2", "UInt32"], ["column3", "UInt32"]])
+    )
 
-    assert node1.query(
-        f"DESCRIBE TABLE url('http://nginx:80/not-exist', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')",
-        user="u1",
-    ) == TSV([["column1", "UInt32"], ["column2", "UInt32"], ["column3", "UInt32"]])
+    assert (
+        node1.query(
+            f"DESCRIBE TABLE url('http://nginx:80/not-exist', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')",
+            user="u1",
+        )
+        == TSV([["column1", "UInt32"], ["column2", "UInt32"], ["column3", "UInt32"]])
+    )
 
     expected_error = "necessary to have the grant URL ON *.*"
     assert expected_error in node1.query_and_get_error(
