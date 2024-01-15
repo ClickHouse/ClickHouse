@@ -30,7 +30,7 @@ EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -
 
 function __set_connection_args
 {
-    # It's impossible to use generous $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
+    # It's impossible to use a generic $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
     # That's why we must stick to the generated option
     CONNECTION_ARGS=(
         --receive_timeout=45 --send_timeout=45 --secure
