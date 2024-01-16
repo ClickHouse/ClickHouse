@@ -23,6 +23,14 @@ public:
 
 void throwIfFDBError(fdb_error_t error_num);
 
+struct FoundationDBOptions
+{
+    FoundationDBOptions() = default;
+    FoundationDBOptions(const Poco::Util::AbstractConfiguration & config, const String & config_name);
+
+    std::vector<String> knobs;
+};
+
 /// The FoundationDB client library performs most tasks on a singleton network thread.
 /// Because of the limitation of fdb library, at most one network thread can be started.
 /// After the network thread stops, it cannot be started again.
@@ -32,12 +40,9 @@ public:
     FoundationDBNetwork() = delete;
 
     /// ensureStarted() should be called before any fdb async api.
-    /// It can be called multiple times, but only one network thread will be started.
-    ///
-    /// You can spawn multiple network threads by set thread > 1. `thread` only
-    /// effective when first ensureStarted(). Multithreading should only be used
-    /// during testing.
-    static void ensureStarted(int64_t thread = 1);
+    /// It can be called multiple times, but it only has effect the first time
+    /// you call it.
+    static void ensureStarted(FoundationDBOptions options = {});
 
     /// shutdownIfNeed() should be called when the program ends.
     /// It will stop the network thread if exists.

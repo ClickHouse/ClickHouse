@@ -862,6 +862,10 @@ try
         }
     );
 
+#if USE_FDB
+    FoundationDBNetwork::ensureStarted(FoundationDBOptions(config(), "foundationdb"));
+#endif
+
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 

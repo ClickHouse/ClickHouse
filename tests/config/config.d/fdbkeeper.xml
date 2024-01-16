@@ -12,4 +12,15 @@
             <root>/test/chroot/auxiliary_zookeeper2</root>
         </zookeeper2>
     </auxiliary_zookeepers>
+    <foundationdb>
+    <!--
+      Set knob(s) for libfdb_c.
+      knob is a list. You can set multi knobs by inserting multi <knob> tags.
+      
+      Example:
+      <knob>transaction_size_limit=15000000</knob>
+      <knob>other_knob=option</knob>
+    -->
+    <knob>transaction_size_limit=15000000</knob>
+  </foundationdb>
 </clickhouse>

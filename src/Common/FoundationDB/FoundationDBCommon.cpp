@@ -30,11 +30,23 @@ void throwIfFDBError(fdb_error_t error_num)
     }
 }
 
+FoundationDBOptions::FoundationDBOptions(const Poco::Util::AbstractConfiguration & config, const String & config_name)
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_name, keys);
+
+    for (const auto & key : keys)
+        if (key.starts_with("knob"))
+            knobs.emplace_back(config.getString(config_name + "." + key));
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupport founcdationdb config: {}.{}", config_name, key);
+}
+
 std::unique_ptr<ThreadFromGlobalPool> FoundationDBNetwork::network_thread;
 std::mutex FoundationDBNetwork::network_thread_mutex;
 std::atomic<int> FoundationDBNetwork::use_cnt = 1;
 
-void FoundationDBNetwork::ensureStarted(int64_t thread)
+void FoundationDBNetwork::ensureStarted(FoundationDBOptions options)
 {
     std::lock_guard lock(network_thread_mutex);
 
@@ -53,8 +65,11 @@ void FoundationDBNetwork::ensureStarted(int64_t thread)
     throwIfFDBError(fdb_network_set_option(FDB_NET_OPTION_TRACE_FORMAT, FDB_VALUE_FROM_STRING(fdb_trace_format)));
 #endif
 
-    if (thread > 1)
-        LOG_WARNING(log, "thread={} is not support", thread);
+    for (auto & knob : options.knobs)
+    {
+        LOG_DEBUG(log, "Using knob: {}", knob);
+        throwIfFDBError(fdb_network_set_option(FDB_NET_OPTION_KNOB, FDB_VALUE_FROM_STRING(knob)));
+    }
 
     throwIfFDBError(fdb_setup_network());
     network_thread = std::make_unique<ThreadFromGlobalPool>(
