@@ -2204,7 +2204,7 @@ void InterpreterSelectQuery::analyze_where_ast(
     if (const auto * ast_function_node = ast->as<ASTFunction>())
     {
         auto arg_size = ast_function_node->arguments ? ast_function_node->arguments->children.size() : 0;
-        if(ast_function_node->name == "equals" && arg_size == 2)
+        if (ast_function_node->name == "equals" && arg_size == 2)
         {
             auto lhs_argument = ast_function_node->arguments->children.at(0);
             auto rhs_argument = ast_function_node->arguments->children.at(1);
