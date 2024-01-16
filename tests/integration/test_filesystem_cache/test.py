@@ -194,3 +194,117 @@ def test_caches_with_the_same_configuration_2(cluster, node_name):
         ).strip()
         == f"cache1\t{size}\ncache2\t{size}"
     )
+
+
+def test_custom_cached_disk(cluster):
+    node = cluster.instances["node"]
+
+    assert "Cannot create cached custom disk without" in node.query_and_get_error(
+        f"""
+        DROP TABLE IF EXISTS test SYNC;
+        CREATE TABLE test (a Int32)
+        ENGINE = MergeTree() ORDER BY tuple()
+        SETTINGS disk = disk(type = cache, path = 'kek', max_size = 1, disk = 'hdd_blob');
+        """
+    )
+
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""echo "
+        <clickhouse>
+            <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
+        </clickhouse>
+        " > /etc/clickhouse-server/config.d/filesystem_caches_path.xml
+        """,
+        ]
+    )
+    node.restart_clickhouse()
+
+    node.query(
+        f"""
+    CREATE TABLE test (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(type = cache, name = 'custom_cached', path = 'kek', max_size = 1, disk = 'hdd_blob');
+    """
+    )
+
+    assert (
+        "/var/lib/clickhouse/filesystem_caches/kek"
+        == node.query(
+            "SELECT cache_path FROM system.disks WHERE name = 'custom_cached'"
+        ).strip()
+    )
+
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"""echo "
+        <clickhouse>
+            <custom_cached_disks_base_directory>/var/lib/clickhouse/custom_caches/</custom_cached_disks_base_directory>
+        </clickhouse>
+        " > /etc/clickhouse-server/config.d/custom_filesystem_caches_path.xml
+        """,
+        ]
+    )
+    node.restart_clickhouse()
+
+    node.query(
+        f"""
+    CREATE TABLE test2 (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(type = cache, name = 'custom_cached2', path = 'kek2', max_size = 1, disk = 'hdd_blob');
+    """
+    )
+
+    assert (
+        "/var/lib/clickhouse/custom_caches/kek2"
+        == node.query(
+            "SELECT cache_path FROM system.disks WHERE name = 'custom_cached2'"
+        ).strip()
+    )
+
+    node.exec_in_container(
+        ["bash", "-c", "rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml"]
+    )
+    node.restart_clickhouse()
+
+    node.query(
+        f"""
+    CREATE TABLE test3 (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(type = cache, name = 'custom_cached3', path = 'kek3', max_size = 1, disk = 'hdd_blob');
+    """
+    )
+
+    assert (
+        "/var/lib/clickhouse/custom_caches/kek3"
+        == node.query(
+            "SELECT cache_path FROM system.disks WHERE name = 'custom_cached3'"
+        ).strip()
+    )
+
+    assert "Filesystem cache path must lie inside" in node.query_and_get_error(
+        f"""
+    CREATE TABLE test4 (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/kek4', max_size = 1, disk = 'hdd_blob');
+    """
+    )
+
+    node.query(
+        f"""
+    CREATE TABLE test4 (a Int32)
+    ENGINE = MergeTree() ORDER BY tuple()
+    SETTINGS disk = disk(type = cache, name = 'custom_cached4', path = '/var/lib/clickhouse/custom_caches/kek4', max_size = 1, disk = 'hdd_blob');
+    """
+    )
+
+    assert (
+        "/var/lib/clickhouse/custom_caches/kek4"
+        == node.query(
+            "SELECT cache_path FROM system.disks WHERE name = 'custom_cached4'"
+        ).strip()
+    )

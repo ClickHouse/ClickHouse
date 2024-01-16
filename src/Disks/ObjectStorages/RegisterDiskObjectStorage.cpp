@@ -45,7 +45,8 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap & /*map*/) -> DiskPtr
+        const DisksMap & /* map */,
+        bool, bool) -> DiskPtr
     {
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         auto object_storage = ObjectStorageFactory::instance().create(name, config, config_prefix, context, skip_access_check);
