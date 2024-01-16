@@ -882,14 +882,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::applyLimitForRangesInDataParts(
             }
 
             const auto & marks_rows_partial_sums = part_index_granularity.getMarksRowsPartialSums();
+            size_t mark_range_partial_sum_start = range.begin > 0 ? marks_rows_partial_sums[range.begin - 1] : 0;
             auto range_begin_it = marks_rows_partial_sums.begin() + range.begin;
             auto range_end_it = marks_rows_partial_sums.begin() + range.end;
             auto it = std::lower_bound(range_begin_it, range_end_it, remaining_limit, [&](size_t limit_value, size_t partial_sum_value)
             {
-                return limit_value < (partial_sum_value - *range_begin_it);
+                return limit_value < (partial_sum_value - mark_range_partial_sum_start);
             });
 
-            size_t new_range_end = it - range_begin_it;
+            size_t new_range_end = (it - range_begin_it) + 1;
             chassert(new_range_end <= range.end);
 
             MarkRange new_range{range.begin, new_range_end};
