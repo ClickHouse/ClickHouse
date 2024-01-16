@@ -84,8 +84,6 @@ int main()
         input_length = ifs.gcount();
         input = input_buffer;
         bool last = (input_length < BUFFER_SIZE);
-        // std::cout << i << ":input_length:" << input_length << std::endl;
-        // ofs << "====================" << i << "====================" << std::endl;
 
         while (input_length > 0)
         {
@@ -98,8 +96,6 @@ int main()
 
             std::cout << i << ":input_length:" << input_length << ":input_bytes_read:" << input_bytes_read
                       << ":output_length:" << output_length << std::endl;
-            // ofs << "===" << i << ":input_length:" << input_length << ":input_bytes_read:" << input_bytes_read
-                // << ":output_length:" << output_length << "===" << std::endl;
             ofs.write(output_buffer, output_length);
 
             input_length -= input_bytes_read;

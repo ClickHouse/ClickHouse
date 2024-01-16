@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const Int32 LOGICAL_ERROR;
-}
-
 class BZip2Constants
 {
 public:
@@ -235,7 +230,7 @@ private:
 
     bool skipToNextMarker(Int64 marker, Int32 markerBitLength);
 
-    [[noreturn]] void reportCRCError() { throw Exception(ErrorCodes::LOGICAL_ERROR, "crc error"); }
+    [[noreturn]] void reportCRCError();
 
     void makeMaps();
 

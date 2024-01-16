@@ -322,10 +322,20 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
 
     std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context);
 
-    int zstd_window_log_max = static_cast<int>(context->getSettingsRef().zstd_window_log_max);
-    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
+    const Settings & settings = context->getSettingsRef();
+    int zstd_window_log_max = static_cast<int>(settings.zstd_window_log_max);
+    bool allow_parallel = settings.allow_parallel_decompress && settings.input_format_allow_seeks;
+    return wrapReadBufferWithCompressionMethod(
+        std::move(nested_buffer),
+        method,
+        zstd_window_log_max,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        nullptr,
+        0,
+        allow_parallel,
+        settings.max_download_threads,
+        settings.max_download_buffer_size);
 }
-
 }
 
 Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read)

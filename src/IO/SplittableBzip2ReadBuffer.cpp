@@ -6,8 +6,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const Int32 LOGICAL_ERROR;
-    extern const Int32 POSITION_OUT_OF_BOUND;
+extern const int LOGICAL_ERROR;
+extern const int POSITION_OUT_OF_BOUND;
 }
 
 std::vector<Int32> & SplittableBzip2ReadBuffer::Data::initTT(Int32 length)
@@ -293,6 +293,11 @@ bool SplittableBzip2ReadBuffer::skipToNextMarker(Int64 marker, Int32 markerBitLe
 bool SplittableBzip2ReadBuffer::skipToNextMarker(Int64 marker, Int32 markerBitLength)
 {
     return skipToNextMarker(marker, markerBitLength, *in, bsBuff, bsLive);
+}
+
+void SplittableBzip2ReadBuffer::reportCRCError()
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "CRC error");
 }
 
 void SplittableBzip2ReadBuffer::makeMaps()

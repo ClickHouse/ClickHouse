@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <IO/BufferWithOwnMemory.h>
@@ -85,7 +84,5 @@ private:
     std::mutex exception_mutex;
     std::exception_ptr background_exception = nullptr;
     std::atomic_bool emergency_stop{false};
-
-    bool all_completed{false};
 };
 }

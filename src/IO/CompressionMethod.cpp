@@ -2,20 +2,23 @@
 
 #include <IO/BrotliReadBuffer.h>
 #include <IO/BrotliWriteBuffer.h>
+#include <IO/Bzip2ReadBuffer.h>
+#include <IO/Bzip2WriteBuffer.h>
+#include <IO/HadoopSnappyReadBuffer.h>
 #include <IO/LZMADeflatingWriteBuffer.h>
 #include <IO/LZMAInflatingReadBuffer.h>
+#include <IO/Lz4DeflatingWriteBuffer.h>
+#include <IO/Lz4InflatingReadBuffer.h>
+#include <IO/ParallelBzip2ReadBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <IO/SeekableReadBuffer.h>
+#include <IO/SplittableBzip2ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ZlibDeflatingWriteBuffer.h>
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ZstdDeflatingWriteBuffer.h>
 #include <IO/ZstdInflatingReadBuffer.h>
-#include <IO/Lz4DeflatingWriteBuffer.h>
-#include <IO/Lz4InflatingReadBuffer.h>
-#include <IO/Bzip2ReadBuffer.h>
-#include <IO/Bzip2WriteBuffer.h>
-#include <IO/HadoopSnappyReadBuffer.h>
-#include <IO/SplittableBzip2ReadBuffer.h>
+#include "IO/SharedThreadPools.h"
 #include "config.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
@@ -135,7 +138,15 @@ std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod &
 }
 
 static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
-    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max)
+    std::unique_ptr<ReadBuffer> nested,
+    CompressionMethod method,
+    size_t buf_size,
+    char * existing_memory,
+    size_t alignment,
+    int zstd_window_log_max,
+    bool allow_parallel,
+    size_t max_download_threads,
+    size_t max_download_buffer_size)
 {
     if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
         return std::make_unique<ZlibInflatingReadBuffer>(std::move(nested), method, buf_size, existing_memory, alignment);
@@ -151,7 +162,28 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
         return std::make_unique<Lz4InflatingReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
 #if USE_BZIP2
     if (method == CompressionMethod::Bzip2)
+    {
+        if (allow_parallel)
+        {
+            auto * seekable = dynamic_cast<SeekableReadBuffer *>(nested.get());
+            auto file_size = tryGetFileSizeFromReadBuffer(*nested);
+            if (seekable && seekable->supportsReadAt() && file_size.has_value() && file_size.value() >= 2 * max_download_buffer_size
+                && max_download_threads > 1)
+            {
+                (void)nested.release();
+                std::unique_ptr<SeekableReadBuffer> seekable_nested;
+                seekable_nested.reset(seekable);
+                return std::make_unique<ParallelBzip2ReadBuffer>(
+                    std::move(seekable_nested),
+                    threadPoolCallbackRunner<void>(getIOThreadPool().get(), "ParallelBzipRead"),
+                    max_download_threads,
+                    max_download_buffer_size,
+                    file_size.value(),
+                    buf_size);
+            }
+        }
         return std::make_unique<Bzip2ReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
+    }
 #endif
 #if USE_SNAPPY
     if (method == CompressionMethod::Snappy)
@@ -162,11 +194,28 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
 }
 
 std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
-    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, int zstd_window_log_max, size_t buf_size, char * existing_memory, size_t alignment)
+    std::unique_ptr<ReadBuffer> nested,
+    CompressionMethod method,
+    int zstd_window_log_max,
+    size_t buf_size,
+    char * existing_memory,
+    size_t alignment,
+    bool allow_parallel,
+    size_t max_download_threads,
+    size_t max_download_buffer_size)
 {
     if (method == CompressionMethod::None)
         return nested;
-    return createCompressedWrapper(std::move(nested), method, buf_size, existing_memory, alignment, zstd_window_log_max);
+    return createCompressedWrapper(
+        std::move(nested),
+        method,
+        buf_size,
+        existing_memory,
+        alignment,
+        zstd_window_log_max,
+        allow_parallel,
+        max_download_threads,
+        max_download_buffer_size);
 }
 
 std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
