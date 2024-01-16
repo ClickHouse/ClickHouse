@@ -6400,23 +6400,27 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 {
 
     String database_name = scope.context->getCurrentDatabase();
-    String table_name = table_function_node->getOriginalAST()->as<ASTFunction>()->name;
+    String table_name = "";
 
-    if (table_function_node->getOriginalAST()->as<ASTFunction>()->is_compound_name)
+    if (table_function_node->getOriginalAST() && table_function_node->getOriginalAST()->as<ASTFunction>())
     {
-        std::vector<std::string> parts;
-        splitInto<'.'>(parts, table_function_node->getOriginalAST()->as<ASTFunction>()->name);
-
-        if (parts.size() == 2)
+        table_name = table_function_node->getOriginalAST()->as<ASTFunction>()->name;
+        if (table_function_node->getOriginalAST()->as<ASTFunction>()->is_compound_name)
         {
-            database_name = parts[0];
-            table_name = parts[1];
+            std::vector<std::string> parts;
+            splitInto<'.'>(parts, table_function_node->getOriginalAST()->as<ASTFunction>()->name);
+
+            if (parts.size() == 2)
+            {
+                database_name = parts[0];
+                table_name = parts[1];
+            }
         }
     }
 
     auto & table_function_node_typed = table_function_node->as<TableFunctionNode &>();
 
-    StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, scope.context->getQueryContext());
+    StoragePtr table = table_name.empty() ? nullptr : DatabaseCatalog::instance().tryGetTable({database_name, table_name}, scope.context->getQueryContext());
     if (table)
     {
         if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
