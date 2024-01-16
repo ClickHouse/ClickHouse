@@ -43,6 +43,13 @@ public:
         return offset();
     }
 
+protected:
+    void finalizeImpl() override
+    {
+        BufferWithOwnMemory<WriteBuffer>::finalizeImpl();
+        out.finalize();
+    }
+
 private:
     void nextImpl() override;
 
