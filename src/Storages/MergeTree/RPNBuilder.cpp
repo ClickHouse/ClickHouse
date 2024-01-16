@@ -14,7 +14,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 
+#include <Functions/indexHint.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 
 #include <Storages/KeyDescription.h>
 
@@ -390,6 +392,13 @@ size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
     }
     else
     {
+        if (dag_node->function_base->getName() == "indexHint")
+        {
+            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
+            const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
+            return index_hint->getActions()->getOutputs().size();
+        }
+
         return dag_node->children.size();
     }
 }
@@ -409,6 +418,13 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     }
     else
     {
+        if (dag_node->function_base->getName() == "indexHint")
+        {
+            const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
+            const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get());
+            return RPNBuilderTreeNode(index_hint->getActions()->getOutputs()[index], tree_context);
+        }
+
         return RPNBuilderTreeNode(dag_node->children[index], tree_context);
     }
 }
