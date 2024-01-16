@@ -18,6 +18,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context.h>
+#include "Common/StackTrace.h"
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 

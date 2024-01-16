@@ -29,9 +29,9 @@ constexpr size_t min(size_t x, size_t y)
 
 /// @note There's no auto scale to larger big integer, only for integral ones.
 /// It's cause of (U)Int64 backward compatibility and very big performance penalties.
-constexpr size_t nextSize(size_t size, bool upgrade_to_bigint = false)
+constexpr size_t nextSize(size_t size, bool force_upgrade = false)
 {
-    if (size < 8 || (upgrade_to_bigint && size <= 16))
+    if (size < 8 || (force_upgrade && size <= 16))
         return size * 2;
     return size;
 }
@@ -111,7 +111,7 @@ template <typename A, typename B> struct ResultOfModulo
     static constexpr bool result_is_signed = is_signed_v<A>;
     /// If modulo of division can yield negative number, we need larger type to accommodate it.
     /// Example: toInt32(-199) % toUInt8(200) will return -199 that does not fit in Int8, only in Int16.
-    static constexpr size_t size_of_result = result_is_signed ? nextSize(sizeof(B), true) : sizeof(B);
+    static constexpr size_t size_of_result = result_is_signed ? nextSize(sizeof(B)) : sizeof(B);
     using Type0 = typename Construct<result_is_signed, false, size_of_result>::Type;
     using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
 };

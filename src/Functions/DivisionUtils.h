@@ -140,7 +140,8 @@ struct ModuloImpl
 
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
-            if constexpr (!std::numeric_limits<IntegerAType>::is_signed && std::numeric_limits<IntegerBType>::is_signed)
+            if constexpr (!std::numeric_limits<IntegerAType>::is_signed &&
+            std::numeric_limits<IntegerBType>::is_signed)
             {
                 using CastA = typename NumberTraits::Construct<true, false, NumberTraits::nextSize(sizeof(IntegerAType), true)>::Type;
                 return static_cast<Result>(static_cast<CastA>(a) % b);
