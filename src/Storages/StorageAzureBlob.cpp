@@ -1121,7 +1121,7 @@ Chunk StorageAzureBlobSource::generate()
     return {};
 }
 
-void StorageAzureBlobSource::addNumRowsToCache(const DB::String & path, size_t num_rows)
+void StorageAzureBlobSource::addNumRowsToCache(const String & path, size_t num_rows)
 {
     String source = fs::path(connection_url) / container / path;
     auto cache_key = getKeyForSchemaCache(source, format, format_settings, getContext());

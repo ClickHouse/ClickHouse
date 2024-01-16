@@ -789,9 +789,9 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
 
         const auto & entry = it->getEntry();
         UNUSED(entry);
-        chassert(entry.size == reserved_size);
-        chassert(entry.key == key());
-        chassert(entry.offset == offset());
+        chassert(entry->size == reserved_size);
+        chassert(entry->key == key());
+        chassert(entry->offset == offset());
     };
 
     if (download_state == State::DOWNLOADED)

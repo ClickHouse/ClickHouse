@@ -46,10 +46,10 @@ namespace ErrorCodes
 IcebergMetadata::IcebergMetadata(
     const StorageS3::Configuration & configuration_,
     DB::ContextPtr context_,
-    DB::Int32 metadata_version_,
-    DB::Int32 format_version_,
-    DB::String manifest_list_file_,
-    DB::Int32 current_schema_id_,
+    Int32 metadata_version_,
+    Int32 format_version_,
+    String manifest_list_file_,
+    Int32 current_schema_id_,
     DB::NamesAndTypesList schema_)
     : WithContext(context_)
     , configuration(configuration_)
