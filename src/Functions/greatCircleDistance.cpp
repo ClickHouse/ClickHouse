@@ -43,7 +43,6 @@ namespace
 {
 
 constexpr double PI = std::numbers::pi_v<double>;
-constexpr double PI_F = std::numbers::pi_v<double>;
 
 constexpr double RAD_IN_DEG = static_cast<double>(PI / 180.0);
 constexpr double RAD_IN_DEG_HALF = static_cast<double>(PI / 360.0);
@@ -115,7 +114,7 @@ inline double geodistDegDiff(double f)
 
 inline double geodistFastCos(double x)
 {
-    double y = std::abs(x) * (COS_LUT_SIZE_F / PI_F / 2.0f);
+    double y = std::abs(x) * (COS_LUT_SIZE_F / PI / 2.0f);
     size_t i = doubleToIndex(y);
     y -= i;
     i &= (COS_LUT_SIZE - 1);
@@ -124,7 +123,7 @@ inline double geodistFastCos(double x)
 
 inline double geodistFastSin(double x)
 {
-    double y = std::abs(x) * (COS_LUT_SIZE_F / PI_F / 2.0f);
+    double y = std::abs(x) * (COS_LUT_SIZE_F / PI / 2.0f);
     size_t i = doubleToIndex(y);
     y -= i;
     i = (i - COS_LUT_SIZE / 4) & (COS_LUT_SIZE - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
@@ -199,7 +198,7 @@ double distance(double lon1deg, double lat1deg, double lon2deg, double lat2deg)
         }
         else if constexpr (method == Method::SPHERE_METERS)
         {
-            k_lat = sqr(EARTH_DIAMETER * PI_F / 360.0f);
+            k_lat = sqr(EARTH_DIAMETER * PI / 360.0f);
 
             k_lon = sphere_metric_meters_lut[latitude_midpoint_index]
                 + (sphere_metric_meters_lut[latitude_midpoint_index + 1] - sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
@@ -224,7 +223,7 @@ double distance(double lon1deg, double lat1deg, double lon2deg, double lat2deg)
             + geodistFastCos(lat1deg * RAD_IN_DEG) * geodistFastCos(lat2deg * RAD_IN_DEG) * sqr(geodistFastSin(lon_diff * RAD_IN_DEG_HALF));
 
         if constexpr (method == Method::SPHERE_DEGREES)
-            return (360.0f / PI_F) * geodistFastAsinSqrt(a);
+            return (360.0f / PI) * geodistFastAsinSqrt(a);
         else
             return EARTH_DIAMETER * geodistFastAsinSqrt(a);
     }
