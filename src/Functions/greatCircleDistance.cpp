@@ -296,7 +296,7 @@ private:
         if (!column_typed)
             throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of argument {} of function {}. Must be Float32/Float64.",
+                    "Illegal type {} of argument {} of function {}. Must be Float64.",
                     arguments[argument_index].type->getName(),
                     argument_index + 1,
                     getName());
