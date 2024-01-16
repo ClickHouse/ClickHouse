@@ -9,14 +9,15 @@
 using namespace DB;
 
 static constexpr size_t BUFFER_SIZE = DBMS_DEFAULT_BUFFER_SIZE;
-static const String compressed_file = "/data1/liyang/root/2.bz2";
-static const String decompressed_file = "/data1/liyang/root/2.txt";
+static const String compressed_file = "/path/to/2.bz2";
+static const String decompressed_file = "/path/to/2.txt";
 static bz_stream stream;
 static char input_buffer[BUFFER_SIZE];
 static char output_buffer[BUFFER_SIZE];
 
 int init()
 {
+    bzero(&stream, sizeof(stream));
     int ret = BZ2_bzDecompressInit(&stream, 0, 0);
     return ret;
 }
@@ -65,7 +66,6 @@ int processBlockStreaming(
 
 int main()
 {
-    bzero(&stream, sizeof(stream));
     if (init() != 0)
         std::cout << "init failed" << std::endl;
 

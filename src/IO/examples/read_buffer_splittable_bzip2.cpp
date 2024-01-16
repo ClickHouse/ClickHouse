@@ -1,11 +1,12 @@
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <filesystem>
 #include <bzlib.h>
 #include <Core/Defines.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/Bzip2ReadBuffer.h>
+#include <IO/CompressionMethod.h>
 #include <IO/ParallelBzip2ReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
@@ -18,10 +19,10 @@
 using namespace DB;
 namespace fs = std::filesystem;
 
-static const String compressed_file = "/path/to/2.bz2";
-static const String decompressed1_file = "/path/to/2.1.txt";
-static const String decompressed2_file = "/path/to/2.2.txt";
-static const String decompressed3_file = "/path/to/2.3.txt";
+static const String compressed_file = "/data1/liyang/root/2.bz2";
+static const String decompressed1_file = "/data1/liyang/root/2.1.txt";
+static const String decompressed2_file = "/data1/liyang/root/2.2.txt";
+static const String decompressed3_file = "/data1/liyang/root/2.3.txt";
 static constexpr size_t max_split_bytes = 2 * 1024 * 1024UL;
 static constexpr size_t max_working_readers = 16;
 static size_t file_size = 0;
@@ -81,14 +82,10 @@ static void decompressFromSplits()
 
 static void parallelDecompressFromSplits()
 {
-    getIOThreadPool().initialize(100, 0, 10000);
+    auto method = chooseCompressionMethod(compressed_file, "auto");
     auto in = std::make_unique<ReadBufferFromFilePRead>(compressed_file);
-    auto rb = std::make_unique<ParallelBzip2ReadBuffer>(
-        std::move(in),
-        threadPoolCallbackRunner<void>(getIOThreadPool().get(), "ParallelRead"),
-        max_working_readers,
-        max_split_bytes,
-        file_size);
+    auto rb = wrapReadBufferWithCompressionMethod(
+        std::move(in), method, 0, DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0, true, max_working_readers, max_split_bytes);
     auto out = std::make_unique<WriteBufferFromFile>(decompressed3_file);
     copyData(*rb, *out);
 }
@@ -98,6 +95,7 @@ int main()
     Poco::AutoPtr<Poco::ConsoleChannel> chan(new Poco::ConsoleChannel);
     Poco::Logger::root().setChannel(chan);
     Poco::Logger::root().setLevel("trace");
+    getIOThreadPool().initialize(100, 0, 10000);
 
     fs::path path(compressed_file);
     try

@@ -19,7 +19,7 @@ private:
 
 public:
     ParallelBzip2ReadBuffer(
-        std::unique_ptr<SeekableReadBuffer> input_,
+        std::unique_ptr<ReadBuffer> input_,
         ThreadPoolCallbackRunner<void> schedule_,
         size_t max_working_readers_,
         size_t range_step_,
@@ -63,7 +63,7 @@ private:
 
     ThreadPoolCallbackRunner<void> schedule;
 
-    SeekableReadBuffer & input;
+    SeekableReadBuffer * input;
     size_t file_size;
     size_t range_step;
     size_t buf_size;

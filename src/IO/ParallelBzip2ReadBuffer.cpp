@@ -5,6 +5,7 @@
 #include <IO/copyData.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include <unistd.h>
 
 namespace DB
 {
@@ -16,7 +17,7 @@ extern const int LOGICAL_ERROR;
 }
 
 ParallelBzip2ReadBuffer::ParallelBzip2ReadBuffer(
-    std::unique_ptr<SeekableReadBuffer> input_,
+    std::unique_ptr<ReadBuffer> input_,
     ThreadPoolCallbackRunner<void> schedule_,
     size_t max_working_readers_,
     size_t range_step_,
@@ -25,11 +26,14 @@ ParallelBzip2ReadBuffer::ParallelBzip2ReadBuffer(
     : CompressedReadBufferWrapper(std::move(input_), 0, nullptr, 0)
     , max_working_readers(max_working_readers_)
     , schedule(std::move(schedule_))
-    , input(dynamic_cast<SeekableReadBuffer &>(getWrappedReadBuffer()))
+    , input(dynamic_cast<SeekableReadBuffer *>(&getWrappedReadBuffer()))
     , file_size(file_size_)
     , range_step(std::max(1ul, range_step_))
     , buf_size(buf_size_)
 {
+    if (!input)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ParallelBzip2ReadBuffer requires SeekableReadBuffer as input");
+
     LOG_TRACE(&Poco::Logger::get("ParallelBzip2ReadBuffer"), "Parallel bzip2 reading is used");
     try
     {
@@ -57,12 +61,12 @@ bool ParallelBzip2ReadBuffer::addReaderToPool()
     {
         Int64 bs_buff = 0;
         Int64 bs_live = 0;
-        input.seek(range_end, SEEK_SET);
+        input->seek(range_end, SEEK_SET);
         bool ok = SplittableBzip2ReadBuffer::skipToNextMarker(
-            SplittableBzip2ReadBuffer::BLOCK_DELIMITER, SplittableBzip2ReadBuffer::DELIMITER_BIT_LENGTH, input, bs_buff, bs_live);
+            SplittableBzip2ReadBuffer::BLOCK_DELIMITER, SplittableBzip2ReadBuffer::DELIMITER_BIT_LENGTH, *input, bs_buff, bs_live);
         if (ok)
         {
-            range_end = input.getPosition() - SplittableBzip2ReadBuffer::DELIMITER_BIT_LENGTH / 8 + 1;
+            range_end = input->getPosition() - SplittableBzip2ReadBuffer::DELIMITER_BIT_LENGTH / 8 + 1;
             next_range_start = range_start + range_step;
         }
         else
@@ -74,7 +78,7 @@ bool ParallelBzip2ReadBuffer::addReaderToPool()
     }
     LOG_TRACE(&Poco::Logger::get("ParallelBzip2ReadBuffer"), "Add reader for range: [{}, {}) after adjustment", range_start, range_end);
 
-    auto worker = compressed_read_workers.emplace_back(std::make_shared<CompressedReadWorker>(input, range_start, range_end - range_start));
+    auto worker = compressed_read_workers.emplace_back(std::make_shared<CompressedReadWorker>(*input, range_start, range_end - range_start));
     ++active_working_readers;
     schedule([this, my_worker = std::move(worker)]() mutable { readerThreadFunction(std::move(my_worker)); }, Priority{});
     return true;
@@ -198,7 +202,7 @@ void ParallelBzip2ReadBuffer::readerThreadFunction(CompressedReadWorkerPtr worke
             return false;
         };
 
-        size_t r = input.readBigAt(worker->segment.data(), worker->segment.size(), worker->start_offset, on_progress);
+        size_t r = input->readBigAt(worker->segment.data(), worker->segment.size(), worker->start_offset, on_progress);
 
         if (!on_progress(r) && r < worker->segment.size())
             throw Exception(
