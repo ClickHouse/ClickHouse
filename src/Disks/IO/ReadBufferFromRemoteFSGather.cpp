@@ -1,6 +1,6 @@
 #include "ReadBufferFromRemoteFSGather.h"
 
-#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
@@ -61,7 +61,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
         current_object = blobs_to_read.front();
 }
 
-SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
+std::unique_ptr<ReadBufferFromFileBase> ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object)
 {
     if (current_buf && !with_cache)
     {
@@ -78,7 +78,7 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     if (with_cache)
     {
         auto cache_key = settings.remote_fs_cache->createKeyForPath(object_path);
-        return std::make_shared<CachedOnDiskReadBufferFromFile>(
+        return std::make_unique<CachedOnDiskReadBufferFromFile>(
             object_path,
             cache_key,
             settings.remote_fs_cache,

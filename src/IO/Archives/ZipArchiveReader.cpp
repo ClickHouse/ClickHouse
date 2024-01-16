@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int LOGICAL_ERROR;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 using RawHandle = unzFile;
@@ -249,6 +250,11 @@ public:
         if (err == MZ_PASSWORD_ERROR)
             showError("Wrong password");
         checkResult(err);
+    }
+
+    size_t getFileOffsetOfBufferEnd() const override
+    {
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getFileOffsetOfBufferEnd is not supported when reading from zip archive");
     }
 
     off_t seek(off_t off, int whence) override
