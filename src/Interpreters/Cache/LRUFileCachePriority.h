@@ -15,7 +15,7 @@ class LRUFileCachePriority final : public IFileCachePriority
 {
 private:
     class LRUIterator;
-    using LRUQueue = std::list<Entry>;
+    using LRUQueue = std::list<EntryPtr>;
     friend class SLRUFileCachePriority;
 
 public:
@@ -76,7 +76,7 @@ private:
     void iterate(IterateFunc && func, const CacheGuard::Lock &);
 
     LRUIterator move(LRUIterator & it, LRUFileCachePriority & other, const CacheGuard::Lock &);
-    LRUIterator add(Entry && entry, const CacheGuard::Lock &);
+    LRUIterator add(EntryPtr entry, const CacheGuard::Lock &);
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator
@@ -91,7 +91,7 @@ public:
     LRUIterator & operator =(const LRUIterator & other);
     bool operator ==(const LRUIterator & other) const;
 
-    const Entry & getEntry() const override { return *iterator; }
+    EntryPtr getEntry() const override { return *iterator; }
 
     size_t increasePriority(const CacheGuard::Lock &) override;
 
