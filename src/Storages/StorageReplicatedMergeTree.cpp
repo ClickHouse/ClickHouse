@@ -2717,8 +2717,16 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
             if (part_desc->src_table_part->info.partition_id != part_desc->new_part_info.partition_id)
             {
+                auto [new_partition, new_min_max_index] = createPartitionAndMinMaxIndexFromSourcePart(
+                    part_desc->src_table_part, metadata_snapshot, getContext());
+
+                auto partition_id = new_partition.getID(*this);
+
                 auto [res_part, temporary_part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
                     part_desc->src_table_part,
+                    new_partition,
+                    partition_id,
+                    new_min_max_index,
                     TMP_PREFIX + "clone_",
                     metadata_snapshot,
                     clone_params,
@@ -7943,11 +7951,16 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                                 "Cannot replace partition '{}' because part '{}"
                                 "' has inconsistent granularity with table", partition_id, src_part->name);
 
+            IMergeTreeDataPart::MinMaxIndex min_max_index = *src_part->minmax_idx;
+            MergeTreePartition merge_tree_partition = src_part->partition;
+
             if (is_partition_exp_different)
             {
-                auto new_partition = createPartitionFromSourcePart(src_part, metadata_snapshot, query_context);
+                auto [new_partition, new_min_max_index] = createPartitionAndMinMaxIndexFromSourcePart(src_part, metadata_snapshot, query_context);
 
-                partition_id = new_partition.getID(*this);
+                merge_tree_partition = new_partition;
+                min_max_index = new_min_max_index;
+                partition_id = merge_tree_partition.getID(*this);
             }
 
             String hash_hex = src_part->checksums.getTotalChecksumHex();
@@ -7983,6 +7996,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             {
                 auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
                     src_part,
+                    merge_tree_partition,
+                    partition_id,
+                    min_max_index,
                     TMP_PREFIX,
                     metadata_snapshot,
                     clone_params,

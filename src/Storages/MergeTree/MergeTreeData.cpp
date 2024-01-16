@@ -7092,6 +7092,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
     const MergeTreeData::DataPartPtr & src_part,
+    const MergeTreePartition & new_partition,
+    const String & partition_id,
+    const IMergeTreeDataPart::MinMaxIndex & min_max_index,
     const String & tmp_part_prefix,
     const StorageMetadataPtr & my_metadata_snapshot,
     const IDataPartStorage::ClonePartParams & clone_params,
@@ -7099,19 +7102,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     Int64 temp_index
 )
 {
-    const auto & src_data = src_part->storage;
-
-    auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
-    IMergeTreeDataPart::MinMaxIndex min_max_index;
-
-    min_max_index.load(src_data, metadata_manager);
-
-    MergeTreePartition new_partition;
-
-    new_partition.create(my_metadata_snapshot, min_max_index.getBlock(src_data), 0u, getContext());
-
-    auto partition_id = new_partition.getID(*this);
-
     MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
 
     return MergeTreeDataPartCloner::cloneWithDistinctPartitionExpression(
@@ -7128,7 +7118,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         clone_params);
 }
 
-MergeTreePartition MergeTreeData::createPartitionFromSourcePart(
+std::pair<MergeTreePartition, IMergeTreeDataPart::MinMaxIndex> MergeTreeData::createPartitionAndMinMaxIndexFromSourcePart(
     const MergeTreeData::DataPartPtr & src_part,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr local_context)
@@ -7144,7 +7134,7 @@ MergeTreePartition MergeTreeData::createPartitionFromSourcePart(
 
     new_partition.create(metadata_snapshot, min_max_index.getBlock(src_data), 0u, local_context);
 
-    return new_partition;
+    return {new_partition, min_max_index};
 }
 
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const

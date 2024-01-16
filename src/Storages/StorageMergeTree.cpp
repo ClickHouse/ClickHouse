@@ -2076,8 +2076,14 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
         if (is_partition_exp_different)
         {
+            auto [new_partition, new_min_max_index] = createPartitionAndMinMaxIndexFromSourcePart(
+                src_part, my_metadata_snapshot, local_context);
+
             auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
                 src_part,
+                new_partition,
+                new_partition.getID(*this),
+                new_min_max_index,
                 TMP_PREFIX,
                 my_metadata_snapshot,
                 clone_params,
