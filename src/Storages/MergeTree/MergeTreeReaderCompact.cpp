@@ -372,7 +372,7 @@ void MergeTreeReaderCompact::readData(
                 deserialize_settings.getter = buffer_getter_for_prefix;
                 serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state_for_prefix);
             }
-          
+
             deserialize_settings.getter = buffer_getter;
             serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
             if (offset > 0)
@@ -410,8 +410,7 @@ void MergeTreeReaderCompact::readData(
         {
             auto serialization_for_prefix = getSerializationInPart(*column_for_offsets);
 
-            deserialize_settings.getter = 
-              ;
+            deserialize_settings.getter = buffer_getter_for_prefix;
             serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state_for_prefix);
         }
 
