@@ -527,12 +527,12 @@ static avro::Codec getCodec(const std::string & codec_name)
 
     if (codec_name == "null")    return avro::Codec::NULL_CODEC;
     if (codec_name == "deflate") return avro::Codec::DEFLATE_CODEC;
-    if (codec_name == "zstandard")
+    if (codec_name == "zstd")
         return avro::Codec::ZSTD_CODEC;
-#    ifdef SNAPPY_CODEC_AVAILABLE
+#ifdef SNAPPY_CODEC_AVAILABLE
     if (codec_name == "snappy")
         return avro::Codec::SNAPPY_CODEC;
-#    endif
+#endif
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Avro codec {} is not available", codec_name);
 }
