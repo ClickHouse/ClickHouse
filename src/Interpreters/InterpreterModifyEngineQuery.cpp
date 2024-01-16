@@ -9,6 +9,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/IStorage.h>
@@ -214,4 +215,12 @@ AccessRightsElements InterpreterModifyEngineQuery::getRequiredAccess() const
     return required_access;
 }
 
+void registerInterpreterModifyEngineQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterModifyEngineQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterModifyEngineQuery", create_fn);
+}
 }

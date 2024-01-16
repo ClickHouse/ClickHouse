@@ -13,6 +13,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/ASTModifyEngineQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -337,6 +338,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTDeleteQuery>())
     {
         interpreter_name = "InterpreterDeleteQuery";
+    }
+    else if (query->as<ASTModifyEngineQuery>())
+    {
+        interpreter_name = "InterpreterModifyEngineQuery";
     }
 
     if (!interpreters.contains(interpreter_name))
