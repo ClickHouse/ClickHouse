@@ -83,7 +83,7 @@ def cancel_backup(backup_id):
     )
     assert (
         node.query(f"SELECT status FROM system.backups WHERE id='{backup_id}'")
-        == "BACKUP_FAILED\n"
+        == "BACKUP_CANCELLED\n"
     )
     expected_error = "QUERY_WAS_CANCELLED"
     assert expected_error in node.query(
@@ -149,7 +149,7 @@ def cancel_restore(restore_id):
     )
     assert (
         node.query(f"SELECT status FROM system.backups WHERE id='{restore_id}'")
-        == "RESTORE_FAILED\n"
+        == "RESTORE_CANCELLED\n"
     )
     expected_error = "QUERY_WAS_CANCELLED"
     assert expected_error in node.query(

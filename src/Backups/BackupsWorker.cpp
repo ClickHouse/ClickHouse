@@ -45,6 +45,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 using OperationID = BackupOperationID;
@@ -152,15 +153,45 @@ namespace
         }
     }
 
-    bool isFinalStatus(BackupStatus status)
+    bool isFinishedSuccessfully(BackupStatus status)
     {
-        return (status == BackupStatus::BACKUP_CREATED) || (status == BackupStatus::BACKUP_FAILED) || (status == BackupStatus::RESTORED)
-            || (status == BackupStatus::RESTORE_FAILED);
+        return (status == BackupStatus::BACKUP_CREATED) || (status == BackupStatus::RESTORED);
     }
 
-    bool isErrorStatus(BackupStatus status)
+    bool isFailed(BackupStatus status)
     {
         return (status == BackupStatus::BACKUP_FAILED) || (status == BackupStatus::RESTORE_FAILED);
+    }
+
+    bool isCancelled(BackupStatus status)
+    {
+        return (status == BackupStatus::BACKUP_CANCELLED) || (status == BackupStatus::RESTORE_CANCELLED);
+    }
+
+    bool isFailedOrCancelled(BackupStatus status)
+    {
+        return isFailed(status) || isCancelled(status);
+    }
+
+    bool isFinalStatus(BackupStatus status)
+    {
+        return isFinishedSuccessfully(status) || isFailedOrCancelled(status);
+    }
+
+    BackupStatus getBackupStatusFromCurrentException()
+    {
+        if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
+            return BackupStatus::BACKUP_CANCELLED;
+        else
+            return BackupStatus::BACKUP_FAILED;
+    }
+
+    BackupStatus getRestoreStatusFromCurrentException()
+    {
+        if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
+            return BackupStatus::RESTORE_CANCELLED;
+        else
+            return BackupStatus::RESTORE_FAILED;
     }
 
     /// Used to change num_active_backups.
@@ -456,7 +487,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     {
         tryLogCurrentException(log, fmt::format("Failed to start {} {}", (backup_settings.internal ? "internal backup" : "backup"), backup_name_for_logging));
         /// Something bad happened, the backup has not built.
-        setStatusSafe(backup_id, BackupStatus::BACKUP_FAILED);
+        setStatusSafe(backup_id, getBackupStatusFromCurrentException());
         sendCurrentExceptionToCoordination(backup_coordination);
         throw;
     }
@@ -611,7 +642,7 @@ void BackupsWorker::doBackup(
         if (called_async)
         {
             tryLogCurrentException(log, fmt::format("Failed to make {} {}", (backup_settings.internal ? "internal backup" : "backup"), backup_name_for_logging));
-            setStatusSafe(backup_id, BackupStatus::BACKUP_FAILED);
+            setStatusSafe(backup_id, getBackupStatusFromCurrentException());
             sendCurrentExceptionToCoordination(backup_coordination);
         }
         else
@@ -827,7 +858,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     catch (...)
     {
         /// Something bad happened, the backup has not built.
-        setStatusSafe(restore_id, BackupStatus::RESTORE_FAILED);
+        setStatusSafe(restore_id, getRestoreStatusFromCurrentException());
         sendCurrentExceptionToCoordination(restore_coordination);
         throw;
     }
@@ -967,7 +998,7 @@ void BackupsWorker::doRestore(
         if (called_async)
         {
             tryLogCurrentException(log, fmt::format("Failed to restore from {} {}", (restore_settings.internal ? "internal backup" : "backup"), backup_name_for_logging));
-            setStatusSafe(restore_id, BackupStatus::RESTORE_FAILED);
+            setStatusSafe(restore_id, getRestoreStatusFromCurrentException());
             sendCurrentExceptionToCoordination(restore_coordination);
         }
         else
@@ -1111,7 +1142,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     if (isFinalStatus(status))
         info.end_time = std::chrono::system_clock::now();
 
-    if (isErrorStatus(status))
+    if (isFailedOrCancelled(status))
     {
         info.error_message = getCurrentExceptionMessage(false);
         info.exception = std::current_exception();
@@ -1163,7 +1194,7 @@ void BackupsWorker::wait(const OperationID & id, bool rethrow_exception)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown backup ID {}", id);
         const auto & info = it->second;
         auto current_status = info.status;
-        if (rethrow_exception && isErrorStatus(current_status))
+        if (rethrow_exception && isFailedOrCancelled(current_status))
             std::rethrow_exception(info.exception);
         return isFinalStatus(current_status);
     });
