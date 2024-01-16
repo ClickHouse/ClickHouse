@@ -31,9 +31,8 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-void WebObjectStorage::initialize(const String & uri_path, const std::unique_lock<std::shared_mutex> & lock) const
+void WebObjectStorage::initialize(const String & uri_path, const std::unique_lock<std::shared_mutex> &) const
 {
-    std::vector<String> directories_to_load;
     LOG_TRACE(log, "Loading metadata for directory: {}", uri_path);
 
     try
@@ -74,11 +73,6 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
 
             file_data.type = is_directory ? FileType::Directory : FileType::File;
             String file_path = fs::path(uri_path) / file_name;
-            if (file_data.type == FileType::Directory)
-            {
-                directories_to_load.push_back(file_path);
-            }
-
             file_path = file_path.substr(url.size());
             LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding file: {}, size: {}", file_path, file_data.size);
 
@@ -101,9 +95,6 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
         e.addMessage("while loading disk metadata");
         throw;
     }
-
-    for (const auto & directory_path : directories_to_load)
-        initialize(directory_path, lock);
 }
 
 
