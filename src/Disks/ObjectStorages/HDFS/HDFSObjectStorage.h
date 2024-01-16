@@ -48,6 +48,7 @@ public:
         , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
         , hdfs_fs(createHDFSFS(hdfs_builder.get()))
         , settings(std::move(settings_))
+        , hdfs_root_path(hdfs_root_path_)
     {
         data_source_description.type = DataSourceType::HDFS;
         data_source_description.description = hdfs_root_path_;
@@ -56,6 +57,8 @@ public:
     }
 
     std::string getName() const override { return "HDFSObjectStorage"; }
+
+    std::string getCommonKeyPrefix() const override { return hdfs_root_path; }
 
     DataSourceDescription getDataSourceDescription() const override
     {
@@ -123,8 +126,8 @@ private:
 
     HDFSBuilderWrapper hdfs_builder;
     HDFSFSPtr hdfs_fs;
-
     SettingsPtr settings;
+    const std::string hdfs_root_path;
 
     DataSourceDescription data_source_description;
 };

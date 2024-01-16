@@ -807,11 +807,11 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             return;
 
         const auto & entry = it->getEntry();
-        if (download_state != State::DOWNLOADING && entry.size != reserved_size)
-            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry.size, reserved_size));
+        if (download_state != State::DOWNLOADING && entry->size != reserved_size)
+            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size, reserved_size));
 
-        chassert(entry.key == key());
-        chassert(entry.offset == offset());
+        chassert(entry->key == key());
+        chassert(entry->offset == offset());
     };
 
     const auto file_path = getPathInLocalCache();
