@@ -163,7 +163,7 @@ public:
         size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr context) const override;
+    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
@@ -208,7 +208,7 @@ public:
 
     /// Wait till replication queue's current last entry is processed or till size becomes 0
     /// If timeout is exceeded returns false
-    bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode);
+    bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
     void getStatus(ReplicatedTableStatus & res, bool with_zk_fields = true);
@@ -561,7 +561,6 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr local_context,
-        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams);
 
@@ -571,7 +570,6 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr local_context,
-        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams);
 

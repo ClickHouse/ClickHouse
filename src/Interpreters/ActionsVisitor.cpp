@@ -1419,7 +1419,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             return set;
         }
 
-        FutureSetPtr external_table_set;
+        FutureSetFromSubqueryPtr external_table_set;
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).

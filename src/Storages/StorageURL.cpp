@@ -36,13 +36,13 @@
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <Common/re2.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <regex>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -84,9 +84,9 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
 /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
-static const std::vector<std::regex> optional_regex_keys = {
-    std::regex(R"(headers.header\[[\d]*\].name)"),
-    std::regex(R"(headers.header\[[\d]*\].value)"),
+static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys = {
+    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
+    std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
 };
 
 static bool urlWithGlobs(const String & uri)
@@ -498,13 +498,13 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     throw Exception(ErrorCodes::NETWORK_ERROR, "All uri ({}) options are unreachable: {}", options, first_exception_message);
 }
 
-void StorageURLSource::addNumRowsToCache(const DB::String & uri, size_t num_rows)
+void StorageURLSource::addNumRowsToCache(const String & uri, size_t num_rows)
 {
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     StorageURL::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
 }
 
-std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const DB::String & uri, std::optional<time_t> last_mod_time)
+std::optional<size_t> StorageURLSource::tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time)
 {
     auto cache_key = getKeyForSchemaCache(uri, format, format_settings, getContext());
     auto get_last_mod_time = [&]() -> std::optional<time_t>
@@ -541,11 +541,12 @@ StorageURLSink::StorageURLSink(
         Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts, DBMS_DEFAULT_BUFFER_SIZE, proxy_config
     );
 
+    const auto & settings = context->getSettingsRef();
     write_buf = wrapWriteBufferWithCompressionMethod(
         std::move(write_buffer),
         compression_method,
-        3
-    );
+        static_cast<int>(settings.output_format_compression_level),
+        static_cast<int>(settings.output_format_compression_zstd_window_log));
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block, context, format_settings);
 }
 

@@ -24,7 +24,6 @@
 #include "MatchGenerator.h"
 
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 #include <map>
 #include <functional>
@@ -228,8 +227,7 @@ private:
 
             auto [lo, _] = *it;
             Rune r = lo + count_down - 1;
-            int n = re2::runetochar(out, &r);
-            return n;
+            return re2::runetochar(out, &r);
         }
 
         size_t getRequiredSize() override
@@ -331,13 +329,6 @@ private:
 
 
 public:
-    explicit RandomStringPrepareWalker(bool logging)
-        : logger(logging ? &Poco::Logger::get("GeneratorCombiner") : nullptr)
-    {
-        if (logger)
-            LOG_DEBUG(logger, "GeneratorCombiner");
-    }
-
     std::function<String()> getGenerator()
     {
         if (root == nullptr)
@@ -364,7 +355,7 @@ public:
     }
 
 private:
-    Children CopyChildrenArgs(Regexp** children, int nchild)
+    Children CopyChildrenArgs(Regexp ** children, int nchild)
     {
         Children result;
         result.reserve(nchild);
@@ -375,16 +366,11 @@ private:
 
     Regexp * ShortVisit(Regexp* /*re*/, Regexp * /*parent_arg*/) override
     {
-        if (logger)
-            LOG_DEBUG(logger, "ShortVisit");
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "should not be call");
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "ShortVisit should not be called");
     }
 
-    Regexp * PreVisit(Regexp * re, Regexp* parent_arg, bool* /*stop*/) override /*noexcept*/
+    Regexp * PreVisit(Regexp * re, Regexp * parent_arg, bool* /*stop*/) override /*noexcept*/
     {
-        if (logger)
-            LOG_DEBUG(logger, "GeneratorCombiner PreVisit node {}", magic_enum::enum_name(re->op()));
-
         if (parent_arg == nullptr)
         {
             chassert(root == nullptr);
@@ -395,13 +381,9 @@ private:
         return re;
     }
 
-    Regexp * PostVisit(Regexp * re, Regexp* /*parent_arg*/, Regexp* pre_arg,
+    Regexp * PostVisit(Regexp * re, Regexp * /*parent_arg*/, Regexp * pre_arg,
                        Regexp ** child_args, int nchild_args) override /*noexcept*/
     {
-        if (logger)
-            LOG_DEBUG(logger, "GeneratorCombiner PostVisit node {}",
-                      magic_enum::enum_name(re->op()));
-
         switch (re->op())
         {
             case kRegexpConcat: // Matches concatenation of sub_[0..nsub-1].
@@ -457,8 +439,6 @@ private:
         return pre_arg;
     }
 
-    Poco::Logger * logger = nullptr;
-
     Regexp * root = nullptr;
     Generators generators;
 };
@@ -474,7 +454,7 @@ void RandomStringGeneratorByRegexp::RegexpPtrDeleter::operator() (re2::Regexp * 
     re->Decref();
 }
 
-RandomStringGeneratorByRegexp::RandomStringGeneratorByRegexp(const String & re_str, bool logging)
+RandomStringGeneratorByRegexp::RandomStringGeneratorByRegexp(const String & re_str)
 {
     re2::RE2::Options options;
     options.set_case_sensitive(true);
@@ -491,7 +471,7 @@ RandomStringGeneratorByRegexp::RandomStringGeneratorByRegexp(const String & re_s
 
     regexp.reset(regexp->Simplify());
 
-    auto walker = re2::RandomStringPrepareWalker(logging);
+    auto walker = re2::RandomStringPrepareWalker();
     walker.Walk(regexp.get(), {});
     generatorFunc = walker.getGenerator();
 

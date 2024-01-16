@@ -377,6 +377,12 @@ Allow parsing bools as numbers in JSON input formats.
 
 Enabled by default.
 
+## input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
+
+Allow parsing bools as strings in JSON input formats.
+
+Enabled by default.
+
 ## input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
 Allow parsing numbers as strings in JSON input formats.
@@ -1260,6 +1266,28 @@ Possible values:
 
 - 0 — The `LowCardinality` type is not converted to the `DICTIONARY` type.
 - 1 — The `LowCardinality` type is converted to the `DICTIONARY` type.
+
+Default value: `0`.
+
+### output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
+
+Use signed integer types instead of unsigned in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
+
+Possible values:
+
+- 0 — Unsigned integer types are used for indexes in `DICTIONARY` type.
+- 1 — Signed integer types are used for indexes in `DICTIONARY` type.
+
+Default value: `1`.
+
+### output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
+
+Use 64-bit integer type in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
+
+Possible values:
+
+- 0 — Type for indexes in `DICTIONARY` type is determined automatically.
+- 1 — 64-bit integer type is used for indexes in `DICTIONARY` type.
 
 Default value: `0`.
 

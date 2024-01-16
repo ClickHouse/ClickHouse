@@ -809,15 +809,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     else
                     {
                         if (auto * distributed = typeid_cast<StorageDistributed *>(storage.get());
-                            distributed && canUseCustomKey(settings, *distributed->getCluster(), *query_context))
+                            distributed && query_context->canUseParallelReplicasCustomKey(*distributed->getCluster()))
                         {
-                            table_expression_query_info.use_custom_key = true;
                             planner_context->getMutableQueryContext()->setSetting("distributed_group_by_no_merge", 2);
                         }
                     }
                 }
 
-                const auto & table_expression_alias = table_expression->getAlias();
+                const auto & table_expression_alias = table_expression->getOriginalAlias();
                 auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, planner_context);
                 add_filter(additional_filters_info, "additional filter");
 
@@ -846,9 +845,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     query_context->getQueryContext()->addQueryAccessInfo(
                         backQuoteIfNeed(local_storage_id.getDatabaseName()),
                         local_storage_id.getFullTableName(),
-                        columns_names,
-                        {},
-                        {});
+                        columns_names);
                 }
             }
 
@@ -1057,6 +1054,18 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
 
     auto right_plan = std::move(right_join_tree_query_plan.query_plan);
     auto right_plan_output_columns = right_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+
+    // {
+    //     WriteBufferFromOwnString buf;
+    //     left_plan.explainPlan(buf, {.header = true, .actions = true});
+    //     std::cerr << "left plan \n "<< buf.str() << std::endl;
+    // }
+
+    // {
+    //     WriteBufferFromOwnString buf;
+    //     right_plan.explainPlan(buf, {.header = true, .actions = true});
+    //     std::cerr << "right plan \n "<< buf.str() << std::endl;
+    // }
 
     JoinClausesAndActions join_clauses_and_actions;
     JoinKind join_kind = join_node.getKind();
