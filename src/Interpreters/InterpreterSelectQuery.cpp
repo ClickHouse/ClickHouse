@@ -589,9 +589,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             }
         }
         else if (auto * distributed = dynamic_cast<StorageDistributed *>(storage.get());
-                 distributed && canUseCustomKey(settings, *distributed->getCluster(), *context))
+                 distributed && context->canUseParallelReplicasCustomKey(*distributed->getCluster()))
         {
-            query_info.use_custom_key = true;
             context->setSetting("distributed_group_by_no_merge", 2);
         }
     }
@@ -2537,6 +2536,10 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         query_info.storage_limits = std::make_shared<StorageLimitsList>(storage_limits);
         query_info.settings_limit_offset_done = options.settings_limit_offset_done;
+        /// Possible filters: row-security, additional filter, replica filter (before array join), where (after array join)
+        query_info.has_filters_and_no_array_join_before_filter = row_policy_filter || additional_filter_info
+            || parallel_replicas_custom_filter_info
+            || (analysis_result.hasWhere() && !analysis_result.before_where->hasArrayJoin() && !analysis_result.array_join);
         storage->read(query_plan, required_columns, storage_snapshot, query_info, context, processing_stage, max_block_size, max_streams);
 
         if (context->hasQueryContext() && !options.is_internal)
@@ -2878,7 +2881,15 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         // has suitable sorting. Also don't create sort steps when there are no
         // columns to sort by, because the sort nodes are confused by this. It
         // happens in case of `over ()`.
-        if (!window.full_sort_description.empty() && (i == 0 || !sortIsPrefix(window, *windows_sorted[i - 1])))
+        // Even if full_sort_description of both windows match, in case of different
+        // partitioning we need to add a SortingStep to reshuffle data in the streams.
+        bool need_sort = !window.full_sort_description.empty();
+        if (need_sort && i != 0)
+        {
+            need_sort = !sortIsPrefix(window, *windows_sorted[i - 1])
+                        || (settings.max_threads != 1 && window.partition_by.size() != windows_sorted[i - 1]->partition_by.size());
+        }
+        if (need_sort)
         {
             SortingStep::Settings sort_settings(*context);
 

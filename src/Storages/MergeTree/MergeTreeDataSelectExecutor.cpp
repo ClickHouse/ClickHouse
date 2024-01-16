@@ -135,9 +135,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
     bool enable_parallel_reading) const
 {
-    if (query_info.merge_tree_empty_result)
-        return std::make_unique<QueryPlan>();
-
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
     const auto & alter_conversions = snapshot_data.alter_conversions;
@@ -516,6 +513,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
 
     if (metadata_snapshot->hasPartitionKey())
     {
+        chassert(minmax_idx_condition && partition_pruner);
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
@@ -933,11 +931,10 @@ static void selectColumnNames(
     }
 }
 
-MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
+ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     MergeTreeData::DataPartsVector parts,
     const PrewhereInfoPtr & prewhere_info,
     const Names & column_names_to_return,
-    const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const ActionDAGNodes & added_filter_nodes,
@@ -947,8 +944,7 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 {
     size_t total_parts = parts.size();
     if (total_parts == 0)
-        return std::make_shared<MergeTreeDataSelectAnalysisResult>(
-            MergeTreeDataSelectAnalysisResult{.result = ReadFromMergeTree::AnalysisResult()});
+        return std::make_shared<ReadFromMergeTree::AnalysisResult>();
 
     Names real_column_names;
     Names virt_column_names;
@@ -966,7 +962,6 @@ MergeTreeDataSelectAnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         /*alter_conversions=*/ {},
         prewhere_info,
         added_filter_nodes,
-        metadata_snapshot_base,
         metadata_snapshot,
         query_info,
         context,
@@ -989,13 +984,13 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     const UInt64 max_block_size,
     const size_t num_streams,
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read,
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr,
+    ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr,
     bool enable_parallel_reading) const
 {
     /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
     if (merge_tree_select_result_ptr)
     {
-        if (merge_tree_select_result_ptr->marks() == 0)
+        if (merge_tree_select_result_ptr->selected_marks == 0)
             return {};
     }
     else if (parts.empty())

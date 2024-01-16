@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <base/types.h>
 
 #include <Common/ProxyConfigurationResolver.h>
