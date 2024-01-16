@@ -45,7 +45,7 @@
 	url = https://github.com/ClickHouse/boost
 [submodule "contrib/arrow"]
 	path = contrib/arrow
-	url = https://github.com/ClickHouse/arrow
+	url = https://github.com/wynemo/arrow
 [submodule "contrib/thrift"]
 	path = contrib/thrift
 	url = https://github.com/apache/thrift
