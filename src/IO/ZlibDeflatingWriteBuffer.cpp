@@ -44,14 +44,8 @@ void ZlibDeflatingWriteBuffer::nextImpl()
 
 ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer()
 {
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    /// It is OK to call deflateEnd() twice (one from the finalizeAfter() that does the proper error checking)
+    deflateEnd(&zstr);
 }
 
 void ZlibDeflatingWriteBuffer::finalizeBefore()

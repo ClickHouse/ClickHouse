@@ -44,14 +44,8 @@ void LZMADeflatingWriteBuffer::initialize(int compression_level)
 
 LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
 {
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    /// It is OK to call deflateEnd() twice (one from the finalizeAfter())
+    lzma_end(&lstr);
 }
 
 void LZMADeflatingWriteBuffer::nextImpl()

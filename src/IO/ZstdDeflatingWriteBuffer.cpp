@@ -51,14 +51,8 @@ void ZstdDeflatingWriteBuffer::initialize(int compression_level, int window_log)
 
 ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
 {
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (cctx)
+        ZSTD_freeCCtx(cctx);
 }
 
 void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)

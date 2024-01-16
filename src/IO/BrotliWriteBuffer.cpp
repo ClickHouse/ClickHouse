@@ -23,17 +23,7 @@ BrotliWriteBuffer::BrotliStateWrapper::~BrotliStateWrapper()
     BrotliEncoderDestroyInstance(state);
 }
 
-BrotliWriteBuffer::~BrotliWriteBuffer()
-{
-    try
-    {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
+BrotliWriteBuffer::~BrotliWriteBuffer() = default;
 
 void BrotliWriteBuffer::nextImpl()
 {
