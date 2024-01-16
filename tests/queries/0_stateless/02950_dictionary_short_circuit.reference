@@ -33,3 +33,7 @@ NP
 (13238,'RU')
 (13238,'RU')
 (13238,'RU')
+POLYGON dictionary
+(0.5,0)	East
+(-0.5,0)	West
+(10,10)	0

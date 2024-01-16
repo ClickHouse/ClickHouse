@@ -196,3 +196,36 @@ FROM ip_dictionary_source_table;
 SELECT dictGetOrDefault('ip_dictionary', ('asn', 'cca2'), IPv6StringToNum('2a02:6b8:1::1'), 
 (intDiv(1, id), intDiv(1, id))) FROM ip_dictionary_source_table;
 DROP DICTIONARY ip_dictionary;
+
+
+DROP TABLE IF EXISTS polygon_dictionary_source_table;
+CREATE TABLE polygon_dictionary_source_table 
+(
+    key Array(Array(Array(Tuple(Float64, Float64)))), 
+    name Nullable(String)
+) ENGINE=TinyLog;
+
+INSERT INTO polygon_dictionary_source_table VALUES([[[(3, 1), (0, 1), (0, -1), (3, -1)]]], 'East'), ([[[(-3, 1), (-3, -1), (0, -1), (0, 1)]]], 'West');
+
+DROP DICTIONARY IF EXISTS polygon_dictionary;
+CREATE DICTIONARY polygon_dictionary
+(
+    key Array(Array(Array(Tuple(Float64, Float64)))),
+    name Nullable(String)
+)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(TABLE 'polygon_dictionary_source_table'))
+LIFETIME(0)
+LAYOUT(POLYGON());
+
+DROP TABLE IF EXISTS points;
+CREATE TABLE points (x Float64, y Float64) ENGINE=TinyLog;
+INSERT INTO points VALUES (0.5, 0), (-0.5, 0), (10,10);
+
+SELECT 'POLYGON dictionary';
+SELECT tuple(x, y) as key, dictGetOrDefault('polygon_dictionary', 'name', key, intDiv(1, y))
+FROM points;
+
+DROP TABLE points;
+DROP DICTIONARY polygon_dictionary;
+DROP TABLE polygon_dictionary_source_table;

@@ -106,6 +106,13 @@ public:
         const DataTypes & key_types,
         const ColumnPtr & default_values_column) const override;
 
+    ColumnPtr getColumnOrDefaultShortCircuit(
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        IColumn::Filter & default_mask) const override;
+
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
@@ -154,6 +161,13 @@ private:
         ValueGetter && get_value,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
+
+    template <typename AttributeType, typename ValueGetter, typename ValueSetter>
+    void getItemsShortCircuitImpl(
+        const std::vector<IPolygonDictionary::Point> & requested_key_points,
+        ValueGetter && get_value,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask) const;
 
     ColumnPtr key_attribute_column;
 

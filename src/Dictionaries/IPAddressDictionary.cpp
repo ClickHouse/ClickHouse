@@ -286,7 +286,7 @@ ColumnPtr IPAddressDictionary::getColumn(
 
 ColumnPtr IPAddressDictionary::getColumnOrDefaultShortCircuit(
     const std::string & attribute_name,
-    const DataTypePtr & result_type,
+    const DataTypePtr & attribute_type,
     const Columns & key_columns,
     const DataTypes & key_types,
     IColumn::Filter & default_mask) const
@@ -296,7 +296,7 @@ ColumnPtr IPAddressDictionary::getColumnOrDefaultShortCircuit(
     ColumnPtr result;
 
     const auto & attribute = getAttribute(attribute_name);
-    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, attribute_type);
 
     auto size = key_columns.front()->size();
 

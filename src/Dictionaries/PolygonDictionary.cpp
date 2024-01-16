@@ -146,6 +146,82 @@ ColumnPtr IPolygonDictionary::getColumn(
     return result;
 }
 
+ColumnPtr IPolygonDictionary::getColumnOrDefaultShortCircuit(
+    const std::string & attribute_name,
+    const DataTypePtr & attribute_type,
+    const Columns & key_columns,
+    const DataTypes &,
+     IColumn::Filter & default_mask) const
+{
+    const auto requested_key_points = extractPoints(key_columns);
+
+    const auto & attribute = dict_struct.getAttribute(attribute_name, attribute_type);
+
+    size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
+    const auto & attribute_values_column = attributes_columns[attribute_index];
+
+    auto result = attribute_values_column->cloneEmpty();
+    result->reserve(requested_key_points.size());
+
+    if (unlikely(attribute.is_nullable))
+    {
+        getItemsShortCircuitImpl<Field>(
+            requested_key_points,
+            [&](size_t row) { return (*attribute_values_column)[row]; },
+            [&](Field & value) { result->insert(value); },
+            default_mask);
+    }
+    else
+    {
+        auto type_call = [&](const auto & dictionary_attribute_type)
+        {
+            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+            using AttributeType = typename Type::AttributeType;
+            using ValueType = DictionaryValueType<AttributeType>;
+            using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+            using ColumnType = typename ColumnProvider::ColumnType;
+
+            const auto attribute_values_column_typed = typeid_cast<const ColumnType *>(attribute_values_column.get());
+            if (!attribute_values_column_typed)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "An attribute type should be same as dictionary type");
+
+            ColumnType & result_column_typed = static_cast<ColumnType &>(*result);
+
+            if constexpr (std::is_same_v<ValueType, Array>)
+            {
+                getItemsShortCircuitImpl<ValueType>(
+                    requested_key_points,
+                    [&](size_t row) { return (*attribute_values_column)[row].get<Array>(); },
+                    [&](Array & value) { result_column_typed.insert(value); },
+                    default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            {
+                getItemsShortCircuitImpl<ValueType>(
+                    requested_key_points,
+                    [&](size_t row) { return attribute_values_column->getDataAt(row); },
+                    [&](StringRef value) { result_column_typed.insertData(value.data, value.size); },
+                    default_mask);
+            }
+            else
+            {
+                auto & attribute_data = attribute_values_column_typed->getData();
+                auto & result_data = result_column_typed.getData();
+
+                getItemsShortCircuitImpl<ValueType>(
+                    requested_key_points,
+                    [&](size_t row) { return attribute_data[row]; },
+                    [&](auto value) { result_data.emplace_back(static_cast<AttributeType>(value)); },
+                    default_mask);
+            }
+        };
+
+        callOnDictionaryAttributeType(attribute.underlying_type, type_call);
+    }
+
+    return result;
+}
+
 Pipe IPolygonDictionary::read(const Names & column_names, size_t, size_t) const
 {
     if (!configuration.store_polygon_key_column)
@@ -390,6 +466,38 @@ void IPolygonDictionary::getItemsImpl(
     }
 
     query_count.fetch_add(requested_key_points.size(), std::memory_order_relaxed);
+    found_count.fetch_add(keys_found, std::memory_order_relaxed);
+}
+
+template <typename AttributeType, typename ValueGetter, typename ValueSetter>
+void IPolygonDictionary::getItemsShortCircuitImpl(
+    const std::vector<IPolygonDictionary::Point> & requested_key_points,
+    ValueGetter && get_value,
+    ValueSetter && set_value,
+    IColumn::Filter & default_mask) const
+{
+    size_t polygon_index = 0;
+    size_t keys_found = 0;
+    size_t requested_key_size = requested_key_points.size();
+    default_mask.resize(requested_key_size);
+
+    for (size_t requested_key_index = 0; requested_key_index < requested_key_size; ++requested_key_index)
+    {
+        const auto found = find(requested_key_points[requested_key_index], polygon_index);
+
+        if (found)
+        {
+            size_t attribute_values_index = polygon_index_to_attribute_value_index[polygon_index];
+            auto value = get_value(attribute_values_index);
+            set_value(value);
+            ++keys_found;
+            default_mask[requested_key_index] = 1;
+        }
+        else
+            default_mask[requested_key_index] = 0;
+    }
+
+    query_count.fetch_add(requested_key_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
