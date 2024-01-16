@@ -91,8 +91,14 @@ void Lz4DeflatingWriteBuffer::initialize(int compression_level)
 
 Lz4DeflatingWriteBuffer::~Lz4DeflatingWriteBuffer()
 {
-    if (ctx)
-        LZ4F_freeCompressionContext(ctx);
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void Lz4DeflatingWriteBuffer::nextImpl()

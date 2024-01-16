@@ -33,7 +33,17 @@ Bzip2WriteBuffer::Bzip2StateWrapper::~Bzip2StateWrapper()
     BZ2_bzCompressEnd(&stream);
 }
 
-Bzip2WriteBuffer::~Bzip2WriteBuffer() = default;
+Bzip2WriteBuffer::~Bzip2WriteBuffer()
+{
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 void Bzip2WriteBuffer::nextImpl()
 {
