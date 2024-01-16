@@ -29,42 +29,46 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        static const std::unordered_set<String> nested_func_supported = {
+        static const std::unordered_set<String> func_supported = {
             "plus",
             "minus"
         };
 
-        const auto * function = node->as<FunctionNode>();
-        if (!function || Poco::toLower(function->getFunctionName()) != "sum")
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node || Poco::toLower(function_node->getFunctionName()) != "sum")
             return;
 
-        auto & func_node = function->getArguments().getNodes();
-        if (func_node.size() != 1)
+        const auto & function_nodes = function_node->getArguments().getNodes();
+        if (function_nodes.size() != 1)
             return;
 
-        const auto * nested_func = func_node[0]->as<FunctionNode>();
-        if (!nested_func || !nested_func_supported.contains(Poco::toLower(nested_func->getFunctionName())))
+        const auto * func_plus_minus_node = function_nodes[0]->as<FunctionNode>();
+        if (!func_plus_minus_node || !func_supported.contains(Poco::toLower(func_plus_minus_node->getFunctionName())))
             return;
 
-        auto & nested_func_node = nested_func->getArguments().getNodes();
-        if (nested_func_node.size() != 2)
+        const auto & func_plus_minus_nodes = func_plus_minus_node->getArguments().getNodes();
+        if (func_plus_minus_nodes.size() != 2)
             return;
 
-        size_t column_id = nested_func_node.size();
-        for (size_t i = 0; i < nested_func_node.size(); i++)
+        size_t column_id = func_plus_minus_nodes.size();
+        for (size_t i = 0; i < func_plus_minus_nodes.size(); i++)
         {
-            if (const auto * column_node = nested_func_node[i]->as<ColumnNode>())
+            if (const auto * column_node = func_plus_minus_nodes[i]->as<ColumnNode>())
                 column_id = i;
         }
-        if (column_id == nested_func_node.size())
+        if (column_id == func_plus_minus_nodes.size())
             return;
 
         size_t literal_id = 1 - column_id;
-        const auto * literal = nested_func_node[literal_id]->as<ConstantNode>();
-        if (!literal || !WhichDataType(literal->getResultType()).isNumber())
+        const auto * literal = func_plus_minus_nodes[literal_id]->as<ConstantNode>();
+        if (!literal)
             return;
 
-        const auto * column_node = nested_func_node[column_id]->as<ColumnNode>();
+        const auto literal_type = literal->getResultType();
+        if (!literal_type || !WhichDataType(literal_type).isNumber())
+            return;
+
+        const auto * column_node = func_plus_minus_nodes[column_id]->as<ColumnNode>();
         if (!column_node)
             return;
 
@@ -72,53 +76,50 @@ public:
         if (!column_type || !isNumber(column_type))
             return;
 
-        auto column_name = column_node->getColumnName();
-
         const auto lhs = std::make_shared<FunctionNode>("sum");
-        lhs->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node->getColumn(), column_node->getColumnSource()));
-        resolveAggregateFunctionNode(*lhs, lhs->getArguments().getNodes()[0], lhs->getFunctionName());
+        lhs->getArguments().getNodes().push_back(func_plus_minus_nodes[column_id]);
+        resolveAsAggregateFunctionNode(*lhs, column_type);
 
-        const auto rhs_nested_right = std::make_shared<FunctionNode>("count");
-        rhs_nested_right->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node->getColumn(), column_node->getColumnSource()));
-        resolveAggregateFunctionNode(*rhs_nested_right, rhs_nested_right->getArguments().getNodes()[0], rhs_nested_right->getFunctionName());
+        const auto rhs_count = std::make_shared<FunctionNode>("count");
+        rhs_count->getArguments().getNodes().push_back(func_plus_minus_nodes[column_id]);
+        resolveAsAggregateFunctionNode(*rhs_count, column_type);
 
         const auto rhs = std::make_shared<FunctionNode>("multiply");
-        rhs->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(literal));
-        rhs->getArguments().getNodes().push_back(rhs_nested_right);
+        rhs->getArguments().getNodes().push_back(func_plus_minus_nodes[literal_id]);
+        rhs->getArguments().getNodes().push_back(rhs_count);
         resolveOrdinaryFunctionNode(*rhs, rhs->getFunctionName());
 
-        const auto new_node = std::make_shared<FunctionNode>("plus");
-
+        const auto new_node = std::make_shared<FunctionNode>(Poco::toLower(func_plus_minus_node->getFunctionName()));
         if (column_id == 0)
             new_node->getArguments().getNodes() = {lhs, rhs};
         else if (column_id == 1)
             new_node->getArguments().getNodes() = {rhs, lhs};
-
         resolveOrdinaryFunctionNode(*new_node, new_node->getFunctionName());
 
         if (!new_node)
             return;
 
         node = new_node;
+
     }
 
 private:
     void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
-        auto function = FunctionFactory::instance().get(function_name, getContext());
+        const auto function = FunctionFactory::instance().get(function_name, getContext());
         function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
     }
 
-    static inline void resolveAggregateFunctionNode(FunctionNode & function_node, const QueryTreeNodePtr & argument, const String & aggregate_function_name)
+    static inline void resolveAsAggregateFunctionNode(FunctionNode & function_node, const DataTypePtr & argument_type)
     {
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name,
+        const auto aggregate_function = AggregateFunctionFactory::instance().get(function_node.getFunctionName(),
             NullsAction::EMPTY,
-            { argument->getResultType() },
+            {argument_type},
             {},
             properties);
 
-        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+        function_node.resolveAsAggregateFunction(aggregate_function);
     }
 
 };

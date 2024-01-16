@@ -22,7 +22,7 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(ASTPtr & ast, const Data & 
  */
 void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & function, ASTPtr & ast, const Data & data)
 {
-    static const std::unordered_set<String> nested_func_supported = {
+    static const std::unordered_set<String> function_supported = {
         "plus",
         "minus"
     };
@@ -30,24 +30,24 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
     if (!function.arguments || Poco::toLower(function.name) != "sum" || function.arguments->children.size() != 1)
         return;
 
-    const auto * nested_func = function.arguments->children[0]->as<ASTFunction>();
+    const auto * func_plus_minus = function.arguments->children[0]->as<ASTFunction>();
 
-    if (!nested_func || !nested_func_supported.contains(Poco::toLower(nested_func->name)) || nested_func->arguments->children.size() != 2)
+    if (!func_plus_minus || !function_supported.contains(Poco::toLower(func_plus_minus->name)) || func_plus_minus->arguments->children.size() != 2)
         return;
 
-    size_t column_id = nested_func->arguments->children.size();
+    size_t column_id = func_plus_minus->arguments->children.size();
 
-    for (size_t i = 0; i < nested_func->arguments->children.size(); i++)
+    for (size_t i = 0; i < func_plus_minus->arguments->children.size(); i++)
     {
-        if (nested_func->arguments->children[i]->as<ASTIdentifier>())
+        if (func_plus_minus->arguments->children[i]->as<ASTIdentifier>())
             column_id = i;
     }
 
-    if (column_id == nested_func->arguments->children.size())
+    if (column_id == func_plus_minus->arguments->children.size())
         return;
 
     size_t literal_id = 1 - column_id;
-    const auto * literal = nested_func->arguments->children[literal_id]->as<ASTLiteral>();
+    const auto * literal = func_plus_minus->arguments->children[literal_id]->as<ASTLiteral>();
     if (!literal)
         return;
 
@@ -65,7 +65,7 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
         literal_type != Field::Types::Decimal256)
         return;
 
-    const auto * column = nested_func->arguments->children[column_id]->as<ASTIdentifier>();
+    const auto * column = func_plus_minus->arguments->children[column_id]->as<ASTIdentifier>();
     if (!column)
         return;
 
@@ -90,7 +90,7 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
 
     if (column_id == 0)
     {
-        const auto new_ast = makeASTFunction(nested_func->name,
+        const auto new_ast = makeASTFunction(func_plus_minus->name,
                                                 makeASTFunction("sum",
                                                                 std::make_shared<ASTIdentifier>(column_name)
                                                                 ),
@@ -106,7 +106,7 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
     }
     else if (column_id == 1)
     {
-        const auto new_ast = makeASTFunction(nested_func->name,
+        const auto new_ast = makeASTFunction(func_plus_minus->name,
                                                 makeASTFunction("multiply",
                                                                 std::make_shared<ASTLiteral>(* literal),
                                                                 makeASTFunction("count", std::make_shared<ASTIdentifier>(column_name))
