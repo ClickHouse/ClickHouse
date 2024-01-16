@@ -42,7 +42,9 @@ public:
         TCPServer & tcp_server_,
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
-        uint32_t connection_id_);
+        uint32_t connection_id_,
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     void run() final;
 
@@ -90,9 +92,12 @@ protected:
     MySQLProtocol::PacketEndpointPtr packet_endpoint;
     std::unique_ptr<Session> session;
 
-    using ReplacementFn = std::function<String(const String & query)>;
-    using Replacements = std::unordered_map<std::string, ReplacementFn>;
-    Replacements replacements;
+    using QueryReplacementFn = std::function<String(const String & query)>;
+    using QueriesReplacements = std::unordered_map<std::string, QueryReplacementFn>;
+    QueriesReplacements queries_replacements;
+
+    using SettingsReplacements = std::unordered_map<std::string, std::string>;
+    SettingsReplacements settings_replacements;
 
     std::mutex prepared_statements_mutex;
     UInt32 current_prepared_statement_id TSA_GUARDED_BY(prepared_statements_mutex) = 0;
@@ -102,6 +107,9 @@ protected:
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
     bool secure_connection = false;
+
+    ProfileEvents::Event read_event;
+    ProfileEvents::Event write_event;
 };
 
 #if USE_SSL
@@ -115,7 +123,9 @@ public:
         bool ssl_enabled,
         uint32_t connection_id_,
         RSA & public_key_,
-        RSA & private_key_);
+        RSA & private_key_,
+        const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
 private:
     void authPluginSSL() override;

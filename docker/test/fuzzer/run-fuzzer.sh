@@ -234,7 +234,7 @@ quit
         --global_time_limit=1800 \
         --jobs=1 \
         --order=random \
-        > >(tail -n 100000 > fuzzer.log) \
+        > fuzzer.log \
         2>&1 &
 
     fuzzer_pid=$!
@@ -383,6 +383,7 @@ rg --text -F '<Fatal>' server.log > fatal.log ||:
 dmesg -T > dmesg.log ||:
 
 zstd --threads=0 server.log
+zstd --threads=0 fuzzer.log
 
 cat > report.html <<EOF ||:
 <!DOCTYPE html>
@@ -406,7 +407,7 @@ p.links a { padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-s
 <h1>AST Fuzzer for PR <a href="https://github.com/ClickHouse/ClickHouse/pull/${PR_TO_TEST}">#${PR_TO_TEST}</a> @ ${SHA_TO_TEST}</h1>
 <p class="links">
   <a href="run.log">run.log</a>
-  <a href="fuzzer.log">fuzzer.log</a>
+  <a href="fuzzer.log.zst">fuzzer.log.zst</a>
   <a href="server.log.zst">server.log.zst</a>
   <a href="main.log">main.log</a>
   <a href="dmesg.log">dmesg.log</a>

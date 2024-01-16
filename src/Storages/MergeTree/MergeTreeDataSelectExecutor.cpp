@@ -513,6 +513,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
 
     if (metadata_snapshot->hasPartitionKey())
     {
+        chassert(minmax_idx_condition && partition_pruner);
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
@@ -934,7 +935,6 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     MergeTreeData::DataPartsVector parts,
     const PrewhereInfoPtr & prewhere_info,
     const Names & column_names_to_return,
-    const StorageMetadataPtr & metadata_snapshot_base,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const ActionDAGNodes & added_filter_nodes,
@@ -962,7 +962,6 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         /*alter_conversions=*/ {},
         prewhere_info,
         added_filter_nodes,
-        metadata_snapshot_base,
         metadata_snapshot,
         query_info,
         context,
