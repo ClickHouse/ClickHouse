@@ -412,7 +412,6 @@ def get_stacktraces_from_gdb(server_pid):
 
 
 # collect server stacktraces from system.stack_trace table
-# it does not work in Sandbox
 def get_stacktraces_from_clickhouse(args):
     settings_str = " ".join(
         [
