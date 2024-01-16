@@ -29,6 +29,9 @@ struct SharedChunk : Chunk
     ColumnRawPtrs all_columns;
     ColumnRawPtrs sort_columns;
 
+    /// Used in ReplacingSortedAlgorithm when using skipping final
+    MutableColumnPtr replace_final_selection;
+
     using Chunk::Chunk;
     using Chunk::operator=;
 
@@ -174,6 +177,8 @@ struct RowRefWithOwnedChunk
     ColumnRawPtrs * sort_columns = nullptr;
     UInt64 row_num = 0;
 
+    const SortCursorImpl * current_cursor = nullptr;
+
     UInt64 source_stream_index = 0;
 
     void swap(RowRefWithOwnedChunk & other)
@@ -182,6 +187,7 @@ struct RowRefWithOwnedChunk
         std::swap(all_columns, other.all_columns);
         std::swap(sort_columns, other.sort_columns);
         std::swap(row_num, other.row_num);
+        std::swap(current_cursor, other.current_cursor);
         std::swap(source_stream_index, other.source_stream_index);
     }
 
@@ -193,6 +199,7 @@ struct RowRefWithOwnedChunk
         all_columns = nullptr;
         sort_columns = nullptr;
         row_num = 0;
+        current_cursor = nullptr;
         source_stream_index = 0;
     }
 
@@ -202,6 +209,7 @@ struct RowRefWithOwnedChunk
         row_num = cursor.impl->getRow();
         all_columns = &owned_chunk->all_columns;
         sort_columns = &owned_chunk->sort_columns;
+        current_cursor = cursor.impl;
         source_stream_index = cursor.impl->order;
     }
 

@@ -190,6 +190,12 @@ void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node)
     }
 }
 
+void QueryTreePassManager::runOnlyResolve(QueryTreeNodePtr query_tree_node)
+{
+    // Run only QueryAnalysisPass and GroupingFunctionsResolvePass passes.
+    run(query_tree_node, 2);
+}
+
 void QueryTreePassManager::run(QueryTreeNodePtr query_tree_node, size_t up_to_pass_index)
 {
     size_t passes_size = passes.size();
@@ -243,6 +249,8 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
 void addQueryTreePasses(QueryTreePassManager & manager)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>());
+    manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
+
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
@@ -278,7 +286,6 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
 
-    manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());

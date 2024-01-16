@@ -1,3 +1,4 @@
+#include <iterator>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 
 
@@ -67,15 +68,11 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
 
     auto & current_task = buffered_ranges.front();
 
-    size_t part_idx = 0;
-    for (size_t index = 0; index < per_part_infos.size(); ++index)
-    {
-        if (per_part_infos[index]->data_part->info == current_task.info)
-        {
-            part_idx = index;
-            break;
-        }
-    }
+    auto part_it
+        = std::ranges::find_if(per_part_infos, [&current_task](const auto & part) { return part->data_part->info == current_task.info; });
+    if (part_it == per_part_infos.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Assignment contains an unknown part (current_task: {})", current_task.describe());
+    const size_t part_idx = std::distance(per_part_infos.begin(), part_it);
 
     MarkRanges ranges_to_read;
     size_t current_sum_marks = 0;
