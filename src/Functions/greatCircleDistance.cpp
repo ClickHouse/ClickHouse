@@ -112,7 +112,7 @@ inline NO_SANITIZE_UNDEFINED size_t doubleToIndex(double x)
 
 inline double geodistDegDiff(double f)
 {
-    f = fabsf(f);
+    f = std::abs(f);
     if (f > 180)
         f = 360 - f;
     return f;
@@ -120,7 +120,7 @@ inline double geodistDegDiff(double f)
 
 inline double geodistFastCos(double x)
 {
-    double y = fabsf(x) * (COS_LUT_SIZE_F / PI_F / 2.0f);
+    double y = std::abs(x) * (COS_LUT_SIZE_F / PI_F / 2.0f);
     size_t i = doubleToIndex(y);
     y -= i;
     i &= (COS_LUT_SIZE - 1);
@@ -129,7 +129,7 @@ inline double geodistFastCos(double x)
 
 inline double geodistFastSin(double x)
 {
-    double y = fabsf(x) * (COS_LUT_SIZE_F / PI_F / 2.0f);
+    double y = std::abs(x) * (COS_LUT_SIZE_F / PI_F / 2.0f);
     size_t i = doubleToIndex(y);
     y -= i;
     i = (i - COS_LUT_SIZE / 4) & (COS_LUT_SIZE - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
