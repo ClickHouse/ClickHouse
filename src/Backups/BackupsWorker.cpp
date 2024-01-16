@@ -452,8 +452,22 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
         if (backup_settings.async)
         {
             auto & thread_pool = getThreadPool(on_cluster ? ThreadPoolId::BACKUP_ASYNC_ON_CLUSTER : ThreadPoolId::BACKUP_ASYNC);
+
+            /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
+            auto process_list_element = context_in_use->getProcessListElement();
+
             thread_pool.scheduleOrThrowOnError(
-                [this, backup_query, backup_id, backup_name_for_logging, backup_info, backup_settings, backup_coordination, context_in_use, mutable_context]
+                [this,
+                 backup_query,
+                 backup_id,
+                 backup_name_for_logging,
+                 backup_info,
+                 backup_settings,
+                 backup_coordination,
+                 context_in_use,
+                 mutable_context,
+                 thread_group = CurrentThread::getGroup(),
+                 process_list_element_holder = process_list_element ? process_list_element->getProcessListEntry() : nullptr]
                 {
                     doBackup(
                         backup_query,
@@ -464,6 +478,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
                         backup_coordination,
                         context_in_use,
                         mutable_context,
+                        thread_group,
                         /* called_async= */ true);
                 });
         }
@@ -478,6 +493,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
                 backup_coordination,
                 context_in_use,
                 mutable_context,
+                nullptr,
                 /* called_async= */ false);
         }
 
@@ -503,27 +519,21 @@ void BackupsWorker::doBackup(
     std::shared_ptr<IBackupCoordination> backup_coordination,
     const ContextPtr & context,
     ContextMutablePtr mutable_context,
+    ThreadGroupPtr thread_group,
     bool called_async)
 {
-    std::optional<CurrentThread::QueryScope> query_scope;
-    ProcessList::EntryPtr process_list_entry;
+    SCOPE_EXIT_SAFE(
+        if (called_async)
+            CurrentThread::detachFromGroupIfNotDetached();
+    );
 
     try
     {
         if (called_async)
         {
-            /// Generate a new current query id for an asynchronous call
-            /// (we can't keep using the old one because we will create a new process list entry).
-            mutable_context->setCurrentQueryId("");
-
-            query_scope.emplace(mutable_context);
+            if (thread_group)
+                CurrentThread::attachToGroup(thread_group);
             setThreadName("BackupWorker");
-
-            /// Make asynchronous backups appear in system.processes (that also allows to cancel them if we want to).
-            String backup_query_for_logging = backup_query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
-            process_list_entry = mutable_context->getProcessList().insert(
-                backup_query_for_logging, backup_query.get(), mutable_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
-            mutable_context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
         bool on_cluster = !backup_query->cluster.empty();
@@ -826,8 +836,21 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
         if (restore_settings.async)
         {
             auto & thread_pool = getThreadPool(on_cluster ? ThreadPoolId::RESTORE_ASYNC_ON_CLUSTER : ThreadPoolId::RESTORE_ASYNC);
+
+            /// process_list_element_holder is used to make an element in ProcessList live while RESTORE is working asynchronously.
+            auto process_list_element = context_in_use->getProcessListElement();
+
             thread_pool.scheduleOrThrowOnError(
-                [this, restore_query, restore_id, backup_name_for_logging, backup_info, restore_settings, restore_coordination, context_in_use]
+                [this,
+                 restore_query,
+                 restore_id,
+                 backup_name_for_logging,
+                 backup_info,
+                 restore_settings,
+                 restore_coordination,
+                 context_in_use,
+                 thread_group = CurrentThread::getGroup(),
+                 process_list_element_holder = process_list_element ? process_list_element->getProcessListEntry() : nullptr]
                 {
                     doRestore(
                         restore_query,
@@ -837,6 +860,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
                         restore_settings,
                         restore_coordination,
                         context_in_use,
+                        thread_group,
                         /* called_async= */ true);
                 });
         }
@@ -850,6 +874,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
                 restore_settings,
                 restore_coordination,
                 context_in_use,
+                nullptr,
                 /* called_async= */ false);
         }
 
@@ -873,27 +898,21 @@ void BackupsWorker::doRestore(
     RestoreSettings restore_settings,
     std::shared_ptr<IRestoreCoordination> restore_coordination,
     ContextMutablePtr context,
+    ThreadGroupPtr thread_group,
     bool called_async)
 {
-    std::optional<CurrentThread::QueryScope> query_scope;
-    ProcessList::EntryPtr process_list_entry;
+    SCOPE_EXIT_SAFE(
+        if (called_async)
+            CurrentThread::detachFromGroupIfNotDetached();
+    );
 
     try
     {
         if (called_async)
         {
-            /// Generate a new current query id for an asynchronous call
-            /// (we can't keep using the old one because we will create a new process list entry).
-            context->setCurrentQueryId("");
-
-            query_scope.emplace(context);
+            if (thread_group)
+                CurrentThread::attachToGroup(thread_group);
             setThreadName("RestoreWorker");
-
-            /// Make asynchronous restores appear in system.processes (that also allows to cancel them if we want to).
-            String restore_query_for_logging = restore_query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
-            process_list_entry = context->getProcessList().insert(
-                restore_query_for_logging, restore_query.get(), context, Stopwatch{CLOCK_MONOTONIC}.getStart());
-            context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
         /// Open the backup for reading.

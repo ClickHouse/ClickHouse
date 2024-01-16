@@ -254,6 +254,7 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         res = std::make_shared<Entry>(*this, process_it);
 
         (*process_it)->setUserProcessList(&user_process_list);
+        (*process_it)->setProcessListEntry(res);
 
         user_process_list.queries.emplace(client_info.current_query_id, res->getQueryStatus());
         queries_to_user.emplace(client_info.current_query_id, client_info.current_user);
@@ -478,6 +479,22 @@ bool QueryStatus::checkTimeLimitSoft()
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
 {
     user_process_list = user_process_list_;
+}
+
+
+void QueryStatus::setProcessListEntry(std::weak_ptr<ProcessListEntry> process_list_entry_)
+{
+    /// Synchronization is not required here because this function is only called from ProcessList::insert()
+    /// when `ProcessList::mutex` is locked.
+    if (!process_list_entry.expired() && !process_list_entry_.expired())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Two entries in the process list cannot both use the same query status");
+    process_list_entry = process_list_entry_;
+}
+
+
+std::shared_ptr<ProcessListEntry> QueryStatus::getProcessListEntry() const
+{
+    return process_list_entry.lock();
 }
 
 

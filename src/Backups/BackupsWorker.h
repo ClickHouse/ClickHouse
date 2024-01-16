@@ -26,6 +26,8 @@ using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBacku
 using DataRestoreTasks = std::vector<std::function<void()>>;
 struct ReadSettings;
 class BackupLog;
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
@@ -63,6 +65,7 @@ private:
         std::shared_ptr<IBackupCoordination> backup_coordination,
         const ContextPtr & context,
         ContextMutablePtr mutable_context,
+        ThreadGroupPtr thread_group,
         bool called_async);
 
     /// Builds file infos for specified backup entries.
@@ -81,6 +84,7 @@ private:
         RestoreSettings restore_settings,
         std::shared_ptr<IRestoreCoordination> restore_coordination,
         ContextMutablePtr context,
+        ThreadGroupPtr thread_group,
         bool called_async);
 
     /// Run data restoring tasks which insert data to tables.
