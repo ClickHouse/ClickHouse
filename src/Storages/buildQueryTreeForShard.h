@@ -10,7 +10,10 @@ struct SelectQueryInfo;
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
-QueryTreeNodePtr buildQueryTreeForShard(SelectQueryInfo & query_info, QueryTreeNodePtr query_tree_to_modify);
+class PlannerContext;
+using PlannerContextPtr = std::shared_ptr<PlannerContext>;
+
+QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify);
 
 void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify);
 

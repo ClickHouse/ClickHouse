@@ -225,7 +225,7 @@ void StorageMergeTree::read(
         {
             QueryTreeNodePtr modified_query_tree = query_info.query_tree->clone();
             rewriteJoinToGlobalJoin(modified_query_tree);
-            modified_query_tree = buildQueryTreeForShard(query_info, modified_query_tree);
+            modified_query_tree = buildQueryTreeForShard(query_info.planner_context, modified_query_tree);
             header = InterpreterSelectQueryAnalyzer::getSampleBlock(
                 modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
             modified_query_ast = queryNodeToSelectQuery(modified_query_tree);

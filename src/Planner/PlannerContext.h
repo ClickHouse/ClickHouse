@@ -18,10 +18,16 @@ namespace DB
   *
   * 1. Column identifiers.
   */
+
+class QueryNode;
+
 class GlobalPlannerContext
 {
 public:
-    GlobalPlannerContext() = default;
+    explicit GlobalPlannerContext(const QueryNode * parallel_replicas_node_)
+        : parallel_replicas_node(parallel_replicas_node_)
+    {
+    }
 
     /** Create column identifier for column node.
       *
@@ -37,6 +43,8 @@ public:
 
     /// Check if context has column identifier
     bool hasColumnIdentifier(const ColumnIdentifier & column_identifier);
+
+    const QueryNode * const parallel_replicas_node = nullptr;
 
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;

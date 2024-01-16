@@ -796,7 +796,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
 
-    return buildQueryTreeForShard(query_info, query_tree_to_modify);
+    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify);
 }
 
 }

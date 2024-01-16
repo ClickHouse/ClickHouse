@@ -295,10 +295,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
 }
 
-QueryTreeNodePtr buildQueryTreeForShard(SelectQueryInfo & query_info, QueryTreeNodePtr query_tree_to_modify)
+QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify)
 {
-    auto & planner_context = query_info.planner_context;
-
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
     collect_column_source_to_columns_visitor.visit(query_tree_to_modify);
 

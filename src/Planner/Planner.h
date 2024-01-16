@@ -65,6 +65,9 @@ public:
         return planner_context;
     }
 
+    using QueryNodeToPlanStepMapping = std::unordered_map<const QueryNode *, const QueryPlan::Node *>;
+    const QueryNodeToPlanStepMapping & getQueryNodeToPlanStepMapping() const { return query_node_to_plan_step_mapping; }
+
 private:
     void buildPlanForUnionNode();
 
@@ -76,6 +79,7 @@ private:
     QueryPlan query_plan;
     StorageLimitsList storage_limits;
     std::set<std::string> used_row_policies;
+    QueryNodeToPlanStepMapping query_node_to_plan_step_mapping;
 };
 
 }
