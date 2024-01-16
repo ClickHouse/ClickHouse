@@ -7128,6 +7128,25 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         clone_params);
 }
 
+MergeTreePartition createPartitionFromSourcePart(
+    const MergeTreeData::DataPartPtr & src_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr local_context)
+{
+    const auto & src_data = src_part->storage;
+
+    auto metadata_manager = std::make_shared<PartMetadataManagerOrdinary>(src_part.get());
+    IMergeTreeDataPart::MinMaxIndex min_max_index;
+
+    min_max_index.load(src_data, metadata_manager);
+
+    MergeTreePartition new_partition;
+
+    new_partition.create(metadata_snapshot, min_max_index.getBlock(src_data), 0u, local_context);
+
+    return new_partition;
+}
+
 String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 {
     return disk->getPath() + relative_data_path;

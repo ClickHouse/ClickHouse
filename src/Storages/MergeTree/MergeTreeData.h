@@ -852,10 +852,15 @@ public:
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
         const MergeTreeData::DataPartPtr & src_part,
         const String & tmp_part_prefix,
-        const StorageMetadataPtr & my_metadata_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         const IDataPartStorage::ClonePartParams & clone_params,
         ContextPtr local_context,
         Int64 temp_index);
+
+    static MergeTreePartition createPartitionFromSourcePart(
+        const MergeTreeData::DataPartPtr & src_part,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr local_context);
 
     virtual std::vector<MergeTreeMutationStatus> getMutationsStatus() const = 0;
 

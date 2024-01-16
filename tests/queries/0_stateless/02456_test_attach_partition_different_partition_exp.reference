@@ -352,11 +352,8 @@ SELECT * FROM source ORDER BY timestamp;
 2010-03-02 02:01:03
 SELECT * FROM destination ORDER BY timestamp;
 2010-03-02 02:01:01
-2010-03-02 02:01:01
-2010-03-02 02:01:03
 2010-03-02 02:01:03
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
-201003
 201003
 -- Should be allowed, it is a local operation, no different than regular attach. Non replicated to replicated
 DROP TABLE IF EXISTS source SYNC;
@@ -384,11 +381,8 @@ SELECT * FROM source ORDER BY timestamp;
 2010-03-02 02:01:03
 SELECT * FROM destination ORDER BY timestamp;
 2010-03-02 02:01:01
-2010-03-02 02:01:01
-2010-03-02 02:01:03
 2010-03-02 02:01:03
 SELECT partition_id FROM system.parts where table='destination' AND database = currentDatabase() AND active = 1;
-201003
 201003
 -- Should not be allowed because data would be split into two different partitions
 DROP TABLE IF EXISTS source SYNC;

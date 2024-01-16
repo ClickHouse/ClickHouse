@@ -7943,6 +7943,13 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                                 "Cannot replace partition '{}' because part '{}"
                                 "' has inconsistent granularity with table", partition_id, src_part->name);
 
+            if (is_partition_exp_different)
+            {
+                auto new_partition = createPartitionFromSourcePart(src_part, metadata_snapshot, query_context);
+
+                partition_id = new_partition.getID(*this);
+            }
+
             String hash_hex = src_part->checksums.getTotalChecksumHex();
             const bool is_duplicated_part = replaced_parts.contains(hash_hex);
             replaced_parts.insert(hash_hex);
