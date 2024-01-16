@@ -230,9 +230,9 @@ quit
         --query-fuzzer-runs=1000 \
         --create-query-fuzzer-runs=50 \
          $NEW_TESTS_OPT \
-        --client-option receive_timeout=10 receive_data_timeout_ms=1000 max_memory_usage_in_client=1000000000 max_memory_usage=1000000000 stacktrace \
+        --client-option receive_timeout=10 receive_data_timeout_ms=1000 max_memory_usage_in_client=100000000 max_memory_usage=100000000 stacktrace \
         --global_time_limit=1800 \
-        --jobs=1 \
+        --jobs=8 \
         --order=random \
         > fuzzer.log \
         2>&1 &
