@@ -73,11 +73,6 @@ inline double sqr(double v)
     return v * v;
 }
 
-inline double sqrf(double v)
-{
-    return v * v;
-}
-
 void geodistInit()
 {
     for (size_t i = 0; i <= COS_LUT_SIZE; ++i)
@@ -153,7 +148,7 @@ inline double geodistFastAsinSqrt(double x)
         size_t i = doubleToIndex(x);
         return asin_sqrt_lut[i] + (asin_sqrt_lut[i + 1] - asin_sqrt_lut[i]) * (x - i);
     }
-    return asinf(sqrt(x)); // distance over 17083 km, just compute exact
+    return asin(sqrt(x)); // distance over 17083 km, just compute exact
 }
 
 
@@ -204,7 +199,7 @@ double distance(double lon1deg, double lat1deg, double lon2deg, double lat2deg)
         }
         else if constexpr (method == Method::SPHERE_METERS)
         {
-            k_lat = sqrf(EARTH_DIAMETER * PI_F / 360.0f);
+            k_lat = sqr(EARTH_DIAMETER * PI_F / 360.0f);
 
             k_lon = sphere_metric_meters_lut[latitude_midpoint_index]
                 + (sphere_metric_meters_lut[latitude_midpoint_index + 1] - sphere_metric_meters_lut[latitude_midpoint_index]) * (latitude_midpoint - latitude_midpoint_index);
@@ -225,8 +220,8 @@ double distance(double lon1deg, double lat1deg, double lon2deg, double lat2deg)
     {
         // points too far away; use haversine
 
-        double a = sqrf(geodistFastSin(lat_diff * RAD_IN_DEG_HALF))
-            + geodistFastCos(lat1deg * RAD_IN_DEG) * geodistFastCos(lat2deg * RAD_IN_DEG) * sqrf(geodistFastSin(lon_diff * RAD_IN_DEG_HALF));
+        double a = sqr(geodistFastSin(lat_diff * RAD_IN_DEG_HALF))
+            + geodistFastCos(lat1deg * RAD_IN_DEG) * geodistFastCos(lat2deg * RAD_IN_DEG) * sqr(geodistFastSin(lon_diff * RAD_IN_DEG_HALF));
 
         if constexpr (method == Method::SPHERE_DEGREES)
             return (360.0f / PI_F) * geodistFastAsinSqrt(a);
