@@ -14,7 +14,7 @@ DiskFactory & DiskFactory::instance()
     return factory;
 }
 
-void DiskFactory::registerDiskType(const String & disk_type, DB::DiskFactory::Creator creator)
+void DiskFactory::registerDiskType(const String & disk_type, Creator creator)
 {
     if (!registry.emplace(disk_type, creator).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DiskFactory: the disk type '{}' is not unique", disk_type);
@@ -31,7 +31,10 @@ DiskPtr DiskFactory::create(
 
     const auto found = registry.find(disk_type);
     if (found == registry.end())
-        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "DiskFactory: the disk '{}' has unknown disk type: {}", name, disk_type);
+    {
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                        "DiskFactory: the disk '{}' has unknown disk type: {}", name, disk_type);
+    }
 
     const auto & disk_creator = found->second;
     return disk_creator(name, config, config_prefix, context, map);
