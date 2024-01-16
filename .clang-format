@@ -4,7 +4,7 @@ AlignAfterOpenBracket: AlwaysBreak
 BreakBeforeBraces: Custom
 BraceWrapping:
     AfterClass: true
-    AfterControlStatement: true
+    AfterControlStatement: tru
     AfterEnum: true
     AfterFunction: true
     AfterNamespace: true
