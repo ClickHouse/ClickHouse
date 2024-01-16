@@ -11,7 +11,6 @@
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
 #include <Interpreters/AggregateFunctionOfGroupByKeysVisitor.h>
-#include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <Interpreters/FunctionMaskingArgumentCheckVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
@@ -172,16 +171,13 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
 
             /// copy shared pointer to args in order to ensure lifetime
             auto args_ast = function->arguments;
-
-            /** remove function call and take a step back to ensure
-              * next iteration does not skip not yet processed data
-              */
-            remove_expr_at_index(i);
-
-            /// copy non-literal arguments
+            /// Replace function call in 'group_exprs' with non-literal arguments.
+            const auto & erase_position = group_exprs.begin() + i;
+            group_exprs.erase(erase_position);
+            const auto & insert_position = group_exprs.begin() + i;
             std::remove_copy_if(
                     std::begin(args_ast->children), std::end(args_ast->children),
-                    std::back_inserter(group_exprs), is_literal
+                    std::inserter(group_exprs, insert_position), is_literal
             );
         }
         else if (is_literal(group_exprs[i]))
@@ -409,7 +405,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
             {
                 for (auto & elem : set->children)
                 {
-                    const auto hash = elem->getTreeHash();
+                    const auto hash = elem->getTreeHash(/*ignore_aliases=*/ true);
                     const auto key = toString(hash);
                     group_by_hashes.insert(key);
                 }
@@ -419,7 +415,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, Context
         {
             for (auto & elem : group_by->children)
             {
-                const auto hash = elem->getTreeHash();
+                const auto hash = elem->getTreeHash(/*ignore_aliases=*/ true);
                 const auto key = toString(hash);
                 group_by_hashes.insert(key);
             }
@@ -606,12 +602,6 @@ void optimizeAggregationFunctions(ASTPtr & query)
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
-void optimizeAnyFunctions(ASTPtr & query)
-{
-    RewriteAnyFunctionVisitor::Data data = {};
-    RewriteAnyFunctionVisitor(data).visit(query);
-}
-
 void optimizeSumIfFunctions(ASTPtr & query)
 {
     RewriteSumIfFunctionVisitor::Data data = {};
@@ -763,10 +753,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// GROUP BY functions of other keys elimination.
     if (settings.optimize_group_by_function_keys)
         optimizeGroupByFunctionKeys(select_query);
-
-    /// Move all operations out of any function
-    if (settings.optimize_move_functions_out_of_any)
-        optimizeAnyFunctions(query);
 
     if (settings.optimize_normalize_count_variants)
         optimizeCountConstantAndSumOne(query, context);

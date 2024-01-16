@@ -15,14 +15,14 @@ struct ClassifierDescription : std::unordered_map<String, String>
 
 /*
  * Loads a config with the following format:
- * <classifiers>
+ * <workload_classifiers>
  *   <classifier1>
  *     <resource1>/path/to/queue</resource1>
  *     <resource2>/path/to/another/queue</resource2>
  *   </classifier1>
  *   ...
  *   <classifierN>...</classifierN>
- * </classifiers>
+ * </workload_classifiers>
  */
 class ClassifiersConfig
 {

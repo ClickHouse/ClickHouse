@@ -117,7 +117,7 @@ public:
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
 
     static void addEmptySourceToQueryPlan(
-        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, const ContextPtr & context_);
+        QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info);
 
     Names getRequiredColumns() { return required_columns; }
 
@@ -133,6 +133,13 @@ public:
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
     static bool isQueryWithFinal(const SelectQueryInfo & info);
+
+
+    static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
+
+    /// Adjust the parallel replicas settings (enabled, disabled) based on the query analysis
+    bool adjustParallelReplicasAfterAnalysis();
+
 
 private:
     InterpreterSelectQuery(
@@ -158,7 +165,8 @@ private:
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
     void addPrewhereAliasActions();
-    bool shouldMoveToPrewhere();
+    void applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const;
+    bool shouldMoveToPrewhere() const;
 
     Block getSampleBlockImpl();
 
@@ -189,6 +197,8 @@ private:
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan);
     bool autoFinalOnQuery(ASTSelectQuery & select_query);
     std::optional<UInt64> getTrivialCount(UInt64 max_parallel_replicas);
+    /// Check if we can limit block size to read based on LIMIT clause
+    UInt64 maxBlockSizeByLimit() const;
 
     enum class Modificator
     {

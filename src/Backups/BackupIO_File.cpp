@@ -152,4 +152,14 @@ void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr s
     BackupWriterDefault::copyFileFromDisk(path_in_backup, src_disk, src_path, copy_encrypted, start_pos, length);
 }
 
+void BackupWriterFile::copyFile(const String & destination, const String & source, size_t /*size*/)
+{
+    LOG_TRACE(log, "Copying file inside backup from {} to {} ", source, destination);
+
+    auto abs_source_path = root_path / source;
+    auto abs_dest_path = root_path / destination;
+    fs::create_directories(abs_dest_path.parent_path());
+    fs::copy(abs_source_path, abs_dest_path, fs::copy_options::overwrite_existing);
+}
+
 }

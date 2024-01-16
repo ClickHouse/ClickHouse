@@ -14,69 +14,70 @@
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
-try
 {
-    using namespace DB;
-
-    static SharedContextHolder shared_context;
-    static ContextMutablePtr context;
-
-    auto initialize = [&]() mutable
+    try
     {
-        shared_context = Context::createShared();
-        context = Context::createGlobal(shared_context.get());
-        context->makeGlobalContext();
-        context->setApplicationType(Context::ApplicationType::LOCAL);
+        using namespace DB;
 
-        MainThreadStatus::getInstance();
+        static SharedContextHolder shared_context;
+        static ContextMutablePtr context;
 
-        registerAggregateFunctions();
-        return true;
-    };
+        auto initialize = [&]() mutable
+        {
+            shared_context = Context::createShared();
+            context = Context::createGlobal(shared_context.get());
+            context->makeGlobalContext();
+            context->setApplicationType(Context::ApplicationType::LOCAL);
 
-    static bool initialized = initialize();
-    (void) initialized;
+            MainThreadStatus::getInstance();
 
-    total_memory_tracker.resetCounters();
-    total_memory_tracker.setHardLimit(1_GiB);
-    CurrentThread::get().memory_tracker.resetCounters();
-    CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
+            registerAggregateFunctions();
+            return true;
+        };
 
-    /// The input format is as follows:
-    /// - data type name on the first line,
-    /// - the data for the rest of the input.
+        static bool initialized = initialize();
+        (void) initialized;
 
-    /// Compile the code as follows:
-    ///   mkdir build_asan_fuzz
-    ///   cd build_asan_fuzz
-    ///   CC=clang CXX=clang++ cmake -D SANITIZE=address -D ENABLE_FUZZING=1 -D WITH_COVERAGE=1 ..
-    ///
-    /// The corpus is located here:
-    /// https://github.com/ClickHouse/fuzz-corpus/tree/main/data_type_deserialization
-    ///
-    /// The fuzzer can be run as follows:
-    ///   ../../../build_asan_fuzz/src/DataTypes/fuzzers/data_type_deserialization_fuzzer corpus -jobs=64 -rss_limit_mb=8192
+        total_memory_tracker.resetCounters();
+        total_memory_tracker.setHardLimit(1_GiB);
+        CurrentThread::get().memory_tracker.resetCounters();
+        CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
 
-    /// clickhouse-local --query "SELECT toJSONString(*) FROM (SELECT name FROM system.functions UNION ALL SELECT name FROM system.data_type_families)" > dictionary
+        /// The input format is as follows:
+        /// - data type name on the first line,
+        /// - the data for the rest of the input.
 
-    DB::ReadBufferFromMemory in(data, size);
+        /// Compile the code as follows:
+        ///   mkdir build_asan_fuzz
+        ///   cd build_asan_fuzz
+        ///   CC=clang CXX=clang++ cmake -D SANITIZE=address -D ENABLE_FUZZING=1 -D WITH_COVERAGE=1 ..
+        ///
+        /// The corpus is located here:
+        /// https://github.com/ClickHouse/fuzz-corpus/tree/main/data_type_deserialization
+        ///
+        /// The fuzzer can be run as follows:
+        ///   ../../../build_asan_fuzz/src/DataTypes/fuzzers/data_type_deserialization_fuzzer corpus -jobs=64 -rss_limit_mb=8192
 
-    String data_type;
-    readStringUntilNewlineInto(data_type, in);
-    assertChar('\n', in);
+        /// clickhouse-local --query "SELECT toJSONString(*) FROM (SELECT name FROM system.functions UNION ALL SELECT name FROM system.data_type_families)" > dictionary
 
-    DataTypePtr type = DataTypeFactory::instance().get(data_type);
+        DB::ReadBufferFromMemory in(data, size);
 
-    FormatSettings settings;
-    settings.max_binary_string_size = 100;
-    settings.max_binary_array_size = 100;
+        String data_type;
+        readStringUntilNewlineInto(data_type, in);
+        assertChar('\n', in);
 
-    Field field;
-    type->getDefaultSerialization()->deserializeBinary(field, in, settings);
+        DataTypePtr type = DataTypeFactory::instance().get(data_type);
+
+        FormatSettings settings;
+        settings.max_binary_string_size = 100;
+        settings.max_binary_array_size = 100;
+
+        Field field;
+        type->getDefaultSerialization()->deserializeBinary(field, in, settings);
+    }
+    catch (...)
+    {
+    }
 
     return 0;
-}
-catch (...)
-{
-    return 1;
 }

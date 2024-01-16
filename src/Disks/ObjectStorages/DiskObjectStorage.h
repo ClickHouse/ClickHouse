@@ -5,7 +5,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
-#include <re2/re2.h>
+#include <Common/re2.h>
 
 namespace CurrentMetrics
 {
@@ -29,7 +29,7 @@ friend class DiskObjectStorageRemoteMetadataRestoreHelper;
 public:
     DiskObjectStorage(
         const String & name_,
-        const String & object_storage_root_path_,
+        const String & object_key_prefix_,
         const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
@@ -154,7 +154,10 @@ public:
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
-        const WriteSettings & settings = {}) override;
+        const ReadSettings & read_settings = {},
+        const WriteSettings & write_settings = {},
+        const std::function<void()> & cancellation_hook = {}
+        ) override;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
@@ -189,7 +192,7 @@ public:
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
     String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
 
-#ifndef CLICKHOUSE_PROGRAM_STANDALONE_BUILD
+#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
@@ -211,8 +214,12 @@ private:
     /// Create actual disk object storage transaction for operations
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
+    DiskTransactionPtr createObjectStorageTransactionToAnotherDisk(DiskObjectStorage& to_disk);
 
-    const String object_storage_root_path;
+    String getReadResourceName() const;
+    String getWriteResourceName() const;
+
+    const String object_key_prefix;
     Poco::Logger * log;
 
     MetadataStoragePtr metadata_storage;
@@ -225,6 +232,10 @@ private:
     bool tryReserve(UInt64 bytes);
 
     const bool send_metadata;
+
+    mutable std::mutex resource_mutex;
+    String read_resource_name;
+    String write_resource_name;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };

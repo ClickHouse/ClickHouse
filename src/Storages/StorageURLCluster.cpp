@@ -69,7 +69,7 @@ StorageURLCluster::StorageURLCluster(
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 
-    virtual_columns = VirtualColumnUtils::getPathAndFileVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
+    virtual_columns = VirtualColumnUtils::getPathFileAndSizeVirtualsForStorage(storage_metadata.getSampleBlock().getNamesAndTypesList());
 }
 
 void StorageURLCluster::addColumnsStructureToQuery(ASTPtr & query, const String & structure, const ContextPtr & context)
@@ -81,9 +81,9 @@ void StorageURLCluster::addColumnsStructureToQuery(ASTPtr & query, const String 
     TableFunctionURLCluster::addColumnsStructureToArguments(expression_list->children, structure, context);
 }
 
-RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(ASTPtr query, const ContextPtr & context) const
+RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
-    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, context->getSettingsRef().glob_expansion_max_elements, query, virtual_columns, context);
+    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, context->getSettingsRef().glob_expansion_max_elements, predicate, virtual_columns, context);
     auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }

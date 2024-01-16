@@ -33,7 +33,7 @@ protected:
         if (TableFunction::configuration.structure != "auto")
             columns = parseColumnsListFromString(TableFunction::configuration.structure, context);
 
-        StoragePtr storage = std::make_shared<Storage>(
+        StoragePtr storage = Storage::create(
             TableFunction::configuration, context, StorageID(TableFunction::getDatabaseName(), table_name),
             columns, ConstraintsDescription{}, String{}, std::nullopt);
 

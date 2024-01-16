@@ -13,6 +13,9 @@
 #include <Core/NamesAndTypes.h>
 #include <Columns/ColumnConst.h>
 
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+
 
 namespace DB
 {
@@ -57,6 +60,13 @@ size_t DataTypeArray::getNumberOfDimensions() const
     if (!nested_array)
         return 1;
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
+}
+
+String DataTypeArray::doGetPrettyName(size_t indent) const
+{
+    WriteBufferFromOwnString s;
+    s << "Array(" << nested->getPrettyName(indent) << ')';
+    return s.str();
 }
 
 

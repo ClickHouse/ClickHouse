@@ -1,10 +1,10 @@
 #pragma once
 
-#include "config.h"
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
-#include <IO/AsynchronousReader.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include "config.h"
 
 namespace Poco { class Logger; }
 
@@ -40,17 +40,17 @@ public:
 
     void setReadUntilEnd() override { return setReadUntilPosition(getFileSize()); }
 
-    IAsynchronousReader::Result readInto(char * data, size_t size, size_t offset, size_t ignore) override;
-
     size_t getFileSize() override { return getTotalSize(blobs_to_read); }
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
     off_t seek(off_t offset, int whence) override;
 
-    off_t getPosition() override { return file_offset_of_buffer_end - available() + bytes_to_ignore; }
+    off_t getPosition() override { return file_offset_of_buffer_end - available(); }
 
-    bool seekIsCheap() override { return !current_buf; }
+    bool isSeekCheap() override;
+
+    bool isContentCached(size_t offset, size_t size) override;
 
 private:
     SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);
@@ -77,7 +77,6 @@ private:
 
     size_t read_until_position = 0;
     size_t file_offset_of_buffer_end = 0;
-    size_t bytes_to_ignore = 0;
 
     StoredObject current_object;
     size_t current_buf_idx = 0;

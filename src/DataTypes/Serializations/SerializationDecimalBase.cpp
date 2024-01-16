@@ -1,11 +1,9 @@
 #include <DataTypes/Serializations/SerializationDecimalBase.h>
 
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include <ranges>
 
@@ -34,10 +32,8 @@ void SerializationDecimalBase<T>::serializeBinaryBulk(const IColumn & column, Wr
         limit = size - offset;
 
     if constexpr (std::endian::native == std::endian::big)
-    {
-        std::ranges::for_each(
-            x | std::views::drop(offset) | std::views::take(limit), [&ostr](const auto & d) { writeBinaryLittleEndian(d, ostr); });
-    }
+        for (size_t i = offset; i < offset + limit; ++i)
+            writeBinaryLittleEndian(x[i], ostr);
     else
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(FieldType) * limit);
 }
@@ -68,8 +64,8 @@ void SerializationDecimalBase<T>::deserializeBinaryBulk(IColumn & column, ReadBu
     x.resize(initial_size + size / sizeof(FieldType));
 
     if constexpr (std::endian::native == std::endian::big)
-        std::ranges::for_each(
-            x | std::views::drop(initial_size), [](auto & d) { transformEndianness<std::endian::big, std::endian::little>(d); });
+        for (size_t i = initial_size; i < x.size(); ++i)
+            transformEndianness<std::endian::big, std::endian::little>(x[i]);
 }
 
 template class SerializationDecimalBase<Decimal32>;

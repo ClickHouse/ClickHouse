@@ -56,8 +56,19 @@ MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_
 void MsgPackRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    buf->reset();
     visitor.reset();
+}
+
+void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IRowInputFormat::setReadBuffer(*buf);
+}
+
+void MsgPackRowInputFormat::resetReadBuffer()
+{
+    buf.reset();
+    IRowInputFormat::resetReadBuffer();
 }
 
 void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type, UInt8 & read) // NOLINT
@@ -244,7 +255,8 @@ static void insertString(IColumn & column, DataTypePtr type, const char * value,
             case TypeIndex::Decimal256:
                 insertFromBinaryRepresentation<ColumnDecimal<Decimal256>>(column, type, value, size);
                 return;
-            default:;
+            default:
+                break;
         }
     }
 
@@ -540,11 +552,6 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         return false;
     }
     return true;
-}
-
-void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    buf->setSubBuffer(in_);
 }
 
 MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

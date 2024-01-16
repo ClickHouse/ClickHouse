@@ -52,12 +52,12 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
         if (left_nullable && right_nullable)
         {
-            int res = left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+            int res = left_nullable->compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
             if (res)
                 return res;
 
             /// NULL != NULL case
-            if (left_column.isNullAt(lhs_pos))
+            if (left_nullable->isNullAt(lhs_pos))
                 return null_direction_hint;
 
             return 0;
@@ -68,7 +68,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
     {
         if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column))
         {
-            if (left_column.isNullAt(lhs_pos))
+            if (left_nullable->isNullAt(lhs_pos))
                 return null_direction_hint;
             return left_nullable->getNestedColumn().compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
         }
@@ -78,7 +78,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
     {
         if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column))
         {
-            if (right_column.isNullAt(rhs_pos))
+            if (right_nullable->isNullAt(rhs_pos))
                 return -null_direction_hint;
             return left_column.compareAt(lhs_pos, rhs_pos, right_nullable->getNestedColumn(), null_direction_hint);
         }
@@ -227,10 +227,10 @@ void inline addRange(PaddedPODArray<UInt64> & left_map, size_t start, size_t end
         left_map.push_back(i);
 }
 
-void inline addMany(PaddedPODArray<UInt64> & left_map, size_t idx, size_t num)
+void inline addMany(PaddedPODArray<UInt64> & left_or_right_map, size_t idx, size_t num)
 {
     for (size_t i = 0; i < num; ++i)
-        left_map.push_back(idx);
+        left_or_right_map.push_back(idx);
 }
 
 }
@@ -291,8 +291,10 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm does not support ON filter conditions");
 
-    cursors.push_back(createCursor(input_headers[0], join_on.key_names_left));
-    cursors.push_back(createCursor(input_headers[1], join_on.key_names_right));
+    cursors = {
+        createCursor(input_headers[0], join_on.key_names_left),
+        createCursor(input_headers[1], join_on.key_names_right)
+    };
 
     for (const auto & [left_key, right_key] : table_join->getTableJoin().leftToRightKeyRemap())
     {
@@ -454,8 +456,9 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
 
     if (all_join_state)
     {
+        assert(cursors.size() == 2);
         /// Accumulate blocks with same key in all_join_state
-        for (size_t i = 0; i < cursors.size(); ++i)
+        for (size_t i = 0; i < 2; ++i)
         {
             if (cursors[i]->cursor.isValid() && all_join_state->keys[i].equals(cursors[i]->cursor))
             {

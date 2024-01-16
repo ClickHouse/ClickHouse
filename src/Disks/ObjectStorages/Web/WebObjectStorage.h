@@ -33,6 +33,8 @@ public:
 
     std::string getName() const override { return "WebObjectStorage"; }
 
+    std::string getCommonKeyPrefix() const override { return ""; }
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -68,6 +70,8 @@ public:
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void shutdown() override;
@@ -87,7 +91,10 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    std::string generateBlobNameForPath(const std::string & path) override { return path; }
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
+    {
+        return ObjectStorageKey::createAsRelative(path);
+    }
 
     bool isRemote() const override { return true; }
 
@@ -112,6 +119,9 @@ protected:
     using Files = std::map<String, FileData>; /// file path -> file data
     mutable Files files;
     mutable std::shared_mutex metadata_mutex;
+
+    std::optional<FileData> tryGetFileInfo(const String & path) const;
+    FileData getFileInfo(const String & path) const;
 
 private:
     void initialize(const String & path, const std::unique_lock<std::shared_mutex> &) const;

@@ -42,7 +42,7 @@ LocalConnection::~LocalConnection()
         {
             LocalConnection::sendCancel();
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// Just ignore any exception.
         }
@@ -95,12 +95,18 @@ void LocalConnection::sendQuery(
     else
         query_context = session.makeQueryContext();
     query_context->setCurrentQueryId(query_id);
+
     if (send_progress)
     {
         query_context->setProgressCallback([this] (const Progress & value) { this->updateProgress(value); });
         query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
     }
-    if (!current_database.empty())
+
+    /// Switch the database to the desired one (set by the USE query)
+    /// but don't attempt to do it if we are already in that database.
+    /// (there is a rare case when it matters - if we deleted the current database,
+    // we can still do some queries, but we cannot switch to the same database)
+    if (!current_database.empty() && current_database != query_context->getCurrentDatabase())
         query_context->setCurrentDatabase(current_database);
 
     query_context->addQueryParameters(query_parameters);
@@ -125,7 +131,7 @@ void LocalConnection::sendQuery(
 
     try
     {
-        state->io = executeQuery(state->query, query_context, false, state->stage);
+        state->io = executeQuery(state->query, query_context, QueryFlags{}, state->stage).second;
 
         if (state->io.pipeline.pushing())
         {
@@ -195,7 +201,7 @@ void LocalConnection::sendQuery(
     catch (...)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
+        state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
     }
 }
 
@@ -245,10 +251,12 @@ void LocalConnection::finishQuery()
     else if (state->pushing_async_executor)
     {
         state->pushing_async_executor->finish();
+        state->pushing_async_executor.reset();
     }
     else if (state->pushing_executor)
     {
         state->pushing_executor->finish();
+        state->pushing_executor.reset();
     }
 
     state->io.onFinish();
@@ -303,7 +311,7 @@ bool LocalConnection::poll(size_t)
         catch (...)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
+            state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
         }
     }
 

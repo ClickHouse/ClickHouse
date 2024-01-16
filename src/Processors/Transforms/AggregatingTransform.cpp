@@ -6,8 +6,10 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Core/ProtocolDefines.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 
 #include <Processors/Transforms/SquashingChunksTransform.h>
+
 
 namespace ProfileEvents
 {
@@ -122,7 +124,10 @@ protected:
         UInt32 bucket_num = shared_data->next_bucket_to_merge.fetch_add(1);
 
         if (bucket_num >= NUM_BUCKETS)
+        {
+            data.reset();
             return {};
+        }
 
         Block block = params->aggregator.mergeAndConvertOneBucketToBlock(*data, arena, params->final, bucket_num, &shared_data->is_cancelled);
         Chunk chunk = convertToChunk(block);
@@ -168,6 +173,8 @@ protected:
             single_level_converted = true;
             return convertToChunk(block);
         }
+
+        variant.reset();
 
         return {};
     }
@@ -371,9 +378,7 @@ private:
         auto & output = outputs.front();
         auto chunk = std::move(single_level_chunks.back());
         single_level_chunks.pop_back();
-        const auto has_rows = chunk.hasRows();
-        if (has_rows)
-            output.push(std::move(chunk));
+        output.push(std::move(chunk));
 
         if (finished && single_level_chunks.empty())
         {
@@ -381,7 +386,7 @@ private:
             return Status::Finished;
         }
 
-        return has_rows ? Status::PortFull : Status::Ready;
+        return Status::PortFull;
     }
 
     /// Read all sources and try to push current bucket.
@@ -399,26 +404,28 @@ private:
             }
         }
 
-        if (!shared_data->is_bucket_processed[current_bucket_num])
-            return Status::NeedData;
-
-        if (!two_level_chunks[current_bucket_num])
-            return Status::NeedData;
-
-        auto chunk = std::move(two_level_chunks[current_bucket_num]);
-        const auto has_rows = chunk.hasRows();
-        if (has_rows)
-            output.push(std::move(chunk));
-
-        ++current_bucket_num;
-        if (current_bucket_num == NUM_BUCKETS)
+        while (current_bucket_num < NUM_BUCKETS)
         {
-            output.finish();
-            /// Do not close inputs, they must be finished.
-            return Status::Finished;
+            if (!shared_data->is_bucket_processed[current_bucket_num])
+                return Status::NeedData;
+
+            if (!two_level_chunks[current_bucket_num])
+                return Status::NeedData;
+
+            auto chunk = std::move(two_level_chunks[current_bucket_num]);
+            ++current_bucket_num;
+
+            const auto has_rows = chunk.hasRows();
+            if (has_rows)
+            {
+                output.push(std::move(chunk));
+                return Status::PortFull;
+            }
         }
 
-        return has_rows ? Status::PortFull : Status::Ready;
+        output.finish();
+        /// Do not close inputs, they must be finished.
+        return Status::Finished;
     }
 
     AggregatingTransformParamsPtr params;
@@ -458,7 +465,8 @@ private:
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
 
-            single_level_chunks.emplace_back(convertToChunk(block));
+            if (block.rows() > 0)
+                single_level_chunks.emplace_back(convertToChunk(block));
         }
     }
 
@@ -485,9 +493,11 @@ private:
 
         auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
         for (auto & block : blocks)
-            single_level_chunks.emplace_back(convertToChunk(block));
+            if (block.rows() > 0)
+                single_level_chunks.emplace_back(convertToChunk(block));
 
         finished = true;
+        data.reset();
     }
 
     void createSources()
@@ -503,6 +513,8 @@ private:
 
             processors.emplace_back(std::move(source));
         }
+
+        data.reset();
     }
 };
 
@@ -622,7 +634,9 @@ IProcessor::Status AggregatingTransform::prepare()
 void AggregatingTransform::work()
 {
     if (is_consume_finished)
+    {
         initGenerate();
+    }
     else
     {
         consume(std::move(current_chunk));
@@ -673,10 +687,10 @@ void AggregatingTransform::consume(Chunk chunk)
 
 void AggregatingTransform::initGenerate()
 {
-    if (is_generate_initialized)
+    if (is_generate_initialized.load(std::memory_order_acquire))
         return;
 
-    is_generate_initialized = true;
+    is_generate_initialized.store(true, std::memory_order_release);
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
@@ -707,24 +721,32 @@ void AggregatingTransform::initGenerate()
     }
 
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
+    {
+        /// Note: we reset aggregation state here to release memory earlier.
+        /// It might cause extra memory usage for complex queries othervise.
+        many_data.reset();
         return;
+    }
 
     if (!params->aggregator.hasTemporaryData())
     {
         if (!skip_merging)
         {
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(
                 std::make_shared<ConvertingAggregatedToChunksTransform>(params, std::move(prepared_data_ptr), max_threads));
         }
         else
         {
-            auto prepared_data = params->aggregator.prepareVariantsToMerge(many_data->variants);
+            auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             Pipes pipes;
             for (auto & variant : prepared_data)
+            {
                 /// Converts hash tables to blocks with data (finalized or not).
                 pipes.emplace_back(std::make_shared<ConvertingAggregatedToChunksSource>(params, variant));
+            }
+
             Pipe pipe = Pipe::unitePipes(std::move(pipes));
             if (!pipe.empty())
             {
@@ -778,21 +800,23 @@ void AggregatingTransform::initGenerate()
             }
         }
 
-        const auto & tmp_data = params->aggregator.getTemporaryData();
+        size_t num_streams = 0;
+        size_t compressed_size = 0;
+        size_t uncompressed_size = 0;
 
-        Pipe pipe;
+        Pipes pipes;
+        /// Merge external data from all aggregators used in query.
+        for (const auto & aggregator : *params->aggregator_list_ptr)
         {
-            Pipes pipes;
-
+            const auto & tmp_data = aggregator.getTemporaryData();
             for (auto * tmp_stream : tmp_data.getStreams())
                 pipes.emplace_back(Pipe(std::make_unique<SourceFromNativeStream>(tmp_stream)));
 
-            pipe = Pipe::unitePipes(std::move(pipes));
+            num_streams += tmp_data.getStreams().size();
+            compressed_size += tmp_data.getStat().compressed_size;
+            uncompressed_size += tmp_data.getStat().uncompressed_size;
         }
 
-        size_t num_streams = tmp_data.getStreams().size();
-        size_t compressed_size = tmp_data.getStat().compressed_size;
-        size_t uncompressed_size = tmp_data.getStat().uncompressed_size;
         LOG_DEBUG(
             log,
             "Will merge {} temporary files of size {} compressed, {} uncompressed.",
@@ -800,10 +824,13 @@ void AggregatingTransform::initGenerate()
             ReadableSize(compressed_size),
             ReadableSize(uncompressed_size));
 
+        auto pipe = Pipe::unitePipes(std::move(pipes));
         addMergingAggregatedMemoryEfficientTransform(pipe, params, temporary_data_merge_threads);
 
         processors = Pipe::detachProcessors(std::move(pipe));
     }
+
+    many_data.reset();
 }
 
 }

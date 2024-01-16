@@ -113,6 +113,12 @@ KeeperAsynchronousMetrics::KeeperAsynchronousMetrics(
 {
 }
 
+KeeperAsynchronousMetrics::~KeeperAsynchronousMetrics()
+{
+    /// NOTE: stop() from base class is not enough, since this leads to leak on vptr
+    stop();
+}
+
 void KeeperAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint /*update_time*/, TimePoint /*current_time*/)
 {
 #if USE_NURAFT

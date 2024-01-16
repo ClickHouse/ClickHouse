@@ -93,7 +93,7 @@ namespace
 
         for (auto ch : src)
         {
-            switch (ch)
+            switch (ch) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case ',':
                 case '\\':
@@ -172,7 +172,7 @@ namespace
 
 void LDAPClient::handleError(int result_code, String text)
 {
-    std::scoped_lock lock(ldap_global_mutex);
+    std::lock_guard lock(ldap_global_mutex);
 
     if (result_code != LDAP_SUCCESS)
     {
@@ -212,7 +212,7 @@ void LDAPClient::handleError(int result_code, String text)
 
 bool LDAPClient::openConnection()
 {
-    std::scoped_lock lock(ldap_global_mutex);
+    std::lock_guard lock(ldap_global_mutex);
 
     closeConnection();
 
@@ -390,7 +390,7 @@ bool LDAPClient::openConnection()
 
 void LDAPClient::closeConnection() noexcept
 {
-    std::scoped_lock lock(ldap_global_mutex);
+    std::lock_guard lock(ldap_global_mutex);
 
     if (!handle)
         return;
@@ -404,7 +404,7 @@ void LDAPClient::closeConnection() noexcept
 
 LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
 {
-    std::scoped_lock lock(ldap_global_mutex);
+    std::lock_guard lock(ldap_global_mutex);
 
     SearchResults result;
 
@@ -450,7 +450,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
          msg = ldap_next_message(handle, msg)
     )
     {
-        switch (ldap_msgtype(msg))
+        switch (ldap_msgtype(msg)) // NOLINT(bugprone-switch-missing-default-case)
         {
             case LDAP_RES_SEARCH_ENTRY:
             {

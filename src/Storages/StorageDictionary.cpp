@@ -39,7 +39,7 @@ namespace
             {
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Not found column {} {} in dictionary {}. There are only columns {}",
                                 column.name, column.type->getName(), backQuote(dictionary_name),
-                                StorageDictionary::generateNamesAndTypesDescription(dictionary_names_and_types));
+                                dictionary_names_and_types.toNamesAndTypesDescription());
             }
         }
     }
@@ -78,20 +78,6 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
     }
 
     return dictionary_names_and_types;
-}
-
-
-String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesList & list)
-{
-    WriteBufferFromOwnString ss;
-    bool first = true;
-    for (const auto & name_and_type : list)
-    {
-        if (!std::exchange(first, false))
-            ss << ", ";
-        ss << name_and_type.name << ' ' << name_and_type.type->getName();
-    }
-    return ss.str();
 }
 
 StorageDictionary::StorageDictionary(
@@ -184,7 +170,7 @@ std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
     return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
 }
 
-void StorageDictionary::shutdown()
+void StorageDictionary::shutdown(bool)
 {
     removeDictionaryConfigurationFromRepository();
 }

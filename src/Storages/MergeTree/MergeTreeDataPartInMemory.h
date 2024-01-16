@@ -32,6 +32,7 @@ public:
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const Statistics & stats_to_recalc_,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity) override;
@@ -40,7 +41,7 @@ public:
     bool isStoredOnRemoteDisk() const override { return false; }
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override { return false; }
     bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.getNameInStorage()); }
-    String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
+    std::optional<String> getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) override;
     DataPartStoragePtr makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot,
                                            const DiskTransactionPtr & disk_transaction) const override;

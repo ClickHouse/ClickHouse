@@ -90,7 +90,9 @@ private:
         int64_t size,
         const std::unique_ptr<Stopwatch> & execution_watch);
 
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
+    std::future<IAsynchronousReader::Result> readAsync(char * data, size_t size, Priority priority);
+
+    IAsynchronousReader::Result readSync(char * data, size_t size);
 
     void resetPrefetch(FilesystemPrefetchState state);
 

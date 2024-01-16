@@ -7,6 +7,8 @@
 
 #include <Interpreters/evaluateConstantExpression.h>
 
+#include <Parsers/ASTCheckQuery.h>
+
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
@@ -33,6 +35,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Storages/BlockNumberColumn.h>
 
 #include <cassert>
 #include <chrono>
@@ -45,6 +48,8 @@
 namespace DB
 {
 
+    CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size);
+
 namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
@@ -54,6 +59,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
@@ -452,10 +458,15 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
             const auto & data_file = *data_file_it->second;
             const auto & columns = metadata_snapshot->getColumns();
 
+            CompressionCodecPtr compression;
+            if (name_and_type.name == BlockNumberColumn::name)
+                compression = BlockNumberColumn::compression_codec;
+            else
+                compression = columns.getCodecOrDefault(name_and_type.name);
+
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
-                                     columns.getCodecOrDefault(name_and_type.name),
-                                     storage.max_compress_block_size).first;
+                                     compression, storage.max_compress_block_size).first;
         }
 
         auto & stream = it->second;
@@ -503,15 +514,15 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
 void StorageLog::Mark::write(WriteBuffer & out) const
 {
-    writeIntBinary(rows, out);
-    writeIntBinary(offset, out);
+    writeBinaryLittleEndian(rows, out);
+    writeBinaryLittleEndian(offset, out);
 }
 
 
 void StorageLog::Mark::read(ReadBuffer & in)
 {
-    readIntBinary(rows, in);
-    readIntBinary(offset, in);
+    readBinaryLittleEndian(rows, in);
+    readBinaryLittleEndian(offset, in);
 }
 
 
@@ -866,15 +877,23 @@ SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetada
     return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
-CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr local_context)
+IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(
+    const std::variant<std::monostate, ASTPtr, String> & check_task_filter, ContextPtr local_context)
 {
+    if (!std::holds_alternative<std::monostate>(check_task_filter))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CHECK PART/PARTITION are not supported for {}", getName());
+
     ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    return file_checker.check();
+    return std::make_unique<DataValidationTasks>(file_checker.getDataValidationTasks(), std::move(lock));
 }
 
+std::optional<CheckResult> StorageLog::checkDataNext(DataValidationTasksPtr & check_task_list)
+{
+    return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks);
+}
 
 IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 {

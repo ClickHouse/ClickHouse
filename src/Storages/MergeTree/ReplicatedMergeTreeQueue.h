@@ -240,7 +240,7 @@ private:
     /// by first argument. If remove_part == true, than also remove part itself.
     /// Both negative flags will throw exception.
     ///
-    /// Part removed from mutations which satisfy contitions:
+    /// Part removed from mutations which satisfy conditions:
     /// block_number > part.getDataVersion()
     /// or block_number == part.getDataVersion()
     ///    ^ (this may happen if we downloaded mutated part from other replica)
@@ -331,11 +331,11 @@ public:
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       * Return the version of "logs" node (that is updated for every merge/mutation/... added to the log)
       */
-    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {}, PullLogsReason reason = OTHER);
+    std::pair<int32_t, int32_t> pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {}, PullLogsReason reason = OTHER);
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
-    void updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback = {});
+    int32_t updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallbackPtr watch_callback = {});
 
     /// Remove a mutation from ZooKeeper and from the local set. Returns the removed entry or nullptr
     /// if it could not be found. Called during KILL MUTATION query execution.
@@ -388,12 +388,12 @@ public:
 
     /// Count the total number of active mutations that are finished (is_done = true).
     size_t countFinishedMutations() const;
-    /// Count the total number of active mutations that are not finished (is_done = false).
-    size_t countUnfinishedMutations() const;
+
+    std::map<std::string, MutationCommands> getUnfinishedMutations() const;
 
     /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
-    ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper,
-                                                        std::optional<PartitionIdsHint> && partition_ids_hint);
+    ReplicatedMergeTreeMergePredicate
+    getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint);
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;
@@ -430,7 +430,7 @@ public:
     ActionBlocker pull_log_blocker;
 
     /// Adds a subscriber
-    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode);
+    SubscriberHandler addSubscriber(SubscriberCallBack && callback, std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode, std::unordered_set<String> src_replicas);
 
     void notifySubscribersOnPartialShutdown();
 

@@ -10,6 +10,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/BlobStorageLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
@@ -19,7 +20,9 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
+#include <Interpreters/S3QueueLog.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/BackupLog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -32,7 +35,9 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/scope_guard.h>
+#include <fmt/core.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include "Common/quoteString.h"
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -115,7 +120,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
     const String & default_database_name,
     const String & default_table_name,
     const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix)
+    const String & config_prefix,
+    const String & comment)
 {
     if (!config.has(config_prefix))
     {
@@ -205,10 +211,14 @@ std::shared_ptr<TSystemLog> createSystemLog(
             if (!settings.empty())
                 log_settings.engine += (storage_policy.empty() ? " " : ", ") + settings;
         }
+
+        /// Add comment to AST. So it will be saved when the table will be renamed.
+        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
     ParserStorageWithComment storage_parser;
+
     parseQuery(storage_parser, log_settings.engine.data(), log_settings.engine.data() + log_settings.engine.size(),
             "Storage to create table for " + config_prefix, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
@@ -264,29 +274,32 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
 
 SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
-    query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log");
-    query_thread_log = createSystemLog<QueryThreadLog>(global_context, "system", "query_thread_log", config, "query_thread_log");
-    part_log = createSystemLog<PartLog>(global_context, "system", "part_log", config, "part_log");
-    trace_log = createSystemLog<TraceLog>(global_context, "system", "trace_log", config, "trace_log");
-    crash_log = createSystemLog<CrashLog>(global_context, "system", "crash_log", config, "crash_log");
-    text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log");
-    metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log");
-    filesystem_cache_log = createSystemLog<FilesystemCacheLog>(global_context, "system", "filesystem_cache_log", config, "filesystem_cache_log");
+    query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log", "Contains information about executed queries, for example, start time, duration of processing, error messages.");
+    query_thread_log = createSystemLog<QueryThreadLog>(global_context, "system", "query_thread_log", config, "query_thread_log", "Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.");
+    part_log = createSystemLog<PartLog>(global_context, "system", "part_log", config, "part_log", "This table contains information about events that occurred with data parts in the MergeTree family tables, such as adding or merging data.");
+    trace_log = createSystemLog<TraceLog>(global_context, "system", "trace_log", config, "trace_log", "Contains stack traces collected by the sampling query profiler.");
+    crash_log = createSystemLog<CrashLog>(global_context, "system", "crash_log", config, "crash_log", "Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.");
+    text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log", "Contains logging entries which are normally written to a log file or to stdout.");
+    metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log", "Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.");
+    filesystem_cache_log = createSystemLog<FilesystemCacheLog>(global_context, "system", "filesystem_cache_log", config, "filesystem_cache_log", "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.");
     filesystem_read_prefetches_log = createSystemLog<FilesystemReadPrefetchesLog>(
-        global_context, "system", "filesystem_read_prefetches_log", config, "filesystem_read_prefetches_log");
+        global_context, "system", "filesystem_read_prefetches_log", config, "filesystem_read_prefetches_log", "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.");
     asynchronous_metric_log = createSystemLog<AsynchronousMetricLog>(
         global_context, "system", "asynchronous_metric_log", config,
-        "asynchronous_metric_log");
+        "asynchronous_metric_log", "Contains the historical values for system.asynchronous_metrics, which are saved once per minute.");
     opentelemetry_span_log = createSystemLog<OpenTelemetrySpanLog>(
         global_context, "system", "opentelemetry_span_log", config,
-        "opentelemetry_span_log");
-    query_views_log = createSystemLog<QueryViewsLog>(global_context, "system", "query_views_log", config, "query_views_log");
-    zookeeper_log = createSystemLog<ZooKeeperLog>(global_context, "system", "zookeeper_log", config, "zookeeper_log");
-    session_log = createSystemLog<SessionLog>(global_context, "system", "session_log", config, "session_log");
+        "opentelemetry_span_log", "Contains information about trace spans for executed queries.");
+    query_views_log = createSystemLog<QueryViewsLog>(global_context, "system", "query_views_log", config, "query_views_log", "Contains information about the dependent views executed when running a query, for example, the view type or the execution time.");
+    zookeeper_log = createSystemLog<ZooKeeperLog>(global_context, "system", "zookeeper_log", config, "zookeeper_log", "This table contains information about the parameters of the request to the ZooKeeper server and the response from it.");
+    session_log = createSystemLog<SessionLog>(global_context, "system", "session_log", config, "session_log", "Contains information about all successful and failed login and logout events.");
     transactions_info_log = createSystemLog<TransactionsInfoLog>(
-        global_context, "system", "transactions_info_log", config, "transactions_info_log");
-    processors_profile_log = createSystemLog<ProcessorsProfileLog>(global_context, "system", "processors_profile_log", config, "processors_profile_log");
-    asynchronous_insert_log = createSystemLog<AsynchronousInsertLog>(global_context, "system", "asynchronous_insert_log", config, "asynchronous_insert_log");
+        global_context, "system", "transactions_info_log", config, "transactions_info_log", "Contains information about all transactions executed on a current server.");
+    processors_profile_log = createSystemLog<ProcessorsProfileLog>(global_context, "system", "processors_profile_log", config, "processors_profile_log", "Contains profiling information on processors level (building blocks for a pipeline for query execution.");
+    asynchronous_insert_log = createSystemLog<AsynchronousInsertLog>(global_context, "system", "asynchronous_insert_log", config, "asynchronous_insert_log", "Contains a history for all asynchronous inserts executed on current server.");
+    backup_log = createSystemLog<BackupLog>(global_context, "system", "backup_log", config, "backup_log", "Contains logging entries with the information about BACKUP and RESTORE operations.");
+    s3_queue_log = createSystemLog<S3QueueLog>(global_context, "system", "s3queue_log", config, "s3queue_log", "Contains logging entries with the information files processes by S3Queue engine.");
+    blob_storage_log = createSystemLog<BlobStorageLog>(global_context, "system", "blob_storage_log", config, "blob_storage_log", "Contains logging entries with information about various blob storage operations such as uploads and deletes.");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -325,6 +338,12 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(filesystem_read_prefetches_log.get());
     if (asynchronous_insert_log)
         logs.emplace_back(asynchronous_insert_log.get());
+    if (backup_log)
+        logs.emplace_back(backup_log.get());
+    if (s3_queue_log)
+        logs.emplace_back(s3_queue_log.get());
+    if (blob_storage_log)
+        logs.emplace_back(blob_storage_log.get());
 
     try
     {
@@ -472,9 +491,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         prepareTable();
 
         ColumnsWithTypeAndName log_element_columns;
-        auto log_element_names_and_types = LogElement::getNamesAndTypes();
+        auto log_element_names_and_types = LogElement::getColumnsDescription();
 
-        for (const auto & name_and_type : log_element_names_and_types)
+        for (const auto & name_and_type : log_element_names_and_types.getAll())
             log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
 
         Block block(std::move(log_element_columns));
@@ -535,6 +554,8 @@ void SystemLog<LogElement>::prepareTable()
 
         if (old_create_query != create_query)
         {
+            /// TODO: Handle altering comment, because otherwise all table will be renamed.
+
             /// Rename the existing table.
             int suffix = 0;
             while (DatabaseCatalog::instance().isTableExist(
@@ -614,22 +635,11 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     create->setTable(table_id.table_name);
 
     auto new_columns_list = std::make_shared<ASTColumns>();
+    auto ordinary_columns = LogElement::getColumnsDescription();
+    auto alias_columns = LogElement::getNamesAndAliases();
+    ordinary_columns.setAliases(alias_columns);
 
-    if (const char * custom_column_list = LogElement::getCustomColumnList())
-    {
-        ParserColumnDeclarationList parser;
-        const Settings & settings = getContext()->getSettingsRef();
-
-        ASTPtr columns_list_raw = parseQuery(parser, custom_column_list, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
-        new_columns_list->set(new_columns_list->columns, columns_list_raw);
-    }
-    else
-    {
-        auto ordinary_columns = LogElement::getNamesAndTypes();
-        auto alias_columns = LogElement::getNamesAndAliases();
-
-        new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
-    }
+    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
 
     create->set(create->columns_list, new_columns_list);
 

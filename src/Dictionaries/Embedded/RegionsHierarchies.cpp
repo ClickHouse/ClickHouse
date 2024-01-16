@@ -3,6 +3,8 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/logger_useful.h>
 
+namespace DB
+{
 
 RegionsHierarchies::RegionsHierarchies(IRegionsHierarchiesDataProviderPtr data_provider)
 {
@@ -18,4 +20,6 @@ RegionsHierarchies::RegionsHierarchies(IRegionsHierarchiesDataProviderPtr data_p
     }
 
     reload();
+}
+
 }

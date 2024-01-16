@@ -21,7 +21,7 @@ ClassifierDescription::ClassifierDescription(const Poco::Util::AbstractConfigura
 ClassifiersConfig::ClassifiersConfig(const Poco::Util::AbstractConfiguration & config)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
-    const String config_prefix = "classifiers";
+    const String config_prefix = "workload_classifiers";
     config.keys(config_prefix, keys);
     for (const auto & key : keys)
         classifiers.emplace(std::piecewise_construct,
@@ -34,7 +34,7 @@ const ClassifierDescription & ClassifiersConfig::get(const String & classifier_n
     if (auto it = classifiers.find(classifier_name); it != classifiers.end())
         return it->second;
     else
-        throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "Unknown classifier '{}' to access resources", classifier_name);
+        throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "Unknown workload classifier '{}' to access resources", classifier_name);
 }
 
 }

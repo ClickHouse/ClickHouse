@@ -12,6 +12,7 @@
 #include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Disks/IDiskTransaction.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
 namespace DB
 {
@@ -54,8 +55,6 @@ struct MergeTreeDataPartChecksums;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
-
-class IStoragePolicy;
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
@@ -252,6 +251,8 @@ public:
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
         const std::string & dir_path,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const = 0;
 
@@ -260,7 +261,11 @@ public:
         const std::string & to,
         const std::string & dir_path,
         const DiskPtr & disk,
-        Poco::Logger * log) const = 0;
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        Poco::Logger * log,
+        const std::function<void()> & cancellation_hook
+        ) const = 0;
 
     /// Change part's root. from_root should be a prefix path of current root path.
     /// Right now, this is needed for rename table query.
@@ -300,6 +305,7 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard() const { return nullptr; }
 
     virtual void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
+    virtual void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
 
     /// Rename part.
     /// Ideally, new_root_path should be the same as current root (but it is not true).

@@ -7,6 +7,7 @@
 #include <boost/algorithm/string.hpp>
 #include <map>
 
+
 namespace DB
 {
 
@@ -80,6 +81,20 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
+    {"24.1", {{"print_pretty_type_names", false, true, "Better user experience."},
+              {"input_format_json_read_bools_as_strings", false, true, "Allow to read bools as strings in JSON formats by default"},
+              {"output_format_arrow_use_signed_indexes_for_dictionary", false, true, "Use signed indexes type for Arrow dictionaries by default as it's recommended"}}},
+    {"23.12", {{"allow_suspicious_ttl_expressions", true, false, "It is a new setting, and in previous versions the behavior was equivalent to allowing."},
+              {"input_format_parquet_allow_missing_columns", false, true, "Allow missing columns in Parquet files by default"},
+              {"input_format_orc_allow_missing_columns", false, true, "Allow missing columns in ORC files by default"},
+              {"input_format_arrow_allow_missing_columns", false, true, "Allow missing columns in Arrow files by default"}}},
+    {"23.9", {{"optimize_group_by_constant_keys", false, true, "Optimize group by constant keys by default"},
+              {"input_format_json_try_infer_named_tuples_from_objects", false, true, "Try to infer named Tuples from JSON objects by default"},
+              {"input_format_json_read_numbers_as_strings", false, true, "Allow to read numbers as strings in JSON formats by default"},
+              {"input_format_json_read_arrays_as_strings", false, true, "Allow to read arrays as strings in JSON formats by default"},
+              {"input_format_json_infer_incomplete_types_as_strings", false, true, "Allow to infer incomplete types as Strings in JSON formats by default"},
+              {"input_format_json_try_infer_numbers_from_strings", true, false, "Don't infer numbers from strings in JSON formats by default to prevent possible parsing errors"},
+              {"http_write_exception_in_output_format", false, true, "Output valid JSON/XML on exception in HTTP streaming."}}},
     {"23.8", {{"rewrite_count_distinct_if_with_count_distinct_implementation", false, true, "Rewrite countDistinctIf with count_distinct_implementation configuration"}}},
     {"23.7", {{"function_sleep_max_microseconds_per_block", 0, 3000000, "In previous versions, the maximum sleep time of 3 seconds was applied only for `sleep`, but not for `sleepEachRow` function. In the new version, we introduce this setting. If you set compatibility with the previous versions, we will disable the limit altogether."}}},
     {"23.6", {{"http_send_timeout", 180, 30, "3 minutes seems crazy long. Note that this is timeout for a single network write call, not for the whole upload operation."},
@@ -117,6 +132,7 @@ static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> sett
     {"22.11", {{"use_structure_from_insertion_table_in_table_functions", 0, 2, "Improve using structure from insertion table in table functions"}}},
     {"23.4", {{"formatdatetime_f_prints_single_zero", true, false, "Improved compatibility with MySQL DATE_FORMAT()/STR_TO_DATE()"}}},
     {"23.4", {{"formatdatetime_parsedatetime_m_is_month_name", false, true, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"}}},
+    {"23.11", {{"parsedatetime_parse_without_leading_zeros", false, true, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"}}},
     {"22.9", {{"force_grouping_standard_compatibility", false, true, "Make GROUPING function output the same as in SQL standard and other DBMS"}}},
     {"22.7", {{"cross_to_inner_join_rewrite", 1, 2, "Force rewrite comma join to inner"},
               {"enable_positional_arguments", false, true, "Enable positional arguments feature by default"},

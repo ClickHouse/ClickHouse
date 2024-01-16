@@ -1,0 +1,14 @@
+-- Uppercase tests
+name	value
+limit	11
+name	value
+send_timeout	22
+name	value
+receive_timeout	33
+-- Lowercase tests
+name	value
+limit	44
+name	value
+send_timeout	55
+name	value
+receive_timeout	66

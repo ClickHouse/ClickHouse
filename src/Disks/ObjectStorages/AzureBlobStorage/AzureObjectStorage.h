@@ -3,7 +3,6 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
@@ -64,6 +63,8 @@ public:
 
     std::string getName() const override { return "AzureObjectStorage"; }
 
+    std::string getCommonKeyPrefix() const override { return ""; } /// No namespaces in azure.
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -100,6 +101,8 @@ public:
     void copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
     void shutdown() override {}
@@ -119,7 +122,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    std::string generateBlobNameForPath(const std::string & path) override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
     bool isRemote() const override { return true; }
 

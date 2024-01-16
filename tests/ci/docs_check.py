@@ -3,20 +3,19 @@ import argparse
 import atexit
 import logging
 import subprocess
-import os
 import sys
+from pathlib import Path
 
 from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from commit_status_helper import (
-    NotSet,
     RerunHelper,
     get_commit,
     post_commit_status,
     update_mergeable_check,
 )
-from docker_pull_helper import get_image_with_version
+from docker_images_helper import get_docker_image, pull_image
 from env_helper import TEMP_PATH, REPO_COPY
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
@@ -30,7 +29,7 @@ from upload_result_helper import upload_results
 NAME = "Docs Check"
 
 
-def main():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="Script to check the docs integrity",
@@ -45,14 +44,19 @@ def main():
         action="store_true",
         help="check the docs even if there no changes",
     )
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
 
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-    repo_path = REPO_COPY
+    temp_path = Path(TEMP_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
+    repo_path = Path(REPO_COPY)
 
     pr_info = PRInfo(need_changed_files=True)
 
@@ -63,12 +67,18 @@ def main():
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
-    atexit.register(update_mergeable_check, gh, pr_info, NAME)
+    atexit.register(update_mergeable_check, commit, pr_info, NAME)
 
     if not pr_info.has_changes_in_documentation() and not args.force:
         logging.info("No changes in documentation")
         post_commit_status(
-            commit, "success", NotSet, "No changes in docs", NAME, pr_info
+            commit,
+            "success",
+            "",
+            "No changes in docs",
+            NAME,
+            pr_info,
+            dump_to_file=True,
         )
         sys.exit(0)
 
@@ -77,14 +87,10 @@ def main():
     elif args.force:
         logging.info("Check the docs because of force flag")
 
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
+    docker_image = pull_image(get_docker_image("clickhouse/docs-builder"))
 
-    docker_image = get_image_with_version(temp_path, "clickhouse/docs-builder")
-
-    test_output = os.path.join(temp_path, "docs_check_log")
-    if not os.path.exists(test_output):
-        os.makedirs(test_output)
+    test_output = temp_path / "docs_check_log"
+    test_output.mkdir(parents=True, exist_ok=True)
 
     cmd = (
         f"docker run --cap-add=SYS_PTRACE -e GIT_DOCS_BRANCH={args.docs_branch} "
@@ -92,7 +98,7 @@ def main():
         f"{docker_image}"
     )
 
-    run_log_path = os.path.join(test_output, "run.log")
+    run_log_path = test_output / "run.log"
     logging.info("Running command: '%s'", cmd)
 
     with TeePopen(cmd, run_log_path) as process:
@@ -107,18 +113,16 @@ def main():
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
-    files = os.listdir(test_output)
     test_results = []  # type: TestResults
     additional_files = []
-    if not files:
+    if not any(test_output.iterdir()):
         logging.error("No output files after docs check")
         description = "No output files after docs check"
         status = "failure"
     else:
-        for f in files:
-            path = os.path.join(test_output, f)
-            additional_files.append(path)
-            with open(path, "r", encoding="utf-8") as check_file:
+        for p in test_output.iterdir():
+            additional_files.append(p)
+            with open(p, "r", encoding="utf-8") as check_file:
                 for line in check_file:
                     if "ERROR" in line:
                         test_results.append(TestResult(line.split(":")[-1], "FAIL"))
@@ -137,7 +141,9 @@ def main():
         s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME
     )
     print("::notice ::Report url: {report_url}")
-    post_commit_status(commit, status, report_url, description, NAME, pr_info)
+    post_commit_status(
+        commit, status, report_url, description, NAME, pr_info, dump_to_file=True
+    )
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,

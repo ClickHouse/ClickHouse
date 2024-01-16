@@ -133,6 +133,12 @@ void DelayedSource::work()
 
     processors = Pipe::detachProcessors(std::move(pipe));
 
+    if (rows_before_limit)
+    {
+        for (auto & processor : processors)
+            processor->setRowsBeforeLimitCounter(rows_before_limit);
+    }
+
     synchronizePorts(totals_output, totals, header, processors);
     synchronizePorts(extremes_output, extremes, header, processors);
 }

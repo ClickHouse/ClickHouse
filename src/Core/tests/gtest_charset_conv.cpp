@@ -5,12 +5,14 @@
 namespace DB
 {
 
+// NOLINTBEGIN(clang-analyzer-optin.performance.Padding)
 struct CheckResult
 {
     Int32 id;
     String name;
     bool need_convert;
 };
+// NOLINTEND(clang-analyzer-optin.performance.Padding)
 
 TEST(CharsetTest, CharsetTest)
 {

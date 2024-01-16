@@ -54,8 +54,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
     }
 
     const auto & settings = context->getSettingsRef();
-    const auto & config = context->getConfigRef();
-    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 20), 0};
+    const auto & server_settings = context->getServerSettings();
 
     auto res = std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
@@ -65,7 +64,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
                            settings.http_send_timeout,
                            std::max(Poco::Timespan(settings.http_receive_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
                            settings.tcp_keep_alive_timeout,
-                           http_keep_alive_timeout),
+                           server_settings.keep_alive_timeout),
         credentials,
         0,
         buf_size,

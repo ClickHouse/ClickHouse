@@ -206,6 +206,55 @@ end_time:          2022-08-30 09:21:46
 1 row in set. Elapsed: 0.002 sec.
 ```
 
+Along with `system.backups` table, all backup and restore operations are also tracked in the system log table [backup_log](../operations/system-tables/backup_log.md): 
+```
+SELECT *
+FROM system.backup_log
+WHERE id = '7678b0b3-f519-4e6e-811f-5a0781a4eb52'
+ORDER BY event_time_microseconds ASC
+FORMAT Vertical
+```
+```response
+Row 1:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.097414
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  CREATING_BACKUP
+error:                   
+start_time:              2023-08-18 11:13:43
+end_time:                1970-01-01 03:00:00
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+Row 2:
+──────
+event_date:              2023-08-18
+event_time_microseconds: 2023-08-18 11:13:43.174782
+id:                      7678b0b3-f519-4e6e-811f-5a0781a4eb52
+name:                    Disk('backups', '1.zip')
+status:                  BACKUP_FAILED
+#highlight-next-line
+error:                   Code: 598. DB::Exception: Backup Disk('backups', '1.zip') already exists. (BACKUP_ALREADY_EXISTS) (version 23.8.1.1)
+start_time:              2023-08-18 11:13:43
+end_time:                2023-08-18 11:13:43
+num_files:               0
+total_size:              0
+num_entries:             0
+uncompressed_size:       0
+compressed_size:         0
+files_read:              0
+bytes_read:              0
+
+2 rows in set. Elapsed: 0.075 sec. 
+```
+
 ## Configuring BACKUP/RESTORE to use an S3 Endpoint
 
 To write backups to an S3 bucket you need three pieces of information:
@@ -357,7 +406,7 @@ RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
 :::note
 But keep in mind that:
 - This disk should not be used for `MergeTree` itself, only for `BACKUP`/`RESTORE`
-- It has excessive API calls
+- If your tables are backed by S3 storage and types of the disks are different, it doesn't use `CopyObject` calls to copy parts to the destination bucket, instead, it downloads and uploads them, which is very inefficient. Prefer to use `BACKUP ... TO S3(<endpoint>)` syntax for this use-case.
 :::
 
 ## Alternatives

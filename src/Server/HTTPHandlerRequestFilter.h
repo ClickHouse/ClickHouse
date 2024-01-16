@@ -4,8 +4,8 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <base/find_symbols.h>
+#include <Common/re2.h>
 
-#include <re2/re2.h>
 #include <Poco/StringTokenizer.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -90,7 +90,7 @@ static inline auto headersFilter(const Poco::Util::AbstractConfiguration & confi
     {
         for (const auto & [header_name, header_expression] : headers_expression)
         {
-            const auto & header_value = request.get(header_name, "");
+            const auto header_value = request.get(header_name, "");
             if (!checkExpression(std::string_view(header_value.data(), header_value.size()), header_expression))
                 return false;
         }
