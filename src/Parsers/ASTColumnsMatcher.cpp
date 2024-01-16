@@ -4,16 +4,8 @@
 #include <IO/WriteHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace DB
 {
@@ -46,11 +38,11 @@ void ASTColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(original_pattern.size());
     hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -201,11 +193,11 @@ const std::shared_ptr<re2::RE2> & ASTQualifiedColumnsRegexpMatcher::getMatcher()
     return column_matcher;
 }
 
-void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
+void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(original_pattern.size());
     hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

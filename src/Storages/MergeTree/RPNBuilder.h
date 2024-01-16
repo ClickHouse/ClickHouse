@@ -202,17 +202,6 @@ public:
         traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context));
     }
 
-    RPNBuilder(const ASTPtr & filter_node,
-        ContextPtr query_context_,
-        Block block_with_constants_,
-        PreparedSetsPtr prepared_sets_,
-        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
-        : tree_context(std::move(query_context_), std::move(block_with_constants_), std::move(prepared_sets_))
-        , extract_atom_from_tree_function(extract_atom_from_tree_function_)
-    {
-        traverseTree(RPNBuilderTreeNode(filter_node.get(), tree_context));
-    }
-
     RPNElements && extractRPN() && { return std::move(rpn_elements); }
 
 private:

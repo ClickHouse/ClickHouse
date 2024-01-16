@@ -68,12 +68,13 @@ RUN python3 -m pip install --no-cache-dir \
     asyncio \
     avro==1.10.2 \
     azure-storage-blob \
+    boto3 \
     cassandra-driver \
     confluent-kafka==1.9.2 \
     delta-spark==2.3.0 \
     dict2xml \
     dicttoxml \
-    docker \
+    docker==6.1.3 \
     docker-compose==1.29.2 \
     grpcio \
     grpcio-tools \

@@ -14,12 +14,6 @@
 namespace DB
 {
 
-
-namespace ErrorCodes
-{
-    extern const int CORRUPTED_DATA;
-}
-
 CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
     : codecs(codecs_)
 {
@@ -79,7 +73,7 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
 void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
 {
     if (source_size < 1 || !source[0])
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Wrong compression methods list");
+        throw Exception(decompression_error_code, "Wrong compression methods list");
 
     UInt8 compression_methods_size = source[0];
 
@@ -95,10 +89,10 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
         compressed_buf.resize(compressed_buf.size() + additional_size_at_the_end_of_buffer);
-        UInt32 uncompressed_size = ICompressionCodec::readDecompressedBlockSize(compressed_buf.data());
+        UInt32 uncompressed_size = readDecompressedBlockSize(compressed_buf.data());
 
         if (idx == 0 && uncompressed_size != decompressed_size)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Wrong final decompressed size in codec Multiple, got {}, expected {}",
+            throw Exception(decompression_error_code, "Wrong final decompressed size in codec Multiple, got {}, expected {}",
                 uncompressed_size, decompressed_size);
 
         uncompressed_buf.resize(uncompressed_size + additional_size_at_the_end_of_buffer);

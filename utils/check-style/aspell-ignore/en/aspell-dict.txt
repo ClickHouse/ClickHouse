@@ -1,4 +1,4 @@
-personal_ws-1.1 en 543
+personal_ws-1.1 en 2657 
 AArch
 ACLs
 ALTERs
@@ -148,6 +148,7 @@ ChannelID
 Cidr
 Ciphertext
 CityHash
+Clangd
 ClickBench
 ClickCat
 ClickHouse
@@ -193,8 +194,11 @@ DDLWorker
 DDLWorkerThreads
 DDLWorkerThreadsActive
 DECRYPT
+DELETEs
 DESC
+DIEs
 DOGEFI
+Damerau
 DataGrip
 DataLens
 DataTime
@@ -258,6 +262,8 @@ FOSDEM
 FQDN
 Failover
 FarmHash
+FileCluster
+FileLog
 FilesystemCacheBytes
 FilesystemCacheElements
 FilesystemCacheFiles
@@ -337,6 +343,9 @@ Hudi
 HyperLogLog
 Hypot
 IANA
+IDE
+IDEs
+IDNA
 IMDS
 INFILE
 INSERTed
@@ -350,6 +359,7 @@ IOUringPendingEvents
 IOWriterThreads
 IOWriterThreadsActive
 IPTrie
+IProcessor
 IPv
 Identifiant
 Incrementing
@@ -359,6 +369,7 @@ Instana
 IntN
 Integrations
 IntelliJ
+IntelliSense
 InterserverConnection
 InterserverThreads
 IsPentagon
@@ -404,6 +415,7 @@ JSONType
 JSONs
 Jaeger
 Jannis
+Jaro
 JavaHash
 Jemalloc
 Jepsen
@@ -432,13 +444,14 @@ Klickhouse
 Kolmogorov
 Kubernetes
 LDAP
-Levenshtein
 LGPL
+LIMITs
 LLDB
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
 LONGLONG
+Levenshtein
 LibFuzzer
 LightHouse
 LineAsString
@@ -492,6 +505,7 @@ Memcheck
 MemoryCode
 MemoryDataAndStack
 MemoryResident
+MemoryResidentMax
 MemorySanitizer
 MemoryShared
 MemoryTracking
@@ -563,6 +577,7 @@ NetworkSendPackets
 NodeJs
 NuRaft
 NumHexagons
+NumPy
 NumToString
 NumToStringClassC
 NumberOfDatabases
@@ -579,6 +594,7 @@ OSGuestNiceTimeNormalized
 OSGuestTime
 OSGuestTimeCPU
 OSGuestTimeNormalized
+OSIOWaitMicroseconds
 OSIOWaitTime
 OSIOWaitTimeCPU
 OSIOWaitTimeNormalized
@@ -699,8 +715,10 @@ Promtail
 Protobuf
 ProtobufSingle
 ProxySQL
+Punycode
 PyArrow
 PyCharm
+QATlib
 QEMU
 QTCreator
 Quantile
@@ -710,6 +728,7 @@ QueryCacheHits
 QueryCacheMisses
 QueryPreempted
 QueryThread
+QuickAssist
 QuoteMeta
 RBAC
 RClickHouse
@@ -738,6 +757,7 @@ Redash
 Reddit
 Refactorings
 ReferenceKeyed
+Refreshable
 RegexpTree
 RemoteRead
 ReplacingMergeTree
@@ -854,12 +874,13 @@ SystemReplicasThreadsActive
 TABLUM
 TCPConnection
 TCPThreads
+TDigest
 TINYINT
-TKSV
 TLSv
 TPCH
 TSDB
 TSVRaw
+TSVWithNames
 TSVs
 TSan
 TThe
@@ -871,8 +892,10 @@ TabSeparatedRawWithNamesAndTypes
 TabSeparatedWithNames
 TabSeparatedWithNamesAndTypes
 Tabix
-TablesLoaderThreads
-TablesLoaderThreadsActive
+TablesLoaderBackgroundThreads
+TablesLoaderBackgroundThreadsActive
+TablesLoaderForegroundThreads
+TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Telegraf
@@ -893,6 +916,7 @@ ThreadsInOvercommitTracker
 Timeunit
 TinyLog
 Tkachenko
+ToASCII
 ToCenterChild
 ToChildren
 ToGeo
@@ -901,10 +925,13 @@ ToIPv
 ToParent
 ToSnowflake
 ToString
+ToUnicode
 Toolset
 TopK
 TotalBytesOfMergeTreeTables
 TotalPartsOfMergeTreeTables
+TotalPrimaryKeyBytesInMemory
+TotalPrimaryKeyBytesInMemoryAllocated
 TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
@@ -957,6 +984,7 @@ Werror
 Wether
 WikiStat
 WindowView
+Winkler
 WithNames
 WithNamesAndTypes
 WordNet
@@ -973,6 +1001,7 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
+ZSTDQAT
 Zabbix
 Zipkin
 ZooKeeper
@@ -1115,6 +1144,7 @@ azureBlobStorageCluster
 backend
 backoff
 backticks
+backupview
 balancer
 basename
 bcrypt
@@ -1181,15 +1211,11 @@ bugfix
 buildId
 buildable
 builtins
+byteHammingDistance
 byteSize
 byteSwap
 bytebase
 bytesToCutForIPv
-editDistance
-byteHammingDistance
-jaccardIndex
-levenshteinDistance
-clickcache
 cLoki
 caConfig
 cacheSessions
@@ -1222,6 +1248,7 @@ changelogs
 charset
 charsets
 chconn
+cheatsheet
 checkouting
 checksummed
 checksumming
@@ -1234,7 +1261,9 @@ cipherList
 ciphertext
 cityHash
 cityhash
+clangd
 cli
+clickcache
 clickcat
 clickhouse
 clickhousedb
@@ -1319,6 +1348,7 @@ cutToFirstSignificantSubdomainWithWWW
 cutURLParameter
 cutWWW
 cyrus
+damerauLevenshteinDistance
 datacenter
 datacenters
 datafiles
@@ -1360,18 +1390,19 @@ defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
 delim
-deltalake
 deltaLake
-deltasum
 deltaSum
-deltasumtimestamp
 deltaSumTimestamp
+deltalake
+deltasum
+deltasumtimestamp
 demangle
 denormalize
 denormalized
 denormalizing
 denormals
 dequeued
+dequeues
 deserialization
 deserialized
 deserializing
@@ -1410,6 +1441,7 @@ dropoff
 dumpColumnStructure
 durations
 ecto
+editDistance
 embeddings
 emptyArray
 emptyArrayDate
@@ -1430,6 +1462,8 @@ endian
 endianness
 endsWith
 endsWithUTF
+endswith
+enqueued
 enum
 enum's
 enums
@@ -1460,6 +1494,8 @@ fastops
 fcoverage
 fibonacci
 fifo
+fileCluster
+filelog
 filesystem
 filesystemAvailable
 filesystemCapacity
@@ -1490,7 +1526,9 @@ formatRowNoNewline
 formated
 formatschema
 formatter
+formatters
 freezed
+fromDaysSinceYearZero
 fromModifiedJulianDay
 fromModifiedJulianDayOrNull
 fromUTCTimestamp
@@ -1499,6 +1537,7 @@ fromUnixTimestampInJodaSyntax
 fsync
 func
 fuzzBits
+fuzzJSON
 fuzzer
 fuzzers
 gRPC
@@ -1521,7 +1560,6 @@ geohashesInBox
 geoip
 geospatial
 getMacro
-getHttpHeader
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1532,6 +1570,7 @@ github
 glibc
 globalIn
 globalNotIn
+globbing
 glushkovds
 golang
 googletest
@@ -1542,6 +1581,7 @@ graphql
 greatCircleAngle
 greatCircleDistance
 greaterOrEquals
+greaterorequals
 greenspace
 groupArray
 groupArrayInsertAt
@@ -1581,6 +1621,7 @@ hadoop
 halfMD
 halfday
 hardlink
+hardlinked
 hardlinks
 hasAll
 hasAny
@@ -1594,6 +1635,8 @@ hasToken
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
+hasall
+hasany
 hashtables
 haversine
 hdbc
@@ -1622,6 +1665,8 @@ hyvor
 icosahedron
 icudata
 idempotency
+idnaDecode
+idnaEncode
 ifNotFinite
 ifNull
 iframe
@@ -1640,7 +1685,6 @@ innogames
 inodes
 instantiation
 instantiations
-DIEs
 intDiv
 intDivOrZero
 intExp
@@ -1666,6 +1710,9 @@ isValidUTF
 isZeroOrNull
 iteratively
 jaccard
+jaccardIndex
+jaroSimilarity
+jaroWinklerSimilarity
 javaHash
 javaHashUTF
 jbod
@@ -1673,6 +1720,7 @@ jdbc
 jemalloc
 joinGet
 json
+jsonMergePatch
 jsonasstring
 jsoncolumns
 jsoncolumnsmonoblock
@@ -1687,7 +1735,6 @@ jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
 jsoneachrow
 jsoneachrowwithprogress
-jsonMergePatch
 jsonobjecteachrow
 jsonstrings
 jsonstringseachrow
@@ -1726,7 +1773,9 @@ lemmatize
 lemmatized
 lengthUTF
 lessOrEquals
+lessorequals
 levenshtein
+levenshteinDistance
 lexicographically
 lgamma
 libFuzzer
@@ -1759,10 +1808,12 @@ llvm
 loadDefaultCAFile
 localhost
 localread
+loess
 logTrace
 logagent
 loghouse
 london
+lookups
 lowcardinality
 lowerUTF
 lowercased
@@ -1816,6 +1867,8 @@ metrica
 metroHash
 mfedotov
 minMap
+minSampleSizeContinuous
+minSampleSizeConversion
 mindsdb
 minimalistic
 mininum
@@ -1834,7 +1887,6 @@ monthName
 moscow
 msgpack
 msgpk
-multidirectory
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -1848,9 +1900,11 @@ multiSearchAny
 multiSearchFirstIndex
 multiSearchFirstPosition
 multibyte
+multidirectory
 multiline
 multiplyDecimal
 multipolygon
+multisearchany
 multisets
 multithread
 multiword
@@ -1903,6 +1957,9 @@ notEquals
 notILike
 notIn
 notLike
+notempty
+notequals
+notlike
 notretry
 nowInBlock
 ntile
@@ -2040,6 +2097,8 @@ pseudorandom
 pseudorandomize
 psql
 ptrs
+punycodeDecode
+punycodeEncode
 pushdown
 pwrite
 py
@@ -2118,6 +2177,7 @@ reddit
 redis
 redisstreams
 refcounter
+refreshable
 regexpExtract
 regexpQuoteMeta
 regionHierarchy
@@ -2154,16 +2214,14 @@ repo
 representable
 requestor
 requireTLSv
-resolvers
 resharding
 reshards
+resolvers
 resultset
 retentions
 rethrow
 retransmit
 retriable
-retuned
-reverseDNSQuery
 reverseUTF
 rightPad
 rightPadUTF
@@ -2204,6 +2262,8 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
+seriesDecomposeSTL
+seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
 serverUUID
@@ -2241,12 +2301,15 @@ sparkbar
 sparsehash
 speedscope
 splitBy
-splitby
 splitByChar
 splitByNonAlpha
 splitByRegexp
 splitByString
 splitByWhitespace
+splitby
+sqid
+sqidDecode
+sqidEncode
 sql
 sqlalchemy
 sqlinsert
@@ -2257,6 +2320,7 @@ stacktrace
 stacktraces
 startsWith
 startsWithUTF
+startswith
 statbox
 stateful
 stddev
@@ -2274,6 +2338,8 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringJaccardIndex
+stringJaccardIndexUTF
 stringToH
 stripelog
 strtod
@@ -2331,6 +2397,7 @@ subtractSeconds
 subtractWeeks
 subtractYears
 subtree
+subtrees
 subtype
 sudo
 sumCount
@@ -2351,6 +2418,7 @@ symlinks
 syntaxes
 syscall
 syscalls
+sysctl
 syslog
 syslogd
 systemd
@@ -2481,6 +2549,8 @@ trimRight
 trunc
 tryBase
 tryDecrypt
+tryIdnaEncode
+tryPunycodeDecode
 tskv
 tsv
 tui
@@ -2625,3 +2695,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+srcReplicas

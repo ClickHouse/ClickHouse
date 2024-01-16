@@ -36,6 +36,9 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
+#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
@@ -45,6 +48,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
@@ -75,10 +79,6 @@
 #include <memory>
 #include <random>
 
-#include <Parsers/Kusto/ParserKQLStatement.h>
-#include <Parsers/PRQL/ParserPRQLQuery.h>
-#include <Parsers/Kusto/parseKQLQuery.h>
-
 namespace ProfileEvents
 {
     extern const Event FailedQuery;
@@ -95,12 +95,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS;
+    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -297,7 +298,7 @@ QueryLogElement logQueryStart(
     elem.query = query_for_logging;
     if (settings.log_formatted_queries)
         elem.formatted_query = queryToString(query_ast);
-    elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
+    elem.normalized_query_hash = normalizedQueryHash(query_for_logging, false);
     elem.query_kind = query_ast->getQueryKind();
 
     elem.client_info = context->getClientInfo();
@@ -571,7 +572,7 @@ void logExceptionBeforeStart(
 
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
-    elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
+    elem.normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
     // Log query_kind if ast is valid
     if (ast)
@@ -645,10 +646,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
     ContextMutablePtr context,
-    bool internal,
+    QueryFlags flags,
     QueryProcessingStage::Enum stage,
     ReadBuffer * istr)
 {
+    const bool internal = flags.internal;
+
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
     /// to make sure SpanHolders in current stack ends in correct order, we disable this span for these internal queries
@@ -730,6 +733,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         bool is_create_parameterized_view = false;
         if (const auto * create_query = ast->as<ASTCreateQuery>())
             is_create_parameterized_view = create_query->isParameterizedView();
+        else if (const auto * explain_query = ast->as<ASTExplainQuery>())
+        {
+            assert(!explain_query->children.empty());
+            if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
+                is_create_parameterized_view = create_of_explain_query->isParameterizedView();
+        }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters
@@ -1001,7 +1010,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getUserName());
+                    QueryCache::Key key(ast, context->getUserID(), context->getCurrentRoles());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1034,7 +1043,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     }
                 }
 
-                interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+                interpreter = InterpreterFactory::instance().get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
                 const auto & query_settings = context->getSettingsRef();
                 if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
@@ -1084,6 +1093,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
                 }
 
+                if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
+                    create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+
                 {
                     std::unique_ptr<OpenTelemetry::SpanHolder> span;
                     if (OpenTelemetry::CurrentContext().isTraceEnabled())
@@ -1099,37 +1111,70 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     /// top of the pipeline which stores the result in the query cache.
                     if (can_use_query_cache && settings.enable_writes_to_query_cache)
                     {
-                        if (astContainsNonDeterministicFunctions(ast, context) && !settings.query_cache_store_results_of_queries_with_nondeterministic_functions)
-                            throw Exception(ErrorCodes::CANNOT_USE_QUERY_CACHE_WITH_NONDETERMINISTIC_FUNCTIONS,
-                                "Unable to cache the query result because the query contains a non-deterministic function. Use setting `query_cache_store_results_of_queries_with_nondeterministic_functions = 1` to cache the query result regardless");
+                        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
+                        const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling = settings.query_cache_nondeterministic_function_handling;
 
-                        QueryCache::Key key(
-                            ast, res.pipeline.getHeader(),
-                            context->getUserName(), settings.query_cache_share_between_users,
-                            std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
-                            settings.query_cache_compress_entries);
+                        if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Throw)
+                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
+                                "The query result was not cached because the query contains a non-deterministic function."
+                                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
 
-                        const size_t num_query_runs = query_cache->recordQueryRun(key);
-                        if (num_query_runs <= settings.query_cache_min_query_runs)
+                        if (!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
                         {
-                            LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}", num_query_runs, settings.query_cache_min_query_runs);
-                        }
-                        else
-                        {
-                            auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
-                                             key,
-                                             std::chrono::milliseconds(settings.query_cache_min_query_duration.totalMilliseconds()),
-                                             settings.query_cache_squash_partial_results,
-                                             settings.max_block_size,
-                                             settings.query_cache_max_size_in_bytes,
-                                             settings.query_cache_max_entries));
-                            res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                            query_cache_usage = QueryCache::Usage::Write;
+                            QueryCache::Key key(
+                                ast, res.pipeline.getHeader(),
+                                context->getUserID(), context->getCurrentRoles(),
+                                settings.query_cache_share_between_users,
+                                std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
+                                settings.query_cache_compress_entries);
+
+                            const size_t num_query_runs = query_cache->recordQueryRun(key);
+                            if (num_query_runs <= settings.query_cache_min_query_runs)
+                            {
+                                LOG_TRACE(&Poco::Logger::get("QueryCache"),
+                                        "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
+                                        num_query_runs, settings.query_cache_min_query_runs);
+                            }
+                            else
+                            {
+                                auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
+                                                 key,
+                                                 std::chrono::milliseconds(settings.query_cache_min_query_duration.totalMilliseconds()),
+                                                 settings.query_cache_squash_partial_results,
+                                                 settings.max_block_size,
+                                                 settings.query_cache_max_size_in_bytes,
+                                                 settings.query_cache_max_entries));
+                                res.pipeline.writeResultIntoQueryCache(query_cache_writer);
+                                query_cache_usage = QueryCache::Usage::Write;
+                            }
                         }
                     }
 
                 }
             }
+        }
+        // Here we check if our our projections contain force_optimize_projection_name
+        if (!settings.force_optimize_projection_name.value.empty())
+        {
+            bool found = false;
+            std::set<std::string> projections = context->getQueryAccessInfo().projections;
+
+            for (const auto &projection : projections)
+            {
+                // projection value has structure like: <db_name>.<table_name>.<projection_name>
+                // We need to get only the projection name
+                size_t last_dot_pos = projection.find_last_of('.');
+                std::string projection_name = (last_dot_pos != std::string::npos) ? projection.substr(last_dot_pos + 1) : projection;
+                if (settings.force_optimize_projection_name.value == projection_name)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Projection {} is specified in setting force_optimize_projection_name but not used",
+                                settings.force_optimize_projection_name.value);
         }
 
         if (process_list_entry)
@@ -1233,13 +1278,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 std::pair<ASTPtr, BlockIO> executeQuery(
     const String & query,
     ContextMutablePtr context,
-    bool internal,
+    QueryFlags flags,
     QueryProcessingStage::Enum stage)
 {
     ASTPtr ast;
     BlockIO res;
 
-    std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, nullptr);
+    std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
@@ -1260,6 +1305,7 @@ void executeQuery(
     bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
+    QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format)
 {
@@ -1348,7 +1394,7 @@ void executeQuery(
 
     try
     {
-        std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+        std::tie(ast, streams) = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, &istr);
     }
     catch (...)
     {
@@ -1389,11 +1435,12 @@ void executeQuery(
                     const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
                     compression_method = compression_method_node.value.safeGet<std::string>();
                 }
-
+                const auto & settings = context->getSettingsRef();
                 compressed_buffer = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
                     chooseCompressionMethod(out_file, compression_method),
-                    /* compression level = */ 3
+                    /* compression level = */ static_cast<int>(settings.output_format_compression_level),
+                    /* zstd_window_log = */ static_cast<int>(settings.output_format_compression_zstd_window_log)
                 );
             }
 

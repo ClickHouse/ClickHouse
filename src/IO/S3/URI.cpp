@@ -6,17 +6,9 @@
 #if USE_AWS_S3
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace DB
 {
@@ -26,7 +18,7 @@ struct URIConverter
     static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper)
     {
         Macros macros({{"bucket", uri.getHost()}});
-        uri = macros.expand(mapper[uri.getScheme()]).empty()? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + "/" + uri.getPathAndQuery());
+        uri = macros.expand(mapper[uri.getScheme()]).empty() ? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + uri.getPathAndQuery());
     }
 };
 
@@ -43,7 +35,7 @@ URI::URI(const std::string & uri_)
     /// Case when bucket name represented in domain name of S3 URL.
     /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
     /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-    static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos|obs|oss)([.\-][a-z0-9\-.:]+))");
+    static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos|obs|oss|eos)([.\-][a-z0-9\-.:]+))");
 
     /// Case when bucket name and key represented in path of S3 URL.
     /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
@@ -55,6 +47,7 @@ URI::URI(const std::string & uri_)
     static constexpr auto COS = "COS";
     static constexpr auto OBS = "OBS";
     static constexpr auto OSS = "OSS";
+    static constexpr auto EOS = "EOS";
 
     uri = Poco::URI(uri_);
 
@@ -122,7 +115,7 @@ URI::URI(const std::string & uri_)
         }
 
         boost::to_upper(name);
-        if (name != S3 && name != COS && name != OBS && name != OSS)
+        if (name != S3 && name != COS && name != OBS && name != OSS && name != EOS)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Object storage system name is unrecognized in virtual hosted style S3 URI: {}",
                             quoteString(name));
@@ -133,6 +126,8 @@ URI::URI(const std::string & uri_)
             storage_name = OBS;
         else if (name == OSS)
             storage_name = OSS;
+        else if (name == EOS)
+            storage_name = EOS;
         else
             storage_name = COSN;
     }
@@ -144,6 +139,12 @@ URI::URI(const std::string & uri_)
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
+}
+
+void URI::addRegionToURI(const std::string &region)
+{
+    if (auto pos = endpoint.find("amazonaws.com"); pos != std::string::npos)
+        endpoint = endpoint.substr(0, pos) + region + "." + endpoint.substr(pos);
 }
 
 void URI::validateBucket(const String & bucket, const Poco::URI & uri)

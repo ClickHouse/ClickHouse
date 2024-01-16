@@ -10,10 +10,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 
+
 namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
 }
 
 namespace DB::ErrorCodes
@@ -106,7 +108,7 @@ Runner::Runner(
 
     std::cerr << "---- Run options ----\n" << std::endl;
 
-    pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, concurrency);
+    pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency);
     queue.emplace(concurrency);
 }
 
@@ -127,6 +129,9 @@ void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & conf
 
         if (config.has(key + ".connection_timeout_ms"))
             connection_info.connection_timeout_ms = config.getInt(key + ".connection_timeout_ms");
+
+        if (config.has(key + ".use_compression"))
+            connection_info.use_compression = config.getBool(key + ".use_compression");
     };
 
     fill_connection_details("connections", default_connection_info);
@@ -169,7 +174,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         || sigaddset(&sig_set, SIGINT)
         || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
     {
-        DB::throwFromErrno("Cannot block signal.", DB::ErrorCodes::CANNOT_BLOCK_SIGNAL);
+        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
     }
 
     while (true)
@@ -430,8 +435,9 @@ std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionI
     nodes.push_back(node);
     zkutil::ZooKeeperArgs args;
     args.session_timeout_ms = connection_info.session_timeout_ms;
-    args.connection_timeout_ms = connection_info.operation_timeout_ms;
-    args.operation_timeout_ms = connection_info.connection_timeout_ms;
+    args.connection_timeout_ms = connection_info.connection_timeout_ms;
+    args.operation_timeout_ms = connection_info.operation_timeout_ms;
+    args.use_compression = connection_info.use_compression;
     return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
 }
 
@@ -457,4 +463,3 @@ Runner::~Runner()
     pool->wait();
     generator->cleanup(*connections[0]);
 }
-

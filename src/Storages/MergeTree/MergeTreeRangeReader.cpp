@@ -18,6 +18,10 @@
 #include <emmintrin.h>
 #endif
 
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
+
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
 #      pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -1253,6 +1257,32 @@ static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second
             "does not match second filter size ({})", bytes_in_first_filter, second_filter_size);
 }
 
+DECLARE_AVX512VBMI2_SPECIFIC_CODE(
+inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
+{
+    constexpr size_t AVX512_VEC_SIZE_IN_BYTES = 64;
+
+    while (first_begin + AVX512_VEC_SIZE_IN_BYTES <= first_end)
+    {
+        UInt64 mask = bytes64MaskToBits64Mask(first_begin);
+        __m512i src = _mm512_loadu_si512(reinterpret_cast<void *>(first_begin));
+        __m512i dst = _mm512_mask_expandloadu_epi8(src, static_cast<__mmask64>(mask), reinterpret_cast<const void *>(second_begin));
+        _mm512_storeu_si512(reinterpret_cast<void *>(first_begin), dst);
+
+        first_begin += AVX512_VEC_SIZE_IN_BYTES;
+        second_begin += std::popcount(mask);
+    }
+
+    for (/* empty */; first_begin < first_end; ++first_begin)
+    {
+        if (*first_begin)
+        {
+            *first_begin = *second_begin++;
+        }
+    }
+}
+)
+
 /// Second filter size must be equal to number of 1s in the first filter.
 /// The result has size equal to first filter size and contains 1s only where both filters contain 1s.
 static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
@@ -1295,12 +1325,21 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     auto & first_data = typeid_cast<ColumnUInt8 *>(mut_first.get())->getData();
     const auto * second_data = second_descr.data->data();
 
-    for (auto & val : first_data)
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX512VBMI2))
     {
-        if (val)
+        TargetSpecific::AVX512VBMI2::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
+    }
+    else
+#endif
+    {
+        for (auto & val : first_data)
         {
-            val = *second_data;
-            ++second_data;
+            if (val)
+            {
+                val = *second_data;
+                ++second_data;
+            }
         }
     }
 

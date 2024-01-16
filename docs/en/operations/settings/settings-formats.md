@@ -377,6 +377,12 @@ Allow parsing bools as numbers in JSON input formats.
 
 Enabled by default.
 
+## input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
+
+Allow parsing bools as strings in JSON input formats.
+
+Enabled by default.
+
 ## input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
 Allow parsing numbers as strings in JSON input formats.
@@ -897,6 +903,12 @@ Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
 
 Disabled by default.
 
+### input_format_csv_allow_cr_end_of_line {#input_format_csv_allow_cr_end_of_line}
+
+If it is set true, CR(\\r) will be allowed at end of line not followed by LF(\\n)
+
+Disabled by default.
+
 ### input_format_csv_enum_as_number {#input_format_csv_enum_as_number}
 
 When enabled, always treat enum values as enum ids for CSV input format. It's recommended to enable this setting if data contains only enum ids to optimize enum parsing.
@@ -1124,6 +1136,13 @@ Result
 a  0  1971-01-01
 ```
 
+## input_format_csv_try_infer_numbers_from_strings {#input_format_csv_try_infer_numbers_from_strings}
+
+If enabled, during schema inference ClickHouse will try to infer numbers from string fields.
+It can be useful if CSV data contains quoted UInt64 numbers.
+
+Disabled by default.
+
 ## Values format settings {#values-format-settings}
 
 ### input_format_values_interpret_expressions {#input_format_values_interpret_expressions}
@@ -1247,6 +1266,28 @@ Possible values:
 
 - 0 — The `LowCardinality` type is not converted to the `DICTIONARY` type.
 - 1 — The `LowCardinality` type is converted to the `DICTIONARY` type.
+
+Default value: `0`.
+
+### output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
+
+Use signed integer types instead of unsigned in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
+
+Possible values:
+
+- 0 — Unsigned integer types are used for indexes in `DICTIONARY` type.
+- 1 — Signed integer types are used for indexes in `DICTIONARY` type.
+
+Default value: `1`.
+
+### output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
+
+Use 64-bit integer type in `DICTIONARY` type of the [Arrow](../../interfaces/formats.md/#data-format-arrow) format during  [LowCardinality](../../sql-reference/data-types/lowcardinality.md) output when `output_format_arrow_low_cardinality_as_dictionary` is enabled.
+
+Possible values:
+
+- 0 — Type for indexes in `DICTIONARY` type is determined automatically.
+- 1 — 64-bit integer type is used for indexes in `DICTIONARY` type.
 
 Default value: `0`.
 

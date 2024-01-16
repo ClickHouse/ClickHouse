@@ -20,9 +20,9 @@ namespace ErrorCodes
 {
     extern const int DICTIONARIES_WAS_NOT_LOADED;
     extern const int FUNCTION_NOT_ALLOWED;
-    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ACCESS_DENIED;
 };
 
 enum class FunctionOrigin : Int8
@@ -113,22 +113,23 @@ std::vector<std::pair<String, Int8>> getOriginEnumsAndValues()
     };
 }
 
-NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
+ColumnsDescription StorageSystemFunctions::getColumnsDescription()
 {
-    return {
-        {"name", std::make_shared<DataTypeString>()},
-        {"is_aggregate", std::make_shared<DataTypeUInt8>()},
-        {"is_deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
-        {"case_insensitive", std::make_shared<DataTypeUInt8>()},
-        {"alias_to", std::make_shared<DataTypeString>()},
-        {"create_query", std::make_shared<DataTypeString>()},
-        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues())},
-        {"description", std::make_shared<DataTypeString>()},
-        {"syntax", std::make_shared<DataTypeString>()},
-        {"arguments", std::make_shared<DataTypeString>()},
-        {"returned_value", std::make_shared<DataTypeString>()},
-        {"examples", std::make_shared<DataTypeString>()},
-        {"categories", std::make_shared<DataTypeString>()}
+    return ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "The name of the function."},
+        {"is_aggregate", std::make_shared<DataTypeUInt8>(), "Whether the function is an aggregate function."},
+        {"is_deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Whether the function is deterministic."},
+        {"case_insensitive", std::make_shared<DataTypeUInt8>(), "Whether the function name can be used case-insensitively."},
+        {"alias_to", std::make_shared<DataTypeString>(), "The original function name, if the function name is an alias."},
+        {"create_query", std::make_shared<DataTypeString>(), "Obsolete."},
+        {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsAndValues()), "Obsolete."},
+        {"description", std::make_shared<DataTypeString>(), "A high-level description what the function does."},
+        {"syntax", std::make_shared<DataTypeString>(), "Signature of the function."},
+        {"arguments", std::make_shared<DataTypeString>(), "What arguments does the function take."},
+        {"returned_value", std::make_shared<DataTypeString>(), "What does the function return."},
+        {"examples", std::make_shared<DataTypeString>(), "Usage example."},
+        {"categories", std::make_shared<DataTypeString>(), "The category of the function."}
     };
 }
 
@@ -149,9 +150,9 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
             /// Some functions throw because they need special configuration or setup before use.
             if (e.code() == ErrorCodes::DICTIONARIES_WAS_NOT_LOADED
                 || e.code() == ErrorCodes::FUNCTION_NOT_ALLOWED
-                || e.code() == ErrorCodes::LOGICAL_ERROR
                 || e.code() == ErrorCodes::NOT_IMPLEMENTED
-                || e.code() == ErrorCodes::SUPPORT_IS_DISABLED)
+                || e.code() == ErrorCodes::SUPPORT_IS_DISABLED
+                || e.code() == ErrorCodes::ACCESS_DENIED)
             {
                 /// Ignore exception, show is_deterministic = NULL.
             }

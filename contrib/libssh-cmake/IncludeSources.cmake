@@ -1,19 +1,7 @@
 set(LIBSSH_LINK_LIBRARIES
-  ${LIBSSH_REQUIRED_LIBRARIES}
-)
-
-
-set(LIBSSH_LINK_LIBRARIES
   ${LIBSSH_LINK_LIBRARIES}
   OpenSSL::Crypto
 )
-
-if (MINGW AND Threads_FOUND)
-  set(LIBSSH_LINK_LIBRARIES
-    ${LIBSSH_LINK_LIBRARIES}
-    Threads::Threads
-  )
-endif()
 
 set(libssh_SRCS
   ${LIB_SOURCE_DIR}/src/agent.c
@@ -66,30 +54,11 @@ set(libssh_SRCS
   ${LIB_SOURCE_DIR}/src/pki_ed25519_common.c
 )
 
-if (DEFAULT_C_NO_DEPRECATION_FLAGS)
-    set_source_files_properties(known_hosts.c
-                                PROPERTIES
-                                    COMPILE_FLAGS ${DEFAULT_C_NO_DEPRECATION_FLAGS})
-endif()
-
-if (CMAKE_USE_PTHREADS_INIT)
-    set(libssh_SRCS
-        ${libssh_SRCS}
-        ${LIB_SOURCE_DIR}/src/threads/noop.c
-        ${LIB_SOURCE_DIR}/src/threads/pthread.c
-    )
-elseif (CMAKE_USE_WIN32_THREADS_INIT)
-        set(libssh_SRCS
-            ${libssh_SRCS}
-            ${LIB_SOURCE_DIR}/src/threads/noop.c
-            ${LIB_SOURCE_DIR}/src/threads/winlocks.c
-        )
-else()
-    set(libssh_SRCS
-        ${libssh_SRCS}
-        ${LIB_SOURCE_DIR}/src/threads/noop.c
-    )
-endif()
+set(libssh_SRCS
+    ${libssh_SRCS}
+    ${LIB_SOURCE_DIR}/src/threads/noop.c
+    ${LIB_SOURCE_DIR}/src/threads/pthread.c
+)
 
 # LIBCRYPT specific
 set(libssh_SRCS
@@ -127,14 +96,3 @@ target_compile_options(_ssh
                      PRIVATE
                         ${DEFAULT_C_COMPILE_FLAGS}
                         -D_GNU_SOURCE)
-
-
-set_target_properties(_ssh
-    PROPERTIES
-      VERSION
-        ${LIBRARY_VERSION}
-      SOVERSION
-        ${LIBRARY_SOVERSION}
-      DEFINE_SYMBOL
-        LIBSSH_EXPORTS
-)

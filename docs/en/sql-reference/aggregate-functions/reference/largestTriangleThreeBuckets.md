@@ -60,7 +60,7 @@ SELECT largestTriangleThreeBuckets(4)(x, y) FROM largestTriangleThreeBuckets_tes
 Result:
 
 ``` text
-┌────────largestTriangleThreeBuckets(3)(x, y)───────────┐
+┌────────largestTriangleThreeBuckets(4)(x, y)───────────┐
 │           [(1,10),(3,15),(5,40),(10,70)]              │
 └───────────────────────────────────────────────────────┘
 ```

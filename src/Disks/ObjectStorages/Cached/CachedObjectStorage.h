@@ -24,6 +24,8 @@ public:
 
     std::string getName() const override { return fmt::format("CachedObjectStorage-{}({})", cache_config_name, object_storage->getName()); }
 
+    std::string getCommonKeyPrefix() const override { return object_storage->getCommonKeyPrefix(); }
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -92,7 +94,7 @@ public:
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    std::string generateBlobNameForPath(const std::string & path) override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
     bool isRemote() const override { return object_storage->isRemote(); }
 

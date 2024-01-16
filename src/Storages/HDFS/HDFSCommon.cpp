@@ -2,15 +2,7 @@
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <filesystem>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+#include <Common/re2.h>
 
 #if USE_HDFS
 #include <Common/ShellCommand.h>
@@ -29,7 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NETWORK_ERROR;
+    extern const int HDFS_ERROR;
     #if USE_KRB5
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int KERBEROS_ERROR;
@@ -127,7 +119,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
 
     HDFSBuilderWrapper builder;
     if (builder.get() == nullptr)
-        throw Exception(ErrorCodes::NETWORK_ERROR, "Unable to create builder to connect to HDFS: {} {}",
+        throw Exception(ErrorCodes::HDFS_ERROR, "Unable to create builder to connect to HDFS: {} {}",
             uri.toString(), String(hdfsGetLastError()));
 
     hdfsBuilderConfSetStr(builder.get(), "input.read.timeout", "60000"); // 1 min
@@ -178,7 +170,7 @@ HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
 {
     HDFSFSPtr fs(hdfsBuilderConnect(builder));
     if (fs == nullptr)
-        throw Exception(ErrorCodes::NETWORK_ERROR, "Unable to connect to HDFS: {}", String(hdfsGetLastError()));
+        throw Exception(ErrorCodes::HDFS_ERROR, "Unable to connect to HDFS: {}", String(hdfsGetLastError()));
 
     return fs;
 }

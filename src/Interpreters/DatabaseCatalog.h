@@ -30,29 +30,6 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-class TableNameHints : public IHints<>
-{
-public:
-    TableNameHints(ConstDatabasePtr database_, ContextPtr context_)
-        : context(context_),
-        database(database_)
-    {
-    }
-    Names getAllRegisteredNames() const override
-    {
-        Names result;
-        if (database)
-        {
-            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-                result.emplace_back(table_it->name());
-        }
-        return result;
-    }
-private:
-    ContextPtr context;
-    ConstDatabasePtr database;
-};
-
 class IDatabase;
 class Exception;
 class ColumnsDescription;
@@ -105,8 +82,8 @@ private:
 
 using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
-class FutureSet;
-using FutureSetPtr = std::shared_ptr<FutureSet>;
+class FutureSetFromSubquery;
+using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
 
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
 /// Such table can be accessed from everywhere by its ID.
@@ -139,7 +116,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
-    FutureSetPtr future_set;
+    FutureSetFromSubqueryPtr future_set;
 };
 
 ///TODO maybe remove shared_ptr from here?
@@ -166,7 +143,7 @@ public:
 
     void createBackgroundTasks();
     void initializeAndLoadTemporaryDatabase();
-    void startupBackgroundCleanup();
+    void startupBackgroundTasks();
     void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
@@ -286,6 +263,9 @@ public:
         std::lock_guard lock(tables_marked_dropped_mutex);
         return tables_marked_dropped;
     }
+
+    void triggerReloadDisksTask(const Strings & new_added_disks);
+
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -318,6 +298,8 @@ private:
 
     void cleanupStoreDirectoryTask();
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
+
+    void reloadDisksTask();
 
     static constexpr size_t reschedule_time_ms = 100;
 
@@ -380,7 +362,75 @@ private:
 
     static constexpr time_t default_drop_error_cooldown_sec = 5;
     time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
+
+    std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
+    std::mutex reload_disks_mutex;
+    std::set<String> disks_to_reload;
+    static constexpr time_t DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC = 5;
 };
+
+class TableNameHints : public IHints<>
+{
+public:
+    TableNameHints(ConstDatabasePtr database_, ContextPtr context_)
+        : context(context_),
+        database(database_)
+    {
+    }
+
+    /// getHintForTable tries to get a hint for the provided table_name in the provided
+    /// database. If the results are empty, it goes for extended hints for the table
+    /// with getExtendedHintForTable which looks for the table name in every database that's
+    /// available in the database catalog. It finally returns a single hint which is the database
+    /// name and table_name pair which is similar to the table_name provided. Perhaps something to
+    /// consider is should we return more than one pair of hint?
+    std::pair<String, String> getHintForTable(const String & table_name) const
+    {
+        auto results = this->getHints(table_name, getAllRegisteredNames());
+        if (results.empty())
+            return getExtendedHintForTable(table_name);
+        return std::make_pair(database->getDatabaseName(), results[0]);
+    }
+
+    /// getExtendedHintsForTable tries to get hint for the given table_name across all
+    /// the databases that are available in the database catalog.
+    std::pair<String, String> getExtendedHintForTable(const String & table_name) const
+    {
+        /// load all available databases from the DatabaseCatalog instance
+        auto & database_catalog = DatabaseCatalog::instance();
+        auto all_databases = database_catalog.getDatabases();
+
+        for (const auto & [db_name, db] : all_databases)
+        {
+            /// this case should be covered already by getHintForTable
+            if (db_name == database->getDatabaseName())
+                continue;
+
+            TableNameHints hints(db, context);
+            auto results = hints.getHints(table_name);
+
+            /// if the results are not empty, return the first instance of the table_name
+            /// and the corresponding database_name that was found.
+            if (!results.empty())
+                return std::make_pair(db_name, results[0]);
+        }
+        return {};
+    }
+
+    Names getAllRegisteredNames() const override
+    {
+        Names result;
+        if (database)
+            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+                result.emplace_back(table_it->name());
+        return result;
+    }
+
+private:
+    ContextPtr context;
+    ConstDatabasePtr database;
+};
+
 
 /// This class is useful when creating a table or database.
 /// Usually we create IStorage/IDatabase object first and then add it to IDatabase/DatabaseCatalog.

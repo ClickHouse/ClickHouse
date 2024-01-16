@@ -47,12 +47,12 @@
 #include <Common/Exception.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/toFixedString.h>
 #include <Functions/TransformDateTime64.h>
 #include <Functions/FunctionsCodingIP.h>
+#include <Functions/CastOverloadResolver.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
@@ -216,6 +216,18 @@ struct ConvertImpl
 
                     vec_to[i].items[1] = vec_from[i].toUnderType().items[0];
                     vec_to[i].items[0] = vec_from[i].toUnderType().items[1];
+
+                    continue;
+                }
+
+                if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> && std::is_same_v<ToDataType, DataTypeUInt128>)
+                {
+                    static_assert(
+                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>,
+                        "UInt128 and IPv6 types must be same");
+
+                    vec_to[i].items[1] = std::byteswap(vec_from[i].toUnderType().items[0]);
+                    vec_to[i].items[0] = std::byteswap(vec_from[i].toUnderType().items[1]);
 
                     continue;
                 }
@@ -1246,9 +1258,9 @@ struct ConvertImplGenericToString
 
             FormatSettings format_settings;
             auto serialization = type.getDefaultSerialization();
-            for (size_t i = 0; i < size; ++i)
+            for (size_t row = 0; row < size; ++row)
             {
-                serialization->serializeText(col_from, i, write_buffer, format_settings);
+                serialization->serializeText(col_from, row, write_buffer, format_settings);
                 write_helper.rowWritten();
             }
 
@@ -1400,10 +1412,10 @@ inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuff
 template <>
 inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
 {
-    time_t tmp = 0;
-    if (!tryReadDateTimeText(tmp, rb, *time_zone))
+    time_t time = 0;
+    if (!tryReadDateTimeText(time, rb, *time_zone))
         return false;
-    x = static_cast<UInt32>(tmp);
+    convertFromTime<DataTypeDateTime>(x, time);
     return true;
 }
 
@@ -1684,7 +1696,6 @@ struct ConvertThroughParsing
                                     break;
                                 }
                             }
-
                             parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
                         } while (false);
                     }
@@ -2033,7 +2044,7 @@ static inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
     else if constexpr (std::is_same_v<Name, NameToDateTime> || std::is_same_v<Name, NameParseDateTimeBestEffort>
         || std::is_same_v<Name, NameParseDateTimeBestEffortOrZero> || std::is_same_v<Name, NameParseDateTimeBestEffortOrNull>)
     {
-        return (arguments.size() == 2 && isUnsignedInteger(arguments[1].type)) || arguments.size() == 3;
+        return (arguments.size() == 2 && isUInt(arguments[1].type)) || arguments.size() == 3;
     }
 
     return false;
@@ -3127,14 +3138,8 @@ class ExecutableFunctionCast : public IExecutableFunction
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
 
-    struct Diagnostic
-    {
-        std::string column_from;
-        std::string column_to;
-    };
-
     explicit ExecutableFunctionCast(
-            WrapperType && wrapper_function_, const char * name_, std::optional<Diagnostic> diagnostic_)
+            WrapperType && wrapper_function_, const char * name_, std::optional<CastDiagnostic> diagnostic_)
             : wrapper_function(std::move(wrapper_function_)), name(name_), diagnostic(std::move(diagnostic_)) {}
 
     String getName() const override { return name; }
@@ -3170,24 +3175,16 @@ protected:
 private:
     WrapperType wrapper_function;
     const char * name;
-    std::optional<Diagnostic> diagnostic;
+    std::optional<CastDiagnostic> diagnostic;
 };
 
 struct CastName { static constexpr auto name = "CAST"; };
 struct CastInternalName { static constexpr auto name = "_CAST"; };
 
-enum class CastType
-{
-    nonAccurate,
-    accurate,
-    accurateOrNull
-};
-
 class FunctionCastBase : public IFunctionBase
 {
 public:
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
-    using Diagnostic = ExecutableFunctionCast::Diagnostic;
 };
 
 template <typename FunctionName>
@@ -3201,7 +3198,7 @@ public:
             , MonotonicityForRange && monotonicity_for_range_
             , const DataTypes & argument_types_
             , const DataTypePtr & return_type_
-            , std::optional<Diagnostic> diagnostic_
+            , std::optional<CastDiagnostic> diagnostic_
             , CastType cast_type_)
         : cast_name(cast_name_), monotonicity_for_range(std::move(monotonicity_for_range_))
         , argument_types(argument_types_), return_type(return_type_), diagnostic(std::move(diagnostic_))
@@ -3251,7 +3248,7 @@ private:
     DataTypes argument_types;
     DataTypePtr return_type;
 
-    std::optional<Diagnostic> diagnostic;
+    std::optional<CastDiagnostic> diagnostic;
     CastType cast_type;
     ContextPtr context;
 
@@ -3292,7 +3289,6 @@ private:
         {
             /// In case when converting to Nullable type, we apply different parsing rule,
             /// that will not throw an exception but return NULL in case of malformed input.
-
             FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionName, ConvertFromStringExceptionMode::Null>::create();
             return createFunctionAdaptor(function, from_type);
         }
@@ -4172,6 +4168,61 @@ arguments, result_type, input_rows_count); \
         };
     }
 
+    template <typename EnumType>
+    WrapperType createEnumToStringWrapper() const
+    {
+        const char * function_name = cast_name;
+        return [function_name] (
+            ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
+        {
+            using ColumnEnumType = EnumType::ColumnType;
+
+            const auto & first_col = arguments.front().column.get();
+            const auto & first_type = arguments.front().type.get();
+
+            const ColumnEnumType * enum_col = typeid_cast<const ColumnEnumType *>(first_col);
+            const EnumType * enum_type = typeid_cast<const EnumType *>(first_type);
+
+            if (enum_col && nullable_col && nullable_col->size() != enum_col->size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnNullable is not compatible with original");
+
+            if (enum_col && enum_type)
+            {
+                const auto size = enum_col->size();
+                const auto & enum_data = enum_col->getData();
+
+                auto res = res_type->createColumn();
+
+                if (nullable_col)
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        if (!nullable_col->isNullAt(i))
+                        {
+                            const auto & value = enum_type->getNameForValue(enum_data[i]);
+                            res->insertData(value.data, value.size);
+                        }
+                        else
+                            res->insertDefault();
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        const auto & value = enum_type->getNameForValue(enum_data[i]);
+                        res->insertData(value.data, value.size);
+                    }
+                }
+
+                return res;
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
+                    first_col->getName(), function_name);
+        };
+    }
+
     static WrapperType createIdentityWrapper(const DataTypePtr &)
     {
         return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/)
@@ -4559,7 +4610,12 @@ arguments, result_type, input_rows_count); \
 
             if constexpr (WhichDataType(ToDataType::type_id).isStringOrFixedString())
             {
-                if (from_type->getCustomSerialization())
+                if constexpr (WhichDataType(FromDataType::type_id).isEnum())
+                {
+                    ret = createEnumToStringWrapper<FromDataType>();
+                    return true;
+                }
+                else if (from_type->getCustomSerialization())
                 {
                     ret = [](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
                     {

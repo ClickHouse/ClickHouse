@@ -115,6 +115,7 @@ public:
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_);
 
     const Nodes & getNodes() const { return nodes; }
+    static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
     const NodeRawConstPtrs & getOutputs() const { return outputs; }
     /** Output nodes can contain any column returned from DAG.
       * You may manually change it if needed.
@@ -157,6 +158,9 @@ public:
     /// Same, but return nullptr if node not found.
     const Node * tryFindInOutputs(const std::string & name) const;
 
+    /// Same, but for the list of names.
+    NodeRawConstPtrs findInOutpus(const Names & names) const;
+
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
     void addOrReplaceInOutputs(const Node & node);
@@ -181,6 +185,9 @@ public:
 
     /// Remove actions that are not needed to compute output nodes
     void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
+
+    /// Remove actions that are not needed to compute output nodes. Keep inputs from used_inputs.
+    void removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true);
 
     /// Remove actions that are not needed to compute output nodes with required names
     void removeUnusedActions(const Names & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
@@ -257,6 +264,8 @@ public:
 
     ActionsDAGPtr clone() const;
 
+    static ActionsDAGPtr cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
+
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.
     /// Actions are not changed, no expressions are compiled.
@@ -264,6 +273,12 @@ public:
     /// In addition, check that result constants are constants according to DAG.
     /// In case if function return constant, but arguments are not constant, materialize it.
     Block updateHeader(Block header) const;
+
+    using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
+    static ColumnsWithTypeAndName evaluatePartialResult(
+        IntermediateExecutionResult & node_to_column,
+        const NodeRawConstPtrs & outputs,
+        bool throw_on_error);
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.

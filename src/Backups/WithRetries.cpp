@@ -5,22 +5,34 @@ namespace DB
 {
 
 
-WithRetries::WithRetries(Poco::Logger * log_, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings_, RenewerCallback callback_)
+WithRetries::KeeperSettings WithRetries::KeeperSettings::fromContext(ContextPtr context)
+{
+    return
+    {
+        .keeper_max_retries = context->getSettingsRef().backup_restore_keeper_max_retries,
+        .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_initial_backoff_ms,
+        .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_restore_keeper_retry_max_backoff_ms,
+        .batch_size_for_keeper_multiread = context->getSettingsRef().backup_restore_batch_size_for_keeper_multiread,
+        .keeper_fault_injection_probability = context->getSettingsRef().backup_restore_keeper_fault_injection_probability,
+        .keeper_fault_injection_seed = context->getSettingsRef().backup_restore_keeper_fault_injection_seed,
+        .keeper_value_max_size = context->getSettingsRef().backup_restore_keeper_value_max_size,
+        .batch_size_for_keeper_multi = context->getSettingsRef().backup_restore_batch_size_for_keeper_multi,
+    };
+}
+
+WithRetries::WithRetries(
+    Poco::Logger * log_, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings_, RenewerCallback callback_)
     : log(log_)
     , get_zookeeper(get_zookeeper_)
     , settings(settings_)
     , callback(callback_)
     , global_zookeeper_retries_info(
-        log->name(),
-        log,
-        settings.keeper_max_retries,
-        settings.keeper_retry_initial_backoff_ms,
-        settings.keeper_retry_max_backoff_ms)
+          settings.keeper_max_retries, settings.keeper_retry_initial_backoff_ms, settings.keeper_retry_max_backoff_ms)
 {}
 
 WithRetries::RetriesControlHolder::RetriesControlHolder(const WithRetries * parent, const String & name)
     : info(parent->global_zookeeper_retries_info)
-    , retries_ctl(name, info, nullptr)
+    , retries_ctl(name, parent->log, info, nullptr)
     , faulty_zookeeper(parent->getFaultyZooKeeper())
 {}
 
@@ -40,6 +52,15 @@ void WithRetries::renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const
 
         callback(my_faulty_zookeeper);
     }
+    else
+    {
+        my_faulty_zookeeper->setKeeper(zookeeper);
+    }
+}
+
+const WithRetries::KeeperSettings & WithRetries::getKeeperSettings() const
+{
+    return settings;
 }
 
 WithRetries::FaultyKeeper WithRetries::getFaultyZooKeeper() const

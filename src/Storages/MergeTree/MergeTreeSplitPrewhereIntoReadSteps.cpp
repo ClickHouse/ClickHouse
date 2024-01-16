@@ -1,8 +1,11 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/ExpressionActions.h>
+
 
 namespace DB
 {
@@ -160,7 +163,7 @@ const ActionsDAG::Node & addCast(
 
     const auto * cast_type_constant_node = &dag->addColumn(std::move(column));
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
-    FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
+    FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::nonAccurate, {});
 
     return addFunction(dag, func_builder_cast, std::move(children), node_remap);
 }

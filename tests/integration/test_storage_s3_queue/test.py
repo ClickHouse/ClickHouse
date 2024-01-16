@@ -1,6 +1,5 @@
 import io
 import logging
-import os
 import random
 import time
 
@@ -9,75 +8,57 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 import json
 
-"""
-export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/home/sergey/vkr/ClickHouse/build/programs/clickhouse-server
-export CLICKHOUSE_TESTS_CLIENT_BIN_PATH=/home/sergey/vkr/ClickHouse/build/programs/clickhouse-client
-export CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH=/home/sergey/vkr/ClickHouse/build/programs/clickhouse-odbc-bridge
-export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=/home/sergey/vkr/ClickHouse/programs/server
 
-"""
-
-MINIO_INTERNAL_PORT = 9001
 AVAILABLE_MODES = ["unordered", "ordered"]
-AUTH = "'minio','minio123',"
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+DEFAULT_AUTH = ["'minio'", "'minio123'"]
+NO_AUTH = ["NOSIGN"]
 
 
-def prepare_s3_bucket(started_cluster):
-    # Allows read-write access for bucket without authorization.
-    bucket_read_write_policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:GetBucketLocation",
-                "Resource": "arn:aws:s3:::root",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:ListBucket",
-                "Resource": "arn:aws:s3:::root",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:PutObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:DeleteObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-        ],
-    }
+def prepare_public_s3_bucket(started_cluster):
+    def create_bucket(client, bucket_name, policy):
+        if client.bucket_exists(bucket_name):
+            client.remove_bucket(bucket_name)
+
+        client.make_bucket(bucket_name)
+
+        client.set_bucket_policy(bucket_name, json.dumps(policy))
+
+    def get_policy_with_public_access(bucket_name):
+        return {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Sid": "",
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": [
+                        "s3:GetBucketLocation",
+                        "s3:ListBucket",
+                    ],
+                    "Resource": f"arn:aws:s3:::{bucket_name}",
+                },
+                {
+                    "Sid": "",
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": [
+                        "s3:GetObject",
+                        "s3:PutObject",
+                        "s3:DeleteObject",
+                    ],
+                    "Resource": f"arn:aws:s3:::{bucket_name}/*",
+                },
+            ],
+        }
 
     minio_client = started_cluster.minio_client
-    minio_client.set_bucket_policy(
-        started_cluster.minio_bucket, json.dumps(bucket_read_write_policy)
-    )
 
-    started_cluster.minio_restricted_bucket = "{}-with-auth".format(
-        started_cluster.minio_bucket
+    started_cluster.minio_public_bucket = f"{started_cluster.minio_bucket}-public"
+    create_bucket(
+        minio_client,
+        started_cluster.minio_public_bucket,
+        get_policy_with_public_access(started_cluster.minio_public_bucket),
     )
-    if minio_client.bucket_exists(started_cluster.minio_restricted_bucket):
-        minio_client.remove_bucket(started_cluster.minio_restricted_bucket)
-
-    minio_client.make_bucket(started_cluster.minio_restricted_bucket)
 
 
 @pytest.fixture(autouse=True)
@@ -89,11 +70,9 @@ def s3_queue_setup_teardown(started_cluster):
     instance_2.query("DROP DATABASE IF EXISTS test; CREATE DATABASE test;")
 
     minio = started_cluster.minio_client
-    objects = list(
-        minio.list_objects(started_cluster.minio_restricted_bucket, recursive=True)
-    )
+    objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
     for obj in objects:
-        minio.remove_object(started_cluster.minio_restricted_bucket, obj.object_name)
+        minio.remove_object(started_cluster.minio_bucket, obj.object_name)
     yield  # run test
 
 
@@ -107,9 +86,8 @@ def started_cluster():
             with_minio=True,
             with_zookeeper=True,
             main_configs=[
-                "configs/defaultS3.xml",
-                "configs/named_collections.xml",
                 "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
             ],
         )
         cluster.add_instance(
@@ -117,14 +95,15 @@ def started_cluster():
             user_configs=["configs/users.xml"],
             with_minio=True,
             with_zookeeper=True,
-            main_configs=["configs/defaultS3.xml", "configs/named_collections.xml"],
+            main_configs=[
+                "configs/s3queue_log.xml",
+            ],
         )
 
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
 
-        prepare_s3_bucket(cluster)
         yield cluster
     finally:
         cluster.shutdown()
@@ -141,7 +120,13 @@ def run_query(instance, query, stdin=None, settings=None):
 
 
 def generate_random_files(
-    started_cluster, files_path, count, column_num=3, row_num=10, start_ind=0
+    started_cluster,
+    files_path,
+    count,
+    column_num=3,
+    row_num=10,
+    start_ind=0,
+    bucket=None,
 ):
     files = [
         (f"{files_path}/test_{i}.csv", i) for i in range(start_ind, start_ind + count)
@@ -159,29 +144,14 @@ def generate_random_files(
         values_csv = (
             "\n".join((",".join(map(str, row)) for row in rand_values)) + "\n"
         ).encode()
-        print(f"File {filename}, content: {rand_values}")
-        put_s3_file_content(started_cluster, filename, values_csv)
+        put_s3_file_content(started_cluster, filename, values_csv, bucket)
     return total_values
 
 
-def put_s3_file_content(started_cluster, filename, data):
+def put_s3_file_content(started_cluster, filename, data, bucket=None):
+    bucket = started_cluster.minio_bucket if bucket is None else bucket
     buf = io.BytesIO(data)
-    started_cluster.minio_client.put_object(
-        started_cluster.minio_bucket, filename, buf, len(data)
-    )
-
-
-def get_s3_file_content(started_cluster, bucket, filename, decode=True):
-    # type: (ClickHouseCluster, str, str, bool) -> str
-    # Returns content of given S3 file as string.
-
-    data = started_cluster.minio_client.get_object(bucket, filename)
-    data_str = b""
-    for chunk in data.stream():
-        data_str += chunk
-    if decode:
-        return data_str.decode()
-    return data_str
+    started_cluster.minio_client.put_object(bucket, filename, buf, len(data))
 
 
 def create_table(
@@ -193,7 +163,12 @@ def create_table(
     format="column1 UInt32, column2 UInt32, column3 UInt32",
     additional_settings={},
     file_format="CSV",
+    auth=DEFAULT_AUTH,
+    bucket=None,
 ):
+    auth_params = ",".join(auth)
+    bucket = started_cluster.minio_bucket if bucket is None else bucket
+
     settings = {
         "s3queue_loading_retries": 0,
         "after_processing": "keep",
@@ -202,11 +177,11 @@ def create_table(
     }
     settings.update(additional_settings)
 
-    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{files_path}/"
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     create_query = f"""
         CREATE TABLE {table_name} ({format})
-        ENGINE = S3Queue('{url}', {AUTH}'{file_format}')
+        ENGINE = S3Queue('{url}', {auth_params}, {file_format})
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         """
     node.query(create_query)
@@ -621,7 +596,8 @@ def test_multiple_tables_meta_mismatch(started_cluster):
     )
 
 
-@pytest.mark.parametrize("mode", AVAILABLE_MODES)
+# TODO: Update the modes for this test to include "ordered" once PR #55795 is finished.
+@pytest.mark.parametrize("mode", ["unordered"])
 def test_multiple_tables_streaming_sync(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"multiple_tables_streaming_sync_{mode}"
@@ -660,6 +636,17 @@ def test_multiple_tables_streaming_sync(started_cluster, mode):
         ) == files_to_generate:
             break
         time.sleep(1)
+
+    if (
+        get_count(f"{dst_table_name}_1")
+        + get_count(f"{dst_table_name}_2")
+        + get_count(f"{dst_table_name}_3")
+    ) != files_to_generate:
+        info = node.query(
+            f"SELECT * FROM system.s3queue WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
+        )
+        logging.debug(info)
+        assert False
 
     res1 = [
         list(map(int, l.split()))
@@ -701,6 +688,8 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 300
+    row_num = 50
+    total_rows = row_num * files_to_generate
 
     for instance in [node, node_2]:
         create_table(
@@ -718,7 +707,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
         create_mv(instance, table_name, dst_table_name)
 
     total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, row_num=1
+        started_cluster, files_path, files_to_generate, row_num=row_num
     )
 
     def get_count(node, table_name):
@@ -727,9 +716,18 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     for _ in range(150):
         if (
             get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-        ) == files_to_generate:
+        ) == total_rows:
             break
         time.sleep(1)
+
+    if (
+        get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
+    ) != total_rows:
+        info = node.query(
+            f"SELECT * FROM system.s3queue WHERE zookeeper_path like '%{table_name}' ORDER BY file_name FORMAT Vertical"
+        )
+        logging.debug(info)
+        assert False
 
     get_query = f"SELECT column1, column2, column3 FROM {dst_table_name}"
     res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
@@ -737,7 +735,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
         list(map(int, l.split())) for l in run_query(node_2, get_query).splitlines()
     ]
 
-    assert len(res1) + len(res2) == files_to_generate
+    assert len(res1) + len(res2) == total_rows
 
     # Checking that all engines have made progress
     assert len(res1) > 0
@@ -749,7 +747,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     time.sleep(10)
     assert (
         get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
-    ) == files_to_generate
+    ) == total_rows
 
 
 def test_max_set_age(started_cluster):
@@ -863,3 +861,102 @@ def test_max_set_size(started_cluster):
     time.sleep(10)
     res1 = [list(map(int, l.split())) for l in run_query(node, get_query).splitlines()]
     assert res1 == [total_values[1]]
+
+
+def test_drop_table(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_drop"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 300
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 5,
+        },
+    )
+    total_values = generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=100000
+    )
+    create_mv(node, table_name, dst_table_name)
+    node.wait_for_log_line(f"Reading from file: test_drop_data")
+    node.query(f"DROP TABLE {table_name} SYNC")
+    assert node.contains_in_log(
+        f"StorageS3Queue ({table_name}): Table is being dropped"
+    ) or node.contains_in_log(
+        f"StorageS3Queue ({table_name}): Shutdown was called, stopping sync"
+    )
+
+
+def test_s3_client_reused(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test.test_s3_client_reused"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    row_num = 10
+
+    def get_created_s3_clients_count():
+        value = node.query(
+            f"SELECT value FROM system.events WHERE event='S3Clients'"
+        ).strip()
+        return int(value) if value != "" else 0
+
+    def wait_all_processed(files_num):
+        expected_count = files_num * row_num
+        for _ in range(100):
+            count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
+            print(f"{count}/{expected_count}")
+            if count == expected_count:
+                break
+            time.sleep(1)
+        assert (
+            int(node.query(f"SELECT count() FROM {dst_table_name}")) == expected_count
+        )
+
+    prepare_public_s3_bucket(started_cluster)
+
+    s3_clients_before = get_created_s3_clients_count()
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "after_processing": "delete",
+            "s3queue_processing_threads_num": 1,
+        },
+        auth=NO_AUTH,
+        bucket=started_cluster.minio_public_bucket,
+    )
+
+    s3_clients_after = get_created_s3_clients_count()
+    assert s3_clients_before + 1 == s3_clients_after
+
+    create_mv(node, table_name, dst_table_name)
+
+    for i in range(0, 10):
+        s3_clients_before = get_created_s3_clients_count()
+
+        generate_random_files(
+            started_cluster,
+            files_path,
+            count=1,
+            start_ind=i,
+            row_num=row_num,
+            bucket=started_cluster.minio_public_bucket,
+        )
+
+        wait_all_processed(i + 1)
+
+        s3_clients_after = get_created_s3_clients_count()
+
+        assert s3_clients_before == s3_clients_after

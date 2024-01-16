@@ -59,7 +59,8 @@ public:
 
     /// Parses the format schema, then parses the corresponding proto file, and returns the descriptor of the message type.
     /// The function never returns nullptr, it throws an exception if it cannot load or parse the file.
-    const google::protobuf::Descriptor * getMessageTypeForFormatSchema(const FormatSchemaInfo & info, WithEnvelope with_envelope);
+    const google::protobuf::Descriptor *
+    getMessageTypeForFormatSchema(const FormatSchemaInfo & info, WithEnvelope with_envelope, const String & google_protos_path);
 
 private:
     class ImporterWithSourceTree;

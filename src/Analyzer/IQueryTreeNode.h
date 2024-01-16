@@ -143,9 +143,17 @@ public:
         return alias;
     }
 
+    const String & getOriginalAlias() const
+    {
+        return original_alias.empty() ? alias : original_alias;
+    }
+
     /// Set node alias
     void setAlias(String alias_value)
     {
+        if (original_alias.empty())
+            original_alias = std::move(alias);
+
         alias = std::move(alias_value);
     }
 
@@ -182,7 +190,7 @@ public:
 
     struct ConvertToASTOptions
     {
-        /// Add _CAST if constant litral type is different from column type
+        /// Add _CAST if constant literal type is different from column type
         bool add_cast_for_constants = true;
 
         /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
@@ -276,6 +284,9 @@ protected:
 
 private:
     String alias;
+    /// An alias from query. Alias can be replaced by query passes,
+    /// but we need to keep the original one to support additional_table_filters.
+    String original_alias;
     ASTPtr original_ast;
 };
 

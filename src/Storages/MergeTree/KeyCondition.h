@@ -4,6 +4,7 @@
 
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
+#include <Core/PlainRanges.h>
 
 #include <Parsers/ASTExpressionList.h>
 
@@ -38,37 +39,12 @@ struct ActionDAGNodes;
 class KeyCondition
 {
 public:
-    /// Construct key condition from AST SELECT query WHERE, PREWHERE and additional filters
-    KeyCondition(
-        const ASTPtr & query,
-        const ASTs & additional_filter_asts,
-        Block block_with_constants,
-        PreparedSetsPtr prepared_sets_,
-        ContextPtr context,
-        const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr,
-        NameSet array_joined_column_names,
-        bool single_point_ = false,
-        bool strict_ = false);
-
-    /** Construct key condition from AST SELECT query WHERE, PREWHERE and additional filters.
-      * Select query, additional filters, prepared sets are initialized using query info.
-      */
-    KeyCondition(
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        const Names & key_column_names,
-        const ExpressionActionsPtr & key_expr_,
-        bool single_point_ = false,
-        bool strict_ = false);
-
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
         ActionsDAGPtr filter_dag,
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
-        NameSet array_joined_column_names,
         bool single_point_ = false,
         bool strict_ = false);
 
@@ -158,7 +134,19 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
+    static ActionsDAGPtr cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
+
     bool matchesExactContinuousRange() const;
+
+    /// Extract plain ranges of the condition.
+    /// Note that only support one column key condition.
+    ///
+    /// Now some cases are parsed to unknown function:
+    ///     1. where 1=1
+    ///     2. where true
+    ///     3. no where
+    /// TODO handle the cases when generate RPN.
+    bool extractPlainRanges(Ranges & ranges) const;
 
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
@@ -172,7 +160,15 @@ public:
             FUNCTION_NOT_IN_SET,
             FUNCTION_IS_NULL,
             FUNCTION_IS_NOT_NULL,
-            FUNCTION_UNKNOWN, /// Can take any value.
+            /// Special for space-filling curves.
+            /// For example, if key is mortonEncode(x, y),
+            /// and the condition contains its arguments, e.g.:
+            ///   x >= 10 AND x <= 20 AND y >= 20 AND y <= 30,
+            /// this expression will be analyzed and then represented by following:
+            ///   args in hyperrectangle [10, 20] × [20, 30].
+            FUNCTION_ARGS_IN_HYPERRECTANGLE,
+            /// Can take any value.
+            FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
             FUNCTION_NOT,
             FUNCTION_AND,
@@ -196,9 +192,18 @@ public:
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
         size_t key_column = 0;
+
+        /// If the key_column is a space filling curve, e.g. mortonEncode(x, y),
+        /// we will analyze expressions of its arguments (x and y) similarly how we do for a normal key columns,
+        /// and this designates the argument number (0 for x, 1 for y):
+        std::optional<size_t> argument_num_of_space_filling_curve;
+
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
+
+        /// For FUNCTION_ARGS_IN_HYPERRECTANGLE
+        Hyperrectangle space_filling_curve_args_hyperrectangle;
 
         MonotonicFunctionsChain monotonic_functions_chain;
     };
@@ -223,21 +228,25 @@ private:
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
-    /** Is node the key column
-      *  or expression in which column of key is wrapped by chain of functions,
+    /** Is node the key column, or an argument of a space-filling curve that is a key column,
+      *  or expression in which that column is wrapped by a chain of functions,
       *  that can be monotonic on certain ranges?
-      * If these conditions are true, then returns number of column in key, type of resulting expression
+      * If these conditions are true, then returns number of column in key,
+      *  optionally the argument position of a space-filling curve,
+      *  type of resulting expression
       *  and fills chain of possibly-monotonic functions.
       */
     bool isKeyPossiblyWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
         size_t & out_key_column_num,
+        std::optional<size_t> & out_argument_num_of_space_filling_curve,
         DataTypePtr & out_key_res_column_type,
         MonotonicFunctionsChain & out_functions_chain);
 
     bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         const RPNBuilderTreeNode & node,
         size_t & out_key_column_num,
+        std::optional<size_t> & out_argument_num_of_space_filling_curve,
         DataTypePtr & out_key_column_type,
         std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
 
@@ -296,7 +305,16 @@ private:
     ///   and all, two, partitions will be scanned, but due to filtering later none of rows will be matched.
     bool unknownOrAlwaysTrue(bool unknown_any) const;
 
+    /** Iterates over RPN and collapses FUNCTION_IN_RANGE over the arguments of space-filling curve function
+      * into atom of type FUNCTION_ARGS_IN_HYPERRECTANGLE.
+      */
+    void findHyperrectanglesForArgumentsOfSpaceFillingCurves();
+
     RPN rpn;
+
+    /// If query has no filter, rpn will has one element with unknown function.
+    /// This flag identify whether there are filters.
+    bool has_filter;
 
     ColumnIndices key_columns;
     std::vector<size_t> key_indices;
@@ -305,6 +323,17 @@ private:
     const ExpressionActionsPtr key_expr;
     /// All intermediate columns are used to calculate key_expr.
     const NameSet key_subexpr_names;
+
+    /// Space-filling curves in the key
+    struct SpaceFillingCurveDescription
+    {
+        size_t key_column_pos;
+        String function_name;
+        std::vector<String> arguments;
+    };
+    using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
+    SpaceFillingCurveDescriptions key_space_filling_curves;
+    void getAllSpaceFillingCurves();
 
     /// Array joined column names
     NameSet array_joined_column_names;

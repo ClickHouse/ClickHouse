@@ -35,7 +35,7 @@
 #include <pcg_random.hpp>
 #include <base/scope_guard.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 #include "config.h"
 
 #if USE_SSL
@@ -296,7 +296,7 @@ void Connection::sendHello()
                         "Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters");
 
     writeVarUInt(Protocol::Client::Hello, *out);
-    writeStringBinary((VERSION_NAME " ") + client_name, *out);
+    writeStringBinary(std::string(VERSION_NAME) + " " + client_name, *out);
     writeVarUInt(VERSION_MAJOR, *out);
     writeVarUInt(VERSION_MINOR, *out);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
@@ -651,7 +651,13 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = settings->network_zstd_compression_level;
 
-        CompressionCodecFactory::instance().validateCodec(method, level, !settings->allow_suspicious_codecs, settings->allow_experimental_codecs, settings->enable_deflate_qpl_codec);
+        CompressionCodecFactory::instance().validateCodec(
+            method,
+            level,
+            !settings->allow_suspicious_codecs,
+            settings->allow_experimental_codecs,
+            settings->enable_deflate_qpl_codec,
+            settings->enable_zstd_qat_codec);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else

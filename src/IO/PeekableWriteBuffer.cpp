@@ -18,7 +18,7 @@ void PeekableWriteBuffer::nextImpl()
             size_t prev_size = position() - memory.data();
             size_t new_size = memory.size() * 2;
             memory.resize(new_size);
-            BufferBase::set(memory.data(), memory.size(), prev_size);
+            BufferBase::set(memory.data() + prev_size, memory.size() - prev_size, 0);
             return;
         }
 
@@ -41,6 +41,7 @@ void PeekableWriteBuffer::dropCheckpoint()
 {
     assert(checkpoint);
     checkpoint = std::nullopt;
+
     /// If we have saved data in own memory, write it to sub-buf.
     if (write_to_own_memory)
     {
@@ -59,9 +60,9 @@ void PeekableWriteBuffer::dropCheckpoint()
             Buffer & sub_working = sub_buf.buffer();
             BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
             write_to_own_memory = false;
+            throw;
         }
     }
-
 }
 
 void PeekableWriteBuffer::rollbackToCheckpoint(bool drop)

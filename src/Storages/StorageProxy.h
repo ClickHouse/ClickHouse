@@ -38,8 +38,6 @@ public:
         const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override
     {
-        /// TODO: Find a way to support projections for StorageProxy
-        info.ignore_projections = true;
         const auto & nested_metadata = getNested()->getInMemoryMetadataPtr();
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
     }
@@ -138,19 +136,20 @@ public:
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 
     void startup() override { getNested()->startup(); }
-    void shutdown() override { getNested()->shutdown(); }
+    void shutdown(bool is_drop) override { getNested()->shutdown(is_drop); }
     void flushAndPrepareForShutdown() override { getNested()->flushAndPrepareForShutdown(); }
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
 
-    bool supportsIndexForIn() const override { return getNested()->supportsIndexForIn(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
+    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override
     {
-        return getNested()->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
+        return getNested()->getCheckTaskList(check_task_filter, context);
     }
 
-    DataValidationTasksPtr getCheckTaskList(const ASTPtr & query, ContextPtr context) override { return getNested()->getCheckTaskList(query, context); }
-    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override { return getNested()->checkDataNext(check_task_list); }
+    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override
+    {
+        return getNested()->checkDataNext(check_task_list);
+    }
 
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableCanBeDropped(query_context); }
 

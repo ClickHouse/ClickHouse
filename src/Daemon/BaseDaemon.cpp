@@ -60,7 +60,7 @@
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 
-#include "config_version.h"
+#include <Common/config_version.h>
 
 #if defined(OS_DARWIN)
 #   pragma clang diagnostic ignored "-Wunused-macros"
@@ -92,10 +92,10 @@ PipeFDs signal_pipe;
 static void call_default_signal_handler(int sig)
 {
     if (SIG_ERR == signal(sig, SIG_DFL))
-        throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
 
     if (0 != raise(sig))
-        throwFromErrno("Cannot send signal.", ErrorCodes::CANNOT_SEND_SIGNAL);
+        throw ErrnoException(ErrorCodes::CANNOT_SEND_SIGNAL, "Cannot send signal");
 }
 
 static const size_t signal_pipe_buf_size =
@@ -485,10 +485,8 @@ private:
         {
             SentryWriter::onFault(sig, error_message, stack_trace);
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
             /// Advice the user to send it manually.
-            if constexpr (std::string_view(VERSION_OFFICIAL).contains("official build"))
+            if (std::string_view(VERSION_OFFICIAL).contains("official build"))
             {
                 const auto & date_lut = DateLUT::instance();
 
@@ -506,8 +504,6 @@ private:
             {
                 LOG_FATAL(log, "This ClickHouse version is not official and should be upgraded to the official build.");
             }
-#pragma clang diagnostic pop
-
         }
 
         /// ClickHouse Keeper does not link to some part of Settings.
@@ -663,7 +659,17 @@ BaseDaemon::~BaseDaemon()
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
     for (int sig : handled_signals)
         if (SIG_ERR == signal(sig, SIG_DFL))
-            throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+        {
+            try
+            {
+                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+            }
+            catch (ErrnoException &)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
     signal_pipe.close();
 }
 
@@ -971,7 +977,7 @@ static void blockSignals(const std::vector<int> & signals)
         throw Poco::Exception("Cannot block signal.");
 }
 
-extern String getGitHash();
+extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
@@ -1011,7 +1017,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     build_id = "";
 #endif
 
-    git_hash = getGitHash();
+    git_hash = GIT_HASH;
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
@@ -1133,7 +1139,7 @@ void BaseDaemon::setupWatchdog()
         pid = fork();
 
         if (-1 == pid)
-            throwFromErrno("Cannot fork", ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork");
 
         if (0 == pid)
         {
@@ -1229,7 +1235,7 @@ void BaseDaemon::setupWatchdog()
                 if (SIG_ERR == signal(sig, SIG_IGN))
                 {
                     char * signal_description = strsignal(sig); // NOLINT(concurrency-mt-unsafe)
-                    throwFromErrno(fmt::format("Cannot ignore {}", signal_description), ErrorCodes::SYSTEM_ERROR);
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot ignore {}", signal_description);
                 }
             }
         }
@@ -1319,7 +1325,7 @@ void systemdNotify(const std::string_view & command)
     int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 
     if (s == -1)
-        throwFromErrno("Can't create UNIX socket for systemd notify.", ErrorCodes::SYSTEM_ERROR);
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Can't create UNIX socket for systemd notify");
 
     SCOPE_EXIT({ close(s); });
 
@@ -1355,7 +1361,7 @@ void systemdNotify(const std::string_view & command)
             if (errno == EINTR)
                 continue;
             else
-                throwFromErrno("Failed to notify systemd, sendto returned error.", ErrorCodes::SYSTEM_ERROR);
+                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Failed to notify systemd, sendto returned error");
         }
         else
             sent_bytes_total += sent_bytes;

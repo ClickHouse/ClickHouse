@@ -1,6 +1,5 @@
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
@@ -24,10 +23,11 @@ namespace ErrorCodes
     extern const int CANNOT_UNLINK;
 }
 
-LocalObjectStorage::LocalObjectStorage()
-    : log(&Poco::Logger::get("LocalObjectStorage"))
+LocalObjectStorage::LocalObjectStorage(String key_prefix_)
+    : key_prefix(std::move(key_prefix_))
+    , log(&Poco::Logger::get("LocalObjectStorage"))
 {
-    data_source_description.type = DataSourceType::Local;
+    data_source_description.type = DataSourceType::LocalBlobStorage;
     if (auto block_device_id = tryGetBlockDeviceId("/"); block_device_id.has_value())
         data_source_description.description = *block_device_id;
     else
@@ -140,7 +140,7 @@ void LocalObjectStorage::removeObject(const StoredObject & object)
         return;
 
     if (0 != unlink(object.remote_path.data()))
-        throwFromErrnoWithPath("Cannot unlink file " + object.remote_path, object.remote_path, ErrorCodes::CANNOT_UNLINK);
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, object.remote_path, "Cannot unlink file {}", object.remote_path);
 }
 
 void LocalObjectStorage::removeObjects(const StoredObjects & objects)
@@ -200,10 +200,10 @@ void LocalObjectStorage::applyNewSettings(
 {
 }
 
-std::string LocalObjectStorage::generateBlobNameForPath(const std::string & /* path */)
+ObjectStorageKey LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
     constexpr size_t key_name_total_size = 32;
-    return getRandomASCIIString(key_name_total_size);
+    return ObjectStorageKey::createAsRelative(key_prefix, getRandomASCIIString(key_name_total_size));
 }
 
 }

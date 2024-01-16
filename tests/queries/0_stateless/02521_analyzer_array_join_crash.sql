@@ -17,7 +17,7 @@ SELECT id, value_element, value FROM test_table ARRAY JOIN [[1,2,3]] AS value_el
 
 SELECT value_element, value FROM test_table ARRAY JOIN [1048577] AS value_element, arrayMap(x -> value_element, ['']) AS value;
 
-SELECT arrayFilter(x -> notEmpty(concat(x)), [NULL, NULL]) FROM system.one ARRAY JOIN [1048577] AS elem, arrayMap(x -> concat(x, elem, ''), ['']) AS unused; -- { serverError 44 }
+SELECT arrayFilter(x -> notEmpty(concat(x)), [NULL, NULL]) FROM system.one ARRAY JOIN [1048577] AS elem, arrayMap(x -> splitByChar(x, elem), ['']) AS unused; -- { serverError 44 }
 
 -- { echoOff }
 

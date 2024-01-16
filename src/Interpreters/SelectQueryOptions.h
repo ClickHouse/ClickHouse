@@ -33,14 +33,6 @@ struct SelectQueryOptions
     bool remove_duplicates = false;
     bool ignore_quota = false;
     bool ignore_limits = false;
-    /// This flag is needed to analyze query ignoring table projections.
-    /// It is needed because we build another one InterpreterSelectQuery while analyzing projections.
-    /// It helps to avoid infinite recursion.
-    bool ignore_projections = false;
-    /// This flag is also used for projection analysis.
-    /// It is needed because lazy normal projections require special planning in FetchColumns stage, such as adding WHERE transform.
-    /// It is also used to avoid adding aggregating step when aggregate projection is chosen.
-    bool is_projection_query = false;
     /// This flag is needed for projection description.
     /// Otherwise, keys for GROUP BY may be removed as constants.
     bool ignore_ast_optimizations = false;
@@ -125,18 +117,6 @@ struct SelectQueryOptions
     SelectQueryOptions & ignoreLimits(bool value = true)
     {
         ignore_limits = value;
-        return *this;
-    }
-
-    SelectQueryOptions & ignoreProjections(bool value = true)
-    {
-        ignore_projections = value;
-        return *this;
-    }
-
-    SelectQueryOptions & projectionQuery(bool value = true)
-    {
-        is_projection_query = value;
         return *this;
     }
 

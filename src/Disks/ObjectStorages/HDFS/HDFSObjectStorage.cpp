@@ -28,9 +28,10 @@ void HDFSObjectStorage::startup()
 {
 }
 
-std::string HDFSObjectStorage::generateBlobNameForPath(const std::string & /* path */)
+ObjectStorageKey HDFSObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
 {
-    return getRandomASCIIString(32);
+    /// what ever data_source_description.description value is, consider that key as relative key
+    return ObjectStorageKey::createAsRelative(data_source_description.description, getRandomASCIIString(32));
 }
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const

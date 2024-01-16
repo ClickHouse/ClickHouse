@@ -9,7 +9,7 @@
 
 
 using StringKey8 = UInt64;
-using StringKey16 = DB::UInt128;
+using StringKey16 = UInt128;
 struct StringKey24
 {
     UInt64 a;
@@ -75,22 +75,22 @@ struct StringHashTableHash
     size_t ALWAYS_INLINE operator()(StringKey8 key) const
     {
         size_t res = -1ULL;
-        res = s390x_crc32(res, key);
+        res = s390x_crc32c(res, key);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey16 key) const
     {
         size_t res = -1ULL;
-        res = s390x_crc32(res, key.items[UInt128::_impl::little(0)]);
-        res = s390x_crc32(res, key.items[UInt128::_impl::little(1)]);
+        res = s390x_crc32c(res, key.items[UInt128::_impl::little(0)]);
+        res = s390x_crc32c(res, key.items[UInt128::_impl::little(1)]);
         return res;
     }
     size_t ALWAYS_INLINE operator()(StringKey24 key) const
     {
         size_t res = -1ULL;
-        res = s390x_crc32(res, key.a);
-        res = s390x_crc32(res, key.b);
-        res = s390x_crc32(res, key.c);
+        res = s390x_crc32c(res, key.a);
+        res = s390x_crc32c(res, key.b);
+        res = s390x_crc32c(res, key.c);
         return res;
     }
 #else
