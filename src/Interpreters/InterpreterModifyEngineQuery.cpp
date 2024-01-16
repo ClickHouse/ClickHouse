@@ -113,6 +113,12 @@ static void checkEngineChangeIsPossible(ASTStorage * storage, bool to_replicated
        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is already not replicated");
 }
 
+static void executeTrivial(const String & query, ContextMutablePtr context)
+{
+    auto res = executeQuery(query, context, { .internal=true });
+    executeTrivialBlockIO(res.second, context);
+}
+
 BlockIO InterpreterModifyEngineQuery::execute()
 {
     if (!getContext()->getSettingsRef().allow_modify_engine_query)
@@ -141,52 +147,45 @@ BlockIO InterpreterModifyEngineQuery::execute()
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Could not find table: {}", table_id.table_name);
     }
 
-    try {
-        /// Get attach query from metadata
-        auto table_metadata_path = database->getObjectMetadataPath(table_id.getTableName());
-        auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), table_metadata_path);
-        auto * create_query = ast->as<ASTCreateQuery>();
+    /// Get attach query from metadata
+    auto table_metadata_path = database->getObjectMetadataPath(table_id.getTableName());
+    auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), table_metadata_path);
+    auto * create_query = ast->as<ASTCreateQuery>();
 
-        checkEngineChangeIsPossible(create_query->storage, query.to_replicated);
+    checkEngineChangeIsPossible(create_query->storage, query.to_replicated);
 
-        /// Detach table
-        String detach_query = fmt::format("DETACH TABLE {} SYNC", table_id.getFullTableName());
-        auto res = executeQuery(detach_query, getContext(), { .internal=true });
-        executeTrivialBlockIO(res.second, getContext());
+    /// Detach table
+    String detach_query = fmt::format("DETACH TABLE {} SYNC", table_id.getFullTableName());
+    executeTrivial(detach_query, getContext());
 
-        /// Set new engine in the query
-        setNewEngine(create_query, query.to_replicated, getContext());
+    /// Set new engine in the query
+    setNewEngine(create_query, query.to_replicated, getContext());
 
-        DatabaseCatalog::instance().removeUUIDMapping(create_query->uuid);
+    DatabaseCatalog::instance().removeUUIDMapping(create_query->uuid);
 
-        /// Change metadata
-        auto table_metadata_tmp_path = table_metadata_path + ".tmp";
+    /// Change metadata
+    auto table_metadata_tmp_path = table_metadata_path + ".tmp";
 
-        String statement = getObjectDefinitionFromCreateQuery(ast);
-        {
-            WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-            writeString(statement, out);
-            out.next();
-            if (getContext()->getSettingsRef().fsync_metadata)
-                out.sync();
-            out.close();
-        }
-        fs::rename(table_metadata_tmp_path, table_metadata_path);
+    String statement = getObjectDefinitionFromCreateQuery(ast);
+    {
+        WriteBufferFromFile out(table_metadata_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+        writeString(statement, out);
+        out.next();
+        if (getContext()->getSettingsRef().fsync_metadata)
+            out.sync();
+        out.close();
+    }
+    fs::rename(table_metadata_tmp_path, table_metadata_path);
 
-        /// Attach table
-        String attach_query = fmt::format("ATTACH TABLE {}", table_id.getFullTableName());
-        res = executeQuery(attach_query, getContext(), { .internal=true });
-        executeTrivialBlockIO(res.second, getContext());
+    /// Attach table
+    String attach_query = fmt::format("ATTACH TABLE {}", table_id.getFullTableName());
+    executeTrivial(attach_query, getContext());
 
-        /// If engine is ReplicatedMergeTree, restore metadata in zk
-        if (query.to_replicated)
-        {
-            String restore_query = fmt::format("SYSTEM RESTORE REPLICA {}", table_id.getFullTableName());
-            res = executeQuery(restore_query, getContext(), { .internal=true });
-            executeTrivialBlockIO(res.second, getContext());
-        }
-    } catch (...) {
-        throw;
+    /// If engine is ReplicatedMergeTree, restore metadata in zk
+    if (query.to_replicated)
+    {
+        String restore_query = fmt::format("SYSTEM RESTORE REPLICA {}", table_id.getFullTableName());
+        executeTrivial(restore_query, getContext());
     }
 
     return {};
