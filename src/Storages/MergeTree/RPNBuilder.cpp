@@ -392,6 +392,8 @@ size_t RPNBuilderFunctionTreeNode::getArgumentsSize() const
     }
     else
     {
+        // indexHint arguments are stored inside of `FunctionIndexHint` class,
+        // because they are used only for index analysis.
         if (dag_node->function_base->getName() == "indexHint")
         {
             const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
@@ -418,6 +420,8 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     }
     else
     {
+        // indexHint arguments are stored inside of `FunctionIndexHint` class,
+        // because they are used only for index analysis.
         if (dag_node->function_base->getName() == "indexHint")
         {
             const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(dag_node->function_base.get());
