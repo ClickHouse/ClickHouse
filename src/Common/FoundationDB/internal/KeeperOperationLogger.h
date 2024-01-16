@@ -51,7 +51,7 @@ public:
 private:
     std::shared_ptr<ZooKeeperLog> zk_log;
 
-    /// FDBKeeper doesnt need xid. This xid just for making zk_log happy.
+    /// FDBKeeper does not need xid. This xid just for making zk_log happy.
     std::atomic<XID> xid_cnt{1};
 
     /// Get current session id
