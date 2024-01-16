@@ -140,6 +140,14 @@ struct ModuloImpl
                     return -(static_cast<Result>(static_cast<CastA>(-a) % b));
                 }
             }
+            else if constexpr (!std::numeric_limits<IntegerAType>::is_signed && std::numeric_limits<IntegerBType>::is_signed)
+            {
+                if (b < 0)
+                {
+                    using CastB = typename NumberTraits::Construct<false, false, sizeof(IntegerBType)>::Type;
+                    return static_cast<Result>(a % static_cast<CastB>(-b));
+                }
+            }
             return static_cast<Result>(IntegerAType(a) % IntegerBType(b));
         }
     }
