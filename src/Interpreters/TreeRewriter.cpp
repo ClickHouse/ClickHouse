@@ -1052,8 +1052,8 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             auto metadata_snapshot = storage->getInMemoryMetadataPtr();
             if (metadata_snapshot->hasPrimaryKey())
             {
-                auto primary_key = metadata_snapshot->getPrimaryKeyColumns()[0];
-                required.insert(primary_key);
+                for (auto key: metadata_snapshot->getPrimaryKeyColumns())
+                    required.insert(key);
             }
         }
     }

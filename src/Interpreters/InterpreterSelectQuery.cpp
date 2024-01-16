@@ -642,10 +642,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty() && metadata_snapshot->hasPrimaryKey())
             {
-                const auto primary_key = metadata_snapshot->getPrimaryKeyColumns()[0];
+                const auto primary_keys = metadata_snapshot->getPrimaryKeyColumns();
                 const auto main_table_name = getTableName(query.tables());
                 bool optimized = false;
-                auto pkoptimized_where_ast = pkOptimization(metadata_snapshot->getProjections(), query.where(), main_table_name, primary_key, optimized);
+                auto pkoptimized_where_ast = pkOptimization(metadata_snapshot->getProjections(), query.where(), primary_keys, main_table_name, optimized);
                 if (optimized)
                 {
                     query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(pkoptimized_where_ast));
@@ -653,6 +653,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 }
             }
         }
+
 
         if (try_move_to_prewhere
             && storage && storage->canMoveConditionsToPrewhere()
@@ -2147,8 +2148,8 @@ void InterpreterSelectQuery::applyFiltersToPrewhereInAnalysis(ExpressionAnalysis
 ASTPtr InterpreterSelectQuery::pkOptimization(
     const ProjectionsDescription & projections,
     const ASTPtr & where_ast,
+    const Names & primary_keys,
     const String & main_table,
-    const String & main_primary_key,
     bool & optimized) const
 {
     NameSet proj_pks = {};
@@ -2164,7 +2165,7 @@ ASTPtr InterpreterSelectQuery::pkOptimization(
             // projection columns needs to include projection primary key and main table primary key
             // in order to use this optimization
             bool proj_col_include_ppk = std::find(projection_columns.begin(), projection_columns.end(), projection_primary_key) != projection_columns.end();
-            bool proj_col_include_mpk = std::find(projection_columns.begin(), projection_columns.end(), main_primary_key) != projection_columns.end();
+            bool proj_col_include_mpk = std::find(projection_columns.begin(), projection_columns.end(), primary_keys[0]) != projection_columns.end();
 
             if (!proj_col_include_ppk || !proj_col_include_mpk)
             {
@@ -2174,10 +2175,11 @@ ASTPtr InterpreterSelectQuery::pkOptimization(
 
     }
 
-    const auto and_function =  makeASTFunction("and");
+    const auto and_function = makeASTFunction("and");
+
     //for keys in where_ast
     NameSet optimized_where_keys = {};
-    analyze_where_ast(where_ast, and_function, proj_pks, optimized_where_keys, main_table, main_primary_key, optimized);
+    analyze_where_ast(where_ast, and_function, proj_pks, optimized_where_keys, primary_keys, main_table, optimized);
     if (optimized)
     {
         and_function->arguments->children.push_back(where_ast->clone());
@@ -2186,7 +2188,14 @@ ASTPtr InterpreterSelectQuery::pkOptimization(
     return where_ast;
 }
 
-void InterpreterSelectQuery::analyze_where_ast(const ASTPtr & ast, const ASTPtr & func, NameSet & proj_pks, NameSet & optimized_where_keys, const String & main_table, const String & main_primary_key, bool & optimized) const
+void InterpreterSelectQuery::analyze_where_ast(
+    const ASTPtr & ast,
+    const ASTPtr & func,
+    NameSet & proj_pks,
+    NameSet & optimized_where_keys,
+    const Names & primary_keys,
+    const String & main_table,
+    bool & optimized) const
 {
     if (optimized)
         return;
@@ -2195,17 +2204,21 @@ void InterpreterSelectQuery::analyze_where_ast(const ASTPtr & ast, const ASTPtr 
     if (const auto * ast_function_node = ast->as<ASTFunction>())
     {
         auto arg_size = ast_function_node->arguments ? ast_function_node->arguments->children.size() : 0;
-        if (ast_function_node->name == "equals" && arg_size == 2)
+        if(ast_function_node->name == "equals" && arg_size == 2)
         {
             auto lhs_argument = ast_function_node->arguments->children.at(0);
             auto rhs_argument = ast_function_node->arguments->children.at(1);
             String lhs = getIdentifier(lhs_argument);
             String rhs = getIdentifier(rhs_argument);
             auto col_name = (lhs != "") ? lhs:rhs;
-            if (proj_pks.contains(col_name) && !optimized_where_keys.contains(col_name) && col_name != main_primary_key)
+            bool contains_pk = false;
+            if (std::find(primary_keys.begin(), primary_keys.end(), col_name) != primary_keys.end())
+                contains_pk = true;
+
+            if (proj_pks.contains(col_name) && !optimized_where_keys.contains(col_name) && !contains_pk)
             {
                 optimized_where_keys.insert(col_name);
-                ASTPtr new_ast = create_proj_optimized_ast(ast, main_table, main_primary_key);
+                ASTPtr new_ast = create_proj_optimized_ast(ast, primary_keys, main_table);
                 auto * function_node = func->as<ASTFunction>();
                 function_node->arguments->children.push_back(new_ast);
                 optimized = true;
@@ -2217,7 +2230,7 @@ void InterpreterSelectQuery::analyze_where_ast(const ASTPtr & ast, const ASTPtr 
             for (size_t i = 0; i < arg_size; i++)
             {
                 auto argument = ast_function_node->arguments->children[i];
-                analyze_where_ast(argument, func, proj_pks, optimized_where_keys, main_table, main_primary_key, optimized);
+                analyze_where_ast(argument, func, proj_pks, optimized_where_keys, primary_keys, main_table, optimized);
             }
         }
         else /* TBD: conditions that are not "=" */
@@ -2245,7 +2258,7 @@ void InterpreterSelectQuery::analyze_where_ast(const ASTPtr & ast, const ASTPtr 
  * The following code will convert this select query to the following
  * select * from test_a where src in (select src from test_a where dst='-42') and dst='-42';
  */
-ASTPtr InterpreterSelectQuery::create_proj_optimized_ast(const ASTPtr & ast, const String & main_table, const String & main_primary_key) const
+ASTPtr InterpreterSelectQuery::create_proj_optimized_ast(const ASTPtr & ast, const Names & primary_keys, const String & main_table) const
 {
     auto select_query = std::make_shared<ASTSelectQuery>();
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
@@ -2263,10 +2276,6 @@ ASTPtr InterpreterSelectQuery::create_proj_optimized_ast(const ASTPtr & ast, con
 
     auto tables_in_select = std::make_shared<ASTTablesInSelectQuery>();
     tables_in_select->children.push_back(std::move(tables_elem));
-
-
-    select_query->select()->children.push_back(std::make_shared<ASTIdentifier>(main_primary_key));
-
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
     select_query->setExpression(ASTSelectQuery::Expression::WHERE, ast->clone());
 
@@ -2275,10 +2284,24 @@ ASTPtr InterpreterSelectQuery::create_proj_optimized_ast(const ASTPtr & ast, con
     auto subquery = std::make_shared<ASTSubquery>();
     subquery->children.push_back(select_with_union_query);
 
-    auto in_function = makeASTFunction("in", std::make_shared<ASTIdentifier>(main_primary_key), subquery);
-
+    auto in_function = makeASTFunction("in");
+    if (primary_keys.size() == 1)
+    {
+        select_query->select()->children.push_back(std::make_shared<ASTIdentifier>(primary_keys[0]));
+        in_function->arguments->children.push_back(std::make_shared<ASTIdentifier>(primary_keys[0]));
+    }
+    else
+    {
+        auto tuples = makeASTFunction("tuple");
+        for (auto key : primary_keys)
+        {
+            tuples->children[0]->as<ASTExpressionList>()->children.push_back(std::make_shared<ASTIdentifier>(key));
+            select_query->select()->children.push_back(std::make_shared<ASTIdentifier>(key));
+        }
+        in_function->arguments->children.push_back(tuples);
+    }
+    in_function->arguments->children.push_back(subquery);
     const auto indexHintFunc = makeASTFunction("indexHint", in_function);
-
     return indexHintFunc;
 }
 
