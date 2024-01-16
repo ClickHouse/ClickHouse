@@ -54,10 +54,10 @@ namespace
 static constexpr auto TMP_SUFFIX = ".tmp";
 
 
-class ReadFromStorageFileLogStep final : public ReadFromStreamLikeEngine
+class ReadFromStorageFileLog final : public ReadFromStreamLikeEngine
 {
 public:
-    ReadFromStorageFileLogStep(
+    ReadFromStorageFileLog(
         const Names & column_names_,
         StoragePtr storage_,
         const StorageSnapshotPtr & storage_snapshot_,
@@ -380,8 +380,8 @@ void StorageFileLog::read(
     size_t /* num_streams */)
 
 {
-    query_plan.addStep(std::make_unique<ReadFromStorageFileLogStep>(
-        column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
+    query_plan.addStep(
+        std::make_unique<ReadFromStorageFileLog>(column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
 }
 
 void StorageFileLog::increaseStreams()

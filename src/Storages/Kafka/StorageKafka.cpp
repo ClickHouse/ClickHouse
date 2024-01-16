@@ -179,10 +179,10 @@ struct StorageKafkaInterceptors
     }
 };
 
-class ReadFromStorageKafkaStep final : public ReadFromStreamLikeEngine
+class ReadFromStorageKafka final : public ReadFromStreamLikeEngine
 {
 public:
-    ReadFromStorageKafkaStep(
+    ReadFromStorageKafka(
         const Names & column_names_,
         StoragePtr storage_,
         const StorageSnapshotPtr & storage_snapshot_,
@@ -423,7 +423,7 @@ void StorageKafka::read(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    query_plan.addStep(std::make_unique<ReadFromStorageKafkaStep>(
+    query_plan.addStep(std::make_unique<ReadFromStorageKafka>(
         column_names, shared_from_this(), storage_snapshot, query_info, std::move(query_context)));
 }
 

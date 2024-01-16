@@ -134,7 +134,7 @@ public:
     const auto & getFileLogSettings() const { return filelog_settings; }
 
 private:
-    friend class ReadFromStorageFileLogStep;
+    friend class ReadFromStorageFileLog;
 
     std::unique_ptr<FileLogSettings> filelog_settings;
 
