@@ -281,7 +281,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingCha
 
     auto command = std::make_shared<ASTAlterCommand>();
     command->type = ASTAlterCommand::Type::MODIFY_DATABASE_SETTING;
-    command->settings_changes = std::move(set);
+    command->settings_changes = command->children.emplace_back(std::move(set)).get();
 
     auto command_list = std::make_shared<ASTExpressionList>();
     command_list->children.push_back(command);
