@@ -372,12 +372,6 @@ void KeeperResponseLogger::response(const Response & resp, size_t elapsed_ms) co
     else if (const auto * multi_response = dynamic_cast<const MultiResponse *>(&resp))
     {
         elem.op_num = static_cast<uint32_t>(OpNum::Multi);
-
-        for (const auto & response : multi_response->responses)
-        {
-            auto & res = dynamic_cast<Response &>(*response);
-            this->response(res, elapsed_ms);
-        }
     }
 
     elem.type = ZooKeeperLogElement::RESPONSE;
@@ -389,7 +383,16 @@ void KeeperResponseLogger::response(const Response & resp, size_t elapsed_ms) co
     elem.xid = xid;
 
     maybe_zk_log->add(std::move(elem));
+
+    if (const auto * multi_response = dynamic_cast<const MultiResponse *>(&resp))
+    {
+        for (const auto & response : multi_response->responses)
+        {
+            auto & res = dynamic_cast<Response &>(*response);
+            this->response(res, elapsed_ms);
+        }
+    }    
+}
 }
 
-}
 }
