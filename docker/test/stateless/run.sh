@@ -207,21 +207,13 @@ function run_tests()
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
     try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
-    try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('api_version', '/keeper/api_version/', 2)"
+    try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('api_version', '/keeper/', 2)"
 
     set +e
-    if [[ -f "setup_fdb.sh" ]] && [[ "$(uname -m)" == "x86_64" ]]; then
-        clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
-        --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" \
-        --skip 02911_backup_restore_keeper_map 2>&1 \
-        | ts '%Y-%m-%d %H:%M:%S' \
-        | tee -a test_output/test_result.txt
-    else
-        clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
+    clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
         --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
-        | ts '%Y-%m-%d %H:%M:%S' \
-        | tee -a test_output/test_result.txt
-    fi
+    | ts '%Y-%m-%d %H:%M:%S' \
+    | tee -a test_output/test_result.txt
     set -e
 }
 
