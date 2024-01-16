@@ -5014,7 +5014,8 @@ def test_multiple_read_in_materialized_views(kafka_cluster, max_retries=15):
         DROP TABLE test.kafka_multiple_read_input;
         DROP TABLE test.kafka_multiple_read_table;
         DROP TABLE test.kafka_multiple_read_mv;
-        """)
+        """
+    )
 
 
 if __name__ == "__main__":
