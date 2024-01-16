@@ -68,6 +68,8 @@ void ObjectStorageVFSGCThread::run() const
     const size_t end_logpointer = std::min(parseFromString<size_t>(end_str.substr(4)), start_logpointer + batch_max_size);
 
     LOG_DEBUG(log, "Acquired lock for [{};{}]", start_logpointer, end_logpointer);
+    // TODO myrrc store for 1 iteration more in case batch removal failed. Next node should try to
+    // load previous snapshot
     updateSnapshotWithLogEntries(start_logpointer, end_logpointer);
     removeBatch(start_logpointer, end_logpointer);
     LOG_DEBUG(log, "Removed lock for [{};{}]", start_logpointer, end_logpointer);

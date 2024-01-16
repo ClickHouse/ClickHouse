@@ -79,8 +79,8 @@ def test_ttl_move_and_s3(started_cluster):
     assert node1.query("SELECT COUNT() FROM s3_test_with_ttl") == "30\n"
     assert node2.query("SELECT COUNT() FROM s3_test_with_ttl") == "30\n"
 
-    # the extra object is for snapshot
-    desired_object_count = 300 + testing_vfs
+    # extra objects for VFS: 1 snapshot + 30 MOVE metadata files
+    desired_object_count = 330 + 31 * testing_vfs
 
     for attempt in reversed(range(5)):
         time.sleep(5)
