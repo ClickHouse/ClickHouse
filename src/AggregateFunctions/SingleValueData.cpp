@@ -418,12 +418,13 @@ template <typename T>
 void SingleValueDataFixed<T>::compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
 {
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-    auto ft = llvm::FunctionType::get(b.getVoidTy(), {aggregate_data_ptr->getType()}, false);
-    auto f = b.CreateIntToPtr(
-        llvm::ConstantInt::get(b.getInt64Ty(), uintptr_t(::DB::build_SingleValueDataFixed<T>)), llvm::PointerType::getUnqual(ft));
-    llvm::FunctionCallee fc(ft, f);
+    auto * function_type = llvm::FunctionType::get(b.getVoidTy(), {aggregate_data_ptr->getType()}, false);
+    auto * function_pointer = b.CreateIntToPtr(
+        llvm::ConstantInt::get(b.getInt64Ty(), uintptr_t(::DB::build_SingleValueDataFixed<T>)),
+        llvm::PointerType::getUnqual(function_type));
+    llvm::FunctionCallee function_callee(function_type, function_pointer);
     llvm::ArrayRef<llvm::Value *> args{aggregate_data_ptr};
-    b.CreateCall(fc, args);
+    b.CreateCall(function_callee, args);
 }
 
 template <typename T>
