@@ -428,7 +428,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     last_log_idx_on_disk = log_store->next_slot() - 1;
     LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk);
     if (state_machine->last_commit_index() >= last_log_idx_on_disk)
-        keeper_context->local_logs_preprocessed = true;
+        keeper_context->setLocalLogsPreprocessed();
 
     loadLatestConfig();
 
@@ -630,16 +630,16 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
         }
     }
 
-    if (!keeper_context->local_logs_preprocessed)
+    if (!keeper_context->localLogsPreprocessed())
     {
         const auto preprocess_logs = [&]
         {
             auto lock = raft_instance->lockRaft();
 
-            if (keeper_context->local_logs_preprocessed)
+            if (keeper_context->localLogsPreprocessed())
                 return;
 
-            keeper_context->local_logs_preprocessed = true;
+            keeper_context->setLocalLogsPreprocessed();
             auto log_store = state_manager->load_log_store();
             auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, log_store->next_slot());
 
@@ -686,7 +686,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     preprocess_logs();
                 /// we don't want to append new logs if we are committing local logs
                 else if (raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk)
-                    keeper_context->local_logs_preprocessed.wait(false);
+                    keeper_context->waitLocalLogsPreprocessedOrShutdown();
 
                 break;
             }
