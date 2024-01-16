@@ -1207,7 +1207,7 @@ private:
 
     static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
-    static void checkDuplicateTableNamesOrAlias(QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope, Names & column_names);
+    static void checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope);
 
     static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
 
@@ -1382,11 +1382,11 @@ private:
 
     void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
 
-    void resolveArrayJoin(QueryTreeNodePtr & array_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, Names & column_names);
+    void resolveArrayJoin(QueryTreeNodePtr & array_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
-    void resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, Names & column_names);
+    void resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
-    void resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, Names & column_names);
+    void resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
     void resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
 
@@ -2254,9 +2254,12 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
         return;
 
     auto table_expression_node_type = table_expression_node->getNodeType();
-    if (table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
+    auto * join_typed = join_node->as<JoinNode>();
+    if (table_expression_node_type == QueryTreeNodeType::QUERY && join_typed->getKind() == JoinKind::Paste)
+        checkDuplicateTableNamesOrAlias(join_node, join_typed->getLeftTableExpression(), join_typed->getRightTableExpression(), scope);
+    else if ((table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
         table_expression_node_type == QueryTreeNodeType::QUERY ||
-        table_expression_node_type == QueryTreeNodeType::UNION)
+        table_expression_node_type == QueryTreeNodeType::UNION) && join_typed->getKind() != JoinKind::Paste)
         throw Exception(ErrorCodes::ALIAS_REQUIRED,
                         "JOIN {} no alias for subquery or table function {}. "
                         "In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
@@ -6655,10 +6658,10 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 }
 
 /// Resolve array join node in scope
-void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, Names & column_names)
+void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
     auto & array_join_node_typed = array_join_node->as<ArrayJoinNode &>();
-    resolveQueryJoinTreeNode(array_join_node_typed.getTableExpression(), scope, expressions_visitor, column_names);
+    resolveQueryJoinTreeNode(array_join_node_typed.getTableExpression(), scope, expressions_visitor);
 
     std::unordered_set<String> array_join_column_names;
 
@@ -6782,8 +6785,9 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
     }
 }
 
-void QueryAnalyzer::checkDuplicateTableNamesOrAlias(QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope, Names & column_names)
+void QueryAnalyzer::checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope)
 {
+    Names column_names;
     if (!scope.context->getSettingsRef().joined_subquery_requires_alias)
         return;
 
@@ -6812,18 +6816,15 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAlias(QueryTreeNodePtr & join_node
 }
 
 /// Resolve join node in scope
-void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, Names & column_names)
+void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
     auto & join_node_typed = join_node->as<JoinNode &>();
 
-    resolveQueryJoinTreeNode(join_node_typed.getLeftTableExpression(), scope, expressions_visitor, column_names);
+    resolveQueryJoinTreeNode(join_node_typed.getLeftTableExpression(), scope, expressions_visitor);
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getLeftTableExpression(), scope);
 
-    resolveQueryJoinTreeNode(join_node_typed.getRightTableExpression(), scope, expressions_visitor, column_names);
+    resolveQueryJoinTreeNode(join_node_typed.getRightTableExpression(), scope, expressions_visitor);
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
-
-    if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
-        checkDuplicateTableNamesOrAlias(join_node, join_node_typed.getLeftTableExpression(), join_node_typed.getRightTableExpression(), scope, column_names);
 
     if (join_node_typed.isOnJoinExpression())
     {
@@ -6911,7 +6912,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
   *
   * Query join tree must be initialized before calling this function.
   */
-void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, Names & column_names)
+void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
     auto from_node_type = join_tree_node->getNodeType();
 
@@ -6935,12 +6936,12 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
-            resolveArrayJoin(join_tree_node, scope, expressions_visitor, column_names);
+            resolveArrayJoin(join_tree_node, scope, expressions_visitor);
             break;
         }
         case QueryTreeNodeType::JOIN:
         {
-            resolveJoin(join_tree_node, scope, expressions_visitor, column_names);
+            resolveJoin(join_tree_node, scope, expressions_visitor);
             break;
         }
         case QueryTreeNodeType::IDENTIFIER:
@@ -7168,7 +7169,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         scope.alias_name_to_table_expression_node.clear();
 
         Names column_names;
-        resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor, column_names);
+        resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
     }
 
     if (!scope.group_by_use_nulls)

@@ -36,11 +36,11 @@ select * from (SELECT number as a FROM numbers_mt(10)) t1 PASTE JOIN (select num
 select * from (SELECT number as a FROM numbers(10)) t1 ANY PASTE JOIN (select number as a from numbers(10)) t2; -- { clientError SYNTAX_ERROR }
 select * from (SELECT number as a FROM numbers(10)) t1 ALL PASTE JOIN (select number as a from numbers(10)) t2; -- { clientError SYNTAX_ERROR }
 
-SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(10) ORDER BY number DESC ) SETTINGS joined_subquery_requires_alias = 1, allow_experimental_analyzer = 1; -- { serverError BAD_ARGUMENTS }
 TRUNCATE TABLE test;
 INSERT INTO test SELECT number from numbers(6);
 SELECT * FROM (SELECT number FROM test) PASTE JOIN (SELECT number FROM numbers(6) ORDER BY number) SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM (SELECT number FROM test PASTE JOIN (Select number FROM numbers(7))) PASTE JOIN (SELECT number FROM numbers(6) PASTE JOIN (SELECT number FROM test)) SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM (SELECT number FROM test PASTE JOIN (Select number FROM numbers(7))) PASTE JOIN (SELECT number FROM numbers(6) CROSS JOIN (SELECT number FROM test)) SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM (SELECT number FROM test PASTE JOIN (SELECT number FROM test PASTE JOIN (Select number FROM numbers(7)))) PASTE JOIN (SELECT number FROM numbers(6) CROSS JOIN (SELECT number FROM test)) SETTINGS joined_subquery_requires_alias = 0;
-SELECT * FROM (SELECT 1 AS a) PASTE JOIN (SELECT 1 AS b) PASTE JOIN (SELECT 1 AS c) SETTINGS allow_experimental_analyzer = 1;
+SELECT * FROM (SELECT 1 AS a) PASTE JOIN (SELECT 2 AS b) PASTE JOIN (SELECT 3 AS c) SETTINGS allow_experimental_analyzer = 1;
+SELECT * FROM (SELECT 1 AS a) PASTE JOIN (SELECT 2 AS b) PASTE JOIN (SELECT 3 AS a) SETTINGS allow_experimental_analyzer = 1; -- { serverError AMBIGUOUS_COLUMN_NAME }
