@@ -25,9 +25,9 @@ namespace DB
         /// fields
 
         static std::string name();
-        static NamesAndTypesList getNamesAndTypes();
+        static ColumnsDescription getColumnsDescription();
+        /// TODO: Remove this method, we can return aliases directly from getColumnsDescription().
         static NamesAndAliases getNamesAndAliases();
-        static const char * getCustomColumnList();
         void appendToBlock(MutableColumns & columns) const;
     };
     */

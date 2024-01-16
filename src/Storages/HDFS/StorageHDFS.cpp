@@ -3,6 +3,7 @@
 #if USE_HDFS
 
 #include <Common/parseGlobs.h>
+#include <Common/re2.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Parsers/ASTLiteral.h>
@@ -47,15 +48,6 @@
 #include <hdfs/hdfs.h>
 
 #include <filesystem>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace fs = std::filesystem;
 
@@ -695,7 +687,7 @@ Chunk HDFSSource::generate()
     return {};
 }
 
-void HDFSSource::addNumRowsToCache(const DB::String & path, size_t num_rows)
+void HDFSSource::addNumRowsToCache(const String & path, size_t num_rows)
 {
     auto cache_key = getKeyForSchemaCache(path, storage->format_name, std::nullopt, getContext());
     StorageHDFS::getSchemaCache(getContext()).addNumRows(cache_key, num_rows);
@@ -724,13 +716,13 @@ public:
         const CompressionMethod compression_method)
         : SinkToStorage(sample_block)
     {
+        const auto & settings = context->getSettingsRef();
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromHDFS>(
-                uri,
-                context->getGlobalContext()->getConfigRef(),
-                context->getSettingsRef().hdfs_replication,
-                context->getWriteSettings()),
-            compression_method, 3);
+                uri, context->getGlobalContext()->getConfigRef(), context->getSettingsRef().hdfs_replication, context->getWriteSettings()),
+            compression_method,
+            static_cast<int>(settings.output_format_compression_level),
+            static_cast<int>(settings.output_format_compression_zstd_window_log));
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context);
     }
 

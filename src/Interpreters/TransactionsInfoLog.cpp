@@ -18,7 +18,7 @@
 namespace DB
 {
 
-NamesAndTypesList TransactionsInfoLogElement::getNamesAndTypes()
+ColumnsDescription TransactionsInfoLogElement::getColumnsDescription()
 {
     auto type_enum = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -32,7 +32,7 @@ NamesAndTypesList TransactionsInfoLogElement::getNamesAndTypes()
             {"UnlockPart",      static_cast<Int8>(UNLOCK_PART)},
         });
 
-    return
+    return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"type", std::move(type_enum)},

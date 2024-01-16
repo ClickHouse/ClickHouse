@@ -57,7 +57,7 @@ DataTypePtr getCoordinationErrorCodesEnumType()
             });
 }
 
-NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
+ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
 {
     auto type_enum = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -120,7 +120,7 @@ NamesAndTypesList ZooKeeperLogElement::getNamesAndTypes()
                 {"NOTCONNECTED",            static_cast<Int16>(Coordination::State::NOTCONNECTED)},
             });
 
-    return
+    return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"type", std::move(type_enum)},

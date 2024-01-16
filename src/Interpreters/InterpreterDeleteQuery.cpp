@@ -1,4 +1,5 @@
 #include <Interpreters/InterpreterDeleteQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseReplicated.h>
@@ -108,6 +109,15 @@ BlockIO InterpreterDeleteQuery::execute()
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE query is not supported for table {}", table->getStorageID().getFullTableName());
     }
+}
+
+void registerInterpreterDeleteQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDeleteQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDeleteQuery", create_fn);
 }
 
 }

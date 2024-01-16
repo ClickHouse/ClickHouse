@@ -122,7 +122,7 @@ class Release:
         self.version = get_version_from_repo(git=self._git)
 
     def get_stable_release_type(self) -> str:
-        if self.version.minor % 5 == 3:  # our 3 and 8 are LTS
+        if self.version.is_lts:
             return VersionType.LTS
         return VersionType.STABLE
 
