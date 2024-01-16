@@ -1269,13 +1269,17 @@ class TestCase:
             file_pattern = "coverage.*"
             matching_files = glob.glob(file_pattern)
             for file_path in matching_files:
-                body = read_file_as_binary_string(file_path)
-                clickhouse_execute(
-                    args,
-                    f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
-                    body=body,
-                    retry_error_codes=True,
-                )
+                try:
+                    body = read_file_as_binary_string(file_path)
+                    clickhouse_execute(
+                        args,
+                        f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
+                        body=body,
+                        retry_error_codes=True,
+                    )
+                except Exception as e:
+                    print("Cannot insert coverage data: ", str(e))
+                # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
                 os.remove(file_path)
 
             coverage = clickhouse_execute(
