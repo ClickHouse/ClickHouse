@@ -6,7 +6,7 @@ sidebar_label: Arrays
 
 # Array Functions
 
-## empty
+## empty {#empty}
 
 Checks whether the input array is empty.
 
@@ -50,7 +50,7 @@ Result:
 └────────────────┘
 ```
 
-## notEmpty
+## notEmpty {#notempty}
 
 Checks whether the input array is non-empty.
 
@@ -143,7 +143,7 @@ range([start, ] end [, step])
 **Implementation details**
 
 - All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments.
-- An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
+- An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#function_range_max_elements_in_block) setting.
 - Returns Null if any argument has Nullable(Nothing) type. An exception is thrown if any argument has Null value (Nullable(T) type).
 
 **Examples**
@@ -221,7 +221,7 @@ SELECT has([1, 2, NULL], NULL)
 └─────────────────────────┘
 ```
 
-## hasAll
+## hasAll {#hasall}
 
 Checks whether one array is a subset of another.
 
@@ -261,7 +261,7 @@ Raises an exception `NO_COMMON_TYPE` if the set and subset elements do not share
 
 `SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` returns 0.
 
-## hasAny
+## hasAny {#hasany}
 
 Checks whether two arrays have intersection by some elements.
 
@@ -1083,7 +1083,7 @@ Result:
 
 **See also**
 
-- [arrayFold](#arrayFold)
+- [arrayFold](#arrayfold)
 
 ## arrayReduceInRanges
 
@@ -1175,7 +1175,7 @@ FROM numbers(1,10);
 
 **See also**
 
-- [arrayReduce](#arrayReduce)
+- [arrayReduce](#arrayreduce)
 
 ## arrayReverse(arr)
 

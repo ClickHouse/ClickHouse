@@ -34,6 +34,11 @@ bool ReadBufferFromIStream::nextImpl()
 ReadBufferFromIStream::ReadBufferFromIStream(std::istream & istr_, size_t size)
     : BufferWithOwnMemory<ReadBuffer>(size), istr(istr_)
 {
+    /// - badbit will be set if some exception will be throw from ios implementation
+    /// - failbit can be set when for instance read() reads less data, so we
+    ///   cannot set it, since we are requesting to read more data, then the
+    ///   buffer has now.
+    istr.exceptions(std::ios::badbit);
 }
 
 }

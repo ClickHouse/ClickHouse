@@ -83,7 +83,7 @@ struct SocketInterruptablePollWrapper
 #if defined(POCO_HAVE_FD_EPOLL)
         epollfd = epoll_create(2);
         if (epollfd < 0)
-            throwFromErrno("Cannot epoll_create", ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot epoll_create");
 
         socket_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         socket_event.data.fd = sockfd;
@@ -92,7 +92,7 @@ struct SocketInterruptablePollWrapper
             int err = ::close(epollfd);
             chassert(!err || errno == EINTR);
 
-            throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot insert socket into epoll queue");
         }
         pipe_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         pipe_event.data.fd = pipe.fds_rw[0];
@@ -101,7 +101,7 @@ struct SocketInterruptablePollWrapper
             int err = ::close(epollfd);
             chassert(!err || errno == EINTR);
 
-            throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot insert socket into epoll queue");
         }
 #endif
     }

@@ -17,7 +17,7 @@ class StorageSystemMacros final : public IStorageSystemOneBlock<StorageSystemMac
 public:
     std::string getName() const override { return "SystemMacros"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

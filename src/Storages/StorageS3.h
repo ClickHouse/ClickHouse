@@ -78,7 +78,7 @@ public:
         DisclosedGlobIterator(
             const S3::Client & client_,
             const S3::URI & globbed_uri_,
-            ASTPtr query,
+            const ActionsDAG::Node * predicate,
             const NamesAndTypesList & virtual_columns,
             ContextPtr context,
             KeysWithInfo * read_keys_ = nullptr,
@@ -145,17 +145,11 @@ public:
         const String & url_host_and_port,
         std::shared_ptr<IIterator> file_iterator_,
         size_t max_parsing_threads,
-        bool need_only_count_,
-        std::optional<SelectQueryInfo> query_info);
+        bool need_only_count_);
 
     ~StorageS3Source() override;
 
     String getName() const override;
-
-    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override
-    {
-        setKeyConditionImpl(query_info_, context_, sample_block);
-    }
 
     void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
     {
@@ -180,7 +174,6 @@ private:
     std::shared_ptr<const S3::Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
-    std::optional<SelectQueryInfo> query_info;
 
     struct ReaderHolder
     {
@@ -360,21 +353,6 @@ public:
         ContextPtr ctx);
 
     using KeysWithInfo = StorageS3Source::KeysWithInfo;
-
-    static std::optional<ColumnsDescription> tryGetColumnsFromCache(
-        const KeysWithInfo::const_iterator & begin,
-        const KeysWithInfo::const_iterator & end,
-        const Configuration & configuration,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & ctx);
-
-    static void addColumnsToCache(
-        const KeysWithInfo & keys,
-        const Configuration & configuration,
-        const ColumnsDescription & columns,
-        const String & format_name,
-        const std::optional<FormatSettings> & format_settings,
-        const ContextPtr & ctx);
 
     bool supportsTrivialCountOptimization() const override { return true; }
 

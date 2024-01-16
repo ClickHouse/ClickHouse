@@ -338,6 +338,8 @@ def test_alter_drop_part(started_cluster, engine):
     main_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (123)")
     if engine == "MergeTree":
         dummy_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (456)")
+    else:
+        main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part PULL")
     main_node.query(f"ALTER TABLE {database}.alter_drop_part DROP PART '{part_name}'")
     assert main_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
     if engine == "ReplicatedMergeTree":
@@ -507,7 +509,7 @@ def test_alters_from_different_replicas(started_cluster):
 
     settings = {"distributed_ddl_task_timeout": 5}
     assert (
-        "There are 1 unfinished hosts (0 of them are currently active)"
+        "There are 1 unfinished hosts (0 of them are currently executing the task"
         in competing_node.query_and_get_error(
             "ALTER TABLE alters_from_different_replicas.concurrent_test ADD COLUMN Added0 UInt32;",
             settings=settings,
@@ -799,7 +801,7 @@ def test_recover_staled_replica(started_cluster):
             settings=settings,
         )
         main_node.query_with_retry(
-            "ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1",
+            "ALTER TABLE recover.mv1 MODIFY QUERY SELECT m as n FROM recover.rmt1",
             settings=settings,
         )
         main_node.query_with_retry(

@@ -73,6 +73,8 @@ public:
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps);
 
+    void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
+
 private:
     /// This struct allow to return block with no columns but with non-zero number of rows similar to Chunk
     struct BlockAndProgress
@@ -122,6 +124,9 @@ private:
     Block result_header;
     /// This header is used for lazily reading.
     Block lazily_read_header;
+
+    /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
+    bool add_part_level = false;
 
     Poco::Logger * log = &Poco::Logger::get("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};

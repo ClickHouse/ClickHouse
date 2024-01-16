@@ -223,6 +223,10 @@ size_t MergeTreeReaderCompact::readRows(
         }
         rows_to_read -= offset;
 
+        /// If we need to read multiple subcolumns from a single column in storage,
+        /// we will read it this column only once and then reuse to extract all subcolumns.
+        std::unordered_map<String, ColumnPtr> columns_cache_for_subcolumns;
+
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
             if (!res_columns[pos])
@@ -234,7 +238,7 @@ size_t MergeTreeReaderCompact::readRows(
                 size_t column_size_before_reading = column->size();
 
                 readData(columns_to_read[pos], column, from_mark, current_task_last_mark, *column_positions[pos],
-                         rows_to_read, offset, columns_for_offsets[pos]);
+                         rows_to_read, offset, columns_for_offsets[pos], columns_cache_for_subcolumns);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
                 if (read_rows_in_column != rows_to_read)
@@ -274,7 +278,7 @@ size_t MergeTreeReaderCompact::readRows(
 void MergeTreeReaderCompact::readData(
     const NameAndTypePair & name_and_type, ColumnPtr & column,
     size_t from_mark, size_t current_task_last_mark, size_t column_position, size_t rows_to_read,
-    size_t offset, ColumnNameLevel name_level_for_offsets)
+    size_t offset, ColumnNameLevel name_level_for_offsets, std::unordered_map<String, ColumnPtr> & columns_cache_for_subcolumns)
 {
     const auto & [name, type] = name_and_type;
     std::optional<NameAndTypePair> column_for_offsets;
@@ -336,46 +340,66 @@ void MergeTreeReaderCompact::readData(
 
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.avg_value_size_hint = avg_value_size_hints[name];
+    bool columns_cache_was_used = false;
 
     if (name_and_type.isSubcolumn())
     {
         NameAndTypePair name_type_in_storage{name_and_type.getNameInStorage(), name_and_type.getTypeInStorage()};
+        ColumnPtr temp_column;
 
-        /// In case of reading onlys offset use the correct serialization for reading of the prefix
-        auto serialization = getSerializationInPart(name_type_in_storage);
-        ColumnPtr temp_column = name_type_in_storage.type->createColumn(*serialization);
-
-        if (column_for_offsets)
+        auto it = columns_cache_for_subcolumns.find(name_type_in_storage.name);
+        if (!column_for_offsets && it != columns_cache_for_subcolumns.end())
         {
-            auto serialization_for_prefix = getSerializationInPart(*column_for_offsets);
-
-            deserialize_settings.getter = buffer_getter_for_prefix;
-            serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state_for_prefix);
-        }
-
-        deserialize_settings.getter = buffer_getter;
-        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
-        if (offset > 0)
-        {
-            if (serialization->deserializeBinaryBulkWithMultipleStreamsSilently(temp_column, offset, deserialize_settings, state))
-                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
+            temp_column = it->second;
+            auto subcolumn = name_type_in_storage.type->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
+            if (column->empty())
+                column = IColumn::mutate(subcolumn);
             else
-            {
-                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, offset + rows_to_read, deserialize_settings, state, nullptr);
-                if (!temp_column->empty())
-                    temp_column = temp_column->cut(offset, temp_column->size() - offset);
-            }
+                column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+
+            columns_cache_was_used = true;
         }
         else
-            serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
+        {
+            /// In case of reading only offset use the correct serialization for reading of the prefix
+            auto serialization = getSerializationInPart(name_type_in_storage);
+            temp_column = name_type_in_storage.type->createColumn(*serialization);
 
-        auto subcolumn = name_type_in_storage.type->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
+            if (column_for_offsets)
+            {
+                auto serialization_for_prefix = getSerializationInPart(*column_for_offsets);
 
-        /// TODO: Avoid extra copying.
-        if (column->empty())
-            column = subcolumn;
-        else
-            column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+                deserialize_settings.getter = buffer_getter_for_prefix;
+                serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state_for_prefix);
+            }
+          
+            deserialize_settings.getter = buffer_getter;
+            serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
+            if (offset > 0)
+            {
+                if (serialization->deserializeBinaryBulkWithMultipleStreamsSilently(temp_column, offset, deserialize_settings, state))
+                    serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
+                else
+                {
+                    serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, offset + rows_to_read, deserialize_settings, state, nullptr);
+                    if (!temp_column->empty())
+                        temp_column = temp_column->cut(offset, temp_column->size() - offset);
+                }
+            }
+            else
+                serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
+
+            if (!column_for_offsets)
+                columns_cache_for_subcolumns[name_type_in_storage.name] = temp_column;
+
+            auto subcolumn = name_type_in_storage.type->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
+
+            /// TODO: Avoid extra copying.
+            if (column->empty())
+                column = subcolumn;
+            else
+                column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
+        }
     }
     else
     {
@@ -386,7 +410,8 @@ void MergeTreeReaderCompact::readData(
         {
             auto serialization_for_prefix = getSerializationInPart(*column_for_offsets);
 
-            deserialize_settings.getter = buffer_getter_for_prefix;
+            deserialize_settings.getter = 
+              ;
             serialization_for_prefix->deserializeBinaryBulkStatePrefix(deserialize_settings, state_for_prefix);
         }
 
@@ -407,8 +432,8 @@ void MergeTreeReaderCompact::readData(
             serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
     }
 
-    /// The buffer is left in inconsistent state after reading single offsets
-    if (name_level_for_offsets.has_value())
+    /// The buffer is left in inconsistent state after reading single offsets or using columns cache during subcolumns reading.
+    if (name_level_for_offsets.has_value() || columns_cache_was_used)
         last_read_granule.reset();
     else
         last_read_granule.emplace(from_mark, column_position);

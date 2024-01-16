@@ -1,4 +1,5 @@
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/DatabaseFactory.h>
@@ -75,7 +76,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr);
 
-    auto table_id = getContext()->tryResolveStorageID(alter, Context::ResolveOrdinary);
+    auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
 
     if (table_id)
@@ -155,6 +156,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
+
         if (!getContext()->getSettings().allow_experimental_statistic && (
             command_ast->type == ASTAlterCommand::ADD_STATISTIC ||
             command_ast->type == ASTAlterCommand::DROP_STATISTIC ||
@@ -407,6 +409,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             break;
         }
         case ASTAlterCommand::DELETE:
+        case ASTAlterCommand::APPLY_DELETED_MASK:
         case ASTAlterCommand::DROP_PARTITION:
         case ASTAlterCommand::DROP_DETACHED_PARTITION:
         {
@@ -456,6 +459,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MODIFY_QUERY:
         {
             required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_QUERY, database, table);
+            break;
+        }
+        case ASTAlterCommand::MODIFY_REFRESH:
+        {
+            required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_REFRESH, database, table);
             break;
         }
         case ASTAlterCommand::LIVE_VIEW_REFRESH:
@@ -526,6 +534,15 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
             }
         }
     }
+}
+
+void registerInterpreterAlterQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterAlterQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterAlterQuery", create_fn);
 }
 
 }

@@ -177,12 +177,6 @@ public:
     /// Checks that two instances belong to the same type
     virtual bool equals(const IDataType & rhs) const = 0;
 
-    /** Checks that two types are exactly identical. Note that two types may be equal but not identical.
-      * For example, `SimpleAggregateFunction(max, String)` and `SimpleAggregateFunction(anyLast, String)`
-      * This is used when creating a replicated table. Column types in different replicas must be identical
-      */
-    virtual bool identical(const IDataType & rhs) const;
-
     /// Various properties on behaviour of data type.
 
     /** The data type is dependent on parameters and types with different parameters are different.
@@ -446,6 +440,8 @@ template <typename T> inline bool isFloat(const T & data_type) { return WhichDat
 template <typename T> inline bool isNativeNumber(const T & data_type) { return WhichDataType(data_type).isNativeNumber(); }
 template <typename T> inline bool isNumber(const T & data_type) { return WhichDataType(data_type).isNumber(); }
 
+template <typename T> inline bool isEnum8(const T & data_type) { return WhichDataType(data_type).isEnum8(); }
+template <typename T> inline bool isEnum16(const T & data_type) { return WhichDataType(data_type).isEnum16(); }
 template <typename T> inline bool isEnum(const T & data_type) { return WhichDataType(data_type).isEnum(); }
 
 template <typename T> inline bool isDate(const T & data_type) { return WhichDataType(data_type).isDate(); }

@@ -110,12 +110,12 @@
     M(StorageHiveThreads, "Number of threads in the StorageHive thread pool.") \
     M(StorageHiveThreadsActive, "Number of threads in the StorageHive thread pool running a task.") \
     M(StorageHiveThreadsScheduled, "Number of queued or active jobs in the StorageHive thread pool.") \
-    M(TablesLoaderThreads, "Number of threads in the tables loader thread pool.") \
-    M(TablesLoaderThreadsActive, "Number of threads in the tables loader thread pool running a task.") \
-    M(TablesLoaderThreadsScheduled, "Number of queued or active jobs in the tables loader thread pool.") \
-    M(DatabaseOrdinaryThreads, "Number of threads in the Ordinary database thread pool.") \
-    M(DatabaseOrdinaryThreadsActive, "Number of threads in the Ordinary database thread pool running a task.") \
-    M(DatabaseOrdinaryThreadsScheduled, "Number of queued or active jobs in the Ordinary database thread pool.") \
+    M(TablesLoaderBackgroundThreads, "Number of threads in the tables loader background thread pool.") \
+    M(TablesLoaderBackgroundThreadsActive, "Number of threads in the tables loader background thread pool running a task.") \
+    M(TablesLoaderBackgroundThreadsScheduled, "Number of queued or active jobs in the tables loader background thread pool.") \
+    M(TablesLoaderForegroundThreads, "Number of threads in the tables loader foreground thread pool.") \
+    M(TablesLoaderForegroundThreadsActive, "Number of threads in the tables loader foreground thread pool running a task.") \
+    M(TablesLoaderForegroundThreadsScheduled, "Number of queued or active jobs in the tables loader foreground thread pool.") \
     M(DatabaseOnDiskThreads, "Number of threads in the DatabaseOnDisk thread pool.") \
     M(DatabaseOnDiskThreadsActive, "Number of threads in the DatabaseOnDisk thread pool running a task.") \
     M(DatabaseOnDiskThreadsScheduled, "Number of queued or active jobs in the DatabaseOnDisk thread pool.") \
@@ -212,6 +212,8 @@
     M(PartsCommitted, "Deprecated. See PartsActive.") \
     M(PartsPreActive, "The part is in data_parts, but not used for SELECTs.") \
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
+    M(AttachedDatabase, "Active database, used by current and upcoming SELECTs.") \
+    M(AttachedTable, "Active table, used by current and upcoming SELECTs.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
     M(PartsDeleting, "Not active data part with identity refcounter, it is deleting right now by a cleaner.") \
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
@@ -240,7 +242,7 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
-    M(S3Requests, "S3 requests") \
+    M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequets, "Number of outstanding requests") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
@@ -251,12 +253,15 @@
     M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
     M(CreatedTimersInQueryProfiler, "Number of Created thread local timers in QueryProfiler") \
     M(ActiveTimersInQueryProfiler, "Number of Active thread local timers in QueryProfiler") \
+    M(RefreshableViews, "Number materialized views with periodic refreshing (REFRESH)") \
+    M(RefreshingViews, "Number of materialized views currently executing a refresh") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)
 #else
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M)
 #endif
+
 
 namespace CurrentMetrics
 {

@@ -14,8 +14,9 @@ namespace DB
 struct Settings;
 
 /// min, max, any, anyLast, anyHeavy, etc...
-template <template <typename> class AggregateFunctionTemplate, template <typename> class Data>
-static IAggregateFunction * createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+template <template <typename> class AggregateFunctionTemplate, template <typename, bool...> class Data>
+static IAggregateFunction *
+createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
@@ -44,30 +45,8 @@ static IAggregateFunction * createAggregateFunctionSingleValue(const String & na
     if (which.idx == TypeIndex::String)
         return new AggregateFunctionTemplate<Data<SingleValueDataString>>(argument_type);
 
-    return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<>>>(argument_type);
+    return new AggregateFunctionTemplate<Data<SingleValueDataGeneric>>(argument_type);
 }
-
-template <template <typename> class AggregateFunctionTemplate, template <typename> class Data, bool RespectNulls = false>
-static IAggregateFunction * createAggregateFunctionSingleNullableValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
-{
-    assertNoParameters(name, parameters);
-    assertUnary(name, argument_types);
-
-    const DataTypePtr & argument_type = argument_types[0];
-    WhichDataType which(argument_type);
-    // If the result value could be null (excluding the case that no row is matched),
-    // use SingleValueDataGeneric.
-    if constexpr (!RespectNulls)
-    {
-        return createAggregateFunctionSingleValue<AggregateFunctionTemplate, Data>(name, argument_types, Array(), settings);
-    }
-    else
-    {
-        return new AggregateFunctionTemplate<Data<SingleValueDataGeneric<true>>>(argument_type);
-    }
-    UNREACHABLE();
-}
-
 
 /// argMin, argMax
 template <template <typename> class MinMaxData, typename ResData>
@@ -98,7 +77,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const DataTyp
     if (which.idx == TypeIndex::String)
         return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataString>>>(res_type, val_type);
 
-    return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataGeneric<>>>>(res_type, val_type);
+    return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataGeneric>>>(res_type, val_type);
 }
 
 template <template <typename> class MinMaxData>
@@ -134,7 +113,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMax(const String & name
     if (which.idx == TypeIndex::String)
         return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataString>(res_type, val_type);
 
-    return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataGeneric<>>(res_type, val_type);
+    return createAggregateFunctionArgMinMaxSecond<MinMaxData, SingleValueDataGeneric>(res_type, val_type);
 }
 
 }

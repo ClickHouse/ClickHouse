@@ -56,6 +56,7 @@
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/PasteJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 
 
@@ -580,7 +581,8 @@ void ExpressionAnalyzer::makeAggregateDescriptions(ActionsDAGPtr & actions, Aggr
 
         AggregateFunctionProperties properties;
         aggregate.parameters = (node.parameters) ? getAggregateFunctionParametersArray(node.parameters, "", getContext()) : Array();
-        aggregate.function = AggregateFunctionFactory::instance().get(node.name, types, aggregate.parameters, properties);
+        aggregate.function
+            = AggregateFunctionFactory::instance().get(node.name, node.nulls_action, types, aggregate.parameters, properties);
 
         descriptions.push_back(aggregate);
     }
@@ -788,11 +790,12 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
         }
 
         AggregateFunctionProperties properties;
-        window_function.aggregate_function
-            = AggregateFunctionFactory::instance().get(
-                window_function.function_node->name,
-                window_function.argument_types,
-                window_function.function_parameters, properties);
+        window_function.aggregate_function = AggregateFunctionFactory::instance().get(
+            window_function.function_node->name,
+            window_function.function_node->nulls_action,
+            window_function.argument_types,
+            window_function.function_parameters,
+            properties);
 
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it
@@ -856,11 +859,8 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
 
 bool ExpressionAnalyzer::isRemoteStorage() const
 {
-    const Settings & csettings = getContext()->getSettingsRef();
     // Consider any storage used in parallel replicas as remote, so the query is executed in multiple servers
-    const bool enable_parallel_processing_of_joins
-        = csettings.max_parallel_replicas > 1 && csettings.allow_experimental_parallel_reading_from_replicas > 0;
-    return syntax->is_remote_storage || enable_parallel_processing_of_joins;
+    return syntax->is_remote_storage || getContext()->canUseTaskBasedParallelReplicas();
 }
 
 const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
@@ -952,6 +952,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     std::unique_ptr<QueryPlan> & joined_plan,
     ContextPtr context)
 {
+    if (analyzed_join->kind() == JoinKind::Paste)
+        return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
+
     if (algorithm == JoinAlgorithm::DIRECT || algorithm == JoinAlgorithm::DEFAULT)
     {
         JoinPtr direct_join = tryKeyValueJoin(analyzed_join, right_sample_block);
@@ -1047,7 +1050,7 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         join_element.table_expression,
         context,
         original_right_column_names,
-        query_options.copy().setWithAllColumns().ignoreProjections(false).ignoreAlias(false));
+        query_options.copy().setWithAllColumns().ignoreAlias(false));
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {

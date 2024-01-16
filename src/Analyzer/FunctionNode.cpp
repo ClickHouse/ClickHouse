@@ -113,6 +113,11 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 
     buffer << ", function_type: " << function_type;
 
+    if (nulls_action == NullsAction::RESPECT_NULLS)
+        buffer << ", nulls_action : RESPECT_NULLS";
+    else if (nulls_action == NullsAction::IGNORE_NULLS)
+        buffer << ", nulls_action : IGNORE_NULLS";
+
     if (function)
         buffer << ", result_type: " + getResultType()->getName();
 
@@ -140,10 +145,9 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
-    if (function_name != rhs_typed.function_name ||
-        isAggregateFunction() != rhs_typed.isAggregateFunction() ||
-        isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() ||
-        isWindowFunction() != rhs_typed.isWindowFunction())
+    if (function_name != rhs_typed.function_name || isAggregateFunction() != rhs_typed.isAggregateFunction()
+        || isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() || isWindowFunction() != rhs_typed.isWindowFunction()
+        || nulls_action != rhs_typed.nulls_action)
         return false;
 
     if (isResolved() != rhs_typed.isResolved())
@@ -171,6 +175,7 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state) const
     hash_state.update(isOrdinaryFunction());
     hash_state.update(isAggregateFunction());
     hash_state.update(isWindowFunction());
+    hash_state.update(nulls_action);
 
     if (!isResolved())
         return;
@@ -192,6 +197,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
       */
     result_function->function = function;
     result_function->kind = kind;
+    result_function->nulls_action = nulls_action;
     result_function->wrap_with_nullable = wrap_with_nullable;
 
     return result_function;
@@ -202,6 +208,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     auto function_ast = std::make_shared<ASTFunction>();
 
     function_ast->name = function_name;
+    function_ast->nulls_action = nulls_action;
 
     if (function_name == "nothing")
     {

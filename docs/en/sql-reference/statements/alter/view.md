@@ -6,28 +6,28 @@ sidebar_label: VIEW
 
 # ALTER TABLE … MODIFY QUERY Statement
 
-You can modify `SELECT` query that was specified when a [materialized view](../create/view.md#materialized) was created with the `ALTER TABLE … MODIFY QUERY` statement without interrupting ingestion process. 
+You can modify `SELECT` query that was specified when a [materialized view](../create/view.md#materialized) was created with the `ALTER TABLE … MODIFY QUERY` statement without interrupting ingestion process.
 
-The `allow_experimental_alter_materialized_view_structure` setting must be enabled. 
+The `allow_experimental_alter_materialized_view_structure` setting must be enabled.
 
 This command is created to change materialized view created with `TO [db.]name` clause. It does not change the structure of the underling storage table and it does not change the columns' definition of the materialized view, because of this the application of this command is very limited for materialized views are created without `TO [db.]name` clause.
 
 **Example with TO table**
 
 ```sql
-CREATE TABLE events (ts DateTime, event_type String) 
+CREATE TABLE events (ts DateTime, event_type String)
 ENGINE = MergeTree ORDER BY (event_type, ts);
 
-CREATE TABLE events_by_day (ts DateTime, event_type String, events_cnt UInt64) 
+CREATE TABLE events_by_day (ts DateTime, event_type String, events_cnt UInt64)
 ENGINE = SummingMergeTree ORDER BY (event_type, ts);
 
-CREATE MATERIALIZED VIEW mv TO events_by_day AS 
+CREATE MATERIALIZED VIEW mv TO events_by_day AS
 SELECT toStartOfDay(ts) ts, event_type, count() events_cnt
 FROM events
-GROUP BY ts, event_type; 
+GROUP BY ts, event_type;
 
-INSERT INTO events 
-SELECT Date '2020-01-01' + interval number * 900 second, 
+INSERT INTO events
+SELECT Date '2020-01-01' + interval number * 900 second,
        ['imp', 'click'][number%2+1]
 FROM numbers(100);
 
@@ -43,23 +43,23 @@ ORDER BY ts, event_type;
 │ 2020-01-02 00:00:00 │ imp        │               2 │
 └─────────────────────┴────────────┴─────────────────┘
 
--- Let's add the new measurment `cost` 
+-- Let's add the new measurment `cost`
 -- and the new dimension `browser`.
 
-ALTER TABLE events 
+ALTER TABLE events
   ADD COLUMN browser String,
   ADD COLUMN cost Float64;
 
 -- Column do not have to match in a materialized view and TO
 -- (destination table), so the next alter does not break insertion.
 
-ALTER TABLE events_by_day 
+ALTER TABLE events_by_day
     ADD COLUMN cost Float64,
     ADD COLUMN browser String after event_type,
     MODIFY ORDER BY (event_type, ts, browser);
 
-INSERT INTO events 
-SELECT Date '2020-01-02' + interval number * 900 second, 
+INSERT INTO events
+SELECT Date '2020-01-02' + interval number * 900 second,
        ['imp', 'click'][number%2+1],
        ['firefox', 'safary', 'chrome'][number%3+1],
        10/(number+1)%33
@@ -82,16 +82,16 @@ ORDER BY ts, event_type;
 └─────────────────────┴────────────┴─────────┴────────────┴──────┘
 
 SET allow_experimental_alter_materialized_view_structure=1;
-  
-ALTER TABLE mv MODIFY QUERY 
+
+ALTER TABLE mv MODIFY QUERY
   SELECT toStartOfDay(ts) ts, event_type, browser,
   count() events_cnt,
   sum(cost) cost
   FROM events
   GROUP BY ts, event_type, browser;
 
-INSERT INTO events 
-SELECT Date '2020-01-03' + interval number * 900 second, 
+INSERT INTO events
+SELECT Date '2020-01-03' + interval number * 900 second,
        ['imp', 'click'][number%2+1],
        ['firefox', 'safary', 'chrome'][number%3+1],
        10/(number+1)%33
@@ -138,7 +138,7 @@ PRIMARY KEY (event_type, ts)
 ORDER BY (event_type, ts, browser)
 SETTINGS index_granularity = 8192
 
--- !!! The columns' definition is unchanged but it does not matter, we are not quering 
+-- !!! The columns' definition is unchanged but it does not matter, we are not quering
 -- MATERIALIZED VIEW, we are quering TO (storage) table.
 -- SELECT section is updated.
 
@@ -169,7 +169,7 @@ The application is very limited because you can only change the `SELECT` section
 
 ```sql
 CREATE TABLE src_table (`a` UInt32) ENGINE = MergeTree ORDER BY a;
-CREATE MATERIALIZED VIEW mv (`a` UInt32) ENGINE = MergeTree ORDER BY a AS SELECT a FROM src_table; 
+CREATE MATERIALIZED VIEW mv (`a` UInt32) ENGINE = MergeTree ORDER BY a AS SELECT a FROM src_table;
 INSERT INTO src_table (a) VALUES (1), (2);
 SELECT * FROM mv;
 ```
@@ -199,3 +199,7 @@ SELECT * FROM mv;
 ## ALTER LIVE VIEW Statement
 
 `ALTER LIVE VIEW ... REFRESH` statement refreshes a [Live view](../create/view.md#live-view). See [Force Live View Refresh](../create/view.md#live-view-alter-refresh).
+
+## ALTER TABLE … MODIFY REFRESH Statement
+
+`ALTER TABLE ... MODIFY REFRESH` statement changes refresh parameters of a [Refreshable Materialized View](../create/view.md#refreshable-materialized-view). See [Changing Refresh Parameters](../create/view.md#changing-refresh-parameters).

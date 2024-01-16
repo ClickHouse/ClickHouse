@@ -161,6 +161,9 @@ target_include_directories(_jemalloc SYSTEM PRIVATE
 
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
 
+# Because our coverage callbacks call malloc, and recursive call of malloc could not work.
+target_compile_options(_jemalloc PRIVATE ${WITHOUT_COVERAGE_FLAGS_LIST})
+
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     target_compile_definitions(_jemalloc PRIVATE
         -DJEMALLOC_DEBUG=1

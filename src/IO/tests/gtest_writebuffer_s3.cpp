@@ -210,9 +210,13 @@ struct Client : DB::S3::Client
                std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
                GetClientConfiguration(),
                Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-               /* use_virtual_addressing = */ true)
+               DB::S3::ClientSettings{
+                   .use_virtual_addressing = true,
+                   .disable_checksum= false,
+                   .gcs_issue_compose_request = false,
+               })
         , store(mock_s3_store)
-    { }
+    {}
 
     static std::shared_ptr<Client> CreateClient(String bucket = "mock-s3-bucket")
     {

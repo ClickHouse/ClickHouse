@@ -1,22 +1,13 @@
 #include "SensitiveDataMasker.h"
 
-#include <mutex>
 #include <set>
 #include <string>
 #include <atomic>
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
-
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Common/logger_useful.h>
+#include <Common/re2.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -95,28 +86,20 @@ public:
 SensitiveDataMasker::~SensitiveDataMasker() = default;
 
 std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
-std::mutex SensitiveDataMasker::instance_mutex;
 
 void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
 {
-
     if (!sensitive_data_masker_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: the 'sensitive_data_masker' is not set");
 
-    std::lock_guard lock(instance_mutex);
     if (sensitive_data_masker_->rulesCount() > 0)
     {
         sensitive_data_masker = std::move(sensitive_data_masker_);
-    }
-    else
-    {
-        sensitive_data_masker.reset();
     }
 }
 
 SensitiveDataMasker * SensitiveDataMasker::getInstance()
 {
-    std::lock_guard lock(instance_mutex);
     return sensitive_data_masker.get();
 }
 
