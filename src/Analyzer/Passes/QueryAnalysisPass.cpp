@@ -3140,6 +3140,64 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
         }
     }
 
+    auto check_nested_column_not_in_using = [&join_using_column_name_to_column_node, &identifier_lookup](const QueryTreeNodePtr & node)
+    {
+        /** tldr: When an identifier is resolved into the function `nested` or `getSubcolumn`, and
+          * some column in its argument is in the USING list and its type has to be updated, we throw an error to avoid overcomplication.
+          *
+          * Identifiers can be resolved into functions in case of nested or subcolumns.
+          * For example `t.t.t` can be resolved into `getSubcolumn(t, 't.t')` function in case of `t` is `Tuple`.
+          * So, `t` in USING list is resolved from JOIN itself and has supertype of columns from left and right table.
+          * But `t` in `getSubcolumn` argument is still resolved from table and we need to update its type.
+          *
+          * Example:
+          *
+          * SELECT t.t FROM (
+          *     SELECT ((1, 's'), 's') :: Tuple(t Tuple(t UInt32, s1 String), s1 String) as t
+          * ) AS a FULL JOIN (
+          *     SELECT ((1, 's'), 's') :: Tuple(t Tuple(t Int32, s2 String), s2 String) as t
+          * ) AS b USING t;
+          *
+          * Result type of `t` is `Tuple(Tuple(Int64, String), String)` (different type and no names for subcolumns),
+          * so it may be tricky to have a correct type for `t.t` that is resolved into getSubcolumn(t, 't').
+          *
+          * It can be more complicated in case of Nested subcolumns, in that case in query:
+          *     SELECT t FROM ... JOIN ... USING (t.t)
+          * Here, `t` is resolved into function `nested(['t', 's'], t.t, t.s) so, `t.t` should be from JOIN and `t.s` should be from table.
+          *
+          * Updating type accordingly is pretty complicated, so just forbid such cases.
+          *
+          * While it still may work for storages that support selecting subcolumns directly without `getSubcolumn` function:
+          *     SELECT t, t.t, toTypeName(t), toTypeName(t.t) FROM t1 AS a FULL JOIN t2 AS b USING t.t;
+          * We just support it as a best-effort: `t` will have original type from table, but `t.t` will have super-type from JOIN.
+          * Probably it's good to prohibit such cases as well, but it's not clear how to check it in general case.
+          */
+        if (node->getNodeType() != QueryTreeNodeType::FUNCTION)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected node type {}, expected function node", node->getNodeType());
+
+        const auto & function_argument_nodes = node->as<FunctionNode &>().getArguments().getNodes();
+        for (const auto & argument_node : function_argument_nodes)
+        {
+            if (argument_node->getNodeType() == QueryTreeNodeType::COLUMN)
+            {
+                const auto & column_name = argument_node->as<ColumnNode &>().getColumnName();
+                if (join_using_column_name_to_column_node.contains(column_name))
+                    throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                        "Cannot select subcolumn for identifier '{}' while joining using column '{}'",
+                            identifier_lookup.identifier, column_name);
+            }
+            else if (argument_node->getNodeType() == QueryTreeNodeType::CONSTANT)
+            {
+                continue;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected node type {} for argument node in {}",
+                    argument_node->getNodeType(), node->formatASTForErrorMessage());
+            }
+        }
+    };
+
     std::optional<JoinTableSide> resolved_side;
     QueryTreeNodePtr resolved_identifier;
 
@@ -3173,12 +3231,23 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
     if (left_resolved_identifier && right_resolved_identifier)
     {
-        auto & left_resolved_column = left_resolved_identifier->as<ColumnNode &>();
-        auto & right_resolved_column = right_resolved_identifier->as<ColumnNode &>();
+        auto using_column_node_it = join_using_column_name_to_column_node.end();
+        if (left_resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN && right_resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN)
+        {
+            auto & left_resolved_column = left_resolved_identifier->as<ColumnNode &>();
+            auto & right_resolved_column = right_resolved_identifier->as<ColumnNode &>();
+            if (left_resolved_column.getColumnName() == right_resolved_column.getColumnName())
+                using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
+        }
+        else
+        {
+            if (left_resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
+                check_nested_column_not_in_using(left_resolved_identifier);
+            if (right_resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
+                check_nested_column_not_in_using(right_resolved_identifier);
+        }
 
-        auto using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
-        if (using_column_node_it != join_using_column_name_to_column_node.end()
-            && left_resolved_column.getColumnName() == right_resolved_column.getColumnName())
+        if (using_column_node_it != join_using_column_name_to_column_node.end())
         {
             JoinTableSide using_column_inner_column_table_side = isRight(join_kind) ? JoinTableSide::Right : JoinTableSide::Left;
             auto & using_column_node = using_column_node_it->second->as<ColumnNode &>();
@@ -3253,39 +3322,45 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     else if (left_resolved_identifier)
     {
         resolved_side = JoinTableSide::Left;
-        auto & left_resolved_column = left_resolved_identifier->as<ColumnNode &>();
-
         resolved_identifier = left_resolved_identifier;
 
-        auto using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
-        if (using_column_node_it != join_using_column_name_to_column_node.end() &&
-            !using_column_node_it->second->getColumnType()->equals(*left_resolved_column.getColumnType()))
+        if (left_resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
         {
-            auto left_resolved_column_clone = std::static_pointer_cast<ColumnNode>(left_resolved_column.clone());
-            left_resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
-            resolved_identifier = std::move(left_resolved_column_clone);
+            check_nested_column_not_in_using(left_resolved_identifier);
         }
         else
         {
-            resolved_identifier = left_resolved_identifier;
+            auto & left_resolved_column = left_resolved_identifier->as<ColumnNode &>();
+            auto using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
+            if (using_column_node_it != join_using_column_name_to_column_node.end() &&
+                !using_column_node_it->second->getColumnType()->equals(*left_resolved_column.getColumnType()))
+            {
+                auto left_resolved_column_clone = std::static_pointer_cast<ColumnNode>(left_resolved_column.clone());
+                left_resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
+                resolved_identifier = std::move(left_resolved_column_clone);
+            }
         }
     }
     else if (right_resolved_identifier)
     {
         resolved_side = JoinTableSide::Right;
-        auto & right_resolved_column = right_resolved_identifier->as<ColumnNode &>();
+        resolved_identifier = right_resolved_identifier;
 
-        auto using_column_node_it = join_using_column_name_to_column_node.find(right_resolved_column.getColumnName());
-        if (using_column_node_it != join_using_column_name_to_column_node.end() &&
-            !using_column_node_it->second->getColumnType()->equals(*right_resolved_column.getColumnType()))
+        if (right_resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
         {
-            auto right_resolved_column_clone = std::static_pointer_cast<ColumnNode>(right_resolved_column.clone());
-            right_resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
-            resolved_identifier = std::move(right_resolved_column_clone);
+            check_nested_column_not_in_using(right_resolved_identifier);
         }
         else
         {
-            resolved_identifier = right_resolved_identifier;
+            auto & right_resolved_column = right_resolved_identifier->as<ColumnNode &>();
+            auto using_column_node_it = join_using_column_name_to_column_node.find(right_resolved_column.getColumnName());
+            if (using_column_node_it != join_using_column_name_to_column_node.end() &&
+                !using_column_node_it->second->getColumnType()->equals(*right_resolved_column.getColumnType()))
+            {
+                auto right_resolved_column_clone = std::static_pointer_cast<ColumnNode>(right_resolved_column.clone());
+                right_resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
+                resolved_identifier = std::move(right_resolved_column_clone);
+            }
         }
     }
 
