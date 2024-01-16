@@ -43,29 +43,29 @@ namespace
 {
 
 constexpr double PI = std::numbers::pi_v<double>;
-constexpr float PI_F = std::numbers::pi_v<float>;
+constexpr double PI_F = std::numbers::pi_v<double>;
 
-constexpr float RAD_IN_DEG = static_cast<float>(PI / 180.0);
-constexpr float RAD_IN_DEG_HALF = static_cast<float>(PI / 360.0);
+constexpr double RAD_IN_DEG = static_cast<double>(PI / 180.0);
+constexpr double RAD_IN_DEG_HALF = static_cast<double>(PI / 360.0);
 
 constexpr size_t COS_LUT_SIZE = 1024; // maxerr 0.00063%
-constexpr float COS_LUT_SIZE_F = 1024.0f; // maxerr 0.00063%
+constexpr double COS_LUT_SIZE_F = 1024.0f; // maxerr 0.00063%
 constexpr size_t ASIN_SQRT_LUT_SIZE = 512;
 constexpr size_t METRIC_LUT_SIZE = 1024;
 
 /** Earth radius in meters using WGS84 authalic radius.
   * We use this value to be consistent with H3 library.
   */
-constexpr float EARTH_RADIUS = 6371007.180918475f;
-constexpr float EARTH_DIAMETER = 2 * EARTH_RADIUS;
+constexpr double EARTH_RADIUS = 6371007.180918475f;
+constexpr double EARTH_DIAMETER = 2 * EARTH_RADIUS;
 
 
-float cos_lut[COS_LUT_SIZE + 1];       /// cos(x) table
-float asin_sqrt_lut[ASIN_SQRT_LUT_SIZE + 1]; /// asin(sqrt(x)) * earth_diameter table
+double cos_lut[COS_LUT_SIZE + 1];       /// cos(x) table
+double asin_sqrt_lut[ASIN_SQRT_LUT_SIZE + 1]; /// asin(sqrt(x)) * earth_diameter table
 
-float sphere_metric_lut[METRIC_LUT_SIZE + 1]; /// sphere metric, unitless: the distance in degrees for one degree across longitude depending on latitude
-float sphere_metric_meters_lut[METRIC_LUT_SIZE + 1]; /// sphere metric: the distance in meters for one degree across longitude depending on latitude
-float wgs84_metric_meters_lut[2 * (METRIC_LUT_SIZE + 1)]; /// ellipsoid metric: the distance in meters across one degree latitude/longitude depending on latitude
+double sphere_metric_lut[METRIC_LUT_SIZE + 1]; /// sphere metric, unitless: the distance in degrees for one degree across longitude depending on latitude
+double sphere_metric_meters_lut[METRIC_LUT_SIZE + 1]; /// sphere metric: the distance in meters for one degree across longitude depending on latitude
+double wgs84_metric_meters_lut[2 * (METRIC_LUT_SIZE + 1)]; /// ellipsoid metric: the distance in meters across one degree latitude/longitude depending on latitude
 
 
 inline double sqr(double v)
@@ -73,7 +73,7 @@ inline double sqr(double v)
     return v * v;
 }
 
-inline float sqrf(float v)
+inline double sqrf(double v)
 {
     return v * v;
 }
@@ -81,10 +81,10 @@ inline float sqrf(float v)
 void geodistInit()
 {
     for (size_t i = 0; i <= COS_LUT_SIZE; ++i)
-        cos_lut[i] = static_cast<float>(cos(2 * PI * i / COS_LUT_SIZE)); // [0, 2 * pi] -> [0, COS_LUT_SIZE]
+        cos_lut[i] = static_cast<double>(cos(2 * PI * i / COS_LUT_SIZE)); // [0, 2 * pi] -> [0, COS_LUT_SIZE]
 
     for (size_t i = 0; i <= ASIN_SQRT_LUT_SIZE; ++i)
-        asin_sqrt_lut[i] = static_cast<float>(asin(
+        asin_sqrt_lut[i] = static_cast<double>(asin(
             sqrt(static_cast<double>(i) / ASIN_SQRT_LUT_SIZE))); // [0, 1] -> [0, ASIN_SQRT_LUT_SIZE]
 
     for (size_t i = 0; i <= METRIC_LUT_SIZE; ++i)
@@ -95,22 +95,22 @@ void geodistInit()
         /// depending on the latitude (in radians).
 
         /// https://github.com/mapbox/cheap-ruler/blob/master/index.js#L67
-        wgs84_metric_meters_lut[i * 2] = static_cast<float>(sqr(111132.09 - 566.05 * cos(2 * latitude) + 1.20 * cos(4 * latitude)));
-        wgs84_metric_meters_lut[i * 2 + 1] = static_cast<float>(sqr(111415.13 * cos(latitude) - 94.55 * cos(3 * latitude) + 0.12 * cos(5 * latitude)));
+        wgs84_metric_meters_lut[i * 2] = static_cast<double>(sqr(111132.09 - 566.05 * cos(2 * latitude) + 1.20 * cos(4 * latitude)));
+        wgs84_metric_meters_lut[i * 2 + 1] = static_cast<double>(sqr(111415.13 * cos(latitude) - 94.55 * cos(3 * latitude) + 0.12 * cos(5 * latitude)));
 
-        sphere_metric_meters_lut[i] = static_cast<float>(sqr((EARTH_DIAMETER * PI / 360) * cos(latitude)));
+        sphere_metric_meters_lut[i] = static_cast<double>(sqr((EARTH_DIAMETER * PI / 360) * cos(latitude)));
 
-        sphere_metric_lut[i] = static_cast<float>(sqr(cos(latitude)));
+        sphere_metric_lut[i] = static_cast<double>(sqr(cos(latitude)));
     }
 }
 
-inline NO_SANITIZE_UNDEFINED size_t floatToIndex(float x)
+inline NO_SANITIZE_UNDEFINED size_t doubleToIndex(double x)
 {
     /// Implementation specific behaviour on overflow or infinite value.
     return static_cast<size_t>(x);
 }
 
-inline float geodistDegDiff(float f)
+inline double geodistDegDiff(double f)
 {
     f = fabsf(f);
     if (f > 180)
@@ -118,19 +118,19 @@ inline float geodistDegDiff(float f)
     return f;
 }
 
-inline float geodistFastCos(float x)
+inline double geodistFastCos(double x)
 {
-    float y = fabsf(x) * (COS_LUT_SIZE_F / PI_F / 2.0f);
-    size_t i = floatToIndex(y);
+    double y = fabsf(x) * (COS_LUT_SIZE_F / PI_F / 2.0f);
+    size_t i = doubleToIndex(y);
     y -= i;
     i &= (COS_LUT_SIZE - 1);
     return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
 }
 
-inline float geodistFastSin(float x)
+inline double geodistFastSin(double x)
 {
-    float y = fabsf(x) * (COS_LUT_SIZE_F / PI_F / 2.0f);
-    size_t i = floatToIndex(y);
+    double y = fabsf(x) * (COS_LUT_SIZE_F / PI_F / 2.0f);
+    size_t i = doubleToIndex(y);
     y -= i;
     i = (i - COS_LUT_SIZE / 4) & (COS_LUT_SIZE - 1); // cos(x - pi / 2) = sin(x), costable / 4 = pi / 2
     return cos_lut[i] + (cos_lut[i + 1] - cos_lut[i]) * y;
@@ -138,22 +138,22 @@ inline float geodistFastSin(float x)
 
 /// fast implementation of asin(sqrt(x))
 /// max error in floats 0.00369%, in doubles 0.00072%
-inline float geodistFastAsinSqrt(float x)
+inline double geodistFastAsinSqrt(double x)
 {
     if (x < 0.122f)
     {
         // distance under 4546 km, Taylor error under 0.00072%
-        float y = sqrtf(x);
+        double y = sqrt(x);
         return y + x * y * 0.166666666666666f + x * x * y * 0.075f + x * x * x * y * 0.044642857142857f;
     }
     if (x < 0.948f)
     {
         // distance under 17083 km, 512-entry LUT error under 0.00072%
         x *= ASIN_SQRT_LUT_SIZE;
-        size_t i = floatToIndex(x);
+        size_t i = doubleToIndex(x);
         return asin_sqrt_lut[i] + (asin_sqrt_lut[i + 1] - asin_sqrt_lut[i]) * (x - i);
     }
-    return asinf(sqrtf(x)); // distance over 17083 km, just compute exact
+    return asinf(sqrt(x)); // distance over 17083 km, just compute exact
 }
 
 
@@ -172,10 +172,10 @@ namespace
 {
 
 template <Method method>
-float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
+double distance(double lon1deg, double lat1deg, double lon2deg, double lat2deg)
 {
-    float lat_diff = geodistDegDiff(lat1deg - lat2deg);
-    float lon_diff = geodistDegDiff(lon1deg - lon2deg);
+    double lat_diff = geodistDegDiff(lat1deg - lat2deg);
+    double lon_diff = geodistDegDiff(lon1deg - lon2deg);
 
     if (lon_diff < 13)
     {
@@ -187,13 +187,13 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
         ///  (Remember how a plane flies from Amsterdam to New York)
         /// But if longitude is close but latitude is different enough, there is no difference between meridian and great circle line.
 
-        float latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, METRIC_LUT_SIZE] indexes
-        size_t latitude_midpoint_index = floatToIndex(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
+        double latitude_midpoint = (lat1deg + lat2deg + 180) * METRIC_LUT_SIZE / 360; // [-90, 90] degrees -> [0, METRIC_LUT_SIZE] indexes
+        size_t latitude_midpoint_index = doubleToIndex(latitude_midpoint) & (METRIC_LUT_SIZE - 1);
 
         /// This is linear interpolation between two table items at index "latitude_midpoint_index" and "latitude_midpoint_index + 1".
 
-        float k_lat{};
-        float k_lon{};
+        double k_lat{};
+        double k_lon{};
 
         if constexpr (method == Method::SPHERE_DEGREES)
         {
@@ -219,13 +219,13 @@ float distance(float lon1deg, float lat1deg, float lon2deg, float lat2deg)
         }
 
         /// Metric on a tangent plane: it differs from Euclidean metric only by scale of coordinates.
-        return sqrtf(k_lat * lat_diff * lat_diff + k_lon * lon_diff * lon_diff);
+        return sqrt(k_lat * lat_diff * lat_diff + k_lon * lon_diff * lon_diff);
     }
     else
     {
         // points too far away; use haversine
 
-        float a = sqrf(geodistFastSin(lat_diff * RAD_IN_DEG_HALF))
+        double a = sqrf(geodistFastSin(lat_diff * RAD_IN_DEG_HALF))
             + geodistFastCos(lat1deg * RAD_IN_DEG) * geodistFastCos(lat2deg * RAD_IN_DEG) * sqrf(geodistFastSin(lon_diff * RAD_IN_DEG_HALF));
 
         if constexpr (method == Method::SPHERE_DEGREES)
@@ -301,7 +301,7 @@ private:
         if (!column_typed)
             throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of argument {} of function {}. Must be Float64.",
+                    "Illegal type {} of argument {} of function {}. Must be Float32/Float64.",
                     arguments[argument_index].type->getName(),
                     argument_index + 1,
                     getName());
