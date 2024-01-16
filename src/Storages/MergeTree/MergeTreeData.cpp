@@ -7128,7 +7128,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         clone_params);
 }
 
-MergeTreePartition MergeTreePartition::createPartitionFromSourcePart(
+MergeTreePartition MergeTreeData::createPartitionFromSourcePart(
     const MergeTreeData::DataPartPtr & src_part,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr local_context)
