@@ -130,26 +130,15 @@ struct ModuloImpl
         }
         else
         {
-            if constexpr (std::is_floating_point_v<A>)
-                if (isNaN(a) || a > std::numeric_limits<IntegerAType>::max() || a < std::numeric_limits<IntegerAType>::lowest())
-                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
-
-            if constexpr (std::is_floating_point_v<B>)
-                if (isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
-                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
-
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
-            if constexpr (!std::numeric_limits<IntegerAType>::is_signed &&
-            std::numeric_limits<IntegerBType>::is_signed)
+            if constexpr (!std::numeric_limits<IntegerBType>::is_signed && std::numeric_limits<IntegerAType>::is_signed)
             {
-                using CastA = typename NumberTraits::Construct<true, false, NumberTraits::nextSize(sizeof(IntegerAType), true)>::Type;
-                return static_cast<Result>(static_cast<CastA>(a) % b);
-            }
-            else if constexpr (!std::numeric_limits<IntegerBType>::is_signed && std::numeric_limits<IntegerAType>::is_signed)
-            {
-                using CastB = typename NumberTraits::Construct<true, false, NumberTraits::nextSize(sizeof(IntegerBType), true)>::Type;
-                return static_cast<Result>(a % static_cast<CastB>(b));
+                if (a < 0)
+                {
+                    using CastA = typename NumberTraits::Construct<false, false, sizeof(IntegerAType)>::Type;
+                    return -(static_cast<Result>(static_cast<CastA>(-a) % b));
+                }
             }
             return static_cast<Result>(IntegerAType(a) % IntegerBType(b));
         }
