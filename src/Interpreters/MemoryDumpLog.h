@@ -4,7 +4,7 @@
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
-
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -21,7 +21,7 @@ struct MemoryDumpLogElement
     UInt64 ptr{};
 
     static std::string name() { return "MemoryDumpLog"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
     static const char * getCustomColumnList() { return nullptr; }

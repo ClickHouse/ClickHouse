@@ -13,9 +13,9 @@
 namespace DB
 {
 
-NamesAndTypesList MemoryDumpLogElement::getNamesAndTypes()
+ColumnsDescription MemoryDumpLogElement::getColumnsDescription()
 {
-    return
+    return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
