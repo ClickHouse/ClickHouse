@@ -196,7 +196,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         if (shutdown)
             return on_error("shutdown");
 
-        /// We must not to allocate any memory after we emplaced a job in a queue.
+        /// We must not allocate any memory after we emplaced a job in a queue.
         /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
 
         /// Check if there are enough threads to process job.
@@ -296,7 +296,7 @@ void ThreadPoolImpl<Thread>::wait()
     /// If threads are waiting on condition variables, but there are some jobs in the queue
     /// then it will prevent us from deadlock.
     new_job_or_shutdown.notify_all();
-    job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
+    no_jobs.wait(lock, [this] { return scheduled_jobs == 0; });
 
     if (first_exception)
     {
@@ -409,11 +409,16 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 if (!shutdown)
                 {
                     job_finished.notify_one();
+                    if (!scheduled_jobs)
+                    {
+                        no_jobs.notify_all();
+                    }
                 }
                 else
                 {
-                    job_finished.notify_all();
+                    job_finished.notify_one();
                     new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
+                    no_jobs.notify_all();
                 }
 
             }

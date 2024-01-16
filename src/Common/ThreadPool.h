@@ -115,6 +115,7 @@ private:
     mutable std::mutex mutex;
     std::condition_variable job_finished;
     std::condition_variable new_job_or_shutdown;
+    std::condition_variable no_jobs;
 
     Metric metric_threads;
     Metric metric_active_threads;
