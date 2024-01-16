@@ -630,6 +630,10 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
         const auto preprocess_logs = [&]
         {
             auto lock = raft_instance->lockRaft();
+
+            if (keeper_context->local_logs_preprocessed)
+                return;
+
             keeper_context->local_logs_preprocessed = true;
             auto log_store = state_manager->load_log_store();
             auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, log_store->next_slot());

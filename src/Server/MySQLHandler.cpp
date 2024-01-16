@@ -2,7 +2,6 @@
 
 #include <limits>
 #include <optional>
-#include <regex>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -26,6 +25,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
+#include <Common/re2.h>
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>
@@ -64,28 +64,34 @@ static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 static String selectEmptyReplacementQuery(const String & query);
 static String showTableStatusReplacementQuery(const String & query);
 static String killConnectionIdReplacementQuery(const String & query);
-static String selectLimitReplacementQuery(const String & query);
+static std::optional<String> setSettingReplacementQuery(const String & query, const String & mysql_setting, const String & native_setting);
 
 MySQLHandler::MySQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, uint32_t connection_id_)
+    bool ssl_enabled, uint32_t connection_id_,
+    const ProfileEvents::Event & read_event_,
+    const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(&Poco::Logger::get("MySQLHandler"))
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
+    , read_event(read_event_)
+    , write_event(write_event_)
 {
     server_capabilities = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
     if (ssl_enabled)
         server_capabilities |= CLIENT_SSL;
 
-    replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
-    replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
-    replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
-    replacements.emplace("SET SQL_SELECT_LIMIT", selectLimitReplacementQuery);
+    queries_replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
+    queries_replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
+    queries_replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
+    settings_replacements.emplace("SQL_SELECT_LIMIT", "limit");
+    settings_replacements.emplace("NET_WRITE_TIMEOUT", "send_timeout");
+    settings_replacements.emplace("NET_READ_TIMEOUT", "receive_timeout");
 }
 
 void MySQLHandler::run()
@@ -98,8 +104,8 @@ void MySQLHandler::run()
 
     session->setClientConnectionId(connection_id);
 
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket());
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket());
+    in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
+    out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
     try
@@ -334,15 +340,29 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         bool should_replace = false;
         bool with_output = false;
 
-        for (auto const & x : replacements)
+        // Queries replacements
+        for (auto const & [query_to_replace, replacement_fn] : queries_replacements)
         {
-            if (0 == strncasecmp(x.first.c_str(), query.c_str(), x.first.size()))
+            if (0 == strncasecmp(query_to_replace.c_str(), query.c_str(), query_to_replace.size()))
             {
                 should_replace = true;
-                replacement_query = x.second(query);
+                replacement_query = replacement_fn(query);
                 break;
             }
         }
+
+        // Settings replacements
+        if (!should_replace)
+            for (auto const & [mysql_setting, native_setting] : settings_replacements)
+            {
+                const auto replacement_query_opt = setSettingReplacementQuery(query, mysql_setting, native_setting);
+                if (replacement_query_opt.has_value())
+                {
+                    should_replace = true;
+                    replacement_query = replacement_query_opt.value();
+                    break;
+                }
+            }
 
         ReadBufferFromString replacement(replacement_query);
 
@@ -489,8 +509,10 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     bool ssl_enabled,
     uint32_t connection_id_,
     RSA & public_key_,
-    RSA & private_key_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_)
+    RSA & private_key_,
+    const ProfileEvents::Event & read_event_,
+    const ProfileEvents::Event & write_event_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_, read_event_, write_event_)
     , public_key(public_key_)
     , private_key(private_key_)
 {}
@@ -524,16 +546,18 @@ void MySQLHandlerSSL::finishHandshakeSSL(
 
 static bool isFederatedServerSetupSetCommand(const String & query)
 {
-    static const std::regex expr{
+    re2::RE2::Options regexp_options;
+    regexp_options.set_case_sensitive(false);
+    static const re2::RE2 expr(
         "(^(SET NAMES(.*)))"
         "|(^(SET character_set_results(.*)))"
         "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
         "|(^(SET AUTOCOMMIT(.*)))"
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
-        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
-        , std::regex::icase};
-    return 1 == std::regex_match(query, expr);
+        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
+    assert(expr.ok());
+    return re2::RE2::FullMatch(query, expr);
 }
 
 /// Replace "[query(such as SHOW VARIABLES...)]" into "".
@@ -577,12 +601,12 @@ static String showTableStatusReplacementQuery(const String & query)
     return query;
 }
 
-static String selectLimitReplacementQuery(const String & query)
+static std::optional<String> setSettingReplacementQuery(const String & query, const String & mysql_setting, const String & native_setting)
 {
-    const String prefix = "SET SQL_SELECT_LIMIT";
-    if (query.starts_with(prefix))
-        return "SET limit" + std::string(query.data() + prefix.length());
-    return query;
+    const String prefix = "SET " + mysql_setting;
+    if (0 == strncasecmp(prefix.c_str(), query.c_str(), prefix.size()))
+        return "SET " + native_setting + String(query.data() + prefix.length());
+    return std::nullopt;
 }
 
 /// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id LIKE 'mysql:[connection_id]:xxx'".
@@ -592,8 +616,8 @@ static String killConnectionIdReplacementQuery(const String & query)
     if (query.size() > prefix.size())
     {
         String suffix = query.data() + prefix.length();
-        static const std::regex expr{"^[0-9]"};
-        if (std::regex_match(suffix, expr))
+        static const re2::RE2 expr("^[0-9]");
+        if (re2::RE2::FullMatch(suffix, expr))
         {
             String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", suffix);
             return replacement;

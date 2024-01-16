@@ -391,6 +391,9 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3PutObject, "Number of DiskS3 API PutObject calls.") \
     M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
     \
+    M(S3Clients, "Number of created S3 clients.") \
+    M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.") \
+    \
     M(EngineFileLikeReadFiles, "Number of files read in table engines working with files (like File/S3/URL/HDFS).") \
     \
     M(ReadBufferFromS3Microseconds, "Time spent on reading from S3.") \
@@ -598,6 +601,19 @@ The server successfully detected this situation and will download merged part fr
     M(LogWarning, "Number of log messages with level Warning") \
     M(LogError, "Number of log messages with level Error") \
     M(LogFatal, "Number of log messages with level Fatal") \
+    \
+    M(InterfaceHTTPSendBytes, "Number of bytes sent through HTTP interfaces") \
+    M(InterfaceHTTPReceiveBytes, "Number of bytes received through HTTP interfaces") \
+    M(InterfaceNativeSendBytes, "Number of bytes sent through native interfaces") \
+    M(InterfaceNativeReceiveBytes, "Number of bytes received through native interfaces") \
+    M(InterfacePrometheusSendBytes, "Number of bytes sent through Prometheus interfaces") \
+    M(InterfacePrometheusReceiveBytes, "Number of bytes received through Prometheus interfaces") \
+    M(InterfaceInterserverSendBytes, "Number of bytes sent through interserver interfaces") \
+    M(InterfaceInterserverReceiveBytes, "Number of bytes received through interserver interfaces") \
+    M(InterfaceMySQLSendBytes, "Number of bytes sent through MySQL interfaces") \
+    M(InterfaceMySQLReceiveBytes, "Number of bytes received through MySQL interfaces") \
+    M(InterfacePostgreSQLSendBytes, "Number of bytes sent through PostgreSQL interfaces") \
+    M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces") \
     \
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas") \
 

@@ -22,7 +22,7 @@ public:
 
     std::string getName() const override { return "SystemBuildOptions"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 };
 
 }
