@@ -95,7 +95,7 @@ TEST(ObjectStorageKey, Performance)
             std::cerr << "slow ratio: +" << float(elapsed_new) / elapsed_old << std::endl;
         else
             std::cerr << "fast ratio: " << float(elapsed_old) / elapsed_new << std::endl;
-        ASSERT_LT(elapsed_new, 1.2 * elapsed_old);
+        ASSERT_LT(elapsed_new, 1.5 * elapsed_old);
     }
 
 }

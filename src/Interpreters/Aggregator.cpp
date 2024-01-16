@@ -1204,8 +1204,9 @@ void NO_INLINE Aggregator::executeImplBatch(
                     inst->state_offset,
                     [&](AggregateDataPtr & aggregate_data)
                     {
-                        aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                        createAggregateStates(aggregate_data);
+                        AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                        createAggregateStates(place);
+                        aggregate_data = place;
                     },
                     state.getKeyData(),
                     inst->batch_arguments,
@@ -2856,7 +2857,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     }
 }
 
-ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedDataVariants & data_variants) const
+ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedDataVariants && data_variants) const
 {
     if (data_variants.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty data passed to Aggregator::prepareVariantsToMerge.");

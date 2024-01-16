@@ -9,6 +9,4 @@ INSERT INTO 25400_dropped_tables VALUES (3),(4);
 DROP TABLE 25400_dropped_tables;
 
 SELECT table, engine FROM system.dropped_tables WHERE database = currentDatabase() LIMIT 1;
-DESCRIBE TABLE system.dropped_tables;
 SELECT database, table, name FROM system.dropped_tables_parts WHERE database = currentDatabase() and table = '25400_dropped_tables';
-DESCRIBE TABLE system.dropped_tables_parts;

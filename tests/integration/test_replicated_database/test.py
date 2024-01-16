@@ -338,6 +338,8 @@ def test_alter_drop_part(started_cluster, engine):
     main_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (123)")
     if engine == "MergeTree":
         dummy_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (456)")
+    else:
+        main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part PULL")
     main_node.query(f"ALTER TABLE {database}.alter_drop_part DROP PART '{part_name}'")
     assert main_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
     if engine == "ReplicatedMergeTree":
