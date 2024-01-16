@@ -263,12 +263,12 @@ private:
                     "Must be numeric", arg->getName(), std::to_string(arg_idx + 1), getName());
         }
 
-        return std::make_shared<DataTypeFloat32>();
+        return std::make_shared<DataTypeFloat64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto dst = ColumnVector<Float32>::create();
+        auto dst = ColumnVector<Float64>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
@@ -280,10 +280,10 @@ private:
             argument.type = result_type;
         }
 
-        const auto * col_lon1 = convertArgumentColumnToFloat32(arguments_copy, 0);
-        const auto * col_lat1 = convertArgumentColumnToFloat32(arguments_copy, 1);
-        const auto * col_lon2 = convertArgumentColumnToFloat32(arguments_copy, 2);
-        const auto * col_lat2 = convertArgumentColumnToFloat32(arguments_copy, 3);
+        const auto * col_lon1 = convertArgumentColumnToFloat64(arguments_copy, 0);
+        const auto * col_lat1 = convertArgumentColumnToFloat64(arguments_copy, 1);
+        const auto * col_lon2 = convertArgumentColumnToFloat64(arguments_copy, 2);
+        const auto * col_lat2 = convertArgumentColumnToFloat64(arguments_copy, 3);
 
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
@@ -295,13 +295,13 @@ private:
         return dst;
     }
 
-    const ColumnFloat32 * convertArgumentColumnToFloat32(const ColumnsWithTypeAndName & arguments, size_t argument_index) const
+    const ColumnFloat64 * convertArgumentColumnToFloat64(const ColumnsWithTypeAndName & arguments, size_t argument_index) const
     {
-        const auto * column_typed = checkAndGetColumn<ColumnFloat32>(arguments[argument_index].column.get());
+        const auto * column_typed = checkAndGetColumn<ColumnFloat64>(arguments[argument_index].column.get());
         if (!column_typed)
             throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of argument {} of function {}. Must be Float32.",
+                    "Illegal type {} of argument {} of function {}. Must be Float64.",
                     arguments[argument_index].type->getName(),
                     argument_index + 1,
                     getName());
