@@ -89,7 +89,7 @@ For example:
 jeprof path/to/binary path/to/heap/profile --text > result.txt
 ```
 
-- if we want to generate a pdf file with call-graph:
+- if we want to generate a PDF file with call-graph:
 
 ```sh
 jeprof path/to/binary path/to/heap/profile --pdf > result.pdf
@@ -156,7 +156,7 @@ For example, if we don't want to sample allocations during startup but only afte
 MALLOC_CONF=background_thread:true,prof:true,prof_active:false
 ```
 
-and enable profiler at later point.
+and enable profiler at a later point.
 
 ## Additional options for profiler
 
@@ -169,6 +169,10 @@ We recommend to check `jemalloc`s [reference page](https://jemalloc.net/jemalloc
 ## Other resources
 
 ClickHouse/Keeper expose `jemalloc` related metrics in many different ways.
+
+:::warning Warning
+It's important to be aware that none of these metrics are synchronized with each other and values may drift.
+:::
 
 ### System table `asynchronous_metrics`
 
