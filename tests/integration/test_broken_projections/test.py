@@ -28,7 +28,7 @@ def cluster():
         cluster.shutdown()
 
 
-def create_table(node, table, replica, data_prefix = ""):
+def create_table(node, table, replica, data_prefix=""):
     if data_prefix == "":
         data_prefix = table
 
