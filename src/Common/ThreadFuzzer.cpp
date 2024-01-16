@@ -348,6 +348,8 @@ void ThreadFuzzer::setup() const
     #    define GLIBC_SYMVER "GLIBC_2.2.5"
     #elif defined(__aarch64__)
     #    define GLIBC_SYMVER "GLIBC_2.17"
+    #elif defined(__mips64__)
+    #    define GLIBC_SYMVER "GLIBC_2.0"
     #elif defined(__riscv) && (__riscv_xlen == 64)
     #    define GLIBC_SYMVER "GLIBC_2.27"
     #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__

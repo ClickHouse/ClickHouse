@@ -429,7 +429,7 @@ if (NOT SANITIZE)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
 endif()
 
-if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X) AND NOT SANITIZE)
+if (OS_LINUX AND NOT (ARCH_AARCH64 OR ARCH_S390X OR ARCH_MIPS64) AND NOT SANITIZE)
     # Slightly more efficient code can be generated
     # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")

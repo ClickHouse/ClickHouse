@@ -39,6 +39,8 @@ enum PollPidResult
 #if !defined(__NR_pidfd_open)
     #if defined(__x86_64__)
         #define SYS_pidfd_open 434
+    #elif defined(__mips64__)
+        #define SYS_pidfd_open 434
     #elif defined(__aarch64__)
         #define SYS_pidfd_open 434
     #elif defined(__powerpc64__)

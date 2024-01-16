@@ -190,6 +190,8 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.mc_gpregs.gp_elr);
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
+#elif defined(__mips64__)
+    return reinterpret_cast<void *>(context.uc_mcontext.pc);
 #elif defined(__powerpc64__) && defined(__linux__)
     return reinterpret_cast<void *>(context.uc_mcontext.gp_regs[PT_NIP]);
 #elif defined(__powerpc64__) && defined(__FreeBSD__)

@@ -38,6 +38,8 @@ elseif (ARCH_S390X)
     set (LLVM_TARGETS_TO_BUILD "SystemZ" CACHE INTERNAL "")
 elseif (ARCH_RISCV64)
     set (LLVM_TARGETS_TO_BUILD "RISCV" CACHE INTERNAL "")
+elseif (ARCH_MIPS64)
+    set (LLVM_TARGETS_TO_BUILD "Mips" CACHE INTERNAL "")
 endif ()
 
 
@@ -90,6 +92,8 @@ else()
         list(APPEND REQUIRED_LLVM_LIBRARIES LLVMSystemZInfo LLVMSystemZDesc LLVMSystemZCodeGen)
     elseif (ARCH_RISCV64)
         list(APPEND REQUIRED_LLVM_LIBRARIES LLVMRISCVInfo LLVMRISCVDesc LLVMRISCVCodeGen)
+    elseif (ARCH_MIPS64)
+        list(APPEND REQUIRED_LLVM_LIBRARIES LLVMMipsInfo LLVMMipsDesc LLVMMipsCodeGen)
     endif ()
 endif()
 
