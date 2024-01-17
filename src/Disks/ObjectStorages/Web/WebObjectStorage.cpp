@@ -31,8 +31,9 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-void WebObjectStorage::initialize(const String & uri_path, const std::unique_lock<std::shared_mutex> &) const
+std::vector<fs::path> WebObjectStorage::initialize(const String & uri_path, const std::unique_lock<std::shared_mutex> &) const
 {
+    std::vector<fs::path> loaded_files;
     LOG_TRACE(log, "Loading metadata for directory: {}", uri_path);
 
     try
@@ -73,10 +74,12 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
 
             file_data.type = is_directory ? FileType::Directory : FileType::File;
             String file_path = fs::path(uri_path) / file_name;
+
             file_path = file_path.substr(url.size());
             LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding file: {}, size: {}", file_path, file_data.size);
 
             files.emplace(std::make_pair(file_path, file_data));
+            loaded_files.emplace_back(file_path);
         }
 
         files.emplace(std::make_pair(dir_name, FileData({ .type = FileType::Directory })));
@@ -85,7 +88,7 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
     {
         /// 404 - no files
         if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            return;
+            return loaded_files;
 
         e.addMessage("while loading disk metadata");
         throw;
@@ -95,6 +98,8 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
         e.addMessage("while loading disk metadata");
         throw;
     }
+
+    return loaded_files;
 }
 
 
@@ -124,6 +129,34 @@ WebObjectStorage::FileData WebObjectStorage::getFileInfo(const String & path) co
     if (!file_info)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No such file: {}", path);
     return file_info.value();
+}
+
+std::vector<std::filesystem::path> WebObjectStorage::getDirectoryFiles(const String & path) const
+{
+    auto file_info = tryGetFileInfo(path);
+    if (!file_info)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No such file: {}", path);
+
+    if (file_info->type != FileType::Directory)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} is not a directory", path);
+
+    std::vector<std::filesystem::path> result;
+    if (!file_info->loaded_children)
+    {
+        std::unique_lock unique_lock(metadata_mutex);
+        result = initialize(fs::path(url) / path, unique_lock);
+        file_info->loaded_children = true;
+    }
+    else
+    {
+        std::shared_lock shared_lock(metadata_mutex);
+        for (const auto & [file_path, _] : files)
+        {
+            if (fs::path(parentPath(file_path)) / "" == fs::path(path) / "")
+                result.emplace_back(file_path);
+        }
+    }
+    return result;
 }
 
 std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const String & path) const
