@@ -112,13 +112,26 @@ public:
 
             String alias = subquery_or_table_name->tryGetAlias();
             String external_table_name;
+
+            /** We need to add required columns to the name of the temporary table,
+              * because different subqueries can have different sets of columns
+              * and we build a query plan that reads only `required_columns`.
+              * Otherwise, we will not be able to read all columns
+              * from the temporary table built from the same subquery but with different `required_columns`.
+              */
+            UInt32 required_columns_hash = 0;
+            for (const auto & name : required_columns)
+                required_columns_hash = ::updateWeakHash32(reinterpret_cast<const UInt8 *>(name.data()), name.size(), required_columns_hash);
+
             if (alias.empty())
             {
                 auto hash = subquery_or_table_name->getTreeHash(/*ignore_aliases=*/ true);
-                external_table_name = fmt::format("_data_{}", toString(hash));
+                external_table_name = fmt::format("_data_{}_{}", toString(hash), toString(required_columns_hash));
             }
             else
-                external_table_name = alias;
+            {
+                external_table_name = fmt::format("_{}_{}", alias, toString(required_columns_hash));
+            }
 
             /** We replace the subquery with the name of the temporary table.
                 * It is in this form, the request will go to the remote server.
