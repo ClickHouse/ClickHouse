@@ -23,6 +23,8 @@ public:
         const ColumnLazy & column_lazy,
         ColumnsWithTypeAndName & res_columns) override;
 
+    SerializationPtr getSerialization() override;
+
 private:
     const MergeTreeData & storage;
     StorageSnapshotPtr storage_snapshot;

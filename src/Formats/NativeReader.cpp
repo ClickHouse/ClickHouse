@@ -6,6 +6,8 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <Columns/ColumnLazy.h>
+#include <Columns/IColumnLazyHelper.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
@@ -201,6 +203,15 @@ Block NativeReader::read()
         /// Data
         ColumnPtr read_column = column.type->createColumn(*serialization);
 
+        if (const auto * tmp_header_column = header.findByName(column.name))
+        {
+            if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(tmp_header_column->column.get())) {
+                serialization = column_lazy->getColumnLazyHelper()->getSerialization();
+                const auto & tmp_columns = column_lazy->getColumns();
+                read_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
+            }
+        }
+
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
         if (rows)    /// If no rows, nothing to read.
             readData(*serialization, read_column, istr, rows, avg_value_size_hint);
@@ -216,6 +227,16 @@ Block NativeReader::read()
 
                 if (null_as_default)
                     insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
+
+                if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(header_column.column.get()))
+                {
+                    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.column.get()))
+                        column.column = ColumnLazy::create(column_tuple->getColumns(), column_lazy->getColumnLazyHelper());
+                    else
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} and data type {} found while reading data in Native format",
+                                        column.name,
+                                        column.column->getDataType());
+                }
 
                 if (!header_column.type->equals(*column.type))
                 {

@@ -115,6 +115,7 @@ public:
     bool isFinalized() const override;
 
     const CapturedColumns & getColumns() const { return captured_columns; }
+    ColumnLazyHelperPtr getColumnLazyHelper() const { return column_lazy_helper; }
 
     void transform(ColumnsWithTypeAndName & res_columns) const;
 };

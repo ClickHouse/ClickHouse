@@ -11,7 +11,9 @@
 #include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnLazy.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/IColumnLazyHelper.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
@@ -51,6 +53,12 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
       * (Since the data type does not know how to serialize / deserialize constants.)
       */
     ColumnPtr full_column = column->convertToFullColumnIfConst();
+
+    if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(*full_column))
+    {
+        const auto & columns = column_lazy->getColumns();
+        full_column = ColumnTuple::create(columns);
+    }
 
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
@@ -157,6 +165,9 @@ size_t NativeWriter::write(const Block & block)
             serialization = column.type->getDefaultSerialization();
             column.column = recursiveRemoveSparse(column.column);
         }
+
+        if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(column.column.get()))
+            serialization = column_lazy->getColumnLazyHelper()->getSerialization();
 
         /// Data
         if (rows)    /// Zero items of data is always represented as zero number of bytes.

@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Columns/ColumnLazy.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeTuple.h>
 #include "base/defines.h"
 
 namespace DB
@@ -117,6 +118,15 @@ void MergeTreeLazilyReader::transformLazyColumns(
 
     for (size_t i = origin_size; i < lazily_read_columns.size(); ++i)
         res_columns[i].column = std::move(lazily_read_columns[i]);
+}
+
+SerializationPtr MergeTreeLazilyReader::getSerialization()
+{
+    DataTypes types;
+    types.push_back(std::make_shared<DataTypeUInt64>());
+    types.push_back(std::make_shared<DataTypeUInt64>());
+
+    return DataTypeTuple(types).getDefaultSerialization();
 }
 
 }
