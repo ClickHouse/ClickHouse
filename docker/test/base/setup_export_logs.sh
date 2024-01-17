@@ -156,7 +156,8 @@ function setup_logs_replication
             # Do not try to resolve stack traces in case of debug/sanitizers
             # build, since it is too slow (flushing of trace_log can take ~1min
             # with such MV attached)
-            if [[ "$debug_or_sanitizer_build" = 1 ]]; then
+            if [[ "$debug_or_sanitizer_build" = 1 ]]
+            then
                 EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
             else
                 EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_TRACE_LOG}"
@@ -180,7 +181,7 @@ function setup_logs_replication
         # Create the destination table with adapted name and structure:
         statement=$(clickhouse-client --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
             s/^\($/('"$EXTRA_COLUMNS_FOR_TABLE"'/;
-            s/ORDER BY \(/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"'/;
+            s/ORDER BY \(?(.+?)\)?/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"', \1)'/;
             s/^CREATE TABLE system\.\w+_log$/CREATE TABLE IF NOT EXISTS '"$table"'_'"$hash"'/;
             /^TTL /d
             ')
