@@ -67,7 +67,7 @@ public:
         {
         }
 
-        void addExternalStorage(ASTPtr & ast, const Names & required_columns, bool set_alias = false)
+        void addExternalStorage(ASTPtr & ast, const Names & required_columns, bool is_join)
         {
             /// With nondistributed queries, creating temporary tables does not make sense.
             if (!is_remote)
@@ -128,12 +128,23 @@ public:
                 auto hash = subquery_or_table_name->getTreeHash(/*ignore_aliases=*/ true);
                 external_table_name = fmt::format("_data_{}_{}", toString(hash), toString(required_columns_hash));
             }
-            else
+            else if (is_join)
             {
                 external_table_name = fmt::format("_{}_{}", alias, toString(required_columns_hash));
             }
+            else
+            {
+                /** For GLOBAL IN, we do not add required columns to the name.
+                  * This is not a problem because we do not have required_columns for GLOBAL IN.
+                  * If we changed the name of the subquery, the name of the column containing the result of GLOBAL IN would also change.
+                  * This could cause issues if it is referenced elsewhere (for example, when we collect names of columns for ARRAY JOIN).
+                  * Therefore, we leave it as is (_subqueryN).
+                  * This problem does not exist for GLOBAL JOIN (hopefully) because we don't use its result in a column name.
+                  */
+                external_table_name = alias;
+            }
 
-            /** We replace the subquery with the name of the temporary table.
+            /** For GLOBAL JOIN we replace the subquery with the name of the temporary table.
                 * It is in this form, the request will go to the remote server.
                 * This temporary table will go to the remote server, and on its side,
                 *  instead of doing a subquery, you just need to read it.
@@ -141,7 +152,7 @@ public:
                 */
 
             auto database_and_table_name = std::make_shared<ASTTableIdentifier>(external_table_name);
-            if (set_alias)
+            if (is_join)
             {
                 if (auto * table_name = subquery_or_table_name->as<ASTTableIdentifier>())
                     if (alias.empty())
@@ -246,7 +257,7 @@ private:
                 return;
             }
 
-            data.addExternalStorage(ast, {});
+            data.addExternalStorage(ast, {}, false);
             data.has_global_subqueries = true;
         }
     }
