@@ -5,11 +5,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int UNEXPECTED_AST_STRUCTURE;
-}
-
 /** Get the text that identifies this element. */
 String ASTModifyEngineQuery::getID(char delim) const
 {
