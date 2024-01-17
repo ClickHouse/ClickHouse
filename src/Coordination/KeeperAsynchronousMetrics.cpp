@@ -70,7 +70,7 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     new_values["KeeperIsFollower"] = { is_follower, "1 if ClickHouse Keeper is a follower, 0 otherwise." };
     new_values["KeeperIsObserver"] = { is_observer, "1 if ClickHouse Keeper is an observer, 0 otherwise." };
     new_values["KeeperIsStandalone"] = { is_standalone, "1 if ClickHouse Keeper is in a standalone mode, 0 otherwise." };
-    new_values["KeeperHasMemorySoftLimitHit"] = { has_mem_soft_limit_hit, "1 if ClickHouse Keeper has hit the memory soft limit, 0 otherwise."};
+    new_values["KeeperHasMemorySoftLimitHit"] = { has_mem_soft_limit_hit, "1 if ClickHouse Keeper has hit the memory soft limit, 0 otherwise." };
 
     new_values["KeeperZnodeCount"] = { znode_count, "The number of nodes (data entries) in ClickHouse Keeper." };
     new_values["KeeperWatchCount"] = { watch_count, "The number of watches in ClickHouse Keeper." };
@@ -88,8 +88,6 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     new_values["KeeperZxid"] = { zxid, "The current transaction id number (zxid) in ClickHouse Keeper." };
     new_values["KeeperSessionWithWatches"] = { session_with_watches, "The number of client sessions of ClickHouse Keeper having watches." };
     new_values["KeeperPathsWatched"] = { paths_watched, "The number of different paths watched by the clients of ClickHouse Keeper." };
-    //new_values["KeeperSnapshotDirSize"] = { snapshot_dir_size, "The size of the snapshots directory of ClickHouse Keeper, in bytes." };
-    //new_values["KeeperLogDirSize"] = { log_dir_size, "The size of the logs directory of ClickHouse Keeper, in bytes." };
 
     auto keeper_log_info = keeper_dispatcher.getKeeperLogInfo();
 
