@@ -420,8 +420,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
     request_for_session->log_idx = log_idx;
 
-    if (!keeper_context->local_logs_preprocessed)
-        preprocess(*request_for_session);
+    if (!keeper_context->local_logs_preprocessed && !preprocess(*request_for_session))
+        return nullptr;
 
     auto try_push = [this](const KeeperStorageBase::ResponseForSession& response)
     {

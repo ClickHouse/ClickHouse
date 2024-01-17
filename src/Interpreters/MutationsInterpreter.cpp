@@ -190,7 +190,7 @@ bool isStorageTouchedByMutations(
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
         auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage.shared_from_this(), context);
-        InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits().ignoreProjections());
+        InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
         io = interpreter.execute();
     }
     else
@@ -200,7 +200,7 @@ bool isStorageTouchedByMutations(
         /// For some reason it may copy context and give it into ExpressionTransform
         /// after that we will use context from destroyed stack frame in our stream.
         interpreter_select_query.emplace(
-            select_query, context, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
+            select_query, context, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits());
 
         io = interpreter_select_query->execute();
     }
@@ -262,7 +262,7 @@ MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command)
 
     auto alter_command = std::make_shared<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
-    alter_command->partition = command.partition;
+    alter_command->partition = alter_command->children.emplace_back(command.partition).get();
 
     auto row_exists_predicate = makeASTFunction("equals",
         std::make_shared<ASTIdentifier>(LightweightDeleteDescription::FILTER_COLUMN.name),
@@ -271,7 +271,7 @@ MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command)
     if (command.predicate)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutation command APPLY DELETED MASK does not support WHERE clause");
 
-    alter_command->predicate = row_exists_predicate;
+    alter_command->predicate = alter_command->children.emplace_back(std::move(row_exists_predicate)).get();
 
     auto mutation_command = MutationCommand::parse(alter_command.get());
     if (!mutation_command)
@@ -404,7 +404,7 @@ MutationsInterpreter::MutationsInterpreter(
     , available_columns(std::move(available_columns_))
     , context(Context::createCopy(context_))
     , settings(std::move(settings_))
-    , select_limits(SelectQueryOptions().analyze(!settings.can_execute).ignoreLimits().ignoreProjections())
+    , select_limits(SelectQueryOptions().analyze(!settings.can_execute).ignoreLimits())
 {
     prepare(!settings.can_execute);
 }
@@ -1280,6 +1280,7 @@ void MutationsInterpreter::Source::read(
         VirtualColumns virtual_columns(std::move(required_columns), part);
 
         createReadFromPartStep(
+            MergeTreeSequentialSourceType::Mutation,
             plan, *data, storage_snapshot, part,
             std::move(virtual_columns.columns_to_read),
             apply_deleted_mask_, filter, context_,

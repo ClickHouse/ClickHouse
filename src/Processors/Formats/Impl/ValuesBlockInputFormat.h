@@ -34,6 +34,7 @@ public:
 
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
     /// TODO: remove context somehow.
     void setContext(ContextPtr & context_) { context = Context::createCopy(context_); }
@@ -57,7 +58,7 @@ private:
 
     using ConstantExpressionTemplates = std::vector<std::optional<ConstantExpressionTemplate>>;
 
-    Chunk generate() override;
+    Chunk read() override;
 
     void readRow(MutableColumns & columns, size_t row_num);
     void readUntilTheEndOfRowAndReTokenize(size_t current_column_idx);

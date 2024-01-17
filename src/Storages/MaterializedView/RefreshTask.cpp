@@ -412,12 +412,16 @@ void RefreshTask::executeRefreshUnlocked(std::shared_ptr<StorageMaterializedView
             });
 
             executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
-        }
 
-        /// (Just in case PipelineExecutor can somehow return without exception but with incomplete
-        ///  results if cancelled at the wrong moment.)
-        if (interrupt_execution.load())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh cancelled");
+            /// A cancelled PipelineExecutor may return without exception but with incomplete results.
+            /// In this case make sure to:
+            ///  * report exception rather than success,
+            ///  * do it before destroying the QueryPipeline; otherwise it may fail assertions about
+            ///    being unexpectedly destroyed before completion and without uncaught exception
+            ///    (specifically, the assert in ~WriteBuffer()).
+            if (interrupt_execution.load())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh cancelled");
+        }
 
         /// Exchange tables.
         stale_table = view->exchangeTargetTable(refresh_query->table_id, refresh_context);
@@ -484,7 +488,11 @@ void RefreshTask::interruptExecution()
     if (interrupt_execution.exchange(true))
         return;
     if (running_executor)
+    {
         running_executor->cancel();
+
+        LOG_DEBUG(log, "Cancelling refresh");
+    }
 }
 
 std::shared_ptr<StorageMaterializedView> RefreshTask::lockView()

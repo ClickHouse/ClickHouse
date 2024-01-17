@@ -8,16 +8,13 @@
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/WindowNode.h>
-#include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/ConstantValue.h>
 
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeSet.h>
 
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -32,6 +29,7 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/TableExpressionData.h>
 #include <Planner/Utils.h>
+
 
 namespace DB
 {
