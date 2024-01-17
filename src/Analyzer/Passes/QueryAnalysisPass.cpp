@@ -2245,9 +2245,6 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     if (table_expression_has_alias)
         return;
 
-    if (join_node->as<JoinNode &>().getKind() == JoinKind::Paste)
-        return;
-
     auto * query_node = table_expression_node->as<QueryNode>();
     auto * union_node = table_expression_node->as<UnionNode>();
     if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
@@ -2256,7 +2253,10 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     auto table_expression_node_type = table_expression_node->getNodeType();
     auto * join_typed = join_node->as<JoinNode>();
     if (table_expression_node_type == QueryTreeNodeType::QUERY && join_typed->getKind() == JoinKind::Paste)
+    {
         checkDuplicateTableNamesOrAlias(join_node, join_typed->getLeftTableExpression(), join_typed->getRightTableExpression(), scope);
+        return;
+    }
     else if ((table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
         table_expression_node_type == QueryTreeNodeType::QUERY ||
         table_expression_node_type == QueryTreeNodeType::UNION) && join_typed->getKind() != JoinKind::Paste)
