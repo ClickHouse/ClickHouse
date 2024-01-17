@@ -31,7 +31,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-std::vector<fs::path> WebObjectStorage::initialize(const String & uri_path, const std::unique_lock<std::shared_mutex> &) const
+std::vector<fs::path> WebObjectStorage::loadFiles(const String & uri_path, const std::unique_lock<std::shared_mutex> &) const
 {
     std::vector<fs::path> loaded_files;
     LOG_TRACE(log, "Loading metadata for directory: {}", uri_path);
@@ -131,7 +131,7 @@ WebObjectStorage::FileData WebObjectStorage::getFileInfo(const String & path) co
     return file_info.value();
 }
 
-std::vector<std::filesystem::path> WebObjectStorage::getDirectoryFiles(const String & path) const
+std::vector<std::filesystem::path> WebObjectStorage::listDirectory(const String & path) const
 {
     auto file_info = tryGetFileInfo(path);
     if (!file_info)
@@ -144,7 +144,7 @@ std::vector<std::filesystem::path> WebObjectStorage::getDirectoryFiles(const Str
     if (!file_info->loaded_children)
     {
         std::unique_lock unique_lock(metadata_mutex);
-        result = initialize(fs::path(url) / path, unique_lock);
+        result = loadFiles(fs::path(url) / path, unique_lock);
         file_info->loaded_children = true;
     }
     else
@@ -166,17 +166,32 @@ std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const
     if (files.find(path) == files.end())
     {
         shared_lock.unlock();
-        std::unique_lock unique_lock(metadata_mutex);
-        if (files.find(path) == files.end())
-        {
-            fs::path index_file_dir = fs::path(url) / path;
-            if (index_file_dir.has_extension())
-                index_file_dir = index_file_dir.parent_path();
 
-            initialize(index_file_dir, unique_lock);
+        bool is_file = fs::path(path).has_extension();
+        if (is_file)
+        {
+            const auto parent_path = fs::path(path).parent_path();
+            auto parent_info = tryGetFileInfo(parent_path);
+            if (!parent_info)
+                return std::nullopt; /// Even parent path does not exist.
+
+            if (parent_info->loaded_children)
+            {
+                return std::nullopt;
+            }
+            else
+            {
+                std::unique_lock unique_lock(metadata_mutex);
+                loadFiles(fs::path(url) / parent_path, unique_lock);
+                parent_info->loaded_children = true;
+            }
         }
-        /// Files are never deleted from `files` as disk is read only, so no worry that we unlock now.
-        unique_lock.unlock();
+        else
+        {
+            std::unique_lock unique_lock(metadata_mutex);
+            loadFiles(fs::path(url) / path, unique_lock);
+        }
+
         shared_lock.lock();
     }
 

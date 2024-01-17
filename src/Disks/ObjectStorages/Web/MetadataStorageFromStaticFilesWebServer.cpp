@@ -109,7 +109,7 @@ DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(c
     if (!exists(path))
         return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
 
-    dir_file_paths = object_storage.getDirectoryFiles(path);
+    dir_file_paths = object_storage.listDirectory(path);
     LOG_TRACE(object_storage.log, "Iterate directory {} with {} files", path, dir_file_paths.size());
     return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
 }

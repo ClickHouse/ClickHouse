@@ -120,11 +120,11 @@ protected:
     mutable std::shared_mutex metadata_mutex;
 
     std::optional<FileData> tryGetFileInfo(const String & path) const;
-    std::vector<std::filesystem::path> getDirectoryFiles(const String & path) const;
+    std::vector<std::filesystem::path> listDirectory(const String & path) const;
     FileData getFileInfo(const String & path) const;
 
 private:
-    std::vector<std::filesystem::path> initialize(const String & path, const std::unique_lock<std::shared_mutex> &) const;
+    std::vector<std::filesystem::path> loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const;
 
     const String url;
     Poco::Logger * log;
