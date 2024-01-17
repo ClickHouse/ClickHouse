@@ -55,7 +55,7 @@ function count()
 
 for i in {1..10}
 do
-	[[ $(count) > 0 ]] && break
+	[[ $(count) -gt 0 ]] && break
 	sleep 1
 done
 
@@ -68,7 +68,7 @@ done
 
 for i in {1..10}
 do
-	[[ $(count) > 10 ]] && break
+	[[ $(count) -gt 10 ]] && break
 	sleep 1
 done
 
