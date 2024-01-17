@@ -334,7 +334,7 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
         auto now = std::chrono::steady_clock::now();
         auto timeout_ms = getBusyWaitTimeoutMs(settings, shard, shard_num, now);
         if (inserted)
-            it->second = shard.queue.emplace(now + timeout_ms, Container{key, std::make_unique<InsertData>()}).first;
+            it->second = shard.queue.emplace(now + timeout_ms, Container{key, std::make_unique<InsertData>(timeout_ms)}).first;
 
         auto queue_it = it->second;
         auto & data = queue_it->second.data;
@@ -367,6 +367,7 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
         /// This works because queries with the same set of settings are already grouped together.
         if (!flush_stopped && (has_enough_bytes || has_enough_queries || max_busy_timeout_exceeded()))
         {
+            data->timeout_ms = Milliseconds::zero();
             data_to_process = std::move(data);
             shard.iterators.erase(it);
             shard.queue.erase(queue_it);
@@ -748,9 +749,12 @@ try
         throw;
     }
 
-    auto add_entry_to_log = [&](
-        const auto & entry, const auto & entry_query_for_logging,
-        const auto & exception, size_t num_rows, size_t num_bytes)
+    auto add_entry_to_log = [&](const auto & entry,
+                                const auto & entry_query_for_logging,
+                                const auto & exception,
+                                size_t num_rows,
+                                size_t num_bytes,
+                                Milliseconds timeout_ms)
     {
         if (!async_insert_log)
             return;
@@ -767,6 +771,7 @@ try
         elem.rows = num_rows;
         elem.exception = exception;
         elem.data_kind = entry->chunk.getDataKind();
+        elem.timeout_milliseconds = timeout_ms.count();
 
         /// If there was a parsing error,
         /// the entry won't be flushed anyway,
@@ -801,9 +806,9 @@ try
     auto header = pipeline.getHeader();
 
     if (key.data_kind == DataKind::Parsed)
-        chunk = processEntriesWithParsing(key, data->entries, header, insert_context, log, add_entry_to_log);
+        chunk = processEntriesWithParsing(key, data, header, insert_context, log, add_entry_to_log);
     else
-        chunk = processPreprocessedEntries(key, data->entries, header, insert_context, add_entry_to_log);
+        chunk = processPreprocessedEntries(key, data, header, insert_context, add_entry_to_log);
 
     ProfileEvents::increment(ProfileEvents::AsyncInsertRows, chunk.getNumRows());
 
@@ -864,7 +869,7 @@ catch (...)
 template <typename LogFunc>
 Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     const InsertQuery & key,
-    const std::list<InsertData::EntryPtr> & entries,
+    const InsertDataPtr & data,
     const Block & header,
     const ContextPtr & insert_context,
     const LoggerPtr logger,
@@ -905,7 +910,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
     auto query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef().log_queries_cut_to_length);
 
-    for (const auto & entry : entries)
+    for (const auto & entry : data->entries)
     {
         current_entry = entry;
 
@@ -921,7 +926,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         chunk_info->offsets.push_back(total_rows);
         chunk_info->tokens.push_back(entry->async_dedup_token);
 
-        add_to_async_insert_log(entry, query_for_logging, current_exception, num_rows, num_bytes);
+        add_to_async_insert_log(entry, query_for_logging, current_exception, num_rows, num_bytes, data->timeout_ms);
         current_exception.clear();
     }
 
@@ -933,7 +938,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 template <typename LogFunc>
 Chunk AsynchronousInsertQueue::processPreprocessedEntries(
     const InsertQuery & key,
-    const std::list<InsertData::EntryPtr> & entries,
+    const InsertDataPtr & data,
     const Block & header,
     const ContextPtr & insert_context,
     LogFunc && add_to_async_insert_log)
@@ -956,7 +961,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
         return it->second;
     };
 
-    for (const auto & entry : entries)
+    for (const auto & entry : data->entries)
     {
         const auto * block = entry->chunk.asBlock();
         if (!block)
@@ -972,7 +977,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
         chunk_info->tokens.push_back(entry->async_dedup_token);
 
         const auto & query_for_logging = get_query_by_format(entry->format);
-        add_to_async_insert_log(entry, query_for_logging, "", block->rows(), block->bytes());
+        add_to_async_insert_log(entry, query_for_logging, "", block->rows(), block->bytes(), data->timeout_ms);
     }
 
     Chunk chunk(std::move(result_columns), total_rows);

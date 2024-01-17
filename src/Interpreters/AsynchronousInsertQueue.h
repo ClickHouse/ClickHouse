@@ -148,6 +148,9 @@ private:
             std::atomic_bool finished = false;
         };
 
+        InsertData() = default;
+        explicit InsertData(Milliseconds timeout_ms_) : timeout_ms(timeout_ms_) { }
+
         ~InsertData()
         {
             auto it = entries.begin();
@@ -165,6 +168,7 @@ private:
 
         std::list<EntryPtr> entries;
         size_t size_in_bytes = 0;
+        Milliseconds timeout_ms = Milliseconds::zero();
     };
 
     using InsertDataPtr = std::unique_ptr<InsertData>;
@@ -241,7 +245,7 @@ private:
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(
         const InsertQuery & key,
-        const std::list<InsertData::EntryPtr> & entries,
+        const InsertDataPtr & data,
         const Block & header,
         const ContextPtr & insert_context,
         const LoggerPtr logger,
@@ -250,7 +254,7 @@ private:
     template <typename LogFunc>
     static Chunk processPreprocessedEntries(
         const InsertQuery & key,
-        const std::list<InsertData::EntryPtr> & entries,
+        const InsertDataPtr & data,
         const Block & header,
         const ContextPtr & insert_context,
         LogFunc && add_to_async_insert_log);
