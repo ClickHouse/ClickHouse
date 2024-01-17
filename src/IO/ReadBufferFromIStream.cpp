@@ -1,5 +1,4 @@
 #include <IO/ReadBufferFromIStream.h>
-#include <Poco/Net/HTTPBasicStreamBuf.h>
 #include <Common/Exception.h>
 
 
