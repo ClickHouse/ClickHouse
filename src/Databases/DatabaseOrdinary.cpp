@@ -95,9 +95,18 @@ static void setReplicatedEngine(ASTCreateQuery * create_query, ContextPtr contex
     create_query->storage->set(create_query->storage->engine, engine->clone());
 }
 
-static fs::path getConvertToReplicatedFlagPath(ContextPtr context, const QualifiedTableName & name)
+String DatabaseOrdinary::getConvertToReplicatedFlagPath(const String & name, bool tableStarted)
 {
-    return fs::path(context->getPath()) / "data" / name.database / name.table / CONVERT_TO_REPLICATED_FLAG_NAME;
+    fs::path data_path;
+    if (!tableStarted)
+    {
+        auto create_query = tryGetCreateTableQuery(name, getContext());
+        data_path = fs::path(getContext()->getPath()) / getTableDataPath(create_query->as<ASTCreateQuery &>());
+    }
+    else
+        data_path = fs::path(getContext()->getPath()) / getTableDataPath(name);
+
+    return (data_path / CONVERT_TO_REPLICATED_FLAG_NAME).string();
 }
 
 void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name)
@@ -111,9 +120,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     if (!create_query->storage || !create_query->storage->engine->name.ends_with("MergeTree") || create_query->storage->engine->name.starts_with("Replicated"))
         return;
 
-    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(getContext(), qualified_name);
-
-    LOG_DEBUG(log, "Searching for {} flag at {}.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(convert_to_replicated_flag_path.string()));
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(qualified_name.table, false);
 
     if (!fs::exists(convert_to_replicated_flag_path))
         return;
@@ -277,59 +284,48 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
 
 void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
 {
-    if (auto * rmt = table->as<StorageReplicatedMergeTree>())
-    {
-        auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(getContext(), name);
-        if (!fs::exists(convert_to_replicated_flag_path))
-            return;
+    auto * rmt = table->as<StorageReplicatedMergeTree>();
+    if (!rmt)
+        return;
 
-        auto has_metadata = rmt->hasMetadataInZooKeeper();
-        if (!has_metadata.has_value())
-        {
-            LOG_INFO
-            (
-                log,
-                "No connection to ZooKeeper, can't restore metadata for {} in ZooKeeper after conversion. Run SYSTEM RESTORE REPLICA while connected to ZooKeeper.",
-                backQuote(name.getFullName())
-            );
-        }
-        else
-        {
-            if (*has_metadata)
-            {
-                LOG_INFO
-                (
-                    log,
-                    "Table {} already has metatada in ZooKeeper.",
-                    backQuote(name.getFullName())
-                );
-            }
-            else
-            {
-                try
-                {
-                    rmt->restoreMetadataInZooKeeper();
-                    LOG_INFO
-                    (
-                        log,
-                        "Metadata in ZooKeeper for {} is restored.",
-                        backQuote(name.getFullName())
-                    );
-                }
-                catch (...)
-                {
-                    /// Something unpredicted happened
-                    /// Remove flag to allow server to restart
-                    fs::remove(convert_to_replicated_flag_path);
-                    throw;
-                }
-            }
-        }
-        fs::remove(convert_to_replicated_flag_path);
+    auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
+    if (!fs::exists(convert_to_replicated_flag_path))
+        return;
+
+    fs::remove(convert_to_replicated_flag_path);
+    LOG_INFO
+    (
+        log,
+        "Removing convert to replicated flag for {}.",
+        backQuote(name.getFullName())
+    );
+
+    auto has_metadata = rmt->hasMetadataInZooKeeper();
+    if (!has_metadata.has_value())
+    {
+        LOG_WARNING
+        (
+            log,
+            "No connection to ZooKeeper, can't restore metadata for {} in ZooKeeper after conversion. Run SYSTEM RESTORE REPLICA while connected to ZooKeeper.",
+            backQuote(name.getFullName())
+        );
+    }
+    else if (*has_metadata)
+    {
         LOG_INFO
         (
             log,
-            "Removing convert to replicated flag for {}.",
+            "Table {} already has metatada in ZooKeeper.",
+            backQuote(name.getFullName())
+        );
+    }
+    else
+    {
+        rmt->restoreMetadataInZooKeeper();
+        LOG_INFO
+        (
+            log,
+            "Metadata in ZooKeeper for {} is restored.",
             backQuote(name.getFullName())
         );
     }

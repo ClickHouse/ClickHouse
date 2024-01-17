@@ -1,13 +1,19 @@
 from helpers.cluster import ClickHouseCluster
 
 
+def get_table_path(node, table, database):
+    return node.query(
+        sql=f"SELECT data_paths FROM system.tables WHERE table = '{table}' and database = '{database}'"
+    ).strip("'[]\n")
+
+
 def check_flags_deleted(node, database_name, tables):
     for table in tables:
         assert "convert_to_replicated" not in node.exec_in_container(
             [
                 "bash",
                 "-c",
-                f"ls /var/lib/clickhouse/data/{database_name}/{table}/",
+                f"ls {get_table_path(node, table, database_name)}",
             ]
         )
 
@@ -18,6 +24,6 @@ def set_convert_flags(node, database_name, tables):
             [
                 "bash",
                 "-c",
-                f"touch /var/lib/clickhouse/data/{database_name}/{table}/convert_to_replicated",
+                f"touch {get_table_path(node, table, database_name)}convert_to_replicated",
             ]
         )

@@ -84,6 +84,7 @@ protected:
 private:
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);
+    String getConvertToReplicatedFlagPath(const String & name, bool tableStarted);
 };
 
 }
