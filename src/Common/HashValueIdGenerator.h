@@ -135,25 +135,6 @@ inline void getValueIdsByRange(UInt64 * __restrict value_ids, UInt64 range_start
         value_ids[i] -= range_start;
 }
 
-inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, Int64 start, Int64 n, UInt64 * lens)
-{
-    Int64 i = 0;
-    auto tmp_lens = lens;
-    for (; i + 8 < n; i += 8)
-    {
-        const auto * ptr = &offsets[start + i];
-        auto off = _mm512_loadu_epi64(ptr);
-        auto prev_off = _mm512_loadu_epi64(ptr - 1);
-        auto res = _mm512_sub_epi64(off, prev_off);
-        _mm512_store_epi64(tmp_lens, res);
-        tmp_lens += 8;
-    }
-    for (; i < n; ++i)
-    {
-        lens[i] = offsets[start + i] - offsets[start + i - 1];
-    }
-}
-
 inline bool quickLookupValueId(HashValueIdCacheLine & cache,
     const StringRef & raw_value,
     UInt64 serialized_value,
@@ -460,7 +441,7 @@ private:
         {
 #if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
-                TargetSpecific::AVX512BW::computeStringsLengthFromOffsets(offsets, i, batch_size, str_lens);
+                TargetSpecific::Default::computeStringsLengthFromOffsets(offsets, i, batch_size, str_lens);
             else
 #endif
             {
