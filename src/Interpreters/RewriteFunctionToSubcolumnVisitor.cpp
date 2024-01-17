@@ -81,6 +81,9 @@ std::optional<NameAndTypePair> getColumnFromArgumentsToOptimize(
         return {};
 
     const auto & column_type = columns.get(name_in_storage).type;
+    if (column_type->hasDynamicSubcolumns())
+        return {};
+
     return NameAndTypePair{name_in_storage, column_type};
 }
 
