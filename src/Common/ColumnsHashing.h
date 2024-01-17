@@ -835,14 +835,6 @@ struct HashMethodKeysAdaptive
             for (size_t i = 0; i < rows; ++i)
             {
                 auto & value_id = value_ids[i];
-                #if 0
-                if (value_id >= max_value_id_number)
-                {
-                    LOG_ERROR(&Poco::Logger::get("HashMethodKeysAdaptive"), "xxx value_id {} >= max_value_id_number {}", value_id, max_value_id_number);
-                    aggregator_context->shared_keys_holder_state.hash_mode  = AdaptiveKeysHolder::State::HASH;
-                    return;
-                }
-                #endif
                 auto & key_holder = cached_keys_holders[value_id];
                 if (key_holder)
                     continue;

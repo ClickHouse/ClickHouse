@@ -319,12 +319,12 @@ protected:
         }
     }
 
+    template<bool use_avx_512 = false>
     ALWAYS_INLINE void getValueId(const StringRef &raw_value, UInt64 serialized_value [[maybe_unused]], UInt64 & value_id)
     {
 
 #if USE_MULTITARGET_CODE
-        // if (isArchSupported(TargetArch::AVX512BW))
-        if constexpr (true)
+        if constexpr (use_avx_512)
         {
             if (enable_value_id_cache_line)
             {
@@ -365,8 +365,7 @@ protected:
         else
             TargetSpecific::Default::shortValuesToUInt64(data_pos, element_bytes, value_ids, n);
 #if USE_MULTITARGET_CODE
-        // if (isArchSupported(TargetArch::AVX512BW))
-        if constexpr (true)
+        if (isArchSupported(TargetArch::AVX512BW))
             TargetSpecific::AVX512BW::getValueIdsByRange(value_ids, range_delta, n);
         else
 #endif
@@ -374,18 +373,32 @@ protected:
             TargetSpecific::Default::getValueIdsByRange(value_ids, range_delta, n);
         }
 
-        #if 0
         UInt64 range_length = range_max - range_min + is_nullable;
-        for (size_t i = 0; i < n; ++i)
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
         {
-            StringRef raw_value(data_pos, element_bytes);
-            if (is_nullable > value_ids[i] || value_ids[i] > range_length)
-                getValueId(raw_value, value_ids[i] + range_delta, value_ids[i]);
-            data_pos += element_bytes;
+            for (size_t i = 0; i < n; ++i)
+            {
+                if (is_nullable > value_ids[i] || value_ids[i] > range_length)
+                {
+                    getValueId<true>(StringRef(data_pos, element_bytes), value_ids[i] + range_delta, value_ids[i]);
+                }
+                data_pos += element_bytes;
+            }
         }
-        #endif
+        else
+#endif
+        {
+            for (size_t i = 0; i < n; ++i)
+            {
+                if (is_nullable > value_ids[i] || value_ids[i] > range_length)
+                {
+                    getValueId<false>(StringRef(data_pos, element_bytes), value_ids[i] + range_delta, value_ids[i]);
+                }
+                data_pos += element_bytes;
+            }
+        }
         applyNullMap(value_ids, null_map, n);
-
     }
 
     /// If the row is null, assign 0 for this row.
@@ -393,9 +406,8 @@ protected:
     {
         if (null_map)
         {
-            constexpr UInt64 mask = -1UL;
             for (size_t i = 0; i < n; ++i)
-                value_ids[i] &= ~(mask * null_map[i]);
+                value_ids[i] &= ~(0 - static_cast<UInt64>(null_map[i]));
         }
     }
 };
