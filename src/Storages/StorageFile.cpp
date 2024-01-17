@@ -9,6 +9,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -37,6 +38,8 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -44,6 +47,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/re2.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -53,15 +57,6 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <algorithm>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace ProfileEvents
 {
@@ -115,8 +110,12 @@ void listFilesWithRegexpMatchingImpl(
     {
         try
         {
-            fs::path path = fs::canonical(path_for_ls + for_match);
-            result.push_back(path.string());
+            /// We use fs::canonical to resolve the canonical path and check if the file does exists
+            /// but the result path will be fs::absolute.
+            /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+            fs::canonical(path_for_ls + for_match);
+            fs::path absolute_path = fs::absolute(path_for_ls + for_match);
+            result.push_back(absolute_path.string());
         }
         catch (const std::exception &) // NOLINT
         {
@@ -939,22 +938,21 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
 
 using StorageFilePtr = std::shared_ptr<StorageFile>;
 
-
 StorageFileSource::FilesIterator::FilesIterator(
     const Strings & files_,
     std::optional<StorageFile::ArchiveInfo> archive_info_,
-    ASTPtr query,
+    const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns,
     ContextPtr context_,
     bool distributed_processing_)
     : files(files_), archive_info(std::move(archive_info_)), distributed_processing(distributed_processing_), context(context_)
 {
-    ASTPtr filter_ast;
-    if (!distributed_processing && !archive_info && !files.empty() && !files[0].empty())
-        filter_ast = VirtualColumnUtils::createPathAndFileFilterAst(query, virtual_columns, files[0], context_);
+    ActionsDAGPtr filter_dag;
+    if (!distributed_processing && !archive_info && !files.empty())
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
-    if (filter_ast)
-        VirtualColumnUtils::filterByPathOrFile(files, files, query, virtual_columns, context_, filter_ast);
+    if (filter_dag)
+        VirtualColumnUtils::filterByPathOrFile(files, files, filter_dag, virtual_columns, context_);
 }
 
 String StorageFileSource::FilesIterator::next()
@@ -984,16 +982,13 @@ const String & StorageFileSource::FilesIterator::getFileNameInArchive()
 StorageFileSource::StorageFileSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<StorageFile> storage_,
-    const StorageSnapshotPtr & storage_snapshot_,
     ContextPtr context_,
-    const SelectQueryInfo & query_info_,
     UInt64 max_block_size_,
     FilesIteratorPtr files_iterator_,
     std::unique_ptr<ReadBuffer> read_buf_,
     bool need_only_count_)
     : SourceWithKeyCondition(info.source_header, false)
     , storage(std::move(storage_))
-    , storage_snapshot(storage_snapshot_)
     , files_iterator(std::move(files_iterator_))
     , read_buf(std::move(read_buf_))
     , columns_description(info.columns_description)
@@ -1001,7 +996,6 @@ StorageFileSource::StorageFileSource(
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , context(context_)
-    , query_info(query_info_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
 {
@@ -1066,11 +1060,6 @@ void StorageFileSource::beforeDestroy()
 StorageFileSource::~StorageFileSource()
 {
     beforeDestroy();
-}
-
-void StorageFileSource::setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_)
-{
-    setKeyConditionImpl(query_info_, context_, block_for_format);
 }
 
 void StorageFileSource::setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_)
@@ -1332,14 +1321,64 @@ std::optional<size_t> StorageFileSource::tryGetNumRowsFromCache(const String & p
     return schema_cache.tryGetNumRows(key, get_last_mod_time);
 }
 
-Pipe StorageFile::read(
+class ReadFromFile : public SourceStepWithFilter
+{
+public:
+    std::string getName() const override { return "ReadFromFile"; }
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void applyFilters() override;
+
+    ReadFromFile(
+        Block sample_block,
+        std::shared_ptr<StorageFile> storage_,
+        ReadFromFormatInfo info_,
+        const bool need_only_count_,
+        ContextPtr context_,
+        size_t max_block_size_,
+        size_t num_streams_)
+        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
+        , storage(std::move(storage_))
+        , info(std::move(info_))
+        , need_only_count(need_only_count_)
+        , context(std::move(context_))
+        , max_block_size(max_block_size_)
+        , max_num_streams(num_streams_)
+    {
+    }
+
+private:
+    std::shared_ptr<StorageFile> storage;
+    ReadFromFormatInfo info;
+    const bool need_only_count;
+
+    ContextPtr context;
+    size_t max_block_size;
+    const size_t max_num_streams;
+
+    std::shared_ptr<StorageFileSource::FilesIterator> files_iterator;
+
+    void createIterator(const ActionsDAG::Node * predicate);
+};
+
+void ReadFromFile::applyFilters()
+{
+    auto filter_actions_dag = ActionsDAG::buildFilterActionsDAG(filter_nodes.nodes, {}, context);
+    const ActionsDAG::Node * predicate = nullptr;
+    if (filter_actions_dag)
+        predicate = filter_actions_dag->getOutputs().at(0);
+
+    createIterator(predicate);
+}
+
+void StorageFile::read(
+    QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    const size_t max_num_streams)
+    size_t num_streams)
 {
     if (use_table_fd)
     {
@@ -1356,24 +1395,58 @@ Pipe StorageFile::read(
 
         if (p->size() == 1 && !fs::exists(p->at(0)))
         {
-            if (context->getSettingsRef().engine_file_empty_if_not_exists)
-                return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
-            else
+            if (!context->getSettingsRef().engine_file_empty_if_not_exists)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", p->at(0));
+
+            auto header = storage_snapshot->getSampleBlockForColumns(column_names);
+            InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
+            return;
         }
     }
 
-    auto files_iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, archive_info, query_info.query, virtual_columns, context, distributed_processing);
-
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
+
+    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context), getVirtuals());
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && context->getSettingsRef().optimize_count_from_files;
+
+    auto reading = std::make_unique<ReadFromFile>(
+        read_from_format_info.source_header,
+        std::move(this_ptr),
+        std::move(read_from_format_info),
+        need_only_count,
+        context,
+        max_block_size,
+        num_streams);
+
+    query_plan.addStep(std::move(reading));
+}
+
+void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
+{
+    if (files_iterator)
+        return;
+
+    files_iterator = std::make_shared<StorageFileSource::FilesIterator>(
+        storage->paths,
+        storage->archive_info,
+        predicate,
+        storage->virtual_columns,
+        context,
+        storage->distributed_processing);
+}
+
+void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+{
+    createIterator(nullptr);
 
     size_t num_streams = max_num_streams;
 
     size_t files_to_read = 0;
-    if (archive_info)
-        files_to_read = archive_info->paths_to_archives.size();
+    if (storage->archive_info)
+        files_to_read = storage->archive_info->paths_to_archives.size();
     else
-        files_to_read = paths.size();
+        files_to_read = storage->paths.size();
 
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
@@ -1384,12 +1457,8 @@ Pipe StorageFile::read(
     /// Set total number of bytes to process. For progress bar.
     auto progress_callback = context->getFileProgressCallback();
 
-    if (progress_callback && !archive_info)
-        progress_callback(FileProgress(0, total_bytes_to_read));
-
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, supportsSubsetOfColumns(context), getVirtuals());
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-        && context->getSettingsRef().optimize_count_from_files;
+    if (progress_callback && !storage->archive_info)
+        progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1398,22 +1467,35 @@ Pipe StorageFile::read(
         /// If yes, then we should use it in StorageFileSource. Atomic bool flag is needed
         /// to prevent data race in case of parallel reads.
         std::unique_ptr<ReadBuffer> read_buffer;
-        if (has_peekable_read_buffer_from_fd.exchange(false))
-            read_buffer = std::move(peekable_read_buffer_from_fd);
+        if (storage->has_peekable_read_buffer_from_fd.exchange(false))
+            read_buffer = std::move(storage->peekable_read_buffer_from_fd);
 
-        pipes.emplace_back(std::make_shared<StorageFileSource>(
-            read_from_format_info,
-            this_ptr,
-            storage_snapshot,
+        auto source = std::make_shared<StorageFileSource>(
+            info,
+            storage,
             context,
-            query_info,
             max_block_size,
             files_iterator,
             std::move(read_buffer),
-            need_only_count));
+            need_only_count);
+
+        source->setKeyCondition(filter_nodes.nodes, context);
+        pipes.emplace_back(std::move(source));
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    size_t output_ports = pipe.numOutputPorts();
+    const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
+    if (parallelize_output && storage->parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < max_num_streams)
+        pipe.resize(max_num_streams);
+
+    if (pipe.empty())
+        pipe = Pipe(std::make_shared<NullSource>(info.source_header));
+
+    for (const auto & processor : pipe.getProcessors())
+        processors.emplace_back(processor);
+
+    pipeline.init(std::move(pipe));
 }
 
 
@@ -1495,8 +1577,12 @@ public:
 
         /// In case of formats with prefixes if file is not empty we have already written prefix.
         bool do_not_write_prefix = naked_buffer->size();
-
-        write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
+        const auto & settings = context->getSettingsRef();
+        write_buf = wrapWriteBufferWithCompressionMethod(
+            std::move(naked_buffer),
+            compression_method,
+            static_cast<int>(settings.output_format_compression_level),
+            static_cast<int>(settings.output_format_compression_zstd_window_log));
 
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
                                                                              *write_buf, metadata_snapshot->getSampleBlock(), context, format_settings);

@@ -46,6 +46,12 @@ public:
         WAIT_LOADING_PARTS,
         DROP_REPLICA,
         DROP_DATABASE_REPLICA,
+#if USE_JEMALLOC
+        JEMALLOC_PURGE,
+        JEMALLOC_ENABLE_PROFILE,
+        JEMALLOC_DISABLE_PROFILE,
+        JEMALLOC_FLUSH_PROFILE,
+#endif
         SYNC_REPLICA,
         SYNC_DATABASE_REPLICA,
         SYNC_TRANSACTION_LOG,
@@ -90,6 +96,13 @@ public:
         STOP_CLEANUP,
         START_CLEANUP,
         RESET_COVERAGE,
+        REFRESH_VIEW,
+        START_VIEW,
+        START_VIEWS,
+        STOP_VIEW,
+        STOP_VIEWS,
+        CANCEL_VIEW,
+        TEST_VIEW,
         END
     };
 
@@ -131,7 +144,13 @@ public:
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
+    std::unordered_set<String> src_replicas;
+
     ServerType server_type;
+
+    /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
+    /// Unix time.
+    std::optional<Int64> fake_time_for_view;
 
     String getID(char) const override { return "SYSTEM query"; }
 

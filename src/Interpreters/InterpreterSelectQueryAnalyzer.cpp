@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -143,7 +144,7 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-        query_tree_pass_manager.run(query_tree, 1 /*up_to_pass_index*/);
+        query_tree_pass_manager.runOnlyResolve(query_tree);
     else
         query_tree_pass_manager.run(query_tree);
 
@@ -265,6 +266,15 @@ void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & el
 {
     for (const auto & used_row_policy : planner.getUsedRowPolicies())
         elem.used_row_policies.emplace(used_row_policy);
+}
+
+void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterSelectQueryAnalyzer>(args.query, args.context, args.options);
+    };
+    factory.registerInterpreter("InterpreterSelectQueryAnalyzer", create_fn);
 }
 
 }

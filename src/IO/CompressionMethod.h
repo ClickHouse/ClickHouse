@@ -64,12 +64,14 @@ std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
     size_t max_download_threads = 4,
     size_t max_download_buffer_size = 10 * 1024 * 1024UL);
 
-
 std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
-    std::unique_ptr<WriteBuffer> nested,
+    WriteBuffer * nested,
     CompressionMethod method,
     int level,
+    int zstd_window_log,
     size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
     char * existing_memory = nullptr,
-    size_t alignment = 0);
+    size_t alignment = 0,
+    bool compress_empty = true);
+
 }

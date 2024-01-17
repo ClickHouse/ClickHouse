@@ -137,7 +137,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.clear = true;
 
         if (command_ast->partition)
-            command.partition = command_ast->partition;
+            command.partition = command_ast->partition->clone();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_COLUMN)
@@ -206,7 +206,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_ORDER_BY;
-        command.order_by = command_ast->order_by;
+        command.order_by = command_ast->order_by->clone();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_SAMPLE_BY)
@@ -214,7 +214,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SAMPLE_BY;
-        command.sample_by = command_ast->sample_by;
+        command.sample_by = command_ast->sample_by->clone();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::REMOVE_SAMPLE_BY)
@@ -228,7 +228,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.index_decl = command_ast->index_decl;
+        command.index_decl = command_ast->index_decl->clone();
         command.type = AlterCommand::ADD_INDEX;
 
         const auto & ast_index_decl = command_ast->index_decl->as<ASTIndexDeclaration &>();
@@ -247,7 +247,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.statistic_decl = command_ast->statistic_decl;
+        command.statistic_decl = command_ast->statistic_decl->clone();
         command.type = AlterCommand::ADD_STATISTIC;
 
         const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
@@ -262,7 +262,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.constraint_decl = command_ast->constraint_decl;
+        command.constraint_decl = command_ast->constraint_decl->clone();
         command.type = AlterCommand::ADD_CONSTRAINT;
 
         const auto & ast_constraint_decl = command_ast->constraint_decl->as<ASTConstraintDeclaration &>();
@@ -277,7 +277,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.projection_decl = command_ast->projection_decl;
+        command.projection_decl = command_ast->projection_decl->clone();
         command.type = AlterCommand::ADD_PROJECTION;
 
         const auto & ast_projection_decl = command_ast->projection_decl->as<ASTProjectionDeclaration &>();
@@ -313,7 +313,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.clear = true;
 
         if (command_ast->partition)
-            command.partition = command_ast->partition;
+            command.partition = command_ast->partition->clone();
 
         return command;
     }
@@ -330,7 +330,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.clear = command_ast->clear_statistic;
 
         if (command_ast->partition)
-            command.partition = command_ast->partition;
+            command.partition = command_ast->partition->clone();
 
         return command;
     }
@@ -345,7 +345,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.clear = true;
 
         if (command_ast->partition)
-            command.partition = command_ast->partition;
+            command.partition = command_ast->partition->clone();
 
         return command;
     }
@@ -354,7 +354,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_TTL;
-        command.ttl = command_ast->ttl;
+        command.ttl = command_ast->ttl->clone();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::REMOVE_TTL)
@@ -399,7 +399,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_QUERY;
-        command.select = command_ast->select;
+        command.select = command_ast->select->clone();
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_REFRESH)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_REFRESH;
+        command.refresh = command_ast->refresh;
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::RENAME_COLUMN)
@@ -431,7 +439,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true, true);
 
         column.ttl = ttl;
 
@@ -496,7 +504,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true, true);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true, true, true);
 
                 if (comment)
                     column.comment = *comment;
@@ -715,7 +723,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_QUERY)
     {
-        metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, context);
+        metadata.select = SelectQueryDescription::getSelectQueryFromASTForMatView(select, metadata.refresh != nullptr, context);
         Block as_select_sample;
 
         if (context->getSettingsRef().allow_experimental_analyzer)
@@ -731,6 +739,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         metadata.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
+    }
+    else if (type == MODIFY_REFRESH)
+    {
+        metadata.refresh = refresh->clone();
     }
     else if (type == MODIFY_SETTING)
     {
@@ -1237,7 +1249,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                                             "this column name is reserved for _block_number persisting feature", backQuote(column_name));
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
@@ -1262,7 +1274,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (all_columns.hasAlias(column_name))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)

@@ -9,15 +9,16 @@
 
 namespace DB
 {
-NamesAndTypesList StorageSystemUserDirectories::getNamesAndTypes()
+ColumnsDescription StorageSystemUserDirectories::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
+    /// TODO: Fill in all the comments.
+    return ColumnsDescription
+    {
         {"name", std::make_shared<DataTypeString>()},
         {"type", std::make_shared<DataTypeString>()},
         {"params", std::make_shared<DataTypeString>()},
         {"precedence", std::make_shared<DataTypeUInt64>()},
     };
-    return names_and_types;
 }
 
 

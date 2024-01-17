@@ -5,6 +5,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -68,7 +69,7 @@ struct ZooKeeperLogElement
 
 
     static std::string name() { return "ZooKeeperLog"; }
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
     static const char * getCustomColumnList() { return nullptr; }

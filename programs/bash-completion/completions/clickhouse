@@ -31,3 +31,4 @@ function _complete_for_clickhouse_entrypoint_bin()
 }
 
 _complete_clickhouse_generic clickhouse _complete_for_clickhouse_entrypoint_bin
+_complete_clickhouse_generic ch _complete_for_clickhouse_entrypoint_bin

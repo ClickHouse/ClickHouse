@@ -396,7 +396,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     String backup_name_for_logging = backup_info.toStringForLogging();
     String base_backup_name;
     if (backup_settings.base_backup_info)
-        base_backup_name = backup_settings.base_backup_info->toString();
+        base_backup_name = backup_settings.base_backup_info->toStringForLogging();
 
     try
     {
@@ -610,7 +610,6 @@ void BackupsWorker::doBackup(
 
 void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination)
 {
-    LOG_TRACE(log, "{}", Stage::BUILDING_FILE_INFOS);
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "");
     backup_coordination->waitForStage(Stage::BUILDING_FILE_INFOS);
     backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(ThreadPoolId::BACKUP_MAKE_FILES_LIST)));
@@ -751,7 +750,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
         String backup_name_for_logging = backup_info.toStringForLogging();
         String base_backup_name;
         if (restore_settings.base_backup_info)
-            base_backup_name = restore_settings.base_backup_info->toString();
+            base_backup_name = restore_settings.base_backup_info->toStringForLogging();
 
         addInfo(restore_id, backup_name_for_logging, base_backup_name, restore_settings.internal, BackupStatus::RESTORING);
 
