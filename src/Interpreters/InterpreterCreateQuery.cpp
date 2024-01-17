@@ -780,8 +780,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         properties.constraints = as_storage_metadata->getConstraints();
     }
-    else if (create.select && !create.isParameterizedView())
+    else if (create.select)
     {
+        if (create.isParameterizedView())
+            return properties;
+
         Block as_select_sample;
 
         if (getContext()->getSettingsRef().allow_experimental_analyzer)

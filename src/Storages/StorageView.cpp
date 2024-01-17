@@ -112,7 +112,7 @@ StorageView::StorageView(
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-    if (is_parameterized_view_)
+    if (!is_parameterized_view_)
     {
         if (!query.isParameterizedView())
             storage_metadata.setColumns(columns_);
