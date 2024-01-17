@@ -856,7 +856,8 @@ bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t vers
 
     if constexpr (use_rocksdb)
         container.erase(path);
-    else {
+    else
+    {
         container.updateValue(
             parentNodePath(path),
             [child_basename = getBaseNodeName(node_it->key)](KeeperMemNode & parent)
