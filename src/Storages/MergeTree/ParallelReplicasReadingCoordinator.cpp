@@ -429,12 +429,17 @@ void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnno
         setProgressCallback();
 
     /// Sift the queue to move out all invisible segments
-    for (const auto & segment : distribution_by_hash_queue[replica_num])
+    for (auto segment_it = distribution_by_hash_queue[replica_num].begin(); segment_it != distribution_by_hash_queue[replica_num].end();)
     {
-        if (!part_visibility[segment.info.getPartNameV1()].contains(replica_num))
+        if (!part_visibility[segment_it->info.getPartNameV1()].contains(replica_num))
         {
-            chassert(segment.ranges.size() == 1);
-            enqueueToStealerOrStealingQueue(segment.info, segment.ranges.front());
+            chassert(segment_it->ranges.size() == 1);
+            enqueueToStealerOrStealingQueue(segment_it->info, segment_it->ranges.front());
+            segment_it = distribution_by_hash_queue[replica_num].erase(segment_it);
+        }
+        else
+        {
+            ++segment_it;
         }
     }
 }
@@ -599,6 +604,8 @@ void DefaultCoordinator::processPartsFurther(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasProcessingPartsMicroseconds);
 
+    auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartNameV1()].contains(replica); };
+
     for (const auto & part : all_parts_to_read)
     {
         if (current_marks_amount >= min_number_of_marks)
@@ -622,7 +629,7 @@ void DefaultCoordinator::processPartsFurther(
                     = MarkRange{std::max(range.begin, segment_begin), std::min(range.end, segment_begin + mark_segment_size)};
 
                 const auto owner = computeConsistentHash(part.description.info.getPartNameV1(), segment_begin, scan_mode);
-                if (owner == replica_num)
+                if (owner == replica_num && replica_can_read_part(replica_num, part.description.info))
                 {
                     const auto taken = takeFromRange(cur_segment, min_number_of_marks, current_marks_amount, result);
                     if (taken == range.getNumberOfMarks())
@@ -681,7 +688,7 @@ void DefaultCoordinator::enqueueSegment(const MergeTreePartInfo & info, const Ma
     {
         /// TODO: optimize me (maybe we can store something lighter than RangesInDataPartDescription)
         distribution_by_hash_queue[owner].insert(RangesInDataPartDescription{.info = info, .ranges = {segment}});
-        LOG_TEST(log, "Segment {} is added to its owner's ({}) queue", segment, owner);
+        LOG_TEST(log, "Segment {} of {} is added to its owner's ({}) queue", segment, info.getPartNameV1(), owner);
     }
     else
         enqueueToStealerOrStealingQueue(info, segment);
@@ -695,12 +702,12 @@ void DefaultCoordinator::enqueueToStealerOrStealingQueue(const MergeTreePartInfo
     if (possiblyCanReadPart(stealer_by_hash, info))
     {
         distribution_by_hash_queue[stealer_by_hash].insert(std::move(range));
-        LOG_TEST(log, "Segment {} is added to its stealer's ({}) queue", segment, stealer_by_hash);
+        LOG_TEST(log, "Segment {} of {} is added to its stealer's ({}) queue", segment, info.getPartNameV1(), stealer_by_hash);
     }
     else
     {
         ranges_for_stealing_queue.push_back(std::move(range));
-        LOG_TEST(log, "Segment {} is added to stealing queue", segment);
+        LOG_TEST(log, "Segment {} of {} is added to stealing queue", segment, info.getPartNameV1());
     }
 }
 

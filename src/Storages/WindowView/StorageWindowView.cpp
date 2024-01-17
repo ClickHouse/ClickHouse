@@ -418,8 +418,7 @@ ASTPtr StorageWindowView::getCleanupQuery()
 
     auto alter_command = std::make_shared<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
-    alter_command->predicate = function_less;
-    alter_command->children.push_back(alter_command->predicate);
+    alter_command->predicate = alter_command->children.emplace_back(function_less).get();
     alter_query->command_list->children.push_back(alter_command);
     return alter_query;
 }
