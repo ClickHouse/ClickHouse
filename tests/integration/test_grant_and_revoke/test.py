@@ -1,4 +1,5 @@
 import pytest
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -614,6 +615,47 @@ def test_grant_current_grants():
     instance.query("DROP USER IF EXISTS C")
     instance.query("CREATE USER C")
     instance.query("GRANT CURRENT GRANTS(NONE ON *.*) TO C", user="A")
+    assert instance.query("SHOW GRANTS FOR C") == TSV([])
+
+
+def test_revoke_current_grants():
+    instance.query("CREATE USER A")
+    instance.query(
+        "GRANT SELECT, CREATE TABLE, CREATE VIEW ON *.* TO A WITH GRANT OPTION"
+    )
+    instance.query(
+        "REVOKE SELECT ON secret.* FROM A"
+    )
+
+    assert instance.query("SHOW GRANTS FOR A") == TSV(
+        [
+            "GRANT SELECT, CREATE TABLE, CREATE VIEW ON *.* TO A WITH GRANT OPTION",
+            "REVOKE SELECT ON secret.* FROM A",
+        ],
+    )
+
+    instance.query("CREATE USER B")
+    instance.query("GRANT CURRENT GRANTS ON *.* TO B", user="A")
+    assert instance.query("SHOW GRANTS FOR B") == TSV(
+        [
+            "GRANT SELECT, CREATE TABLE, CREATE VIEW ON *.* TO B",
+            "REVOKE SELECT ON secret.* FROM B",
+        ],
+    )
+
+    instance.query("CREATE USER C")
+    instance.query("GRANT CURRENT GRANTS(CREATE ON test.*) TO C", user="A")
+    assert instance.query("SHOW GRANTS FOR C") == TSV(
+        ["GRANT CREATE TABLE, CREATE VIEW ON test.* TO C"]
+    )
+
+    # not enough privileges
+    with pytest.raises(QueryRuntimeException):
+        instance.query("REVOKE ALL ON *.* FROM B", user="A")
+
+    instance.query("REVOKE CURRENT GRANTS ON *.* FROM B", user="A")
+    assert instance.query("SHOW GRANTS FOR B") == TSV([])
+    instance.query("REVOKE CURRENT GRANTS ON *.* FROM C", user="A")
     assert instance.query("SHOW GRANTS FOR C") == TSV([])
 
 

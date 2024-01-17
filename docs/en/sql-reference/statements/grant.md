@@ -48,6 +48,8 @@ GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*
 Using the `CURRENT GRANTS` statement allows you to give all specified privileges to the given user or role.
 If none of the privileges were specified, then the given user or role will receive all available privileges for `CURRENT_USER`.
 
+`CURRENT GRANTS` syntax can be used in the [REVOKE](../../sql-reference/statements/revoke.md) statement too.
+
 ## Usage
 
 To use `GRANT`, your account must have the `GRANT OPTION` privilege. You can grant privileges only inside the scope of your account privileges.

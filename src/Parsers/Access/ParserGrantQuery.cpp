@@ -316,7 +316,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     std::shared_ptr<ASTRolesOrUsersSet> roles;
 
     bool current_grants = false;
-    if (!is_revoke && ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
+    if (ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
     {
         current_grants = true;
         if (!parseCurrentGrants(pos, expected, elements))
