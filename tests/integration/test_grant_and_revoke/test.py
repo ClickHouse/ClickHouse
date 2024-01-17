@@ -623,9 +623,7 @@ def test_revoke_current_grants():
     instance.query(
         "GRANT SELECT, CREATE TABLE, CREATE VIEW ON *.* TO A WITH GRANT OPTION"
     )
-    instance.query(
-        "REVOKE SELECT ON secret.* FROM A"
-    )
+    instance.query("REVOKE SELECT ON secret.* FROM A")
 
     assert instance.query("SHOW GRANTS FOR A") == TSV(
         [
