@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FDB_EXCEPTION;
+    extern const int BAD_ARGUMENTS;
 }
 
 FoundationDBException::FoundationDBException(fdb_error_t fdb_error)
