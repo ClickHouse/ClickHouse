@@ -109,8 +109,6 @@ std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
     std::string connection_str;
     if (config.has(config_prefix + ".connection_string"))
         connection_str = config.getString(config_prefix + ".connection_string");
-    else if (config.has(config_prefix + ".endpoint"))
-        connection_str = config.getString(config_prefix + ".endpoint");
 
     if (!connection_str.empty())
         return getClientWithConnectionString<T>(connection_str, container_name);
@@ -134,14 +132,15 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
 {
     auto endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
     auto container_name = endpoint.container_name;
-    auto final_url = endpoint.storage_account_url
-        + (endpoint.storage_account_url.back() == '/' ? "" : "/")
-        + container_name;
+    auto final_url = container_name.empty()
+        ? endpoint.storage_account_url
+        : (std::filesystem::path(endpoint.storage_account_url) / container_name).string();
 
     if (endpoint.container_already_exists.value_or(false))
         return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
 
-    auto blob_service_client = getAzureBlobStorageClientWithAuth<BlobServiceClient>(endpoint.storage_account_url, container_name, config, config_prefix);
+    auto blob_service_client = getAzureBlobStorageClientWithAuth<BlobServiceClient>(
+        endpoint.storage_account_url, container_name, config, config_prefix);
 
     try
     {
