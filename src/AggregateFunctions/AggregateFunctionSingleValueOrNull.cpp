@@ -172,7 +172,7 @@ public:
         this->data(place).read(buf, *serialization, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return value_type_index == TypeIndex::String; }
+    bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type_index); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {

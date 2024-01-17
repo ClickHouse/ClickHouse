@@ -1,5 +1,9 @@
 #include <AggregateFunctions/SingleValueData.h>
 #include <Columns/ColumnString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Common/Arena.h>
+#include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -13,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
@@ -149,6 +154,111 @@ void SingleValueDataBase::setGreatestNotNullIf(
         setIfGreater(column, *index, arena);
 }
 
+template <typename T>
+void SingleValueDataFixed<T>::insertResultInto(IColumn & to) const
+{
+    if (has())
+        assert_cast<ColVecType &>(to).getData().push_back(value);
+    else
+        assert_cast<ColVecType &>(to).insertDefault();
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::write(WriteBuffer & buf, const ISerialization &) const
+{
+    writeBinary(has(), buf);
+    if (has())
+        writeBinaryLittleEndian(value, buf);
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::read(ReadBuffer & buf, const ISerialization &, Arena *)
+{
+    readBinary(has_value, buf);
+    if (has())
+        readBinaryLittleEndian(value, buf);
+}
+
+template <typename T>
+bool SingleValueDataFixed<T>::isEqualTo(const IColumn & column, size_t index) const
+{
+    return has() && assert_cast<const ColVecType &>(column).getData()[index] == value;
+}
+
+template <typename T>
+bool SingleValueDataFixed<T>::isEqualTo(const SingleValueDataBase & to) const
+{
+    auto const & other = assert_cast<const Self &>(to);
+    return has() && other.value == value;
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::set(const IColumn & column, size_t row_num, Arena *)
+{
+    has_value = true;
+    value = assert_cast<const ColVecType &>(column).getData()[row_num];
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::set(const SingleValueDataBase & to, Arena *)
+{
+    auto const & other = assert_cast<const Self &>(to);
+    if (other.has())
+    {
+        has_value = true;
+        value = other.value;
+    }
+}
+
+template <typename T>
+bool SingleValueDataFixed<T>::setIfSmaller(const T & to)
+{
+    if (!has_value || to < value)
+    {
+        has_value = true;
+        value = to;
+        return true;
+    }
+    return false;
+}
+
+template <typename T>
+bool SingleValueDataFixed<T>::setIfGreater(const T & to)
+{
+    if (!has_value || to > value)
+    {
+        has_value = true;
+        value = to;
+        return true;
+    }
+    return false;
+}
+
+template <typename T>
+bool SingleValueDataFixed<T>::setIfSmaller(const SingleValueDataBase & to, Arena * arena)
+{
+    auto const & other = assert_cast<const Self &>(to);
+    if (other.has() && (!has() || other.value < value))
+    {
+        set(other, arena);
+        return true;
+    }
+    else
+        return false;
+}
+
+template <typename T>
+bool SingleValueDataFixed<T>::setIfGreater(const SingleValueDataBase & to, Arena * arena)
+{
+    auto const & other = assert_cast<const Self &>(to);
+    if (other.has() && (!has() || other.value > value))
+    {
+        set(other, arena);
+        return true;
+    }
+    else
+        return false;
+}
 
 template <typename T>
 bool SingleValueDataFixed<T>::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
@@ -701,6 +811,64 @@ struct StringValueCompatibility
 
 }
 
+char * SingleValueDataString::getDataMutable()
+{
+    return size <= MAX_SMALL_STRING_SIZE ? small_data : large_data;
+}
+
+const char * SingleValueDataString::getData() const
+{
+    const char * data_ptr = size <= MAX_SMALL_STRING_SIZE ? small_data : large_data;
+    /// It must always be terminated with null-character
+    chassert(0 < size);
+    chassert(data_ptr[size - 1] == '\0');
+    return data_ptr;
+}
+
+StringRef SingleValueDataString::getStringRef() const
+{
+    return StringRef(getData(), size);
+}
+
+void SingleValueDataString::allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena)
+{
+    if (capacity < size_to_reserve)
+    {
+        if (unlikely(MAX_STRING_SIZE < size_to_reserve))
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}", size_to_reserve, MAX_STRING_SIZE);
+
+        size_t rounded_capacity = roundUpToPowerOfTwoOrZero(size_to_reserve);
+        chassert(rounded_capacity <= MAX_STRING_SIZE + 1); /// rounded_capacity <= 2^31
+        capacity = static_cast<UInt32>(rounded_capacity);
+
+        /// Don't free large_data here.
+        large_data = arena->alloc(capacity);
+    }
+}
+
+void SingleValueDataString::changeImpl(StringRef value, Arena * arena)
+{
+    if (unlikely(MAX_STRING_SIZE < value.size))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}", value.size, MAX_STRING_SIZE);
+
+    UInt32 value_size = static_cast<UInt32>(value.size);
+
+    if (value_size <= MAX_SMALL_STRING_SIZE)
+    {
+        /// Don't free large_data here.
+        size = value_size;
+
+        if (size > 0)
+            memcpy(small_data, value.data, size);
+    }
+    else
+    {
+        allocateLargeDataIfNeeded(value_size, arena);
+        size = value_size;
+        memcpy(large_data, value.data, size);
+    }
+}
 
 void SingleValueDataString::insertResultInto(DB::IColumn & to) const
 {
@@ -850,6 +1018,122 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
         return false;
 }
 
+void SingleValueDataGeneric::insertResultInto(IColumn & to) const
+{
+    if (has())
+        to.insert(value);
+    else
+        to.insertDefault();
+}
+
+void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization) const
+{
+    if (!value.isNull())
+    {
+        writeBinary(true, buf);
+        serialization.serializeBinary(value, buf, {});
+    }
+    else
+        writeBinary(false, buf);
+}
+
+void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, Arena *)
+{
+    bool is_not_null;
+    readBinary(is_not_null, buf);
+
+    if (is_not_null)
+        serialization.deserializeBinary(value, buf, {});
+}
+
+bool SingleValueDataGeneric::isEqualTo(const IColumn & column, size_t row_num) const
+{
+    return has() && value == column[row_num];
+}
+
+bool SingleValueDataGeneric::isEqualTo(const DB::SingleValueDataBase & other) const
+{
+    auto const & to = assert_cast<const Self &>(other);
+    return has() && to.value == value;
+}
+
+void SingleValueDataGeneric::set(const IColumn & column, size_t row_num, Arena *)
+{
+    column.get(row_num, value);
+}
+
+void SingleValueDataGeneric::set(const SingleValueDataBase & other, Arena *)
+{
+    auto const & to = assert_cast<const Self &>(other);
+    if (other.has())
+        value = to.value;
+}
+
+bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
+{
+    if (!has())
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+    else
+    {
+        Field new_value;
+        column.get(row_num, new_value);
+        if (new_value < value)
+        {
+            value = new_value;
+            return true;
+        }
+        else
+            return false;
+    }
+}
+
+bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Arena *)
+{
+    auto const & to = assert_cast<const Self &>(other);
+    if (to.has() && (!has() || to.value < value))
+    {
+        value = to.value;
+        return true;
+    }
+    else
+        return false;
+}
+
+bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
+{
+    if (!has())
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+    else
+    {
+        Field new_value;
+        column.get(row_num, new_value);
+        if (new_value > value)
+        {
+            value = new_value;
+            return true;
+        }
+        else
+            return false;
+    }
+}
+
+bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Arena *)
+{
+    auto const & to = assert_cast<const Self &>(other);
+    if (to.has() && (!has() || to.value > value))
+    {
+        value = to.value;
+        return true;
+    }
+    else
+        return false;
+}
 
 void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBase::memory_block & data)
 {
@@ -884,5 +1168,10 @@ void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBase::memory
     }
     static_assert(sizeof(SingleValueDataGeneric) <= SingleValueDataBase::MAX_STORAGE_SIZE);
     new (data.memory) SingleValueDataGeneric;
+}
+
+bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx)
+{
+    return idx == TypeIndex::String;
 }
 }

@@ -5,29 +5,23 @@
 #include <Columns/ColumnDecimal.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <base/StringRef.h>
-#include <Common/Arena.h>
-#include <Common/assert_cast.h>
 
 namespace DB
 {
+class Arena;
+class ReadBuffer;
 struct Settings;
+class WriteBuffer;
 
-namespace ErrorCodes
-{
-extern const int TOO_LARGE_STRING_SIZE;
-}
-
-/** Base class for data that stores one of passed values: min, max, any, anyLast...
-  */
+/// Base class for Aggregation data that stores one of passed values: min, any, argMax...
+/// It's setup as a virtual class so we can avoid templates when we need to extend them (argMax, SingleValueOrNull)
 struct SingleValueDataBase
 {
     static constexpr int nan_direction_hint = 1;
     /// Any subclass (numeric, string, generic) must be smaller than MAX_STORAGE_SIZE
-    /// We use this knowledge to create composite data classes that use them directly by reserving a ::memory_block
-    /// For example ArgMin holds 2 of these objects
+    /// We use this knowledge to create composite data classes that use them directly by reserving a 'memory_block'
+    /// For example argMin holds 2 of these objects
     static constexpr UInt32 MAX_STORAGE_SIZE = 64;
 
     /// Helper to allocate enough memory to store any derived class and subclasses will be misaligned
@@ -56,14 +50,16 @@ struct SingleValueDataBase
     virtual bool setIfGreater(const SingleValueDataBase &, Arena *) = 0;
 
     /// Given a column, sets the internal value to the smallest or greatest value from the column
+    /// Used to implement batch min/max
     virtual void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena);
     virtual void setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena);
     virtual void setSmallestNotNullIf(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *);
     virtual void setGreatestNotNullIf(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *);
 
     /// Given a column returns the index of the smallest or greatest value in it
-    /// Doesn't return anything if the column is empty. Might also return empty if the value stored is the smallest/greatest
-    /// Useful to implement argMin / argMax
+    /// Doesn't return anything if the column is empty. In some cases (SingleValueDataFixed<T>) it will also return
+    /// empty if the stored value is already the smallest/greatest
+    /// There are used to implement argMin / argMax
     virtual std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end);
     virtual std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end);
     static std::optional<size_t> getSmallestIndexNotNullIf(
@@ -103,108 +99,27 @@ struct SingleValueDataFixed final : public SingleValueDataBase
     using ColVecType = ColumnVectorOrDecimal<T>;
 
     T value = T{};
-    /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf or when merging states
+    /// We need to remember if at least one value has been passed.
+    /// This is necessary for AggregateFunctionIf, merging states, JIT (where simple add is used), etc
     bool has_value = false;
 
     ~SingleValueDataFixed() override { }
 
     bool has() const override { return has_value; }
+    void insertResultInto(IColumn & to) const override;
+    void write(WriteBuffer & buf, const ISerialization &) const override;
+    void read(ReadBuffer & buf, const ISerialization &, Arena *) override;
+    bool isEqualTo(const IColumn & column, size_t index) const override;
+    bool isEqualTo(const SingleValueDataBase & to) const override;
 
-    void insertResultInto(IColumn & to) const override
-    {
-        if (has())
-            assert_cast<ColVecType &>(to).getData().push_back(value);
-        else
-            assert_cast<ColVecType &>(to).insertDefault();
-    }
+    void set(const IColumn & column, size_t row_num, Arena *) override;
+    void set(const SingleValueDataBase & to, Arena *) override;
 
-    void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override
-    {
-        writeBinary(has(), buf);
-        if (has())
-            writeBinaryLittleEndian(value, buf);
-    }
+    bool setIfSmaller(const T & to);
+    bool setIfGreater(const T & to);
 
-    void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena *) override
-    {
-        readBinary(has_value, buf);
-        if (has())
-            readBinaryLittleEndian(value, buf);
-    }
-
-    bool isEqualTo(const IColumn & column, size_t index) const override
-    {
-        return has() && assert_cast<const ColVecType &>(column).getData()[index] == value;
-    }
-
-    bool isEqualTo(const SingleValueDataBase & to) const override
-    {
-        auto const & other = assert_cast<const Self &>(to);
-        return has() && other.value == value;
-    }
-
-    void set(const IColumn & column, size_t row_num, Arena *) override
-    {
-        has_value = true;
-        value = assert_cast<const ColVecType &>(column).getData()[row_num];
-    }
-
-    void set(const SingleValueDataBase & to, Arena *) override
-    {
-        auto const & other = assert_cast<const Self &>(to);
-        if (other.has())
-        {
-            has_value = true;
-            value = other.value;
-        }
-    }
-
-    bool setIfSmaller(const T & to)
-    {
-        if (!has_value || to < value)
-        {
-            has_value = true;
-            value = to;
-            return true;
-        }
-        return false;
-    }
-
-    bool setIfGreater(const T & to)
-    {
-        if (!has_value || to > value)
-        {
-            has_value = true;
-            value = to;
-            return true;
-        }
-        return false;
-    }
-
-    bool setIfSmaller(const SingleValueDataBase & to, Arena * arena) override
-    {
-        auto const & other = assert_cast<const Self &>(to);
-        if (other.has() && (!has() || other.value < value))
-        {
-            set(other, arena);
-            return true;
-        }
-        else
-            return false;
-    }
-
-    bool setIfGreater(const SingleValueDataBase & to, Arena * arena) override
-    {
-        auto const & other = assert_cast<const Self &>(to);
-        if (other.has() && (!has() || other.value > value))
-        {
-            set(to, arena);
-            return true;
-        }
-        else
-            return false;
-    }
-
+    bool setIfSmaller(const SingleValueDataBase & to, Arena * arena) override;
+    bool setIfGreater(const SingleValueDataBase & to, Arena * arena) override;
     bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena *) override;
@@ -294,65 +209,18 @@ struct SingleValueDataString final : public SingleValueDataBase
 private:
     char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
 
-    char * getDataMutable() { return size <= MAX_SMALL_STRING_SIZE ? small_data : large_data; }
-
-    const char * getData() const
-    {
-        const char * data_ptr = size <= MAX_SMALL_STRING_SIZE ? small_data : large_data;
-        /// It must always be terminated with null-character
-        chassert(0 < size);
-        chassert(data_ptr[size - 1] == '\0');
-        return data_ptr;
-    }
-
-    StringRef getStringRef() const { return StringRef(getData(), size); }
-
-    void allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena)
-    {
-        if (capacity < size_to_reserve)
-        {
-            if (unlikely(MAX_STRING_SIZE < size_to_reserve))
-                throw Exception(
-                    ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}", size_to_reserve, MAX_STRING_SIZE);
-
-            size_t rounded_capacity = roundUpToPowerOfTwoOrZero(size_to_reserve);
-            chassert(rounded_capacity <= MAX_STRING_SIZE + 1); /// rounded_capacity <= 2^31
-            capacity = static_cast<UInt32>(rounded_capacity);
-
-            /// Don't free large_data here.
-            large_data = arena->alloc(capacity);
-        }
-    }
-
-    void changeImpl(StringRef value, Arena * arena)
-    {
-        if (unlikely(MAX_STRING_SIZE < value.size))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}", value.size, MAX_STRING_SIZE);
-
-        UInt32 value_size = static_cast<UInt32>(value.size);
-
-        if (value_size <= MAX_SMALL_STRING_SIZE)
-        {
-            /// Don't free large_data here.
-            size = value_size;
-
-            if (size > 0)
-                memcpy(small_data, value.data, size);
-        }
-        else
-        {
-            allocateLargeDataIfNeeded(value_size, arena);
-            size = value_size;
-            memcpy(large_data, value.data, size);
-        }
-    }
+    char * getDataMutable();
+    const char * getData() const;
+    StringRef getStringRef() const;
+    void allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena);
+    void changeImpl(StringRef value, Arena * arena);
 
 public:
     bool has() const override { return size != 0; }
-
     void insertResultInto(IColumn & to) const override;
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override;
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena) override;
+
     bool isEqualTo(const IColumn & column, size_t row_num) const override;
     bool isEqualTo(const SingleValueDataBase &) const override;
     void set(const IColumn & column, size_t row_num, Arena * arena) override;
@@ -381,117 +249,19 @@ private:
 
 public:
     bool has() const override { return !value.isNull(); }
+    void insertResultInto(IColumn & to) const override;
+    void write(WriteBuffer & buf, const ISerialization & serialization) const override;
+    void read(ReadBuffer & buf, const ISerialization & serialization, Arena *) override;
 
-    void insertResultInto(IColumn & to) const override
-    {
-        if (has())
-            to.insert(value);
-        else
-            to.insertDefault();
-    }
+    bool isEqualTo(const IColumn & column, size_t row_num) const override;
+    bool isEqualTo(const SingleValueDataBase & other) const override;
+    void set(const IColumn & column, size_t row_num, Arena *) override;
+    void set(const SingleValueDataBase & other, Arena *) override;
 
-    void write(WriteBuffer & buf, const ISerialization & serialization) const override
-    {
-        if (!value.isNull())
-        {
-            writeBinary(true, buf);
-            serialization.serializeBinary(value, buf, {});
-        }
-        else
-            writeBinary(false, buf);
-    }
-
-    void read(ReadBuffer & buf, const ISerialization & serialization, Arena *) override
-    {
-        bool is_not_null;
-        readBinary(is_not_null, buf);
-
-        if (is_not_null)
-            serialization.deserializeBinary(value, buf, {});
-    }
-
-    bool isEqualTo(const IColumn & column, size_t row_num) const override { return has() && value == column[row_num]; }
-
-    bool isEqualTo(const SingleValueDataBase & other) const override
-    {
-        auto const & to = assert_cast<const Self &>(other);
-        return has() && to.value == value;
-    }
-
-    void set(const IColumn & column, size_t row_num, Arena *) override { column.get(row_num, value); }
-
-    void set(const SingleValueDataBase & other, Arena *) override
-    {
-        auto const & to = assert_cast<const Self &>(other);
-        if (other.has())
-            value = to.value;
-    }
-
-    bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override
-    {
-        if (!has())
-        {
-            set(column, row_num, arena);
-            return true;
-        }
-        else
-        {
-            Field new_value;
-            column.get(row_num, new_value);
-            if (new_value < value)
-            {
-                value = new_value;
-                return true;
-            }
-            else
-                return false;
-        }
-    }
-
-    bool setIfSmaller(const SingleValueDataBase & other, Arena *) override
-    {
-        auto const & to = assert_cast<const Self &>(other);
-        if (to.has() && (!has() || to.value < value))
-        {
-            value = to.value;
-            return true;
-        }
-        else
-            return false;
-    }
-
-    bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override
-    {
-        if (!has())
-        {
-            set(column, row_num, arena);
-            return true;
-        }
-        else
-        {
-            Field new_value;
-            column.get(row_num, new_value);
-            if (new_value > value)
-            {
-                value = new_value;
-                return true;
-            }
-            else
-                return false;
-        }
-    }
-
-    bool setIfGreater(const SingleValueDataBase & other, Arena *) override
-    {
-        auto const & to = assert_cast<const Self &>(other);
-        if (to.has() && (!has() || to.value > value))
-        {
-            value = to.value;
-            return true;
-        }
-        else
-            return false;
-    }
+    bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
+    bool setIfSmaller(const SingleValueDataBase & other, Arena *) override;
+    bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
+    bool setIfGreater(const SingleValueDataBase & other, Arena *) override;
 
     static bool allocatesMemoryInArena() { return false; }
 };
@@ -525,5 +295,8 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
 }
 
 /// For Data classes that want to compose on top of SingleValueDataBase values, like argMax or singleValueOrNull
+/// It will build the object based on the type idx on the memory block provided
 void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBase::memory_block & data);
+
+bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx);
 }

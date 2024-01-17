@@ -54,7 +54,7 @@ public:
         , nested_function{nested_function_}
         , serialization(arguments.back()->getDefaultSerialization())
         , key_col{arguments.size() - 1}
-        , key_offset{alignOfData()}
+        , key_offset{((nested_function->sizeOfData() + alignof(Key) - 1) / alignof(Key)) * alignof(Key)}
         , key_type_index(WhichDataType(arguments[key_col]).idx)
     {
         if (!arguments[key_col]->isComparable())
@@ -83,12 +83,12 @@ public:
 
     bool allocatesMemoryInArena() const override
     {
-        return nested_function->allocatesMemoryInArena() || key_type_index == TypeIndex::String;
+        return nested_function->allocatesMemoryInArena() || singleValueTypeAllocatesMemoryInArena(key_type_index);
     }
 
     bool hasTrivialDestructor() const override
     {
-        return nested_function->hasTrivialDestructor() && std::is_trivially_destructible_v<SingleValueDataBase>;
+        return nested_function->hasTrivialDestructor() && /*false*/ std::is_trivially_destructible_v<SingleValueDataBase>;
     }
 
     size_t sizeOfData() const override { return key_offset + sizeof(Key); }

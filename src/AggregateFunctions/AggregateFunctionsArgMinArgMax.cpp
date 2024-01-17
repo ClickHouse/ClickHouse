@@ -212,7 +212,10 @@ public:
                 this->data(place).result().has());
     }
 
-    bool allocatesMemoryInArena() const override { return result_type_index == TypeIndex::String || value_type_index == TypeIndex::String; }
+    bool allocatesMemoryInArena() const override
+    {
+        return singleValueTypeAllocatesMemoryInArena(result_type_index) || singleValueTypeAllocatesMemoryInArena(value_type_index);
+    }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
