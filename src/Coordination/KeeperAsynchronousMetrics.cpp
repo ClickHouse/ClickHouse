@@ -29,8 +29,6 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     size_t session_with_watches = 0;
     size_t paths_watched = 0;
     size_t has_mem_soft_limit_hit = 0;
-    //size_t snapshot_dir_size = 0;
-    //size_t log_dir_size = 0;
 
     if (keeper_dispatcher.isServerActive())
     {
