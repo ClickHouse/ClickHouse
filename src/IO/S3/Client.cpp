@@ -24,6 +24,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
+#include <Common/re2.h>
 
 #include <base/sleep.h>
 
@@ -47,6 +48,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace S3
@@ -104,6 +106,20 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
     assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
 }
 
+void validateCredentials(const Aws::Auth::AWSCredentials& auth_credentials)
+{
+    if (auth_credentials.GetAWSAccessKeyId().empty())
+    {
+        return;
+    }
+    /// Follow https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
+    const auto * ACCESS_KEY_ID_REGEX = R"(\w+)";
+    if (!re2::RE2::FullMatch(auth_credentials.GetAWSAccessKeyId(), ACCESS_KEY_ID_REGEX))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Access key id has invalid character");
+    }
+}
+
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
     const HTTPHeaderEntries & extra_headers
@@ -129,6 +145,7 @@ std::unique_ptr<Client> Client::create(
     const ClientSettings & client_settings)
 {
     verifyClientConfiguration(client_configuration);
+    validateCredentials(credentials_provider->GetAWSCredentials());
     return std::unique_ptr<Client>(
         new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings));
 }
