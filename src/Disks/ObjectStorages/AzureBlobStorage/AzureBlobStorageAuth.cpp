@@ -3,18 +3,10 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/Exception.h>
+#include <Common/re2.h>
 #include <optional>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 using namespace Azure::Storage::Blobs;
 
@@ -73,8 +65,14 @@ AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::Abstr
     }
     else
     {
-        storage_url = config.getString(config_prefix + ".connection_string");
+        if (config.has(config_prefix + ".connection_string"))
+            storage_url = config.getString(config_prefix + ".connection_string");
+        else if (config.has(config_prefix + ".endpoint"))
+            storage_url = config.getString(config_prefix + ".endpoint");
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `connection_string` or `endpoint` in config");
     }
+
     String container_name = config.getString(config_prefix + ".container_name", "default-container");
     validateContainerName(container_name);
     std::optional<bool> container_already_exists {};
@@ -108,11 +106,14 @@ template <class T>
 std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
     const String & url, const String & container_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
+    std::string connection_str;
     if (config.has(config_prefix + ".connection_string"))
-    {
-        String connection_str = config.getString(config_prefix + ".connection_string");
+        connection_str = config.getString(config_prefix + ".connection_string");
+    else if (config.has(config_prefix + ".endpoint"))
+        connection_str = config.getString(config_prefix + ".endpoint");
+
+    if (!connection_str.empty())
         return getClientWithConnectionString<T>(connection_str, container_name);
-    }
 
     if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name"))
     {

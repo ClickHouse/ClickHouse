@@ -15,7 +15,7 @@ class StorageSystemViewRefreshes final : public IStorageSystemOneBlock<StorageSy
 public:
     std::string getName() const override { return "SystemViewRefreshes"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
@@ -24,4 +24,3 @@ protected:
 };
 
 }
-

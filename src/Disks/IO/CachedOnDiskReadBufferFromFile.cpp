@@ -864,23 +864,26 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     chassert(!internal_buffer.empty());
 
-    /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
-    /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
-    if (use_external_buffer && read_type == ReadType::CACHED && settings.local_fs_buffer_size < internal_buffer.size())
-        internal_buffer.resize(settings.local_fs_buffer_size);
-
     auto & file_segment = file_segments->front();
     const auto & current_read_range = file_segment.range();
 
-    /// The requested right boundary could be
-    /// segment->range().left < requested_right_boundary < segment->range().right
-    /// therefore need to resize to a smaller size.
-    if (file_segments->size() == 1) // We're reading the last segment
+    if (use_external_buffer && read_type == ReadType::CACHED)
     {
-        const size_t remaining_size_to_read = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
-        const size_t new_buf_size = std::min(internal_buffer.size(), remaining_size_to_read);
-        chassert((internal_buffer.size() >= nextimpl_working_buffer_offset + new_buf_size) && (new_buf_size > 0));
-        internal_buffer.resize(nextimpl_working_buffer_offset + new_buf_size);
+        /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
+        /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
+        if (settings.local_fs_buffer_size < internal_buffer.size())
+            internal_buffer.resize(settings.local_fs_buffer_size);
+
+        /// It would make sense to reduce buffer size to what is left to read (when we read the last segment) regardless of the read_type.
+        /// But we have to use big enough buffers when we [pre]download segments to amortize netw and FileCache overhead (space reservation and relevant locks).
+        if (file_segments->size() == 1)
+        {
+            const size_t remaining_size_to_read
+                = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
+            const size_t new_buf_size = std::min(internal_buffer.size(), remaining_size_to_read);
+            chassert((internal_buffer.size() >= nextimpl_working_buffer_offset + new_buf_size) && (new_buf_size > 0));
+            internal_buffer.resize(nextimpl_working_buffer_offset + new_buf_size);
+        }
     }
 
     // Pass a valid external buffer for implementation_buffer to read into.
@@ -1018,6 +1021,20 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
+        }
+
+        /// - If last file segment was read from remote fs, then we read up to segment->range().right,
+        /// but the requested right boundary could be
+        /// segment->range().left < requested_right_boundary <  segment->range().right.
+        /// Therefore need to resize to a smaller size. And resize must be done after write into cache.
+        /// - If last file segment was read from local fs, then we could read more than
+        /// file_segemnt->range().right, so resize is also needed.
+        if (file_segments->size() == 1)
+        {
+            size_t remaining_size_to_read = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
+            size = std::min(size, remaining_size_to_read);
+            chassert(implementation_buffer->buffer().size() >= nextimpl_working_buffer_offset + size);
+            implementation_buffer->buffer().resize(nextimpl_working_buffer_offset + size);
         }
 
         file_offset_of_buffer_end += size;

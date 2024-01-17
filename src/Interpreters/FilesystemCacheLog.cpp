@@ -1,3 +1,4 @@
+#include "Storages/ColumnsDescription.h"
 #include <base/getFQDNOrHostName.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -28,14 +29,15 @@ static String typeToString(FilesystemCacheLogElement::CacheType type)
     UNREACHABLE();
 }
 
-NamesAndTypesList FilesystemCacheLogElement::getNamesAndTypes()
+ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
 {
     DataTypes types{
         std::make_shared<DataTypeNumber<UInt64>>(),
         std::make_shared<DataTypeNumber<UInt64>>(),
     };
 
-    return {
+    return ColumnsDescription
+    {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},

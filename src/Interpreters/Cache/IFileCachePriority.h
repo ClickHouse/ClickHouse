@@ -31,13 +31,14 @@ public:
         std::atomic<size_t> size;
         size_t hits = 0;
     };
+    using EntryPtr = std::shared_ptr<Entry>;
 
     class Iterator
     {
     public:
         virtual ~Iterator() = default;
 
-        virtual const Entry & getEntry() const = 0;
+        virtual EntryPtr getEntry() const = 0;
 
         virtual size_t increasePriority(const CacheGuard::Lock &) = 0;
 
