@@ -421,15 +421,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
     const auto & vec = assert_cast<const ColVecType &>(column);
     if constexpr (has_find_extreme_implementation<T>)
     {
-        std::optional<T> opt = findExtremeMin(vec.getData().data(), row_begin, row_end);
-        if (!opt || (has() && value <= opt))
-            return std::nullopt;
-
-        /// TODO: Implement findExtremeMinIndex to do the lookup properly (with SIMD and batching)
-        for (size_t i = row_begin; i < row_end; i++)
-            if (vec.getData()[i] == *opt)
-                return i;
-        return row_end;
+        return findExtremeMinIndex(vec.getData().data(), row_begin, row_end);
     }
     else
     {
@@ -450,15 +442,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & 
     const auto & vec = assert_cast<const ColVecType &>(column);
     if constexpr (has_find_extreme_implementation<T>)
     {
-        std::optional<T> opt = findExtremeMax(vec.getData().data(), row_begin, row_end);
-        if (!opt || (has() && value >= opt))
-            return std::nullopt;
-
-        /// TODO: Implement findExtremeMaxIndex to do the lookup properly (with SIMD and batching)
-        for (size_t i = row_begin; i < row_end; i++)
-            if (vec.getData()[i] == *opt)
-                return i;
-        return row_end;
+        return findExtremeMaxIndex(vec.getData().data(), row_begin, row_end);
     }
     else
     {

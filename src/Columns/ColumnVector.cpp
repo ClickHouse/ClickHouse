@@ -19,6 +19,7 @@
 #include <Common/TargetSpecific.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
+#include <Common/findExtreme.h>
 #include <Common/iota.h>
 
 #include <bit>
@@ -246,6 +247,26 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
         limit = 0;
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
+
+    if constexpr (has_find_extreme_implementation<T> && !std::is_floating_point_v<T>)
+    {
+        /// Disabled for:floating point
+        /// * floating point: We don't deal with nan_direction_hint
+        /// * stability::Stable: We might return any value, not the first
+        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable))
+        {
+            std::optional<size_t> index;
+            if (direction == IColumn::PermutationSortDirection::Ascending)
+                index = findExtremeMinIndex(data.data(), 0, data.size());
+            else
+                index = findExtremeMaxIndex(data.data(), 0, data.size());
+            if (index)
+            {
+                res.data()[0] = *index;
+                return;
+            }
+        }
+    }
 
     if constexpr (is_arithmetic_v<T> && !is_big_int_v<T>)
     {

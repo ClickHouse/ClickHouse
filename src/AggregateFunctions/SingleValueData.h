@@ -57,8 +57,7 @@ struct SingleValueDataBase
     virtual void setGreatestNotNullIf(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *);
 
     /// Given a column returns the index of the smallest or greatest value in it
-    /// Doesn't return anything if the column is empty. In some cases (SingleValueDataFixed<T>) it will also return
-    /// empty if the stored value is already the smallest/greatest
+    /// Doesn't return anything if the column is empty
     /// There are used to implement argMin / argMax
     virtual std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end);
     virtual std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end);

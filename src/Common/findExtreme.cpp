@@ -133,14 +133,54 @@ std::optional<T> findExtremeMaxIf(const T * __restrict ptr, const UInt8 * __rest
     return findExtreme<T, MaxComparator<T>, false, false>(ptr, condition_map, start, end);
 }
 
+template <has_find_extreme_implementation T>
+std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start, size_t end)
+{
+    /// This is implemented based on findNumericExtreme and not the other way around (or independently) because getting
+    /// the MIN or MAX value of an array is possible with SIMD, but getting the index isn't.
+    /// So what we do is use SIMD to find the lowest value and then iterate again over the array to find its position
+    std::optional<T> opt = findExtremeMin(ptr, start, end);
+    if (!opt)
+        return std::nullopt;
+
+    /// Some minimal heuristics for the case the input is sorted
+    if (*opt == ptr[start])
+        return {start};
+    for (size_t i = end - 1; i != start + 1; i--)
+        if (ptr[i] == *opt)
+            return {i};
+    return std::nullopt;
+}
+
+template <has_find_extreme_implementation T>
+std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start, size_t end)
+{
+    std::optional<T> opt = findExtremeMax(ptr, start, end);
+    if (!opt)
+        return std::nullopt;
+
+    /// Some minimal heuristics for the case the input is sorted
+    if (*opt == ptr[start])
+        return {start};
+    for (size_t i = end - 1; i != start + 1; i--)
+        if (ptr[i] == *opt)
+            return {i};
+    return std::nullopt;
+}
 
 #define INSTANTIATION(T) \
     template std::optional<T> findExtremeMin(const T * __restrict ptr, size_t start, size_t end); \
-    template std::optional<T> findExtremeMinNotNull(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
-    template std::optional<T> findExtremeMinIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
+    template std::optional<T> findExtremeMinNotNull( \
+        const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
+    template std::optional<T> findExtremeMinIf( \
+        const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
     template std::optional<T> findExtremeMax(const T * __restrict ptr, size_t start, size_t end); \
-    template std::optional<T> findExtremeMaxNotNull(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
-    template std::optional<T> findExtremeMaxIf(const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end);
+    template std::optional<T> findExtremeMaxNotNull( \
+        const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
+    template std::optional<T> findExtremeMaxIf( \
+        const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
+    template std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start, size_t end); \
+    template std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start, size_t end);
 
 FOR_BASIC_NUMERIC_TYPES(INSTANTIATION)
 #undef INSTANTIATION
