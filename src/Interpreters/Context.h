@@ -817,6 +817,7 @@ public:
 #endif
 
     BackupsWorker & getBackupsWorker() const;
+    void waitAllBackupsAndRestores() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,

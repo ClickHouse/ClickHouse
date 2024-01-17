@@ -2547,6 +2547,12 @@ BackupsWorker & Context::getBackupsWorker() const
     return *shared->backups_worker;
 }
 
+void Context::waitAllBackupsAndRestores() const
+{
+    if (shared->backups_worker)
+        shared->backups_worker->waitAll();
+}
+
 
 void Context::setProgressCallback(ProgressCallback callback)
 {

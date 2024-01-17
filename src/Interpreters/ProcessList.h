@@ -460,6 +460,7 @@ public:
 
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);
+    CancellationCode sendCancelToQuery(QueryStatusPtr elem, bool kill = false);
 
     void killAllQueries();
 };

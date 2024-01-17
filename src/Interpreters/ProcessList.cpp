@@ -558,6 +558,28 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
 }
 
 
+CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem, bool kill)
+{
+    /// Cancelling the query should be done without the lock.
+    /// So here we first set is_cancelling, and later reset it.
+    /// The ProcessListEntry cannot be destroy if is_cancelling is true.
+    {
+        auto lock = safeLock();
+        elem->is_cancelling = true;
+    }
+
+    SCOPE_EXIT({
+        DENY_ALLOCATIONS_IN_SCOPE;
+
+        auto lock = unsafeLock();
+        elem->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
+
+    return elem->cancelQuery(kill);
+}
+
+
 void ProcessList::killAllQueries()
 {
     std::vector<QueryStatusPtr> cancelled_processes;

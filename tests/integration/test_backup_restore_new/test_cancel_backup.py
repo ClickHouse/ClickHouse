@@ -2,6 +2,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 import uuid
+import re
 
 
 cluster = ClickHouseCluster(__file__)
@@ -9,12 +10,14 @@ cluster = ClickHouseCluster(__file__)
 main_configs = [
     "configs/backups_disk.xml",
     "configs/slow_backups.xml",
+    "configs/shutdown_cancel_backups.xml",
 ]
 
 node = cluster.add_instance(
     "node",
     main_configs=main_configs,
     external_dirs=["/backups/"],
+    stay_alive=True,
 )
 
 
@@ -170,6 +173,7 @@ def cancel_restore(restore_id):
     assert kill_duration_ms < 2000  # Query must be cancelled quickly
 
 
+# Test that BACKUP and RESTORE operations can be cancelled with KILL QUERY.
 def test_cancel_backup():
     # We use partitioning so backups would contain more files.
     node.query(
@@ -197,3 +201,32 @@ def test_cancel_backup():
     restore_id = uuid.uuid4().hex
     start_restore(restore_id, backup_id)
     wait_restore(restore_id)
+
+
+# Test that shutdown cancels a running backup and doesn't wait until it finishes.
+def test_shutdown_cancel_backup():
+    node.query(
+        "CREATE TABLE tbl (x UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY x%5"
+    )
+
+    node.query(f"INSERT INTO tbl SELECT number FROM numbers(500)")
+
+    backup_id = uuid.uuid4().hex
+    start_backup(backup_id)
+
+    node.restart_clickhouse()  # Must cancel the backup.
+
+    # The information about this cancelled backup must be stored in system.backup_log
+    assert node.query(
+        f"SELECT status FROM system.backup_log WHERE id='{backup_id}' ORDER BY status"
+    ) == TSV(["CREATING_BACKUP", "BACKUP_CANCELLED"])
+
+    # The table can't be restored from this backup.
+    expected_error = "Backup .* not found"
+    node.query("DROP TABLE tbl SYNC")
+    assert re.search(
+        expected_error,
+        node.query_and_get_error(
+            f"RESTORE TABLE tbl FROM {get_backup_name(backup_id)}"
+        ),
+    )
