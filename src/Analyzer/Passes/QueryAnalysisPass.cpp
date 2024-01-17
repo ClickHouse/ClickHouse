@@ -6401,7 +6401,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 {
 
     String database_name = scope.context->getCurrentDatabase();
-    String table_name = "";
+    String table_name;
 
     if (table_function_node->getOriginalAST() && table_function_node->getOriginalAST()->as<ASTFunction>())
     {

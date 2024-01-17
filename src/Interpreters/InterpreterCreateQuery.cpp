@@ -809,11 +809,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
               * for example: LIMIT, OFFSET, functions parameters, functions constant only arguments.
               */
 
-            SelectQueryOptions options;
-            if (create.isParameterizedView())
-                options = options.createParameterizedView();
-
-            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), options);
+            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), SelectQueryOptions());
             as_select_sample = interpreter.getSampleBlock();
         }
 
