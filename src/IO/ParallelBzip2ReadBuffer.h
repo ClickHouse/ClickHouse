@@ -25,7 +25,6 @@ public:
         size_t range_step_,
         size_t file_size_,
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
-
     ~ParallelBzip2ReadBuffer() override { finishAndWait(); }
 
 private:
