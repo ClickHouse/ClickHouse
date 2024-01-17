@@ -548,7 +548,7 @@ bool KeeperServer::isLeaderAlive() const
     return raft_instance && raft_instance->is_leader_alive();
 }
 
-bool KeeperServer::hasMemorySoftLimitHit() const
+bool KeeperServer::isExceedingMemorySoftLimit() const
 {
     Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
     return mem_soft_limit > 0 && total_memory_tracker.get() >= mem_soft_limit;
@@ -1081,7 +1081,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
         result.follower_count = getFollowerCount();
         result.synced_follower_count = getSyncedFollowerCount();
     }
-    result.has_mem_soft_limit_hit = hasMemorySoftLimitHit();
+    result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
     result.total_nodes_count = getKeeperStateMachine()->getNodesCount();
     result.last_zxid = getKeeperStateMachine()->getLastProcessedZxid();
     return result;

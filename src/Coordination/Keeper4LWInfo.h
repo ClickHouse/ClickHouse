@@ -22,7 +22,7 @@ struct Keeper4LWInfo
     bool is_standalone;
 
     bool has_leader;
-    bool has_mem_soft_limit_hit;
+    bool is_exceeding_mem_soft_limit;
 
     uint64_t alive_connections_count;
     uint64_t outstanding_requests_count;

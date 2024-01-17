@@ -110,7 +110,7 @@ public:
 
     bool isLeaderAlive() const;
 
-    bool hasMemorySoftLimitHit() const;
+    bool isExceedingMemorySoftLimit() const;
 
     Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 

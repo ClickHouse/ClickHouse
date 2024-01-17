@@ -177,9 +177,9 @@ public:
         return server->isObserver();
     }
 
-    bool hasMemorySoftLimitHit() const
+    bool isExceedingMemorySoftLimit() const
     {
-        return server->hasMemorySoftLimitHit();
+        return server->isExceedingMemorySoftLimit();
     }
 
     uint64_t getLogDirSize() const;
