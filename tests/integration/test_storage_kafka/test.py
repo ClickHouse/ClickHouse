@@ -4450,7 +4450,7 @@ def test_block_based_formats_1(kafka_cluster):
                      kafka_group_name = '{topic}',
                      kafka_format = 'PrettySpace';
 
-        INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;
+        INSERT INTO test.kafka SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0, output_format_pretty_color=1;
     """
     )
 
