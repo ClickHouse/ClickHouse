@@ -294,7 +294,7 @@ void LocalServer::cleanup()
         /// We should reset it before resetting global_context.
         if (suggest)
             suggest.reset();
-        
+
         if (global_context)
         {
             global_context->shutdown();
