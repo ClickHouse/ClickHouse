@@ -127,14 +127,30 @@ KeeperServer::KeeperServer(
     if (coordination_settings->quorum_reads)
         LOG_WARNING(log, "Quorum reads enabled, Keeper will work slower.");
 
-    state_machine = nuraft::cs_new<KeeperStateMachine<KeeperMemoryStorage>>(
-        responses_queue_,
-        snapshots_queue_,
-        coordination_settings,
-        keeper_context,
-        config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
-        commit_callback,
-        checkAndGetSuperdigest(configuration_and_settings_->super_digest));
+    if (coordination_settings->use_rocksdb)
+    {
+#if USE_ROCKSDB
+        state_machine = nuraft::cs_new<KeeperStateMachine<KeeperRocksStorage>>(
+            responses_queue_,
+            snapshots_queue_,
+            coordination_settings,
+            keeper_context,
+            config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
+            commit_callback,
+            checkAndGetSuperdigest(configuration_and_settings_->super_digest));
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "RocksDB support is disabled because ClickHouse was built without RocksDB support.");
+#endif
+    }
+    else
+        state_machine = nuraft::cs_new<KeeperStateMachine<KeeperMemoryStorage>>(
+            responses_queue_,
+            snapshots_queue_,
+            coordination_settings,
+            keeper_context,
+            config.getBool("keeper_server.upload_snapshot_on_exit", true) ? &snapshot_manager_s3 : nullptr,
+            commit_callback,
+            checkAndGetSuperdigest(configuration_and_settings_->super_digest));
 
     state_manager = nuraft::cs_new<KeeperStateManager>(
         server_id,

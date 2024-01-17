@@ -6,12 +6,18 @@
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/KeeperContext.h>
 
 #include <absl/container/flat_hash_set.h>
+
+#include "config.h"
+#if USE_ROCKSDB
+#include <Coordination/RocksDBContainer.h>
+#endif
 
 namespace DB
 {
@@ -20,16 +26,23 @@ using ResponseCallback = std::function<void(const Coordination::ZooKeeperRespons
 using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
-struct KeeperRocksNode
+struct KeeperRocksNodeInfo
 {
-    struct KeeperRocksNodeInfo
-    {
-        uint64_t acl_id = 0; /// 0 -- no ACL by default
-        bool is_sequental = false;
-        Coordination::Stat stat{};
-        int32_t seq_num = 0;
-        UInt64 digest = 0; /// we cached digest for this node.
-    } meta;
+    uint64_t acl_id = 0; /// 0 -- no ACL by default
+    bool is_sequental = false;
+    Coordination::Stat stat{};
+    int32_t seq_num = 0;
+    mutable UInt64 digest = 0; /// we cached digest for this node.
+};
+
+struct KeeperRocksNode:KeeperRocksNodeInfo
+{
+#if USE_ROCKSDB
+    friend struct RocksDBContainer<KeeperRocksNode>;
+#endif
+    using Meta = KeeperRocksNodeInfo;
+
+    uint64_t size_bytes = 0; // only for compatible, should be deprecated
 
     uint64_t sizeInBytes() const { return data.size() + sizeof(KeeperRocksNodeInfo); }
     void setData(String new_data) {data = new_data;}
@@ -38,7 +51,17 @@ struct KeeperRocksNode
     {
         *this = other;
     }
+    void invalidateDigestCache() const;
+    UInt64 getDigest(std::string_view path) const;
+    String getEncodedString();
+    void decodeFromString(const String & buffer_str);
+    void recalculateSize() {}
+    void reset()
+    {
+        serialized = false;
+    }
 private:
+    bool serialized = false;
     String data;
 };
 
@@ -158,7 +181,11 @@ public:
     using Container = Container_;
     using Node = Container::Node;
 
-    /// static constexpr bool use_rocksdb = std::is_same_v<Container_, RocksDBContainer>;
+#if USE_ROCKSDB
+    static constexpr bool use_rocksdb = std::is_same_v<Container_, RocksDBContainer<KeeperRocksNode>>;
+#else
+    static constexpr bool use_rocksdb = false;
+#endif
 
     static constexpr auto CURRENT_DIGEST_VERSION = DigestVersion::V2;
 
@@ -521,6 +548,8 @@ private:
 };
 
 using KeeperMemoryStorage = KeeperStorage<SnapshotableHashTable<KeeperMemNode>>;
-//using KeeperRocksStorage = KeeperStorage<RocksDBContainer<KeeperRocksNode>>;
+#if USE_ROCKSDB
+using KeeperRocksStorage = KeeperStorage<RocksDBContainer<KeeperRocksNode>>;
+#endif
 
 }

@@ -939,5 +939,8 @@ void KeeperStateMachine<Storage>::recalculateStorageStats()
 }
 
 template class KeeperStateMachine<KeeperMemoryStorage>;
+#if USE_ROCKSDB
+template class KeeperStateMachine<KeeperRocksStorage>;
+#endif
 
 }

@@ -51,6 +51,12 @@ struct SnapshotDeserializationResult
 template<typename Storage>
 struct KeeperStorageSnapshot
 {
+#if USE_ROCKSDB
+    static constexpr bool use_rocksdb = std::is_same_v<Storage, KeeperRocksStorage>;
+#else
+    static constexpr bool use_rocksdb = false;
+#endif
+
 public:
     KeeperStorageSnapshot(Storage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_ = nullptr);
 
@@ -98,7 +104,11 @@ struct SnapshotFileInfo
     DiskPtr disk;
 };
 
+#if USE_ROCKSDB
+using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>, std::shared_ptr<KeeperStorageSnapshot<KeeperRocksStorage>>>;
+#else
 using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>>;
+#endif
 using CreateSnapshotCallback = std::function<SnapshotFileInfo(KeeperStorageSnapshotPtr &&)>;
 
 /// Class responsible for snapshots serialization and deserialization. Each snapshot

@@ -194,6 +194,40 @@ uint64_t calculateDigest(std::string_view path, std::string_view data, const Coo
 
 }
 
+void KeeperRocksNode::invalidateDigestCache() const
+{
+    if (serialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "We modify node after serialized it");
+    digest = 0;
+}
+
+UInt64 KeeperRocksNode::getDigest(std::string_view path) const
+{
+    if (!digest)
+        digest = calculateDigest(path, data, stat);
+    return digest;
+}
+
+String KeeperRocksNode::getEncodedString()
+{
+    if (serialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "We modify node after serialized it");
+    serialized = true;
+
+    WriteBufferFromOwnString buffer;
+    const KeeperRocksNodeInfo & node_info = *this;
+    writePODBinary(node_info, buffer);
+    return buffer.str();
+}
+
+void KeeperRocksNode::decodeFromString(const String &buffer_str)
+{
+    ReadBufferFromOwnString buffer(buffer_str);
+    KeeperRocksNodeInfo & node_info = *this;
+    readPODBinary(node_info, buffer);
+    readStringBinary(data, buffer);
+}
+
 void KeeperMemNode::setData(String new_data)
 {
     size_bytes = size_bytes - data.size() + new_data.size();
@@ -248,7 +282,8 @@ KeeperStorage<Container>::KeeperStorage(
 {
     Node root_node;
     container.insert("/", root_node);
-    addDigest(root_node, "/");
+    if constexpr (!use_rocksdb)
+        addDigest(root_node, "/");
 
     if (initialize_system_nodes)
         initializeSystemNodes();
@@ -267,21 +302,25 @@ void KeeperStorage<Container>::initializeSystemNodes()
         container.insert(keeper_system_path, system_node);
         // store digest for the empty node because we won't update
         // its stats
-        addDigest(system_node, keeper_system_path);
+        if constexpr (!use_rocksdb)
+            addDigest(system_node, keeper_system_path);
 
         // update root and the digest based on it
         auto current_root_it = container.find("/");
         assert(current_root_it);
-        removeDigest(current_root_it->value, "/");
+        if constexpr (!use_rocksdb)
+            removeDigest(current_root_it->value, "/");
         auto updated_root_it = container.updateValue(
             "/",
             [](auto & node)
             {
                 ++node.stat.numChildren;
-                node.addChild(getBaseNodeName(keeper_system_path));
+                if constexpr (!use_rocksdb)
+                    node.addChild(getBaseNodeName(keeper_system_path));
             }
         );
-        addDigest(updated_root_it->value, "/");
+        if constexpr (!use_rocksdb)
+            addDigest(updated_root_it->value, "/");
     }
 
     // insert child system nodes
@@ -290,17 +329,22 @@ void KeeperStorage<Container>::initializeSystemNodes()
         assert(path.starts_with(keeper_system_path));
         Node child_system_node;
         child_system_node.setData(data);
-        auto [map_key, _] = container.insert(std::string{path}, child_system_node);
-        /// Take child path from key owned by map.
-        auto child_path = getBaseNodeName(map_key->getKey());
-        container.updateValue(
-            parentNodePath(StringRef(path)),
-            [child_path](auto & parent)
-            {
-                // don't update stats so digest is okay
-                parent.addChild(child_path);
-            }
-        );
+        if constexpr (use_rocksdb)
+            container.insert(std::string{path}, child_system_node);
+        else
+        {
+            auto [map_key, _] = container.insert(std::string{path}, child_system_node);
+            /// Take child path from key owned by map.
+            auto child_path = getBaseNodeName(map_key->getKey());
+            container.updateValue(
+                parentNodePath(StringRef(path)),
+                [child_path](auto & parent)
+                {
+                    // don't update stats so digest is okay
+                    parent.addChild(child_path);
+                }
+            );
+        }
     }
 
     initialized = true;
@@ -679,9 +723,11 @@ Coordination::Error KeeperStorage<Container>::commit(int64_t commit_zxid)
                     if (operation.version != -1 && operation.version != node_it->value.stat.version)
                         onStorageInconsistency();
 
-                    removeDigest(node_it->value, path);
+                    if constexpr (!use_rocksdb)
+                        removeDigest(node_it->value, path);
                     auto updated_node = container.updateValue(path, operation.update_fn);
-                    addDigest(updated_node->value, path);
+                    if constexpr (!use_rocksdb)
+                        addDigest(updated_node->value, path);
 
                     return Coordination::Error::ZOK;
                 }
@@ -769,19 +815,26 @@ bool KeeperStorage<Container>::createNode(
     created_node.stat = stat;
     created_node.setData(std::move(data));
     created_node.is_sequental = is_sequental;
-    auto [map_key, _] = container.insert(path, created_node);
-    /// Take child path from key owned by map.
-    auto child_path = getBaseNodeName(map_key->getKey());
-    container.updateValue(
-            parent_path,
-            [child_path](Node & parent)
-            {
-                parent.addChild(child_path);
-                chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
-            }
-    );
+    if constexpr (use_rocksdb)
+    {
+        container.insert(path, created_node);
+    }
+    else
+    {
+        auto [map_key, _] = container.insert(path, created_node);
+        /// Take child path from key owned by map.
+        auto child_path = getBaseNodeName(map_key->getKey());
+        container.updateValue(
+                parent_path,
+                [child_path](KeeperMemNode & parent)
+                {
+                    parent.addChild(child_path);
+                    chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
+                }
+        );
 
-    addDigest(map_key->getMapped()->value, map_key->getKey().toView());
+        addDigest(map_key->getMapped()->value, map_key->getKey().toView());
+    }
     return true;
 };
 
@@ -801,18 +854,22 @@ bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t vers
     auto prev_node = node_it->value;
     acl_map.removeUsage(prev_node.acl_id);
 
-    container.updateValue(
-        parentNodePath(path),
-        [child_basename = getBaseNodeName(node_it->key)](Node & parent)
-        {
-            parent.removeChild(child_basename);
-            chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
-        }
-    );
+    if constexpr (use_rocksdb)
+        container.erase(path);
+    else {
+        container.updateValue(
+            parentNodePath(path),
+            [child_basename = getBaseNodeName(node_it->key)](KeeperMemNode & parent)
+            {
+                parent.removeChild(child_basename);
+                chassert(parent.stat.numChildren == static_cast<int32_t>(parent.getChildren().size()));
+            }
+        );
 
-    container.erase(path);
+        container.erase(path);
 
-    removeDigest(prev_node, path);
+        removeDigest(prev_node, path);
+    }
     return true;
 }
 
@@ -1485,35 +1542,65 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             if (path_prefix.empty())
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: path cannot be empty");
 
-            const auto & children = node_it->value.getChildren();
-            response.names.reserve(children.size());
-
-            const auto add_child = [&](const auto child)
+            if constexpr (Storage::use_rocksdb)
             {
-                using enum Coordination::ListRequestType;
-
-                auto list_request_type = ALL;
-                if (auto * filtered_list = dynamic_cast<Coordination::ZooKeeperFilteredListRequest *>(&request))
+                const auto & children = container.getChildren(request.path);
+                response.names.reserve(children.size());
+                const auto add_child = [&](const auto & child)
                 {
-                    list_request_type = filtered_list->list_request_type;
+                    using enum Coordination::ListRequestType;
+
+                    auto list_request_type = ALL;
+                    if (auto * filtered_list = dynamic_cast<Coordination::ZooKeeperFilteredListRequest *>(&request))
+                    {
+                        list_request_type = filtered_list->list_request_type;
+                    }
+
+                    if (list_request_type == ALL)
+                        return true;
+
+                    const auto is_ephemeral = child.value.stat.ephemeralOwner != 0;
+                    return (is_ephemeral && list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
+                };
+
+                for (const auto & child : children)
+                {
+                    if (add_child(child))
+                        response.names.push_back(child.key.toString());
                 }
-
-                if (list_request_type == ALL)
-                    return true;
-
-                auto child_path = (std::filesystem::path(request.path) / child.toView()).generic_string();
-                auto child_it = container.find(child_path);
-                if (child_it == nullptr)
-                    onStorageInconsistency();
-
-                const auto is_ephemeral = child_it->value.stat.ephemeralOwner != 0;
-                return (is_ephemeral && list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
-            };
-
-            for (const auto child : children)
+            }
+            else
             {
-                if (add_child(child))
-                    response.names.push_back(child.toString());
+                const auto & children = node_it->value.getChildren();
+                response.names.reserve(children.size());
+
+                const auto add_child = [&](const auto child)
+                {
+                    using enum Coordination::ListRequestType;
+
+                    auto list_request_type = ALL;
+                    if (auto * filtered_list = dynamic_cast<Coordination::ZooKeeperFilteredListRequest *>(&request))
+                    {
+                        list_request_type = filtered_list->list_request_type;
+                    }
+
+                    if (list_request_type == ALL)
+                        return true;
+
+                    auto child_path = (std::filesystem::path(request.path) / child.toView()).generic_string();
+                    auto child_it = container.find(child_path);
+                    if (child_it == nullptr)
+                        onStorageInconsistency();
+
+                    const auto is_ephemeral = child_it->value.stat.ephemeralOwner != 0;
+                    return (is_ephemeral && list_request_type == EPHEMERAL_ONLY) || (!is_ephemeral && list_request_type == PERSISTENT_ONLY);
+                };
+
+                for (const auto child : children)
+                {
+                    if (add_child(child))
+                        response.names.push_back(child.toString());
+                }
             }
 
             response.stat = node_it->value.stat;
@@ -2040,9 +2127,9 @@ public:
     using Creator = std::function<std::shared_ptr<KeeperStorageRequestProcessor<Storage>>(const Coordination::ZooKeeperRequestPtr &)>;
     using OpNumToRequest = std::unordered_map<Coordination::OpNum, Creator>;
 
-    static KeeperStorageRequestProcessorsFactory & instance()
+    static KeeperStorageRequestProcessorsFactory<Storage> & instance()
     {
-        static KeeperStorageRequestProcessorsFactory factory;
+        static KeeperStorageRequestProcessorsFactory<Storage> factory;
         return factory;
     }
 
@@ -2593,5 +2680,8 @@ String KeeperStorage<Container>::generateDigest(const String & userdata)
 }
 
 template class KeeperStorage<SnapshotableHashTable<KeeperMemNode>>;
+#if USE_ROCKSDB
+template class KeeperStorage<RocksDBContainer<KeeperRocksNode>>;
+#endif
 
 }

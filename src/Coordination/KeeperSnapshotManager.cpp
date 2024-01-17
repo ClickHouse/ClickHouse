@@ -415,31 +415,34 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
             storage.nodes_digest += node.getDigest(path);
     }
 
-    for (const auto & itr : storage.container)
+    if constexpr (!use_rocksdb)
     {
-        if (itr.key != "/")
+        for (const auto & itr : storage.container)
         {
-            auto parent_path = parentNodePath(itr.key);
-            storage.container.updateValue(
-                parent_path, [version, path = itr.key](typename Storage::Node & value) { value.addChild(getBaseNodeName(path), /*update_size*/ version < SnapshotVersion::V4); });
-        }
-    }
-
-    for (const auto & itr : storage.container)
-    {
-        if (itr.key != "/")
-        {
-            if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
+            if (itr.key != "/")
             {
-#ifdef NDEBUG
-                /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
-                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
-                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
-#else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
-                                " is different from actual children size {} for node {}",
-                                itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
-#endif
+                auto parent_path = parentNodePath(itr.key);
+                storage.container.updateValue(
+                    parent_path, [version, path = itr.key](typename Storage::Node & value) { value.addChild(getBaseNodeName(path), /*update_size*/ version < SnapshotVersion::V4); });
+            }
+        }
+
+        for (const auto & itr : storage.container)
+        {
+            if (itr.key != "/")
+            {
+                if (itr.value.stat.numChildren != static_cast<int32_t>(itr.value.getChildren().size()))
+                {
+    #ifdef NDEBUG
+                    /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
+                    LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "Children counter in stat.numChildren {}"
+                                " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+    #else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
+                                    " is different from actual children size {} for node {}",
+                                    itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+    #endif
+                }
             }
         }
     }
@@ -845,5 +848,9 @@ SnapshotFileInfo KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(const K
 
 template struct KeeperStorageSnapshot<KeeperMemoryStorage>;
 template class KeeperSnapshotManager<KeeperMemoryStorage>;
+#if USE_ROCKSDB
+template struct KeeperStorageSnapshot<KeeperRocksStorage>;
+template class KeeperSnapshotManager<KeeperRocksStorage>;
+#endif
 
 }
