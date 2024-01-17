@@ -28,6 +28,7 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     size_t zxid = 0;
     size_t session_with_watches = 0;
     size_t paths_watched = 0;
+    size_t has_mem_soft_limit_hit = 0;
     //size_t snapshot_dir_size = 0;
     //size_t log_dir_size = 0;
 
@@ -38,6 +39,7 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
         is_leader = static_cast<size_t>(keeper_info.is_leader);
         is_observer = static_cast<size_t>(keeper_info.is_observer);
         is_follower = static_cast<size_t>(keeper_info.is_follower);
+        has_mem_soft_limit_hit = static_cast<size_t>(keeper_info.has_mem_soft_limit_hit);
 
         zxid = keeper_info.last_zxid;
         const auto & state_machine = keeper_dispatcher.getStateMachine();
@@ -68,6 +70,7 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     new_values["KeeperIsFollower"] = { is_follower, "1 if ClickHouse Keeper is a follower, 0 otherwise." };
     new_values["KeeperIsObserver"] = { is_observer, "1 if ClickHouse Keeper is an observer, 0 otherwise." };
     new_values["KeeperIsStandalone"] = { is_standalone, "1 if ClickHouse Keeper is in a standalone mode, 0 otherwise." };
+    new_values["KeeperHasMemorySoftLimitHit"] = { has_mem_soft_limit_hit, "1 if ClickHouse Keeper has hit the memory soft limit, 0 otherwise."};
 
     new_values["KeeperZnodeCount"] = { znode_count, "The number of nodes (data entries) in ClickHouse Keeper." };
     new_values["KeeperWatchCount"] = { watch_count, "The number of watches in ClickHouse Keeper." };

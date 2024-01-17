@@ -177,6 +177,11 @@ public:
         return server->isObserver();
     }
 
+    bool hasMemorySoftLimitHit() const
+    {
+        return server->hasMemorySoftLimitHit();
+    }
+
     uint64_t getLogDirSize() const;
 
     uint64_t getSnapDirSize() const;
