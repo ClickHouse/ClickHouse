@@ -264,7 +264,6 @@ SLRUFileCachePriority::SLRUIterator::SLRUIterator(
 
 SLRUFileCachePriority::EntryPtr SLRUFileCachePriority::SLRUIterator::getEntry() const
 {
-    chassert(entry == lru_iterator.getEntry());
     return entry;
 }
 
