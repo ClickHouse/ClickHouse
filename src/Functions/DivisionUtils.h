@@ -137,7 +137,8 @@ struct ModuloImpl
                 if (a < 0)
                 {
                     using CastA = typename NumberTraits::Construct<false, false, sizeof(IntegerAType)>::Type;
-                    return -(static_cast<Result>(static_cast<CastA>(-a) % b));
+                    CastA abs_a = -a;
+                    return -(static_cast<Result>(abs_a % b));
                 }
             }
             else if constexpr (!std::numeric_limits<IntegerAType>::is_signed && std::numeric_limits<IntegerBType>::is_signed)
