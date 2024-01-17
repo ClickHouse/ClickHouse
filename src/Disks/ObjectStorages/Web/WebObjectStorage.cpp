@@ -167,29 +167,20 @@ std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const
     {
         shared_lock.unlock();
 
-        bool is_file = fs::path(path).has_extension();
-        if (is_file)
-        {
-            const auto parent_path = fs::path(path).parent_path();
-            auto parent_info = tryGetFileInfo(parent_path);
-            if (!parent_info)
-                return std::nullopt; /// Even parent path does not exist.
+        const auto parent_path = fs::path(path).parent_path();
+        auto parent_info = tryGetFileInfo(parent_path);
+        if (!parent_info)
+            return std::nullopt; /// Even parent path does not exist.
 
-            if (parent_info->loaded_children)
-            {
-                return std::nullopt;
-            }
-            else
-            {
-                std::unique_lock unique_lock(metadata_mutex);
-                loadFiles(fs::path(url) / parent_path, unique_lock);
-                parent_info->loaded_children = true;
-            }
+        if (parent_info->loaded_children)
+        {
+            return std::nullopt;
         }
         else
         {
             std::unique_lock unique_lock(metadata_mutex);
-            loadFiles(fs::path(url) / path, unique_lock);
+            loadFiles(fs::path(url) / parent_path, unique_lock);
+            parent_info->loaded_children = true;
         }
 
         shared_lock.lock();
