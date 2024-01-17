@@ -1154,7 +1154,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                 std::vector<IConnectionPool::Entry>{try_result},
-                connection,
                 new_query_str,
                 Block{},
                 query_context,
