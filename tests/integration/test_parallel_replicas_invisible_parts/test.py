@@ -73,15 +73,6 @@ def _create_query(query_tmpl, table_name):
     return query_tmpl.format(table_name=table_name)
 
 
-def _get_result_without_parallel_replicas(query):
-    return nodes[0].query(
-        query,
-        settings={
-            "allow_experimental_parallel_reading_from_replicas": 0,
-        },
-    )
-
-
 def _get_result_with_parallel_replicas(
     query, cluster_name, parallel_replicas_mark_segment_size
 ):
