@@ -9,6 +9,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BZIP2_STREAM_ENCODER_FAILED;
+}
 
 Bzip2WriteBuffer::~Bzip2WriteBuffer() = default;
 
