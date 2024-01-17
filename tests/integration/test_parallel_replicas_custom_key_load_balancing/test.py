@@ -75,7 +75,7 @@ def test_parallel_replicas_custom_key_load_balancing(
     log_comment = uuid.uuid4()
     assert (
         node1.query(
-            f"SELECT key, count() FROM cluster('{cluster}', default.test_table) GROUP BY key ORDER BY key",
+            f"SELECT key, count() FROM cluster('{cluster}', currentDatabase(), test_table) GROUP BY key ORDER BY key",
             settings={
                 "log_comment": log_comment,
                 "prefer_localhost_replica": 0,
