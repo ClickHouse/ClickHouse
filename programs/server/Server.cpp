@@ -666,7 +666,7 @@ try
     registerDatabases();
     registerStorages();
     registerDictionaries();
-    registerDisks(/* global_skip_access_check= */ false, /* allow_vfs */ true);
+    registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
     registerSchedulerNodes();
