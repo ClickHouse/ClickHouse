@@ -61,8 +61,8 @@ start_fdb_server () {
     _fdb_port="$1"
     _role="$2"
 
-    mkdir -p data/$_fdb_port
-    mkdir -p log/$_fdb_port
+    mkdir -p data/"$_fdb_port"
+    mkdir -p log/"$_fdb_port"
 
     nohup $FDBSERVER \
     -l "127.0.0.1:$_fdb_port" \

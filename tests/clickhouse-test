@@ -774,7 +774,7 @@ class TestCase:
         for ext in [".reference", ".gen.reference"]:
             if os.path.isfile(
                 os.path.join(
-                   suite_dir, "..", "..", "config", "config.d", "fdbkeeper.xml"
+                    suite_dir, "..", "..", "config", "config.d", "fdbkeeper.xml"
                 )
             ):
                 reference_file_fdb = os.path.join(suite_dir, name + "_fdb") + ext

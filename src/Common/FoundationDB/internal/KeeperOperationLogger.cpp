@@ -391,7 +391,7 @@ void KeeperResponseLogger::response(const Response & resp, size_t elapsed_ms) co
             auto & res = dynamic_cast<Response &>(*response);
             this->response(res, elapsed_ms);
         }
-    }    
+    }
 }
 }
 

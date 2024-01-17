@@ -39,7 +39,7 @@ FoundationDBOptions::FoundationDBOptions(const Poco::Util::AbstractConfiguration
         if (key.starts_with("knob"))
             knobs.emplace_back(config.getString(config_name + "." + key));
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupport founcdationdb config: {}.{}", config_name, key);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported founcdationdb config: {}.{}", config_name, key);
 }
 
 std::unique_ptr<ThreadFromGlobalPool> FoundationDBNetwork::network_thread;
