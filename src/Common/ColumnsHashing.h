@@ -29,6 +29,9 @@
 #    include <immintrin.h>
 #endif
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -723,44 +726,14 @@ struct HashMethodSerialized
     }
 };
 
-DECLARE_AVX512BW_SPECIFIC_CODE(
-inline std::optional<AdaptiveKeysHolder> quickLookupValueId(
-    AdaptiveKeysHolder::State::ValueCacheLine & cache,
-    size_t row,
-    UInt64 value_id,
-    const ColumnRawPtrs & key_columns,
-    AdaptiveKeysHolder::State & shared_state)
-{
-    if (cache.allocated_num > 8)
-        return {};
-    auto value_id_v = _mm512_set1_epi64(value_id);
-    auto value_id_line = _mm512_load_epi64(reinterpret_cast<const UInt8 *>(cache.value_ids));
-    auto cmp_mask = _mm512_cmpeq_epi64_mask(value_id_line, value_id_v);
-    auto hit_pos = _tzcnt_u32(cmp_mask);
-    if (hit_pos >= 8) [[unlikely]]
-    {
-        if (cache.allocated_num >= 8)
-        {
-            cache.allocated_num++;
-            return {};
-        }
-        auto & cached_values = shared_state.cached_values;
-        auto current_index = cache.allocated_num++;
-        auto serialized_keys = serializeKeysToPoolContiguous(row, key_columns.size(), key_columns, *shared_state.pool);
-        auto hash = ::DefaultHash<StringRef>()(serialized_keys);
-        cached_values[value_id] = AdaptiveKeysHolder::StateRef(serialized_keys, value_id, hash, &shared_state);
-        cache.value_ids[current_index] = value_id;
-        cache.cached_values[current_index] = &cached_values[value_id];
-        return {AdaptiveKeysHolder{serialized_keys, cache.cached_values[current_index], shared_state.pool.get()}};
-    }
-
-    return {AdaptiveKeysHolder{cache.cached_values[hit_pos]->serialized_keys, cache.cached_values[hit_pos], shared_state.pool.get()}};
-})
-
 /// Multiple aggregators share one AdaptiveHashMethodContext.
 class AdaptiveHashMethodContext : public HashMethodContext
 {
 public:
+    struct IdHash
+    {
+        ALWAYS_INLINE size_t operator()(const UInt64 & id) const { return id; }
+    };
 
     /// Each AggregatorContext is bound to one Aggregator.
     struct AggregatorContext
@@ -772,7 +745,7 @@ public:
         HashValueIdGenerators value_id_generators;
     };
     std::mutex mutex;
-    std::unordered_map<UInt64, AggregatorContext> aggregator_contexts;
+    std::unordered_map<UInt64, AggregatorContext, IdHash> aggregator_contexts;
 };
 
 /// If all the keys are low cardinality, we could assign unique values for different keys combinations.
@@ -786,7 +759,9 @@ struct HashMethodKeysAdaptive
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
     static constexpr bool has_cheap_key_calculation = false;
-    static constexpr size_t max_value_id_number = 65536;
+    static constexpr size_t max_value_id_number_bits = 10;
+    static constexpr size_t max_value_id_number = 1 << max_value_id_number_bits;
+    std::vector<AdaptiveKeysHolder::StateRef*> cached_keys_holders;
 
     ColumnRawPtrs key_columns;
     size_t keys_size;
@@ -826,12 +801,11 @@ struct HashMethodKeysAdaptive
         }
         if (aggregator_context->value_id_generators.empty())
         {
-            auto max_value_id_num_for_key = max_value_id_number/key_columns.size();
-            max_value_id_num_for_key = 256 > max_value_id_num_for_key ? 256 : max_value_id_num_for_key;
+            UInt32 max_value_id_bits = max_value_id_number_bits/key_columns.size();
             for (size_t i = 0, n = key_columns.size(); i < n; ++i)
             {
                 aggregator_context->value_id_generators.emplace_back(HashValueIdGeneratorFactory::instance().getGenerator(
-                    &(aggregator_context->shared_keys_holder_state), max_value_id_num_for_key, full_key_columns[i].get()));
+                    &(aggregator_context->shared_keys_holder_state), max_value_id_bits, full_key_columns[i].get()));
             }
         }
 
@@ -847,8 +821,38 @@ struct HashMethodKeysAdaptive
         {
             value_ids.clear();
             value_ids.resize_fill(key_columns[0]->size(), 0);
-            for (size_t i = 0; i < keys_size; ++i)
+            for (size_t i = 0;
+                 i < keys_size && aggregator_context->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID;
+                 ++i)
                 aggregator_context->value_id_generators[i]->computeValueId(full_key_columns[i].get(), &value_ids[0]);
+        }
+
+        if (aggregator_context->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+        {
+            cached_keys_holders.resize(max_value_id_number);
+            auto rows = key_columns[0]->size();
+            auto & cached_values = aggregator_context->shared_keys_holder_state.cached_values;
+            for (size_t i = 0; i < rows; ++i)
+            {
+                auto & value_id = value_ids[i];
+                #if 0
+                if (value_id >= max_value_id_number)
+                {
+                    LOG_ERROR(&Poco::Logger::get("HashMethodKeysAdaptive"), "xxx value_id {} >= max_value_id_number {}", value_id, max_value_id_number);
+                    aggregator_context->shared_keys_holder_state.hash_mode  = AdaptiveKeysHolder::State::HASH;
+                    return;
+                }
+                #endif
+                auto & key_holder = cached_keys_holders[value_id];
+                if (key_holder)
+                    continue;
+                auto serialized_keys
+                    = serializeKeysToPoolContiguous(i, keys_size, key_columns, *aggregator_context->shared_keys_holder_state.pool);
+                auto hash = ::DefaultHash<StringRef>()(serialized_keys);
+                auto & x = cached_values[value_id];
+                x = AdaptiveKeysHolder::StateRef(serialized_keys, value_id, hash, &aggregator_context->shared_keys_holder_state);
+                key_holder = &x;
+            }
         }
     }
 
@@ -858,21 +862,6 @@ struct HashMethodKeysAdaptive
     {
         if (aggregator_context->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
-#if USE_MULTITARGET_CODE
-            if (isArchSupported(TargetArch::AVX512BW))
-            {
-                auto & value_id = value_ids[row];
-                auto & value_cache_lines = aggregator_context->shared_keys_holder_state.value_cache_lines;
-                auto key_holder = TargetSpecific::AVX512BW::quickLookupValueId(
-                    value_cache_lines[value_id & aggregator_context->shared_keys_holder_state.cache_line_num_mask],
-                    row,
-                    value_id,
-                    key_columns,
-                    aggregator_context->shared_keys_holder_state);
-                if (key_holder)
-                    return *key_holder;
-            }
-#endif
             return getKeyHolderFromCacheValues(row);
         }
         else
@@ -886,27 +875,15 @@ struct HashMethodKeysAdaptive
     ALWAYS_INLINE AdaptiveKeysHolder getKeyHolderFromCacheValues(size_t row)
     {
         auto & value_id = value_ids[row];
-        auto & cached_values = aggregator_context->shared_keys_holder_state.cached_values;
-        auto cache_it = cached_values.find(value_id);
-        if (cache_it == cached_values.end()) [[unlikely]]
-        {
-            auto serialized_keys
-                = serializeKeysToPoolContiguous(row, keys_size, key_columns, *aggregator_context->shared_keys_holder_state.pool);
-            auto hash = ::DefaultHash<StringRef>()(serialized_keys);
-
-            cached_values[value_id]
-                = AdaptiveKeysHolder::StateRef(serialized_keys, value_id, hash, &aggregator_context->shared_keys_holder_state);
-            return AdaptiveKeysHolder{serialized_keys, &cached_values[value_id], aggregator_context->shared_keys_holder_state.pool.get()};
-        }
-        else
-            return AdaptiveKeysHolder{
-                cache_it->second.serialized_keys, &cache_it->second, aggregator_context->shared_keys_holder_state.pool.get()};
+        auto & key_holder = cached_keys_holders[value_id];
+        return AdaptiveKeysHolder{key_holder->serialized_keys, key_holder, aggregator_context->shared_keys_holder_state.pool.get()};
     }
 
     static HashMethodContextPtr createContext(const HashMethodContext::Settings & settings[[maybe_unused]])
     {
         return std::make_shared<AdaptiveHashMethodContext>();
     }
+
 
 };
 

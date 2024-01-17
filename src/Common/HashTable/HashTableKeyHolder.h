@@ -179,7 +179,6 @@ struct AdaptiveKeysHolder
             alignas(64) UInt64 value_ids[8] = {-1UL, -1UL, -1UL, -1UL, -1UL, -1UL, -1UL, -1UL};
             StateRef * cached_values[8] = {nullptr};
         };
-        ValueCacheLine value_cache_lines[cache_line_num];
 
         std::unordered_map<UInt64, StateRef> cached_values;
     };
@@ -196,7 +195,7 @@ inline bool ALWAYS_INLINE operator==(const DB::AdaptiveKeysHolder &a, const DB::
 {
     /// a and b may come from different aggregate variants during the merging phase, in this case
     /// we cannot compare the value_ids.
-    if (a.state_ref && a.state_ref->state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID && b.state_ref
+    if (b.state_ref && b.state_ref->state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID && a.state_ref
         && a.state_ref->state == b.state_ref->state)
     {
         return a.state_ref->value_id == b.state_ref->value_id;

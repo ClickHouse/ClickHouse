@@ -28,6 +28,9 @@
 #    include <immintrin.h>
 #endif
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -48,10 +51,10 @@ struct HashValueIdCacheLine
 };
 
 DECLARE_DEFAULT_CODE(
-inline void concateValueIds(const UInt64 * __restrict local_value_ids, UInt64 * __restrict value_ids, size_t multiplier, size_t n)
+inline void concateValueIds(const UInt64 * __restrict local_value_ids, UInt64 * __restrict value_ids, UInt32 value_id_bits, size_t n)
 {
     for (size_t j = 0; j < n; ++j)
-        value_ids[j] = value_ids[j] * multiplier + local_value_ids[j];
+        value_ids[j] = value_ids[j] << value_id_bits | local_value_ids[j];
 }
 
 template<typename T>
@@ -94,25 +97,26 @@ inline void computeStringsLengthFromOffsets(const IColumn::Offsets & offsets, In
 )
 
 DECLARE_AVX512BW_SPECIFIC_CODE(
-inline void concateValueIds(const UInt64 * __restrict local_value_ids, UInt64 * __restrict value_ids, size_t multiplier, size_t n)
+inline void concateValueIds(const UInt64 * __restrict local_value_ids, UInt64 * __restrict value_ids, UInt32 value_id_bits, size_t n)
 {
     size_t i = 0;
     auto tmp_value_ids = value_ids;
     auto tmp_local_value_ids = local_value_ids;
     for (; i + 8 < n; i += 8)
     {
-        auto multiplier_v = _mm512_set1_epi64(multiplier);
+        // auto multiplier_v = _mm512_set1_epi64(multiplier);
         auto value_ids_v = _mm512_loadu_epi64(tmp_value_ids);
-        auto multipy_result = _mm512_mullox_epi64(value_ids_v, multiplier_v);
+        auto multipy_result = _mm512_slli_epi64(value_ids_v, value_id_bits);
         auto local_value_ids_v = _mm512_loadu_epi64(tmp_local_value_ids);
-        auto add_result = _mm512_add_epi64(multipy_result, local_value_ids_v);
+        auto add_result = _mm512_or_epi64(multipy_result, local_value_ids_v);
+        // auto add_result = _mm512_add_epi64(multipy_result, local_value_ids_v);
         _mm512_storeu_epi64(tmp_value_ids, add_result);
         tmp_value_ids += 8;
         tmp_local_value_ids += 8;
     }
 
     for (; i < n; ++i)
-        value_ids[i] = value_ids[i] * multiplier + local_value_ids[i];
+        value_ids[i] = value_ids[i] << value_id_bits | local_value_ids[i];
 }
 
 inline void getValueIdsByRange(UInt64 * __restrict value_ids, UInt64 range_start, size_t n)
@@ -187,11 +191,14 @@ inline bool quickLookupValueId(HashValueIdCacheLine & cache,
 class IHashValueIdGenerator
 {
 public:
-    explicit IHashValueIdGenerator(const IColumn * /*col_*/, AdaptiveKeysHolder::State *state_, size_t max_distinct_values_)
-        : state(state_), max_distinct_values(max_distinct_values_)
+    explicit IHashValueIdGenerator(const IColumn * /*col_*/, AdaptiveKeysHolder::State *state_, UInt32 value_id_bits_, size_t max_distinct_values_)
+        : state(state_), value_id_bits(value_id_bits_), max_distinct_values(max_distinct_values_)
     {
     }
-    virtual ~IHashValueIdGenerator() = default;
+    virtual ~IHashValueIdGenerator()
+    {
+        LOG_ERROR(&Poco::Logger::get("HashValueIdGenerator"), "xxx allocated_value_id: {}", allocated_value_id);
+    }
 
     void computeValueId(const IColumn * col, UInt64 * value_ids)
     {
@@ -226,6 +233,7 @@ public:
 
         if (allocated_value_id > max_distinct_values)
         {
+            LOG_ERROR(&Poco::Logger::get("HashValueIdGenerator"), "Too many distinct values: {}, max_distinct_values: {}", allocated_value_id, max_distinct_values);
             state->hash_mode = AdaptiveKeysHolder::State::HASH;
             m_value_ids.clearAndShrink();
         }
@@ -241,6 +249,7 @@ public:
 
 protected:
     AdaptiveKeysHolder::State *state;
+    UInt32 value_id_bits;
     size_t max_distinct_values;
 
     /// If the values are in range [range_min, range_max], we can use the value - range_min as the
@@ -312,8 +321,10 @@ protected:
 
     ALWAYS_INLINE void getValueId(const StringRef &raw_value, UInt64 serialized_value [[maybe_unused]], UInt64 & value_id)
     {
+
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        // if (isArchSupported(TargetArch::AVX512BW))
+        if constexpr (true)
         {
             if (enable_value_id_cache_line)
             {
@@ -330,6 +341,7 @@ protected:
             }
         }
 #endif
+
         getValueId(raw_value, value_id);
     }
 
@@ -348,14 +360,13 @@ protected:
     ALWAYS_INLINE void computeValueIdsInRangeMode(UInt64 * __restrict value_ids, size_t n, const UInt8 * __restrict data_pos, size_t element_bytes, const UInt8 * __restrict null_map)
     {
         UInt64 range_delta = range_min - is_nullable;
-        UInt64 range_length = range_max - range_min + is_nullable;
         if (element_bytes <= 8 && data_pos_aligned)
             TargetSpecific::Default::extendValuesToUInt64<T>(data_pos, value_ids, n);
         else
             TargetSpecific::Default::shortValuesToUInt64(data_pos, element_bytes, value_ids, n);
-
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        // if (isArchSupported(TargetArch::AVX512BW))
+        if constexpr (true)
             TargetSpecific::AVX512BW::getValueIdsByRange(value_ids, range_delta, n);
         else
 #endif
@@ -363,6 +374,8 @@ protected:
             TargetSpecific::Default::getValueIdsByRange(value_ids, range_delta, n);
         }
 
+        #if 0
+        UInt64 range_length = range_max - range_min + is_nullable;
         for (size_t i = 0; i < n; ++i)
         {
             StringRef raw_value(data_pos, element_bytes);
@@ -370,6 +383,7 @@ protected:
                 getValueId(raw_value, value_ids[i] + range_delta, value_ids[i]);
             data_pos += element_bytes;
         }
+        #endif
         applyNullMap(value_ids, null_map, n);
 
     }
@@ -389,8 +403,8 @@ protected:
 class StringHashValueIdGenerator : public IHashValueIdGenerator
 {
 public:
-    explicit StringHashValueIdGenerator(const IColumn * col_, AdaptiveKeysHolder::State * state_, size_t max_distinct_values_)
-        : IHashValueIdGenerator(col_, state_, max_distinct_values_)
+    explicit StringHashValueIdGenerator(const IColumn * col_, AdaptiveKeysHolder::State * state_, UInt32 value_id_bits_, size_t max_distinct_values_)
+        : IHashValueIdGenerator(col_, state_, value_id_bits_, max_distinct_values_)
     {
         setup(col_);
     }
@@ -423,7 +437,7 @@ private:
         const auto & offsets = str_col->getOffsets();
         IColumn::Offset prev_offset = 0;
 
-        constexpr size_t batch_size = 32;
+        constexpr size_t batch_size = 512;
         alignas(64) UInt64 tmp_value_ids[batch_size] = {0};
         alignas(64) UInt64 str_lens[batch_size] = {0};
         size_t i = 0;
@@ -444,15 +458,21 @@ private:
             computeValueIdForString(char_pos, str_lens, batch_size, tmp_value_ids, null_map_pos);
 #if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
-                TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_size);
+                TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, value_id_bits, batch_size);
             else
 #endif
             {
-                TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_size);
+                TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, value_id_bits, batch_size);
             }
             value_ids_pos += batch_size;
             char_pos += offsets[i + batch_size - 1] - prev_offset;
             prev_offset = offsets[i + batch_size - 1];
+
+            if (allocated_value_id > max_distinct_values)
+            {
+                state->hash_mode = AdaptiveKeysHolder::State::HASH;
+                return;
+            }
         }
 
         if (i < n)
@@ -461,7 +481,7 @@ private:
             null_map_pos = is_nullable ? null_map->getData().data() + i : nullptr;
             TargetSpecific::Default::computeStringsLengthFromOffsets(offsets, i, remained, str_lens);
             computeValueIdForString(char_pos, str_lens, remained, tmp_value_ids, null_map_pos);
-            TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, remained);
+            TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, value_id_bits, remained);
         }
     }
 
@@ -479,8 +499,8 @@ private:
 class FixedStringHashValueIdGenerator : public IHashValueIdGenerator
 {
 public:
-    explicit FixedStringHashValueIdGenerator(const IColumn *col_, AdaptiveKeysHolder::State *state_, size_t max_distinct_values_)
-        : IHashValueIdGenerator(col_, state_, max_distinct_values_)
+    explicit FixedStringHashValueIdGenerator(const IColumn *col_, AdaptiveKeysHolder::State *state_, UInt32 value_id_bits_, size_t max_distinct_values_)
+        : IHashValueIdGenerator(col_, state_, value_id_bits_, max_distinct_values_)
     {
         setup(col_);
     }
@@ -537,6 +557,10 @@ private:
         {
             allocated_value_id = is_nullable;
         }
+        if (allocated_value_id > max_distinct_values)
+        {
+            state->hash_mode = AdaptiveKeysHolder::State::HASH;
+        }
     }
 
     void computeValueIdImpl(const IColumn *col, UInt64 * value_ids) override
@@ -558,7 +582,7 @@ private:
         UInt64 * value_ids_pos = value_ids;
         auto str_len = str_col->getN();
 
-        constexpr size_t batch_step = 32;
+        constexpr size_t batch_step = 512;
         alignas(64) UInt64 tmp_value_ids[batch_step] = {0};
         size_t i = 0;
         size_t n = str_col->size();
@@ -574,14 +598,20 @@ private:
 
 #if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
-                TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_step);
+                TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, value_id_bits, batch_step);
             else
 #endif
             {
-                TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_step);
+                TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, value_id_bits, batch_step);
             }
             char_pos += str_len * batch_step;
             value_ids_pos += batch_step;
+
+            if (allocated_value_id > max_distinct_values)
+            {
+                state->hash_mode = AdaptiveKeysHolder::State::HASH;
+                return;
+            }
         }
 
         if (i < n)
@@ -591,7 +621,7 @@ private:
                 computeValueIdsInRangeMode<UInt8, false>(tmp_value_ids, n - i, char_pos, str_len, null_map_pos);
             else
                 computeValueIdsInNormalMode(tmp_value_ids, n - i, char_pos, str_len, null_map_pos);
-            TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, n - i);
+            TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, value_id_bits, n - i);
         }
     }
 };
@@ -600,8 +630,8 @@ template <typename ElementType, typename ColumnType, bool is_basic_number>
 class NumericHashValueIdGenerator : public IHashValueIdGenerator
 {
 public:
-    explicit NumericHashValueIdGenerator(const IColumn * col_, AdaptiveKeysHolder::State * state_, size_t max_distinct_values_)
-        : IHashValueIdGenerator(col_, state_, max_distinct_values_)
+    explicit NumericHashValueIdGenerator(const IColumn * col_, AdaptiveKeysHolder::State * state_, UInt32 value_id_bits_, size_t max_distinct_values_)
+        : IHashValueIdGenerator(col_, state_, value_id_bits_, max_distinct_values_)
     {
         setup(col_);
     }
@@ -654,6 +684,11 @@ private:
         {
             allocated_value_id = is_nullable;
         }
+
+        if (allocated_value_id > max_distinct_values)
+        {
+            state->hash_mode = AdaptiveKeysHolder::State::HASH;
+        }
     }
 
     void computeValueIdImpl(const IColumn * col, UInt64 * value_ids) override
@@ -675,7 +710,7 @@ private:
         size_t i = 0;
         size_t n = num_col->size();
 
-        constexpr size_t batch_step = 32;
+        constexpr size_t batch_step = 512;
         alignas(64) UInt64 tmp_value_ids[batch_step] = {0};
         for (; i + batch_step < n; i += batch_step)
         {
@@ -689,17 +724,24 @@ private:
             else
                 computeValueIdsInNormalMode(tmp_value_ids, batch_step, data_pos, element_bytes, null_map_pos);
 
+
 #if USE_MULTITARGET_CODE
             if (isArchSupported(TargetArch::AVX512BW))
-                TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_step);
+                TargetSpecific::AVX512BW::concateValueIds(tmp_value_ids, value_ids_pos, value_id_bits, batch_step);
             else
 #endif
             {
-                TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, batch_step);
+                TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, value_id_bits, batch_step);
             }
 
             data_pos += element_bytes * batch_step;
             value_ids_pos += batch_step;
+            
+            if (allocated_value_id > max_distinct_values)
+            {
+                state->hash_mode = AdaptiveKeysHolder::State::HASH;
+                return;
+            }
         }
 
         if (i < n)
@@ -712,7 +754,7 @@ private:
                     computeValueIdsInNormalMode(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
             else
                 computeValueIdsInNormalMode(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
-            TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, max_distinct_values, n - i);
+            TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, value_id_bits, n - i);
         }
     }
 };
@@ -721,6 +763,6 @@ class HashValueIdGeneratorFactory
 {
 public:
     static HashValueIdGeneratorFactory & instance();
-    std::unique_ptr<IHashValueIdGenerator> getGenerator(AdaptiveKeysHolder::State *state_, size_t max_distinct_values_, const IColumn * col);
+    std::unique_ptr<IHashValueIdGenerator> getGenerator(AdaptiveKeysHolder::State *state_, UInt32 values_id_bits_, const IColumn * col);
 };
 }
