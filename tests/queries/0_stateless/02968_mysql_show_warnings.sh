@@ -2,8 +2,6 @@
 # Tags: no-fasttest
 # Tag no-fasttest: requires mysql client
 
-# Tests the override of certain MySQL proprietary settings to ClickHouse native settings
-
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
