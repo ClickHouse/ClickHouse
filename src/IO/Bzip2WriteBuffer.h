@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BZIP2_STREAM_ENCODER_FAILED;
+}
+
 class Bzip2WriteBuffer : public WriteBufferWithOwnMemoryDecorator
 {
 public:
@@ -23,9 +28,18 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0,
         bool compress_empty_ = true)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment), bz(std::make_unique<Bzip2StateWrapper>(compression_level))
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
     , compress_empty(compress_empty_)
     {
+        memset(&stream, 0, sizeof(stream));
+
+        int ret = BZ2_bzCompressInit(&stream, compression_level, 0, 0);
+
+        if (ret != BZ_OK)
+            throw Exception(
+                ErrorCodes::BZIP2_STREAM_ENCODER_FAILED,
+                "bzip2 stream encoder init failed: error code: {}",
+                ret);
     }
 
     ~Bzip2WriteBuffer() override;
@@ -34,17 +48,9 @@ private:
     void nextImpl() override;
 
     void finalizeBefore() override;
+    void finalizeAfter() override;
 
-    class Bzip2StateWrapper
-    {
-    public:
-        explicit Bzip2StateWrapper(int compression_level);
-        ~Bzip2StateWrapper();
-
-        bz_stream stream;
-    };
-
-    std::unique_ptr<Bzip2StateWrapper> bz;
+    bz_stream stream;
     bool compress_empty = true;
     UInt64 total_in = 0;
 };
