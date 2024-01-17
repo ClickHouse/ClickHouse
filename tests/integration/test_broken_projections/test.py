@@ -425,9 +425,7 @@ def test_broken_projections_in_backups(cluster):
     )
 
     check(node, table_name, 1)
-
     assert "" == get_broken_projections_info(node, table_name)
-    # TODO: add a check for what projections are loaded
 
     break_projection(node, table_name, "proj", "all_2_2_0", "part")
 
@@ -446,8 +444,6 @@ def test_broken_projections_in_backups(cluster):
 
     materialize_projection(node, table_name, "proj")
     check(node, table_name, 1)
-    # TODO:
-    # assert "all_2_2_0\tproj\tFILE_DOESNT_EXIST" == get_broken_projections_info(node, table_name)
 
     assert "BACKUP_CREATED" in node.query(
         f"""
@@ -466,7 +462,6 @@ def test_broken_projections_in_backups(cluster):
     check(node, table_name, 1)
 
     break_projection(node, table_name, "proj", "all_1_1_0", "part")
-    # TODO: check(node, table_name, 0, "proj", "FILE_DOESNT_EXIST")
     assert "Part all_1_1_0 has a broken projection proj" in check_table_full(
         node, table_name
     )
@@ -477,7 +472,7 @@ def test_broken_projections_in_backups(cluster):
     assert "BACKUP_CREATED" in node.query(
         f"""
     set backup_restore_keeper_fault_injection_probability=0.0;
-    backup table {table_name} to Disk('backups', 'b4') settings check_projection_parts=false;
+    backup table {table_name} to Disk('backups', 'b4') settings check_projection_parts=false, allow_backup_broken_projections=true;
     """
     )
 
@@ -488,5 +483,5 @@ def test_broken_projections_in_backups(cluster):
     restore table {table_name} from Disk('backups', 'b4');
     """
     )
-    check(node, table_name, 1)
-    assert "" == get_broken_projections_info(node, table_name)
+    check(node, table_name, 0)
+    assert "all_1_1_0\tproj\tNO_FILE_IN_DATA_PART" == get_broken_projections_info(node, table_name)
