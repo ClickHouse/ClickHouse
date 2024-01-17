@@ -36,7 +36,7 @@ static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 
 void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
 {
-    if (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+    if (total && (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS)))
     {
         LOG_INFO(log, "Processed: {}%", processed * 100.0 / total);
         watch.restart();
