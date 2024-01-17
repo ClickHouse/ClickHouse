@@ -1,13 +1,10 @@
 #include "ParallelBzip2ReadBuffer.h"
 
 #if USE_BZIP2
-#include <IO/CompressedReadBufferWrapper.h>
-#include <IO/SharedThreadPools.h>
-#include <IO/SplittableBzip2ReadBuffer.h>
-#include <IO/copyData.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-#include <unistd.h>
+#    include <IO/SharedThreadPools.h>
+#    include <IO/copyData.h>
+#    include <Poco/Logger.h>
+#    include <Common/logger_useful.h>
 
 namespace DB
 {

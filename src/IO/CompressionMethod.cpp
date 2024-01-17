@@ -167,12 +167,13 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
         {
             auto * seekable = dynamic_cast<SeekableReadBuffer *>(nested.get());
             auto file_size = tryGetFileSizeFromReadBuffer(*nested);
+            auto * pool = getIOThreadPool().tryGet();
             if (seekable && seekable->supportsReadAt() && file_size.has_value() && file_size.value() >= 2 * max_download_buffer_size
-                && max_download_threads > 1)
+                && max_download_threads > 1 && pool)
             {
                 return std::make_unique<ParallelBzip2ReadBuffer>(
                     std::move(nested),
-                    threadPoolCallbackRunner<void>(getIOThreadPool().get(), "ParallelRead"),
+                    threadPoolCallbackRunner<void>(*pool, "ParallelRead"),
                     max_download_threads,
                     max_download_buffer_size,
                     file_size.value(),

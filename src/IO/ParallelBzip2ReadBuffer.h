@@ -3,17 +3,17 @@
 #include "config.h"
 
 #if USE_BZIP2
-#include <IO/CompressedReadBufferWrapper.h>
-#include <IO/ParallelReadBuffer.h>
-#include <IO/SeekableReadBuffer.h>
-#include <Interpreters/threadPoolCallbackRunner.h>
+#    include <IO/CompressedReadBufferWrapper.h>
+#    include <IO/ParallelReadBuffer.h>
+#    include <IO/ReadBufferFromMemory.h>
+#    include <IO/SeekableReadBuffer.h>
+#    include <IO/SplittableBzip2ReadBuffer.h>
+#    include <IO/WriteBufferFromString.h>
+#    include <Interpreters/threadPoolCallbackRunner.h>
 
 namespace DB
 {
 
-class ReadBufferFromMemory;
-class SplittableBzip2ReadBuffer;
-class WriteBufferFromString;
 class ParallelBzip2ReadBuffer : public CompressedReadBufferWrapper
 {
 private:
