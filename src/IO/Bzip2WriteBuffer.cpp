@@ -14,7 +14,10 @@ namespace ErrorCodes
     extern const int BZIP2_STREAM_ENCODER_FAILED;
 }
 
-Bzip2WriteBuffer::~Bzip2WriteBuffer() = default;
+Bzip2WriteBuffer::~Bzip2WriteBuffer()
+{
+    BZ2_bzCompressEnd(&stream);
+}
 
 void Bzip2WriteBuffer::nextImpl()
 {
@@ -85,11 +88,6 @@ void Bzip2WriteBuffer::finalizeBefore()
                 ret);
     }
     while (true);
-}
-
-void Bzip2WriteBuffer::finalizeAfter()
-{
-    BZ2_bzCompressEnd(&stream);
 }
 
 }
