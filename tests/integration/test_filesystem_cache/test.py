@@ -27,6 +27,14 @@ def cluster():
                 "config.d/storage_conf_2.xml",
             ],
         )
+        cluster.add_instance(
+            "node_no_filesystem_caches_path",
+            main_configs=[
+                "config.d/storage_conf.xml",
+                "config.d/remove_filesystem_caches_path.xml",
+            ],
+            stay_alive=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -197,7 +205,7 @@ def test_caches_with_the_same_configuration_2(cluster, node_name):
 
 
 def test_custom_cached_disk(cluster):
-    node = cluster.instances["node"]
+    node = cluster.instances["node_no_filesystem_caches_path"]
 
     assert "Cannot create cached custom disk without" in node.query_and_get_error(
         f"""
@@ -247,6 +255,13 @@ def test_custom_cached_disk(cluster):
         </clickhouse>
         " > /etc/clickhouse-server/config.d/custom_filesystem_caches_path.xml
         """,
+        ]
+    )
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm /etc/clickhouse-server/config.d/remove_filesystem_caches_path.xml"
         ]
     )
     node.restart_clickhouse()

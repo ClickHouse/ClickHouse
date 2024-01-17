@@ -28,5 +28,5 @@
         <role_cache_expiration_time_seconds>2</role_cache_expiration_time_seconds>
     </access_control_improvements>
 
-    <custom_cached_disks_base_directory remove="remove"/>
+    <custom_cached_disks_base_directory replace="replace">/</custom_cached_disks_base_directory>
 </clickhouse>
