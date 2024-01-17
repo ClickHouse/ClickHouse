@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Columns/ColumnConst.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Exception.h>
 #include <Disks/createVolume.h>
@@ -314,6 +315,8 @@ Block MergeTreeDataWriter::mergeBlock(
     IColumn::Permutation *& permutation,
     const MergeTreeData::MergingParams & merging_params)
 {
+    OpenTelemetry::SpanHolder span("MergeTreeDataWriter::mergeBlock");
+
     size_t block_size = block.rows();
 
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>

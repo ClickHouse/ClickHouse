@@ -178,6 +178,8 @@ void WriteBufferFromS3::preFinalize()
 
 void WriteBufferFromS3::finalizeImpl()
 {
+    OpenTelemetry::SpanHolder span("WriteBufferFromS3::finalizeImpl");
+
     LOG_TRACE(limitedLog, "finalizeImpl WriteBufferFromS3. {}.", getShortLogDetails());
 
     if (!is_prefinalized)
