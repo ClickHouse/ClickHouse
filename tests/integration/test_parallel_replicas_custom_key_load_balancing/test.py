@@ -7,11 +7,17 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "n1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
 )
+node2 = cluster.add_instance(
+    "n2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+)
 node3 = cluster.add_instance(
     "n3", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
 )
+node4 = cluster.add_instance(
+    "n4", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
+)
 
-nodes = [node1, node3]
+nodes = [node1, node2, node3, node4]
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -23,16 +29,12 @@ def start_cluster():
         cluster.shutdown()
 
 
-def create_tables(cluster, table_name):
-    node1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-    node3.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-
-    node1.query(
-        f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r1') ORDER BY (key)"
-    )
-    node3.query(
-        f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3') ORDER BY (key)"
-    )
+def create_tables(table_name):
+    for i in range(0, 4):
+        nodes[i].query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+        nodes[i].query(
+            f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r{i+1}') ORDER BY (key)"
+        )
 
     # populate data
     node1.query(
@@ -47,24 +49,24 @@ def create_tables(cluster, table_name):
     node1.query(
         f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(3000, 1000)"
     )
+    node2.query(f"SYSTEM SYNC REPLICA {table_name}")
     node3.query(f"SYSTEM SYNC REPLICA {table_name}")
+    node4.query(f"SYSTEM SYNC REPLICA {table_name}")
 
 
 @pytest.mark.parametrize("use_hedged_requests", [1, 0])
 @pytest.mark.parametrize("custom_key", ["sipHash64(key)", "key"])
 @pytest.mark.parametrize("filter_type", ["default", "range"])
-@pytest.mark.parametrize("prefer_localhost_replica", [0, 1])
-def test_parallel_replicas_custom_key_failover(
+def test_parallel_replicas_custom_key_load_balancing(
     start_cluster,
     use_hedged_requests,
     custom_key,
     filter_type,
-    prefer_localhost_replica,
 ):
     cluster = "test_single_shard_multiple_replicas"
     table = "test_table"
 
-    create_tables(cluster, table)
+    create_tables(table)
 
     expected_result = ""
     for i in range(4):
@@ -76,7 +78,7 @@ def test_parallel_replicas_custom_key_failover(
             f"SELECT key, count() FROM cluster('{cluster}', default.test_table) GROUP BY key ORDER BY key",
             settings={
                 "log_comment": log_comment,
-                "prefer_localhost_replica": prefer_localhost_replica,
+                "prefer_localhost_replica": 0,
                 "max_parallel_replicas": 4,
                 "parallel_replicas_custom_key": custom_key,
                 "parallel_replicas_custom_key_filter_type": filter_type,
@@ -98,17 +100,17 @@ def test_parallel_replicas_custom_key_failover(
     assert query_id != ""
     query_id = query_id[:-1]
 
-    if prefer_localhost_replica == 0:
-        assert (
-            node1.query(
-                f"SELECT 'subqueries', count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id SETTINGS skip_unavailable_shards=1"
-            )
-            == "subqueries\t4\n"
+    assert (
+        node1.query(
+            f"SELECT 'subqueries', count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id SETTINGS skip_unavailable_shards=1"
         )
+        == "subqueries\t4\n"
+    )
 
-        assert (
-            node1.query(
-                f"SELECT h, count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
-            )
-            == "n1\t3\nn3\t2\n"
+    # check queries per node
+    assert (
+        node1.query(
+            f"SELECT h, count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
         )
+        == "n1\t2\nn2\t1\nn3\t1\nn4\t1\n"
+    )
