@@ -261,7 +261,7 @@ def test_custom_cached_disk(cluster):
         [
             "bash",
             "-c",
-            "rm /etc/clickhouse-server/config.d/remove_filesystem_caches_path.xml"
+            "rm /etc/clickhouse-server/config.d/remove_filesystem_caches_path.xml",
         ]
     )
     node.restart_clickhouse()
