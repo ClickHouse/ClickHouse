@@ -181,7 +181,7 @@ function setup_logs_replication
         # Create the destination table with adapted name and structure:
         statement=$(clickhouse-client --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
             s/^\($/('"$EXTRA_COLUMNS_FOR_TABLE"'/;
-            s/ORDER BY \(?(.+?)\)?/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"', \1)'/;
+            s/ORDER BY \(?(.+?)\)?/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"', \1)/;
             s/^CREATE TABLE system\.\w+_log$/CREATE TABLE IF NOT EXISTS '"$table"'_'"$hash"'/;
             /^TTL /d
             ')
