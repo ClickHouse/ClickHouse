@@ -2257,9 +2257,9 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
         checkDuplicateTableNamesOrAlias(join_node, join_typed->getLeftTableExpression(), join_typed->getRightTableExpression(), scope);
         return;
     }
-    else if ((table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
+    else if (table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
         table_expression_node_type == QueryTreeNodeType::QUERY ||
-        table_expression_node_type == QueryTreeNodeType::UNION) && join_typed->getKind() != JoinKind::Paste)
+        table_expression_node_type == QueryTreeNodeType::UNION)
         throw Exception(ErrorCodes::ALIAS_REQUIRED,
                         "JOIN {} no alias for subquery or table function {}. "
                         "In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
