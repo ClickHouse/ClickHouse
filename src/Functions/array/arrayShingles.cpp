@@ -92,7 +92,7 @@ REGISTER_FUNCTION(ArrayShingles)
 Generates an array of "shingles", i.e. consecutive sub-arrays with specified length of the input array.
 )",
             .examples{
-                {"example 1", "SELECT arrayShingles( [1,2,3,4,5], 3)", "[[1,2,3],[2,3,4],[3,4,5]]"}
+                {"example 1", "SELECT arrayShingles([1,2,3,4,5], 3)", "[[1,2,3],[2,3,4],[3,4,5]]"}
             },
             .categories = {"Array"},
         });

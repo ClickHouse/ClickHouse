@@ -1107,6 +1107,7 @@ arrayRotateLeft
 arrayRotateRight
 arrayShiftLeft
 arrayShiftRight
+arrayShingles
 arraySlice
 arraySort
 arraySplit
@@ -2316,6 +2317,7 @@ sqlinsert
 sqlite
 sqrt
 src
+srcReplicas
 stacktrace
 stacktraces
 startsWith
@@ -2695,4 +2697,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-srcReplicas
