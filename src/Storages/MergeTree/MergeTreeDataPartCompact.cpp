@@ -72,7 +72,7 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     /// Order of writing is important in compact format
     ordered_columns_list.sort([this](const auto & lhs, const auto & rhs)
         { return *getColumnPosition(lhs.name) < *getColumnPosition(rhs.name); });
-    
+
     return std::make_unique<MergeTreeDataPartWriterCompact>(
         shared_from_this(), ordered_columns_list, metadata_snapshot,
         indices_to_recalc, stats_to_recalc_, getMarksFileExtension(),
