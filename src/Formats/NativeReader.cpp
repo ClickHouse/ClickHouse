@@ -205,7 +205,8 @@ Block NativeReader::read()
 
         if (const auto * tmp_header_column = header.findByName(column.name))
         {
-            if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(tmp_header_column->column.get())) {
+            if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(tmp_header_column->column.get()))
+            {
                 serialization = column_lazy->getColumnLazyHelper()->getSerialization();
                 const auto & tmp_columns = column_lazy->getColumns();
                 read_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
