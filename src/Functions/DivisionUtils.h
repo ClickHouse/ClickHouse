@@ -145,7 +145,8 @@ struct ModuloImpl
                 if (b < 0)
                 {
                     using CastB = typename NumberTraits::Construct<false, false, sizeof(IntegerBType)>::Type;
-                    return static_cast<Result>(a % static_cast<CastB>(-b));
+                    CastB abs_b = -b;
+                    return static_cast<Result>(a % abs_b);
                 }
             }
             return static_cast<Result>(IntegerAType(a) % IntegerBType(b));
