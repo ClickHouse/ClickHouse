@@ -440,7 +440,7 @@
     <!-- Cache size in elements for compiled expressions.-->
     <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
 
-    <!-- Cache path for custom (created from AST) cached disks -->
+    <!-- Cache path for custom (created from SQL) cached disks -->
     <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
 
     <validate_tcp_client_information>false</validate_tcp_client_information>
