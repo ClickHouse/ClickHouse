@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNested.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
@@ -140,16 +141,29 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     }
 }
 
+bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const
+{
+    /// We cannot read separate subcolumn with offsets from compact parts.
+    if (!data_part_info_for_read->isWidePart() || subcolumn_name != "size0")
+        return false;
+
+    return Nested::isSubcolumnOfNested(name_in_storage, part_columns);
+}
+
 String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
 {
     auto name_in_storage = required_column.getNameInStorage();
-    if (alter_conversions->isColumnRenamed(name_in_storage))
-    {
-        name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
-        return Nested::concatenateName(name_in_storage, required_column.getSubcolumnName());
-    }
+    auto subcolumn_name = required_column.getSubcolumnName();
 
-    return required_column.name;
+    if (alter_conversions->isColumnRenamed(name_in_storage))
+        name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
+
+    /// A special case when we read subcolumn of shared offsets of Nested.
+    /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
+    if (isSubcolumnOffsetsOfNested(name_in_storage, subcolumn_name))
+        name_in_storage = Nested::splitName(name_in_storage).first;
+
+    return Nested::concatenateName(name_in_storage, subcolumn_name);
 }
 
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const

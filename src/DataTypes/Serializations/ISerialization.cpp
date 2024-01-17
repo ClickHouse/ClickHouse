@@ -49,11 +49,17 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 
+const std::set<SubstreamType> ISerialization::Substream::named_types
+{
+    TupleElement,
+    NamedOffsets,
+    NamedNullMap,
+};
+
 String ISerialization::Substream::toString() const
 {
-    if (type == TupleElement)
-        return fmt::format("TupleElement({}, escape_tuple_delimiter = {})",
-            tuple_element_name, escape_tuple_delimiter ? "true" : "false");
+    if (named_types.contains(type))
+        return fmt::format("{}({})", type, name_of_substream);
 
     return String(magic_enum::enum_name(type));
 }
@@ -110,8 +116,10 @@ void ISerialization::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & /* state */) const
 {
+    settings.path.push_back(Substream::Regular);
     if (WriteBuffer * stream = settings.getter(settings.path))
         serializeBinaryBulk(column, *stream, offset, limit);
+    settings.path.pop_back();
 }
 
 void ISerialization::deserializeBinaryBulkWithMultipleStreams(
@@ -121,6 +129,8 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & /* state */,
     SubstreamsCache * cache) const
 {
+    settings.path.push_back(Substream::Regular);
+
     auto cached_column = getFromSubstreamsCache(cache, settings.path);
     if (cached_column)
     {
@@ -133,6 +143,8 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
         column = std::move(mutable_column);
         addToSubstreamsCache(cache, settings.path, column);
     }
+
+    settings.path.pop_back();
 }
 
 bool ISerialization::deserializeBinaryBulkWithMultipleStreamsSilently(
@@ -170,16 +182,18 @@ String getNameForSubstreamPath(
             stream_name += ".dict";
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
-        else if (it->type == Substream::TupleElement)
+        else if (Substream::named_types.contains(it->type))
         {
+            auto substream_name = "." + it->name_of_substream;
+
             /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
             /// Because nested data may be represented not by Array of Tuple,
-            ///  but by separate Array columns with names in a form of a.b,
-            ///  and name is encoded as a whole.
-            if (escape_tuple_delimiter && it->escape_tuple_delimiter)
-                stream_name += escapeForFileName("." + it->tuple_element_name);
+            /// but by separate Array columns with names in a form of a.b,
+            /// and name is encoded as a whole.
+            if (it->type == Substream::TupleElement && escape_tuple_delimiter)
+                stream_name += escapeForFileName(substream_name);
             else
-                stream_name += "." + it->tuple_element_name;
+                stream_name += substream_name;
         }
     }
 
@@ -193,23 +207,31 @@ String ISerialization::getFileNameForStream(const NameAndTypePair & column, cons
     return getFileNameForStream(column.getNameInStorage(), path);
 }
 
-bool isOffsetsOfNested(const ISerialization::SubstreamPath & path)
+static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path)
 {
-    if (path.empty())
-        return false;
+    /// Arrays of Nested cannot be inside other types.
+    /// So it's ok to check only first element of path.
 
-    for (const auto & elem : path)
-        if (elem.type == ISerialization::Substream::ArrayElements)
-            return false;
+    /// Array offsets as a part of serialization of Array type.
+    if (path.size() == 1
+        && path[0].type == ISerialization::Substream::ArraySizes)
+        return true;
 
-    return path.back().type == ISerialization::Substream::ArraySizes;
+    /// Array offsets as a separate subcolumn.
+    if (path.size() == 2
+        && path[0].type == ISerialization::Substream::NamedOffsets
+        && path[1].type == ISerialization::Substream::Regular
+        && path[0].name_of_substream == "size0")
+        return true;
+
+    return false;
 }
 
 String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path)
 {
     String stream_name;
     auto nested_storage_name = Nested::extractTableName(name_in_storage);
-    if (name_in_storage != nested_storage_name && isOffsetsOfNested(path))
+    if (name_in_storage != nested_storage_name && isPossibleOffsetsOfNested(path))
         stream_name = escapeForFileName(nested_storage_name);
     else
         stream_name = escapeForFileName(name_in_storage);
