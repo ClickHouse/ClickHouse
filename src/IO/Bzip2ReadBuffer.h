@@ -1,8 +1,10 @@
 #pragma once
 
+#include "config.h"
+
+# if USE_BZIP2
 #include <IO/ReadBuffer.h>
 #include <IO/CompressedReadBufferWrapper.h>
-
 
 namespace DB
 {
@@ -28,4 +30,4 @@ private:
 };
 
 }
-
+#endif

@@ -1,4 +1,6 @@
 #include "SplittableBzip2ReadBuffer.h"
+
+#if USE_BZIP2
 #include <IO/SeekableReadBuffer.h>
 
 namespace DB
@@ -879,3 +881,4 @@ void SplittableBzip2ReadBuffer::setupNoRandPartC()
 }
 
 }
+#endif

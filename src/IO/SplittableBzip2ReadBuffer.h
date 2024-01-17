@@ -1,5 +1,8 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_BZIP2
 #include <iostream>
 #include <vector>
 #include <IO/CompressedReadBufferWrapper.h>
@@ -265,3 +268,4 @@ private:
 };
 
 }
+#endif

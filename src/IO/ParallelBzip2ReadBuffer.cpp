@@ -1,4 +1,6 @@
 #include "ParallelBzip2ReadBuffer.h"
+
+#if USE_BZIP2
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/SplittableBzip2ReadBuffer.h>
@@ -240,3 +242,4 @@ void ParallelBzip2ReadBuffer::finishAndWait()
     }
 }
 }
+#endif

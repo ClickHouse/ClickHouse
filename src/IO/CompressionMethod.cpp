@@ -144,9 +144,9 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
     char * existing_memory,
     size_t alignment,
     int zstd_window_log_max,
-    bool allow_parallel,
-    size_t max_download_threads,
-    size_t max_download_buffer_size)
+    [[maybe_unused]] bool allow_parallel,
+    [[maybe_unused]] size_t max_download_threads,
+    [[maybe_unused]] size_t max_download_buffer_size)
 {
     if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
         return std::make_unique<ZlibInflatingReadBuffer>(std::move(nested), method, buf_size, existing_memory, alignment);
