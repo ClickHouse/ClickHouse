@@ -146,7 +146,7 @@ std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start
     /// Some minimal heuristics for the case the input is sorted
     if (*opt == ptr[start])
         return {start};
-    for (size_t i = end - 1; i != start + 1; i--)
+    for (size_t i = end - 1; i > start; i--)
         if (ptr[i] == *opt)
             return {i};
     return std::nullopt;
@@ -162,7 +162,7 @@ std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start
     /// Some minimal heuristics for the case the input is sorted
     if (*opt == ptr[start])
         return {start};
-    for (size_t i = end - 1; i != start + 1; i--)
+    for (size_t i = end - 1; i > start; i--)
         if (ptr[i] == *opt)
             return {i};
     return std::nullopt;
