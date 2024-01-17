@@ -113,7 +113,7 @@ void validateCredentials(const Aws::Auth::AWSCredentials& auth_credentials)
         return;
     }
     /// Follow https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
-    const auto * ACCESS_KEY_ID_REGEX = R"(\w+)";
+    const auto * ACCESS_KEY_ID_REGEX = R"\w+";
     if (!re2::RE2::FullMatch(auth_credentials.GetAWSAccessKeyId(), ACCESS_KEY_ID_REGEX))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Access key id has invalid character");
