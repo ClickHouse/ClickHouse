@@ -15,28 +15,16 @@
 #include <atomic>
 #include <future>
 #include <chrono>
-#include <filesystem>
-#include <iterator>
 #include <limits>
 
 #if USE_JEMALLOC
-#    include <jemalloc/jemalloc.h>
-
-#define STRINGIFY_HELPER(x) #x
-#define STRINGIFY(x) STRINGIFY_HELPER(x)
-
+#include <Common/Jemalloc.h>
 #endif
 
 namespace CurrentMetrics
 {
     extern const Metric KeeperAliveConnections;
     extern const Metric KeeperOutstandingRequets;
-}
-
-namespace ProfileEvents
-{
-    extern const Event MemoryAllocatorPurge;
-    extern const Event MemoryAllocatorPurgeTimeMicroseconds;
 }
 
 using namespace std::chrono_literals;
@@ -144,7 +132,7 @@ void KeeperDispatcher::requestThread()
                     break;
 
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
-                if (configuration_and_settings->standalone_keeper && mem_soft_limit > 0 && total_memory_tracker.get() >= mem_soft_limit && checkIfRequestIncreaseMem(request.request))
+                if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
                 {
                     LOG_TRACE(log, "Processing requests refused because of max_memory_usage_soft_limit {}, the total used memory is {}, request type is {}", mem_soft_limit, total_memory_tracker.get(), request.request->getOpNum());
                     addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
@@ -986,11 +974,7 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 void KeeperDispatcher::cleanResources()
 {
 #if USE_JEMALLOC
-    LOG_TRACE(&Poco::Logger::get("KeeperDispatcher"), "Purging unused memory");
-    Stopwatch watch;
-    mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
-    ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
-    ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, watch.elapsedMicroseconds());
+    purgeJemallocArenas();
 #endif
 }
 

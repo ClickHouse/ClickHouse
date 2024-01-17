@@ -222,6 +222,9 @@ public:
         if (!identifiers_to_optimize.contains(qualified_name))
             return;
 
+        if (first_argument_column_node->getColumnName() == "__grouping_set")
+            return;
+
         auto column_source = first_argument_column_node->getColumnSource();
         WhichDataType column_type(column.type);
 
