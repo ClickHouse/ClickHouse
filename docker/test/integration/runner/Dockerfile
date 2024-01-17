@@ -94,6 +94,7 @@ RUN python3 -m pip install --no-cache-dir \
     pytest-repeat \
     pytest-timeout \
     pytest-xdist \
+    pytest-reportlog==0.4.0 \
     pytz \
     pyyaml==5.3.1 \
     redis \
