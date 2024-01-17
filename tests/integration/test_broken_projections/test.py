@@ -484,4 +484,6 @@ def test_broken_projections_in_backups(cluster):
     """
     )
     check(node, table_name, 0)
-    assert "all_1_1_0\tproj\tNO_FILE_IN_DATA_PART" == get_broken_projections_info(node, table_name)
+    assert "all_1_1_0\tproj\tNO_FILE_IN_DATA_PART" == get_broken_projections_info(
+        node, table_name
+    )
