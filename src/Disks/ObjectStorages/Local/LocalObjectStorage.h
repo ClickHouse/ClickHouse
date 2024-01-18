@@ -18,9 +18,9 @@ class LocalObjectStorage : public IObjectStorage
 public:
     explicit LocalObjectStorage(String key_prefix_);
 
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
-
     std::string getName() const override { return "LocalObjectStorage"; }
+
+    ObjectStorageType getType() const override { return ObjectStorageType::Local; }
 
     std::string getCommonKeyPrefix() const override { return key_prefix; }
 
@@ -89,7 +89,7 @@ public:
 private:
     String key_prefix;
     Poco::Logger * log;
-    DataSourceDescription data_source_description;
+    std::string description;
 };
 
 }

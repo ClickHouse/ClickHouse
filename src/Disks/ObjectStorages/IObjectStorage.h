@@ -80,9 +80,9 @@ class IObjectStorage
 public:
     IObjectStorage() = default;
 
-    virtual DataSourceDescription getDataSourceDescription() const = 0;
-
     virtual std::string getName() const = 0;
+
+    virtual ObjectStorageType getType() const = 0;
 
     virtual std::string getCommonKeyPrefix() const = 0;
 

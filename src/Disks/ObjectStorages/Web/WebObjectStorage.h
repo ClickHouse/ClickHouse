@@ -21,19 +21,11 @@ class WebObjectStorage : public IObjectStorage, WithContext
 public:
     WebObjectStorage(const String & url_, ContextPtr context_);
 
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        return DataSourceDescription{
-            .type = DataSourceType::WebServer,
-            .description = url,
-            .is_encrypted = false,
-            .is_cached = false,
-        };
-    }
-
     std::string getName() const override { return "WebObjectStorage"; }
 
-    std::string getCommonKeyPrefix() const override { return ""; }
+    ObjectStorageType getType() const override { return ObjectStorageType::Web; }
+
+    std::string getCommonKeyPrefix() const override { return url; }
 
     bool exists(const StoredObject & object) const override;
 
