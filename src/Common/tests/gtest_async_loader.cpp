@@ -886,6 +886,55 @@ TEST(AsyncLoader, DynamicPriorities)
     }
 }
 
+TEST(AsyncLoader, JobPrioritizedWhileWaited)
+{
+    AsyncLoaderTest t({
+        {.max_threads = 2, .priority{0}},
+        {.max_threads = 1, .priority{-1}},
+    });
+
+    std::barrier sync(2);
+
+    LoadJobPtr job_to_wait; // and then to prioritize
+
+    auto running_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+        sync.arrive_and_wait();
+    };
+
+    auto dependent_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
+    {
+    };
+
+    auto waiting_job_func = [&] (AsyncLoader & loader, const LoadJobPtr &)
+    {
+        loader.wait(job_to_wait);
+    };
+
+    std::vector<LoadJobPtr> jobs;
+    jobs.push_back(makeLoadJob({}, 0, "running", running_job_func));
+    jobs.push_back(makeLoadJob({jobs[0]}, 0, "dependent", dependent_job_func));
+    jobs.push_back(makeLoadJob({}, 0, "waiting", waiting_job_func));
+    auto task = t.schedule({ jobs.begin(), jobs.end() });
+
+    job_to_wait = jobs[1];
+
+    t.loader.start();
+
+    while (job_to_wait->waitersCount() == 0)
+        std::this_thread::yield();
+
+    ASSERT_EQ(t.loader.suspendedWorkersCount(0), 1);
+
+    t.loader.prioritize(job_to_wait, 1);
+    sync.arrive_and_wait();
+
+    t.loader.wait();
+    t.loader.stop();
+    ASSERT_EQ(t.loader.suspendedWorkersCount(1), 0);
+    ASSERT_EQ(t.loader.suspendedWorkersCount(0), 0);
+}
+
 TEST(AsyncLoader, RandomIndependentTasks)
 {
     AsyncLoaderTest t(16);

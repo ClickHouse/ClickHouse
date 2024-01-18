@@ -604,6 +604,8 @@ void DefaultCoordinator::processPartsFurther(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasProcessingPartsMicroseconds);
 
+    auto replica_can_read_part = [&](auto replica, const auto & part) { return part_visibility[part.getPartNameV1()].contains(replica); };
+
     for (const auto & part : all_parts_to_read)
     {
         if (current_marks_amount >= min_number_of_marks)
@@ -627,7 +629,7 @@ void DefaultCoordinator::processPartsFurther(
                     = MarkRange{std::max(range.begin, segment_begin), std::min(range.end, segment_begin + mark_segment_size)};
 
                 const auto owner = computeConsistentHash(part.description.info.getPartNameV1(), segment_begin, scan_mode);
-                if (owner == replica_num)
+                if (owner == replica_num && replica_can_read_part(replica_num, part.description.info))
                 {
                     const auto taken = takeFromRange(cur_segment, min_number_of_marks, current_marks_amount, result);
                     if (taken == range.getNumberOfMarks())

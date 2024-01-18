@@ -11,10 +11,6 @@ namespace DB
 /// the head of the queue, and the record with the highest priority is stored at the tail.
 class SLRUFileCachePriority : public IFileCachePriority
 {
-private:
-    using LRUIterator = LRUFileCachePriority::LRUIterator;
-    using LRUQueue = std::list<Entry>;
-
 public:
     class SLRUIterator;
 
@@ -62,10 +58,10 @@ class SLRUFileCachePriority::SLRUIterator : public IFileCachePriority::Iterator
 public:
     SLRUIterator(
         SLRUFileCachePriority * cache_priority_,
-        LRUIterator && lru_iterator_,
+        LRUFileCachePriority::LRUIterator && lru_iterator_,
         bool is_protected_);
 
-    const Entry & getEntry() const override;
+    EntryPtr getEntry() const override;
 
     size_t increasePriority(const CacheGuard::Lock &) override;
 
@@ -81,7 +77,8 @@ private:
     void assertValid() const;
 
     SLRUFileCachePriority * cache_priority;
-    mutable LRUIterator lru_iterator;
+    LRUFileCachePriority::LRUIterator lru_iterator;
+    const EntryPtr entry;
     bool is_protected;
 };
 
