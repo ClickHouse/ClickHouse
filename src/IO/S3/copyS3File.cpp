@@ -99,14 +99,16 @@ namespace
             std::exception_ptr exception;
         };
 
+        size_t num_parts;
         size_t normal_part_size;
         String multipart_upload_id;
         std::atomic<bool> multipart_upload_aborted = false;
         Strings part_tags;
 
         std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
-        int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
-        int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+        size_t num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+        size_t num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
+        size_t num_finished_parts TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         std::mutex bg_tasks_mutex;
         std::condition_variable bg_tasks_condvar;
 
@@ -301,7 +303,7 @@ namespace
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be less than min_upload_part_size");
 
             size_t part_size = min_upload_part_size;
-            size_t num_parts = (total_size + part_size - 1) / part_size;
+            num_parts = (total_size + part_size - 1) / part_size;
 
             if (num_parts > max_part_number)
             {
@@ -340,7 +342,7 @@ namespace
 
         void uploadPart(size_t part_number, size_t part_offset, size_t part_size)
         {
-            LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", dest_bucket, dest_key, multipart_upload_id, part_size);
+            LOG_TRACE(log, "Writing part #{} of {}. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", part_number, num_parts, dest_bucket, dest_key, multipart_upload_id, part_size);
 
             if (!part_size)
             {
@@ -416,7 +418,9 @@ namespace
 
             std::lock_guard lock(bg_tasks_mutex); /// Protect bg_tasks from race
             task.tag = tag;
-            LOG_TRACE(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, task.tag, bg_tasks.size());
+            ++num_finished_parts;
+            LOG_TRACE(log, "Finished writing part #{}. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Finished parts: {} of {}",
+                      task.part_number, dest_key, multipart_upload_id, task.tag, bg_tasks.size(), num_finished_parts, num_parts);
         }
 
         virtual std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) = 0;
