@@ -474,7 +474,7 @@ CI_CONFIG = CiConfig(
             compiler="clang-17",
             debug_build=True,
             package_type="deb",
-            sparse_checkout=True,
+            sparse_checkout=True,   # Check that it works with at least one build, see also update-submodules.sh
         ),
         "binary_release": BuildConfig(
             name="binary_release",
@@ -495,7 +495,7 @@ CI_CONFIG = CiConfig(
             compiler="clang-17-darwin",
             package_type="binary",
             static_binary_name="macos",
-            sparse_checkout=True,
+            sparse_checkout=True,   # Check that it works with at least one build, see also update-submodules.sh
         ),
         "binary_aarch64": BuildConfig(
             name="binary_aarch64",
