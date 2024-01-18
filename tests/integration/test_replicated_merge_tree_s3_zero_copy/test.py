@@ -283,7 +283,6 @@ def test_drop_detached_part_with_try_n_suffix(cluster):
         == "all_0_0_0\nall_0_0_0_try1\ncovered-by-broken_all_0_0_0_try1\n"
     )
 
-
     node1.query(
         "ALTER TABLE drop_detached_part_with_tryn_suffix DROP DETACHED PART 'covered-by-broken_all_0_0_0_try1' SETTINGS mutations_sync = 1, allow_drop_detached = 1"
     )
