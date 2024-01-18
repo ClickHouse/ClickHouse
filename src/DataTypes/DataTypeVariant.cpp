@@ -230,6 +230,28 @@ static DataTypePtr create(const ASTPtr & arguments)
     return std::make_shared<DataTypeVariant>(nested_types);
 }
 
+bool isVariantExtension(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    const auto * from_variant = typeid_cast<const DataTypeVariant *>(from_type.get());
+    const auto * to_variant = typeid_cast<const DataTypeVariant *>(to_type.get());
+    if (!from_variant || !to_variant)
+        return false;
+
+    const auto & to_variants = to_variant->getVariants();
+    std::unordered_set<String> to_variant_types;
+    to_variant_types.reserve(to_variants.size());
+    for (const auto & variant : to_variants)
+        to_variant_types.insert(variant->getName());
+
+    for (const auto & variant : from_variant->getVariants())
+    {
+        if (!to_variant_types.contains(variant->getName()))
+            return false;
+    }
+
+    return true;
+}
+
 
 void registerDataTypeVariant(DataTypeFactory & factory)
 {

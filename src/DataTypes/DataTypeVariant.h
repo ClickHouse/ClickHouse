@@ -61,5 +61,9 @@ private:
     SerializationPtr doGetDefaultSerialization() const override;
 };
 
+/// Check if conversion from from_type to to_type is Variant extension
+/// (both types are Variants and to_type contains all variants from from_type).
+bool isVariantExtension(const DataTypePtr & from_type, const DataTypePtr & to_type);
+
 }
 

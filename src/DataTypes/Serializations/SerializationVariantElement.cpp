@@ -91,7 +91,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     {
         auto * discriminators_stream = settings.getter(settings.path);
         if (!discriminators_stream)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for VariantDiscriminators in SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams");
+            return;
 
         /// If we started to read a new column, reinitialize discriminators column in deserialization state.
         if (!variant_element_state->discriminators || result_column->empty())
@@ -156,9 +156,23 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         return;
     }
 
+    size_t prev_variant_size = variant_element_state->variant->size();
     addVariantToPath(settings.path);
     nested_serialization->deserializeBinaryBulkWithMultipleStreams(variant_element_state->variant, variant_limit, settings, variant_element_state->variant_element_state, cache);
     removeVariantFromPath(settings.path);
+
+    /// If nothing was deserialized when variant_limit > 0
+    /// it means that we don't have a stream for such sub-column.
+    /// It may happen during ALTER MODIFY column with Variant extension.
+    /// In this case we should just insert default values.
+    if (variant_element_state->variant->empty())
+    {
+        mutable_column->insertManyDefaults(limit);
+        return;
+    }
+
+    if (variant_element_state->variant->size() != prev_variant_size + variant_limit)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected variant column size after deserialization. Expected {}, got {}", prev_variant_size + variant_limit, variant_element_state->variant->size());
 
     size_t variant_offset = variant_element_state->variant->size() - variant_limit;
 

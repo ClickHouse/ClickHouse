@@ -275,7 +275,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     {
         auto * discriminators_stream = settings.getter(settings.path);
         if (!discriminators_stream)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for VariantDiscriminators in SerializationVariant::deserializeBinaryBulkWithMultipleStreams");
+            return;
 
         SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(*col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, limit, 0);
         addToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsPtr());
