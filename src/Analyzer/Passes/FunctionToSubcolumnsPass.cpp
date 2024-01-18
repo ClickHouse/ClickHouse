@@ -29,7 +29,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitor>;
     using Base::Base;
 
-    void enterImpl(QueryTreeNodePtr & node) const
+    void visitImpl(QueryTreeNodePtr & node) const
     {
         if (!getSettings().optimize_functions_to_subcolumns)
             return;
@@ -47,9 +47,6 @@ public:
         auto * first_argument_column_node = function_arguments_nodes.front()->as<ColumnNode>();
 
         if (!first_argument_column_node)
-            return;
-
-        if (first_argument_column_node->getColumnName() == "__grouping_set")
             return;
 
         auto column_source = first_argument_column_node->getColumnSource();

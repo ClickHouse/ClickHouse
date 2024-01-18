@@ -95,7 +95,7 @@ ReturnType parseDateTimeBestEffortImpl(
                                              FmtArgs && ...fmt_args [[maybe_unused]])
     {
         if constexpr (std::is_same_v<ReturnType, void>)
-            throw Exception(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
+            throw ParsingException(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
         else
             return false;
     };
@@ -434,7 +434,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 num_digits = readDigits(digits, sizeof(digits), in);
                 if (fractional)
                 {
-                    using FractionalType = typename std::decay_t<decltype(fractional->value)>;
+                    using FractionalType = typename std::decay<decltype(fractional->value)>::type;
                     // Reading more decimal digits than fits into FractionalType would case an
                     // overflow, so it is better to skip all digits from the right side that do not
                     // fit into result type. To provide less precise value rather than bogus one.
@@ -578,16 +578,12 @@ ReturnType parseDateTimeBestEffortImpl(
     if (!year && !month && !day_of_month && !has_time)
         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: neither Date nor Time was parsed successfully");
 
-    if (!day_of_month)
-        day_of_month = 1;
+    if (!year)
+        year = 2000;
     if (!month)
         month = 1;
-    if (!year)
-    {
-        time_t now = time(nullptr);
-        UInt16 curr_year = local_time_zone.toYear(now);
-        year = now < local_time_zone.makeDateTime(curr_year, month, day_of_month, hour, minute, second) ? curr_year - 1 : curr_year;
-    }
+    if (!day_of_month)
+        day_of_month = 1;
 
     auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
 

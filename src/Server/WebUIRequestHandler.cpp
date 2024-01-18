@@ -1,23 +1,14 @@
 #include "WebUIRequestHandler.h"
 #include "IServer.h"
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
+#include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <Interpreters/Context.h>
 #include <IO/HTTPCommon.h>
-#include <Common/re2.h>
+#include <Common/getResource.h>
 
-#include <incbin.h>
-
-#include "config.h"
-
-/// Embedded HTML pages
-INCBIN(resource_play_html, SOURCE_DIR "/programs/server/play.html");
-INCBIN(resource_dashboard_html, SOURCE_DIR "/programs/server/dashboard.html");
-INCBIN(resource_uplot_js, SOURCE_DIR "/programs/server/js/uplot.js");
-INCBIN(resource_binary_html, SOURCE_DIR "/programs/server/binary.html");
+#include <re2/re2.h>
 
 
 namespace DB
@@ -29,9 +20,9 @@ WebUIRequestHandler::WebUIRequestHandler(IServer & server_)
 }
 
 
-void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
+    auto keep_alive_timeout = server.config().getUInt("keep_alive_timeout", 10);
 
     response.setContentType("text/html; charset=UTF-8");
 
@@ -43,13 +34,13 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
     if (request.getURI().starts_with("/play"))
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize);
+        *response.send() << getResource("play.html");
     }
     else if (request.getURI().starts_with("/dashboard"))
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
 
-        std::string html(reinterpret_cast<const char *>(gresource_dashboard_htmlData), gresource_dashboard_htmlSize);
+        std::string html(getResource("dashboard.html"));
 
         /// Replace a link to external JavaScript file to embedded file.
         /// This allows to open the HTML without running a server and to host it on server.
@@ -59,17 +50,12 @@ void WebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerR
         static re2::RE2 uplot_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js)";
         RE2::Replace(&html, uplot_url, "/js/uplot.js");
 
-        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(html);
-    }
-    else if (request.getURI().starts_with("/binary"))
-    {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize);
+        *response.send() << html;
     }
     else if (request.getURI() == "/js/uplot.js")
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-        WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize);
+        *response.send() << getResource("js/uplot.js");
     }
     else
     {

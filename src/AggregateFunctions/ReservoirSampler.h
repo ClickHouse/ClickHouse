@@ -207,14 +207,13 @@ public:
 
     void read(DB::ReadBuffer & buf)
     {
-        DB::readBinaryLittleEndian(sample_count, buf);
-        DB::readBinaryLittleEndian(total_values, buf);
+        DB::readIntBinary<size_t>(sample_count, buf);
+        DB::readIntBinary<size_t>(total_values, buf);
 
         size_t size = std::min(total_values, sample_count);
         static constexpr size_t MAX_RESERVOIR_SIZE = 1_GiB;
         if (unlikely(size > MAX_RESERVOIR_SIZE))
-            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                                "Too large array size (maximum: {})", MAX_RESERVOIR_SIZE);
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
 
         samples.resize(size);
 
@@ -224,22 +223,22 @@ public:
         rng_buf >> rng;
 
         for (size_t i = 0; i < samples.size(); ++i)
-            DB::readBinaryLittleEndian(samples[i], buf);
+            DB::readBinary(samples[i], buf);
 
         sorted = false;
     }
 
     void write(DB::WriteBuffer & buf) const
     {
-        DB::writeBinaryLittleEndian(sample_count, buf);
-        DB::writeBinaryLittleEndian(total_values, buf);
+        DB::writeIntBinary<size_t>(sample_count, buf);
+        DB::writeIntBinary<size_t>(total_values, buf);
 
         DB::WriteBufferFromOwnString rng_buf;
         rng_buf << rng;
         DB::writeStringBinary(rng_buf.str(), buf);
 
         for (size_t i = 0; i < std::min(sample_count, total_values); ++i)
-            DB::writeBinaryLittleEndian(samples[i], buf);
+            DB::writeBinary(samples[i], buf);
     }
 
 private:
@@ -255,11 +254,11 @@ private:
 
     UInt64 genRandom(UInt64 limit)
     {
-        chassert(limit > 0);
+        assert(limit > 0);
 
         /// With a large number of values, we will generate random numbers several times slower.
         if (limit <= static_cast<UInt64>(rng.max()))
-            return rng() % limit;
+            return static_cast<UInt32>(rng()) % static_cast<UInt32>(limit);
         else
             return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
     }

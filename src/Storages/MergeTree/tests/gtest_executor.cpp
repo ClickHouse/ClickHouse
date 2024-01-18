@@ -39,7 +39,7 @@ public:
         return false;
     }
 
-    StorageID getStorageID() const override
+    StorageID getStorageID() override
     {
         return {"test", name};
     }
@@ -51,8 +51,7 @@ public:
             throw std::runtime_error("Unlucky...");
     }
 
-    Priority getPriority() const override { return {}; }
-    String getQueryId() const override { return {}; }
+    UInt64 getPriority() override { return 0; }
 
 private:
     std::mt19937 generator;
@@ -66,11 +65,11 @@ using StepFunc = std::function<void(const String & name, size_t steps_left)>;
 class LambdaExecutableTask : public IExecutableTask
 {
 public:
-    explicit LambdaExecutableTask(const String & name_, size_t step_count_, StepFunc step_func_ = {}, Int64 priority_value = 0)
+    explicit LambdaExecutableTask(const String & name_, size_t step_count_, StepFunc step_func_ = {}, UInt64 priority_ = 0)
         : name(name_)
         , step_count(step_count_)
         , step_func(step_func_)
-        , priority{priority_value}
+        , priority(priority_)
     {}
 
     bool executeStep() override
@@ -80,21 +79,20 @@ public:
         return --step_count;
     }
 
-    StorageID getStorageID() const override
+    StorageID getStorageID() override
     {
         return {"test", name};
     }
 
     void onCompleted() override {}
 
-    Priority getPriority() const override { return priority; }
-    String getQueryId() const override { return "test::lambda"; }
+    UInt64 getPriority() override { return priority; }
 
 private:
     String name;
     size_t step_count;
     StepFunc step_func;
-    Priority priority;
+    UInt64 priority;
 };
 
 

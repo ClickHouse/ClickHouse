@@ -39,7 +39,7 @@ SELECT name, status FROM system.dictionaries;
 **Синтаксис**
 
 ```sql
-SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
+SYSTEM RELOAD MODELS
 ```
 
 ## RELOAD MODEL {#query_language-system-reload-model}
@@ -49,7 +49,7 @@ SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
 **Синтаксис**
 
 ```sql
-SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
+SYSTEM RELOAD MODEL <model_path>
 ```
 
 ## RELOAD FUNCTIONS {#query_language-system-reload-functions}
@@ -59,8 +59,8 @@ SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
 **Синтаксис**
 
 ```sql
-RELOAD FUNCTIONS [ON CLUSTER cluster_name]
-RELOAD FUNCTION function_name [ON CLUSTER cluster_name]
+RELOAD FUNCTIONS
+RELOAD FUNCTION function_name
 ```
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
@@ -106,17 +106,9 @@ Cкомпилированные выражения используются ко
 Записывает буферы логов в системные таблицы (например system.query_log). Позволяет не ждать 7.5 секунд при отладке.
 Если буфер логов пустой, то этот запрос просто создаст системные таблицы.
 
-```sql
-SYSTEM FLUSH LOGS [ON CLUSTER cluster_name]
-```
-
 ## RELOAD CONFIG {#query_language-system-reload-config}
 
 Перечитывает конфигурацию настроек ClickHouse. Используется при хранении конфигурации в zookeeper.
-
-```sql
-SYSTEM RELOAD CONFIG [ON CLUSTER cluster_name]
-```
 
 ## SHUTDOWN {#query_language-system-shutdown}
 
@@ -128,14 +120,14 @@ SYSTEM RELOAD CONFIG [ON CLUSTER cluster_name]
 
 ## Управление распределёнными таблицами {#query-language-system-distributed}
 
-ClickHouse может оперировать [распределёнными](../../sql-reference/statements/system.md) таблицами. Когда пользователь вставляет данные в эти таблицы, ClickHouse сначала формирует очередь из данных, которые должны быть отправлены на узлы кластера, а затем асинхронно отправляет подготовленные данные. Вы можете управлять очередью с помощью запросов [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) и [FLUSH DISTRIBUTED](#query_language-system-flush-distributed). Также есть возможность синхронно вставлять распределенные данные с помощью настройки [distributed_foreground_insert](../../operations/settings/settings.md#distributed_foreground_insert).
+ClickHouse может оперировать [распределёнными](../../sql-reference/statements/system.md) таблицами. Когда пользователь вставляет данные в эти таблицы, ClickHouse сначала формирует очередь из данных, которые должны быть отправлены на узлы кластера, а затем асинхронно отправляет подготовленные данные. Вы можете управлять очередью с помощью запросов [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) и [FLUSH DISTRIBUTED](#query_language-system-flush-distributed). Также есть возможность синхронно вставлять распределенные данные с помощью настройки [insert_distributed_sync](../../operations/settings/settings.md#insert_distributed_sync).
 
 ### STOP DISTRIBUTED SENDS {#query_language-system-stop-distributed-sends}
 
 Отключает фоновую отправку при вставке данных в распределённые таблицы.
 
 ``` sql
-SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name>
 ```
 
 ### FLUSH DISTRIBUTED {#query_language-system-flush-distributed}
@@ -143,7 +135,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 В синхронном режиме отправляет все данные на узлы кластера. Если какие-либо узлы недоступны, ClickHouse генерирует исключение и останавливает выполнение запроса. Такой запрос можно повторять до успешного завершения, что будет означать возвращение связанности с остальными узлами кластера.
 
 ``` sql
-SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name>
 ```
 
 ### START DISTRIBUTED SENDS {#query_language-system-start-distributed-sends}
@@ -151,7 +143,7 @@ SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 Включает фоновую отправку при вставке данных в распределенные таблицы.
 
 ``` sql
-SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
 ```
 
 ## Managing MergeTree Tables {#query-language-system-mergetree}
@@ -163,18 +155,18 @@ ClickHouse может управлять фоновыми процессами �
 Позволяет остановить фоновые мержи для таблиц семейства MergeTree:
 
 ``` sql
-SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
+SYSTEM STOP MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
-:::note Примечание
-`DETACH / ATTACH` таблицы восстанавливает фоновые мержи для этой таблицы (даже в случае отключения фоновых мержей для всех таблиц семейства MergeTree до `DETACH`).
-:::
+    :::note
+    `DETACH / ATTACH` таблицы восстанавливает фоновые мержи для этой таблицы (даже в случае отключения фоновых мержей для всех таблиц семейства MergeTree до `DETACH`).
+    :::
 ### START MERGES {#query_language-system-start-merges}
 
 Включает фоновые мержи для таблиц семейства MergeTree:
 
 ``` sql
-SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
+SYSTEM START MERGES [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
 ```
 
 ### STOP TTL MERGES {#query_language-stop-ttl-merges}
@@ -183,7 +175,7 @@ SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]me
 Возвращает `Ok.` даже если указана несуществующая таблица или таблица имеет тип отличный от MergeTree. Возвращает ошибку если указана не существующая база данных:
 
 ``` sql
-SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+SYSTEM STOP TTL MERGES [[db.]merge_tree_family_table_name]
 ```
 
 ### START TTL MERGES {#query_language-start-ttl-merges}
@@ -192,7 +184,7 @@ SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_n
 Возвращает `Ok.` даже если указана несуществующая таблица или таблица имеет тип отличный от MergeTree. Возвращает ошибку если указана не существующая база данных:
 
 ``` sql
-SYSTEM START TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+SYSTEM START TTL MERGES [[db.]merge_tree_family_table_name]
 ```
 
 ### STOP MOVES {#query_language-stop-moves}
@@ -201,7 +193,7 @@ SYSTEM START TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_
 Возвращает `Ok.` даже если указана несуществующая таблица или таблица имеет тип отличный от MergeTree. Возвращает ошибку если указана не существующая база данных:
 
 ``` sql
-SYSTEM STOP MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+SYSTEM STOP MOVES [[db.]merge_tree_family_table_name]
 ```
 
 ### START MOVES {#query_language-start-moves}
@@ -210,7 +202,7 @@ SYSTEM STOP MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 Возвращает `Ok.` даже если указана несуществующая таблица или таблица имеет тип отличный от MergeTree. Возвращает ошибку если указана не существующая база данных:
 
 ``` sql
-SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+SYSTEM START MOVES [[db.]merge_tree_family_table_name]
 ```
 
 ### SYSTEM UNFREEZE {#query_language-system-unfreeze}
@@ -231,7 +223,7 @@ ClickHouse может управлять фоновыми процессами �
 Всегда возвращает `Ok.` вне зависимости от типа таблицы и даже если таблица или база данных не существет.
 
 ``` sql
-SYSTEM STOP FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+SYSTEM STOP FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### START FETCHES {#query_language-system-start-fetches}
@@ -240,7 +232,7 @@ SYSTEM STOP FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family
 Всегда возвращает `Ok.` вне зависимости от типа таблицы и даже если таблица или база данных не существет.
 
 ``` sql
-SYSTEM START FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+SYSTEM START FETCHES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### STOP REPLICATED SENDS {#query_language-system-start-replicated-sends}
@@ -248,7 +240,7 @@ SYSTEM START FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_famil
 Позволяет остановить фоновые процессы отсылки новых вставленных кусков данных другим репликам в кластере для таблиц семейства `ReplicatedMergeTree`:
 
 ``` sql
-SYSTEM STOP REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+SYSTEM STOP REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### START REPLICATED SENDS {#query_language-system-start-replicated-sends}
@@ -256,7 +248,7 @@ SYSTEM STOP REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tr
 Позволяет запустить фоновые процессы отсылки новых вставленных кусков данных другим репликам в кластере для таблиц семейства `ReplicatedMergeTree`:
 
 ``` sql
-SYSTEM START REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+SYSTEM START REPLICATED SENDS [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### STOP REPLICATION QUEUES {#query_language-system-stop-replication-queues}
@@ -264,7 +256,7 @@ SYSTEM START REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_t
 Останавливает фоновые процессы разбора заданий из очереди репликации которая хранится в Zookeeper для таблиц семейства `ReplicatedMergeTree`. Возможные типы заданий - merges, fetches, mutation, DDL запросы с ON CLUSTER:
 
 ``` sql
-SYSTEM STOP REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+SYSTEM STOP REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### START REPLICATION QUEUES {#query_language-system-start-replication-queues}
@@ -272,7 +264,7 @@ SYSTEM STOP REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_
 Запускает фоновые процессы разбора заданий из очереди репликации которая хранится в Zookeeper для таблиц семейства `ReplicatedMergeTree`. Возможные типы заданий - merges, fetches, mutation, DDL запросы с ON CLUSTER:
 
 ``` sql
-SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 ```
 
 ### SYNC REPLICA {#query_language-system-sync-replica}
@@ -280,14 +272,10 @@ SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge
 Ждет когда таблица семейства `ReplicatedMergeTree` будет синхронизирована с другими репликами в кластере, но не более `receive_timeout` секунд:
 
 ``` sql
-SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name [STRICT | LIGHTWEIGHT [FROM 'srcReplica1'[, 'srcReplica2'[, ...]]] | PULL]
+SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name [STRICT]
 ```
 
-После выполнения этого запроса таблица `[db.]replicated_merge_tree_family_table_name` загружает команды из общего реплицированного лога в свою собственную очередь репликации. Затем запрос ждет, пока реплика не обработает все загруженные команды. Поддерживаются следующие модификаторы:
-
- - Если указан модификатор `STRICT`, то запрос ждёт когда очередь репликации станет пустой. Строгий вариант запроса может никогда не завершиться успешно, если в очереди репликации постоянно появляются новые записи.
- - Если указан модификатор `LIGHTWEIGHT`, то запрос ждёт когда будут обработаны записи `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` и `DROP_PART`.
- - Если указан модификатор `PULL`, то запрос только загружает записи очереди репликации из ZooKeeper и не ждёт выполнения чего-либо.
+После выполнения этого запроса таблица `[db.]replicated_merge_tree_family_table_name` загружает команды из общего реплицированного лога в свою собственную очередь репликации. Затем запрос ждет, пока реплика не обработает все загруженные команды. Если указан модификатор `STRICT`, то запрос ждёт когда очередь репликации станет пустой. Строгий вариант запроса может никогда не завершиться успешно, если в очереди репликации постоянно появляются новые записи.
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
@@ -295,7 +283,7 @@ SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name [STRICT | LIGHT
 Инициализация очереди репликации на основе данных ZooKeeper происходит так же, как при `ATTACH TABLE`. Некоторое время таблица будет недоступна для любых операций.
 
 ``` sql
-SYSTEM RESTART REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
 ### RESTORE REPLICA {#query_language-system-restore-replica}
@@ -313,9 +301,8 @@ SYSTEM RESTART REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_fami
 К реплике прикрепляются локально найденные куски, информация о них отправляется в Zookeeper.
 Если присутствующие в реплике до потери метаданных данные не устарели, они не скачиваются повторно с других реплик. Поэтому восстановление реплики не означает повторную загрузку всех данных по сети.
 
-:::danger Предупреждение
-Потерянные данные в любых состояниях перемещаются в папку `detached/`. Куски, активные до потери данных (находившиеся в состоянии Committed), прикрепляются.
-:::
+:::danger "Предупреждение"
+    Потерянные данные в любых состояниях перемещаются в папку `detached/`. Куски, активные до потери данных (находившиеся в состоянии Committed), прикрепляются.
 
 **Синтаксис**
 

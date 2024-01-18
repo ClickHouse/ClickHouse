@@ -2,9 +2,6 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
-#include <Common/CurrentThread.h>
-#include <Common/logger_useful.h>
-#include <base/getPageSize.h>
 #include <base/errnoToString.h>
 #include <Interpreters/Context.h>
 
@@ -64,15 +61,13 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
-ThreadGroup::ThreadGroup()
+ThreadGroupStatus::ThreadGroupStatus()
     : master_thread_id(CurrentThread::get().thread_id)
 {}
 
-ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
-    : thread_id{getThreadId()}, check_current_thread_on_destruction(check_current_thread_on_destruction_)
+ThreadStatus::ThreadStatus()
+    : thread_id{getThreadId()}
 {
-    chassert(!current_thread);
-
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("(for thread)");
@@ -124,9 +119,8 @@ ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)
 #endif
 }
 
-ThreadGroupPtr ThreadStatus::getThreadGroup() const
+ThreadGroupStatusPtr ThreadStatus::getThreadGroup() const
 {
-    chassert(current_thread == this);
     return thread_group;
 }
 
@@ -145,7 +139,7 @@ ContextPtr ThreadStatus::getGlobalContext() const
     return global_context.lock();
 }
 
-void ThreadGroup::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
+void ThreadGroupStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
 {
     std::lock_guard lock(mutex);
     shared_data.logs_queue_ptr = logs_queue;
@@ -191,15 +185,6 @@ void ThreadStatus::flushUntrackedMemory()
     untracked_memory = 0;
 }
 
-bool ThreadStatus::isQueryCanceled() const
-{
-    if (!thread_group)
-        return false;
-
-    chassert(local_data.query_is_canceled_predicate);
-    return local_data.query_is_canceled_predicate();
-}
-
 ThreadStatus::~ThreadStatus()
 {
     flushUntrackedMemory();
@@ -212,14 +197,10 @@ ThreadStatus::~ThreadStatus()
     if (deleter)
         deleter();
 
-    chassert(!check_current_thread_on_destruction || current_thread == this);
-
     /// Only change current_thread if it's currently being used by this ThreadStatus
     /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread
     if (current_thread == this)
         current_thread = nullptr;
-    else if (check_current_thread_on_destruction)
-        LOG_ERROR(log, "current_thread contains invalid address");
 }
 
 void ThreadStatus::updatePerformanceCounters()

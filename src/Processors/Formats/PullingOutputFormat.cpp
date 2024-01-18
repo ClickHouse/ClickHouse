@@ -9,12 +9,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-WriteBufferFromPointer PullingOutputFormat::out(nullptr, 0);
-
-PullingOutputFormat::PullingOutputFormat(const Block & header, std::atomic_bool & consume_data_flag_)
-    : IOutputFormat(header, out)
-    , has_data_flag(consume_data_flag_)
-{}
+WriteBuffer PullingOutputFormat::out(nullptr, 0);
 
 void PullingOutputFormat::consume(Chunk chunk)
 {

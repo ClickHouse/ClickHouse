@@ -1,31 +1,29 @@
 #include "MySQLHandler.h"
 
 #include <limits>
-#include <optional>
-#include <Core/MySQL/Authentication.h>
-#include <Core/MySQL/PacketsConnection.h>
+#include <Common/NetException.h>
+#include <Common/OpenSSLHelpers.h>
 #include <Core/MySQL/PacketsGeneric.h>
-#include <Core/MySQL/PacketsPreparedStatements.h>
+#include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/Session.h>
+#include <Interpreters/executeQuery.h>
+#include <IO/copyData.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/copyData.h>
-#include <Interpreters/Session.h>
-#include <Interpreters/executeQuery.h>
+#include <IO/ReadHelpers.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
-#include <base/scope_guard.h>
-#include <Common/NetException.h>
-#include <Common/OpenSSLHelpers.h>
-#include <Common/logger_useful.h>
+#include <regex>
 #include <Common/setThreadName.h>
-#include <Common/config_version.h>
-#include <Common/re2.h>
+#include <Core/MySQL/Authentication.h>
+#include <Common/logger_useful.h>
+
+#include "config_version.h"
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>
@@ -41,7 +39,6 @@ using namespace MySQLProtocol;
 using namespace MySQLProtocol::Generic;
 using namespace MySQLProtocol::ProtocolText;
 using namespace MySQLProtocol::ConnectionPhase;
-using namespace MySQLProtocol::PreparedStatements;
 
 #if USE_SSL
 using Poco::Net::SecureStreamSocket;
@@ -64,34 +61,28 @@ static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 static String selectEmptyReplacementQuery(const String & query);
 static String showTableStatusReplacementQuery(const String & query);
 static String killConnectionIdReplacementQuery(const String & query);
-static std::optional<String> setSettingReplacementQuery(const String & query, const String & mysql_setting, const String & native_setting);
+static String selectLimitReplacementQuery(const String & query);
 
 MySQLHandler::MySQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, uint32_t connection_id_,
-    const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_)
+    bool ssl_enabled, uint32_t connection_id_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(&Poco::Logger::get("MySQLHandler"))
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
-    , read_event(read_event_)
-    , write_event(write_event_)
 {
     server_capabilities = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
     if (ssl_enabled)
         server_capabilities |= CLIENT_SSL;
 
-    queries_replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
-    queries_replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
-    queries_replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
-    settings_replacements.emplace("SQL_SELECT_LIMIT", "limit");
-    settings_replacements.emplace("NET_WRITE_TIMEOUT", "send_timeout");
-    settings_replacements.emplace("NET_READ_TIMEOUT", "receive_timeout");
+    replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
+    replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
+    replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
+    replacements.emplace("SET SQL_SELECT_LIMIT", selectLimitReplacementQuery);
 }
 
 void MySQLHandler::run()
@@ -102,10 +93,10 @@ void MySQLHandler::run()
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
 
-    session->setClientConnectionId(connection_id);
+    session->getClientInfo().connection_id = connection_id;
 
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
+    in = std::make_shared<ReadBufferFromPocoSocket>(socket());
+    out = std::make_shared<WriteBufferFromPocoSocket>(socket());
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
     try
@@ -181,22 +172,13 @@ void MySQLHandler::run()
                         comInitDB(limited_payload);
                         break;
                     case COM_QUERY:
-                        comQuery(payload, false);
+                        comQuery(payload);
                         break;
                     case COM_FIELD_LIST:
                         comFieldList(limited_payload);
                         break;
                     case COM_PING:
                         comPing();
-                        break;
-                    case COM_STMT_PREPARE:
-                        comStmtPrepare(payload);
-                        break;
-                    case COM_STMT_EXECUTE:
-                        comStmtExecute(payload);
-                        break;
-                    case COM_STMT_CLOSE:
-                        comStmtClose(payload);
                         break;
                     default:
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Command {} is not implemented.", command);
@@ -271,8 +253,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
 {
     try
     {
-        // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible
-        // (if password is specified using double SHA1). Otherwise, SHA256 plugin is used.
+        // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
         if (session->getAuthenticationTypeOrLogInFailure(user_name) == DB::AuthenticationType::SHA256_PASSWORD)
         {
             authPluginSSL();
@@ -324,7 +305,7 @@ void MySQLHandler::comPing()
 
 static bool isFederatedServerSetupSetCommand(const String & query);
 
-void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
+void MySQLHandler::comQuery(ReadBuffer & payload)
 {
     String query = String(payload.position(), payload.buffer().end());
 
@@ -340,29 +321,15 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         bool should_replace = false;
         bool with_output = false;
 
-        // Queries replacements
-        for (auto const & [query_to_replace, replacement_fn] : queries_replacements)
+        for (auto const & x : replacements)
         {
-            if (0 == strncasecmp(query_to_replace.c_str(), query.c_str(), query_to_replace.size()))
+            if (0 == strncasecmp(x.first.c_str(), query.c_str(), x.first.size()))
             {
                 should_replace = true;
-                replacement_query = replacement_fn(query);
+                replacement_query = x.second(query);
                 break;
             }
         }
-
-        // Settings replacements
-        if (!should_replace)
-            for (auto const & [mysql_setting, native_setting] : settings_replacements)
-            {
-                const auto replacement_query_opt = setSettingReplacementQuery(query, mysql_setting, native_setting);
-                if (replacement_query_opt.has_value())
-                {
-                    should_replace = true;
-                    replacement_query = replacement_query_opt.value();
-                    break;
-                }
-            }
 
         ReadBufferFromString replacement(replacement_query);
 
@@ -372,10 +339,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
-        query_context->setProgressCallback([&, my_prev = prev](const Progress & progress)
+        query_context->setProgressCallback([&, prev = prev](const Progress & progress)
         {
-            if (my_prev)
-                my_prev(progress);
+            if (prev)
+                prev(progress);
 
             affected_rows += progress.written_rows;
         });
@@ -384,7 +351,6 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         format_settings.mysql_wire.client_capabilities = client_capabilities;
         format_settings.mysql_wire.max_packet_size = max_packet_size;
         format_settings.mysql_wire.sequence_id = &sequence_id;
-        format_settings.mysql_wire.binary_protocol = binary_protocol;
 
         auto set_result_details = [&with_output](const QueryResultDetails & details)
         {
@@ -397,95 +363,11 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
             }
         };
 
-        executeQuery(should_replace ? replacement : payload, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+        executeQuery(should_replace ? replacement : payload, *out, false, query_context, set_result_details, format_settings);
 
         if (!with_output)
             packet_endpoint->sendPacket(OKPacket(0x00, client_capabilities, affected_rows, 0, 0), true);
     }
-}
-
-void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
-{
-    String statement;
-    readStringUntilEOF(statement, payload);
-
-    auto statement_id_opt = emplacePreparedStatement(std::move(statement));
-    if (statement_id_opt.has_value())
-        packet_endpoint->sendPacket(PreparedStatementResponseOK(statement_id_opt.value(), 0, 0, 0), true);
-    else
-        packet_endpoint->sendPacket(ERRPacket(), true);
-}
-
-void MySQLHandler::comStmtExecute(ReadBuffer & payload)
-{
-    uint32_t statement_id;
-    payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
-
-    auto statement_opt = getPreparedStatement(statement_id);
-    if (statement_opt.has_value())
-        MySQLHandler::comQuery(statement_opt.value(), true);
-    else
-        packet_endpoint->sendPacket(ERRPacket(), true);
-};
-
-void MySQLHandler::comStmtClose(ReadBuffer & payload)
-{
-    uint32_t statement_id;
-    payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
-
-    // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_close.html
-    // No response packet is sent back to the client.
-    erasePreparedStatement(statement_id);
-};
-
-std::optional<UInt32> MySQLHandler::emplacePreparedStatement(String statement)
-{
-    static constexpr size_t MAX_PREPARED_STATEMENTS = 10'000;
-    std::lock_guard<std::mutex> lock(prepared_statements_mutex);
-    if (prepared_statements.size() > MAX_PREPARED_STATEMENTS) /// Shouldn't happen in reality as COM_STMT_CLOSE cleans up the elements
-    {
-        LOG_ERROR(log, "Too many prepared statements");
-        current_prepared_statement_id = 0;
-        prepared_statements.clear();
-        return {};
-    }
-
-    uint32_t statement_id = current_prepared_statement_id;
-    ++current_prepared_statement_id;
-
-    // Key collisions should not happen here, as we remove the elements from the map with COM_STMT_CLOSE,
-    // and we have quite a big range of available identifiers with 32-bit unsigned integer
-    if (prepared_statements.contains(statement_id))
-    {
-        LOG_ERROR(
-            log,
-            "Failed to store a new statement `{}` with id {}; it is already taken by `{}`",
-            statement,
-            statement_id,
-            prepared_statements.at(statement_id));
-        return {};
-    }
-
-    prepared_statements.emplace(statement_id, statement);
-    return std::make_optional(statement_id);
-};
-
-std::optional<ReadBufferFromString> MySQLHandler::getPreparedStatement(UInt32 statement_id)
-{
-    std::lock_guard<std::mutex> lock(prepared_statements_mutex);
-    if (!prepared_statements.contains(statement_id))
-    {
-        LOG_ERROR(log, "Could not find prepared statement with id {}", statement_id);
-        return {};
-    }
-    // Temporary workaround as we work only with queries that do not bind any parameters atm
-    return std::make_optional<ReadBufferFromString>(prepared_statements.at(statement_id));
-}
-
-void MySQLHandler::erasePreparedStatement(UInt32 statement_id)
-{
-    std::lock_guard<std::mutex> lock(prepared_statements_mutex);
-    prepared_statements.erase(statement_id);
 }
 
 void MySQLHandler::authPluginSSL()
@@ -509,10 +391,8 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     bool ssl_enabled,
     uint32_t connection_id_,
     RSA & public_key_,
-    RSA & private_key_,
-    const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_, read_event_, write_event_)
+    RSA & private_key_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_)
     , public_key(public_key_)
     , private_key(private_key_)
 {}
@@ -546,18 +426,16 @@ void MySQLHandlerSSL::finishHandshakeSSL(
 
 static bool isFederatedServerSetupSetCommand(const String & query)
 {
-    re2::RE2::Options regexp_options;
-    regexp_options.set_case_sensitive(false);
-    static const re2::RE2 expr(
+    static const std::regex expr{
         "(^(SET NAMES(.*)))"
         "|(^(SET character_set_results(.*)))"
         "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
         "|(^(SET AUTOCOMMIT(.*)))"
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
-        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
-    assert(expr.ok());
-    return re2::RE2::FullMatch(query, expr);
+        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
+        , std::regex::icase};
+    return 1 == std::regex_match(query, expr);
 }
 
 /// Replace "[query(such as SHOW VARIABLES...)]" into "".
@@ -601,12 +479,12 @@ static String showTableStatusReplacementQuery(const String & query)
     return query;
 }
 
-static std::optional<String> setSettingReplacementQuery(const String & query, const String & mysql_setting, const String & native_setting)
+static String selectLimitReplacementQuery(const String & query)
 {
-    const String prefix = "SET " + mysql_setting;
-    if (0 == strncasecmp(prefix.c_str(), query.c_str(), prefix.size()))
-        return "SET " + native_setting + String(query.data() + prefix.length());
-    return std::nullopt;
+    const String prefix = "SET SQL_SELECT_LIMIT";
+    if (query.starts_with(prefix))
+        return "SET limit" + std::string(query.data() + prefix.length());
+    return query;
 }
 
 /// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id LIKE 'mysql:[connection_id]:xxx'".
@@ -616,8 +494,8 @@ static String killConnectionIdReplacementQuery(const String & query)
     if (query.size() > prefix.size())
     {
         String suffix = query.data() + prefix.length();
-        static const re2::RE2 expr("^[0-9]");
-        if (re2::RE2::FullMatch(suffix, expr))
+        static const std::regex expr{"^[0-9]"};
+        if (std::regex_match(suffix, expr))
         {
             String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", suffix);
             return replacement;

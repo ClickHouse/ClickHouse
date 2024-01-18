@@ -9,8 +9,6 @@
 #include <Common/ConcurrencyControl.h>
 #include <Common/randomSeed.h>
 
-using namespace DB;
-
 struct ConcurrencyControlTest
 {
     ConcurrencyControl cc;
@@ -234,12 +232,12 @@ TEST(ConcurrencyControl, MultipleThreads)
             while (auto slot = slots->tryAcquire())
             {
                 std::unique_lock lock{threads_mutex};
-                threads.emplace_back([&, my_slot = std::move(slot)]
+                threads.emplace_back([&, slot = std::move(slot)]
                 {
                     pcg64 rng(randomSeed());
                     std::uniform_int_distribution<size_t> distribution(1, cfg_work_us);
                     size_t steps = distribution(rng);
-                    for (size_t step = 0; step < steps; ++step)
+                    for (size_t step = 0; step < steps; step++)
                     {
                         sleepForMicroseconds(distribution(rng)); // emulate work
                         spawn_threads(); // upscale
@@ -278,9 +276,9 @@ TEST(ConcurrencyControl, MultipleThreads)
             queries.emplace_back([&, max_threads = max_threads_distribution(rng)]
             {
                 run_query(max_threads);
-                ++finished;
+                finished++;
             });
-            ++started;
+            started++;
         }
         sleepForMicroseconds(5); // wait some queries to finish
         t.cc.setMaxConcurrency(cfg_max_concurrency - started % 3); // emulate configuration updates

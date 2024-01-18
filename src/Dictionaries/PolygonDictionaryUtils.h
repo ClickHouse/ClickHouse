@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/iota.h>
 #include <Common/ThreadPool.h>
 #include <Poco/Logger.h>
 
@@ -13,7 +12,6 @@
 #include "PolygonDictionary.h"
 
 #include <numeric>
-
 
 namespace DB
 {
@@ -185,7 +183,7 @@ public:
     {
         setBoundingBox();
         std::vector<size_t> order(polygons.size());
-        iota(order.data(), order.size(), size_t(0));
+        std::iota(order.begin(), order.end(), 0);
         root = makeCell(min_x, min_y, max_x, max_y, order);
     }
 

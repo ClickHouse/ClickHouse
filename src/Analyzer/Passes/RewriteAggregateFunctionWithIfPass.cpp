@@ -26,7 +26,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<RewriteAggregateFunctionWithIfVisitor>;
     using Base::Base;
 
-    void enterImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings().optimize_rewrite_aggregate_function_with_if)
             return;
@@ -97,7 +97,6 @@ private:
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get(
             function_node.getFunctionName() + suffix,
-            function_node.getNullsAction(),
             argument_types,
             function_node.getAggregateFunction()->getParameters(),
             properties);

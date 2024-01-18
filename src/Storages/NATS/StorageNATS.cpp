@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -157,11 +156,7 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
     auto modified_context = Context::createCopy(local_context);
     modified_context->setSetting("input_format_skip_unknown_fields", true);
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
-    if (nats_settings->nats_handle_error_mode == StreamingHandleErrorMode::DEFAULT)
-        modified_context->setSetting("input_format_allow_errors_num", nats_settings->nats_skip_broken_messages.value);
-    else
-        modified_context->setSetting("input_format_allow_errors_num", Field{0});
-
+    modified_context->setSetting("input_format_allow_errors_num", nats_settings->nats_skip_broken_messages.value);
     /// Since we are reusing the same context for all queries executed simultaneously, we don't want to used shared `analyze_count`
     modified_context->setSetting("max_analyze_depth", Field{0});
 
@@ -324,7 +319,7 @@ void StorageNATS::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1, nats_settings->nats_handle_error_mode);
+        auto nats_source = std::make_shared<NATSSource>(*this, storage_snapshot, modified_context, column_names, 1);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -347,18 +342,18 @@ void StorageNATS::read(
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
-        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, local_context);
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), local_context, query_info);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), query_info.storage_limits);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }
 }
 
 
-SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
+SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     auto modified_context = addSettings(local_context);
     std::string subject = modified_context->getSettingsRef().stream_like_engine_insert_queue.changed
@@ -419,7 +414,7 @@ void StorageNATS::startup()
 }
 
 
-void StorageNATS::shutdown(bool /* is_drop */)
+void StorageNATS::shutdown()
 {
     shutdown_called = true;
 
@@ -647,7 +642,7 @@ bool StorageNATS::streamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         LOG_DEBUG(log, "Current queue size: {}", consumers[0]->queueSize());
-        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size, nats_settings->nats_handle_error_mode);
+        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -748,17 +743,9 @@ void registerStorageNATS(StorageFactory & factory)
 
 NamesAndTypesList StorageNATS::getVirtuals() const
 {
-    auto virtuals = NamesAndTypesList{
+    return NamesAndTypesList{
             {"_subject", std::make_shared<DataTypeString>()}
     };
-
-    if (nats_settings->nats_handle_error_mode == StreamingHandleErrorMode::STREAM)
-    {
-        virtuals.push_back({"_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-        virtuals.push_back({"_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
-    }
-
-    return virtuals;
 }
 
 }

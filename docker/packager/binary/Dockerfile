@@ -1,6 +1,6 @@
 # docker build -t clickhouse/binary-builder .
 ARG FROM_TAG=latest
-FROM clickhouse/test-util:latest AS cctools
+FROM clickhouse/test-util:48280 AS cctools
 # The cctools are built always from the clickhouse/test-util:latest and cached inline
 # Theoretically, it should improve rebuild speed significantly
 ENV CC=clang-${LLVM_VERSION}
@@ -44,46 +44,39 @@ ENV CXX=clang++-${LLVM_VERSION}
 # Rust toolchain and libraries
 ENV RUSTUP_HOME=/rust/rustup
 ENV CARGO_HOME=/rust/cargo
+ENV PATH="/rust/cargo/env:${PATH}"
 ENV PATH="/rust/cargo/bin:${PATH}"
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     chmod 777 -R /rust && \
-    rustup toolchain install nightly-2023-07-04 && \
-    rustup default nightly-2023-07-04 && \
-    rustup toolchain remove stable && \
-    rustup component add rust-src && \
-    rustup target add x86_64-unknown-linux-gnu && \
+    rustup toolchain install 1.71.0 && \
+    rustup default 1.71.0 && \
     rustup target add aarch64-unknown-linux-gnu && \
     rustup target add x86_64-apple-darwin && \
     rustup target add x86_64-unknown-freebsd && \
     rustup target add aarch64-apple-darwin && \
-    rustup target add powerpc64le-unknown-linux-gnu && \
-    rustup target add x86_64-unknown-linux-musl && \
-    rustup target add aarch64-unknown-linux-musl && \
-    rustup target add riscv64gc-unknown-linux-gnu
+    rustup target add powerpc64le-unknown-linux-gnu
 
+# NOTE: Seems like gcc-11 is too new for ubuntu20 repository
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
     && apt-get install --yes \
         binutils-riscv64-linux-gnu \
         build-essential \
+        g++-11 \
+        gcc-11 \
+        gcc-aarch64-linux-gnu \
+        libc6 \
+        libc6-dev \
+        libc6-dev-arm64-cross \
         python3-boto3 \
         yasm \
         zstd \
-        zip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists
 
 # Download toolchain and SDK for Darwin
 RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
-
-# Download and install mold 2.0 for s390x build
-RUN curl -Lo /tmp/mold.tar.gz "https://github.com/rui314/mold/releases/download/v2.0.0/mold-2.0.0-x86_64-linux.tar.gz" \
-    && mkdir /tmp/mold \
-    && tar -xzf /tmp/mold.tar.gz -C /tmp/mold \
-    && cp -r /tmp/mold/mold*/* /usr \
-    && rm -rf /tmp/mold \
-    && rm /tmp/mold.tar.gz
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH

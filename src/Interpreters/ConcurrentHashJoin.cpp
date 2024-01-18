@@ -18,7 +18,6 @@
 #include <Common/Exception.h>
 #include <Common/WeakHash.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -44,16 +43,12 @@ ConcurrentHashJoin::ConcurrentHashJoin(ContextPtr context_, std::shared_ptr<Tabl
     for (size_t i = 0; i < slots; ++i)
     {
         auto inner_hash_join = std::make_shared<InternalHashJoin>();
-
-        inner_hash_join->data = std::make_unique<HashJoin>(table_join_, right_sample_block, any_take_last_row_, 0, fmt::format("concurrent{}", i));
-        /// Non zero `max_joined_block_rows` allows to process block partially and return not processed part.
-        /// TODO: It's not handled properly in ConcurrentHashJoin case, so we set it to 0 to disable this feature.
-        inner_hash_join->data->setMaxJoinedBlockRows(0);
+        inner_hash_join->data = std::make_unique<HashJoin>(table_join_, right_sample_block, any_take_last_row_);
         hash_joins.emplace_back(std::move(inner_hash_join));
     }
 }
 
-bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_limits)
+bool ConcurrentHashJoin::addJoinedBlock(const Block & right_block, bool check_limits)
 {
     Blocks dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, right_block);
 
@@ -81,7 +76,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block, bool check_li
                 if (!lock.owns_lock())
                     continue;
 
-                bool limit_exceeded = !hash_join->data->addBlockToJoin(dispatched_block, check_limits);
+                bool limit_exceeded = !hash_join->data->addJoinedBlock(dispatched_block, check_limits);
 
                 dispatched_block = {};
                 blocks_left--;

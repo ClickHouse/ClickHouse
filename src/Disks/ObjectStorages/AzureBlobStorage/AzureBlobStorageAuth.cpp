@@ -3,8 +3,8 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/Exception.h>
-#include <Common/re2.h>
 #include <optional>
+#include <re2/re2.h>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -57,28 +57,14 @@ void validateContainerName(const String & container_name)
 
 AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    std::string storage_url;
-    if (config.has(config_prefix + ".storage_account_url"))
-    {
-        storage_url = config.getString(config_prefix + ".storage_account_url");
-        validateStorageAccountUrl(storage_url);
-    }
-    else
-    {
-        if (config.has(config_prefix + ".connection_string"))
-            storage_url = config.getString(config_prefix + ".connection_string");
-        else if (config.has(config_prefix + ".endpoint"))
-            storage_url = config.getString(config_prefix + ".endpoint");
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `connection_string` or `endpoint` in config");
-    }
-
+    String storage_account_url = config.getString(config_prefix + ".storage_account_url");
+    validateStorageAccountUrl(storage_account_url);
     String container_name = config.getString(config_prefix + ".container_name", "default-container");
     validateContainerName(container_name);
     std::optional<bool> container_already_exists {};
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
-    return {storage_url, container_name, container_already_exists};
+    return {storage_account_url, container_name, container_already_exists};
 }
 
 
@@ -106,14 +92,11 @@ template <class T>
 std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
     const String & url, const String & container_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    std::string connection_str;
     if (config.has(config_prefix + ".connection_string"))
-        connection_str = config.getString(config_prefix + ".connection_string");
-    else if (config.has(config_prefix + ".endpoint"))
-        connection_str = config.getString(config_prefix + ".endpoint");
-
-    if (!connection_str.empty())
+    {
+        String connection_str = config.getString(config_prefix + ".connection_string");
         return getClientWithConnectionString<T>(connection_str, container_name);
+    }
 
     if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name"))
     {
@@ -153,7 +136,10 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
         /// If container_already_exists is not set (in config), ignore already exists error.
         /// (Conflict - The specified container already exists)
         if (!endpoint.container_already_exists.has_value() && e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
+        {
+            tryLogCurrentException("Container already exists, returning the existing container");
             return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
+        }
         throw;
     }
 }

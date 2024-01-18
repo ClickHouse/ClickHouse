@@ -270,14 +270,14 @@ public:
         /// Note that there is no explicit time zone argument for this function (we specify 2 as an argument number with explicit time zone).
         if (WhichDataType(arguments[0].type).isDateTime())
         {
-            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
         }
         else
         {
             auto start_time_scale = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type).getScale();
             auto duration_scale = assert_cast<const DataTypeDecimal64 &>(*arguments[1].type).getScale();
             return std::make_shared<DataTypeArray>(
-                std::make_shared<DataTypeDateTime64>(std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
+                std::make_shared<DataTypeDateTime64>(std::max(start_time_scale, duration_scale), extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
         }
 
     }

@@ -1,19 +1,24 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
+#include <base/types.h>
+#include <Common/Exception.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/format.h>
 #include <Common/memcpySmall.h>
-#include <base/types.h>
+
 
 #include <algorithm>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
+
 
 namespace DB
 {
 
-struct FormatStringImpl
+struct FormatImpl
 {
     static constexpr size_t right_padding = 15;
 

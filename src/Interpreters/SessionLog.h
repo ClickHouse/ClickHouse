@@ -2,11 +2,10 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
-#include <Access/Common/AuthenticationType.h>
+#include <Access/Common/AuthenticationData.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Columns/IColumn.h>
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -21,7 +20,6 @@ enum SessionLogElementType : int8_t
 class ContextAccess;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
-using ContextAccessPtr = std::shared_ptr<const ContextAccess>;
 
 /** A struct which will be inserted as row into session_log table.
   *
@@ -60,7 +58,7 @@ struct SessionLogElement
 
     static std::string name() { return "SessionLog"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
@@ -74,13 +72,7 @@ class SessionLog : public SystemLog<SessionLogElement>
     using SystemLog<SessionLogElement>::SystemLog;
 
 public:
-    void addLoginSuccess(const UUID & auth_id,
-                         const String & session_id,
-                         const Settings & settings,
-                         const ContextAccessPtr & access,
-                         const ClientInfo & client_info,
-                         const UserPtr & login_user);
-
+    void addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context, const UserPtr & login_user);
     void addLoginFailure(const UUID & auth_id, const ClientInfo & info, const std::optional<String> & user, const Exception & reason);
     void addLogOut(const UUID & auth_id, const UserPtr & login_user, const ClientInfo & client_info);
 };

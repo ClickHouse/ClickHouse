@@ -4,10 +4,12 @@
 #include <string>
 #include <atomic>
 
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Common/logger_useful.h>
-#include <Common/re2.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -42,7 +44,7 @@ private:
     const std::string regexp_string;
 
     const RE2 regexp;
-    const std::string_view replacement;
+    const re2::StringPiece replacement;
 
 #ifndef NDEBUG
     mutable std::atomic<std::uint64_t> matches_count = 0;

@@ -5,7 +5,6 @@
 
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <Common/quoteString.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>

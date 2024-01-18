@@ -1,29 +1,30 @@
+-- Tags: no-parallel
 
 SET allow_experimental_analyzer = 0;
 SET allow_experimental_window_view = 1;
 
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
+DROP DATABASE IF EXISTS test_01085;
 set allow_deprecated_database_ordinary=1;
-CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier} ENGINE=Ordinary;
+CREATE DATABASE test_01085 ENGINE=Ordinary;
 
-DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.mt;
-DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE:Identifier}.wv;
+DROP TABLE IF EXISTS test_01085.mt;
+DROP TABLE IF EXISTS test_01085.wv;
 
-CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.mt(a Int32, market Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
-CREATE WINDOW VIEW {CLICKHOUSE_DATABASE:Identifier}.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, market, tumbleEnd(wid) AS w_end FROM {CLICKHOUSE_DATABASE:Identifier}.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND) AS wid, market;
+CREATE TABLE test_01085.mt(a Int32, market Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
+CREATE WINDOW VIEW test_01085.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, market, tumbleEnd(wid) AS w_end FROM test_01085.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND) AS wid, market;
 
-SHOW tables FROM {CLICKHOUSE_DATABASE:Identifier};
+SHOW tables FROM test_01085;
 
-DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.wv SYNC;
-SHOW tables FROM {CLICKHOUSE_DATABASE:Identifier};
+DROP TABLE test_01085.wv NO DELAY;
+SHOW tables FROM test_01085;
 
-CREATE WINDOW VIEW {CLICKHOUSE_DATABASE:Identifier}.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, market, tumbleEnd(wid) AS w_end FROM {CLICKHOUSE_DATABASE:Identifier}.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND) AS wid, market;
+CREATE WINDOW VIEW test_01085.wv ENGINE Memory WATERMARK=ASCENDING AS SELECT count(a) AS count, market, tumbleEnd(wid) AS w_end FROM test_01085.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND) AS wid, market;
 
-DETACH TABLE {CLICKHOUSE_DATABASE:Identifier}.wv;
-SHOW tables FROM {CLICKHOUSE_DATABASE:Identifier};
+DETACH TABLE test_01085.wv;
+SHOW tables FROM test_01085;
 
-ATTACH TABLE {CLICKHOUSE_DATABASE:Identifier}.wv;
-SHOW tables FROM {CLICKHOUSE_DATABASE:Identifier};
+ATTACH TABLE test_01085.wv;
+SHOW tables FROM test_01085;
 
-DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.wv SYNC;
-SHOW tables FROM {CLICKHOUSE_DATABASE:Identifier};
+DROP TABLE test_01085.wv NO DELAY;
+SHOW tables FROM test_01085;
