@@ -63,7 +63,7 @@ struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectSto
             std::ranges::move(unlink_by_path.objects, std::back_inserter(unlink));
         const String entry = VFSLogItem::getSerialised({}, std::move(unlink));
         LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
-        disk.zookeeper()->create(disk.traits.log_item, entry, zkutil::CreateMode::PersistentSequential);
+        disk.zookeeper()->create(disk.settings.log_item, entry, zkutil::CreateMode::PersistentSequential);
     }
 };
 
@@ -95,7 +95,7 @@ struct RemoveManyObjectStorageVFSOperation final : RemoveManyObjectStorageOperat
             std::ranges::move(objects, std::back_inserter(unlink));
         const String entry = VFSLogItem::getSerialised({}, std::move(unlink));
         LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
-        disk.zookeeper()->create(disk.traits.log_item, entry, zkutil::CreateMode::PersistentSequential);
+        disk.zookeeper()->create(disk.settings.log_item, entry, zkutil::CreateMode::PersistentSequential);
     }
 
     void finalize() override { }
@@ -180,7 +180,7 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
         CopyFileObjectStorageOperation::execute(tx);
         const String entry = VFSLogItem::getSerialised(std::move(created_objects), {});
         LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
-        disk.zookeeper()->create(disk.traits.log_item, entry, zkutil::CreateMode::PersistentSequential);
+        disk.zookeeper()->create(disk.settings.log_item, entry, zkutil::CreateMode::PersistentSequential);
     }
 };
 
@@ -215,7 +215,7 @@ void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, 
     auto callback = [entry_captured = std::move(entry), &disk_captured = disk]
     {
         LOG_TRACE(disk_captured.log, "Executing {}", entry_captured);
-        disk_captured.zookeeper()->create(disk_captured.traits.log_item, entry_captured, zkutil::CreateMode::PersistentSequential);
+        disk_captured.zookeeper()->create(disk_captured.settings.log_item, entry_captured, zkutil::CreateMode::PersistentSequential);
     };
 
     operations_to_execute.emplace_back(

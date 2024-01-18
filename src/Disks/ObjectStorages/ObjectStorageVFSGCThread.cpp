@@ -27,9 +27,9 @@ extern const int LOGICAL_ERROR;
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool)
     : storage(storage_)
     , log(&Poco::Logger::get(fmt::format("VFSGC({})", storage_.getName())))
-    , lock_path(fs::path(storage.traits.locks_node) / "gc_lock")
+    , lock_path(fs::path(storage.settings.locks_node) / "gc_lock")
 {
-    LOG_DEBUG(log, "GC started with interval {}ms", storage.settings.gc_sleep_ms);
+    LOG_INFO(log, "GC started");
     storage.zookeeper()->createAncestors(lock_path);
 
     task = pool.createTask(
@@ -74,10 +74,11 @@ void ObjectStorageVFSGCThread::run() const
         ProfileEvents::increment(ProfileEvents::VFSGcTotalMicroseconds, stop_watch.elapsedMicroseconds());
     });
 
-    Strings log_items_batch = storage.zookeeper()->getChildren(storage.traits.log_base_node);
+    Strings log_items_batch = storage.zookeeper()->getChildren(storage.settings.log_base_node);
+    const size_t batch_size = log_items_batch.size();
     if ((skip_run = log_items_batch.empty()))
     {
-        LOG_TRACE(log, "Skipped run due to empty batch");
+        LOG_DEBUG(log, "Skipped run due to empty batch");
         return;
     }
 
@@ -90,7 +91,7 @@ void ObjectStorageVFSGCThread::run() const
     const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4)); // log- is a prefix
     const size_t end_logpointer = std::min(parseFromString<size_t>(end_str.substr(4)), start_logpointer + storage.settings.batch_max_size);
 
-    if ((skip_run = skipRun(log_items_batch.size(), start_logpointer)))
+    if ((skip_run = skipRun(batch_size, start_logpointer)))
         return;
 
     LOG_DEBUG(log, "Acquired lock for [{};{}]", start_logpointer, end_logpointer);
@@ -199,7 +200,7 @@ void ObjectStorageVFSGCThread::removeBatch(size_t start_logpointer, size_t end_l
 String ObjectStorageVFSGCThread::getNode(size_t id) const
 {
     // Zookeeper's sequential node is 10 digits with padding zeros
-    return fmt::format("{}{:010}", storage.traits.log_item, id);
+    return fmt::format("{}{:010}", storage.settings.log_item, id);
 }
 
 StoredObject ObjectStorageVFSGCThread::getSnapshotObject(size_t logpointer) const

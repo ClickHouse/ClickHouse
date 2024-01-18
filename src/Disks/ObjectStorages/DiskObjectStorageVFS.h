@@ -2,7 +2,6 @@
 #include "Common/ZooKeeper/ZooKeeper.h"
 #include "DiskObjectStorage.h"
 #include "ObjectStorageVFSGCThread.h"
-#include "VFSTraits.h"
 #include "VFSSettings.h"
 
 namespace DB
@@ -25,8 +24,7 @@ public:
 
     void startupImpl(ContextPtr context) override;
     void shutdown() override;
-
-    // TODO myrrc support changing disk settings in runtime e.g. GC interval
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr, const String &, const DisksMap &) override;
 
     constexpr bool isObjectStorageVFS() const override { return true; }
     constexpr bool supportZeroCopyReplication() const override { return false; }
@@ -49,8 +47,7 @@ private:
     std::optional<ObjectStorageVFSGCThread> garbage_collector;
 
     const bool enable_gc; // In certain conditions we don't want a GC e.g. when running from clickhouse-disks
-    const VFSTraits traits;
-    const VFSSettings settings;
+    VFSSettings settings;
 
     zkutil::ZooKeeperPtr zookeeper();
 

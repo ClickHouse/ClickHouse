@@ -29,12 +29,11 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
         config,
         config_prefix)
     , enable_gc(enable_gc_)
-    , traits(VFSTraits{name_})
-    , settings(config, config_prefix)
+    , settings(config, config_prefix, name)
 {
     if (send_metadata)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS doesn't support send_metadata");
-    zookeeper()->createAncestors(traits.log_item);
+    zookeeper()->createAncestors(settings.log_item);
 }
 
 DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
@@ -54,6 +53,7 @@ DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
 void DiskObjectStorageVFS::startupImpl(ContextPtr context)
 {
     DiskObjectStorage::startupImpl(context);
+    LOG_INFO(log, "VFS settings: {}", settings);
     if (!enable_gc)
         return;
     garbage_collector.emplace(*this, context->getSchedulePool());
@@ -64,6 +64,15 @@ void DiskObjectStorageVFS::shutdown()
     DiskObjectStorage::shutdown();
     if (garbage_collector)
         garbage_collector->stop();
+}
+
+void DiskObjectStorageVFS::applyNewSettings(
+    const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap & disk_map)
+{
+    const auto config_prefix = "storage_configuration.disks." + name;
+    settings = {config, config_prefix, name};
+    LOG_DEBUG(log, "New VFS settings: {}", settings);
+    DiskObjectStorage::applyNewSettings(config, context, config_prefix, disk_map);
 }
 
 String DiskObjectStorageVFS::getStructure() const
@@ -177,7 +186,7 @@ String DiskObjectStorageVFS::lockPathToFullPath(std::string_view path) const
 {
     String lock_path{path};
     std::ranges::replace(lock_path, '/', '_');
-    return fs::path(traits.locks_node) / lock_path;
+    return fs::path(settings.locks_node) / lock_path;
 }
 
 StoredObject DiskObjectStorageVFS::getMetadataObject(std::string_view remote) const
