@@ -17,14 +17,14 @@ ReadFromStreamLikeEngine::ReadFromStreamLikeEngine(
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     ContextPtr context_)
     : ISourceStep{DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)}}
+    , WithContext{context_}
     , storage_limits{std::move(storage_limits_)}
-    , context{context_}
 {
 }
 
 void ReadFromStreamLikeEngine::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (!context->getSettingsRef().stream_like_engine_allow_direct_select)
+    if (!getContext()->getSettingsRef().stream_like_engine_allow_direct_select)
         throw Exception(
             ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 

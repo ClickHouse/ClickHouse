@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class ReadFromStreamLikeEngine : public ISourceStep
+class ReadFromStreamLikeEngine : public ISourceStep, protected WithContext
 {
 public:
     ReadFromStreamLikeEngine(
@@ -21,6 +21,5 @@ protected:
     virtual Pipe makePipe() = 0;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
-    ContextPtr context;
 };
 }

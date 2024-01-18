@@ -212,7 +212,7 @@ private:
         /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
         Pipes pipes;
         pipes.reserve(kafka_storage.num_consumers);
-        auto modified_context = Context::createCopy(context);
+        auto modified_context = Context::createCopy(getContext());
         modified_context->applySettingsChanges(kafka_storage.settings_adjustments);
 
         // Claim as many consumers as requested, but don't block

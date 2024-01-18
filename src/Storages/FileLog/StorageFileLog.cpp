@@ -92,7 +92,7 @@ private:
             return Pipe{};
         }
 
-        auto modified_context = Context::createCopy(context);
+        auto modified_context = Context::createCopy(getContext());
 
         auto max_streams_number = std::min<UInt64>(file_log.filelog_settings->max_threads, file_log.file_infos.file_names.size());
 
