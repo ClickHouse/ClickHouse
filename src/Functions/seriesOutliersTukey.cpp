@@ -1,5 +1,6 @@
 #include <cmath>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -16,16 +17,18 @@ extern const int ILLEGAL_COLUMN;
 }
 
 //Detects a possible anomaly in series using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences)
-class FunctionSeriesOutliersTukey : public IFunction
+class FunctionSeriesOutliersDetectTukey : public IFunction
 {
 public:
-    static constexpr auto name = "seriesOutliersTukey";
+    static constexpr auto name = "seriesOutliersDetectTukey";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSeriesOutliersTukey>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSeriesOutliersDetectTukey>(); }
 
     std::string getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    bool isVariadic() const override { return true; }
+
+    size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -33,11 +36,19 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors args{{"time_series", &isArray<IDataType>, nullptr, "Array"}};
-        validateFunctionArgumentTypes(*this, arguments, args);
+        FunctionArgumentDescriptors mandatory_args{{"time_series", &isArray<IDataType>, nullptr, "Array"}};
+        FunctionArgumentDescriptors optional_args{
+            {"kind", &isString<IDataType>, isColumnConst, "const String"},
+            {"min_percentile", &isNativeNumber<IDataType>, isColumnConst, "Number"},
+            {"max_percentile", &isNativeNumber<IDataType>, isColumnConst, "Number"}
+        };
+
+        validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1,2,3}; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
@@ -47,13 +58,54 @@ public:
         const IColumn & src_data = array->getData();
         const ColumnArray::Offsets & src_offsets = array->getOffsets();
 
+        Float64 min_percentile = 0.25;
+        Float64 max_percentile = 0.75;
+
+        if(arguments.size() > 1)
+        {
+            //const IColumn * arg_column = arguments[1].column.get();
+            const ColumnConst * arg_string = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
+
+            if (!arg_string)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The second argument of function {} must be constant String", getName());
+
+            String kind = arg_string->getValue<String>();
+            if(kind == "ctukey"){
+                min_percentile = 0.10; //default 10th percentile
+                max_percentile = 0.90; //default 90th percentile
+
+                if(arguments.size() > 2)
+                {
+                    Float64 p_min = arguments[2].column->getFloat64(0);
+                    if(p_min >= 2.0 && p_min <= 98.0)
+                        min_percentile = p_min/100;
+                    else
+                      throw Exception(ErrorCodes::BAD_ARGUMENTS, "The third argumet of function {} must be in range [2.0, 98.0]", getName());  
+                }
+
+                if(arguments.size() == 4)
+                {
+                    Float64 p_max = arguments[3].column->getFloat64(0);
+                    if(p_max >= 2.0 && p_max <= 98.0 && p_max > min_percentile*100)
+                        max_percentile = p_max/100;
+                    else
+                      throw Exception(ErrorCodes::BAD_ARGUMENTS, "The fourth argumet of function {} must be in range [2.0, 98.0]", getName());  
+                }
+            } 
+            else
+            {
+                if(kind != "tukey")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second argument of function {} can only be 'tukey' or 'ctukey'.", getName());
+            }
+        }
+
         ColumnPtr res;
 
-        if (executeNumber<UInt8>(src_data, src_offsets, res) || executeNumber<UInt16>(src_data, src_offsets, res)
-            || executeNumber<UInt32>(src_data, src_offsets, res) || executeNumber<UInt64>(src_data, src_offsets, res)
-            || executeNumber<Int8>(src_data, src_offsets, res) || executeNumber<Int16>(src_data, src_offsets, res)
-            || executeNumber<Int32>(src_data, src_offsets, res) || executeNumber<Int64>(src_data, src_offsets, res)
-            || executeNumber<Float32>(src_data, src_offsets, res) || executeNumber<Float64>(src_data, src_offsets, res))
+        if (executeNumber<UInt8>(src_data, src_offsets, min_percentile, max_percentile, res) || executeNumber<UInt16>(src_data, src_offsets,min_percentile, max_percentile, res)
+            || executeNumber<UInt32>(src_data, src_offsets, min_percentile, max_percentile,res) || executeNumber<UInt64>(src_data, src_offsets,min_percentile, max_percentile, res)
+            || executeNumber<Int8>(src_data, src_offsets,min_percentile, max_percentile, res) || executeNumber<Int16>(src_data, src_offsets,min_percentile, max_percentile, res)
+            || executeNumber<Int32>(src_data, src_offsets,min_percentile, max_percentile, res) || executeNumber<Int64>(src_data, src_offsets, min_percentile, max_percentile,res)
+            || executeNumber<Float32>(src_data, src_offsets,min_percentile, max_percentile, res) || executeNumber<Float64>(src_data, src_offsets,min_percentile, max_percentile, res))
         {
             return res;
         }
@@ -66,7 +118,11 @@ public:
     }
 
     template <typename T>
-    bool executeNumber(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, ColumnPtr & res_ptr) const
+    bool executeNumber(const IColumn & src_data, 
+    const ColumnArray::Offsets & src_offsets, 
+    Float64 min_percentile,
+    Float64 max_percentile,
+    ColumnPtr & res_ptr) const
     {
         const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
         if (!src_data_concrete)
@@ -91,16 +147,34 @@ public:
             std::vector<Float64> src_sorted(src_vec.begin() + prev_src_offset, src_vec.begin() + curr_src_offset);
             std::sort(src_sorted.begin(), src_sorted.end());
 
-            size_t q1_index = len / 4;
-            size_t q3_index = (len * 3) / 4;
+            Float64 q1, q2;
 
-            Float64 q1 = (len % 2 != 0) ? src_sorted[q1_index] : (src_sorted[q1_index - 1] + src_sorted[q1_index]) / 2;
-            Float64 q3 = (len % 2 != 0) ? src_sorted[q3_index] : (src_sorted[q3_index - 1] + src_sorted[q3_index]) / 2;
+            auto p1 = len * min_percentile;
+            if(p1 == static_cast<Int64>(p1)){
+                size_t index = static_cast<size_t>(p1)-1;
+                q1 = (src_sorted[index] + src_sorted[index+1])/2;
+            }
+            else
+            {   
+                size_t index = static_cast<size_t>(std::ceil(p1))-1;
+                q1 = src_sorted[index];
+            }
 
-            Float64 iqr = q3 - q1;
+            auto p2 = len * max_percentile;
+            if(p2 == static_cast<Int64>(p2)){
+                size_t index = static_cast<size_t>(p2)-1;
+                q2 = (src_sorted[index] + src_sorted[index+1])/2;
+            }
+            else
+            {   
+                size_t index = static_cast<size_t>(std::ceil(p2))-1;
+                q2 = src_sorted[index];
+            }
+
+            Float64 iqr = q2 - q1;
 
             Float64 lower_fence = q1 - 1.5 * iqr;
-            Float64 upper_fence = q3 + 1.5 * iqr;
+            Float64 upper_fence = q2 + 1.5 * iqr;
 
             for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
             {
@@ -116,16 +190,16 @@ public:
     }
 };
 
-REGISTER_FUNCTION(SeriesOutliersTukey)
+REGISTER_FUNCTION(SeriesOutliersDetectTukey)
 {
-    factory.registerFunction<FunctionSeriesOutliersTukey>(FunctionDocumentation{
+    factory.registerFunction<FunctionSeriesOutliersDetectTukey>(FunctionDocumentation{
         .description = R"(
 Detects a possible anomaly in series using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences).
 
 **Syntax**
 
 ``` sql
-seriesOutliersTukey(series);
+seriesOutliersDetectTukey(series);
 ```
 
 **Arguments**
@@ -144,7 +218,7 @@ Type: [Array](../../sql-reference/data-types/array.md).
 Query:
 
 ``` sql
-seriesOutliersTukey([-3,2.4,15,3.9,5,6,4.5,5.2,3,4,5,16,7,5,5,4]) AS print_0;
+seriesOutliersDetectTukey([-3,2.4,15,3.9,5,6,4.5,5.2,3,4,5,16,7,5,5,4]) AS print_0;
 ```
 
 Result:
@@ -158,7 +232,7 @@ Result:
 Query:
 
 ``` sql
-seriesOutliersTukey(arrayMap(x -> sin(x / 10), range(30))) AS print_0;
+seriesOutliersDetectTukey(arrayMap(x -> sin(x / 10), range(30))) AS print_0;
 ```
 
 Result:

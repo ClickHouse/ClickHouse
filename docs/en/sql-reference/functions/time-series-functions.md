@@ -8,14 +8,14 @@ sidebar_label: Time Series
 
 Below functions are used for time series analysis.
 
-## seriesOutliersTukey
+## seriesOutliersDetectTukey
 
 Detects a possible anomaly in series using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences).
 
 **Syntax**
 
 ``` sql
-seriesOutliersTukey(series);
+seriesOutliersDetectTukey(series);
 ```
 
 **Arguments**
@@ -34,7 +34,7 @@ Type: [Array](../../sql-reference/data-types/array.md).
 Query:
 
 ``` sql
-seriesOutliersTukey([-3,2.4,15,3.9,5,6,4.5,5.2,3,4,5,16,7,5,5,4]) AS print_0;
+seriesOutliersDetectTukey([-3,2.4,15,3.9,5,6,4.5,5.2,3,4,5,16,7,5,5,4]) AS print_0;
 ```
 
 Result:
@@ -48,7 +48,7 @@ Result:
 Query:
 
 ``` sql
-seriesOutliersTukey(arrayMap(x -> sin(x / 10), range(30))) AS print_0;
+seriesOutliersDetectTukey(arrayMap(x -> sin(x / 10), range(30))) AS print_0;
 ```
 
 Result:
