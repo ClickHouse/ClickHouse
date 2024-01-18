@@ -49,25 +49,21 @@ std::unique_ptr<IHashValueIdGenerator> HashValueIdGeneratorFactory::getGenerator
 #define APPLY_ON_NUMBER_COLUMN(type, nested_col, col) \
     else if (const auto * col##type = typeid_cast<const Column##type *>(nested_col)) \
     { \
-        LOG_ERROR(&Poco::Logger::get("HashValueIdGeneratorFactory"), "xxx APPLY_ON_NUMBER_COLUMN for {}", col->getName()); \
         return std::make_unique<NumericHashValueIdGenerator<type, Column##type, false>>(col, state_, values_id_bits_, max_distinct_values_); \
     }
 #define APPLY_ON_BASIC_NUMBER_COLUMN(type, nested_col, col) \
     else if (const auto * col##type = typeid_cast<const Column##type *>(nested_col)) \
     { \
-        LOG_ERROR(&Poco::Logger::get("HashValueIdGeneratorFactory"), "xxx APPLY_ON_BASIC_NUMBER_COLUMN for {}", col->getName()); \
         return std::make_unique<NumericHashValueIdGenerator<type, Column##type, true>>(col, state_, values_id_bits_, max_distinct_values_); \
     }
 
     WhichDataType which_type(nested_col->getDataType());
     if (which_type.isString())
     {
-        LOG_ERROR(&Poco::Logger::get("HashValueIdGeneratorFactory"), "xxx StringHashValueIdGenerator for {}", col->getName());
         return std::make_unique<StringHashValueIdGenerator>(col, state_, values_id_bits_, max_distinct_values_);
     }
     else if (which_type.isFixedString())
     {
-        LOG_ERROR(&Poco::Logger::get("HashValueIdGeneratorFactory"), "xxx FixedStringHashValueIdGenerator for {}", col->getName());
         return std::make_unique<FixedStringHashValueIdGenerator>(col, state_, values_id_bits_, max_distinct_values_);
     }
     APPLY_ON_BASIC_NUMBER_COLUMN(UInt8, nested_col, col)

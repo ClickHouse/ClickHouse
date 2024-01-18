@@ -733,15 +733,6 @@ private:
             data_pos += element_bytes;
         }
         enable_range_mode = enable_range_mode && range_max > range_min && range_max - range_min + 1 + is_nullable <= max_distinct_values;
-        LOG_ERROR(
-            &Poco::Logger::get("NumericHashValueIdGenerator"),
-            "xxx n: {} range_min: {}, range_max: {}, enable_range_mode: {}, is_nullable: {}, max_distinct_values: {}",
-            n,
-            range_min,
-            range_max,
-            enable_range_mode,
-            is_nullable,
-            max_distinct_values);
         if (enable_range_mode)
         {
             allocated_value_id =  range_max - range_min + 1 + is_nullable;
