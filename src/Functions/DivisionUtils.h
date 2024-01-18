@@ -180,7 +180,7 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
             if (res < 0)
             {
                 if constexpr (is_unsigned_v<B>)
-                    res += static_cast<OriginResultType>(b);
+                    return static_cast<ResultType>(res + b);
                 else
                 {
                     if (b == std::numeric_limits<B>::lowest())
