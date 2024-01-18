@@ -13,12 +13,12 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(ASTPtr & ast, const Data & 
         visit(*func, ast, data);
 }
 
-/** Rewrite the following AST to break the function `sum(column + literal)` into two individual functions
+/** Rewrite the following AST to break the function `sum(column +/- literal)` into two individual functions
  * `sum(column)` and `literal * count(column)`.
- *  sum(column + literal)  ->  sum(column) + literal * count(column)
- *  sum(literal + column)  ->  sum(column) + literal * count(column)
- *  sum(column - literal)  ->  sum(column) - literal * count(column)
- *  sum(literal - column)  ->  sum(column) - literal * count(column)
+ * sum(column + literal) -> sum(column) + literal * count(column)
+ * sum(literal + column) -> literal * count(column) + sum(column)
+ * sum(column - literal) -> sum(column) - literal * count(column)
+ * sum(literal - column) -> literal * count(column) - sum(column)
  */
 void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & function, ASTPtr & ast, const Data & data)
 {

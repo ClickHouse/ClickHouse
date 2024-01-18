@@ -10,12 +10,12 @@
 namespace DB
 {
 
-/** Rewrite the following AST to break the function `sum(column + literal)` into two individual functions
+/** Rewrite the following Analyzer to break the function `sum(column +/- literal)` into two individual functions
  * `sum(column)` and `literal * count(column)`.
- *  sum(column + literal)  ->  sum(column) + literal * count(column)
- *  sum(literal + column)  ->  sum(column) + literal * count(column)
- *  sum(column - literal)  ->  sum(column) - literal * count(column)
- *  sum(literal - column)  ->  sum(column) - literal * count(column)
+ * sum(column + literal) -> sum(column) + literal * count(column)
+ * sum(literal + column) -> literal * count(column) + sum(column)
+ * sum(column - literal) -> sum(column) - literal * count(column)
+ * sum(literal - column) -> literal * count(column) - sum(column)
  */
 
 namespace
