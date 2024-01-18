@@ -54,6 +54,16 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
 {
 }
 
+ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, String comment_)
+    : name(std::move(name_)), type(std::move(type_)), comment(comment_)
+{
+}
+
+ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_)
+    : name(std::move(name_)), type(std::move(type_)), comment(comment_), codec(codec_)
+{
+}
+
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
     auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
@@ -167,16 +177,18 @@ void ColumnDescription::readText(ReadBuffer & buf)
     }
 }
 
-ColumnsDescription::ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary)
+ColumnsDescription::ColumnsDescription(std::initializer_list<ColumnDescription> ordinary)
 {
-    for (const auto & elem : ordinary)
-        add(ColumnDescription(elem.name, elem.type));
+    for (auto && elem : ordinary)
+        add(elem);
 }
 
-ColumnsDescription::ColumnsDescription(NamesAndTypes ordinary)
+ColumnsDescription ColumnsDescription::fromNamesAndTypes(NamesAndTypes ordinary)
 {
+    ColumnsDescription result;
     for (auto & elem : ordinary)
-        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
+        result.add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
+    return result;
 }
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
@@ -190,6 +202,11 @@ ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, NamesAndAlias
     for (auto & elem : ordinary)
         add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
 
+    setAliases(std::move(aliases));
+}
+
+void ColumnsDescription::setAliases(NamesAndAliases aliases)
+{
     for (auto & alias : aliases)
     {
         ColumnDescription description(std::move(alias.name), std::move(alias.type));

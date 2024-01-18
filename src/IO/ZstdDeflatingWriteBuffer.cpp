@@ -21,9 +21,7 @@ static void setZstdParameter(ZSTD_CCtx * cctx, ZSTD_cParameter param, int value)
             ZSTD_VERSION_STRING);
 }
 
-ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
-    std::unique_ptr<WriteBuffer> out_, int compression_level, int window_log, size_t buf_size, char * existing_memory, size_t alignment)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
+void ZstdDeflatingWriteBuffer::initialize(int compression_level, int window_log)
 {
     cctx = ZSTD_createCCtx();
     if (cctx == nullptr)
@@ -65,6 +63,7 @@ void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)
 
     try
     {
+        size_t out_offset = out->offset();
         bool ended = false;
         do
         {
@@ -88,6 +87,8 @@ void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)
 
             ended = everything_was_compressed && everything_was_flushed;
         } while (!ended);
+
+        total_out += out->offset() - out_offset;
     }
     catch (...)
     {
@@ -105,6 +106,9 @@ void ZstdDeflatingWriteBuffer::nextImpl()
 
 void ZstdDeflatingWriteBuffer::finalizeBefore()
 {
+    /// Don't write out if no data was ever compressed
+    if (!compress_empty && total_out == 0)
+        return;
     flush(ZSTD_e_end);
 }
 

@@ -6924,7 +6924,6 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
         query_info.prewhere_info,
         storage_snapshot->getMetadataForQuery()->getColumns().getAll().getNames(),
         storage_snapshot->metadata,
-        storage_snapshot->metadata,
         query_info,
         added_filter_nodes,
         query_context,

@@ -908,9 +908,17 @@ void addWindowSteps(QueryPlan & query_plan,
           * has suitable sorting. Also don't create sort steps when there are no
           * columns to sort by, because the sort nodes are confused by this. It
           * happens in case of `over ()`.
+          * Even if full_sort_description of both windows match, in case of different
+          * partitioning we need to add a SortingStep to reshuffle data in the streams.
           */
-        if (!window_description.full_sort_description.empty() &&
-            (i == 0 || !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)))
+
+        bool need_sort = !window_description.full_sort_description.empty();
+        if (need_sort && i != 0)
+        {
+            need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
+                        || (settings.max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
+        }
+        if (need_sort)
         {
             SortingStep::Settings sort_settings(*query_context);
 
@@ -1382,7 +1390,7 @@ void Planner::buildPlanForQueryNode()
         }
     }
 
-    if (query_context->canUseTaskBasedParallelReplicas() || !settings.parallel_replicas_custom_key.value.empty())
+    if (!settings.parallel_replicas_custom_key.value.empty())
     {
         /// Check support for JOIN for parallel replicas with custom key
         if (planner_context->getTableExpressionNodeToData().size() > 1)

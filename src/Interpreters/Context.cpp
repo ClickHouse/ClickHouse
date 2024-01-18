@@ -215,6 +215,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
 
+    ConfigurationPtr sensitive_data_masker_config;
+
 #if USE_NURAFT
     mutable std::mutex keeper_dispatcher_mutex;
     mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
@@ -892,11 +894,11 @@ Strings Context::getWarnings() const
     {
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
-        if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<DB::Int64>(shared->max_table_num_to_warn))
+        if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
-        if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<DB::Int64>(shared->max_database_num_to_warn))
+        if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_table_num_to_warn));
-        if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<DB::Int64>(shared->max_part_num_to_warn))
+        if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
     }
     /// Make setting's name ordered
@@ -3369,6 +3371,16 @@ bool Context::hasAuxiliaryZooKeeper(const String & name) const
     return getConfigRef().has("auxiliary_zookeepers." + name);
 }
 
+void Context::reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const
+{
+    const auto old_config = shared->sensitive_data_masker_config;
+    if (old_config && isSameConfiguration(*config, *old_config, "query_masking_rules"))
+        return;
+
+    SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(*config, "query_masking_rules"));
+    shared->sensitive_data_masker_config = config;
+}
+
 InterserverCredentialsPtr Context::getInterserverCredentials() const
 {
     return shared->interserver_io_credentials.get();
@@ -5085,6 +5097,12 @@ bool Context::canUseParallelReplicasOnInitiator() const
 bool Context::canUseParallelReplicasOnFollower() const
 {
     return canUseTaskBasedParallelReplicas() && getClientInfo().collaborate_with_initiator;
+}
+
+bool Context::canUseParallelReplicasCustomKey(const Cluster & cluster) const
+{
+    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
+        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
