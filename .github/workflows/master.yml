@@ -99,7 +99,7 @@ jobs:
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
   BuilderDebReleaseCoverage:
-    needs: [ RunConfig, BuildDockers ]
+    needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_build.yml
     with:
