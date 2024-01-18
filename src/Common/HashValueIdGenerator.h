@@ -750,7 +750,6 @@ private:
         {
             allocated_value_id = is_nullable;
         }
-        enable_range_mode = false;
 
         if (allocated_value_id > max_distinct_values)
         {
