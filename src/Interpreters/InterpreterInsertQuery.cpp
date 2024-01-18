@@ -391,8 +391,42 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
 
 BlockIO InterpreterInsertQuery::execute()
 {
-    const Settings & settings = getContext()->getSettingsRef();
+    auto context_ptr = getContext();
+    const Settings & settings = context_ptr->getSettingsRef();
     auto & query = query_ptr->as<ASTInsertQuery &>();
+
+    if (query.select)
+    {
+        const ASTSelectWithUnionQuery * ast_select = typeid_cast<ASTSelectWithUnionQuery *>(query.select.get());
+        const auto * ast_expression = typeid_cast<ASTExpressionList *>(ast_select->list_of_selects.get());
+        if (ast_expression->children.size() == 1)
+        {
+            const auto * sub_select = ast_expression->children.at(0)->as<const ASTSelectQuery>();
+            if (sub_select->tables())
+            {
+                const auto * tables = sub_select->tables()->as<const ASTTablesInSelectQuery>();
+                const auto * tables_elements = tables->children.at(0)->as<const ASTTablesInSelectQueryElement>();
+                const auto * table_expression = tables_elements->table_expression->as<const ASTTableExpression>();
+
+                if (table_expression->table_function)
+                {
+                    if (const auto * table_function = table_expression->table_function->as<const ASTFunction>())
+                    {
+                        if (const auto * limit = sub_select->limitLength().get())
+                        {
+                            if (const auto * limit_literal = limit->as<const ASTLiteral>())
+                            {
+                                UInt64 limit_value = 0;
+                                limit->as<ASTLiteral &>().value.tryGet<UInt64>(limit_value);
+                                auto progress_call_back = context_ptr->getProgressCallback();
+                                progress_call_back({0, 0, limit_value, 0});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     QueryPipelineBuilder pipeline;
     std::optional<QueryPipeline> distributed_pipeline;
