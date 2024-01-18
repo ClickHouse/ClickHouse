@@ -75,8 +75,8 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
         return AlterCommand::RemoveProperty::CODEC;
     else if (property == "TTL")
         return AlterCommand::RemoveProperty::TTL;
-    else if (property == "SETTING")
-        return AlterCommand::RemoveProperty::SETTING;
+    else if (property == "SETTINGS")
+        return AlterCommand::RemoveProperty::SETTINGS;
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
 }
@@ -152,16 +152,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
         command.column_name = ast_col_decl.name;
         command.to_remove = removePropertyFromString(command_ast->remove_property);
-        if (command.to_remove == RemoveProperty::SETTING)
-        {
-            for (const ASTPtr & identifier_ast : command_ast->settings_resets->children)
-            {
-                const auto & identifier = identifier_ast->as<ASTIdentifier &>();
-                auto insertion = command.settings_resets.emplace(identifier.name());
-                if (!insertion.second)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate setting name {}", backQuote(identifier.name()));
-            }
-        }
 
         if (ast_col_decl.type)
         {
@@ -186,8 +176,24 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.codec)
             command.codec = ast_col_decl.codec;
 
-        if (ast_col_decl.per_column_settings)
-            command.settings_changes = ast_col_decl.per_column_settings->as<ASTSetQuery &>().changes;
+        if (ast_col_decl.settings)
+            command.settings_changes = ast_col_decl.settings->as<ASTSetQuery &>().changes;
+
+        /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
+        if (command_ast->settings_changes)
+        {
+            command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+            command.append_column_setting = true;
+        }
+
+        if (command_ast->settings_resets)
+        {
+            for (const ASTPtr & identifier_ast : command_ast->settings_resets->children)
+            {
+                const auto & identifier = identifier_ast->as<ASTIdentifier &>();
+                command.settings_resets.emplace(identifier.name());
+            }
+        }
 
         if (command_ast->column)
             command.after_column = getIdentifierName(command_ast->column);
@@ -517,10 +523,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             {
                 column.ttl.reset();
             }
-            else if (to_remove == RemoveProperty::SETTING)
+            else if (to_remove == RemoveProperty::SETTINGS)
             {
-                for (const auto & setting : settings_resets)
-                    column.settings.removeSetting(setting);
+                column.settings.clear();
             }
             else
             {
@@ -539,7 +544,17 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 if (!settings_changes.empty())
                 {
                     MergeTreeColumnSettings::validate(settings_changes);
-                    column.settings = settings_changes;
+                    if (append_column_setting)
+                        for (const auto & change : settings_changes)
+                            column.settings.setSetting(change.name, change.value);
+                    else
+                        column.settings = settings_changes;
+                }
+
+                if (!settings_resets.empty())
+                {
+                    for (const auto & setting : settings_resets)
+                        column.settings.removeSetting(setting);
                 }
 
                 /// User specified default expression or changed
@@ -1384,15 +1399,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         ErrorCodes::BAD_ARGUMENTS,
                         "Column {} doesn't have COMMENT, cannot remove it",
                         backQuote(column_name));
-                if (command.to_remove == AlterCommand::RemoveProperty::SETTING)
-                {
-                    for (const auto & setting : command.settings_resets)
-                    {
-                        if (!column_from_table.settings.tryGet(setting))
-                            throw Exception(
-                                ErrorCodes::BAD_ARGUMENTS, "Column {} doesn't have SETTINGS, cannot remove it", backQuote(column_name));
-                    }
-                }
             }
 
             modified_columns.emplace(column_name);

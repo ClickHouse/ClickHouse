@@ -135,6 +135,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_stat{"STATISTIC"};
     ParserKeyword s_ttl{"TTL"};
     ParserKeyword s_remove{"REMOVE"};
+    ParserKeyword s_modify_setting("MODIFY SETTING");
+    ParserKeyword s_reset_setting("RESET SETTING");
     ParserKeyword s_type{"TYPE"};
     ParserKeyword s_collate{"COLLATE"};
     ParserKeyword s_primary_key{"PRIMARY KEY"};
@@ -159,10 +161,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
     /// because ParserDataType parses types as an arbitrary identifiers and
     /// doesn't check that parsed string is existing data type. In this way
-    /// REMOVE keyword can be parsed as data type and further parsing will fail.
-    /// So we just check this keyword and in case of success return column
-    /// declaration with name only.
-    if (!require_type && s_remove.checkWithoutMoving(pos, expected))
+    /// REMOVE, MODIFY SETTING, or RESET SETTING can be parsed as data type
+    /// and further parsing will fail. So we just check these keyword and in
+    /// case of success return column declaration with name only.
+    if (!require_type
+        && (s_remove.checkWithoutMoving(pos, expected) || s_modify_setting.checkWithoutMoving(pos, expected)
+            || s_reset_setting.checkWithoutMoving(pos, expected)))
     {
         if (!check_keywords_after_name)
             return false;
@@ -181,10 +185,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
-    ASTPtr per_column_settings;
     ASTPtr stat_type_expression;
     ASTPtr ttl_expression;
     ASTPtr collation_expression;
+    ASTPtr settings;
     bool primary_key_specifier = false;
 
     auto null_check_without_moving = [&]() -> bool
@@ -325,24 +329,19 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         primary_key_specifier = true;
     }
 
-    auto old_pos = pos;
     if (s_settings.ignore(pos, expected))
     {
         ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
-        if (parser_opening_bracket.ignore(pos, expected))
+        if (parser_opening_bracket.check(pos, expected))
         {
-            if (!settings_parser.parse(pos, per_column_settings, expected))
+            if (!settings_parser.parse(pos, settings, expected))
                 return false;
             ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
             if (!parser_closing_bracket.ignore(pos, expected))
                 return false;
         }
-        else
-        {
-            /// This could be settings in alter query
-            /// E.g: ALTER TABLE alter_enum_array MODIFY COLUMN x String SETTINGS mutations_sync=2;
-            pos = old_pos;
-        }
+        /// This could be settings in alter query
+        /// E.g: ALTER TABLE alter_enum_array MODIFY COLUMN x String SETTINGS mutations_sync=2;
     }
 
     node = column_declaration;
@@ -375,10 +374,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(codec_expression));
     }
 
-    if (per_column_settings)
+    if (settings)
     {
-        column_declaration->per_column_settings = per_column_settings;
-        column_declaration->children.push_back(std::move(per_column_settings));
+        column_declaration->settings = settings;
+        column_declaration->children.push_back(std::move(settings));
     }
 
     if (stat_type_expression)

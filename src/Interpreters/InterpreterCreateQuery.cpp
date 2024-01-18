@@ -467,10 +467,10 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         if (!column.settings.empty())
         {
-            auto per_column_settings = std::make_shared<ASTSetQuery>();
-            per_column_settings->is_standalone = false;
-            per_column_settings->changes = column.settings;
-            column_declaration->per_column_settings = std::move(per_column_settings);
+            auto settings = std::make_shared<ASTSetQuery>();
+            settings->is_standalone = false;
+            settings->changes = column.settings;
+            column_declaration->settings = std::move(settings);
         }
 
         columns_list->children.push_back(column_declaration_ptr);
@@ -680,9 +680,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;
 
-        if (col_decl.per_column_settings)
+        if (col_decl.settings)
         {
-            column.settings = col_decl.per_column_settings->as<ASTSetQuery &>().changes;
+            column.settings = col_decl.settings->as<ASTSetQuery &>().changes;
             MergeTreeColumnSettings::validate(column.settings);
         }
 
@@ -890,33 +890,22 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
             throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} already exists", backQuoteIfNeed(column.name));
     }
 
-    if (create.storage && create.storage->engine)
+    /// Check if _row_exists for lightweight delete column in column_lists for merge tree family.
+    if (create.storage && create.storage->engine && endsWith(create.storage->engine->name, "MergeTree"))
     {
-        /// Check if _row_exists for lightweight delete column in column_lists for merge tree family.
-        if (endsWith(create.storage->engine->name, "MergeTree"))
-        {
-            auto search = all_columns.find(LightweightDeleteDescription::FILTER_COLUMN.name);
-            if (search != all_columns.end())
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                                "Cannot create table with column '{}' for *MergeTree engines because it "
-                                "is reserved for lightweight delete feature",
-                                LightweightDeleteDescription::FILTER_COLUMN.name);
-            auto search_block_number = all_columns.find(BlockNumberColumn::name);
-            if (search_block_number != all_columns.end())
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                                "Cannot create table with column '{}' for *MergeTree engines because it "
-                                "is reserved for storing block number",
-                                BlockNumberColumn::name);
-        }
-        else
-        {
-            /// Only merge tree family supports column with custom column setting
-            if (std::any_of(
-                    properties.columns.begin(),
-                    properties.columns.end(),
-                    [](const ColumnDescription & column) { return !column.settings.empty(); }))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot create table with column level settings for non-MergeTree engines");
-        }
+        auto search = all_columns.find(LightweightDeleteDescription::FILTER_COLUMN.name);
+        if (search != all_columns.end())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Cannot create table with column '{}' for *MergeTree engines because it "
+                            "is reserved for lightweight delete feature",
+                            LightweightDeleteDescription::FILTER_COLUMN.name);
+
+        auto search_block_number = all_columns.find(BlockNumberColumn::name);
+        if (search_block_number != all_columns.end())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Cannot create table with column '{}' for *MergeTree engines because it "
+                            "is reserved for storing block number",
+                            BlockNumberColumn::name);
     }
 
     const auto & settings = getContext()->getSettingsRef();

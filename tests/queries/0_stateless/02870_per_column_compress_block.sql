@@ -1,7 +1,5 @@
 -- Tags: no-random-merge-tree-settings
-DROP DATABASE IF EXISTS db_02780;
-CREATE DATABASE db_02780;
-USE db_02780;
+
 CREATE TABLE t
 (
     `id` UInt64 CODEC(ZSTD(1)),
@@ -21,7 +19,15 @@ INSERT INTO TABLE t SELECT number, randomPrintableASCII(1000), randomPrintableAS
 
 SELECT count() FROM t;
 
-ALTER TABLE t MODIFY COLUMN long_string REMOVE SETTING min_compress_block_size, max_compress_block_size;
+ALTER TABLE t MODIFY COLUMN long_string MODIFY SETTING min_compress_block_size = 8192;
+
+SHOW CREATE t;
+
+ALTER TABLE t MODIFY COLUMN long_string RESET SETTING min_compress_block_size;
+
+SHOW CREATE t;
+
+ALTER TABLE t MODIFY COLUMN long_string REMOVE SETTINGS;
 
 SHOW CREATE t;
 
@@ -46,7 +52,9 @@ SETTINGS min_bytes_for_wide_part = 1;
 INSERT INTO TABLE t2 SELECT number, tuple(number, number), concat('{"key": ', toString(number), ' ,"value": ', toString(rand(number+1)), '}') FROM numbers(1000);
 SELECT tup, json.key AS key FROM t2 ORDER BY key LIMIT 10;
 
+DROP TABLE t2;
 
+-- Non-supported column setting
 CREATE TABLE t3
 (
     `id` UInt64 CODEC(ZSTD(1)),
@@ -56,6 +64,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1; -- {serverError 115}
 
+-- Invalid setting values
 CREATE TABLE t4
 (
     `id` UInt64 CODEC(ZSTD(1)),
@@ -64,4 +73,3 @@ CREATE TABLE t4
 ENGINE = TinyLog
 ORDER BY id; -- {serverError 44}
 
-DROP DATABASE db_02780;

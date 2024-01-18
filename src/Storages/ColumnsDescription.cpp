@@ -159,8 +159,8 @@ void ColumnDescription::readText(ReadBuffer & buf)
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
 
-            if (col_ast->per_column_settings)
-                settings = col_ast->per_column_settings->as<ASTSetQuery &>().changes;
+            if (col_ast->settings)
+                settings = col_ast->settings->as<ASTSetQuery &>().changes;
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
