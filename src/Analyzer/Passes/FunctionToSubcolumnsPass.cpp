@@ -35,17 +35,29 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
         return {};
 
     auto * first_argument_column_node = function_arguments_nodes.front()->as<ColumnNode>();
-    if (!first_argument_column_node)
+    if (!first_argument_column_node || first_argument_column_node->getColumnName() == "__grouping_set")
         return {};
 
     auto column_source = first_argument_column_node->getColumnSource();
     auto * table_node = column_source->as<TableNode>();
-    if (!table_node || !table_node->getStorage()->supportsSubcolumns())
+    if (!table_node)
+        return {};
+
+    const auto & storage = table_node->getStorage();
+    const auto & storage_snapshot = table_node->getStorageSnapshot();
+    auto column = first_argument_column_node->getColumn();
+
+    if (!storage->supportsOptimizationToSubcolumns() || storage->isVirtualColumn(column.name, storage_snapshot->metadata))
+        return {};
+
+    auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions::All, column.name);
+    if (!column_in_table || !column_in_table->type->equals(*column.type))
         return {};
 
     return std::make_tuple(function_node, first_argument_column_node, table_node);
 }
 
+/// First pass collects info about identifiers to determine which identifiers are allowed to optimize.
 class FunctionToSubcolumnsVisitorFirstPass : public InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorFirstPass>
 {
 public:
@@ -132,6 +144,9 @@ private:
 
     void enterImpl(const ColumnNode & column_node)
     {
+        if (column_node.getColumnName() == "__grouping_set")
+            return;
+
         auto column_source = column_node.getColumnSource();
         auto * table_node = column_source->as<TableNode>();
         if (!table_node)
@@ -191,7 +206,7 @@ private:
     }
 };
 
-
+/// Second pass optimizes functions to subcolumns for allowed identifiers.
 class FunctionToSubcolumnsVisitorSecondPass : public InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>
 {
 public:
@@ -222,9 +237,6 @@ public:
         if (!identifiers_to_optimize.contains(qualified_name))
             return;
 
-        if (first_argument_column_node->getColumnName() == "__grouping_set")
-            return;
-
         auto column_source = first_argument_column_node->getColumnSource();
         WhichDataType column_type(column.type);
 
@@ -236,6 +248,8 @@ public:
                 {
                     /// Replace `length(array_argument)` with `array_argument.size0`
                     column.name += ".size0";
+                    column.type = std::make_shared<DataTypeUInt64>();
+
                     node = std::make_shared<ColumnNode>(column, column_source);
                 }
                 else if (function_name == "empty")
@@ -269,6 +283,8 @@ public:
                 {
                     /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
                     column.name += ".null";
+                    column.type = std::make_shared<DataTypeUInt8>();
+
                     node = std::make_shared<ColumnNode>(column, column_source);
                 }
                 else if (function_name == "isNotNull")

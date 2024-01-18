@@ -81,6 +81,7 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsOptimizationToSubcolumns() const override { return false; }
 
     static ColumnsDescription getTableStructureFromData(
         const String & format,

@@ -655,7 +655,7 @@ void transformIfStringsIntoEnum(ASTPtr & query)
 
 void optimizeFunctionsToSubcolumns(ASTPtr & query, const TreeRewriterResult & result)
 {
-    if (!result.storage || !result.storage->supportsSubcolumns() || !result.storage_snapshot)
+    if (!result.storage || !result.storage->supportsOptimizationToSubcolumns() || !result.storage_snapshot)
         return;
 
     const auto & metadata_snapshot = result.storage_snapshot->metadata;
