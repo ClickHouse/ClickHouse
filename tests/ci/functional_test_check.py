@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from github import Github
+from git_helper import Runner as GitRunner
 
 from build_download_helper import download_all_deb_packages
 from clickhouse_helper import (
@@ -310,8 +311,9 @@ def main():
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
 
+    release_tag = None
     if validate_bugfix_check:
-        download_last_release(packages_path)
+        release_tag = download_last_release(packages_path)
     else:
         download_all_deb_packages(check_name, reports_path, packages_path)
 
@@ -334,6 +336,10 @@ def main():
     ci_logs_args = ci_logs_credentials.get_docker_arguments(
         pr_info, stopwatch.start_time_str, check_name
     )
+
+    if release_tag:
+        GitRunner(f'git -C {repo_path} checkout {release_tag} -- tests/config')
+        GitRunner(f'git -C {repo_path} diff --cached --stat -- tests/config')
 
     run_command = get_run_command(
         check_name,

@@ -83,6 +83,7 @@ def download_packages(release, dest_path=PACKAGES_DIR):
 def download_last_release(dest_path):
     current_release = get_previous_release(None)
     download_packages(current_release, dest_path=dest_path)
+    return current_release
 
 
 if __name__ == "__main__":
