@@ -55,6 +55,13 @@ class JobConfig:
     run_always: bool = False
 
 
+# About the "sparse_checkout" option:
+#
+# Misha f. Shiryaev
+# :facepalm:
+# we have this feature, it's used by devs, we need to test it in CI
+# It's not useful for the CI itself
+
 @dataclass
 class BuildConfig:
     name: str
