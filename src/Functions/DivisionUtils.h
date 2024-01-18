@@ -142,7 +142,7 @@ struct ModuloImpl
                     if (unlikely(a == std::numeric_limits<IntegerAType>::min()))
                         abs_a = static_cast<CastA>(std::numeric_limits<IntegerAType>::max()) + 1;
                     else
-                        abs_a = -b;
+                        abs_a = -a;
                     return -(static_cast<Result>(abs_a % b));
                 }
             }
