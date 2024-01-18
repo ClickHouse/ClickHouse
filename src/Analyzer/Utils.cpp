@@ -354,13 +354,13 @@ QueryTreeNodes extractTrueTableExpressions(const QueryTreeNodePtr & tree)
             }
             case QueryTreeNodeType::UNION:
             {
-                for (auto union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
+                for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
                     nodes_to_process.push_front(union_node);
                 break;
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
-                for (auto argument_node : node_to_process->as<TableFunctionNode>()->getArgumentsNode()->getChildren())
+                for (const auto & argument_node : node_to_process->as<TableFunctionNode>()->getArgumentsNode()->getChildren())
                     nodes_to_process.push_front(argument_node);
                 break;
             }
