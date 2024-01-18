@@ -1,0 +1,41 @@
+-- negative tests
+-- const and non-const inputs
+Row 1:
+──────
+arr:                                            [1,2,3,4,5]
+len:                                            1
+arrayShingles([1, 2, 3, 4, 5], 1):              [[1],[2],[3],[4],[5]]
+arrayShingles(materialize([1, 2, 3, 4, 5]), 1): [[1],[2],[3],[4],[5]]
+Row 1:
+──────
+arr:                                            [1,2,3,4,5]
+len:                                            3
+arrayShingles([1, 2, 3, 4, 5], 3):              [[1,2,3],[2,3,4],[3,4,5]]
+arrayShingles(materialize([1, 2, 3, 4, 5]), 3): [[1,2,3],[2,3,4],[3,4,5]]
+Row 1:
+──────
+arr:                                            [1,2,3,4,5]
+len:                                            5
+arrayShingles([1, 2, 3, 4, 5], 5):              [[1,2,3,4,5]]
+arrayShingles(materialize([1, 2, 3, 4, 5]), 5): [[1,2,3,4,5]]
+Row 1:
+──────
+arr:                                                        ['ab','c','de','','hi']
+len:                                                        1
+arrayShingles(['ab', 'c', 'de', '', 'hi'], 1):              [['ab'],['c'],['de'],[''],['hi']]
+arrayShingles(materialize(['ab', 'c', 'de', '', 'hi']), 1): [['ab'],['c'],['de'],[''],['hi']]
+Row 1:
+──────
+arr:                                                        ['ab','c','de','','hi']
+len:                                                        3
+arrayShingles(['ab', 'c', 'de', '', 'hi'], 3):              [['ab','c','de'],['c','de',''],['de','','hi']]
+arrayShingles(materialize(['ab', 'c', 'de', '', 'hi']), 3): [['ab','c','de'],['c','de',''],['de','','hi']]
+Row 1:
+──────
+arr:                                                        ['ab','c','de','','hi']
+len:                                                        5
+arrayShingles(['ab', 'c', 'de', '', 'hi'], 5):              [['ab','c','de','','hi']]
+arrayShingles(materialize(['ab', 'c', 'de', '', 'hi']), 5): [['ab','c','de','','hi']]
+-- special cases
+[[2],[1]]
+[[2],[1]]
