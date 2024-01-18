@@ -38,8 +38,6 @@ public:
         const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override
     {
-        /// TODO: Find a way to support projections for StorageProxy
-        info.ignore_projections = true;
         const auto & nested_metadata = getNested()->getInMemoryMetadataPtr();
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
     }
@@ -121,15 +119,16 @@ public:
     }
 
     bool optimize(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ASTPtr & partition,
-        bool final,
-        bool deduplicate,
-        const Names & deduplicate_by_columns,
-        ContextPtr context) override
+            const ASTPtr & query,
+            const StorageMetadataPtr & metadata_snapshot,
+            const ASTPtr & partition,
+            bool final,
+            bool deduplicate,
+            const Names & deduplicate_by_columns,
+            bool cleanup,
+            ContextPtr context) override
     {
-        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, context);
+        return getNested()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, context);
     }
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
@@ -141,12 +140,6 @@ public:
     void flushAndPrepareForShutdown() override { getNested()->flushAndPrepareForShutdown(); }
 
     ActionLock getActionLock(StorageActionBlockType action_type) override { return getNested()->getActionLock(action_type); }
-
-    bool supportsIndexForIn() const override { return getNested()->supportsIndexForIn(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
-    {
-        return getNested()->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
-    }
 
     DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & check_task_filter, ContextPtr context) override
     {

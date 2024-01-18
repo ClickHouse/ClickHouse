@@ -288,6 +288,18 @@ The server successfully detected this situation and will download merged part fr
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     \
+    M(ParallelReplicasHandleRequestMicroseconds, "Time spent processing requests for marks from replicas") \
+    M(ParallelReplicasHandleAnnouncementMicroseconds, "Time spent processing replicas announcements") \
+    \
+    M(ParallelReplicasReadAssignedMarks, "Sum across all replicas of how many of scheduled marks were assigned by consistent hash") \
+    M(ParallelReplicasReadUnassignedMarks, "Sum across all replicas of how many unassigned marks were scheduled") \
+    M(ParallelReplicasReadAssignedForStealingMarks, "Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash") \
+    \
+    M(ParallelReplicasStealingByHashMicroseconds, "Time spent collecting segments meant for stealing by hash") \
+    M(ParallelReplicasProcessingPartsMicroseconds, "Time spent processing data parts") \
+    M(ParallelReplicasStealingLeftoversMicroseconds, "Time spent collecting orphaned segments") \
+    M(ParallelReplicasCollectingOwnedSegmentsMicroseconds, "Time spent collecting segments meant by hash") \
+    \
     M(PerfCpuCycles, "Total cycles. Be wary of what happens during CPU frequency scaling.")  \
     M(PerfInstructions, "Retired instructions. Be careful, these can be affected by various issues, most notably hardware interrupt counts.") \
     M(PerfCacheReferences, "Cache accesses. Usually, this indicates Last Level Cache accesses, but this may vary depending on your CPU. This may include prefetches and coherency messages; again this depends on the design of your CPU.") \
@@ -382,6 +394,9 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3CompleteMultipartUpload, "Number of DiskS3 API CompleteMultipartUpload calls.") \
     M(DiskS3PutObject, "Number of DiskS3 API PutObject calls.") \
     M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
+    \
+    M(S3Clients, "Number of created S3 clients.") \
+    M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.") \
     \
     M(EngineFileLikeReadFiles, "Number of files read in table engines working with files (like File/S3/URL/HDFS).") \
     \
@@ -590,6 +605,19 @@ The server successfully detected this situation and will download merged part fr
     M(LogWarning, "Number of log messages with level Warning") \
     M(LogError, "Number of log messages with level Error") \
     M(LogFatal, "Number of log messages with level Fatal") \
+    \
+    M(InterfaceHTTPSendBytes, "Number of bytes sent through HTTP interfaces") \
+    M(InterfaceHTTPReceiveBytes, "Number of bytes received through HTTP interfaces") \
+    M(InterfaceNativeSendBytes, "Number of bytes sent through native interfaces") \
+    M(InterfaceNativeReceiveBytes, "Number of bytes received through native interfaces") \
+    M(InterfacePrometheusSendBytes, "Number of bytes sent through Prometheus interfaces") \
+    M(InterfacePrometheusReceiveBytes, "Number of bytes received through Prometheus interfaces") \
+    M(InterfaceInterserverSendBytes, "Number of bytes sent through interserver interfaces") \
+    M(InterfaceInterserverReceiveBytes, "Number of bytes received through interserver interfaces") \
+    M(InterfaceMySQLSendBytes, "Number of bytes sent through MySQL interfaces") \
+    M(InterfaceMySQLReceiveBytes, "Number of bytes received through MySQL interfaces") \
+    M(InterfacePostgreSQLSendBytes, "Number of bytes sent through PostgreSQL interfaces") \
+    M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces") \
     \
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas") \
 

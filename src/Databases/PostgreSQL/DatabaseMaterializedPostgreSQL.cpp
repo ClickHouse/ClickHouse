@@ -8,23 +8,25 @@
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
+#include <Common/parseAddress.h>
+#include <Common/parseRemoteDescription.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
+#include <Databases/DatabaseFactory.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/AlterCommands.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/File.h>
 
 namespace DB
 {
@@ -279,7 +281,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingCha
 
     auto command = std::make_shared<ASTAlterCommand>();
     command->type = ASTAlterCommand::Type::MODIFY_DATABASE_SETTING;
-    command->settings_changes = std::move(set);
+    command->settings_changes = command->children.emplace_back(std::move(set)).get();
 
     auto command_list = std::make_shared<ASTExpressionList>();
     command_list->children.push_back(command);
@@ -471,6 +473,59 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
     return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);
 }
 
+void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        auto * engine_define = args.create_query.storage;
+        const ASTFunction * engine = engine_define->engine;
+        ASTs & engine_args = engine->arguments->children;
+        const String & engine_name = engine_define->engine->name;
+
+        if (!engine->arguments)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
+
+        StoragePostgreSQL::Configuration configuration;
+
+        if (!engine->arguments)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
+
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
+        {
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, args.context, false);
+        }
+        else
+        {
+            if (engine_args.size() != 4)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "MaterializedPostgreSQL Database require `host:port`, `database_name`, `username`, `password`.");
+
+            for (auto & engine_arg : engine_args)
+                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
+
+            auto parsed_host_port = parseAddress(safeGetLiteralValue<String>(engine_args[0], engine_name), 5432);
+
+            configuration.host = parsed_host_port.first;
+            configuration.port = parsed_host_port.second;
+            configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
+            configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
+            configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+        }
+
+        auto connection_info = postgres::formatConnectionString(
+            configuration.database, configuration.host, configuration.port, configuration.username, configuration.password);
+
+        auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
+        if (engine_define->settings)
+            postgresql_replica_settings->loadFromQuery(*engine_define);
+
+        return std::make_shared<DatabaseMaterializedPostgreSQL>(
+            args.context, args.metadata_path, args.uuid, args.create_query.attach,
+            args.database_name, configuration.database, connection_info,
+            std::move(postgresql_replica_settings));
+    };
+    factory.registerDatabase("MaterializedPostgreSQL", create_fn);
+}
 }
 
 #endif

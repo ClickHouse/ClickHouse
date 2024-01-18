@@ -817,7 +817,7 @@ bool FileCache::tryReserve(FileSegment & file_segment, const size_t size, FileCa
     }
 
     file_segment.reserved_size += size;
-    chassert(file_segment.reserved_size == queue_iterator->getEntry().size);
+    chassert(file_segment.reserved_size == queue_iterator->getEntry()->size);
 
     if (query_context)
     {

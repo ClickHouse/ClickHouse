@@ -6,21 +6,49 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/AsynchronousMetricLog.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Common/AsynchronousMetrics.h>
 
 
 namespace DB
 {
 
-NamesAndTypesList AsynchronousMetricLogElement::getNamesAndTypes()
+ColumnsDescription AsynchronousMetricLogElement::getColumnsDescription()
 {
-    return
+    ParserCodec codec_parser;
+    return ColumnsDescription
     {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"event_date", std::make_shared<DataTypeDate>()},
-        {"event_time", std::make_shared<DataTypeDateTime>()},
-        {"metric", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-        {"value", std::make_shared<DataTypeFloat64>(),}
+        {
+            "hostname",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH),
+            "Hostname of the server executing the query."
+        },
+        {
+            "event_date",
+            std::make_shared<DataTypeDate>(),
+            parseQuery(codec_parser, "(Delta(2), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH),
+            "Event date."
+        },
+        {
+            "event_time",
+            std::make_shared<DataTypeDateTime>(),
+            parseQuery(codec_parser, "(Delta(4), ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH),
+            "Event time."
+        },
+        {
+            "metric",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH),
+            "Metric name."
+        },
+        {
+            "value",
+            std::make_shared<DataTypeFloat64>(),
+            parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH),
+            "Metric value."
+        }
     };
 }
 

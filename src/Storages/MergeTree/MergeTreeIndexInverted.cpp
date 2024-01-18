@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <algorithm>
 
 
@@ -184,7 +185,7 @@ void MergeTreeIndexAggregatorInverted::update(const Block & block, size_t * pos,
 }
 
 MergeTreeConditionInverted::MergeTreeConditionInverted(
-    const SelectQueryInfo & query_info,
+    const ActionsDAGPtr & filter_actions_dag,
     ContextPtr context_,
     const Block & index_sample_block,
     const GinFilterParameters & params_,
@@ -192,41 +193,20 @@ MergeTreeConditionInverted::MergeTreeConditionInverted(
     :  WithContext(context_), header(index_sample_block)
     , params(params_)
     , token_extractor(token_extactor_)
-    , prepared_sets(query_info.prepared_sets)
 {
-    if (context_->getSettingsRef().allow_experimental_analyzer)
-    {
-        if (!query_info.filter_actions_dag)
-        {
-            rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
-            return;
-        }
-
-        rpn = std::move(
-                RPNBuilder<RPNElement>(
-                        query_info.filter_actions_dag->getOutputs().at(0), context_,
-                        [&](const RPNBuilderTreeNode & node, RPNElement & out)
-                        {
-                            return this->traverseAtomAST(node, out);
-                        }).extractRPN());
-        return;
-    }
-
-    ASTPtr filter_node = buildFilterNode(query_info.query);
-    if (!filter_node)
+    if (!filter_actions_dag)
     {
         rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
 
-    auto block_with_constants = KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context_);
-    RPNBuilder<RPNElement> builder(
-        filter_node,
-        context_,
-        std::move(block_with_constants),
-        query_info.prepared_sets,
-        [&](const RPNBuilderTreeNode & node, RPNElement & out) { return traverseAtomAST(node, out); });
-    rpn = std::move(builder).extractRPN();
+    rpn = std::move(
+            RPNBuilder<RPNElement>(
+                    filter_actions_dag->getOutputs().at(0), context_,
+                    [&](const RPNBuilderTreeNode & node, RPNElement & out)
+                    {
+                        return this->traverseAtomAST(node, out);
+                    }).extractRPN());
 }
 
 /// Keep in-sync with MergeTreeConditionFullText::alwaysUnknownOrTrue
@@ -248,6 +228,7 @@ bool MergeTreeConditionInverted::alwaysUnknownOrTrue() const
              || element.function == RPNElement::FUNCTION_IN
              || element.function == RPNElement::FUNCTION_NOT_IN
              || element.function == RPNElement::FUNCTION_MULTI_SEARCH
+             || element.function == RPNElement::FUNCTION_MATCH
              || element.function == RPNElement::ALWAYS_FALSE)
         {
             rpn_stack.push_back(false);
@@ -315,8 +296,7 @@ bool MergeTreeConditionInverted::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
                     result[row] = result[row] && granule->gin_filters[key_idx].contains(gin_filters[row], cache_store);
             }
 
-            rpn_stack.emplace_back(
-                    std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+            rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
             if (element.function == RPNElement::FUNCTION_NOT_IN)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -329,8 +309,27 @@ bool MergeTreeConditionInverted::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             for (size_t row = 0; row < gin_filters.size(); ++row)
                 result[row] = result[row] && granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
 
-            rpn_stack.emplace_back(
-                    std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+            rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+        }
+        else if (element.function == RPNElement::FUNCTION_MATCH)
+        {
+            if (!element.set_gin_filters.empty())
+            {
+                /// Alternative substrings
+                std::vector<bool> result(element.set_gin_filters.back().size(), true);
+
+                const auto & gin_filters = element.set_gin_filters[0];
+
+                for (size_t row = 0; row < gin_filters.size(); ++row)
+                    result[row] = result[row] && granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
+
+                rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+            }
+            else if (element.gin_filter)
+            {
+                rpn_stack.emplace_back(granule->gin_filters[element.key_column].contains(*element.gin_filter, cache_store), true);
+            }
+
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
@@ -435,7 +434,8 @@ bool MergeTreeConditionInverted::traverseAtomAST(const RPNBuilderTreeNode & node
                  function_name == "hasTokenOrNull" ||
                  function_name == "startsWith" ||
                  function_name == "endsWith" ||
-                 function_name == "multiSearchAny")
+                 function_name == "multiSearchAny" ||
+                 function_name == "match")
         {
             Field const_value;
             DataTypePtr const_type;
@@ -626,6 +626,42 @@ bool MergeTreeConditionInverted::traverseASTEquals(
         out.set_gin_filters = std::move(gin_filters);
         return true;
     }
+    else if (function_name == "match")
+    {
+        out.key_column = key_column_num;
+        out.function = RPNElement::FUNCTION_MATCH;
+
+        auto & value = const_value.get<String>();
+        String required_substring;
+        bool dummy_is_trivial, dummy_required_substring_is_prefix;
+        std::vector<String> alternatives;
+        OptimizedRegularExpression::analyze(value, required_substring, dummy_is_trivial, dummy_required_substring_is_prefix, alternatives);
+
+        if (required_substring.empty() && alternatives.empty())
+            return false;
+
+        /// out.set_gin_filters means alternatives exist
+        /// out.gin_filter means required_substring exists
+        if (!alternatives.empty())
+        {
+            std::vector<GinFilters> gin_filters;
+            gin_filters.emplace_back();
+            for (const auto & alternative : alternatives)
+            {
+               gin_filters.back().emplace_back(params);
+               token_extractor->stringToGinFilter(alternative.data(), alternative.size(), gin_filters.back().back());
+            }
+            out.set_gin_filters = std::move(gin_filters);
+        }
+        else
+        {
+            out.gin_filter = std::make_unique<GinFilter>(params);
+            token_extractor->stringToGinFilter(required_substring.data(), required_substring.size(), *out.gin_filter);
+        }
+
+        return true;
+
+    }
 
     return false;
 }
@@ -721,15 +757,10 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexInverted::createIndexAggregatorForPart
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexInverted::createIndexCondition(
-        const SelectQueryInfo & query, ContextPtr context) const
+        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionInverted>(query, context, index.sample_block, params, token_extractor.get());
+    return std::make_shared<MergeTreeConditionInverted>(filter_actions_dag, context, index.sample_block, params, token_extractor.get());
 };
-
-bool MergeTreeIndexInverted::mayBenefitFromIndexForIn(const ASTPtr & node) const
-{
-    return std::find(std::cbegin(index.column_names), std::cend(index.column_names), node->getColumnName()) != std::cend(index.column_names);
-}
 
 MergeTreeIndexPtr invertedIndexCreator(
     const IndexDescription & index)

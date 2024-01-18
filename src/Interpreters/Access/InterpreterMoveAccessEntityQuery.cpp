@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
@@ -88,6 +89,15 @@ AccessRightsElements InterpreterMoveAccessEntityQuery::getRequiredAccess() const
             break;
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by DROP query", toString(query.type));
+}
+
+void registerInterpreterMoveAccessEntityQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterMoveAccessEntityQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterMoveAccessEntityQuery", create_fn);
 }
 
 }

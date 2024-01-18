@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/iota.h>
 #include <Common/ThreadPool.h>
 #include <Poco/Logger.h>
 
@@ -156,6 +157,12 @@ public:
         auto y_ratio = y * kSplit;
         auto x_bin = static_cast<int>(x_ratio);
         auto y_bin = static_cast<int>(y_ratio);
+        /// In case if we have a lot of values and argument is very close to max_x (max_y) so x_ratio (y_ratio) = 1.
+        if (x_bin == kSplit)
+            --x_bin;
+        /// => x_bin (y_bin) will be 4, which can lead to wrong vector access.
+        if (y_bin == kSplit)
+            --y_bin;
         return children[y_bin + x_bin * kSplit]->find(x_ratio - x_bin, y_ratio - y_bin);
     }
 
@@ -184,7 +191,7 @@ public:
     {
         setBoundingBox();
         std::vector<size_t> order(polygons.size());
-        std::iota(order.begin(), order.end(), 0);
+        iota(order.data(), order.size(), size_t(0));
         root = makeCell(min_x, min_y, max_x, max_y, order);
     }
 
