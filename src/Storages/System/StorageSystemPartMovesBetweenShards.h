@@ -14,7 +14,7 @@ class StorageSystemPartMovesBetweenShards final : public IStorageSystemOneBlock<
 public:
     std::string getName() const override { return "SystemShardMoves"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

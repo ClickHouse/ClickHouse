@@ -484,7 +484,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
     if (!is_trivial)
     {
         /// Compile the re2 regular expression.
-        typename re2::RE2::Options regexp_options;
+        re2::RE2::Options regexp_options;
 
         /// Never write error messages to stderr. It's ignorant to do it from library code.
         regexp_options.set_log_errors(false);

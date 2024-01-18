@@ -1010,7 +1010,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getUserName());
+                    QueryCache::Key key(ast, context->getUserID(), context->getCurrentRoles());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1043,7 +1043,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     }
                 }
 
-                interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+                interpreter = InterpreterFactory::instance().get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
                 const auto & query_settings = context->getSettingsRef();
                 if (context->getCurrentTransaction() && query_settings.throw_on_unsupported_query_inside_transaction)
@@ -1123,7 +1123,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         {
                             QueryCache::Key key(
                                 ast, res.pipeline.getHeader(),
-                                context->getUserName(), settings.query_cache_share_between_users,
+                                context->getUserID(), context->getCurrentRoles(),
+                                settings.query_cache_share_between_users,
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
                                 settings.query_cache_compress_entries);
 
@@ -1434,11 +1435,12 @@ void executeQuery(
                     const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
                     compression_method = compression_method_node.value.safeGet<std::string>();
                 }
-
+                const auto & settings = context->getSettingsRef();
                 compressed_buffer = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
                     chooseCompressionMethod(out_file, compression_method),
-                    /* compression level = */ 3
+                    /* compression level = */ static_cast<int>(settings.output_format_compression_level),
+                    /* zstd_window_log = */ static_cast<int>(settings.output_format_compression_zstd_window_log)
                 );
             }
 

@@ -215,6 +215,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
 
+    ConfigurationPtr sensitive_data_masker_config;
+
 #if USE_NURAFT
     mutable std::mutex keeper_dispatcher_mutex;
     mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
@@ -892,11 +894,11 @@ Strings Context::getWarnings() const
     {
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
-        if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<DB::Int64>(shared->max_table_num_to_warn))
+        if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}", shared->max_table_num_to_warn));
-        if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<DB::Int64>(shared->max_database_num_to_warn))
+        if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}", shared->max_table_num_to_warn));
-        if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<DB::Int64>(shared->max_part_num_to_warn))
+        if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
             common_warnings.emplace_back(fmt::format("The number of active parts is more than {}", shared->max_part_num_to_warn));
     }
     /// Make setting's name ordered
@@ -1583,9 +1585,7 @@ bool Context::hasScalar(const String & name) const
 void Context::addQueryAccessInfo(
     const String & quoted_database_name,
     const String & full_quoted_table_name,
-    const Names & column_names,
-    const String & projection_name,
-    const String & view_name)
+    const Names & column_names)
 {
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
@@ -1593,12 +1593,9 @@ void Context::addQueryAccessInfo(
     std::lock_guard lock(query_access_info.mutex);
     query_access_info.databases.emplace(quoted_database_name);
     query_access_info.tables.emplace(full_quoted_table_name);
+
     for (const auto & column_name : column_names)
         query_access_info.columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
-    if (!projection_name.empty())
-        query_access_info.projections.emplace(full_quoted_table_name + "." + backQuoteIfNeed(projection_name));
-    if (!view_name.empty())
-        query_access_info.views.emplace(view_name);
 }
 
 void Context::addQueryAccessInfo(const Names & partition_names)
@@ -1609,6 +1606,15 @@ void Context::addQueryAccessInfo(const Names & partition_names)
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
     for (const auto & partition_name : partition_names)
         query_access_info.partitions.emplace(partition_name);
+}
+
+void Context::addViewAccessInfo(const String & view_name)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard<std::mutex> lock(query_access_info.mutex);
+    query_access_info.views.emplace(view_name);
 }
 
 void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name)
@@ -3365,6 +3371,16 @@ bool Context::hasAuxiliaryZooKeeper(const String & name) const
     return getConfigRef().has("auxiliary_zookeepers." + name);
 }
 
+void Context::reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const
+{
+    const auto old_config = shared->sensitive_data_masker_config;
+    if (old_config && isSameConfiguration(*config, *old_config, "query_masking_rules"))
+        return;
+
+    SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(*config, "query_masking_rules"));
+    shared->sensitive_data_masker_config = config;
+}
+
 InterserverCredentialsPtr Context::getInterserverCredentials() const
 {
     return shared->interserver_io_credentials.get();
@@ -5081,6 +5097,12 @@ bool Context::canUseParallelReplicasOnInitiator() const
 bool Context::canUseParallelReplicasOnFollower() const
 {
     return canUseTaskBasedParallelReplicas() && getClientInfo().collaborate_with_initiator;
+}
+
+bool Context::canUseParallelReplicasCustomKey(const Cluster & cluster) const
+{
+    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
+        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)

@@ -5345,12 +5345,12 @@ void StorageReplicatedMergeTree::read(
     /// 2. Do not read parts that have not yet been written to the quorum of the replicas.
     /// For this you have to synchronously go to ZooKeeper.
     if (settings.select_sequential_consistency)
-        return readLocalSequentialConsistencyImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+        return readLocalSequentialConsistencyImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
 
     if (local_context->canUseParallelReplicasOnInitiator())
         return readParallelReplicasImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage);
 
-    readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
+    readLocalImpl(query_plan, column_names, storage_snapshot, query_info, local_context, max_block_size, num_streams);
 }
 
 void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
@@ -5359,14 +5359,15 @@ void StorageReplicatedMergeTree::readLocalSequentialConsistencyImpl(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     size_t num_streams)
 {
     auto max_added_blocks = std::make_shared<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock>(getMaxAddedBlocks());
-    auto plan = reader.read(column_names, storage_snapshot, query_info, local_context,
-            max_block_size, num_streams, processed_stage, std::move(max_added_blocks),
-            /* enable_parallel_reading= */false);
+    auto plan = reader.read(
+        column_names, storage_snapshot, query_info, local_context,
+        max_block_size, num_streams, std::move(max_added_blocks),
+        /* enable_parallel_reading=*/ false);
+
     if (plan)
         query_plan = std::move(*plan);
 }
@@ -5384,7 +5385,9 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
-        auto modified_query_tree = buildQueryTreeForShard(query_info, query_info.query_tree);
+        QueryTreeNodePtr modified_query_tree = query_info.query_tree->clone();
+        rewriteJoinToGlobalJoin(modified_query_tree);
+        modified_query_tree = buildQueryTreeForShard(query_info, modified_query_tree);
 
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(
             modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
@@ -5407,7 +5410,6 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
 
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
-        getStorageID(),
         select_stream_factory,
         modified_query_ast,
         local_context,
@@ -5420,16 +5422,15 @@ void StorageReplicatedMergeTree::readLocalImpl(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
-    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const size_t num_streams)
 {
     auto plan = reader.read(
         column_names, storage_snapshot, query_info,
         local_context, max_block_size, num_streams,
-        processed_stage,
         /* max_block_numbers_to_read= */ nullptr,
         /* enable_parallel_reading= */ local_context->canUseParallelReplicasOnFollower());
+
     if (plan)
         query_plan = std::move(*plan);
 }
@@ -8551,7 +8552,7 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         cleanup_thread.wakeup();
 }
 
-bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode)
+bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas)
 {
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
@@ -8591,7 +8592,8 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
         if (wait_for_ids.empty())
             target_entry_event.set();
     };
-    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, sync_mode);
+
+    const auto handler = queue.addSubscriber(std::move(callback), wait_for_ids, sync_mode, source_replicas);
 
     if (!target_entry_event.tryWait(max_wait_milliseconds))
         return false;

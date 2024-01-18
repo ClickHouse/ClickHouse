@@ -1,9 +1,8 @@
 #include "PrometheusMetricsWriter.h"
 
 #include <IO/WriteHelpers.h>
-#include <regex>    /// TODO: this library is harmful.
+#include <Common/re2.h>
 #include <algorithm>
-
 
 namespace
 {
@@ -26,9 +25,11 @@ void writeOutLine(DB::WriteBuffer & wb, T && val, TArgs &&... args)
 /// Returns false if name is not valid
 bool replaceInvalidChars(std::string & metric_name)
 {
-    /// dirty solution
-    metric_name = std::regex_replace(metric_name, std::regex("[^a-zA-Z0-9_:]"), "_");
-    metric_name = std::regex_replace(metric_name, std::regex("^[^a-zA-Z]*"), "");
+    /// dirty solution:
+    static const re2::RE2 regexp1("[^a-zA-Z0-9_:]");
+    static const re2::RE2 regexp2("^[^a-zA-Z]*");
+    re2::RE2::GlobalReplace(&metric_name, regexp1, "_");
+    re2::RE2::GlobalReplace(&metric_name, regexp2, "");
     return !metric_name.empty();
 }
 

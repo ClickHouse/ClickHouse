@@ -1,4 +1,5 @@
 #include <Interpreters/InterpreterCheckQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 
 #include <algorithm>
 
@@ -470,6 +471,15 @@ BlockIO InterpreterCheckQuery::execute()
     res.pipeline.setNumThreads(num_streams);
 
     return res;
+}
+
+void registerInterpreterCheckQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterCheckQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterCheckQuery", create_fn);
 }
 
 }

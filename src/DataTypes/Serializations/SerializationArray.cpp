@@ -230,10 +230,10 @@ void SerializationArray::enumerateStreams(
     const auto * column_array = data.column ? &assert_cast<const ColumnArray &>(*data.column) : nullptr;
     auto offsets = column_array ? column_array->getOffsetsPtr() : nullptr;
 
-    auto offsets_serialization =
-        std::make_shared<SerializationNamed>(
-            std::make_shared<SerializationNumber<UInt64>>(),
-                "size" + std::to_string(getArrayLevel(settings.path)), false);
+    auto subcolumn_name = "size" + std::to_string(getArrayLevel(settings.path));
+    auto offsets_serialization = std::make_shared<SerializationNamed>(
+        std::make_shared<SerializationNumber<UInt64>>(),
+        subcolumn_name, SubstreamType::NamedOffsets);
 
     auto offsets_column = offsets && !settings.position_independent_encoding
         ? arrayOffsetsToSizes(*offsets)

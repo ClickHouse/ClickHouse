@@ -12,7 +12,9 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 instance = cluster.add_instance(
-    "instance", stay_alive=True, main_configs=["config/models_config.xml"]
+    "instance",
+    stay_alive=True,
+    main_configs=["config/models_config.xml", "config/logger_library_bridge.xml"],
 )
 
 

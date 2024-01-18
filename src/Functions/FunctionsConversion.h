@@ -61,7 +61,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Common/IPv6ToBinary.h>
-#include "DataTypes/IDataType.h"
 #include <Core/Types.h>
 
 
