@@ -61,6 +61,7 @@ void ObjectStorageVFSGCThread::run() const
     }
     else if (code != ZOK)
         throw Coordination::Exception(code);
+    LOG_DEBUG(log, "Acquired lock");
 
     bool successful_run = false, skip_run = false;
     SCOPE_EXIT({
@@ -94,9 +95,7 @@ void ObjectStorageVFSGCThread::run() const
     if ((skip_run = skipRun(batch_size, start_logpointer)))
         return;
 
-    LOG_DEBUG(log, "Acquired lock for [{};{}]", start_logpointer, end_logpointer);
-    // TODO myrrc store for 1 iteration more in case batch removal failed. Next node should try to
-    // load previous snapshot
+    LOG_DEBUG(log, "Processing range [{};{}]", start_logpointer, end_logpointer);
     updateSnapshotWithLogEntries(start_logpointer, end_logpointer);
     removeBatch(start_logpointer, end_logpointer);
     LOG_DEBUG(log, "Removed lock for [{};{}]", start_logpointer, end_logpointer);

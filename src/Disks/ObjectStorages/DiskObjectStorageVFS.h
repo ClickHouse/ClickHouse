@@ -1,5 +1,5 @@
 #pragma once
-#include "Common/ZooKeeper/ZooKeeper.h"
+#include "Common/ZooKeeper/ZooKeeperWithFaultInjection.h"
 #include "DiskObjectStorage.h"
 #include "ObjectStorageVFSGCThread.h"
 #include "VFSSettings.h"
@@ -48,8 +48,10 @@ private:
 
     const bool enable_gc; // In certain conditions we don't want a GC e.g. when running from clickhouse-disks
     VFSSettings settings;
+    double keeper_fault_injection_probability{0};
+    UInt64 keeper_fault_injection_seed{0};
 
-    zkutil::ZooKeeperPtr zookeeper();
+    ZooKeeperWithFaultInjection::Ptr zookeeper();
 
     DiskTransactionPtr createObjectStorageTransaction() final;
     String lockPathToFullPath(std::string_view path) const;

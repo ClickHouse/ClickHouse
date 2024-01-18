@@ -53,6 +53,10 @@ DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
 void DiskObjectStorageVFS::startupImpl(ContextPtr context)
 {
     DiskObjectStorage::startupImpl(context);
+    const auto & context_settings = context->getSettingsRef();
+    keeper_fault_injection_probability = context_settings.insert_keeper_fault_injection_probability;
+    keeper_fault_injection_seed = context_settings.insert_keeper_fault_injection_seed;
+
     LOG_INFO(log, "VFS settings: {}", settings);
     if (!enable_gc)
         return;
@@ -71,6 +75,11 @@ void DiskObjectStorageVFS::applyNewSettings(
 {
     const auto config_prefix = "storage_configuration.disks." + name;
     settings = {config, config_prefix, name};
+
+    const auto & context_settings = context->getSettingsRef();
+    keeper_fault_injection_probability = context_settings.insert_keeper_fault_injection_probability;
+    keeper_fault_injection_seed = context_settings.insert_keeper_fault_injection_seed;
+
     LOG_DEBUG(log, "New VFS settings: {}", settings);
     DiskObjectStorage::applyNewSettings(config, context, config_prefix, disk_map);
 }
@@ -168,13 +177,15 @@ void DiskObjectStorageVFS::uploadMetadata(std::string_view remote_to, const Stri
     buf->finalize();
 }
 
-zkutil::ZooKeeperPtr DiskObjectStorageVFS::zookeeper()
+ZooKeeperWithFaultInjectionPtr DiskObjectStorageVFS::zookeeper()
 {
-    // TODO myrrc support remote_fs_zero_copy_zookeeper_path
-    // TODO myrrc this is incredibly slow, however, we can't cache zookeeper ptr on init
-    //  as we need to change it on expiration, and a data race occurs
-    // TODO myrrc what if global context instance is nullptr due to shutdown?
-    return Context::getGlobalContextInstance()->getZooKeeper();
+    return ZooKeeperWithFaultInjection::createInstance(
+        keeper_fault_injection_probability,
+        keeper_fault_injection_seed,
+        // TODO myrrc what if global context instance is nullptr due to shutdown?
+        Context::getGlobalContextInstance()->getZooKeeper(),
+        "DiskObjectStorageVFS",
+        log);
 }
 
 DiskTransactionPtr DiskObjectStorageVFS::createObjectStorageTransaction()

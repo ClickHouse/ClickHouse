@@ -23,10 +23,25 @@ def started_cluster(request):
         cluster.shutdown()
 
 
+def test_already_processed_log_batch(started_cluster):
+    """
+    Test if GC:
+    - processed a log batch
+    - wrote new snapshot
+    - removed old snapshot, and
+    - failed to remove old log batch from ZK,
+    next GC run will discard already processed batch
+    """
+    pass
+
+
 # TODO myrrc check possible errors on merge and move
-def test_vfs_reacquire_session(started_cluster):
+def test_reacquire_session(started_cluster):
+    """
+    Test VFS can work when ZK session breaks
+    """
     node: ClickHouseInstance = started_cluster.instances["node"]
-    # MergeTree implies ZK data flow will be vfs-related
+    # non-replicated MergeTree implies ZK data flow will be vfs-related
     node.query("CREATE TABLE test (i UInt32) ENGINE=MergeTree ORDER BY i")
     node.query("INSERT INTO test VALUES (0)")
 
