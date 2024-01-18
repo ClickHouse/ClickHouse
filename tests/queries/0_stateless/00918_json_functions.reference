@@ -44,10 +44,13 @@ hello
 (-100,200,300)
 [-100,0,0]
 [-100,NULL,NULL]
+[-100,NULL,NULL]
 [0,200,0]
+[NULL,200,NULL]
 [NULL,200,NULL]
 -100
 200
+\N
 \N
 1
 Thursday
@@ -202,10 +205,13 @@ hello
 (-100,200,300)
 [-100,0,0]
 [-100,NULL,NULL]
+[-100,NULL,NULL]
 [0,200,0]
+[NULL,200,NULL]
 [NULL,200,NULL]
 -100
 200
+\N
 \N
 1
 Thursday
