@@ -33,10 +33,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
