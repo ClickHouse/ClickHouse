@@ -616,6 +616,7 @@ struct ContextSharedPart : boost::noncopyable
         const auto & caches = FileCacheFactory::instance().getAll();
         for (const auto & [_, cache] : caches)
             cache->cache->deactivateBackgroundOperations();
+        FileCacheFactory::instance().clear();
 
         {
             // Disk selector might not be initialized if there was some error during

@@ -111,14 +111,14 @@ FileCache::Key FileCache::createKeyForPath(const String & path)
 
 const FileCache::UserInfo & FileCache::getCommonUser()
 {
-    static UserInfo common_user(getCommonUserID(), 0);
-    return common_user;
+    static UserInfo user(getCommonUserID(), 0);
+    return user;
 }
 
 const FileCache::UserInfo & FileCache::getInternalUser()
 {
-    static UserInfo common_user("internal");
-    return common_user;
+    static UserInfo user("internal");
+    return user;
 }
 
 const String & FileCache::getBasePath() const
