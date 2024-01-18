@@ -24,6 +24,7 @@ namespace DB
 {
 
 class StorageSystemKafkaConsumers;
+class ReadFromStorageKafkaStep;
 
 struct StorageKafkaInterceptors;
 
@@ -52,7 +53,8 @@ public:
     void startup() override;
     void shutdown(bool is_drop) override;
 
-    Pipe read(
+    void read(
+        QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -90,6 +92,8 @@ public:
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), all_consumers};  }
 
 private:
+    friend class ReadFromStorageKafkaStep;
+
     // Configuration and state
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
