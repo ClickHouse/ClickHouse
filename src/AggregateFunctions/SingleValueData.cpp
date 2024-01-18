@@ -497,7 +497,7 @@ void SingleValueDataFixed<T>::compileCreate(llvm::IRBuilderBase & builder, llvm:
 {
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
     auto * has_value_ptr = getHasValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
-    b.CreateStore(b.getTrue(), has_value_ptr);
+    b.CreateStore(b.getFalse(), has_value_ptr);
 }
 
 template <typename T>
