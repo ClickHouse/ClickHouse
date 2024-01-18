@@ -229,3 +229,40 @@ FROM points;
 DROP TABLE points;
 DROP DICTIONARY polygon_dictionary;
 DROP TABLE polygon_dictionary_source_table;
+
+
+DROP TABLE IF EXISTS regexp_dictionary_source_table;
+CREATE TABLE regexp_dictionary_source_table
+(
+    id UInt64,
+    parent_id UInt64,
+    regexp String,
+    keys   Array(String),
+    values Array(String),
+) ENGINE=TinyLog;
+
+INSERT INTO regexp_dictionary_source_table VALUES (1, 0, 'Linux/(\d+[\.\d]*).+tlinux', ['name', 'version'], ['TencentOS', '\1'])
+INSERT INTO regexp_dictionary_source_table VALUES (2, 0, '(\d+)/tclwebkit(\d+[\.\d]*)', ['name', 'version', 'comment'], ['Android', '$1', 'test $1 and $2'])
+INSERT INTO regexp_dictionary_source_table VALUES (3, 2, '33/tclwebkit', ['version'], ['13'])
+INSERT INTO regexp_dictionary_source_table VALUES (4, 2, '3[12]/tclwebkit', ['version'], ['12'])
+INSERT INTO regexp_dictionary_source_table VALUES (5, 2, '3[12]/tclwebkit', ['version'], ['11'])
+INSERT INTO regexp_dictionary_source_table VALUES (6, 2, '3[12]/tclwebkit', ['version'], ['10'])
+
+DROP DICTIONARY IF EXISTS regexp_dict;
+create dictionary regexp_dict
+(
+    regexp String,
+    name String,
+    version Nullable(UInt64),
+    comment String default 'nothing'
+)
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_dictionary_source_table'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+
+SELECT 'Regular Expression Tree dictionary';
+SELECT dictGetOrDefault('regexp_dict', 'name', concat(toString(number), '/tclwebkit', toString(number)), 
+intDiv(1,number)) FROM numbers(2);
+DROP DICTIONARY regexp_dict;
+DROP TABLE regexp_dictionary_source_table;

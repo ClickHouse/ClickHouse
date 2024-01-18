@@ -438,7 +438,8 @@ public:
     constexpr bool collecting() const { return collect_values_limit != std::nullopt; }
 
     // Add a name-value pair to the collection if there's space
-    void add(const String & attr_name, Field field)
+    void add(const String & attr_name, Field field,
+        std::shared_ptr<std::unordered_set<String>> defaults = nullptr)
     {
         if (collect_values_limit)
         {
@@ -453,15 +454,28 @@ public:
                     n_full_attributes++;
             }
         }
-        else if (!this->contains(attr_name))
+        else if (!this->contains(attr_name) && (!defaults || !defaults->contains(attr_name)))
         {
             (*this)[attr_name] = std::move(field);
             n_full_attributes++;
         }
     }
 
+    // Just occupy a space
+    void addDefault(const String & attr_name,
+        std::shared_ptr<std::unordered_set<String>> defaults)
+    {
+        assert (!collect_values_limit);
+        if (!this->contains(attr_name) && !defaults->contains(attr_name))
+        {
+            defaults->insert(attr_name);
+            n_full_attributes++;
+        }
+    }
+
     // Checks if no more values can be added for a given attribute
-    inline bool full(const String & attr_name) const
+    inline bool full(const String & attr_name,
+        std::shared_ptr<std::unordered_set<String>> defaults = nullptr) const
     {
         if (collect_values_limit)
         {
@@ -472,7 +486,7 @@ public:
         }
         else
         {
-            return this->contains(attr_name);
+            return this->contains(attr_name) || (defaults && defaults->contains(attr_name));
         }
     }
 
@@ -545,6 +559,51 @@ bool RegExpTreeDictionary::setAttributes(
     auto parent_id = regex_nodes.at(id)->parent_id;
     if (parent_id > 0)
         setAttributes(parent_id, attributes_to_set, data, visited_nodes, attributes, defaults, key_index);
+
+    /// if all attributes are full, we can stop walking the tree
+    return attributes_to_set.attributesFull() == attributes.size();
+}
+
+bool RegExpTreeDictionary::setAttributesShortCircuit(
+    UInt64 id,
+    AttributeCollector & attributes_to_set,
+    const String & data,
+    std::unordered_set<UInt64> & visited_nodes,
+    const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+    std::shared_ptr<std::unordered_set<String>> defaults) const
+{
+    if (visited_nodes.contains(id))
+        return attributes_to_set.attributesFull() == attributes.size();
+    visited_nodes.emplace(id);
+    const auto & node_attributes = regex_nodes.at(id)->attributes;
+    for (const auto & [name_, value] : node_attributes)
+    {
+        if (!attributes.contains(name_) || attributes_to_set.full(name_, defaults))
+            continue;
+
+        if (value.containsBackRefs())
+        {
+            auto [updated_str, use_default] = processBackRefs(data, regex_nodes.at(id)->searcher, value.pieces);
+            if (use_default)
+            {
+                // Back-ref processing failed.
+                // - If not collecting values, set the default value immediately while we're still on this node.
+                //   Otherwise, a value from a different node could take its place before we set it to the default value post-walk.
+                // - If collecting values, don't add anything. If we find no other matches for this attribute,
+                //   then we'll set its value to the default Array value later.
+                if (!attributes_to_set.collecting())
+                    attributes_to_set.addDefault(name_, defaults);
+            }
+            else
+                attributes_to_set.add(name_, parseStringToField(updated_str, attributes.at(name_).type), defaults);
+        }
+        else
+            attributes_to_set.add(name_, value.field, defaults);
+    }
+
+    auto parent_id = regex_nodes.at(id)->parent_id;
+    if (parent_id > 0)
+        setAttributesShortCircuit(parent_id, attributes_to_set, data, visited_nodes, attributes, defaults);
 
     /// if all attributes are full, we can stop walking the tree
     return attributes_to_set.attributesFull() == attributes.size();
@@ -749,6 +808,145 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     return result;
 }
 
+std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::matchShortCircuit(
+    const ColumnString::Chars & keys_data,
+    const ColumnString::Offsets & keys_offsets,
+    const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+    IColumn::Filter & default_mask,
+    std::optional<size_t> collect_values_limit) const
+{
+
+#if USE_VECTORSCAN
+    hs_scratch_t * scratch = nullptr;
+    if (use_vectorscan)
+    {
+        hs_error_t err = hs_clone_scratch(origin_scratch.get(), &scratch);
+
+        if (err != HS_SUCCESS)
+        {
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not clone scratch space for hyperscan");
+        }
+    }
+
+    MultiRegexps::ScratchPtr smart_scratch(scratch);
+#endif
+
+    std::unordered_map<String, MutableColumnPtr> columns;
+
+    /// initialize columns
+    for (const auto & [name_, attr] : attributes)
+    {
+        auto col_ptr = (collect_values_limit ? std::make_shared<DataTypeArray>(attr.type) : attr.type)->createColumn();
+        col_ptr->reserve(keys_offsets.size());
+        columns[name_] = std::move(col_ptr);
+    }
+
+    default_mask.resize(keys_offsets.size());
+
+    UInt64 offset = 0;
+    for (size_t key_idx = 0; key_idx < keys_offsets.size(); ++key_idx)
+    {
+        auto key_offset = keys_offsets[key_idx];
+        UInt64 length = key_offset - offset - 1;
+
+        const char * begin = reinterpret_cast<const char *>(keys_data.data()) + offset;
+
+        MatchContext match_result(regexp_ids, topology_order, begin, length, regex_nodes);
+
+#if USE_VECTORSCAN
+        if (use_vectorscan)
+        {
+            /// pre-select all the possible matches
+            auto on_match = [](unsigned int id,
+                            unsigned long long /* from */, // NOLINT
+                            unsigned long long /* to */, // NOLINT
+                            unsigned int /* flags */,
+                            void * context) -> int
+            {
+                static_cast<MatchContext *>(context)->insertIdx(id);
+                return 0;
+            };
+
+            hs_error_t err = hs_scan(
+                origin_db.get(),
+                reinterpret_cast<const char *>(keys_data.data()) + offset,
+                static_cast<unsigned>(length),
+                0,
+                smart_scratch.get(),
+                on_match,
+                &match_result);
+
+            if (err != HS_SUCCESS)
+                throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");
+
+        }
+#endif
+
+        for (const auto & node_ptr : complex_regexp_nodes)
+        {
+            if (node_ptr->match(reinterpret_cast<const char *>(keys_data.data()) + offset, length))
+            {
+                match_result.insertNodeID(node_ptr->id);
+            }
+        }
+
+        match_result.sort();
+        /// Walk through the regex tree util all attributes are set;
+        AttributeCollector attributes_to_set{collect_values_limit};
+        std::unordered_set<UInt64> visited_nodes;
+
+        /// Some node matches but its parents cannot match. In this case we must regard this node unmatched.
+        auto is_valid = [&](UInt64 id)
+        {
+            while (id)
+            {
+                if (!match_result.contains(id))
+                    return false;
+                id = regex_nodes.at(id)->parent_id;
+            }
+            return true;
+        };
+
+        String str = String(reinterpret_cast<const char *>(keys_data.data()) + offset, length);
+
+        std::shared_ptr<std::unordered_set<String>> defaults = std::make_shared<std::unordered_set<String>>();
+
+        for (auto item : match_result.matched_idx_sorted_list)
+        {
+            UInt64 id = item.second;
+            if (!is_valid(id))
+                continue;
+            if (visited_nodes.contains(id))
+                continue;
+            if (setAttributesShortCircuit(id, attributes_to_set, str, visited_nodes, attributes, defaults))
+                break;
+        }
+
+        for (const auto & [name_, attr] : attributes)
+        {
+            if (attributes_to_set.contains(name_))
+                continue;
+
+            default_mask[key_idx] = 0;
+        }
+
+        /// insert to columns
+        for (const auto & [name_, value] : attributes_to_set)
+        {
+            columns[name_]->insert(value);
+            default_mask[key_idx] = 1;
+        }
+
+        offset = key_offset;
+    }
+
+    std::unordered_map<String, ColumnPtr> result;
+    for (auto & [name_, mutable_ptr] : columns)
+        result.emplace(name_, std::move(mutable_ptr));
+
+    return result;
+}
+
 Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) const
 {
 
@@ -837,6 +1035,55 @@ Columns RegExpTreeDictionary::getColumnsImpl(
         key_column->getOffsets(),
         attributes,
         defaults,
+        collect_values_limit);
+
+    Columns result;
+    for (const String & name_ : attribute_names)
+        result.push_back(columns_map.at(name_));
+
+    return result;
+}
+
+Columns RegExpTreeDictionary::getColumnsShortCircuitImpl(
+    const Strings & attribute_names,
+    const DataTypes & attribute_types,
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    IColumn::Filter & default_mask,
+    std::optional<size_t> collect_values_limit) const
+{
+    /// valid check
+    if (key_columns.size() != 1)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expect 1 key for DictGet, but got {} arguments", key_columns.size());
+    }
+    structure.validateKeyTypes(key_types);
+
+    std::unordered_map<String, const DictionaryAttribute &> attributes;
+
+    for (size_t i = 0; i < attribute_names.size(); i++)
+    {
+        DataTypePtr attribute_type = attribute_types[i];
+        if (collect_values_limit)
+        {
+            if (!WhichDataType(attribute_type).isArray())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Expected Array result type for attribute `{}`, got `{}`",
+                    attribute_names[i],
+                    attribute_type->getName());
+            attribute_type = assert_cast<const DataTypeArray &>(*attribute_type).getNestedType();
+        }
+        const auto & attribute = structure.getAttribute(attribute_names[i], attribute_type);
+        attributes.emplace(attribute.name, attribute);
+    }
+
+    /// calculate matches
+    const ColumnString * key_column = typeid_cast<const ColumnString *>(key_columns[0].get());
+    const auto & columns_map = matchShortCircuit(
+        key_column->getChars(),
+        key_column->getOffsets(),
+        attributes,
+        default_mask,
         collect_values_limit);
 
     Columns result;

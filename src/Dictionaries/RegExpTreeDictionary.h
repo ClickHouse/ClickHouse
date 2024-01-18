@@ -109,6 +109,17 @@ public:
         return getColumns(Strings({attribute_name}), DataTypes({result_type}), key_columns, key_types, Columns({default_values_column}))[0];
     }
 
+    ColumnPtr getColumnOrDefaultShortCircuit(
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        IColumn::Filter & default_mask) const override
+    {
+        return getColumnsOrDefaultShortCircuit(Strings({attribute_name}),
+            DataTypes({attribute_type}), key_columns, key_types, default_mask)[0];
+    }
+
     Columns getColumns(
         const Strings & attribute_names,
         const DataTypes & result_types,
@@ -117,6 +128,17 @@ public:
         const Columns & default_values_columns) const override
     {
         return getColumnsImpl(attribute_names, result_types, key_columns, key_types, default_values_columns, std::nullopt);
+    }
+
+    Columns getColumnsOrDefaultShortCircuit(
+        const Strings & attribute_names,
+        const DataTypes & attribute_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        IColumn::Filter & default_mask) const override
+    {
+        return getColumnsShortCircuitImpl(attribute_names, attribute_types,
+            key_columns, key_types, default_mask, std::nullopt);
     }
 
     ColumnPtr getColumnAllValues(
@@ -150,6 +172,14 @@ public:
         const Columns & default_values_columns,
         std::optional<size_t> collect_values_limit) const;
 
+    Columns getColumnsShortCircuitImpl(
+        const Strings & attribute_names,
+        const DataTypes & attribute_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        IColumn::Filter & default_mask,
+        std::optional<size_t> collect_values_limit) const;
+
 private:
     const DictionaryStructure structure;
     DictionarySourcePtr source_ptr;
@@ -178,6 +208,13 @@ private:
         const std::unordered_map<String, ColumnPtr> & defaults,
         std::optional<size_t> collect_values_limit) const;
 
+    std::unordered_map<String, ColumnPtr> matchShortCircuit(
+        const ColumnString::Chars & keys_data,
+        const ColumnString::Offsets & keys_offsets,
+        const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+        IColumn::Filter & default_mask,
+        std::optional<size_t> collect_values_limit) const;
+
     class AttributeCollector;
 
     bool setAttributes(
@@ -188,6 +225,14 @@ private:
         const std::unordered_map<String, const DictionaryAttribute &> & attributes,
         const std::unordered_map<String, ColumnPtr> & defaults,
         size_t key_index) const;
+
+    bool setAttributesShortCircuit(
+        UInt64 id,
+        AttributeCollector & attributes_to_set,
+        const String & data,
+        std::unordered_set<UInt64> & visited_nodes,
+        const std::unordered_map<String, const DictionaryAttribute &> & attributes,
+        std::shared_ptr<std::unordered_set<String>> defaults) const;
 
     struct RegexTreeNode;
     using RegexTreeNodePtr = std::shared_ptr<RegexTreeNode>;
