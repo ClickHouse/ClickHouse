@@ -39,8 +39,8 @@ If you need to update rows frequently, we recommend using the [`ReplacingMergeTr
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY],
-    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY],
+    name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTIC(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
+    name2 [type2] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr2] [COMMENT ...] [CODEC(codec2)] [STATISTIC(stat2)] [TTL expr2] [PRIMARY KEY] [SETTINGS (name = value, ...)],
     ...
     INDEX index_name1 expr1 TYPE type1(...) [GRANULARITY value1],
     INDEX index_name2 expr2 TYPE type2(...) [GRANULARITY value2],
@@ -1390,3 +1390,42 @@ They can be used for query optimization when we enable `set allow_statistic_opti
 -   `tdigest`
 
     Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
+
+## Column Settings {#column-settings}
+
+Some table parameters can be override at column level by column settings.
+
+- `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
+- `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
+
+Example of creating table with column settings:
+
+```sql
+CREATE TABLE example_table
+(
+    id Int64,
+    document String CODEC(ZSTD(9,24)) SETTINGS (min_compress_block_size = 16777216, max_compress_block_size = 16777216)
+)
+ENGINE = MergeTree
+ORDER BY id
+```
+
+Column settings can be modified or removed via [ALTER MODIFY COLUMN](/docs/en/sql-reference/statements/alter/column.md) query, for example:
+
+Remove `SETTINGS` from column declaration:
+
+```sql
+ALTER TABLE example_table MODIFY COLUMN document REMOVE SETTINGS;
+```
+
+Modify a setting:
+
+```sql
+ALTER TABLE example_table MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 8192;
+```
+
+Reset one or more settings, after reset the setting expression is also removed from column declaration:
+
+```sql
+ALTER TABLE example_table MODIFY COLUMN document RESET SETTING min_compress_block_size;
+```

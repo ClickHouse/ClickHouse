@@ -132,7 +132,7 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, Fo
     if (settings)
     {
         format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "SETTINGS" << (format_settings.hilite ? hilite_none : "") << ' ' << '(';
-        settings->formatImpl(format_settings,  state, frame);
+        settings->formatImpl(format_settings, state, frame);
         format_settings.ostr << ')';
     }
 }
