@@ -11,7 +11,6 @@
 #include <Common/assert_cast.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/PODArray.h>
-#include "Allocator.h"
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>

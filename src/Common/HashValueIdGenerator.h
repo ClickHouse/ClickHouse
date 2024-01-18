@@ -215,7 +215,6 @@ public:
 
         if (allocated_value_id > max_distinct_values)
         {
-            LOG_ERROR(&Poco::Logger::get("HashValueIdGenerator"), "Too many distinct values: {}, max_distinct_values: {}", allocated_value_id, max_distinct_values);
             state->hash_mode = AdaptiveKeysHolder::State::HASH;
             release();
         }
