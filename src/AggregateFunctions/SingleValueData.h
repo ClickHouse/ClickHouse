@@ -89,9 +89,9 @@ struct SingleValueDataBase
     M(Decimal256) \
     M(DateTime64)
 
-/// For numeric values
+/// For numeric values (without inheritance, for performance sensitive functions and JIT)
 template <typename T>
-struct SingleValueDataFixed final : public SingleValueDataBase
+struct SingleValueDataFixed
 {
     static constexpr bool is_compilable = true;
     using Self = SingleValueDataFixed;
@@ -102,50 +102,48 @@ struct SingleValueDataFixed final : public SingleValueDataBase
     /// This is necessary for AggregateFunctionIf, merging states, JIT (where simple add is used), etc
     bool has_value = false;
 
-    ~SingleValueDataFixed() override { }
+    bool has() const { return has_value; }
+    void insertResultInto(IColumn & to) const;
+    void write(WriteBuffer & buf, const ISerialization &) const;
+    void read(ReadBuffer & buf, const ISerialization &, Arena *);
+    bool isEqualTo(const IColumn & column, size_t index) const;
+    bool isEqualTo(const Self & to) const;
 
-    bool has() const override { return has_value; }
-    void insertResultInto(IColumn & to) const override;
-    void write(WriteBuffer & buf, const ISerialization &) const override;
-    void read(ReadBuffer & buf, const ISerialization &, Arena *) override;
-    bool isEqualTo(const IColumn & column, size_t index) const override;
-    bool isEqualTo(const SingleValueDataBase & to) const override;
-
-    void set(const IColumn & column, size_t row_num, Arena *) override;
-    void set(const SingleValueDataBase & to, Arena *) override;
+    void set(const IColumn & column, size_t row_num, Arena *);
+    void set(const Self & to, Arena *);
 
     bool setIfSmaller(const T & to);
     bool setIfGreater(const T & to);
 
-    bool setIfSmaller(const SingleValueDataBase & to, Arena * arena) override;
-    bool setIfGreater(const SingleValueDataBase & to, Arena * arena) override;
-    bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
-    bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
-    void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena *) override;
-    void setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena *) override;
+    bool setIfSmaller(const Self & to, Arena * arena);
+    bool setIfGreater(const Self & to, Arena * arena);
+    bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena);
+    bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena);
+    void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena *);
+    void setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena *);
     void setSmallestNotNullIf(
         const IColumn & column,
         const UInt8 * __restrict null_map,
         const UInt8 * __restrict if_map,
         size_t row_begin,
         size_t row_end,
-        Arena *) override;
+        Arena *);
     void setGreatestNotNullIf(
         const IColumn & column,
         const UInt8 * __restrict null_map,
         const UInt8 * __restrict if_map,
         size_t row_begin,
         size_t row_end,
-        Arena *) override;
+        Arena *);
 
-    std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) override;
-    std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) override;
+    std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end);
+    std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end);
 
     static bool allocatesMemoryInArena() { return false; }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr size_t has_value_offset = offsetof(SingleValueDataFixed<T>, has_value);
-    static constexpr size_t value_offset = offsetof(SingleValueDataFixed<T>, value);
+    static constexpr size_t has_value_offset = offsetof(Self, has_value);
+    static constexpr size_t value_offset = offsetof(Self, value);
 
     static bool isCompilable(const IDataType & type);
     static llvm::Value * getValuePtrFromAggregateDataPtr(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr);
@@ -186,6 +184,77 @@ struct SingleValueDataFixed final : public SingleValueDataBase
 
 FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
+
+/// For numeric values inheriting from SingleValueDataBase
+template <typename T>
+struct SingleValueDataNumeric final : public SingleValueDataBase
+{
+    using Self = SingleValueDataNumeric<T>;
+    using Base = SingleValueDataFixed<T>;
+
+private:
+    static constexpr size_t base_memory_reserved_size = 40;
+    struct alignas(alignof(Base)) PrivateMemory
+    {
+        char memory[base_memory_reserved_size];
+        Base & get() { return *reinterpret_cast<Base *>(memory); }
+        const Base & get() const { return *reinterpret_cast<const Base *>(memory); }
+    };
+    static_assert(sizeof(Base) <= base_memory_reserved_size);
+
+    PrivateMemory memory;
+
+public:
+    static constexpr bool is_compilable = false;
+
+    SingleValueDataNumeric();
+    ~SingleValueDataNumeric() override;
+
+    bool has() const override;
+    void insertResultInto(IColumn & to) const override;
+    void write(WriteBuffer & buf, const ISerialization & serialization) const override;
+    void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena) override;
+    bool isEqualTo(const IColumn & column, size_t index) const override;
+    bool isEqualTo(const SingleValueDataBase & to) const override;
+
+    void set(const IColumn & column, size_t row_num, Arena * arena) override;
+    void set(const SingleValueDataBase & to, Arena * arena) override;
+
+    bool setIfSmaller(const SingleValueDataBase & to, Arena * arena) override;
+    bool setIfGreater(const SingleValueDataBase & to, Arena * arena) override;
+    bool setIfSmaller(const IColumn & column, size_t row_num, Arena * arena) override;
+    bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
+    void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena) override;
+    void setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena) override;
+    void setSmallestNotNullIf(
+        const IColumn & column,
+        const UInt8 * __restrict null_map,
+        const UInt8 * __restrict if_map,
+        size_t row_begin,
+        size_t row_end,
+        Arena * arena) override;
+    void setGreatestNotNullIf(
+        const IColumn & column,
+        const UInt8 * __restrict null_map,
+        const UInt8 * __restrict if_map,
+        size_t row_begin,
+        size_t row_end,
+        Arena * arena) override;
+
+    std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) override;
+    std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) override;
+
+    static bool allocatesMemoryInArena() { return false; }
+};
+
+#define DISPATCH(TYPE) \
+    extern template struct SingleValueDataNumeric<TYPE>; \
+    static_assert( \
+        sizeof(SingleValueDataNumeric<TYPE>) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataNumeric struct");
+
+FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+
 
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
@@ -292,6 +361,9 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
 
     return new AggregateFunctionTemplate<SingleValueDataGeneric, isMin...>(argument_type);
 }
+
+/// Helper when you want to build SingleValueNumeric
+void generateSingleValueNumericFromTypeIndex(TypeIndex idx, SingleValueDataBase::memory_block & data);
 
 /// For Data classes that want to compose on top of SingleValueDataBase values, like argMax or singleValueOrNull
 /// It will build the object based on the type idx on the memory block provided

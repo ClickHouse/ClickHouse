@@ -186,10 +186,9 @@ bool SingleValueDataFixed<T>::isEqualTo(const IColumn & column, size_t index) co
 }
 
 template <typename T>
-bool SingleValueDataFixed<T>::isEqualTo(const SingleValueDataBase & to) const
+bool SingleValueDataFixed<T>::isEqualTo(const SingleValueDataFixed<T> & to) const
 {
-    auto const & other = assert_cast<const Self &>(to);
-    return has() && other.value == value;
+    return has() && to.value == value;
 }
 
 template <typename T>
@@ -200,13 +199,12 @@ void SingleValueDataFixed<T>::set(const IColumn & column, size_t row_num, Arena 
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::set(const SingleValueDataBase & to, Arena *)
+void SingleValueDataFixed<T>::set(const SingleValueDataFixed<T> & to, Arena *)
 {
-    auto const & other = assert_cast<const Self &>(to);
-    if (other.has())
+    if (to.has())
     {
         has_value = true;
-        value = other.value;
+        value = to.value;
     }
 }
 
@@ -235,12 +233,11 @@ bool SingleValueDataFixed<T>::setIfGreater(const T & to)
 }
 
 template <typename T>
-bool SingleValueDataFixed<T>::setIfSmaller(const SingleValueDataBase & to, Arena * arena)
+bool SingleValueDataFixed<T>::setIfSmaller(const SingleValueDataFixed<T> & to, Arena * arena)
 {
-    auto const & other = assert_cast<const Self &>(to);
-    if (other.has() && (!has() || other.value < value))
+    if (to.has() && (!has() || to.value < value))
     {
-        set(other, arena);
+        set(to, arena);
         return true;
     }
     else
@@ -248,12 +245,11 @@ bool SingleValueDataFixed<T>::setIfSmaller(const SingleValueDataBase & to, Arena
 }
 
 template <typename T>
-bool SingleValueDataFixed<T>::setIfGreater(const SingleValueDataBase & to, Arena * arena)
+bool SingleValueDataFixed<T>::setIfGreater(const SingleValueDataFixed<T> & to, Arena * arena)
 {
-    auto const & other = assert_cast<const Self &>(to);
-    if (other.has() && (!has() || other.value > value))
+    if (to.has() && (!has() || to.value > value))
     {
-        set(other, arena);
+        set(to, arena);
         return true;
     }
     else
@@ -496,28 +492,12 @@ llvm::Value * SingleValueDataFixed<T>::getHasValueFromAggregateDataPtr(llvm::IRB
     return b.CreateLoad(b.getInt1Ty(), has_value_ptr);
 }
 
-namespace
-{
-/// We create a helper function to be able to the constructor to initialize the value in JIT
-/// We do this instead of initializing the values directly because we must initialize the vtable too
-/// and there is no easy way to do that except calling the constructor
-template <typename T>
-void build_SingleValueDataFixed(SingleValueDataFixed<T> * single)
-{
-    new (single) SingleValueDataFixed<T>();
-}
-}
-
 template <typename T>
 void SingleValueDataFixed<T>::compileCreate(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
 {
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-    auto * function_type = llvm::FunctionType::get(b.getVoidTy(), {aggregate_data_ptr->getType()}, false);
-    auto * function_pointer = b.CreateIntToPtr(
-        llvm::ConstantInt::get(b.getInt64Ty(), uintptr_t(::DB::build_SingleValueDataFixed<T>)),
-        llvm::PointerType::getUnqual(function_type));
-    llvm::ArrayRef<llvm::Value *> args{&aggregate_data_ptr, 1};
-    b.CreateCall(function_type, function_pointer, args);
+    auto * has_value_ptr = getHasValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
+    b.CreateStore(b.getTrue(), has_value_ptr);
 }
 
 template <typename T>
@@ -760,6 +740,147 @@ void SingleValueDataFixed<T>::compileMaxMerge(
 FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
+
+template <typename T>
+SingleValueDataNumeric<T>::SingleValueDataNumeric()
+{
+    new (&memory) SingleValueDataFixed<T>;
+}
+
+template <typename T>
+SingleValueDataNumeric<T>::~SingleValueDataNumeric()
+{
+    /// No need to deallocate or do anything, since SingleValueDataFixed<T> uses only static storage
+}
+
+template <typename T>
+bool SingleValueDataNumeric<T>::has() const
+{
+    return memory.get().has();
+}
+
+template <typename T>
+void SingleValueDataNumeric<T>::insertResultInto(IColumn & to) const
+{
+    return memory.get().insertResultInto(to);
+}
+
+template <typename T>
+void SingleValueDataNumeric<T>::write(DB::WriteBuffer & buf, const DB::ISerialization & serialization) const
+{
+    return memory.get().write(buf, serialization);
+}
+
+template <typename T>
+void SingleValueDataNumeric<T>::read(DB::ReadBuffer & buf, const DB::ISerialization & serialization, DB::Arena * arena)
+{
+    return memory.get().read(buf, serialization, arena);
+}
+
+template <typename T>
+bool SingleValueDataNumeric<T>::isEqualTo(const DB::IColumn & column, size_t index) const
+{
+    return memory.get().isEqualTo(column, index);
+}
+
+template <typename T>
+bool SingleValueDataNumeric<T>::isEqualTo(const DB::SingleValueDataBase & to) const
+{
+    auto const & other = assert_cast<const Self &>(to);
+    return memory.get().isEqualTo(other.memory.get());
+}
+
+template <typename T>
+void SingleValueDataNumeric<T>::set(const DB::IColumn & column, size_t row_num, DB::Arena * arena)
+{
+    return memory.get().set(column, row_num, arena);
+}
+
+template <typename T>
+void SingleValueDataNumeric<T>::set(const DB::SingleValueDataBase & to, DB::Arena * arena)
+{
+    auto const & other = assert_cast<const Self &>(to);
+    return memory.get().set(other.memory.get(), arena);
+}
+
+template <typename T>
+bool SingleValueDataNumeric<T>::setIfSmaller(const DB::SingleValueDataBase & to, DB::Arena * arena)
+{
+    auto const & other = assert_cast<const Self &>(to);
+    return memory.get().setIfSmaller(other.memory.get(), arena);
+}
+
+template <typename T>
+bool SingleValueDataNumeric<T>::setIfGreater(const DB::SingleValueDataBase & to, DB::Arena * arena)
+{
+    auto const & other = assert_cast<const Self &>(to);
+    return memory.get().setIfGreater(other.memory.get(), arena);
+}
+
+template <typename T>
+bool SingleValueDataNumeric<T>::setIfSmaller(const DB::IColumn & column, size_t row_num, DB::Arena * arena)
+{
+    return memory.get().setIfSmaller(column, row_num, arena);
+}
+
+template <typename T>
+bool SingleValueDataNumeric<T>::setIfGreater(const DB::IColumn & column, size_t row_num, DB::Arena * arena)
+{
+    return memory.get().setIfGreater(column, row_num, arena);
+}
+
+template <typename T>
+void SingleValueDataNumeric<T>::setSmallest(const DB::IColumn & column, size_t row_begin, size_t row_end, DB::Arena * arena)
+{
+    return memory.get().setSmallest(column, row_begin, row_end, arena);
+}
+
+template <typename T>
+void SingleValueDataNumeric<T>::setGreatest(const DB::IColumn & column, size_t row_begin, size_t row_end, DB::Arena * arena)
+{
+    return memory.get().setGreatest(column, row_begin, row_end, arena);
+}
+
+template <typename T>
+void SingleValueDataNumeric<T>::setSmallestNotNullIf(
+    const DB::IColumn & column,
+    const UInt8 * __restrict null_map,
+    const UInt8 * __restrict if_map,
+    size_t row_begin,
+    size_t row_end,
+    DB::Arena * arena)
+{
+    return memory.get().setSmallestNotNullIf(column, null_map, if_map, row_begin, row_end, arena);
+}
+
+template <typename T>
+void SingleValueDataNumeric<T>::setGreatestNotNullIf(
+    const DB::IColumn & column,
+    const UInt8 * __restrict null_map,
+    const UInt8 * __restrict if_map,
+    size_t row_begin,
+    size_t row_end,
+    DB::Arena * arena)
+{
+    return memory.get().setGreatestNotNullIf(column, null_map, if_map, row_begin, row_end, arena);
+}
+
+template <typename T>
+std::optional<size_t> SingleValueDataNumeric<T>::getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end)
+{
+    return memory.get().getSmallestIndex(column, row_begin, row_end);
+}
+
+template <typename T>
+std::optional<size_t> SingleValueDataNumeric<T>::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end)
+{
+    return memory.get().getGreatestIndex(column, row_begin, row_end);
+}
+
+#define DISPATCH(TYPE) template struct SingleValueDataNumeric<TYPE>;
+
+FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
 
 namespace
 {
@@ -1124,8 +1245,8 @@ void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBase::memory
 #define DISPATCH(TYPE) \
     if (idx == TypeIndex::TYPE) \
     { \
-        static_assert(sizeof(SingleValueDataFixed<TYPE>) <= SingleValueDataBase::MAX_STORAGE_SIZE); \
-        new (data.memory) SingleValueDataFixed<TYPE>(); \
+        static_assert(sizeof(SingleValueDataNumeric<TYPE>) <= SingleValueDataBase::MAX_STORAGE_SIZE); \
+        new (data.memory) SingleValueDataNumeric<TYPE>; \
         return; \
     }
 
@@ -1135,13 +1256,13 @@ void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBase::memory
     if (idx == TypeIndex::Date)
     {
         static_assert(sizeof(SingleValueDataFixed<DataTypeDate::FieldType>) <= SingleValueDataBase::MAX_STORAGE_SIZE);
-        new (data.memory) SingleValueDataFixed<DataTypeDate::FieldType>;
+        new (data.memory) SingleValueDataNumeric<DataTypeDate::FieldType>;
         return;
     }
     if (idx == TypeIndex::DateTime)
     {
         static_assert(sizeof(SingleValueDataFixed<DataTypeDateTime::FieldType>) <= SingleValueDataBase::MAX_STORAGE_SIZE);
-        new (data.memory) SingleValueDataFixed<DataTypeDateTime::FieldType>;
+        new (data.memory) SingleValueDataNumeric<DataTypeDateTime::FieldType>;
         return;
     }
     if (idx == TypeIndex::String)
