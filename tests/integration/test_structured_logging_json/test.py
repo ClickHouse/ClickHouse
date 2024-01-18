@@ -37,14 +37,14 @@ def validate_log_level(config, logs):
     key = root.findtext(".//names/level") or "level"
 
     valid_level_values = {
-        "Fatal", 
-        "Critical", 
-        "Error", 
-        "Warning", 
-        "Notice", 
-        "Information", 
-        "Debug", 
-        "Trace", 
+        "Fatal",
+        "Critical",
+        "Error",
+        "Warning",
+        "Notice",
+        "Information",
+        "Debug",
+        "Trace",
         "Test",
     }
 
@@ -102,9 +102,11 @@ def validate_logs(logs):
 def valiade_everything(config, node, config_type):
     node.query("SELECT 1")
     logs = node.grep_in_log("").split("\n")
-    return validate_logs(logs) and validate_log_config_relation(
-        config, logs, config_type
-    ) and validate_log_level(config, logs)
+    return (
+        validate_logs(logs)
+        and validate_log_config_relation(config, logs, config_type)
+        and validate_log_level(config, logs)
+    )
 
 
 def test_structured_logging_json_format(start_cluster):
