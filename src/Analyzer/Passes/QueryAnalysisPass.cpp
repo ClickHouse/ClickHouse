@@ -6808,7 +6808,7 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & joi
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Names of projection columns cannot be empty");
 
     std::sort(column_names.begin(), column_names.end());
-    for (size_t i = 0; i < column_names.size() - 1; i++) // Check if there is not any duplicates because it will lead to broken result
+    for (size_t i = 0; i < column_names.size() - 1; i++) // Check if there is no any duplicates because it will lead to broken result
         if (column_names[i] == column_names[i+1])
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Name of columns and aliases should be unique for this query (you can add/change aliases so they will not be duplicated)"
@@ -7168,7 +7168,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
         scope.alias_name_to_table_expression_node.clear();
 
-        Names column_names;
         resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
     }
 
