@@ -1,5 +1,6 @@
 #include <Processors/Transforms/FillingTransform.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/IDataType.h>

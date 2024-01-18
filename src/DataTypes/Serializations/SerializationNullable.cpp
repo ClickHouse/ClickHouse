@@ -45,7 +45,9 @@ void SerializationNullable::enumerateStreams(
     const auto * type_nullable = data.type ? &assert_cast<const DataTypeNullable &>(*data.type) : nullptr;
     const auto * column_nullable = data.column ? &assert_cast<const ColumnNullable &>(*data.column) : nullptr;
 
-    auto null_map_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", false);
+    auto null_map_serialization = std::make_shared<SerializationNamed>(
+        std::make_shared<SerializationNumber<UInt8>>(),
+        "null", SubstreamType::NamedNullMap);
 
     settings.path.push_back(Substream::NullMap);
     auto null_map_data = SubstreamData(null_map_serialization)
@@ -359,7 +361,7 @@ ReturnType SerializationNullable::deserializeTextEscapedAndRawImpl(IColumn & col
         nested_column.popBack(1);
 
         if (null_representation.find('\t') != std::string::npos || null_representation.find('\n') != std::string::npos)
-            throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
+            throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
                                        "containing '\\t' or '\\n' may not work correctly for large input.");
 
         WriteBufferFromOwnString parsed_value;
@@ -367,7 +369,7 @@ ReturnType SerializationNullable::deserializeTextEscapedAndRawImpl(IColumn & col
             nested_serialization->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
         else
             nested_serialization->serializeTextRaw(nested_column, nested_column.size() - 1, parsed_value, settings);
-        throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
+        throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
                                    " at position {}: got \"{}\", which was deserialized as \"{}\". "
                                    "It seems that input data is ill-formatted.",
                                    std::string(pos, buf.buffer().end()),
@@ -452,7 +454,7 @@ ReturnType SerializationNullable::deserializeTextQuotedImpl(IColumn & column, Re
         /// It can happen only if there is an unquoted string instead of a number.
         /// We also should delete incorrectly deserialized value from nested column.
         nested_column.popBack(1);
-        throw DB::ParsingException(
+        throw DB::Exception(
             ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while parsing Nullable: got an unquoted string {} instead of a number",
             String(buf.position(), std::min(10ul, buf.available())));
@@ -589,12 +591,12 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
 
         if (null_representation.find(settings.csv.delimiter) != std::string::npos || null_representation.find('\r') != std::string::npos
             || null_representation.find('\n') != std::string::npos)
-            throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "CSV custom null representation containing "
+            throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "CSV custom null representation containing "
                                        "format_csv_delimiter, '\\r' or '\\n' may not work correctly for large input.");
 
         WriteBufferFromOwnString parsed_value;
         nested_serialization->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
-        throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
+        throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
                                    " at position {}: got \"{}\", which was deserialized as \"{}\". "
                                    "It seems that input data is ill-formatted.",
                                    std::string(pos, buf.buffer().end()),

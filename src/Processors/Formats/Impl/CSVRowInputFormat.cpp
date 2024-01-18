@@ -106,13 +106,14 @@ void CSVRowInputFormat::syncAfterError()
 
 void CSVRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
 }
 
-void CSVRowInputFormat::resetParser()
+void CSVRowInputFormat::resetReadBuffer()
 {
-    RowInputFormatWithNamesAndTypes::resetParser();
-    buf->reset();
+    buf.reset();
+    RowInputFormatWithNamesAndTypes::resetReadBuffer();
 }
 
 void CSVFormatReader::skipRow()

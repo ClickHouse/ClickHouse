@@ -60,7 +60,7 @@ function check_replication_consistency()
             echo "==================== STACK  TRACES ===================="
             $CLICKHOUSE_CLIENT -q "SELECT query_id, thread_name, thread_id, arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') FROM system.stack_trace where query_id IN (SELECT query_id FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%') SETTINGS allow_introspection_functions=1 FORMAT Vertical"
             echo "==================== MUTATIONS ===================="
-            $CLICKHOUSE_CLIENT -q "SELECT * FROM system.mutations WHERE current_database=currentDatabase() FORMAT Vertical"
+            $CLICKHOUSE_CLIENT -q "SELECT * FROM system.mutations WHERE database=currentDatabase() FORMAT Vertical"
             break
         fi
     done

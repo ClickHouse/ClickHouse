@@ -77,7 +77,7 @@ protected:
         Poco::Logger::root().setChannel(channel);
         Poco::Logger::root().setLevel("trace");
 
-        keeper_context->local_logs_preprocessed = true;
+        keeper_context->setLocalLogsPreprocessed();
     }
 
     void setLogDirectory(const std::string & path) { keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", path)); }
@@ -1000,7 +1000,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate)
     EXPECT_TRUE(fs::exists("./logs/changelog_31_35.bin" + params.extension));
 
     DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_11_15.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        "./logs/changelog_11_15.bin" + params.extension, DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(0);
 
     DB::KeeperLogStore changelog_reader(
@@ -1073,7 +1073,7 @@ TEST_P(CoordinationTest, ChangelogTestReadAfterBrokenTruncate2)
     EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
 
     DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_1_20.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        "./logs/changelog_1_20.bin" + params.extension, DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(30);
 
     DB::KeeperLogStore changelog_reader(
@@ -1130,7 +1130,7 @@ TEST_F(CoordinationTest, ChangelogTestReadAfterBrokenTruncate3)
     EXPECT_TRUE(fs::exists("./logs/changelog_21_40.bin"));
 
     DB::WriteBufferFromFile plain_buf(
-        "./logs/changelog_1_20.bin", DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        "./logs/changelog_1_20.bin", DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(plain_buf.size() - 30);
 
     DB::KeeperLogStore changelog_reader(
@@ -1733,7 +1733,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotBroken)
 
     /// Let's corrupt file
     DB::WriteBufferFromFile plain_buf(
-        "./snapshots/snapshot_50.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        "./snapshots/snapshot_50.bin" + params.extension, DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(34);
     plain_buf.sync();
 
@@ -2770,7 +2770,7 @@ TEST_P(CoordinationTest, TestDurableState)
     {
         SCOPED_TRACE("Read from corrupted file");
         state_manager.reset();
-        DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
+        DB::WriteBufferFromFile write_buf("./state", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY);
         write_buf.seek(20, SEEK_SET);
         DB::writeIntBinary(31, write_buf);
         write_buf.sync();
@@ -2787,7 +2787,7 @@ TEST_P(CoordinationTest, TestDurableState)
         SCOPED_TRACE("Read from file with invalid size");
         state_manager.reset();
 
-        DB::WriteBufferFromFile write_buf("./state", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+        DB::WriteBufferFromFile write_buf("./state", DB::DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
         DB::writeIntBinary(20, write_buf);
         write_buf.sync();
         write_buf.close();

@@ -9,6 +9,7 @@
 #include <memory>
 #include <Storages/StorageS3Settings.h>
 #include <Common/MultiVersion.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 
 
 namespace DB
@@ -39,7 +40,6 @@ struct S3ObjectStorageSettings
     bool read_only;
 };
 
-
 class S3ObjectStorage : public IObjectStorage
 {
 private:
@@ -49,22 +49,19 @@ private:
         const char * logger_name,
         std::unique_ptr<S3::Client> && client_,
         std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
-        String version_id_,
+        S3::URI uri_,
         const S3Capabilities & s3_capabilities_,
-        String bucket_,
-        String connection_string,
-        String object_key_prefix_,
+        ObjectStorageKeysGeneratorPtr key_generator_,
         const String & disk_name_)
-        : bucket(std::move(bucket_))
-        , object_key_prefix(std::move(object_key_prefix_))
+        : uri(uri_)
+        , key_generator(std::move(key_generator_))
         , disk_name(disk_name_)
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
-        , version_id(std::move(version_id_))
     {
         data_source_description.type = DataSourceType::S3;
-        data_source_description.description = connection_string;
+        data_source_description.description = uri_.endpoint;
         data_source_description.is_cached = false;
         data_source_description.is_encrypted = false;
 
@@ -84,6 +81,8 @@ public:
     }
 
     std::string getName() const override { return "S3ObjectStorage"; }
+
+    std::string getCommonKeyPrefix() const override { return uri.key; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -153,7 +152,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    std::string getObjectsNamespace() const override { return bucket; }
+    std::string getObjectsNamespace() const override { return uri.bucket; }
 
     bool isRemote() const override { return true; }
 
@@ -177,16 +176,14 @@ private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
-private:
-    std::string bucket;
-    String object_key_prefix;
+    const S3::URI uri;
+
+    ObjectStorageKeysGeneratorPtr key_generator;
     std::string disk_name;
 
     MultiVersion<S3::Client> client;
     MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
-
-    const String version_id;
 
     Poco::Logger * log;
     DataSourceDescription data_source_description;
@@ -199,11 +196,6 @@ private:
 class S3PlainObjectStorage : public S3ObjectStorage
 {
 public:
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
-    {
-        return ObjectStorageKey::createAsRelative(object_key_prefix, path);
-    }
-
     std::string getName() const override { return "S3PlainObjectStorage"; }
 
     template <class ...Args>
