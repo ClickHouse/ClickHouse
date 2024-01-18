@@ -129,7 +129,7 @@ public:
     virtual bool supportsFinal() const { return false; }
 
     /// Returns true if the storage supports queries with the STREAM section.
-    virtual bool supportsStreaming() const { return false; }
+    virtual bool supportsStreaming() const { return true; }
 
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
