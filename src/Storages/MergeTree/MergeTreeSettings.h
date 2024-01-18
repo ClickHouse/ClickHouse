@@ -275,9 +275,10 @@ struct MergeTreeSettings : public BaseSettings<MergeTreeSettingsTraits>, public 
     std::vector<String> getAllRegisteredNames() const override;
 };
 
-
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
+
+/// Column-level Merge-Tree settings which overwrite MergeTree settings
 namespace MergeTreeColumnSettings
 {
     void validate(const SettingsChanges & changes);

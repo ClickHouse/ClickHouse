@@ -733,12 +733,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 }
                 else if (s_modify_setting.ignore(pos, expected))
                 {
-                    if (!parser_settings.parse(pos, command->settings_changes, expected))
+                    if (!parser_settings.parse(pos, command_settings_changes, expected))
                         return false;
                 }
                 else if (s_reset_setting.ignore(pos, expected))
                 {
-                    if (!parser_reset_setting.parse(pos, command->settings_resets, expected))
+                    if (!parser_reset_setting.parse(pos, command_settings_resets, expected))
                         return false;
                 }
                 else

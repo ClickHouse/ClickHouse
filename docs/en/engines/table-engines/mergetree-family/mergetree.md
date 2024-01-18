@@ -56,7 +56,7 @@ ORDER BY expr
     [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
     [WHERE conditions]
     [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ]
-[SETTINGS name=value, ...]
+[SETTINGS name = value, ...]
 ```
 
 For a description of parameters, see the [CREATE query description](/docs/en/sql-reference/statements/create/table.md).
@@ -620,7 +620,7 @@ The `TTL` clause can’t be used for key columns.
 #### Creating a table with `TTL`:
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     d DateTime,
     a Int TTL d + INTERVAL 1 MONTH,
@@ -635,7 +635,7 @@ ORDER BY d;
 #### Adding TTL to a column of an existing table
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 DAY;
 ```
@@ -643,7 +643,7 @@ ALTER TABLE example_table
 #### Altering TTL of the column
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 MONTH;
 ```
@@ -681,7 +681,7 @@ If a column is not part of the `GROUP BY` expression and is not set explicitly i
 #### Creating a table with `TTL`:
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     d DateTime,
     a Int
@@ -697,7 +697,7 @@ TTL d + INTERVAL 1 MONTH DELETE,
 #### Altering `TTL` of the table:
 
 ``` sql
-ALTER TABLE example_table
+ALTER TABLE tab
     MODIFY TTL d + INTERVAL 1 DAY;
 ```
 
@@ -1366,7 +1366,7 @@ In this sample configuration:
 The statistic declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistic = 1`.
 
 ``` sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     a Int64 STATISTIC(tdigest),
     b Float64
@@ -1378,8 +1378,8 @@ ORDER BY a
 We can also manipulate statistics with `ALTER` statements.
 
 ```sql
-ALTER TABLE example_table ADD STATISTIC b TYPE tdigest;
-ALTER TABLE example_table DROP STATISTIC a TYPE tdigest;
+ALTER TABLE tab ADD STATISTIC b TYPE tdigest;
+ALTER TABLE tab DROP STATISTIC a TYPE tdigest;
 ```
 
 These lightweight statistics aggregate information about distribution of values in columns.
@@ -1391,41 +1391,41 @@ They can be used for query optimization when we enable `set allow_statistic_opti
 
     Stores distribution of values from numeric columns in [TDigest](https://github.com/tdunning/t-digest) sketch.
 
-## Column Settings {#column-settings}
+## Column-level Settings {#column-level-settings}
 
-Some table parameters can be override at column level by column settings.
+Certain MergeTree settings can be override at column level:
 
 - `max_compress_block_size` — Maximum size of blocks of uncompressed data before compressing for writing to a table.
 - `min_compress_block_size` — Minimum size of blocks of uncompressed data required for compression when writing the next mark.
 
-Example of creating table with column settings:
+Example:
 
 ```sql
-CREATE TABLE example_table
+CREATE TABLE tab
 (
     id Int64,
-    document String CODEC(ZSTD(9,24)) SETTINGS (min_compress_block_size = 16777216, max_compress_block_size = 16777216)
+    document String SETTINGS (min_compress_block_size = 16777216, max_compress_block_size = 16777216)
 )
 ENGINE = MergeTree
 ORDER BY id
 ```
 
-Column settings can be modified or removed via [ALTER MODIFY COLUMN](/docs/en/sql-reference/statements/alter/column.md) query, for example:
+Column-level settings can be modified or removed using [ALTER MODIFY COLUMN](/docs/en/sql-reference/statements/alter/column.md), for example:
 
-Remove `SETTINGS` from column declaration:
+- Remove `SETTINGS` from column declaration:
 
 ```sql
-ALTER TABLE example_table MODIFY COLUMN document REMOVE SETTINGS;
+ALTER TABLE tab MODIFY COLUMN document REMOVE SETTINGS;
 ```
 
-Modify a setting:
+- Modify a setting:
 
 ```sql
-ALTER TABLE example_table MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 8192;
+ALTER TABLE tab MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 8192;
 ```
 
-Reset one or more settings, after reset the setting expression is also removed from column declaration:
+- Reset one or more settings, also removes the setting declaration in the column expression of the table's CREATE query.
 
 ```sql
-ALTER TABLE example_table MODIFY COLUMN document RESET SETTING min_compress_block_size;
+ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
 ```

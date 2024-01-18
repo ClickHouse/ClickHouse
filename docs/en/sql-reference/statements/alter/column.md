@@ -23,7 +23,7 @@ The following actions are supported:
 - [RENAME COLUMN](#rename-column) — Renames an existing column.
 - [CLEAR COLUMN](#clear-column) — Resets column values.
 - [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
-- [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression, TTL, and settings.
+- [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression, TTL, and column settings.
 - [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
 - [MODIFY COLUMN MODIFY SETTING](#modify-column-modify-setting) - Changes column settings.
 - [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - Reset column settings.
@@ -232,7 +232,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 ## MODIFY COLUMN MODIFY SETTING
 
-Modify a column level setting.
+Modify a column setting.
 
 Syntax:
 
@@ -250,7 +250,7 @@ ALTER TABLE table_name MODIFY COLUMN MODIFY SETTING max_compress_block_size = 10
 
 ## MODIFY COLUMN RESET SETTING
 
-Reset a column setting, also remove the setting declaration in column expression in table create query.
+Reset a column setting, also removes the setting declaration in the column expression of the table's CREATE query.
 
 Syntax:
 

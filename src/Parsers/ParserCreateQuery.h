@@ -121,8 +121,6 @@ using ParserCompoundColumnDeclaration = IParserColumnDeclaration<ParserCompoundI
 template <typename NameParser>
 bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    NameParser name_parser;
-    ParserDataType type_parser;
     ParserKeyword s_default{"DEFAULT"};
     ParserKeyword s_null{"NULL"};
     ParserKeyword s_not{"NOT"};
@@ -137,10 +135,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_remove{"REMOVE"};
     ParserKeyword s_modify_setting("MODIFY SETTING");
     ParserKeyword s_reset_setting("RESET SETTING");
+    ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_type{"TYPE"};
     ParserKeyword s_collate{"COLLATE"};
     ParserKeyword s_primary_key{"PRIMARY KEY"};
-    ParserKeyword s_settings("SETTINGS");
+
+    NameParser name_parser;
+    ParserDataType type_parser;
     ParserExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserLiteral literal_parser;
@@ -160,13 +161,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
     /// because ParserDataType parses types as an arbitrary identifiers and
-    /// doesn't check that parsed string is existing data type. In this way
+    /// doesn't check that parsed string is existing data type. In this way,
     /// REMOVE, MODIFY SETTING, or RESET SETTING can be parsed as data type
     /// and further parsing will fail. So we just check these keyword and in
     /// case of success return column declaration with name only.
     if (!require_type
-        && (s_remove.checkWithoutMoving(pos, expected) || s_modify_setting.checkWithoutMoving(pos, expected)
-            || s_reset_setting.checkWithoutMoving(pos, expected)))
+        && (s_remove.checkWithoutMoving(pos, expected) || s_modify_setting.checkWithoutMoving(pos, expected) || s_reset_setting.checkWithoutMoving(pos, expected)))
     {
         if (!check_keywords_after_name)
             return false;

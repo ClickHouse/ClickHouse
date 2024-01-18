@@ -156,7 +156,7 @@ struct AlterCommand
     /// What to remove from column (or TTL)
     RemoveProperty to_remove = RemoveProperty::NO_PROPERTY;
 
-    /// Is this MODIFY COLUMN MODIFY SETTING or MODIFY COLUMN <column with settings declaration)
+    /// Is this MODIFY COLUMN MODIFY SETTING or MODIFY COLUMN column with settings declaration)
     bool append_column_setting = false;
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);

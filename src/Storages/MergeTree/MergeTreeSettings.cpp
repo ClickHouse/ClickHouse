@@ -221,6 +221,7 @@ void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
         "min_compress_block_size",
         "max_compress_block_size"
     };
+
     for (const auto & change : changes)
     {
         if (!allowed_column_level_settings.contains(change.name))
