@@ -573,12 +573,11 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
     create_database_query->if_not_exists = (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists);
 
     LOG_TRACE(log, "Creating database {}: {}", backQuoteIfNeed(database_name), serializeAST(*create_database_query));
-    auto query_context = Context::createCopy(context);
-    query_context->setSetting("allow_deprecated_database_ordinary", 1);
+
     try
     {
         /// Execute CREATE DATABASE query.
-        InterpreterCreateQuery interpreter{create_database_query, query_context};
+        InterpreterCreateQuery interpreter{create_database_query, context};
         interpreter.setInternal(true);
         interpreter.execute();
     }

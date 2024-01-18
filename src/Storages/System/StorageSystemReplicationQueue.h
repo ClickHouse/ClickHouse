@@ -16,7 +16,7 @@ class StorageSystemReplicationQueue final : public IStorageSystemOneBlock<Storag
 public:
     std::string getName() const override { return "SystemReplicationQueue"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

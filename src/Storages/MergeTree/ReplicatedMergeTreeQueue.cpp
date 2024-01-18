@@ -2622,8 +2622,7 @@ String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & 
 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback,
-                                        std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode,
-                                        std::unordered_set<String> src_replicas)
+                                        std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode)
 {
     std::lock_guard<std::mutex> lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);
@@ -2640,56 +2639,13 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
             LogEntry::REPLACE_RANGE,
             LogEntry::DROP_PART
         };
-
-        std::unordered_set<String> existing_replicas;
-        if (!src_replicas.empty())
-        {
-            Strings unfiltered_hosts;
-            unfiltered_hosts = storage.getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-            for (const auto & host : unfiltered_hosts)
-                existing_replicas.insert(host);
-        }
-
         out_entry_names.reserve(queue.size());
-
         for (const auto & entry : queue)
         {
-            bool entry_matches = !lightweight_entries_only || std::find(lightweight_entries.begin(), lightweight_entries.end(), entry->type) != lightweight_entries.end();
-            if (!entry_matches)
-                continue;
-
-            // `src_replicas` is used for specified sets of replicas; however, we also account for
-            // entries from removed or unknown replicas. This is necessary because the `source_replica`
-            // field in a replication queue entry doesn't always indicate the current existence or state
-            // of the part in that replica. Therefore, we include entries from replicas not listed in zookeeper.
-            // The `need_wait_for_entry` condition ensures:
-            // 1. Waiting for entries from both specified (`src_replicas`) and potentially removed
-            //    or unknown replicas, as `source_replica` may not reflect the current part status.
-            // 2. Handling cases where parts become broken (e.g., due to a hard restart) leading to
-            //    changes in the source replica or empty `source_replica` fields.
-
-            // Example Scenario:
-            // - A part is added on replica1 and fetched by replica2. If the part on replica1 breaks and
-            //   replica1 schedules a re-fetch from another source, a GET_PART entry with an empty
-            //   `source_replica` may be created.
-            // - If replica3 is added and replica2 (with the intact part) is removed, SYNC .. FROM replica2
-            //   might not account for the re-fetch need from replica1, risking data inconsistencies.
-            // - Therefore, `need_wait_for_entry` considers entries with specified sources, those not in
-            //   zookeeper->getChildren(zookeeper_path + "/replicas"), and entries with empty `source_replica`.
-
-            bool is_entry_from_specified_replica = src_replicas.contains(entry->source_replica);
-
-            chassert(!existing_replicas.contains(""));
-            bool is_entry_from_removed_or_unknown_replica = !existing_replicas.contains(entry->source_replica) || entry->source_replica.empty();
-
-            bool need_wait_for_entry = src_replicas.empty() || is_entry_from_specified_replica || is_entry_from_removed_or_unknown_replica;
-
-            if (need_wait_for_entry)
-            {
+            if (!lightweight_entries_only
+                || std::find(lightweight_entries.begin(), lightweight_entries.end(), entry->type) != lightweight_entries.end())
                 out_entry_names.insert(entry->znode_name);
-            }
         }
-
         LOG_TEST(log, "Waiting for {} entries to be processed: {}", out_entry_names.size(), fmt::join(out_entry_names, ", "));
     }
 

@@ -376,8 +376,7 @@ void TableJoin::addJoinedColumnsAndCorrectTypesImpl(TColumns & left_columns, boo
              * For `JOIN ON expr1 == expr2` we will infer common type later in makeTableJoin,
              *   when part of plan built and types of expression will be known.
              */
-            bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
-            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage(), require_strict_keys_match);
+            inferJoinKeyCommonType(left_columns, columns_from_joined_table, !isSpecialStorage());
 
             if (auto it = left_type_map.find(col.name); it != left_type_map.end())
             {
@@ -561,9 +560,7 @@ TableJoin::createConvertingActions(
     NameToNameMap left_column_rename;
     NameToNameMap right_column_rename;
 
-    /// FullSortingMerge join algorithm doesn't support joining keys with different types (e.g. String and Nullable(String))
-    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
-    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage(), require_strict_keys_match);
+    inferJoinKeyCommonType(left_sample_columns, right_sample_columns, !isSpecialStorage());
     if (!left_type_map.empty() || !right_type_map.empty())
     {
         left_dag = applyKeyConvertToTable(left_sample_columns, left_type_map, JoinTableSide::Left, left_column_rename);
@@ -617,8 +614,11 @@ TableJoin::createConvertingActions(
 }
 
 template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right, bool require_strict_keys_match)
+void TableJoin::inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right)
 {
+    /// FullSortingMerge and PartialMerge join algorithms don't support joining keys with different types
+    /// (e.g. String and LowCardinality(String))
+    bool require_strict_keys_match = isEnabledAlgorithm(JoinAlgorithm::FULL_SORTING_MERGE);
     if (!left_type_map.empty() || !right_type_map.empty())
         return;
 

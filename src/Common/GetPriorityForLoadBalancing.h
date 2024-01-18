@@ -8,12 +8,7 @@ namespace DB
 class GetPriorityForLoadBalancing
 {
 public:
-    using Func = std::function<Priority(size_t index)>;
-
-    explicit GetPriorityForLoadBalancing(LoadBalancing load_balancing_, size_t last_used_ = 0)
-        : load_balancing(load_balancing_), last_used(last_used_)
-    {
-    }
+    explicit GetPriorityForLoadBalancing(LoadBalancing load_balancing_) : load_balancing(load_balancing_) {}
     GetPriorityForLoadBalancing() = default;
 
     bool operator == (const GetPriorityForLoadBalancing & other) const
@@ -28,7 +23,7 @@ public:
         return !(*this == other);
     }
 
-    Func getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const;
+    std::function<Priority(size_t index)> getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const;
 
     std::vector<size_t> hostname_prefix_distance; /// Prefix distances from name of this host to the names of hosts of pools.
     std::vector<size_t> hostname_levenshtein_distance; /// Levenshtein Distances from name of this host to the names of hosts of pools.

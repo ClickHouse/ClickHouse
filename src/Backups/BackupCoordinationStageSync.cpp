@@ -154,14 +154,14 @@ BackupCoordinationStageSync::State BackupCoordinationStageSync::readCurrentState
                 /// If the "alive" node doesn't exist then we don't have connection to the corresponding host.
                 /// This node is ephemeral so probably it will be recreated soon. We use zookeeper retries to wait.
                 /// In worst case when we won't manage to see the alive node for a long time we will just abort the backup.
-                const auto * const suffix = retries_ctl.isLastRetry() ? "" : ", will retry";
+                String message;
                 if (started)
-                    retries_ctl.setUserError(Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
-                                                       "Lost connection to host {}{}", host, suffix));
+                    message = fmt::format("Lost connection to host {}", host);
                 else
-                    retries_ctl.setUserError(Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE,
-                                                       "No connection to host {} yet{}", host, suffix));
-
+                    message = fmt::format("No connection to host {} yet", host);
+                if (!retries_ctl.isLastRetry())
+                    message += ", will retry";
+                retries_ctl.setUserError(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, message);
                 state.disconnected_host = host;
                 return state;
             }

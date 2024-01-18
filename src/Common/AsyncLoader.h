@@ -1,7 +1,6 @@
 #pragma once
 
 #include <condition_variable>
-#include <concepts>
 #include <exception>
 #include <memory>
 #include <map>
@@ -58,13 +57,12 @@ enum class LoadStatus
 class LoadJob : private boost::noncopyable
 {
 public:
-    template <class LoadJobSetType, class Func, class DFFunc>
-    LoadJob(LoadJobSetType && dependencies_, String name_, size_t pool_id_, DFFunc && dependency_failure_, Func && func_)
+    template <class Func, class LoadJobSetType>
+    LoadJob(LoadJobSetType && dependencies_, String name_, size_t pool_id_, Func && func_)
         : dependencies(std::forward<LoadJobSetType>(dependencies_))
         , name(std::move(name_))
         , execution_pool_id(pool_id_)
         , pool_id(pool_id_)
-        , dependency_failure(std::forward<DFFunc>(dependency_failure_))
         , func(std::forward<Func>(func_))
     {}
 
@@ -110,14 +108,6 @@ private:
     std::atomic<UInt64> job_id{0};
     std::atomic<size_t> execution_pool_id;
     std::atomic<size_t> pool_id;
-
-    // Handler for failed or canceled dependencies.
-    // If job needs to be canceled on `dependency` failure, then function should set `cancel` to a specific reason.
-    // Note that implementation should be fast and cannot use AsyncLoader, because it is called under `AsyncLoader::mutex`.
-    // Note that `dependency_failure` is called only on pending jobs.
-    std::function<void(const LoadJobPtr & self, const LoadJobPtr & dependency, std::exception_ptr & cancel)> dependency_failure;
-
-    // Function to be called to execute the job.
     std::function<void(AsyncLoader & loader, const LoadJobPtr & self)> func;
 
     mutable std::mutex mutex;
@@ -133,54 +123,35 @@ private:
     std::atomic<TimePoint> finish_time{TimePoint{}};
 };
 
-// For LoadJob::dependency_failure. Cancels the job on the first dependency failure or cancel.
-void cancelOnDependencyFailure(const LoadJobPtr & self, const LoadJobPtr & dependency, std::exception_ptr & cancel);
-
-// For LoadJob::dependency_failure. Never cancels the job due to dependency failure or cancel.
-void ignoreDependencyFailure(const LoadJobPtr & self, const LoadJobPtr & dependency, std::exception_ptr & cancel);
-
-template <class F> concept LoadJobDependencyFailure = std::invocable<F, const LoadJobPtr &, const LoadJobPtr &, std::exception_ptr &>;
-template <class F> concept LoadJobFunc = std::invocable<F, AsyncLoader &, const LoadJobPtr &>;
-
-LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
+struct EmptyJobFunc
 {
-    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), 0, std::forward<decltype(dependency_failure)>(dependency_failure), std::forward<decltype(func)>(func));
+    void operator()(AsyncLoader &, const LoadJobPtr &) {}
+};
+
+template <class Func = EmptyJobFunc>
+LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, Func && func = EmptyJobFunc())
+{
+    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), 0, std::forward<Func>(func));
 }
 
-LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, String name, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
+template <class Func = EmptyJobFunc>
+LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, String name, Func && func = EmptyJobFunc())
 {
-    return std::make_shared<LoadJob>(dependencies, std::move(name), 0, std::forward<decltype(dependency_failure)>(dependency_failure), std::forward<decltype(func)>(func));
+    return std::make_shared<LoadJob>(dependencies, std::move(name), 0, std::forward<Func>(func));
 }
 
-LoadJobPtr makeLoadJob(LoadJobSet && dependencies, size_t pool_id, String name, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
+template <class Func = EmptyJobFunc>
+LoadJobPtr makeLoadJob(LoadJobSet && dependencies, size_t pool_id, String name, Func && func = EmptyJobFunc())
 {
-    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), pool_id, std::forward<decltype(dependency_failure)>(dependency_failure), std::forward<decltype(func)>(func));
+    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), pool_id, std::forward<Func>(func));
 }
 
-LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, size_t pool_id, String name, LoadJobDependencyFailure auto && dependency_failure, LoadJobFunc auto && func)
+template <class Func = EmptyJobFunc>
+LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, size_t pool_id, String name, Func && func = EmptyJobFunc())
 {
-    return std::make_shared<LoadJob>(dependencies, std::move(name), pool_id, std::forward<decltype(dependency_failure)>(dependency_failure), std::forward<decltype(func)>(func));
+    return std::make_shared<LoadJob>(dependencies, std::move(name), pool_id, std::forward<Func>(func));
 }
 
-LoadJobPtr makeLoadJob(LoadJobSet && dependencies, String name, LoadJobFunc auto && func)
-{
-    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), 0, cancelOnDependencyFailure, std::forward<decltype(func)>(func));
-}
-
-LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, String name, LoadJobFunc auto && func)
-{
-    return std::make_shared<LoadJob>(dependencies, std::move(name), 0, cancelOnDependencyFailure, std::forward<decltype(func)>(func));
-}
-
-LoadJobPtr makeLoadJob(LoadJobSet && dependencies, size_t pool_id, String name, LoadJobFunc auto && func)
-{
-    return std::make_shared<LoadJob>(std::move(dependencies), std::move(name), pool_id, cancelOnDependencyFailure, std::forward<decltype(func)>(func));
-}
-
-LoadJobPtr makeLoadJob(const LoadJobSet & dependencies, size_t pool_id, String name, LoadJobFunc auto && func)
-{
-    return std::make_shared<LoadJob>(dependencies, std::move(name), pool_id, cancelOnDependencyFailure, std::forward<decltype(func)>(func));
-}
 
 // Represents a logically connected set of LoadJobs required to achieve some goals (final LoadJob in the set).
 class LoadTask : private boost::noncopyable
@@ -306,7 +277,7 @@ private:
     {
         size_t dependencies_left = 0; // Current number of dependencies on pending jobs.
         UInt64 ready_seqno = 0; // Zero means that job is not in ready queue.
-        LoadJobSet dependent_jobs; // Set of jobs dependent on this job. Contains only scheduled jobs.
+        LoadJobSet dependent_jobs; // Set of jobs dependent on this job.
 
         // Three independent states of a scheduled job.
         bool isBlocked() const { return dependencies_left > 0; }
@@ -400,7 +371,7 @@ public:
 private:
     void checkCycle(const LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
     String checkCycle(const LoadJobPtr & job, LoadJobSet & left, LoadJobSet & visited, std::unique_lock<std::mutex> & lock);
-    void finish(const LoadJobPtr & job, LoadStatus status, std::exception_ptr reason, std::unique_lock<std::mutex> & lock);
+    void finish(const LoadJobPtr & job, LoadStatus status, std::exception_ptr exception_from_job, std::unique_lock<std::mutex> & lock);
     void gatherNotScheduled(const LoadJobPtr & job, LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
     void prioritize(const LoadJobPtr & job, size_t new_pool_id, std::unique_lock<std::mutex> & lock);
     void enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<std::mutex> & lock);

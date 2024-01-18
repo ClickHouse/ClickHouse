@@ -228,7 +228,7 @@ struct SplitPartsRangesResult
     RangesInDataParts intersecting_parts_ranges;
 };
 
-SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts)
+SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool force_process_all_ranges)
 {
     /** Split ranges in data parts into intersecting ranges in data parts and non intersecting ranges in data parts.
       *
@@ -349,7 +349,7 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts)
             if (previous_part_range.event == PartsRangesIterator::EventType::RangeStart)
             {
                 /// If part level is 0, we must process whole previous part because it can contain duplicate primary keys
-                if (ranges_in_data_parts[previous_part_range.part_index].data_part->info.level == 0)
+                if (force_process_all_ranges || ranges_in_data_parts[previous_part_range.part_index].data_part->info.level == 0)
                     continue;
 
                 /// Case 1 Range Start after Range Start
@@ -384,7 +384,7 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts)
             MarkRange other_interval_range = other_interval_it->second;
 
             /// If part level is 0, we must process whole other intersecting part because it can contain duplicate primary keys
-            if (ranges_in_data_parts[other_interval_part_index].data_part->info.level == 0)
+            if (force_process_all_ranges || ranges_in_data_parts[other_interval_part_index].data_part->info.level == 0)
                 continue;
 
             /// Case 2 Range Start after Range End
@@ -419,7 +419,7 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts)
           *
           * If part level is 0, we must process whole part because it can contain duplicate primary keys.
           */
-        if (intersecting_parts != 1 || ranges_in_data_parts[current_part_range.part_index].data_part->info.level == 0)
+        if (intersecting_parts != 1 || force_process_all_ranges || ranges_in_data_parts[current_part_range.part_index].data_part->info.level == 0)
         {
             add_intersecting_range(current_part_range.part_index, part_index_start_to_range[current_part_range.part_index]);
             part_index_start_to_range.erase(current_part_range.part_index);
@@ -719,16 +719,10 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     SplitPartsWithRangesByPrimaryKeyResult result;
 
-    RangesInDataParts intersecting_parts_ranges = std::move(parts);
+    SplitPartsRangesResult split_result = splitPartsRanges(std::move(parts), force_process_all_ranges);
+    result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
 
-    if (!force_process_all_ranges)
-    {
-        SplitPartsRangesResult split_result = splitPartsRanges(intersecting_parts_ranges);
-        result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
-        intersecting_parts_ranges = std::move(split_result.intersecting_parts_ranges);
-    }
-
-    auto && [layers, borders] = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers);
+    auto && [layers, borders] = splitIntersectingPartsRangesIntoLayers(std::move(split_result.intersecting_parts_ranges), max_layers);
     auto filters = buildFilters(primary_key, borders);
     result.merging_pipes.resize(layers.size());
 

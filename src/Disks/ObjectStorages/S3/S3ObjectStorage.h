@@ -9,7 +9,6 @@
 #include <memory>
 #include <Storages/StorageS3Settings.h>
 #include <Common/MultiVersion.h>
-#include <Common/ObjectStorageKeyGenerator.h>
 
 
 namespace DB
@@ -40,6 +39,7 @@ struct S3ObjectStorageSettings
     bool read_only;
 };
 
+
 class S3ObjectStorage : public IObjectStorage
 {
 private:
@@ -53,10 +53,10 @@ private:
         const S3Capabilities & s3_capabilities_,
         String bucket_,
         String connection_string,
-        ObjectStorageKeysGeneratorPtr key_generator_,
+        String object_key_prefix_,
         const String & disk_name_)
         : bucket(std::move(bucket_))
-        , key_generator(std::move(key_generator_))
+        , object_key_prefix(std::move(object_key_prefix_))
         , disk_name(disk_name_)
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
@@ -179,7 +179,7 @@ private:
 
 private:
     std::string bucket;
-    ObjectStorageKeysGeneratorPtr key_generator;
+    String object_key_prefix;
     std::string disk_name;
 
     MultiVersion<S3::Client> client;
@@ -199,6 +199,11 @@ private:
 class S3PlainObjectStorage : public S3ObjectStorage
 {
 public:
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
+    {
+        return ObjectStorageKey::createAsRelative(object_key_prefix, path);
+    }
+
     std::string getName() const override { return "S3PlainObjectStorage"; }
 
     template <class ...Args>

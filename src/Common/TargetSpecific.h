@@ -83,9 +83,6 @@ enum class TargetArch : UInt32
     AVX512BW    = (1 << 4),
     AVX512VBMI  = (1 << 5),
     AVX512VBMI2 = (1 << 6),
-    AMXBF16 = (1 << 7),
-    AMXTILE = (1 << 8),
-    AMXINT8 = (1 << 9),
 };
 
 /// Runtime detection.
@@ -368,7 +365,7 @@ DECLARE_AVX512VBMI2_SPECIFIC_CODE(
     FUNCTION_HEADER \
     \
     name \
-    FUNCTION_BODY \
+    FUNCTION_BODY                                                             \
 
 /// NOLINTNEXTLINE
 #define MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(FUNCTION_HEADER, name, FUNCTION_BODY) \

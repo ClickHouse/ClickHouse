@@ -1,17 +1,16 @@
 #include <Columns/ColumnTuple.h>
 
-#include <Columns/ColumnCompressed.h>
+#include <base/sort.h>
 #include <Columns/IColumnImpl.h>
+#include <Columns/ColumnCompressed.h>
 #include <Core/Field.h>
-#include <DataTypes/Serializations/SerializationInfoTuple.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <base/sort.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <Common/iota.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
 
 
 namespace DB
@@ -379,7 +378,8 @@ void ColumnTuple::getPermutationImpl(IColumn::PermutationSortDirection direction
 {
     size_t rows = size();
     res.resize(rows);
-    iota(res.data(), rows, IColumn::Permutation::value_type(0));
+    for (size_t i = 0; i < rows; ++i)
+        res[i] = i;
 
     if (limit >= rows)
         limit = 0;

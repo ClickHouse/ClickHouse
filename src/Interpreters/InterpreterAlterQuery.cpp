@@ -1,5 +1,4 @@
 #include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/InterpreterFactory.h>
 
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/DatabaseFactory.h>
@@ -534,15 +533,6 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
             }
         }
     }
-}
-
-void registerInterpreterAlterQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterAlterQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterAlterQuery", create_fn);
 }
 
 }

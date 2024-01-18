@@ -158,13 +158,6 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster,
         new_settings.timeout_overflow_mode = settings.timeout_overflow_mode_leaf;
     }
 
-    /// in case of parallel replicas custom key use round robing load balancing
-    /// so custom key partitions will be spread over nodes in round-robin fashion
-    if (context->canUseParallelReplicasCustomKey(cluster) && !settings.load_balancing.changed)
-    {
-        new_settings.load_balancing = LoadBalancing::ROUND_ROBIN;
-    }
-
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
     return new_context;
@@ -254,6 +247,21 @@ void executeQuery(
             visitor.visit(query_ast_for_shard);
         }
 
+        if (shard_filter_generator)
+        {
+            auto shard_filter = shard_filter_generator(shard_info.shard_num);
+            if (shard_filter)
+            {
+                auto & select_query = query_ast_for_shard->as<ASTSelectQuery &>();
+
+                auto where_expression = select_query.where();
+                if (where_expression)
+                    shard_filter = makeASTFunction("and", where_expression, shard_filter);
+
+                select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
+            }
+        }
+
         // decide for each shard if parallel reading from replicas should be enabled
         // according to settings and number of replicas declared per shard
         const auto & addresses = cluster->getShardsAddresses().at(i);
@@ -268,8 +276,7 @@ void executeQuery(
             plans,
             remote_shards,
             static_cast<UInt32>(shards),
-            parallel_replicas_enabled,
-            shard_filter_generator);
+            parallel_replicas_enabled);
     }
 
     if (!remote_shards.empty())
@@ -405,8 +412,7 @@ void executeQueryWithParallelReplicas(
         new_cluster = not_optimized_cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
     }
 
-    auto coordinator
-        = std::make_shared<ParallelReplicasReadingCoordinator>(new_cluster->getShardCount(), settings.parallel_replicas_mark_segment_size);
+    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>(new_cluster->getShardCount());
     auto external_tables = new_context->getExternalTables();
     auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
         query_ast,

@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <optional>
+#include <regex>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -25,7 +26,6 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
-#include <Common/re2.h>
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>
@@ -70,17 +70,13 @@ MySQLHandler::MySQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, uint32_t connection_id_,
-    const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_)
+    bool ssl_enabled, uint32_t connection_id_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(&Poco::Logger::get("MySQLHandler"))
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
-    , read_event(read_event_)
-    , write_event(write_event_)
 {
     server_capabilities = CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF;
     if (ssl_enabled)
@@ -102,8 +98,8 @@ void MySQLHandler::run()
 
     session->setClientConnectionId(connection_id);
 
-    in = std::make_shared<ReadBufferFromPocoSocket>(socket(), read_event);
-    out = std::make_shared<WriteBufferFromPocoSocket>(socket(), write_event);
+    in = std::make_shared<ReadBufferFromPocoSocket>(socket());
+    out = std::make_shared<WriteBufferFromPocoSocket>(socket());
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
     try
@@ -493,10 +489,8 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     bool ssl_enabled,
     uint32_t connection_id_,
     RSA & public_key_,
-    RSA & private_key_,
-    const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_, read_event_, write_event_)
+    RSA & private_key_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_)
     , public_key(public_key_)
     , private_key(private_key_)
 {}
@@ -530,18 +524,16 @@ void MySQLHandlerSSL::finishHandshakeSSL(
 
 static bool isFederatedServerSetupSetCommand(const String & query)
 {
-    re2::RE2::Options regexp_options;
-    regexp_options.set_case_sensitive(false);
-    static const re2::RE2 expr(
+    static const std::regex expr{
         "(^(SET NAMES(.*)))"
         "|(^(SET character_set_results(.*)))"
         "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
         "|(^(SET AUTOCOMMIT(.*)))"
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
-        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
-    assert(expr.ok());
-    return re2::RE2::FullMatch(query, expr);
+        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
+        , std::regex::icase};
+    return 1 == std::regex_match(query, expr);
 }
 
 /// Replace "[query(such as SHOW VARIABLES...)]" into "".
@@ -600,8 +592,8 @@ static String killConnectionIdReplacementQuery(const String & query)
     if (query.size() > prefix.size())
     {
         String suffix = query.data() + prefix.length();
-        static const re2::RE2 expr("^[0-9]");
-        if (re2::RE2::FullMatch(suffix, expr))
+        static const std::regex expr{"^[0-9]"};
+        if (std::regex_match(suffix, expr))
         {
             String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", suffix);
             return replacement;

@@ -45,26 +45,25 @@ static std::vector<std::pair<String, Int8>> getStatusEnumsAndValues()
     };
 }
 
-ColumnsDescription StorageSystemDDLWorkerQueue::getColumnsDescription()
+NamesAndTypesList StorageSystemDDLWorkerQueue::getNamesAndTypes()
 {
-    return ColumnsDescription
-    {
-        {"entry",               std::make_shared<DataTypeString>(), "Query id."},
-        {"entry_version",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Version of the entry."},
-        {"initiator_host",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Host that initiated the DDL operation."},
-        {"initiator_port",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>()), "Port used by the initiator."},
-        {"cluster",             std::make_shared<DataTypeString>(), "Cluster name."},
-        {"query",               std::make_shared<DataTypeString>(), "Query executed."},
-        {"settings",            std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Settings used in the DDL operation."},
-        {"query_create_time",   std::make_shared<DataTypeDateTime>(), "Query created time."},
+    return {
+        {"entry",               std::make_shared<DataTypeString>()},
+        {"entry_version",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
+        {"initiator_host",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"initiator_port",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>())},
+        {"cluster",             std::make_shared<DataTypeString>()},
+        {"query",               std::make_shared<DataTypeString>()},
+        {"settings",            std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
+        {"query_create_time",   std::make_shared<DataTypeDateTime>()},
 
-        {"host",                std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Hostname."},
-        {"port",                std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>()), "Host Port."},
-        {"status",              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getStatusEnumsAndValues())), "Status of the query."},
-        {"exception_code",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>()), "Exception code."},
-        {"exception_text",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Exception message."},
-        {"query_finish_time",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Query finish time."},
-        {"query_duration_ms",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Duration of query execution (in milliseconds)."},
+        {"host",                std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"port",                std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>())},
+        {"status",              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getStatusEnumsAndValues()))},
+        {"exception_code",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>())},
+        {"exception_text",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"query_finish_time",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())},
+        {"query_duration_ms",   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
     };
 }
 

@@ -439,7 +439,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true, true);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true, true);
 
         column.ttl = ttl;
 
@@ -504,7 +504,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true, true, true);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true, true);
 
                 if (comment)
                     column.comment = *comment;
@@ -1249,7 +1249,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                                             "this column name is reserved for _block_number persisting feature", backQuote(column_name));
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec);
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
@@ -1274,7 +1274,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (all_columns.hasAlias(column_name))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec, context->getSettingsRef().enable_zstd_qat_codec);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs, context->getSettingsRef().enable_deflate_qpl_codec);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)

@@ -12,11 +12,9 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemFilesystemCache::getColumnsDescription()
+NamesAndTypesList StorageSystemFilesystemCache::getNamesAndTypes()
 {
-    /// TODO: Fill in all the comments.
-    return ColumnsDescription
-    {
+    return {
         {"cache_name", std::make_shared<DataTypeString>()},
         {"cache_base_path", std::make_shared<DataTypeString>()},
         {"cache_path", std::make_shared<DataTypeString>()},

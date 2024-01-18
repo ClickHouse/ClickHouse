@@ -8,7 +8,6 @@
 
 #include <chrono>
 #include <memory>
-#include <mutex>
 #include <optional>
 
 namespace Poco::Net { class SocketAddress; }

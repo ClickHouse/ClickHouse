@@ -1,4 +1,3 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
@@ -1070,7 +1069,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
         auto sync_timeout = getContext()->getSettingsRef().receive_timeout.totalMilliseconds();
-        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode, query.src_replicas))
+        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
@@ -1417,15 +1416,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::END: break;
     }
     return required_access;
-}
-
-void registerInterpreterSystemQuery(InterpreterFactory & factory)
-{
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterSystemQuery>(args.query, args.context);
-    };
-    factory.registerInterpreter("InterpreterSystemQuery", create_fn);
 }
 
 }

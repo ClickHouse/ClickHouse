@@ -65,7 +65,7 @@ void executeQuery(
     const std::string & sharding_key_column_name,
     const ClusterPtr & not_optimized_cluster,
     const DistributedSettings & distributed_settings,
-    AdditionalShardFilterGenerator shard_filter_generator);
+    AdditionalShardFilterGenerator shard_filter_generator = {});
 
 
 void executeQueryWithParallelReplicas(

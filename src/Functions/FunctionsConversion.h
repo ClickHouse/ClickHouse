@@ -47,6 +47,7 @@
 #include <Common/Exception.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/toFixedString.h>

@@ -81,9 +81,6 @@ namespace SettingsChangesHistory
 /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
 static std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> settings_changes_history =
 {
-    {"24.1", {{"print_pretty_type_names", false, true, "Better user experience."},
-              {"input_format_json_read_bools_as_strings", false, true, "Allow to read bools as strings in JSON formats by default"},
-              {"output_format_arrow_use_signed_indexes_for_dictionary", false, true, "Use signed indexes type for Arrow dictionaries by default as it's recommended"}}},
     {"23.12", {{"allow_suspicious_ttl_expressions", true, false, "It is a new setting, and in previous versions the behavior was equivalent to allowing."},
               {"input_format_parquet_allow_missing_columns", false, true, "Allow missing columns in Parquet files by default"},
               {"input_format_orc_allow_missing_columns", false, true, "Allow missing columns in ORC files by default"},

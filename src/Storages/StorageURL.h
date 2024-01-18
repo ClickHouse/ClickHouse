@@ -34,8 +34,7 @@ class PullingPipelineExecutor;
 class IStorageURLBase : public IStorage
 {
 public:
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -68,8 +67,6 @@ public:
         const ContextPtr & context);
 
 protected:
-    friend class ReadFromURL;
-
     IStorageURLBase(
         const String & uri_,
         ContextPtr context_,
@@ -139,7 +136,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ASTPtr & query, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
 
         String next();
         size_t size();
@@ -165,12 +162,18 @@ public:
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
         size_t max_parsing_threads,
+        const SelectQueryInfo & query_info,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
         bool need_only_count_ = false);
 
     String getName() const override { return name; }
+
+    void setKeyCondition(const SelectQueryInfo & query_info_, ContextPtr context_) override
+    {
+        setKeyConditionImpl(query_info_, context_, block_for_format);
+    }
 
     void setKeyCondition(const ActionsDAG::NodeRawConstPtrs & nodes, ContextPtr context_) override
     {
@@ -314,8 +317,7 @@ public:
         ContextPtr context_,
         const String & compression_method_);
 
-    void read(
-        QueryPlan & query_plan,
+    Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,

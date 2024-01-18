@@ -198,7 +198,6 @@ DELETEs
 DESC
 DIEs
 DOGEFI
-Damerau
 DataGrip
 DataLens
 DataTime
@@ -345,7 +344,6 @@ Hypot
 IANA
 IDE
 IDEs
-IDNA
 IMDS
 INFILE
 INSERTed
@@ -415,7 +413,6 @@ JSONType
 JSONs
 Jaeger
 Jannis
-Jaro
 JavaHash
 Jemalloc
 Jepsen
@@ -704,6 +701,8 @@ PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
+TotalPrimaryKeyBytesInMemory
+TotalPrimaryKeyBytesInMemoryAllocated
 PrivateKeyPassphraseHandler
 ProfileEvents
 Profiler
@@ -715,10 +714,8 @@ Promtail
 Protobuf
 ProtobufSingle
 ProxySQL
-Punycode
 PyArrow
 PyCharm
-QATlib
 QEMU
 QTCreator
 Quantile
@@ -728,7 +725,6 @@ QueryCacheHits
 QueryCacheMisses
 QueryPreempted
 QueryThread
-QuickAssist
 QuoteMeta
 RBAC
 RClickHouse
@@ -916,7 +912,6 @@ ThreadsInOvercommitTracker
 Timeunit
 TinyLog
 Tkachenko
-ToASCII
 ToCenterChild
 ToChildren
 ToGeo
@@ -925,13 +920,10 @@ ToIPv
 ToParent
 ToSnowflake
 ToString
-ToUnicode
 Toolset
 TopK
 TotalBytesOfMergeTreeTables
 TotalPartsOfMergeTreeTables
-TotalPrimaryKeyBytesInMemory
-TotalPrimaryKeyBytesInMemoryAllocated
 TotalRowsOfMergeTreeTables
 TotalTemporaryFiles
 Tradeoff
@@ -984,7 +976,6 @@ Werror
 Wether
 WikiStat
 WindowView
-Winkler
 WithNames
 WithNamesAndTypes
 WordNet
@@ -1001,7 +992,6 @@ YYYYMMDDToDate
 YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
-ZSTDQAT
 Zabbix
 Zipkin
 ZooKeeper
@@ -1348,7 +1338,6 @@ cutToFirstSignificantSubdomainWithWWW
 cutURLParameter
 cutWWW
 cyrus
-damerauLevenshteinDistance
 datacenter
 datacenters
 datafiles
@@ -1462,7 +1451,6 @@ endian
 endianness
 endsWith
 endsWithUTF
-endswith
 enqueued
 enum
 enum's
@@ -1635,8 +1623,6 @@ hasToken
 hasTokenCaseInsensitive
 hasTokenCaseInsensitiveOrNull
 hasTokenOrNull
-hasall
-hasany
 hashtables
 haversine
 hdbc
@@ -1665,8 +1651,6 @@ hyvor
 icosahedron
 icudata
 idempotency
-idnaDecode
-idnaEncode
 ifNotFinite
 ifNull
 iframe
@@ -1711,8 +1695,6 @@ isZeroOrNull
 iteratively
 jaccard
 jaccardIndex
-jaroSimilarity
-jaroWinklerSimilarity
 javaHash
 javaHashUTF
 jbod
@@ -1808,7 +1790,6 @@ llvm
 loadDefaultCAFile
 localhost
 localread
-loess
 logTrace
 logagent
 loghouse
@@ -1867,14 +1848,14 @@ metrica
 metroHash
 mfedotov
 minMap
-minSampleSizeContinuous
-minSampleSizeConversion
 mindsdb
 minimalistic
 mininum
 miniselect
 minmap
 minmax
+minSampleSizeContinuous
+minSampleSizeConversion
 mins
 misconfiguration
 mispredictions
@@ -1904,7 +1885,6 @@ multidirectory
 multiline
 multiplyDecimal
 multipolygon
-multisearchany
 multisets
 multithread
 multiword
@@ -1957,9 +1937,7 @@ notEquals
 notILike
 notIn
 notLike
-notempty
 notequals
-notlike
 notretry
 nowInBlock
 ntile
@@ -2097,8 +2075,6 @@ pseudorandom
 pseudorandomize
 psql
 ptrs
-punycodeDecode
-punycodeEncode
 pushdown
 pwrite
 py
@@ -2222,6 +2198,8 @@ retentions
 rethrow
 retransmit
 retriable
+retuned
+reverseDNSQuery
 reverseUTF
 rightPad
 rightPadUTF
@@ -2262,7 +2240,6 @@ seektable
 sequenceCount
 sequenceMatch
 sequenceNextNode
-seriesDecomposeSTL
 seriesPeriodDetectFFT
 serverTimeZone
 serverTimezone
@@ -2308,8 +2285,6 @@ splitByString
 splitByWhitespace
 splitby
 sqid
-sqidDecode
-sqidEncode
 sql
 sqlalchemy
 sqlinsert
@@ -2320,7 +2295,6 @@ stacktrace
 stacktraces
 startsWith
 startsWithUTF
-startswith
 statbox
 stateful
 stddev
@@ -2549,8 +2523,6 @@ trimRight
 trunc
 tryBase
 tryDecrypt
-tryIdnaEncode
-tryPunycodeDecode
 tskv
 tsv
 tui
@@ -2695,4 +2667,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-srcReplicas
