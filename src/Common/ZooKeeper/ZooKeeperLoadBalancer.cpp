@@ -353,6 +353,7 @@ public:
         return asTemporaryEndpoint(id);
     }
 
+    // TODO: use optional to make more readable.
     size_t getMostPriority(Status status) const
     {
         auto it = priority_by_status.lower_bound(boost::make_tuple(status));
@@ -462,31 +463,36 @@ class RoundRobin: public IBalancerWithPriorities
 private:
     EndpointInfo getHostToConnect() override
     {
-        auto round_robin_status = getStatus(round_robin_id);
+        size_t next_id = round_robin_id;
+        size_t total_count = getEndpointsCount();
+        round_robin_id = (round_robin_id + 1) % total_count;
 
+        auto round_robin_status = getStatus(next_id);
         if (round_robin_status == ONLINE)
-            return asOptimalEndpoint(round_robin_id++);
+            return asOptimalEndpoint(next_id);
 
         auto id = getMostPriority(ONLINE);
 
-        if (id != getEndpointsCount())
+        if (id != total_count)
         {
-            round_robin_id = id;
-            return getHostWithSetting(round_robin_id++);
+            round_robin_id = (id + 1) % total_count;
+            return getHostWithSetting(id);
         }
 
         if (round_robin_status == UNDEF)
-            return asOptimalEndpoint(round_robin_id++);
+            return asOptimalEndpoint(next_id);
 
         id = getMostPriority(UNDEF);
 
-        if (id != getEndpointsCount())
+        if (id != total_count)
         {
             round_robin_id = id;
-            return getHostWithSetting(round_robin_id++);
+            return getHostWithSetting(next_id);
         }
 
         chassert(getAvailableEndpointsCount() == 0);
+
+        // TODO: consider not reset here. instead before the createClient. because it's already reset anyway.
         resetOfflineStatuses();
         throw DB::Exception(
             DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
