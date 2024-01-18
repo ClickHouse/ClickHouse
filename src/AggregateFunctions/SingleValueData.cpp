@@ -747,11 +747,9 @@ SingleValueDataNumeric<T>::SingleValueDataNumeric()
     new (&memory) SingleValueDataFixed<T>;
 }
 
+/// No need to deallocate or do anything, since SingleValueDataFixed<T> uses only static storage
 template <typename T>
-SingleValueDataNumeric<T>::~SingleValueDataNumeric()
-{
-    /// No need to deallocate or do anything, since SingleValueDataFixed<T> uses only static storage
-}
+SingleValueDataNumeric<T>::~SingleValueDataNumeric() = default;
 
 template <typename T>
 bool SingleValueDataNumeric<T>::has() const
