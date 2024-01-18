@@ -235,7 +235,9 @@ def test_drop_detached_part_with_try_n_suffix(cluster):
         SETTINGS storage_policy='s3'
         """
     )
-    node1.query("INSERT INTO drop_detached_part_with_tryn_suffix VALUES (1),(42)")  # will create all_0_0_0
+    node1.query(
+        "INSERT INTO drop_detached_part_with_tryn_suffix VALUES (1),(42)"
+    )  # will create all_0_0_0
 
     assert (
         node1.query(
@@ -248,8 +250,10 @@ def test_drop_detached_part_with_try_n_suffix(cluster):
         "ALTER TABLE drop_detached_part_with_tryn_suffix DETACH PART 'all_0_0_0'"
     )
 
-    detached_part_path = node1.query("SELECT path FROM system.detached_parts WHERE table='drop_detached_part_with_tryn_suffix'")
-    assert detached_part_path.count('\n') == 1
+    detached_part_path = node1.query(
+        "SELECT path FROM system.detached_parts WHERE table='drop_detached_part_with_tryn_suffix'"
+    )
+    assert detached_part_path.count("\n") == 1
     detached_part_path = detached_part_path.strip()
     detached_path = os.path.dirname(detached_part_path)
 
@@ -279,7 +283,9 @@ def test_drop_detached_part_with_try_n_suffix(cluster):
         == "all_0_0_0\nall_0_0_0_try1\ncovered-by-broken_all_0_0_0_try1\n"
     )
 
-    node1.query("ALTER TABLE drop_detached_part_with_tryn_suffix DROP DETACHED PART 'covered-by-broken_all_0_0_0_try1' SETTINGS allow_drop_detached = 1")
+    node1.query(
+        "ALTER TABLE drop_detached_part_with_tryn_suffix DROP DETACHED PART 'covered-by-broken_all_0_0_0_try1' SETTINGS allow_drop_detached = 1"
+    )
     assert (
         node1.query(
             "SELECT name FROM system.detached_parts WHERE table='drop_detached_part_with_tryn_suffix' ORDER BY name"
@@ -287,7 +293,9 @@ def test_drop_detached_part_with_try_n_suffix(cluster):
         == "all_0_0_0\nall_0_0_0_try1\n"
     )
 
-    node1.query("ALTER TABLE drop_detached_part_with_tryn_suffix DROP DETACHED PART 'all_0_0_0_try1' SETTINGS allow_drop_detached = 1")
+    node1.query(
+        "ALTER TABLE drop_detached_part_with_tryn_suffix DROP DETACHED PART 'all_0_0_0_try1' SETTINGS allow_drop_detached = 1"
+    )
     assert (
         node1.query(
             "SELECT name FROM system.detached_parts WHERE table='drop_detached_part_with_tryn_suffix' ORDER BY name"
@@ -295,6 +303,11 @@ def test_drop_detached_part_with_try_n_suffix(cluster):
         == "all_0_0_0\n"
     )
 
-    node1.query("ALTER TABLE drop_detached_part_with_tryn_suffix ATTACH PART 'all_0_0_0'")
-    assert node1.query("SELECT n FROM drop_detached_part_with_tryn_suffix ORDER BY n") == "1\n42\n"
+    node1.query(
+        "ALTER TABLE drop_detached_part_with_tryn_suffix ATTACH PART 'all_0_0_0'"
+    )
+    assert (
+        node1.query("SELECT n FROM drop_detached_part_with_tryn_suffix ORDER BY n")
+        == "1\n42\n"
+    )
     node1.query("DROP TABLE drop_detached_part_with_tryn_suffix")
