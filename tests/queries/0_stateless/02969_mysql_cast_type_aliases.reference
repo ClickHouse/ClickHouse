@@ -1,54 +1,54 @@
 -- Uppercase tests
-type	result
-Binary(N)	foo
-type	result
-Char	44
-type	result
-Date	2021-02-03
-type	result
-DateTime	2021-02-03 12:01:02
-type	result
-Decimal	45
-type	result
-Decimal(M)	46
-type	result
-Decimal(M, D)	47.21
-type	result
-Double	48.11
-type	result
-JSON	{"foo":"bar"}
-type	result
-Real	49.22
-type	result
-Signed	50
-type	result
-Unsigned	52
-type	result
-Year	2007
+mysql_type	result	native_type
+Binary(N)	foo	FixedString(3)
+mysql_type	result	native_type
+Char	44	String
+mysql_type	result	native_type
+Date	2021-02-03	Date
+mysql_type	result	native_type
+DateTime	2021-02-03 12:01:02	DateTime
+mysql_type	result	native_type
+Decimal	45	Decimal(10, 0)
+mysql_type	result	native_type
+Decimal(M)	46	Decimal(4, 0)
+mysql_type	result	native_type
+Decimal(M, D)	47.21	Decimal(4, 2)
+mysql_type	result	native_type
+Double	48.11	Float64
+mysql_type	result	native_type
+JSON	{"foo":"bar"}	Object('json')
+mysql_type	result	native_type
+Real	49.22	Float32
+mysql_type	result	native_type
+Signed	50	Int64
+mysql_type	result	native_type
+Unsigned	52	UInt64
+mysql_type	result	native_type
+Year	2007	UInt16
 -- Lowercase tests
-type	result
-Binary(N)	foo
-type	result
-Char	44
-type	result
-Date	2021-02-03
-type	result
-DateTime	2021-02-03 12:01:02
-type	result
-Decimal	45
-type	result
-Decimal(M)	46
-type	result
-Decimal(M, D)	47.21
-type	result
-Double	48.11
-type	result
-JSON	{"foo":"bar"}
-type	result
-Real	49.22
-type	result
-Signed	50
-type	result
-Unsigned	52
-type	result
-Year	2007
+mysql_type	result	native_type
+Binary(N)	foo	FixedString(3)
+mysql_type	result	native_type
+Char	44	String
+mysql_type	result	native_type
+Date	2021-02-03	Date
+mysql_type	result	native_type
+DateTime	2021-02-03 12:01:02	DateTime
+mysql_type	result	native_type
+Decimal	45	Decimal(10, 0)
+mysql_type	result	native_type
+Decimal(M)	46	Decimal(4, 0)
+mysql_type	result	native_type
+Decimal(M, D)	47.21	Decimal(4, 2)
+mysql_type	result	native_type
+Double	48.11	Float64
+mysql_type	result	native_type
+JSON	{"foo":"bar"}	Object('json')
+mysql_type	result	native_type
+Real	49.22	Float32
+mysql_type	result	native_type
+Signed	50	Int64
+mysql_type	result	native_type
+Unsigned	52	UInt64
+mysql_type	result	native_type
+Year	2007	UInt16
