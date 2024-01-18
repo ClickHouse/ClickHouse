@@ -16,7 +16,7 @@ protected:
 public:
     std::string getName() const override { return "SystemDatabaseEngines"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 };
 
 }

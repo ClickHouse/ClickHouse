@@ -151,7 +151,7 @@ public:
 
     bool isLastRetry() const { return total_failures >= retries_info.max_retries; }
 
-    bool isRetry() const { return current_iteration > 1; }
+    bool isRetry() const { return current_iteration > 0; }
 
     const std::string & getLastKeeperErrorMessage() const { return keeper_error.message; }
 

@@ -8,6 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -265,6 +266,42 @@ namespace
                 assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
                 read_bytes_size += column.sizeOfValueIfFixed();
                 break;
+            case ValueType::vtPoint:
+            {
+                /// The value is 25 bytes:
+                /// 4 bytes for integer SRID (0)
+                /// 1 byte for integer byte order (1 = little-endian)
+                /// 4 bytes for integer type information (1 = Point)
+                /// 8 bytes for double-precision X coordinate
+                /// 8 bytes for double-precision Y coordinate
+                ReadBufferFromMemory payload(value.data(), value.size());
+                String val;
+                payload.ignore(4);
+
+                UInt8 endian;
+                readBinary(endian, payload);
+
+                Int32 point_type;
+                readBinary(point_type, payload);
+                if (point_type != 1)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only Point data type is supported");
+
+                Float64 x, y;
+                if (endian == 1)
+                {
+                    readBinaryLittleEndian(x, payload);
+                    readBinaryLittleEndian(y, payload);
+                }
+                else
+                {
+                    readBinaryBigEndian(x, payload);
+                    readBinaryBigEndian(y, payload);
+                }
+
+                assert_cast<ColumnTuple &>(column).insert(Tuple({Field(x), Field(y)}));
+                read_bytes_size += value.size();
+                break;
+            }
             default:
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
         }

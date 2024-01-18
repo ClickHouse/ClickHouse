@@ -15,24 +15,24 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemDatabases::getNamesAndTypes()
+ColumnsDescription StorageSystemDatabases::getColumnsDescription()
 {
-    return {
-        {"name", std::make_shared<DataTypeString>()},
-        {"engine", std::make_shared<DataTypeString>()},
-        {"data_path", std::make_shared<DataTypeString>()},
-        {"metadata_path", std::make_shared<DataTypeString>()},
-        {"uuid", std::make_shared<DataTypeUUID>()},
-        {"engine_full", std::make_shared<DataTypeString>()},
-        {"comment", std::make_shared<DataTypeString>()}
+    auto description = ColumnsDescription
+    {
+        {"name", std::make_shared<DataTypeString>(), "Database name."},
+        {"engine", std::make_shared<DataTypeString>(), "Database engine."},
+        {"data_path", std::make_shared<DataTypeString>(), "Data path."},
+        {"metadata_path", std::make_shared<DataTypeString>(), "Metadata path."},
+        {"uuid", std::make_shared<DataTypeUUID>(), "Database UUID."},
+        {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the database engine."},
+        {"comment", std::make_shared<DataTypeString>(), "Database comment."}
     };
-}
 
-NamesAndAliases StorageSystemDatabases::getNamesAndAliases()
-{
-    return {
+    description.setAliases({
         {"database", std::make_shared<DataTypeString>(), "name"}
-    };
+    });
+
+    return description;
 }
 
 static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database)
