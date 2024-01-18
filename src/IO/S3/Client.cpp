@@ -24,7 +24,6 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
-#include <Common/re2.h>
 
 #include <base/sleep.h>
 
@@ -114,7 +113,7 @@ void validateCredentials(const Aws::Auth::AWSCredentials& auth_credentials)
         return;
     }
     /// Follow https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
-    if (!std::all_of(auth_credentials.GetAWSAccessKeyId().begin(), auth_credentials.GetAWSAccessKeyId().end(),isWordCharASCII))
+    if (!std::all_of(auth_credentials.GetAWSAccessKeyId().begin(), auth_credentials.GetAWSAccessKeyId().end(), isWordCharASCII))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Access key id has invalid character");
     }
