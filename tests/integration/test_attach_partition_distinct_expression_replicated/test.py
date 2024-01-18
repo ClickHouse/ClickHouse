@@ -146,7 +146,7 @@ def test_both_replicated_partitioned_to_unpartitioned(start_cluster):
     assert_eq_with_retry(
         replica1,
         f"SELECT * FROM destination",
-        "2010-03-02 02:01:01\n2010-03-03 02:01:01\n"
+        "2010-03-02 02:01:01\n2010-03-03 02:01:01\n",
     )
     assert_eq_with_retry(
         replica1,
