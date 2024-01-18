@@ -1,0 +1,54 @@
+-- Uppercase tests
+type	result
+Binary(N)	foo
+type	result
+Char	44
+type	result
+Date	2021-02-03
+type	result
+DateTime	2021-02-03 12:01:02
+type	result
+Decimal	45
+type	result
+Decimal(M)	46
+type	result
+Decimal(M, D)	47.21
+type	result
+Double	48.11
+type	result
+JSON	{"foo":"bar"}
+type	result
+Real	49.22
+type	result
+Signed	50
+type	result
+Unsigned	52
+type	result
+Year	2007
+-- Lowercase tests
+type	result
+Binary(N)	foo
+type	result
+Char	44
+type	result
+Date	2021-02-03
+type	result
+DateTime	2021-02-03 12:01:02
+type	result
+Decimal	45
+type	result
+Decimal(M)	46
+type	result
+Decimal(M, D)	47.21
+type	result
+Double	48.11
+type	result
+JSON	{"foo":"bar"}
+type	result
+Real	49.22
+type	result
+Signed	50
+type	result
+Unsigned	52
+type	result
+Year	2007
