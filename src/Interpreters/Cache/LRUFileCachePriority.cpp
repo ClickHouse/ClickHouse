@@ -36,49 +36,49 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
     const CacheGuard::Lock & lock,
     bool /* is_startup */)
 {
-    return std::make_shared<LRUIterator>(add(Entry(key_metadata->key, offset, size, key_metadata), lock));
+    return std::make_shared<LRUIterator>(add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock));
 }
 
-LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(Entry && entry, const CacheGuard::Lock & lock)
+LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, const CacheGuard::Lock & lock)
 {
-    if (entry.size == 0)
+    if (entry->size == 0)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Adding zero size entries to LRU queue is not allowed "
-            "(key: {}, offset: {})", entry.key, entry.offset);
+            "(key: {}, offset: {})", entry->key, entry->offset);
     }
 
 #ifndef NDEBUG
     for (const auto & queue_entry : queue)
     {
         /// entry.size == 0 means entry was invalidated.
-        if (queue_entry.size != 0 && queue_entry.key == entry.key && queue_entry.offset == entry.offset)
+        if (queue_entry->size != 0 && queue_entry->key == entry->key && queue_entry->offset == entry->offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to add duplicate queue entry to queue. "
                 "(Key: {}, offset: {}, size: {})",
-                entry.key, entry.offset, entry.size);
+                entry->key, entry->offset, entry->size);
     }
 #endif
 
     const auto & size_limit = getSizeLimit(lock);
-    if (size_limit && current_size + entry.size > size_limit)
+    if (size_limit && current_size + entry->size > size_limit)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Not enough space to add {}:{} with size {}: current size: {}/{}",
-            entry.key, entry.offset, entry.size, current_size, size_limit);
+            entry->key, entry->offset, entry->size, current_size, size_limit);
     }
 
     auto iterator = queue.insert(queue.end(), entry);
 
-    updateSize(entry.size);
+    updateSize(entry->size);
     updateElementsCount(1);
 
     LOG_TEST(
         log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
-        entry.key, entry.offset, entry.size);
+        entry->key, entry->offset, entry->size);
 
     return LRUIterator(this, iterator);
 }
@@ -86,15 +86,16 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(Entry && entry, cons
 LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::remove(LRUQueue::iterator it, const CacheGuard::Lock &)
 {
     /// If size is 0, entry is invalidated, current_elements_num was already updated.
-    if (it->size)
+    const auto & entry = **it;
+    if (entry.size)
     {
-        updateSize(-it->size);
+        updateSize(-entry.size);
         updateElementsCount(-1);
     }
 
     LOG_TEST(
         log, "Removed entry from LRU queue, key: {}, offset: {}, size: {}",
-        it->key, it->offset, it->size);
+        entry.key, entry.offset, entry.size);
 
     return queue.erase(it);
 }
@@ -143,27 +144,28 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &
 {
     for (auto it = queue.begin(); it != queue.end();)
     {
-        auto locked_key = it->key_metadata->tryLock();
-        if (!locked_key || it->size == 0)
+        const auto & entry = **it;
+        auto locked_key = entry.key_metadata->tryLock();
+        if (!locked_key || entry.size == 0)
         {
             it = remove(it, lock);
             continue;
         }
 
-        auto metadata = locked_key->tryGetByOffset(it->offset);
+        auto metadata = locked_key->tryGetByOffset(entry.offset);
         if (!metadata)
         {
             it = remove(it, lock);
             continue;
         }
 
-        if (metadata->size() != it->size)
+        if (metadata->size() != entry.size)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Mismatch of file segment size in file segment metadata "
                 "and priority queue: {} != {} ({})",
-                it->size, metadata->size(), metadata->file_segment->getInfoForLog());
+                entry.size, metadata->size(), metadata->file_segment->getInfoForLog());
         }
 
         auto result = func(*locked_key, metadata);
@@ -249,7 +251,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
 
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(LRUIterator & it, LRUFileCachePriority & other, const CacheGuard::Lock &)
 {
-    const auto & entry = it.getEntry();
+    const auto & entry = *it.getEntry();
     if (entry.size == 0)
     {
         throw Exception(
@@ -261,7 +263,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(LRUIterator & it, L
     for (const auto & queue_entry : queue)
     {
         /// entry.size == 0 means entry was invalidated.
-        if (queue_entry.size != 0 && queue_entry.key == entry.key && queue_entry.offset == entry.offset)
+        if (queue_entry->size != 0 && queue_entry->key == entry.key && queue_entry->offset == entry.offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to add duplicate queue entry to queue. "
@@ -347,34 +349,36 @@ void LRUFileCachePriority::LRUIterator::invalidate()
 {
     assertValid();
 
+    const auto & entry = *iterator;
     LOG_TEST(
         cache_priority->log,
         "Invalidating entry in LRU queue. Key: {}, offset: {}, previous size: {}",
-        iterator->key, iterator->offset, iterator->size);
+        entry->key, entry->offset, entry->size);
 
-    cache_priority->updateSize(-iterator->size);
+    cache_priority->updateSize(-entry->size);
     cache_priority->updateElementsCount(-1);
-    iterator->size = 0;
+    entry->size = 0;
 }
 
 void LRUFileCachePriority::LRUIterator::updateSize(int64_t size)
 {
     assertValid();
 
+    const auto & entry = *iterator;
     LOG_TEST(
         cache_priority->log,
         "Update size with {} in LRU queue for key: {}, offset: {}, previous size: {}",
-        size, iterator->key, iterator->offset, iterator->size);
+        size, entry->key, entry->offset, entry->size);
 
     cache_priority->updateSize(size);
-    iterator->size += size;
+    entry->size += size;
 }
 
 size_t LRUFileCachePriority::LRUIterator::increasePriority(const CacheGuard::Lock &)
 {
     assertValid();
     cache_priority->queue.splice(cache_priority->queue.end(), cache_priority->queue, iterator);
-    return ++iterator->hits;
+    return ++((*iterator)->hits);
 }
 
 void LRUFileCachePriority::LRUIterator::assertValid() const

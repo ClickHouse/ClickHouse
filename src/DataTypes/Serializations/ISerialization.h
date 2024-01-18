@@ -9,7 +9,7 @@
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
 #include <memory>
-#include <variant>
+#include <set>
 
 namespace DB
 {
@@ -142,6 +142,8 @@ public:
             NullMap,
 
             TupleElement,
+            NamedOffsets,
+            NamedNullMap,
 
             DictionaryKeys,
             DictionaryIndexes,
@@ -155,13 +157,13 @@ public:
             Regular,
         };
 
+        /// Types of substreams that can have arbitrary name.
+        static const std::set<Type> named_types;
+
         Type type;
 
-        /// Index of tuple element, starting at 1 or name.
-        String tuple_element_name;
-
-        /// Do we need to escape a dot in filenames for tuple elements.
-        bool escape_tuple_delimiter = true;
+        /// Name of substream for type from 'named_types'.
+        String name_of_substream;
 
         /// Data for current substream.
         SubstreamData data;
@@ -173,7 +175,6 @@ public:
         mutable bool visited = false;
 
         Substream(Type type_) : type(type_) {} /// NOLINT
-
         String toString() const;
     };
 
@@ -393,6 +394,7 @@ protected:
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 using Serializations = std::vector<SerializationPtr>;
 using SerializationByName = std::unordered_map<String, SerializationPtr>;
+using SubstreamType = ISerialization::Substream::Type;
 
 template <typename State, typename StatePtr>
 State * ISerialization::checkAndGetState(const StatePtr & state) const
@@ -414,7 +416,5 @@ State * ISerialization::checkAndGetState(const StatePtr & state) const
 
     return state_concrete;
 }
-
-bool isOffsetsOfNested(const ISerialization::SubstreamPath & path);
 
 }

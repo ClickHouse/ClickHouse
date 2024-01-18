@@ -825,10 +825,18 @@ CI_CONFIG = CiConfig(
             "package_asan",
             job_config=JobConfig(**{**statless_test_common_params, "timeout": 3600}),  # type: ignore
         ),
-        # FIXME: add digest and params
-        "ClickHouse Keeper Jepsen": TestConfig("binary_release"),
-        # FIXME: add digest and params
-        "ClickHouse Server Jepsen": TestConfig("binary_release"),
+        "ClickHouse Keeper Jepsen": TestConfig(
+            "binary_release",
+            job_config=JobConfig(
+                run_by_label="jepsen-test", run_command="jepsen_check.py keeper"
+            ),
+        ),
+        "ClickHouse Server Jepsen": TestConfig(
+            "binary_release",
+            job_config=JobConfig(
+                run_by_label="jepsen-test", run_command="jepsen_check.py server"
+            ),
+        ),
         "Performance Comparison": TestConfig(
             "package_release",
             job_config=JobConfig(num_batches=4, **perf_test_common_params),  # type: ignore
