@@ -99,6 +99,7 @@ class PRInfo:
         # release_pr and merged_pr are used for docker images additional cache
         self.release_pr = 0
         self.merged_pr = 0
+        self.schedule = False
         ref = github_event.get("ref", "refs/heads/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
@@ -243,6 +244,8 @@ class PRInfo:
                         )
                     )
         else:
+            if "schedule" in github_event:
+                self.schedule = True
             print("event.json does not match pull_request or push:")
             print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv(
