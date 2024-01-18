@@ -105,6 +105,15 @@ ColumnPtr DataTypeVariant::createColumnConst(size_t size, const DB::Field & fiel
     }
     else
     {
+        /// We don't have exact mapping Field type -> Data type, so we cannot
+        /// always know in which variant we need to insert the field by it's type.
+        /// Examples:
+        /// Field(42) and Variant(UInt16, String). Type of the Field - UInt64, but we can insert it in UInt16
+        /// Field(42) and Variant(Date, String). Type of the Field - UInt64, but we can insert it in Date
+
+        /// Let's first apply FieldToDataType visitor to find best Data type for this field.
+        /// If we have variant with such type, we will insert this field into it.
+        /// Otherwise we will try to find the first variant that has default Field value with the same type.
         auto field_type = applyVisitor(FieldToDataType(), field);
         auto discr = tryGetVariantDiscriminator(field_type);
         if (!discr)

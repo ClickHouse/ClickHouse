@@ -149,19 +149,21 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
             assert_cast<ColumnLowCardinality &>(*variant_element_state->variant->assumeMutable()).nestedRemoveNullable();
     }
 
+    /// If nothing to deserialize, just insert defaults.
+    if (variant_limit == 0)
+    {
+        mutable_column->insertManyDefaults(limit);
+        return;
+    }
+
     addVariantToPath(settings.path);
     nested_serialization->deserializeBinaryBulkWithMultipleStreams(variant_element_state->variant, variant_limit, settings, variant_element_state->variant_element_state, cache);
     removeVariantFromPath(settings.path);
 
     size_t variant_offset = variant_element_state->variant->size() - variant_limit;
 
-    /// If don't have our discriminator in range, just insert defaults.
-    if (variant_limit == 0)
-    {
-        mutable_column->insertManyDefaults(limit);
-    }
     /// If we have only our discriminator in range, insert the whole range to result column.
-    else if (variant_limit == limit)
+    if (variant_limit == limit)
     {
         mutable_column->insertRangeFrom(*variant_element_state->variant, variant_offset, variant_limit);
     }

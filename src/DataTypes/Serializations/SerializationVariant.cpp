@@ -200,19 +200,12 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
         for (size_t i = 0; i != limit; ++i)
             writeBinaryLittleEndian(non_empty_global_discr, *discriminators_stream);
 
-        /// Second, serialize variants in global order.
+        /// Second, serialize non-empty variant (other variants are empty and we can skip their serialization).
         settings.path.push_back(Substream::VariantElements);
-        for (size_t i = 0; i != variants.size(); ++i)
-        {
-            addVariantElementToPath(settings.path, i);
-            /// For non empty variant use the same offset/limit as for whole Variant column
-            if (i == non_empty_global_discr)
-                variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), offset, limit, settings, variant_state->states[i]);
-            /// For empty variants, use just 0/0, they won't serialize anything.
-            else
-                variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), 0, 0, settings, variant_state->states[i]);
-            settings.path.pop_back();
-        }
+        addVariantElementToPath(settings.path, non_empty_global_discr);
+        /// We can use the same offset/limit as for whole Variant column
+        variants[non_empty_global_discr]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(non_empty_global_discr), offset, limit, settings, variant_state->states[non_empty_global_discr]);
+        settings.path.pop_back();
         settings.path.pop_back();
         return;
     }
@@ -237,26 +230,22 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
         }
     }
 
-    /// If limit for some variant is 0, it means that we don't have its discriminator in the range.
-    /// Set offset to the size of column for such variants, so we won't serialize values from them.
-    for (size_t i = 0; i != variant_offsets_and_limits.size(); ++i)
-    {
-        if (!variant_offsets_and_limits[i].second)
-            variant_offsets_and_limits[i].first = col.getVariantByGlobalDiscriminator(i).size();
-    }
-
     /// Serialize variants in global order.
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i != variants.size(); ++i)
     {
-        addVariantElementToPath(settings.path, i);
-        variants[i]->serializeBinaryBulkWithMultipleStreams(
-            col.getVariantByGlobalDiscriminator(i),
-            variant_offsets_and_limits[i].first,
-            variant_offsets_and_limits[i].second,
-            settings,
-            variant_state->states[i]);
-        settings.path.pop_back();
+        /// Serialize variant only if we have its discriminator in the range.
+        if (variant_offsets_and_limits[i].second)
+        {
+            addVariantElementToPath(settings.path, i);
+            variants[i]->serializeBinaryBulkWithMultipleStreams(
+                col.getVariantByGlobalDiscriminator(i),
+                variant_offsets_and_limits[i].first,
+                variant_offsets_and_limits[i].second,
+                settings,
+                variant_state->states[i]);
+            settings.path.pop_back();
+        }
     }
     settings.path.pop_back();
 }
@@ -564,9 +553,6 @@ std::vector<size_t> SerializationVariant::getVariantsDeserializeTextOrder(const 
     }
 
     std::sort(order.begin(), order.end(), [&](size_t left, size_t right) { return priorities[left] > priorities[right]; });
-    String types_order;
-    for (auto i : order)
-        types_order += " " + variant_types[i]->getName();
     return order;
 }
 

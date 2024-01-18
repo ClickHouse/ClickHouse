@@ -6,6 +6,29 @@
 namespace DB
 {
 
+/// Class for serializing/deserializing column with Variant type.
+/// It supports both text and binary bulk serializations/deserializations.
+///
+/// During text serialization it checks discriminator of the current row and
+/// uses corresponding text serialization of this variant.
+///
+/// During text deserialization it tries all variants deserializations
+/// (using tryDeserializeText* methods of ISerialization) in predefined order
+/// and inserts data in the first variant with succeeded deserialization.
+///
+/// During binary bulk serialization it transforms local discriminators
+/// to global and serializes them into a separate stream VariantDiscriminators.
+/// Each variant is serialized into a separate stream with path VariantElements/VariantElement
+/// (VariantElements stream is needed for correct sub-columns creation). We store and serialize
+/// variants in a sparse form (the size of a variant column equals to the number of its discriminator
+/// in the discriminators column), so during deserialization the limit for each variant is
+/// calculated according to discriminators column.
+/// Offsets column is not serialized and stored only in memory.
+///
+/// During binary bulk deserialization we first deserialize discriminators from corresponding stream
+/// and use them to calculate the limit for each variant. Each variant is deserialized from
+/// corresponding stream using calculated limit. Offsets column is not deserialized and constructed
+/// according to discriminators.
 class SerializationVariant : public ISerialization
 {
 public:
