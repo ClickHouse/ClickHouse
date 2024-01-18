@@ -81,7 +81,7 @@ using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<
 using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
 
 using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDataPtr>;
-using AggregateDataWithKeys = HashMapWithSavedHash<AdaptiveKeysHolder, AggregateDataPtr>;
+using AggregateDataWithAdaptiveKeys = HashMapWithSavedHash<AdaptiveKeysHolder, AggregateDataPtr>;
 
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
@@ -92,7 +92,7 @@ using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDat
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
 
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr>;
-using AggregateDataWithKeysTwoLevel = TwoLevelHashMapWithSavedHash<AdaptiveKeysHolder, AggregateDataPtr>;
+using AggregateDataWithAdaptiveKeysTwoLevel = TwoLevelHashMapWithSavedHash<AdaptiveKeysHolder, AggregateDataPtr>;
 
 using AggregatedDataWithKeys128TwoLevel = TwoLevelHashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256TwoLevel = TwoLevelHashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
@@ -630,11 +630,7 @@ struct AggregationMethodAdaptive
     {
         const auto & serialized_key = key.serialized_keys;
         const auto * pos = serialized_key.data;
-        if (!pos) [[unlikely]]
-        {
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "AggregationMethodAdaptive. key is nullptr");
-            //return;
-        }
+        chassert(pos);
         for (auto & column : key_columns)
             pos = column->deserializeAndInsertFromArena(pos);
     }
@@ -698,7 +694,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>>                   keys128;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>>                   keys256;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>>                serialized;
-    std::unique_ptr<AggregationMethodAdaptive<AggregateDataWithKeys>>                        adaptive;
+    std::unique_ptr<AggregationMethodAdaptive<AggregateDataWithAdaptiveKeys>>                        adaptive;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>> key32_two_level;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>> key64_two_level;
@@ -709,7 +705,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>>           keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>>           keys256_two_level;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>        serialized_two_level;
-    std::unique_ptr<AggregationMethodAdaptive<AggregateDataWithKeysTwoLevel>>                adaptive_two_level;
+    std::unique_ptr<AggregationMethodAdaptive<AggregateDataWithAdaptiveKeysTwoLevel>>                adaptive_two_level;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>>   key64_hash64;
     std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyHash64>>              key_string_hash64;

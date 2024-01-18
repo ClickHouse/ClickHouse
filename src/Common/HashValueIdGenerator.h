@@ -17,7 +17,9 @@
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/PODArray.h>
 #include <Common/PODArray_fwd.h>
+#include "Arena.h"
 #include "Exception.h"
+#include "ThreadStatus.h"
 #include "config.h"
 
 #if defined(__SSE2__)
@@ -36,7 +38,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int LOGICAL_ERROR;
 }
 namespace ColumnsHashing
 {
@@ -60,14 +61,17 @@ inline void concateValueIds(const UInt64 * __restrict local_value_ids, UInt64 * 
 template<typename T>
 inline void extendValuesToUInt64(const UInt8 * __restrict values, UInt64 * __restrict ids, size_t n)
 {
-    for (size_t j = 0; j < n; ++j)
+    if constexpr (sizeof(T) < 8)
     {
-        if constexpr (sizeof(T) < 8)
+        for (size_t j = 0; j < n; ++j)
         {
-            ids[j] = static_cast<UInt64>(*reinterpret_cast<const T *>(&values[j * sizeof(T)])) & ((1UL << 8 * sizeof(T)) - 1);
+            ids[j] = static_cast<UInt64>(*reinterpret_cast<const T *>(values)) & ((1UL << 8 * sizeof(T)) - 1);
+            values += sizeof(T);
         }
-        else
-            ids[j] = static_cast<UInt64>(*reinterpret_cast<const T *>(&values[j * sizeof(T)]));
+    }
+    else
+    {
+        memcpy(ids, values, n * sizeof(T));
     }
 }
 
@@ -104,12 +108,10 @@ inline void concateValueIds(const UInt64 * __restrict local_value_ids, UInt64 * 
     auto tmp_local_value_ids = local_value_ids;
     for (; i + 8 < n; i += 8)
     {
-        // auto multiplier_v = _mm512_set1_epi64(multiplier);
         auto value_ids_v = _mm512_loadu_epi64(tmp_value_ids);
         auto multipy_result = _mm512_slli_epi64(value_ids_v, value_id_bits);
         auto local_value_ids_v = _mm512_loadu_epi64(tmp_local_value_ids);
         auto add_result = _mm512_or_epi64(multipy_result, local_value_ids_v);
-        // auto add_result = _mm512_add_epi64(multipy_result, local_value_ids_v);
         _mm512_storeu_epi64(tmp_value_ids, add_result);
         tmp_value_ids += 8;
         tmp_local_value_ids += 8;
@@ -176,17 +178,14 @@ public:
         : state(state_), value_id_bits(value_id_bits_), max_distinct_values(max_distinct_values_)
     {
     }
-    virtual ~IHashValueIdGenerator()
-    {
-        LOG_ERROR(&Poco::Logger::get("HashValueIdGenerator"), "xxx allocated_value_id: {}", allocated_value_id);
-    }
+    virtual ~IHashValueIdGenerator() = default;
 
     void computeValueId(const IColumn * col, UInt64 * value_ids)
     {
         if (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID)
             return;
 
-        if (enable_range_mode && (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID || m_value_ids.size() > range_max - range_min + 1))
+        if (enable_range_mode && (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID || allocated_value_id > range_max - range_min + 1))
         {
             for (UInt64 i = range_min; i <= range_max; ++i)
             {
@@ -207,7 +206,7 @@ public:
 
         computeValueIdImpl(col, value_ids);
 
-        if (!enable_range_mode && enable_value_id_cache_line && m_value_ids.size() > value_id_cache_line_num * 16)
+        if (!enable_range_mode && enable_value_id_cache_line && allocated_value_id > value_id_cache_line_num * 16)
         {
             enable_value_id_cache_line = false;
         }
@@ -216,17 +215,16 @@ public:
         {
             LOG_ERROR(&Poco::Logger::get("HashValueIdGenerator"), "Too many distinct values: {}, max_distinct_values: {}", allocated_value_id, max_distinct_values);
             state->hash_mode = AdaptiveKeysHolder::State::HASH;
-            m_value_ids.clearAndShrink();
+            release();
         }
     }
 
     void release()
     {
-        if (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID)
-        {
-            m_value_ids.clearAndShrink();
-        }
+        releaseImpl();
     }
+
+    virtual void emplaceValueId(const StringRef & raw_value, UInt64 value_id) = 0;
 
 protected:
     AdaptiveKeysHolder::State *state;
@@ -243,10 +241,6 @@ protected:
     bool is_nullable = false;
 
     const size_t max_sample_rows = 10000;
-
-    /// In general, we use a hash map to assign value ids.
-    using MAP= StringHashMap<UInt64>;
-    MAP m_value_ids;
 
     /// The value id is allocated from 1. 0 is reserved for null.
     UInt64 allocated_value_id = 0;
@@ -265,121 +259,17 @@ protected:
     static constexpr size_t pad_left = integerRoundUp(PADDING_FOR_SIMD, 1);
     Arena pool;
 
-    // The address may be not aligned. Cannot cast the pointer into a integer pointer.
-    ALWAYS_INLINE void emplaceValueId(const StringRef & raw_value, UInt64 value_id)
+    /// need to pad the address.
+    ALWAYS_INLINE StringRef buildMapStringKey(const StringRef & raw_value)
     {
-        MAP::LookupResult m_it;
-        bool inserted = false;
-
         size_t alloc_size = 0;
         if (__builtin_add_overflow(raw_value.size, pad_left + pad_right, &alloc_size))
             throw DB::Exception(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
         /// need to pad the address.
         auto * new_str = pool.alloc(alloc_size) + pad_left;
         memcpy(new_str, raw_value.data, raw_value.size);
+        return StringRef(new_str, raw_value.size);
 
-        m_value_ids.emplace(StringRef(new_str, raw_value.size), m_it, inserted);
-        if (!inserted)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert value id {} for ", value_id);
-        }
-        m_it->getMapped() = value_id;
-    }
-
-    ALWAYS_INLINE void getValueId(const StringRef & raw_value, UInt64 & value_id)
-    {
-        auto it = m_value_ids.find(raw_value);
-        if (it) [[likely]]
-        {
-            value_id = it->getMapped();
-        }
-        else
-        {
-            value_id = allocated_value_id++;
-            emplaceValueId(raw_value, value_id);
-        }
-    }
-
-    template<bool use_avx_512 = false>
-    ALWAYS_INLINE void getValueId(const StringRef &raw_value, UInt64 serialized_value [[maybe_unused]], UInt64 & value_id)
-    {
-
-#if USE_MULTITARGET_CODE
-        if constexpr (use_avx_512)
-        {
-            if (enable_value_id_cache_line)
-            {
-                auto & cache = value_ids_cache_line[serialized_value & value_id_cache_line_num_mask];
-                auto ok = TargetSpecific::AVX512BW::quickLookupValueId(
-                    cache,
-                    raw_value,
-                    serialized_value,
-                    value_id,
-                    allocated_value_id,
-                    [&](const StringRef & raw_value_, UInt64 value_id_) { emplaceValueId(raw_value_, value_id_); });
-                if (ok)
-                    return;
-            }
-        }
-#endif
-
-        getValueId(raw_value, value_id);
-    }
-
-    ALWAYS_INLINE void computeValueIdsInNormalMode(UInt64 * __restrict value_ids, size_t n, const UInt8 * __restrict data_pos, size_t element_bytes, const UInt8 * __restrict null_map)
-    {
-        for (size_t i = 0; i < n; ++i)
-        {
-            getValueId(StringRef(data_pos, element_bytes), value_ids[i]);
-            data_pos += element_bytes;
-        }
-
-        applyNullMap(value_ids, null_map, n);
-    }
-
-    template<typename T, bool data_pos_aligned>
-    ALWAYS_INLINE void computeValueIdsInRangeMode(UInt64 * __restrict value_ids, size_t n, const UInt8 * __restrict data_pos, size_t element_bytes, const UInt8 * __restrict null_map)
-    {
-        UInt64 range_delta = range_min - is_nullable;
-        if (element_bytes <= 8 && data_pos_aligned)
-            TargetSpecific::Default::extendValuesToUInt64<T>(data_pos, value_ids, n);
-        else
-            TargetSpecific::Default::shortValuesToUInt64(data_pos, element_bytes, value_ids, n);
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
-            TargetSpecific::AVX512BW::getValueIdsByRange(value_ids, range_delta, n);
-        else
-#endif
-        {
-            TargetSpecific::Default::getValueIdsByRange(value_ids, range_delta, n);
-        }
-
-        UInt64 range_length = range_max - range_min + is_nullable;
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
-        {
-            for (size_t i = 0; i < n; ++i)
-            {
-                if (is_nullable > value_ids[i] || value_ids[i] > range_length)
-                {
-                    getValueId<true>(StringRef(data_pos, element_bytes), value_ids[i] + range_delta, value_ids[i]);
-                }
-                data_pos += element_bytes;
-            }
-        }
-        else
-#endif
-        {
-            for (size_t i = 0; i < n; ++i)
-            {
-                if (is_nullable > value_ids[i] || value_ids[i] > range_length)
-                {
-                    getValueId<false>(StringRef(data_pos, element_bytes), value_ids[i] + range_delta, value_ids[i]);
-                }
-                data_pos += element_bytes;
-            }
-        }
-        applyNullMap(value_ids, null_map, n);
     }
 
     /// If the row is null, assign 0 for this row.
@@ -391,6 +281,8 @@ protected:
                 value_ids[i] &= ~(0 - static_cast<UInt64>(null_map[i]));
         }
     }
+
+    virtual void releaseImpl() = 0;
 };
 
 class StringHashValueIdGenerator : public IHashValueIdGenerator
@@ -403,6 +295,8 @@ public:
     }
 
 private:
+    StringHashMap<UInt64> value_ids_index;
+
     void setup(const IColumn * col);
 
     void computeValueIdImpl(const IColumn * col, UInt64 * value_ids) override
@@ -487,6 +381,48 @@ private:
         }
         applyNullMap(value_ids, null_map, n);
     }
+
+    void emplaceValueId(const StringRef & raw_value, UInt64 value_id) override
+    {
+        emplaceValueIdImpl(raw_value, value_id);
+    }
+
+    ALWAYS_INLINE void emplaceValueIdImpl(const StringRef & raw_value, UInt64 value_id)
+    {
+        StringHashMap<UInt64>::LookupResult m_it;
+        bool inserted = false;
+
+        auto key = buildMapStringKey(raw_value);
+
+        value_ids_index.emplace(key, m_it, inserted);
+        if (!inserted)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert value id {} for ", value_id);
+        }
+        m_it->getMapped() = value_id;
+    }
+
+    ALWAYS_INLINE void getValueId(const StringRef & raw_value, UInt64 & value_id)
+    {
+        auto it = value_ids_index.find(raw_value);
+        if (it) [[likely]]
+        {
+            value_id = it->getMapped();
+        }
+        else
+        {
+            value_id = allocated_value_id++;
+            emplaceValueIdImpl(raw_value, value_id);
+        }
+    }
+
+    void releaseImpl() override
+    {
+        if (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID)
+        {
+            value_ids_index.clearAndShrink();
+        }
+    }
 };
 
 class FixedStringHashValueIdGenerator : public IHashValueIdGenerator
@@ -499,6 +435,7 @@ public:
     }
 
 private:
+    StringHashMap<UInt64> value_ids_index;
     void setup(const IColumn * col)
     {
         is_nullable = col->isNullable();
@@ -617,6 +554,129 @@ private:
             TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, value_id_bits, n - i);
         }
     }
+
+    void emplaceValueId(const StringRef & raw_value, UInt64 value_id) override
+    {
+        emplaceValueIdImpl(raw_value, value_id);
+    }
+
+    ALWAYS_INLINE void emplaceValueIdImpl(const StringRef & raw_value, UInt64 value_id)
+    {
+        StringHashMap<UInt64>::LookupResult m_it;
+        bool inserted = false;
+
+        auto key = buildMapStringKey(raw_value);
+
+        value_ids_index.emplace(key, m_it, inserted);
+        if (!inserted)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert value id {} for ", value_id);
+        }
+        m_it->getMapped() = value_id;
+    }
+
+    ALWAYS_INLINE void getValueId(const StringRef & raw_value, UInt64 & value_id)
+    {
+        auto it = value_ids_index.find(raw_value);
+        if (it) [[likely]]
+        {
+            value_id = it->getMapped();
+        }
+        else
+        {
+            value_id = allocated_value_id++;
+            emplaceValueIdImpl(raw_value, value_id);
+        }
+    }
+
+    template<bool use_avx_512 = false>
+    ALWAYS_INLINE void getValueId(const StringRef &raw_value, UInt64 serialized_value [[maybe_unused]], UInt64 & value_id)
+    {
+
+#if USE_MULTITARGET_CODE
+        if constexpr (use_avx_512)
+        {
+            if (enable_value_id_cache_line)
+            {
+                auto & cache = value_ids_cache_line[serialized_value & value_id_cache_line_num_mask];
+                auto ok = TargetSpecific::AVX512BW::quickLookupValueId(
+                    cache,
+                    raw_value,
+                    serialized_value,
+                    value_id,
+                    allocated_value_id,
+                    [&](const StringRef & raw_value_, UInt64 value_id_) { emplaceValueId(raw_value_, value_id_); });
+                if (ok)
+                    return;
+            }
+        }
+#endif
+
+        getValueId(raw_value, value_id);
+    }
+
+    ALWAYS_INLINE void computeValueIdsInNormalMode(UInt64 * __restrict value_ids, size_t n, const UInt8 * __restrict data_pos, size_t element_bytes, const UInt8 * __restrict null_map)
+    {
+        for (size_t i = 0; i < n; ++i)
+        {
+            getValueId(StringRef(data_pos, element_bytes), value_ids[i]);
+            data_pos += element_bytes;
+        }
+        applyNullMap(value_ids, null_map, n);
+    }
+
+    template<typename T, bool data_pos_aligned>
+    ALWAYS_INLINE void computeValueIdsInRangeMode(UInt64 * __restrict value_ids, size_t n, const UInt8 * __restrict data_pos, size_t element_bytes, const UInt8 * __restrict null_map)
+    {
+        UInt64 range_delta = range_min - is_nullable;
+        if (element_bytes <= 8 && data_pos_aligned)
+            TargetSpecific::Default::extendValuesToUInt64<T>(data_pos, value_ids, n);
+        else
+            TargetSpecific::Default::shortValuesToUInt64(data_pos, element_bytes, value_ids, n);
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+            TargetSpecific::AVX512BW::getValueIdsByRange(value_ids, range_delta, n);
+        else
+#endif
+        {
+            TargetSpecific::Default::getValueIdsByRange(value_ids, range_delta, n);
+        }
+
+        UInt64 range_length = range_max - range_min + is_nullable;
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+        {
+            for (size_t i = 0; i < n; ++i)
+            {
+                if (is_nullable > value_ids[i] || value_ids[i] > range_length)
+                {
+                    getValueId<true>(StringRef(data_pos, element_bytes), value_ids[i] + range_delta, value_ids[i]);
+                }
+                data_pos += element_bytes;
+            }
+        }
+        else
+#endif
+        {
+            for (size_t i = 0; i < n; ++i)
+            {
+                if (is_nullable > value_ids[i] || value_ids[i] > range_length)
+                {
+                    getValueId<false>(StringRef(data_pos, element_bytes), value_ids[i] + range_delta, value_ids[i]);
+                }
+                data_pos += element_bytes;
+            }
+        }
+        applyNullMap(value_ids, null_map, n);
+    }
+
+    void releaseImpl() override
+    {
+        if (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID)
+        {
+            value_ids_index.clearAndShrink();
+        }
+    }
 };
 
 template <typename ElementType, typename ColumnType, bool is_basic_number>
@@ -629,6 +689,8 @@ public:
         setup(col_);
     }
 private:
+    HashMapWithSavedHash<ElementType, UInt64> value_ids_index;
+
     void setup(const IColumn * col)
     {
         /// Find the min and max value in the column
@@ -656,7 +718,7 @@ private:
                 break;
             }
             UInt64 val = 0;
-            TargetSpecific::Default::shortValuesToUInt64(data_pos, element_bytes, &val, 1);
+            TargetSpecific::Default::extendValuesToUInt64<ElementType>(data_pos, &val, 1);
             if (val > range_max)
                 range_max = val;
             if (val < range_min)
@@ -669,6 +731,15 @@ private:
             data_pos += element_bytes;
         }
         enable_range_mode = enable_range_mode && range_max > range_min && range_max - range_min + 1 + is_nullable <= max_distinct_values;
+        LOG_ERROR(
+            &Poco::Logger::get("NumericHashValueIdGenerator"),
+            "xxx n: {} range_min: {}, range_max: {}, enable_range_mode: {}, is_nullable: {}, max_distinct_values: {}",
+            n,
+            range_min,
+            range_max,
+            enable_range_mode,
+            is_nullable,
+            max_distinct_values);
         if (enable_range_mode)
         {
             allocated_value_id =  range_max - range_min + 1 + is_nullable;
@@ -677,6 +748,7 @@ private:
         {
             allocated_value_id = is_nullable;
         }
+        enable_range_mode = false;
 
         if (allocated_value_id > max_distinct_values)
         {
@@ -713,7 +785,9 @@ private:
                 if (enable_range_mode)
                     computeValueIdsInRangeMode<ElementType, true>(tmp_value_ids, batch_step, data_pos, element_bytes, null_map_pos);
                 else
+                {
                     computeValueIdsInNormalMode(tmp_value_ids, batch_step, data_pos, element_bytes, null_map_pos);
+                }
             else
                 computeValueIdsInNormalMode(tmp_value_ids, batch_step, data_pos, element_bytes, null_map_pos);
 
@@ -729,7 +803,7 @@ private:
 
             data_pos += element_bytes * batch_step;
             value_ids_pos += batch_step;
-            
+
             if (allocated_value_id > max_distinct_values)
             {
                 state->hash_mode = AdaptiveKeysHolder::State::HASH;
@@ -748,6 +822,80 @@ private:
             else
                 computeValueIdsInNormalMode(tmp_value_ids, n - i, data_pos, element_bytes, null_map_pos);
             TargetSpecific::Default::concateValueIds(tmp_value_ids, value_ids_pos, value_id_bits, n - i);
+        }
+    }
+
+    void emplaceValueId(const StringRef & raw_value, UInt64 value_id) override
+    {
+        emplaceValueIdImpl(raw_value, value_id);
+    }
+
+    ALWAYS_INLINE void emplaceValueIdImpl(const StringRef & raw_value, UInt64 value_id)
+    {
+        const ElementType * value = reinterpret_cast<const ElementType *>(raw_value.data);
+        typename HashMapWithSavedHash<ElementType, UInt64>::LookupResult m_it;
+        bool inserted = false;
+        value_ids_index.emplace(*value, m_it, inserted);
+        m_it->getMapped() = value_id;
+    }
+
+    ALWAYS_INLINE void getValueId(const StringRef & raw_value, UInt64 & value_id)
+    {
+        const ElementType * value = reinterpret_cast<const ElementType *>(raw_value.data);
+        auto it = value_ids_index.find(*value);
+        if (it) [[likely]]
+        {
+            value_id = it->getMapped();
+        }
+        else
+        {
+            value_id = allocated_value_id++;
+            emplaceValueIdImpl(raw_value, value_id);
+        }
+    }
+
+    ALWAYS_INLINE void computeValueIdsInNormalMode(UInt64 * __restrict value_ids, size_t n, const UInt8 * __restrict data_pos, size_t element_bytes, const UInt8 * __restrict null_map)
+    {
+        for (size_t i = 0; i < n; ++i)
+        {
+            getValueId(StringRef(data_pos, element_bytes), value_ids[i]);
+            data_pos += element_bytes;
+        }
+        applyNullMap(value_ids, null_map, n);
+    }
+
+    template<typename T, bool data_pos_aligned>
+    ALWAYS_INLINE void computeValueIdsInRangeMode(UInt64 * __restrict value_ids, size_t n, const UInt8 * __restrict data_pos, size_t element_bytes, const UInt8 * __restrict null_map)
+    {
+        UInt64 range_delta = range_min - is_nullable;
+        if (element_bytes <= 8 && data_pos_aligned)
+            TargetSpecific::Default::extendValuesToUInt64<T>(data_pos, value_ids, n);
+        else
+            TargetSpecific::Default::shortValuesToUInt64(data_pos, element_bytes, value_ids, n);
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
+            TargetSpecific::AVX512BW::getValueIdsByRange(value_ids, range_delta, n);
+        else
+#endif
+        {
+            TargetSpecific::Default::getValueIdsByRange(value_ids, range_delta, n);
+        }
+
+        UInt64 range_length = range_max - range_min + is_nullable;
+        for (size_t i = 0; i < n; ++i)
+        {
+            if (is_nullable > value_ids[i] || value_ids[i] > range_length)
+                getValueId(StringRef(data_pos, element_bytes), value_ids[i]);
+            data_pos += element_bytes;
+        }
+        applyNullMap(value_ids, null_map, n);
+    }
+
+    void releaseImpl() override
+    {
+        if (state->hash_mode != AdaptiveKeysHolder::State::VALUE_ID)
+        {
+            value_ids_index.clearAndShrink();
         }
     }
 };

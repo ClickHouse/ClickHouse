@@ -137,9 +137,22 @@ inline void ALWAYS_INLINE keyHolderDiscardKey(DB::SerializedKeyHolder & holder)
 }
 namespace DB
 {
+
+/**
+  * AdaptiveKeysHolder could be a map key itself. It has a shared state reference. The state has two working
+  * modes.
+  * - keys are low cardinality mode and the two keys take the same state reference. We use the value_ids to
+  *   determine whether two keys ​are equal
+  * - keys are high cardinality mode or the two keys take different state references. We use the serialized_keys
+  *   to determine whether two keys are equal
+  * When run aggregation in multiple threads, multiple aggregate data variants are created. Eache aggregate data
+  * variant has its own state. The purpose of this is to avoid the contention of a shared state lock. So if the
+  * keys come from the same aggregate data variants, they will have the same state reference.
+  */
 struct AdaptiveKeysHolder
 {
     struct State;
+    /// wrapper some fields into one struct.
     struct StateRef
     {
         StateRef() = default;
@@ -153,7 +166,6 @@ struct AdaptiveKeysHolder
         State * state = nullptr;
     };
     /// State is shared between all AdaptiveKeysHolder instances.
-    /// Different hash_mode will have different behavior
     struct State
     {
         /// There are two modes.
@@ -162,30 +174,22 @@ struct AdaptiveKeysHolder
         ///   at the first.
         /// - HASH. It's like SerializedKeyHolder. After inserting some keys into the hash table, if
         ///   we found that the hash table size is to large, we will switch to this mode.
-        enum HashMode
+        enum Mode
         {
             VALUE_ID = 0,
             HASH,
         };
-        HashMode hash_mode = VALUE_ID;
+        Mode hash_mode = VALUE_ID;
         std::shared_ptr<Arena> pool;
 
-        /// If the table size is small, use avx512 to accelate lookup.
-        static constexpr size_t cache_line_num = 1;
-        static constexpr size_t cache_line_num_mask = cache_line_num - 1;
-        struct ValueCacheLine
-        {
-            size_t allocated_num = 0;
-            alignas(64) UInt64 value_ids[8] = {-1UL, -1UL, -1UL, -1UL, -1UL, -1UL, -1UL, -1UL};
-            StateRef * cached_values[8] = {nullptr};
-        };
-
+        /// Store the serialized keys for each id.
         std::unordered_map<UInt64, StateRef> cached_values;
     };
 
-    /// be careful with all fields, their default value must be zero bits.
+    /// Be careful with all fields, their default value must be zero bits.
     /// since hash table allocs cell buffer without calling cell constructor.
     StringRef serialized_keys;
+    /// wrapper some fields into one struct and just pass the struct reference.
     StateRef * state_ref = nullptr;
     Arena * pool = nullptr;
 };
@@ -194,7 +198,7 @@ struct AdaptiveKeysHolder
 inline bool ALWAYS_INLINE operator==(const DB::AdaptiveKeysHolder &a, const DB::AdaptiveKeysHolder &b)
 {
     /// a and b may come from different aggregate variants during the merging phase, in this case
-    /// we cannot compare the value_ids.
+    /// we cannot use the value_ids to compare the keys.
     if (b.state_ref && b.state_ref->state->hash_mode == DB::AdaptiveKeysHolder::State::VALUE_ID && a.state_ref
         && a.state_ref->state == b.state_ref->state)
     {
@@ -203,6 +207,7 @@ inline bool ALWAYS_INLINE operator==(const DB::AdaptiveKeysHolder &a, const DB::
     return a.serialized_keys == b.serialized_keys;
 }
 
+// It is the map key itself.
 inline DB::AdaptiveKeysHolder & ALWAYS_INLINE keyHolderGetKey(DB::AdaptiveKeysHolder & holder)
 {
     return holder;
