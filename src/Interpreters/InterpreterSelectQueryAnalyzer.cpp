@@ -1,5 +1,4 @@
-#include "Analyzer/IQueryTreeNode.h"
-#include "Analyzer/JoinNode.h"
+#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
