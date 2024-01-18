@@ -446,7 +446,6 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
 
 QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node)
 {
-std::cout << "\033[1;31m" << "+++ JOO extractLeftTableExpression 0" << "\033[0m" << std::endl;
     QueryTreeNodePtr result;
 
     std::deque<QueryTreeNodePtr> nodes_to_process;
@@ -458,7 +457,7 @@ std::cout << "\033[1;31m" << "+++ JOO extractLeftTableExpression 0" << "\033[0m"
         nodes_to_process.pop_front();
 
         auto node_type = node_to_process->getNodeType();
-std::cout << "\033[1;31m" << "+++ JOO extractLeftTableExpression " << static_cast<int>(node_type) << "\033[0m" << std::endl;
+
         switch (node_type)
         {
             case QueryTreeNodeType::TABLE:

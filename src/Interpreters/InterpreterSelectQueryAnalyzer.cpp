@@ -78,7 +78,7 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
 {
     auto nodes = extractTrueTableExpressions(query_tree);
     IQueryTreeNode::ReplacementMap replacement_map;
-    
+
     for (auto & node : nodes)
     {
         auto & table_node = node->as<TableNode &>();
@@ -117,12 +117,10 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
         query_tree_pass_manager.runOnlyResolve(query_tree);
     else
         query_tree_pass_manager.run(query_tree);
-std::cout << "\033[1;31m" << "+++ JOO query_tree\n" << query_tree->dumpTree() << "\033[0m" << std::endl;
-    if (storage) {
+
+    if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);
-//        replaceStorageInQueryTree(query_tree, context, storage, false);
-    }
-std::cout << "\033[1;31m" << "+++ JOO query_tree NEW\n" << query_tree->dumpTree() << "\033[0m" << std::endl;
+
     return query_tree;
 }
 
