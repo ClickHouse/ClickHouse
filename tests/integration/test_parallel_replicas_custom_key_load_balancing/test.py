@@ -83,9 +83,9 @@ def test_parallel_replicas_custom_key_load_balancing(
                 "parallel_replicas_custom_key": custom_key,
                 "parallel_replicas_custom_key_filter_type": filter_type,
                 "use_hedged_requests": use_hedged_requests,
-                "max_replica_delay_for_distributed_queries": 0, # avoid considering replica delay on connection choice
-                                                                # otherwise connection will not be distributed evenly among available nodes
-                                                                # and so custom key secondary queries
+                "max_replica_delay_for_distributed_queries": 0,  # avoid considering replica delay on connection choice
+                # otherwise connection will not be distributed evenly among available nodes
+                # and so custom key secondary queries
                 # "async_socket_for_remote": 0,
                 # "async_query_sending_for_remote": 0,
             },
