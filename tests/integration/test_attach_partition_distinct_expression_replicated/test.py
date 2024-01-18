@@ -28,6 +28,7 @@ def cleanup(nodes):
         node.query("DROP TABLE IF EXISTS source SYNC")
         node.query("DROP TABLE IF EXISTS destination SYNC")
 
+
 def create_table(node, table_name, replicated):
     replica = node.name
     engine = (
@@ -98,10 +99,13 @@ def test_only_destination_replicated(start_cluster):
 
     cleanup([replica1, replica2])
 
+
 def test_both_replicated_partitioned_to_unpartitioned(start_cluster):
     def create_tables(nodes):
         for node in nodes:
-            source_engine = f"ReplicatedMergeTree('/clickhouse/tables/1/source', '{node.name}')"
+            source_engine = (
+                f"ReplicatedMergeTree('/clickhouse/tables/1/source', '{node.name}')"
+            )
             node.query(
                 """
                 CREATE TABLE source(timestamp DateTime)
@@ -140,7 +144,9 @@ def test_both_replicated_partitioned_to_unpartitioned(start_cluster):
     )
 
     assert_eq_with_retry(
-        replica1, f"SELECT * FROM destination", "2010-03-02 02:01:01\n2010-03-03 02:01:01\n"
+        replica1,
+        f"SELECT * FROM destination",
+        "2010-03-02 02:01:01\n2010-03-03 02:01:01\n"
     )
     assert_eq_with_retry(
         replica1,
