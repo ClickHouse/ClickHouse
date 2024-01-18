@@ -474,6 +474,12 @@ CI_CONFIG = CiConfig(
             name="package_debug",
             compiler="clang-17",
             debug_build=True,
+            package_type="deb",
+            sparse_checkout=True,
+        ),
+        "package_release_coverage": BuildConfig(
+            name="package_release_coverage",
+            compiler="clang-17",
             coverage=True,
             package_type="deb",
             sparse_checkout=True,
@@ -571,6 +577,7 @@ CI_CONFIG = CiConfig(
                 "package_tsan",
                 "package_msan",
                 "package_debug",
+                "package_release_coverage",
                 "binary_release",
                 "fuzzers",
             ]
@@ -660,16 +667,15 @@ CI_CONFIG = CiConfig(
         "Stateful tests (release)": TestConfig(
             "package_release", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
+        "Stateful tests (coverage)": TestConfig(
+            "package_release_coverage", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
+        ),
         "Stateful tests (aarch64)": TestConfig(
             "package_aarch64", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
         "Stateful tests (release, DatabaseOrdinary)": TestConfig(
             "package_release", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
-        # "Stateful tests (release, DatabaseReplicated)": TestConfig(
-        #     "package_release", job_config=JobConfig(**stateful_test_common_params) # type: ignore
-        # ),
-        # Stateful tests for parallel replicas
         "Stateful tests (release, ParallelReplicas)": TestConfig(
             "package_release", job_config=JobConfig(**stateful_test_common_params)  # type: ignore
         ),
@@ -711,6 +717,9 @@ CI_CONFIG = CiConfig(
         ),
         "Stateless tests (release)": TestConfig(
             "package_release", job_config=JobConfig(**statless_test_common_params)  # type: ignore
+        ),
+        "Stateless tests (coverage)": TestConfig(
+            "package_release_coverage", job_config=JobConfig(**statless_test_common_params)  # type: ignore
         ),
         "Stateless tests (aarch64)": TestConfig(
             "package_aarch64", job_config=JobConfig(**statless_test_common_params)  # type: ignore
