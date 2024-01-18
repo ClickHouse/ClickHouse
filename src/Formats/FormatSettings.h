@@ -338,6 +338,7 @@ struct FormatSettings
         String resultset_format;
         String row_format;
         String row_between_delimiter;
+        String row_format_schema_string;
     } template_settings;
 
     struct

@@ -1668,6 +1668,10 @@ Path to file which contains format string for rows (for Template format).
 
 Delimiter between rows (for Template format).
 
+### format_schema_rows_template {#format_schema_rows_template}
+
+Format string for rows (for Template format)
+
 ## CustomSeparated format settings {custom-separated-format-settings}
 
 ### format_custom_escaping_rule {#format_custom_escaping_rule}
