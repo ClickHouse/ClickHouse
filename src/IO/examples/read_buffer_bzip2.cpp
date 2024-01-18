@@ -17,7 +17,7 @@ static char output_buffer[BUFFER_SIZE];
 
 int init()
 {
-    bzero(&stream, sizeof(stream));
+    memset(&stream, 0, sizeof(stream));
     int ret = BZ2_bzDecompressInit(&stream, 0, 0);
     return ret;
 }
