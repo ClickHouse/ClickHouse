@@ -38,6 +38,14 @@ DIFF_IN_DOCUMENTATION_EXT = [
 RETRY_SLEEP = 0
 
 
+class EventType:
+    UNKNOWN = 0
+    PUSH = 1
+    PULL_REQUEST = 2
+    SCHEDULE = 3
+    DISPATCH = 4
+
+
 def get_pr_for_commit(sha, ref):
     if not ref:
         return None
@@ -99,7 +107,7 @@ class PRInfo:
         # release_pr and merged_pr are used for docker images additional cache
         self.release_pr = 0
         self.merged_pr = 0
-        self.schedule = False
+        self.event_type = EventType.UNKNOWN
         ref = github_event.get("ref", "refs/heads/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
@@ -116,6 +124,7 @@ class PRInfo:
                 github_event["pull_request"] = prs_for_sha[0]
 
         if "pull_request" in github_event:  # pull request and other similar events
+            self.event_type = EventType.PULL_REQUEST
             self.number = github_event["pull_request"]["number"]  # type: int
             if pr_event_from_api:
                 try:
@@ -176,6 +185,7 @@ class PRInfo:
             self.diff_urls.append(self.compare_pr_url(github_event["pull_request"]))
 
         elif "commits" in github_event:
+            self.event_type = EventType.PUSH
             # `head_commit` always comes with `commits`
             commit_message = github_event["head_commit"]["message"]  # type: str
             if commit_message.startswith("Merge pull request #"):
@@ -245,7 +255,10 @@ class PRInfo:
                     )
         else:
             if "schedule" in github_event:
-                self.schedule = True
+                self.event_type = EventType.SCHEDULE
+            else:
+                # assume this is a dispatch
+                self.event_type = EventType.DISPATCH
             print("event.json does not match pull_request or push:")
             print(json.dumps(github_event, sort_keys=True, indent=4))
             self.sha = os.getenv(
@@ -265,6 +278,12 @@ class PRInfo:
 
         if need_changed_files:
             self.fetch_changed_files()
+
+    def is_scheduled(self):
+        return self.event_type == EventType.SCHEDULE
+
+    def is_dispatched(self):
+        return self.event_type == EventType.DISPATCH
 
     def compare_pr_url(self, pr_object: dict) -> str:
         return self.compare_url(pr_object["base"]["label"], pr_object["head"]["label"])
