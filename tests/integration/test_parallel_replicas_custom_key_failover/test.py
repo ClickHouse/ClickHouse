@@ -81,6 +81,9 @@ def test_parallel_replicas_custom_key_failover(
                 "parallel_replicas_custom_key": custom_key,
                 "parallel_replicas_custom_key_filter_type": filter_type,
                 "use_hedged_requests": use_hedged_requests,
+                "max_replica_delay_for_distributed_queries": 0, # avoid considering replica delay on connection choice
+                                                                # otherwise connection will not be distributed evenly among available nodes
+                                                                # and so custom key secondary queries
                 # "async_socket_for_remote": 0,
                 # "async_query_sending_for_remote": 0,
             },
@@ -106,6 +109,7 @@ def test_parallel_replicas_custom_key_failover(
             == "subqueries\t4\n"
         )
 
+        # check queries distribution among nodes, it should be even
         assert (
             node1.query(
                 f"SELECT h, count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
