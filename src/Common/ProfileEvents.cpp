@@ -594,6 +594,13 @@ The server successfully detected this situation and will download merged part fr
     \
     M(AsyncLoaderWaitMicroseconds, "Total time a query was waiting for async loader jobs.") \
     \
+    M(VFSGcRunsCompleted, "Number of successful VFS Garbage Collector runs.")\
+    M(VFSGcRunsException, "Number of VFS Garbage Collector runs raised an exception.")\
+    M(VFSGcRunsSkipped, "Number of VFS Garbage Collector runs skipped because of settings (e.g. small number of operations)")\
+    M(VFSGcTotalMicroseconds, "Total time took by VFS Garbage Collector.")\
+    M(VFSGcCummulativeSnapshotBytesRead, "Total size of snapshots read from Object Storage by VFS Garbage Collector.")\
+    M(VFSGcCummulativeLogItemsRead, "Total number of log items from keeper by VFS Garbage Collector.")\
+    \
     M(LogTest, "Number of log messages with level Test") \
     M(LogTrace, "Number of log messages with level Trace") \
     M(LogDebug, "Number of log messages with level Debug") \

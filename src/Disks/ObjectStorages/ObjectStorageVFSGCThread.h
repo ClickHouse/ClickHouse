@@ -26,5 +26,7 @@ private:
     void removeBatch(size_t start_logpointer, size_t end_logpointer) const;
     String getNode(size_t id) const;
     StoredObject getSnapshotObject(size_t logpointer) const;
+
+    bool skipRun(size_t batch_size, size_t log_pointer) const;
 };
 }

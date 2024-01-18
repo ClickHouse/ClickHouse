@@ -1,9 +1,21 @@
 #include "ObjectStorageVFSGCThread.h"
+#include "Common/ProfileEvents.h"
+#include "Common/Stopwatch.h"
 #include "DiskObjectStorageVFS.h"
 #include "IO/Lz4DeflatingWriteBuffer.h"
 #include "IO/Lz4InflatingReadBuffer.h"
 #include "IO/ReadBufferFromEmptyFile.h"
 #include "IO/ReadHelpers.h"
+
+namespace ProfileEvents
+{
+extern const Event VFSGcRunsCompleted;
+extern const Event VFSGcRunsException;
+extern const Event VFSGcRunsSkipped;
+extern const Event VFSGcTotalMicroseconds;
+extern const Event VFSGcCummulativeSnapshotBytesRead;
+extern const Event VFSGcCummulativeLogItemsRead;
+}
 
 namespace DB
 {
@@ -12,15 +24,12 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-// TODO myrrc should (possibly?) be settings. The batch size must not be too large as we put it in memory
-constexpr size_t batch_min_size = 1, batch_max_size = 5000, snapshot_lz4_compression_level = 8;
-
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool)
     : storage(storage_)
     , log(&Poco::Logger::get(fmt::format("VFSGC({})", storage_.getName())))
     , lock_path(fs::path(storage.traits.locks_node) / "gc_lock")
 {
-    LOG_DEBUG(log, "GC started with interval {}ms", storage.gc_sleep_ms);
+    LOG_DEBUG(log, "GC started with interval {}ms", storage.settings.gc_sleep_ms);
     storage.zookeeper()->createAncestors(lock_path);
 
     task = pool.createTask(
@@ -35,13 +44,15 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
             {
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
             }
-            task->scheduleAfter(storage.gc_sleep_ms);
+            task->scheduleAfter(storage.settings.gc_sleep_ms);
         });
     task->activateAndSchedule();
 }
 
 void ObjectStorageVFSGCThread::run() const
 {
+    Stopwatch stop_watch;
+
     using enum Coordination::Error;
     if (auto code = storage.zookeeper()->tryCreate(lock_path, "", zkutil::CreateMode::Ephemeral); code == ZNODEEXISTS)
     {
@@ -51,12 +62,23 @@ void ObjectStorageVFSGCThread::run() const
     else if (code != ZOK)
         throw Coordination::Exception(code);
 
-    bool successful_run = false;
-    SCOPE_EXIT(if (!successful_run) storage.zookeeper()->remove(lock_path));
+    bool successful_run = false, skip_run = false;
+    SCOPE_EXIT(if (!successful_run) {
+        if (skip_run)
+            ProfileEvents::increment(ProfileEvents::VFSGcRunsSkipped);
+        else
+            ProfileEvents::increment(ProfileEvents::VFSGcRunsException);
+        storage.zookeeper()->remove(lock_path);
+    } ProfileEvents::increment(ProfileEvents::VFSGcTotalMicroseconds, stop_watch.elapsedMicroseconds()));
 
     Strings log_items_batch = storage.zookeeper()->getChildren(storage.traits.log_base_node);
-    if (log_items_batch.size() < batch_min_size)
+
+    if (!log_items_batch.size())
+    {
+        LOG_TRACE(log, "Skipped run due to empty batch");
+        skip_run = true;
         return;
+    }
 
     // TODO myrrc Sequential node in zookeeper overflows after 32 bit.
     // We can catch this case by checking (end_logpointer - start_logpointer) != log_items_batch.size()
@@ -65,7 +87,13 @@ void ObjectStorageVFSGCThread::run() const
     // We also must use a signed type for logpointers.
     const auto [start_str, end_str] = std::ranges::minmax(std::move(log_items_batch));
     const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4)); // log- is a prefix
-    const size_t end_logpointer = std::min(parseFromString<size_t>(end_str.substr(4)), start_logpointer + batch_max_size);
+    const size_t end_logpointer = std::min(parseFromString<size_t>(end_str.substr(4)), start_logpointer + storage.settings.batch_max_size);
+
+    if (skipRun(log_items_batch.size(), start_logpointer))
+    {
+        skip_run = true;
+        return;
+    }
 
     LOG_DEBUG(log, "Acquired lock for [{};{}]", start_logpointer, end_logpointer);
     // TODO myrrc store for 1 iteration more in case batch removal failed. Next node should try to
@@ -74,10 +102,43 @@ void ObjectStorageVFSGCThread::run() const
     removeBatch(start_logpointer, end_logpointer);
     LOG_DEBUG(log, "Removed lock for [{};{}]", start_logpointer, end_logpointer);
     successful_run = true;
+    ProfileEvents::increment(ProfileEvents::VFSGcRunsCompleted);
 }
+
+bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t log_pointer) const
+{
+    if (batch_size > storage.settings.batch_min_size)
+        return false;
+    if (!storage.settings.batch_can_wait_milliseconds)
+    {
+        LOG_TRACE(log, "Skipped run due to insufficient batch size: {} vs {}",
+            batch_size, storage.settings.batch_min_size);
+        return true;
+    }
+
+    /// batch creation time is determined by the first item
+    auto node_name = getNode(log_pointer);
+    Coordination::Stat stat;
+    storage.zookeeper()->exists(node_name, &stat);
+
+    auto delta
+        = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - stat.mtime;
+
+    if (delta > static_cast<int64_t>(storage.settings.batch_can_wait_milliseconds))
+        return false;
+    else
+    {
+        LOG_TRACE(log, "Skipped run due to insufficient batch size and time constraints: {} vs {} and {} vs {}",
+            batch_size, storage.settings.batch_min_size, delta, static_cast<int64_t>(storage.settings.batch_can_wait_milliseconds));
+        return true;
+    }
+}
+
 
 void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const
 {
+    ProfileEvents::increment(ProfileEvents::VFSGcCummulativeLogItemsRead, end_logpointer - start_logpointer);
+
     auto & object_storage = *storage.object_storage;
     const bool should_have_previous_snapshot = start_logpointer > 0;
 
@@ -90,11 +151,15 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpoin
     const StoredObject new_snapshot = getSnapshotObject(end_logpointer);
     auto new_snapshot_uncompressed_buf = object_storage.writeObject(new_snapshot, WriteMode::Rewrite);
     // TODO myrrc research zstd dictionary builder or zstd for compression
-    Lz4DeflatingWriteBuffer new_snapshot_buf{std::move(new_snapshot_uncompressed_buf), snapshot_lz4_compression_level};
+    Lz4DeflatingWriteBuffer new_snapshot_buf{std::move(new_snapshot_uncompressed_buf), storage.settings.snapshot_lz4_compression_level};
 
     auto [obsolete, invalid] = getBatch(start_logpointer, end_logpointer).mergeWithSnapshot(old_snapshot_buf, new_snapshot_buf, log);
     if (should_have_previous_snapshot)
+    {
         obsolete.emplace_back(std::move(old_snapshot));
+        ProfileEvents::increment(ProfileEvents::VFSGcCummulativeSnapshotBytesRead, old_snapshot_buf.count());
+    }
+
 
     if (!invalid.empty()) // TODO myrrc remove after testing
     {

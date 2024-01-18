@@ -3,6 +3,7 @@
 #include "DiskObjectStorage.h"
 #include "ObjectStorageVFSGCThread.h"
 #include "VFSTraits.h"
+#include "VFSSettings.h"
 
 namespace DB
 {
@@ -48,8 +49,8 @@ private:
     std::optional<ObjectStorageVFSGCThread> garbage_collector;
 
     const bool enable_gc; // In certain conditions we don't want a GC e.g. when running from clickhouse-disks
-    const UInt64 gc_sleep_ms;
     const VFSTraits traits;
+    const VFSSettings settings;
 
     zkutil::ZooKeeperPtr zookeeper();
 
