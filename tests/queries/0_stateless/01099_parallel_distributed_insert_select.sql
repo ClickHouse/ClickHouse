@@ -126,7 +126,7 @@ CREATE TABLE distributed_01099_b AS local_01099_b ENGINE = Distributed('test_clu
 SYSTEM STOP DISTRIBUTED SENDS distributed_01099_b;
 SET prefer_localhost_replica=0; -- to require distributed send for local replica too
 SET send_logs_level='error';
-INSERT INTO distributed_01099_b SELECT * FROM urlCluster('test_cluster', 'http://localhost:8123/?query=select+{1,2,3}+format+TSV', 'TSV', 's String');
+INSERT INTO distributed_01099_b SELECT * FROM urlCluster('test_cluster_two_shards', 'http://localhost:8123/?query=select+{1,2,3}+format+TSV', 'TSV', 's String');
 SET send_logs_level='warning';
 SET prefer_localhost_replica=1;
 
@@ -256,7 +256,7 @@ CREATE TABLE distributed_01099_b AS local_01099_b ENGINE = Distributed('test_clu
 SYSTEM STOP DISTRIBUTED SENDS distributed_01099_b;
 SET prefer_localhost_replica=0; -- to require distributed send for local replica too
 SET send_logs_level='error';
-INSERT INTO distributed_01099_b SELECT * FROM urlCluster('test_cluster', 'http://localhost:8123/?query=select+{1,2,3}+format+TSV', 'TSV', 's String');
+INSERT INTO distributed_01099_b SELECT * FROM urlCluster('test_cluster_two_shards', 'http://localhost:8123/?query=select+{1,2,3}+format+TSV', 'TSV', 's String');
 SET send_logs_level='warning';
 SET prefer_localhost_replica=1;
 
