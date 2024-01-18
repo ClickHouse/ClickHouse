@@ -155,6 +155,7 @@ public:
             ObjectData,
 
             VariantDiscriminators,
+            NamedVariantDiscriminators,
             VariantOffsets,
             VariantElements,
             VariantElement,

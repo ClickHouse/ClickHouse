@@ -54,6 +54,7 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     TupleElement,
     NamedOffsets,
     NamedNullMap,
+    NamedVariantDiscriminators,
 };
 
 String ISerialization::Substream::toString() const

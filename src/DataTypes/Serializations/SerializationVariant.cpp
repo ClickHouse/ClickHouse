@@ -36,7 +36,7 @@ void SerializationVariant::enumerateStreams(
     const auto * type_variant = data.type ? &assert_cast<const DataTypeVariant &>(*data.type) : nullptr;
     const auto * column_variant = data.column ? &assert_cast<const ColumnVariant &>(*data.column) : nullptr;
 
-    auto discriminators_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<ColumnVariant::Discriminator>>(), "discr", false);
+    auto discriminators_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<ColumnVariant::Discriminator>>(), "discr", SubstreamType::NamedVariantDiscriminators);
     auto local_discriminators = column_variant ? column_variant->getLocalDiscriminatorsPtr() : nullptr;
 
     settings.path.push_back(Substream::VariantDiscriminators);
