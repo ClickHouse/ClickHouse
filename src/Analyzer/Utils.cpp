@@ -326,6 +326,69 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
     }
 }
 
+QueryTreeNodes extractTrueTableExpressions(const QueryTreeNodePtr & tree)
+{
+    QueryTreeNodes result;
+
+    std::deque<QueryTreeNodePtr> nodes_to_process;
+    nodes_to_process.push_back(tree);
+
+    while (!nodes_to_process.empty())
+    {
+        auto node_to_process = std::move(nodes_to_process.front());
+        nodes_to_process.pop_front();
+
+        auto node_type = node_to_process->getNodeType();
+
+        switch (node_type)
+        {
+            case QueryTreeNodeType::TABLE:
+            {
+                result.push_back(std::move(node_to_process));
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                nodes_to_process.push_front(node_to_process->as<QueryNode>()->getJoinTree());
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                for (auto union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
+                    nodes_to_process.push_front(union_node);
+                break;
+            }
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                for (auto argument_node : node_to_process->as<TableFunctionNode>()->getArgumentsNode()->getChildren())
+                    nodes_to_process.push_front(argument_node);
+                break;
+            }
+            case QueryTreeNodeType::ARRAY_JOIN:
+            {
+                nodes_to_process.push_front(node_to_process->as<ArrayJoinNode>()->getTableExpression());
+                break;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                auto & join_node = node_to_process->as<JoinNode &>();
+                nodes_to_process.push_front(join_node.getRightTableExpression());
+                nodes_to_process.push_front(join_node.getLeftTableExpression());
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Unexpected node type for table expression. "
+                                "Expected table, table function, query, union, join or array join. Actual {}",
+                                node_to_process->getNodeTypeName());
+            }
+        }
+    }
+
+    return result;
+}
+
 QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join)
 {
     QueryTreeNodes result;
@@ -383,6 +446,7 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
 
 QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node)
 {
+std::cout << "\033[1;31m" << "+++ JOO extractLeftTableExpression 0" << "\033[0m" << std::endl;
     QueryTreeNodePtr result;
 
     std::deque<QueryTreeNodePtr> nodes_to_process;
@@ -394,7 +458,7 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
         nodes_to_process.pop_front();
 
         auto node_type = node_to_process->getNodeType();
-
+std::cout << "\033[1;31m" << "+++ JOO extractLeftTableExpression " << static_cast<int>(node_type) << "\033[0m" << std::endl;
         switch (node_type)
         {
             case QueryTreeNodeType::TABLE:

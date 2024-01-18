@@ -50,6 +50,9 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
   */
 void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options);
 
+/// Extract table expressions from tree
+QueryTreeNodes extractTrueTableExpressions(const QueryTreeNodePtr & tree);
+
 /// Extract table, table function, query, union from join tree
 QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false);
 
