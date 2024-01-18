@@ -9,11 +9,8 @@ FDBCLI_BIN_URL="https://github.com/apple/foundationdb/releases/download/$FDB_VER
 FDBCLI_BIN_SHA256="8519a398676e5e27dc6f19c949c22878eb810964b8127bbd37b2d270fb6b7301"
 
 FDB_PORT_TRANSACTION="4511"
-FDB_PORT_STORAGE_1="4600"
-FDB_PORT_STORAGE_2="4601"
-FDB_PORT_STATELESS_1="4602"
-FDB_PORT_STATELESS_2="4603"
-FDB_PORT_STATELESS_3="4604"
+FDB_PORT_STORAGE="4600"
+FDB_PORT_STATELESS="4601"
 
 FDB_HOME=/tmp/foundationdb
 FDB_CLUSTER="/etc/foundationdb/fdb.cluster"
@@ -54,7 +51,7 @@ download_executable "$FDBCLI" "$FDBCLI_BIN_URL" "$FDBCLI_BIN_SHA256"
 
 # Prepare conf
 cat <<EOF > "$FDB_CLUSTER"
-test:test@127.0.0.1:$FDB_PORT_TRANSACTION,127.0.0.1:$FDB_PORT_STORAGE_1,127.0.0.1:$FDB_PORT_STORAGE_2,127.0.0.1:$FDB_PORT_STATELESS_1,127.0.0.1:$FDB_PORT_STATELESS_2,127.0.0.1:$FDB_PORT_STATELESS_3
+test:test@127.0.0.1:$FDB_PORT_TRANSACTION,127.0.0.1:$FDB_PORT_STORAGE,127.0.0.1:$FDB_PORT_STATELESS
 EOF
 
 start_fdb_server () {
@@ -77,11 +74,8 @@ start_fdb_server () {
 }
 
 start_fdb_server "$FDB_PORT_TRANSACTION" "transaction"
-start_fdb_server "$FDB_PORT_STORAGE_1" "storage"
-start_fdb_server "$FDB_PORT_STORAGE_2"  "storage"
-start_fdb_server "$FDB_PORT_STATELESS_1" "stateless"
-start_fdb_server "$FDB_PORT_STATELESS_2" "stateless"
-start_fdb_server "$FDB_PORT_STATELESS_3" "stateless"
+start_fdb_server "$FDB_PORT_STORAGE" "storage"
+start_fdb_server "$FDB_PORT_STATELESS" "stateless"
 
 sleep 2s
 $FDBCLI --exec "configure new single ssd"
