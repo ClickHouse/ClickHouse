@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int INCORRECT_DICTIONARY_DEFINITION;
     extern const int LOGICAL_ERROR;
+    extern const int TYPE_MISMATCH;
 }
 
 const std::string kRegExp = "regexp";
@@ -1030,6 +1031,9 @@ Columns RegExpTreeDictionary::getColumnsImpl(
 
     /// calculate matches
     const ColumnString * key_column = typeid_cast<const ColumnString *>(key_columns[0].get());
+    if (key_column == nullptr)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a ColumnString column");
+
     const auto & columns_map = match(
         key_column->getChars(),
         key_column->getOffsets(),
@@ -1079,6 +1083,9 @@ Columns RegExpTreeDictionary::getColumnsShortCircuitImpl(
 
     /// calculate matches
     const ColumnString * key_column = typeid_cast<const ColumnString *>(key_columns[0].get());
+    if (key_column == nullptr)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a ColumnString column");
+
     const auto & columns_map = matchShortCircuit(
         key_column->getChars(),
         key_column->getOffsets(),
