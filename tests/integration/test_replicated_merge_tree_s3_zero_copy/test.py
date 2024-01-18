@@ -247,7 +247,7 @@ def test_drop_detached_part_with_try_n_suffix(cluster):
     )
 
     node1.query(
-        "ALTER TABLE drop_detached_part_with_tryn_suffix DETACH PART 'all_0_0_0'"
+        "ALTER TABLE drop_detached_part_with_tryn_suffix DETACH PART 'all_0_0_0' SETTINGS mutations_sync = 1"
     )
 
     detached_part_path = node1.query(
@@ -283,8 +283,9 @@ def test_drop_detached_part_with_try_n_suffix(cluster):
         == "all_0_0_0\nall_0_0_0_try1\ncovered-by-broken_all_0_0_0_try1\n"
     )
 
+
     node1.query(
-        "ALTER TABLE drop_detached_part_with_tryn_suffix DROP DETACHED PART 'covered-by-broken_all_0_0_0_try1' SETTINGS allow_drop_detached = 1"
+        "ALTER TABLE drop_detached_part_with_tryn_suffix DROP DETACHED PART 'covered-by-broken_all_0_0_0_try1' SETTINGS mutations_sync = 1, allow_drop_detached = 1"
     )
     assert (
         node1.query(
@@ -294,7 +295,7 @@ def test_drop_detached_part_with_try_n_suffix(cluster):
     )
 
     node1.query(
-        "ALTER TABLE drop_detached_part_with_tryn_suffix DROP DETACHED PART 'all_0_0_0_try1' SETTINGS allow_drop_detached = 1"
+        "ALTER TABLE drop_detached_part_with_tryn_suffix DROP DETACHED PART 'all_0_0_0_try1' SETTINGS mutations_sync = 1, allow_drop_detached = 1"
     )
     assert (
         node1.query(
@@ -304,10 +305,11 @@ def test_drop_detached_part_with_try_n_suffix(cluster):
     )
 
     node1.query(
-        "ALTER TABLE drop_detached_part_with_tryn_suffix ATTACH PART 'all_0_0_0'"
+        "ALTER TABLE drop_detached_part_with_tryn_suffix ATTACH PART 'all_0_0_0' SETTINGS mutations_sync = 1"
     )
     assert (
         node1.query("SELECT n FROM drop_detached_part_with_tryn_suffix ORDER BY n")
         == "1\n42\n"
     )
+
     node1.query("DROP TABLE drop_detached_part_with_tryn_suffix")
