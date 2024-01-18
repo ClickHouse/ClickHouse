@@ -7,6 +7,7 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
+#include "base/defines.h"
 #include "config.h"
 
 
@@ -137,7 +138,11 @@ struct ModuloImpl
                 if (a < 0)
                 {
                     using CastA = typename NumberTraits::Construct<false, false, sizeof(IntegerAType)>::Type;
-                    CastA abs_a = -a;
+                    CastA abs_a;
+                    if (unlikely(a == std::numeric_limits<IntegerAType>::min()))
+                        abs_a = static_cast<CastA>(std::numeric_limits<IntegerAType>::max()) + 1;
+                    else
+                        abs_a = -b;
                     return -(static_cast<Result>(abs_a % b));
                 }
             }
@@ -146,7 +151,11 @@ struct ModuloImpl
                 if (b < 0)
                 {
                     using CastB = typename NumberTraits::Construct<false, false, sizeof(IntegerBType)>::Type;
-                    CastB abs_b = -b;
+                    CastB abs_b;
+                    if (unlikely(b == std::numeric_limits<IntegerBType>::min()))
+                        abs_b = static_cast<CastB>(std::numeric_limits<IntegerBType>::max()) + 1;
+                    else
+                        abs_b = -b;
                     return static_cast<Result>(a % abs_b);
                 }
             }
