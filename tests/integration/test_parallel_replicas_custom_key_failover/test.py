@@ -82,9 +82,10 @@ def test_parallel_replicas_custom_key_failover(
                 "parallel_replicas_custom_key_filter_type": filter_type,
                 "use_hedged_requests": use_hedged_requests,
                 # fmt: off
-                "max_replica_delay_for_distributed_queries": 0, # avoid considering replica delay on connection choice
-                                                                # otherwise connection will not be distributed evenly among available nodes
-                                                                # and so custom key secondary queries
+                "max_replica_delay_for_distributed_queries": 0,
+                # avoid considering replica delay on connection choice
+                # otherwise connection will not be distributed evenly among available nodes
+                # and so custom key secondary queries
                 # fmt: on
             },
         )
