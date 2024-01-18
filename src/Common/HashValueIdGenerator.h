@@ -21,6 +21,7 @@
 #include "Exception.h"
 #include "ThreadStatus.h"
 #include "config.h"
+#include "typeid_cast.h"
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -38,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int LOGICAL_ERROR;
 }
 namespace ColumnsHashing
 {
