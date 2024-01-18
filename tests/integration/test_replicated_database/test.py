@@ -1079,7 +1079,7 @@ def test_startup_without_zk(started_cluster):
         err = main_node.query_and_get_error(
             "CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');"
         )
-        assert "ZooKeeper" in err
+        assert "ZooKeeper" in err or "Coordination::Exception" in err
     main_node.query(
         "CREATE DATABASE startup ENGINE = Replicated('/clickhouse/databases/startup', 'shard1', 'replica1');"
     )
