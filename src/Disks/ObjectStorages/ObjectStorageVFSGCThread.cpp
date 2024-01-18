@@ -13,8 +13,8 @@ extern const Event VFSGcRunsCompleted;
 extern const Event VFSGcRunsException;
 extern const Event VFSGcRunsSkipped;
 extern const Event VFSGcTotalMicroseconds;
-extern const Event VFSGcCummulativeSnapshotBytesRead;
-extern const Event VFSGcCummulativeLogItemsRead;
+extern const Event VFSGcCumulativeSnapshotBytesRead;
+extern const Event VFSGcCumulativeLogItemsRead;
 }
 
 namespace DB
@@ -63,20 +63,21 @@ void ObjectStorageVFSGCThread::run() const
         throw Coordination::Exception(code);
 
     bool successful_run = false, skip_run = false;
-    SCOPE_EXIT(if (!successful_run) {
-        if (skip_run)
-            ProfileEvents::increment(ProfileEvents::VFSGcRunsSkipped);
+    SCOPE_EXIT({
+        if (successful_run)
+            ProfileEvents::increment(ProfileEvents::VFSGcRunsCompleted);
         else
-            ProfileEvents::increment(ProfileEvents::VFSGcRunsException);
-        storage.zookeeper()->remove(lock_path);
-    } ProfileEvents::increment(ProfileEvents::VFSGcTotalMicroseconds, stop_watch.elapsedMicroseconds()));
+        {
+            ProfileEvents::increment(skip_run ? ProfileEvents::VFSGcRunsSkipped : ProfileEvents::VFSGcRunsException);
+            storage.zookeeper()->remove(lock_path);
+        };
+        ProfileEvents::increment(ProfileEvents::VFSGcTotalMicroseconds, stop_watch.elapsedMicroseconds());
+    });
 
     Strings log_items_batch = storage.zookeeper()->getChildren(storage.traits.log_base_node);
-
-    if (!log_items_batch.size())
+    if ((skip_run = log_items_batch.empty()))
     {
         LOG_TRACE(log, "Skipped run due to empty batch");
-        skip_run = true;
         return;
     }
 
@@ -89,11 +90,8 @@ void ObjectStorageVFSGCThread::run() const
     const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4)); // log- is a prefix
     const size_t end_logpointer = std::min(parseFromString<size_t>(end_str.substr(4)), start_logpointer + storage.settings.batch_max_size);
 
-    if (skipRun(log_items_batch.size(), start_logpointer))
-    {
-        skip_run = true;
+    if ((skip_run = skipRun(log_items_batch.size(), start_logpointer)))
         return;
-    }
 
     LOG_DEBUG(log, "Acquired lock for [{};{}]", start_logpointer, end_logpointer);
     // TODO myrrc store for 1 iteration more in case batch removal failed. Next node should try to
@@ -102,42 +100,37 @@ void ObjectStorageVFSGCThread::run() const
     removeBatch(start_logpointer, end_logpointer);
     LOG_DEBUG(log, "Removed lock for [{};{}]", start_logpointer, end_logpointer);
     successful_run = true;
-    ProfileEvents::increment(ProfileEvents::VFSGcRunsCompleted);
 }
 
 bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t log_pointer) const
 {
-    if (batch_size > storage.settings.batch_min_size)
+    const UInt64 min_size = storage.settings.batch_min_size;
+    if (batch_size >= min_size)
         return false;
-    if (!storage.settings.batch_can_wait_milliseconds)
+
+    const Int64 wait_ms = storage.settings.batch_can_wait_ms;
+    if (!wait_ms)
     {
-        LOG_TRACE(log, "Skipped run due to insufficient batch size: {} vs {}",
-            batch_size, storage.settings.batch_min_size);
+        LOG_DEBUG(log, "Skipped run due to insufficient batch size: {} < {}", batch_size, min_size);
         return true;
     }
 
-    /// batch creation time is determined by the first item
-    auto node_name = getNode(log_pointer);
     Coordination::Stat stat;
-    storage.zookeeper()->exists(node_name, &stat);
+    storage.zookeeper()->exists(getNode(log_pointer), &stat);
 
-    auto delta
+    const auto delta
         = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count() - stat.mtime;
 
-    if (delta > static_cast<int64_t>(storage.settings.batch_can_wait_milliseconds))
-        return false;
-    else
-    {
-        LOG_TRACE(log, "Skipped run due to insufficient batch size and time constraints: {} vs {} and {} vs {}",
-            batch_size, storage.settings.batch_min_size, delta, static_cast<int64_t>(storage.settings.batch_can_wait_milliseconds));
-        return true;
-    }
+    if (delta < wait_ms)
+        LOG_DEBUG(log, "Skipped run due to insufficient batch size ({} < {}) and time ({} < {})", batch_size, min_size, delta, wait_ms);
+
+    return delta < wait_ms;
 }
 
 
 void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const
 {
-    ProfileEvents::increment(ProfileEvents::VFSGcCummulativeLogItemsRead, end_logpointer - start_logpointer);
+    ProfileEvents::increment(ProfileEvents::VFSGcCumulativeLogItemsRead, end_logpointer - start_logpointer);
 
     auto & object_storage = *storage.object_storage;
     const bool should_have_previous_snapshot = start_logpointer > 0;
@@ -157,9 +150,8 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpoin
     if (should_have_previous_snapshot)
     {
         obsolete.emplace_back(std::move(old_snapshot));
-        ProfileEvents::increment(ProfileEvents::VFSGcCummulativeSnapshotBytesRead, old_snapshot_buf.count());
+        ProfileEvents::increment(ProfileEvents::VFSGcCumulativeSnapshotBytesRead, old_snapshot_buf.count());
     }
-
 
     if (!invalid.empty()) // TODO myrrc remove after testing
     {

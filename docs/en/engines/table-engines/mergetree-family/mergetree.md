@@ -949,20 +949,22 @@ counting.
 
 If turned on, disables `allow_remote_fs_zero_copy_replication` for disk. Unlike the former, can't be set in
 runtime, a server restart is needed.
-ClickHouse Keeper can not use VFS disk as a storage backend.
+ClickHouse Keeper can not use VFS disk as a backup storage.
 VFS is incompatible with `send_metadata`.
 
 When turned on, reuses the following settings:
 - `remote_fs_execute_merges_on_single_replica_time_threshold`
 - `zero_copy_merge_mutation_min_parts_size_sleep_before_lock`
 
-VFS specific settings
-`vfs_gc_sleep_ms` — sleep timeout between iterations for VFS disks
-(default: 1'000).
-`vfs_batch_min_size` — allowed to skip gc run if log batch size is smaller
-`vfs_batch_max_size` — max log batch size to process at once
-`vfs_batch_can_wait_milliseconds` — allowed to skip gc run if log batch is younger then specified
-`vfs_snapshot_lz4_compression_level` — VFS snapshot compression
+Additional settings:
+
+- `vfs_gc_sleep_ms` -- sleep timeout between garbage collector iterations (default: 10000).
+- `vfs_batch_min_size` -- skip garbage collector run if log batch size is smaller (default: 1).
+- `vfs_batch_max_size` -- max log batch size to process at once (default: 100000).
+- `vfs_batch_can_wait_ms` -- skip garbage collector run if log batch size is smaller than
+  `vfs_batch_min_size` and log batch first item was created in last `vfs_batch_can_wait_ms` milliseconds.
+  (default: 0, always skip).
+- `vfs_snapshot_lz4_compression_level` -- self-describing (default: 8).
 
 ### Dynamic Storage
 

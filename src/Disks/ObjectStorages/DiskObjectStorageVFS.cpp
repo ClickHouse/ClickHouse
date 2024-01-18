@@ -34,7 +34,6 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
 {
     if (send_metadata)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS doesn't support send_metadata");
-    log = &Poco::Logger::get(fmt::format("DiskVFS({})", log_name));
     zookeeper()->createAncestors(traits.log_item);
 }
 
