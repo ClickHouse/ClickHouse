@@ -68,15 +68,16 @@ std::optional<ProcessedPredicate> processPredicate(const ActionsDAG::Node & node
 
 struct ProcessedFunction
 {
-    const ActionsDAG::Node * node;
-    Field value;
+    const ActionsDAG::Node * hinted_node;
+    DataTypePtr result_type;
+    ExecutableFunctionPtr executable_function;
+    std::optional<Field> value;
     bool reversed; // If INPUT is right child
-    bool is_column_unsigned;
 };
 
 std::optional<ProcessedFunction> processFunction(const ActionsDAG::Node & node)
 {
-    if (node.children.size() != 2)
+    if (node.children.size() > 2)
         return std::nullopt;
 
     const ActionsDAG::Node * maybe_hinted_node = nullptr;
@@ -90,30 +91,35 @@ std::optional<ProcessedFunction> processFunction(const ActionsDAG::Node & node)
             maybe_hinted_node = child;
     }
 
-    if (!maybe_constant_node || !maybe_hinted_node||
-            !maybe_hinted_node->result_type->isValueRepresentedByInteger() ||
-            !maybe_constant_node->result_type->isValueRepresentedByInteger())
+    if (!maybe_hinted_node || !maybe_hinted_node->result_type->isValueRepresentedByInteger())
         return std::nullopt;
 
-    const auto & constant_type_name = maybe_constant_node->result_type->getName();
-    if (constant_type_name == "UInt128" || constant_type_name == "Int128" || constant_type_name == "UInt256" || constant_type_name == "Int256" ||
-            constant_type_name == "IPv4" || constant_type_name == "IPv6")
-        return std::nullopt;
+    if (maybe_constant_node)
+    {
+        const auto & constant_type_name = maybe_constant_node->result_type->getName();
+        if (constant_type_name == "UInt128" || constant_type_name == "Int128" || constant_type_name == "UInt256" || constant_type_name == "Int256" ||
+                constant_type_name == "IPv4" || constant_type_name == "IPv6")
+            return std::nullopt;
 
-    const auto & input_type = maybe_hinted_node->result_type;
-    const auto & constant_type = maybe_constant_node->result_type;
-    if (isDate(input_type) != isDate(constant_type) || isDate32(input_type) != isDate32(constant_type) ||
-            isDateTime(input_type) != isDateTime(constant_type) || isDateTime64(input_type) != isDateTime64(constant_type))
-        return std::nullopt;
+        const auto & input_type = maybe_hinted_node->result_type;
+        const auto & constant_type = maybe_constant_node->result_type;
+        if (isDate(input_type) != isDate(constant_type) || isDate32(input_type) != isDate32(constant_type) ||
+                isDateTime(input_type) != isDateTime(constant_type) || isDateTime64(input_type) != isDateTime64(constant_type))
+            return std::nullopt;
+    }
 
     ProcessedFunction result;
-    result.node = maybe_hinted_node;
-    if (maybe_constant_node->result_type->isValueRepresentedByUnsignedInteger())
-        result.value = maybe_constant_node->column->getUInt(0);
-    else
-        result.value = maybe_constant_node->column->getInt(0);
-    result.reversed = maybe_hinted_node == node.children[1];
-    result.is_column_unsigned = maybe_hinted_node->result_type->isValueRepresentedByUnsignedInteger();
+    result.hinted_node = maybe_hinted_node;
+    result.result_type = node.result_type;
+    result.executable_function = node.function;
+    if (maybe_constant_node)
+    {
+        if (maybe_constant_node->result_type->isValueRepresentedByUnsignedInteger())
+            result.value = maybe_constant_node->column->getUInt(0);
+        else
+            result.value = maybe_constant_node->column->getInt(0);
+        result.reversed = maybe_hinted_node == node.children[1];
+    }
     return result;
 }
 
@@ -242,7 +248,7 @@ void updateDataHintsWithFilterActionsDAG(DataHints & hints, const ActionsDAG::No
         intersectDataHints(hints, node_to_hints[&actions]);
 }
 
-const std::unordered_set<std::string> allowed_functions = {"plus", "minus", "multiply", "modulo"};
+const std::unordered_set<std::string> allowed_functions = {"plus", "minus", "multiply", "modulo", "toYear", "toQuarter", "toMonth", "toDayOfYear", "toDayOfMonth", "toDayOfWeek", "toHour", "toMinute", "toSecond"};
 
 void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG & actions)
 {
@@ -300,46 +306,46 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
             if (name == "modulo")
             {
                 node_to_hint[node] = {};
-                if (!info->reversed && info->value.getTypeName() == "UInt64")
+                if (!info->reversed && info->value.value().getTypeName() == "UInt64")
                 {
                     node_to_hint[node] = {true};
                     node_to_hint[node].setLowerBoundary(0);
-                    node_to_hint[node].setStrictUpperBoundary(info->value.get<uint64_t>());
+                    node_to_hint[node].setStrictUpperBoundary(info->value.value().get<uint64_t>());
                 }
                 stack.pop();
                 continue;
             }
 
-            if (!visited_nodes.contains(info->node))
+            if (!visited_nodes.contains(info->hinted_node))
             {
-                stack.push(info->node);
+                stack.push(info->hinted_node);
                 continue;
             }
 
-            if (node_to_hint.contains(info->node))
+            if (node_to_hint.contains(info->hinted_node))
             {
-                node_to_hint[node] = node_to_hint[info->node];
+                node_to_hint[node] = node_to_hint[info->hinted_node];
                 node_to_hint[node].is_column_unsigned = node->result_type->isValueRepresentedByUnsignedInteger();
 
                 if (name == "plus")
                 {
-                    node_to_hint[node].plusConst(info->value);
+                    node_to_hint[node].plusConst(info->value.value());
                 }
                 else if (name == "minus")
                 {
                     if (info->reversed)
                     {
                         node_to_hint[node].multiplyConst(-1);
-                        node_to_hint[node].plusConst(info->value);
+                        node_to_hint[node].plusConst(info->value.value());
                     }
                     else
                     {
-                        node_to_hint[node].minusConst(info->value);
+                        node_to_hint[node].minusConst(info->value.value());
                     }
                 }
                 else if (name == "multiply")
                 {
-                    node_to_hint[node].multiplyConst(info->value);
+                    node_to_hint[node].multiplyConst(info->value.value());
                 }
                 else if (name == "toHour")
                 {
@@ -368,6 +374,19 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
                 else if (name == "toQuarter")
                 {
                     node_to_hint[node] = {1, 4, true};
+                }
+                else if (name == "toYear")
+                {
+                    if (node_to_hint[node].lower_boundary.has_value()) {
+                        const auto& col1 = info->result_type->createColumnConst(1, node_to_hint[node].lower_boundary.value());
+                        const auto& result1 = info->executable_function->execute({{col1, info->hinted_node->result_type, "lower_boundary_hint"}}, info->result_type, 1, false);
+                        node_to_hint[node].lower_boundary = result1->getUInt(0);
+                    }
+                    if (node_to_hint[node].upper_boundary.has_value()) {
+                        const auto& col2 = info->result_type->createColumnConst(1, node_to_hint[node].upper_boundary.value());
+                        const auto& result2 = info->executable_function->execute({{col2, info->hinted_node->result_type, "upper_boundary_hint"}}, info->result_type, 1, false);
+                        node_to_hint[node].upper_boundary = result2->getUInt(0);
+                    }
                 }
             }
         }
