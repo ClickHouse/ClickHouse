@@ -128,7 +128,7 @@ ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std
 {
     auto zk_args = ZooKeeperArgs(config, config_name);
     // When we invoke this constructor, it implies the configuration has changed, therefore we should reload configuration to load balancer as well.
-    Coordination::ZooKeeperLoadBalancer::instance(config_name).init(args, zk_log_);
+    Coordination::ZooKeeperLoadBalancer::instance(config_name).init(zk_args, zk_log_);
     init(zk_args);
 }
 

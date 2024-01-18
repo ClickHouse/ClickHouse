@@ -95,6 +95,8 @@ public:
     {
         auto infoIt = endpoints_by_id.find(id);
         chassert(infoIt != endpoints_by_id.end());
+        // auto *log = &Poco::Logger::get("ZooKeeperLoadBalancerEndpoint");
+        // LOG_INFO(log, "getStatus id {}, status {} ", id, infoIt->current_status);
 
         return infoIt->current_status;
     }
@@ -121,9 +123,13 @@ public:
         auto start = endpoints_by_status.lower_bound(boost::make_tuple(status));
         auto end = endpoints_by_status.upper_bound(boost::make_tuple(status));
 
+        // auto *log = &Poco::Logger::get("ZooKeeperLoadBalancerEndpoint");
         std::vector<size_t> ids;
         for (auto it =start; it != end; ++it)
+        {
             ids.push_back(it->id);
+            // LOG_INFO(log, "getRangeByStatus status {}, endpoint {}", status, it->id);
+        }
 
         return ids;
     }
@@ -184,7 +190,7 @@ public:
 
     void atHostIsOffline(size_t id) override
     {
-        registry.atHostIsOnline(id);
+        registry.atHostIsOffline(id);
     }
 
     void atHostIsOnline(size_t id) override
@@ -324,6 +330,8 @@ public:
     {
         IBalancerWithEndpointStatuses::atHostIsOffline(id);
         reindex(id);
+        // auto *log = &Poco::Logger::get("ZooKeeperLoadBalancerEndpoint");
+        // LOG_INFO(log, "Set the endpoint {} to OFFLINE", id);
     }
 
     void atHostIsOnline(size_t id) override
@@ -787,15 +795,12 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
         }
         catch (DB::Exception& ex)
         {
+            connection_balancer->atHostIsOffline(endpoint.id);
             LOG_ERROR(log, "Failed to connect to ZooKeeper host {}, error {}", endpoint.address, ex.what());
-
-            if (ex.code() == DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
-            {
-                throw;
-            }
         }
-        throwWhenNoHostAvailable(dns_error_occurred);
     }
+    // now get host returned the error not sure if dns error make sense or not.
+    // throwWhenNoHostAvailable(dns_error_occurred);
 }
 
 }
