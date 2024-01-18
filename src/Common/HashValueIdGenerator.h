@@ -823,8 +823,9 @@ private:
 
     ALWAYS_INLINE void emplaceValueIdImpl(const StringRef & raw_value, UInt64 value_id)
     {
-        auto aligned_addr = buildMapStringKey(raw_value);
-        const ElementType * value = reinterpret_cast<const ElementType *>(aligned_addr.data);
+        auto * aligned_addr = pool.alignedAlloc(sizeof(ElementType), sizeof(ElementType));
+        memcpy(aligned_addr, raw_value.data, sizeof(ElementType));
+        const ElementType * value = reinterpret_cast<const ElementType *>(aligned_addr);
         typename HashMapWithSavedHash<ElementType, UInt64>::LookupResult m_it;
         bool inserted = false;
         value_ids_index.emplace(*value, m_it, inserted);
