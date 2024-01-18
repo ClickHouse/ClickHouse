@@ -606,7 +606,7 @@ def test_big_insert(cluster):
 def test_endpoint(cluster):
     node = cluster.instances[NODE_NAME]
     account_name = "devstoreaccount1"
-    container_name = "cont"
+    container_name = "cont2"
     data_prefix = "data_prefix"
     port = cluster.azurite_port
 
