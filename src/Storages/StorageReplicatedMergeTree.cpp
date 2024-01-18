@@ -2731,7 +2731,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                     metadata_snapshot,
                     clone_params,
                     getContext(),
-                    insert_increment.get());
+                    part_desc->new_part_info.min_block,
+                    part_desc->new_part_info.max_block);
 
                 part_desc->res_part = std::move(res_part);
                 part_desc->temporary_part_lock = std::move(temporary_part_lock);
@@ -8003,6 +8004,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                     metadata_snapshot,
                     clone_params,
                     query_context,
+                    index,
                     index);
 
                 dst_parts.emplace_back(dst_part);

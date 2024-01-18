@@ -2073,6 +2073,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                             partition_id, src_part->name);
 
         IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
+        /// This will generate unique name in scope of current server process.
+        auto index = insert_increment.get();
 
         if (is_partition_exp_different)
         {
@@ -2088,16 +2090,15 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 my_metadata_snapshot,
                 clone_params,
                 local_context,
-                insert_increment.get());
+                index,
+                index);
 
             dst_parts.emplace_back(std::move(dst_part));
             dst_parts_locks.emplace_back(std::move(part_lock));
         }
         else
         {
-            /// This will generate unique name in scope of current server process.
-            Int64 temp_index = insert_increment.get();
-            MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+            MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
 
             auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
                 src_part,

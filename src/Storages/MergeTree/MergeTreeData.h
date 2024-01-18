@@ -858,7 +858,8 @@ public:
         const StorageMetadataPtr & my_metadata_snapshot,
         const IDataPartStorage::ClonePartParams & clone_params,
         ContextPtr local_context,
-        Int64 temp_index);
+        Int64 min_block,
+        Int64 max_block);
 
     static std::pair<MergeTreePartition, IMergeTreeDataPart::MinMaxIndex> createPartitionAndMinMaxIndexFromSourcePart(
         const MergeTreeData::DataPartPtr & src_part,

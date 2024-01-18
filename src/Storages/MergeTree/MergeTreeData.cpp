@@ -7099,10 +7099,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     const StorageMetadataPtr & my_metadata_snapshot,
     const IDataPartStorage::ClonePartParams & clone_params,
     ContextPtr local_context,
-    Int64 temp_index
+    Int64 min_block,
+    Int64 max_block
 )
 {
-    MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+    MergeTreePartInfo dst_part_info(partition_id, min_block, max_block, src_part->info.level);
 
     return MergeTreeDataPartCloner::cloneWithDistinctPartitionExpression(
         this,
