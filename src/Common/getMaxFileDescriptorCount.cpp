@@ -3,17 +3,17 @@
 
 std::optional<size_t> getMaxFileDescriptorCount()
 {
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// We want to calculate it only once.
     static auto result = []() -> std::optional<size_t>
     {
-    #if defined(OS_LINUX) || defined(OS_DARWIN)
         rlimit rlim;
-        if (getrlimit(RLIMIT_NOFILE, &rlim))
+        if (0 != getrlimit(RLIMIT_NOFILE, &rlim))
             return std::nullopt;
         return rlim.rlim_max;
-    #else
-        return std::nullopt;
-    #endif
     }();
-
     return result;
+#else
+    return std::nullopt;
+#endif
 }
