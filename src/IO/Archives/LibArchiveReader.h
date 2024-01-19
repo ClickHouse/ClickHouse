@@ -1,7 +1,7 @@
 #pragma once
 
 #include "config.h"
-
+#include <mutex>
 #include <IO/Archives/IArchiveReader.h>
 
 
@@ -52,20 +52,31 @@ protected:
     /// Constructs an archive's reader that will read from a file in the local filesystem.
     LibArchiveReader(std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_);
 
+    LibArchiveReader(std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_, const ReadArchiveFunction & archive_read_function_);
+
 private:
     class ReadBufferFromLibArchive;
     class Handle;
     class FileEnumeratorImpl;
+    class StreamInfo;
+
+    Handle acquireHandle();
 
     const std::string archive_name;
     const bool lock_on_reading;
     const String path_to_archive;
+    const ReadArchiveFunction archive_read_function;
+    mutable std::mutex mutex;
+    
 };
 
 class TarArchiveReader : public LibArchiveReader
 {
 public:
     explicit TarArchiveReader(std::string path_to_archive) : LibArchiveReader("tar", /*lock_on_reading_=*/ true, std::move(path_to_archive)) { }
+
+    explicit TarArchiveReader(std::string path_to_archive, const ReadArchiveFunction & archive_read_function ) : LibArchiveReader("tar", /*lock_on_reading_=*/ true, std::move(path_to_archive), archive_read_function) { }
+
 };
 
 class SevenZipArchiveReader : public LibArchiveReader

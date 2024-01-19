@@ -6,7 +6,7 @@ namespace DB
 
 bool hasRegisteredArchiveFileExtension(const String & path)
 {
-    return path.ends_with(".zip") || path.ends_with(".zipx");
+    return path.ends_with(".zip") || path.ends_with(".zipx") || path.ends_with(".tar");
 }
 
 }

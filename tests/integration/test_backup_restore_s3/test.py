@@ -453,6 +453,11 @@ def test_backup_to_zip():
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', 'minio123')"
     check_backup_and_restore(storage_policy, backup_destination)
 
+def test_backup_to_tar():
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar', 'minio', 'minio123')"
+    check_backup_and_restore(storage_policy, backup_destination)
 
 def test_user_specific_auth(start_cluster):
     def create_user(user):

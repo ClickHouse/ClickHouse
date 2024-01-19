@@ -48,7 +48,7 @@ std::shared_ptr<IArchiveReader> createArchiveReader(
                  tar_extensions.begin(), tar_extensions.end(), [&](const auto extension) { return path_to_archive.ends_with(extension); }))
     {
 #if USE_LIBARCHIVE
-        return std::make_shared<TarArchiveReader>(path_to_archive);
+        return std::make_shared<TarArchiveReader>(path_to_archive, archive_read_function);
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "libarchive library is disabled");
 #endif

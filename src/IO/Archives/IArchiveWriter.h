@@ -22,6 +22,9 @@ public:
     /// of the function `writeFile()` should be destroyed before next call of `writeFile()`.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename) = 0;
 
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & filename, const size_t & size) = 0;
+
+
     /// Returns true if there is an active instance of WriteBuffer returned by writeFile().
     /// This function should be used mostly for debugging purposes.
     virtual bool isWritingFile() const = 0;
