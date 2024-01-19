@@ -25,7 +25,35 @@ def started_cluster(request):
         cluster.shutdown()
 
 
-def test_already_processed_log_batch(started_cluster):
+# TODO myrrc check possible errors on merge and move
+def test_reacquire_session(started_cluster):
+    """
+    Test VFS can work when ZK session breaks
+    """
+    node: ClickHouseInstance = started_cluster.instances["node"]
+    # non-replicated MergeTree implies ZK data flow will be vfs-related
+    node.query("CREATE TABLE test (i UInt32) ENGINE=MergeTree ORDER BY i")
+    node.query("INSERT INTO test VALUES (0)")
+
+    with PartitionManager() as pm:
+        pm.drop_instance_zk_connections(node)
+        node.query_and_get_error("INSERT INTO test VALUES (1)")
+        time.sleep(4)
+    time.sleep(2)  # Wait for CH to reconnect to ZK before next GC run
+
+    assert (
+        int(node.count_in_log("VFSGC(reacquire): Removed lock for")) > 1
+    ), "GC must run at least twice"
+    assert (
+        int(node.count_in_log("Trying to establish a new connection with ZooKeeper"))
+        > 1
+    ), "ZooKeeper session must expire"
+
+    node.query("INSERT INTO test VALUES (2)")
+    assert int(node.query("SELECT count() FROM test")) == 2
+
+
+def test_already_processed_batch(started_cluster):
     """
     Test if GC:
     - processed a log batch
@@ -53,31 +81,3 @@ def test_already_processed_log_batch(started_cluster):
     assert int(node.count_in_log("found snapshot for 14, discarding this batch")) == 1
     assert zk.get_children("/vfs_log/already/ops") == []
     zk.stop()
-
-
-# TODO myrrc check possible errors on merge and move
-def test_reacquire_session(started_cluster):
-    """
-    Test VFS can work when ZK session breaks
-    """
-    node: ClickHouseInstance = started_cluster.instances["node"]
-    # non-replicated MergeTree implies ZK data flow will be vfs-related
-    node.query("CREATE TABLE test (i UInt32) ENGINE=MergeTree ORDER BY i")
-    node.query("INSERT INTO test VALUES (0)")
-
-    with PartitionManager() as pm:
-        pm.drop_instance_zk_connections(node)
-        node.query_and_get_error("INSERT INTO test VALUES (1)")
-        time.sleep(4)
-    time.sleep(2)  # Wait for CH to reconnect to ZK before next GC run
-
-    assert (
-        int(node.count_in_log("VFSGC(reacquire): Removed lock for")) == 2
-    ), "GC must run twice"
-    assert (
-        int(node.count_in_log("Trying to establish a new connection with ZooKeeper"))
-        > 1
-    ), "ZooKeeper session must expire"
-
-    node.query("INSERT INTO test VALUES (2)")
-    assert int(node.query("SELECT count() FROM test")) == 2
