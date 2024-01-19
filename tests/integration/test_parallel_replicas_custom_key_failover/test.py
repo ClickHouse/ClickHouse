@@ -34,6 +34,20 @@ def create_tables(cluster, table_name):
         f"CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String) Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', 'r3') ORDER BY (key)"
     )
 
+    # create distributed table
+    node1.query(f"DROP TABLE IF EXISTS {table_name}_d SYNC")
+    node1.query(
+        f"""
+            CREATE TABLE {table_name}_d AS {table_name}
+            Engine=Distributed(
+                {cluster},
+                currentDatabase(),
+                {table_name},
+                key
+            )
+            """
+    )
+
     # populate data
     node1.query(
         f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(1000)"
@@ -73,7 +87,7 @@ def test_parallel_replicas_custom_key_failover(
     log_comment = uuid.uuid4()
     assert (
         node1.query(
-            f"SELECT key, count() FROM cluster('{cluster}', currentDatabase(), test_table) GROUP BY key ORDER BY key",
+            f"SELECT key, count() FROM {table}_d GROUP BY key ORDER BY key",
             settings={
                 "log_comment": log_comment,
                 "prefer_localhost_replica": prefer_localhost_replica,
@@ -108,7 +122,7 @@ def test_parallel_replicas_custom_key_failover(
 
         assert (
             node1.query(
-                f"SELECT h, count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
+                f"SELECT h, count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h SETTINGS skip_unavailable_shards=1"
             )
             == "n1\t3\nn3\t2\n"
         )
