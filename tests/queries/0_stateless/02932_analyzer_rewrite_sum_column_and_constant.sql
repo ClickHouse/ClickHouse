@@ -1,20 +1,18 @@
+-- { echoOn }
 Select sum(number + 1) from numbers(10) SETTINGS allow_experimental_analyzer=1;
 Select sum(1 + number) from numbers(10) SETTINGS allow_experimental_analyzer=1;
 Select sum(number - 1) from numbers(10) SETTINGS allow_experimental_analyzer=1;
 Select sum(1 - number) from numbers(10) SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (Select sum(number + 1) from numbers(10) SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (Select sum(1 + number) from numbers(10) SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (Select sum(number - 1) from numbers(10) SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (Select sum(1 - number) from numbers(10) SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
 
 WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0) SETTINGS allow_experimental_analyzer=1;
 WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0) SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0) SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0) SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
+-- { echoOff }
 
 DROP TABLE IF EXISTS test_table;
 
@@ -31,57 +29,50 @@ INSERT INTO test_table VALUES (3, 3.3, 3.33);
 INSERT INTO test_table VALUES (4, 4.4, 4.44);
 INSERT INTO test_table VALUES (5, 5.5, 5.55);
 
+-- { echoOn }
 SELECT sum(uint64 + 1 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1;
 SELECT sum(uint64 + 1) AS j from test_table having j > 0 SETTINGS allow_experimental_analyzer=1;
 SELECT sum(uint64 + 1 AS i) j from test_table where i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 SELECT sum((uint64 AS m) + (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 SELECT sum(((uint64 AS m) + (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (SELECT sum(uint64 + 1 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(uint64 + 1) AS j from test_table having j > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(uint64 + 1 AS i) j from test_table where i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum((uint64 AS m) + (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(((uint64 AS m) + (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
 
 SELECT sum(1 + uint64 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1;
 SELECT sum(1 + uint64) AS j from test_table having j > 0 SETTINGS allow_experimental_analyzer=1;
 SELECT sum(1 + uint64 AS i) j from test_table where i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 SELECT sum((1 AS m) + (uint64 AS n)) j from test_table where m > 0 and n > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 SELECT sum(((1 AS m) + (uint64 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (SELECT sum(1 + uint64 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(1 + uint64) AS j from test_table having j > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(1 + uint64 AS i) j from test_table where i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum((1 AS m) + (uint64 AS n)) j from test_table where m > 0 and n > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(((1 AS m) + (uint64 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
 
 SELECT sum(uint64 - 1 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1;
 SELECT sum(uint64 - 1) AS j from test_table having j > 0 SETTINGS allow_experimental_analyzer=1;
 SELECT sum(uint64 - 1 AS i) j from test_table where i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 SELECT sum((uint64 AS m) - (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 SELECT sum(((uint64 AS m) - (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (SELECT sum(uint64 - 1 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(uint64 - 1) AS j from test_table having j > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(uint64 - 1 AS i) j from test_table where i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum((uint64 AS m) - (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(((uint64 AS m) - (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
 
 SELECT sum(1 - uint64 AS i) from test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(1 - uint64) AS j from test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(1 - uint64 AS i) j from test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum((1 AS m) - (uint64 AS n)) j from test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(((1 AS m) - (uint64 AS n)) AS i) j from test_table SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (SELECT sum(1 - uint64 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(1 - uint64) AS j from test_table having j < 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(1 - uint64 AS i) j from test_table where i > 0 having j < 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum((1 AS m) - (uint64 AS n)) j from test_table where m > 0 and n > 0 having j < 0 SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(((1 AS m) - (uint64 AS n)) AS i) j from test_table where m > 0 and n > 0 and i < 0 having j < 0 SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
 
 SELECT sum(uint64 + 2.11) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(2.11 + uint64) From test_table SETTINGS allow_experimental_analyzer=1;
@@ -91,7 +82,6 @@ SELECT sum(uint64) + 2.11 * count(uint64) From test_table SETTINGS allow_experim
 SELECT 2.11 * count(uint64) + sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(uint64) - 2.11 * count(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT 2.11 * count(uint64) - sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (SELECT sum(uint64 + 2.11) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(2.11 + uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(uint64 - 2.11) From test_table SETTINGS allow_experimental_analyzer=1);
@@ -100,7 +90,6 @@ EXPLAIN QUERY TREE (SELECT sum(uint64) + 2.11 * count(uint64) From test_table SE
 EXPLAIN QUERY TREE (SELECT 2.11 * count(uint64) + sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(uint64) - 2.11 * count(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT 2.11 * count(uint64) - sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
 
 SELECT sum(uint64 + 2) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(2 + uint64) From test_table SETTINGS allow_experimental_analyzer=1;
@@ -110,7 +99,6 @@ SELECT sum(uint64) + 2 * count(uint64) From test_table SETTINGS allow_experiment
 SELECT 2 * count(uint64) + sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(uint64) - 2 * count(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT 2 * count(uint64) - sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (SELECT sum(uint64 + 2) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(2 + uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(uint64 - 2) From test_table SETTINGS allow_experimental_analyzer=1);
@@ -119,7 +107,6 @@ EXPLAIN QUERY TREE (SELECT sum(uint64) + 2 * count(uint64) From test_table SETTI
 EXPLAIN QUERY TREE (SELECT 2 * count(uint64) + sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(uint64) - 2 * count(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT 2 * count(uint64) - sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
 
 SELECT sum(float64 + 2) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(2 + float64) From test_table SETTINGS allow_experimental_analyzer=1;
@@ -129,7 +116,6 @@ SELECT sum(float64) + 2 * count(float64) From test_table SETTINGS allow_experime
 SELECT 2 * count(float64) + sum(float64) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(float64) - 2 * count(float64) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT 2 * count(float64) - sum(float64) From test_table SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (SELECT sum(float64 + 2) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(2 + float64) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(float64 - 2) From test_table SETTINGS allow_experimental_analyzer=1);
@@ -138,7 +124,6 @@ EXPLAIN QUERY TREE (SELECT sum(float64) + 2 * count(float64) From test_table SET
 EXPLAIN QUERY TREE (SELECT 2 * count(float64) + sum(float64) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(float64) - 2 * count(float64) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT 2 * count(float64) - sum(float64) From test_table SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
 
 SELECT sum(decimal32 + 2) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(2 + decimal32) From test_table SETTINGS allow_experimental_analyzer=1;
@@ -148,7 +133,6 @@ SELECT sum(decimal32) + 2 * count(decimal32) From test_table SETTINGS allow_expe
 SELECT 2 * count(decimal32) + sum(decimal32) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(decimal32) - 2 * count(decimal32) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT 2 * count(decimal32) - sum(decimal32) From test_table SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(2 + decimal32) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) From test_table SETTINGS allow_experimental_analyzer=1);
@@ -157,7 +141,6 @@ EXPLAIN QUERY TREE (SELECT sum(decimal32) + 2 * count(decimal32) From test_table
 EXPLAIN QUERY TREE (SELECT 2 * count(decimal32) + sum(decimal32) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(decimal32) - 2 * count(decimal32) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT 2 * count(decimal32) - sum(decimal32) From test_table SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
 
 SELECT sum(uint64 + 2) + sum(uint64 + 3) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(uint64 + 2) - sum(uint64 + 3) From test_table SETTINGS allow_experimental_analyzer=1;
@@ -168,7 +151,6 @@ SELECT (sum(uint64) + 2 * count(uint64)) - (sum(uint64) + 3 * count(uint64)) Fro
 SELECT (sum(uint64) - 2 * count(uint64)) + (sum(uint64) - 3 * count(uint64)) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT (sum(uint64) - 2 * count(uint64)) - (sum(uint64) - 3 * count(uint64)) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT (2 * count(uint64) - sum(uint64)) + (3 * count(uint64) - sum(uint64)) From test_table SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (SELECT sum(uint64 + 2) + sum(uint64 + 3) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(uint64 + 2) - sum(uint64 + 3) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(uint64 - 2) + sum(uint64 - 3) From test_table SETTINGS allow_experimental_analyzer=1);
@@ -179,7 +161,6 @@ EXPLAIN QUERY TREE (SELECT (sum(uint64) + 2 * count(uint64)) - (sum(uint64) + 3 
 EXPLAIN QUERY TREE (SELECT (sum(uint64) - 2 * count(uint64)) + (sum(uint64) - 3 * count(uint64)) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT (sum(uint64) - 2 * count(uint64)) - (sum(uint64) - 3 * count(uint64)) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT (2 * count(uint64) - sum(uint64)) + (3 * count(uint64) - sum(uint64)) From test_table SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
 
 SELECT sum(float64 + 2) + sum(float64 + 3) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(float64 + 2) - sum(float64 + 3) From test_table SETTINGS allow_experimental_analyzer=1;
@@ -191,7 +172,6 @@ SELECT (sum(float64) + 2 * count(float64)) - (sum(float64) + 3 * count(float64))
 SELECT (sum(float64) - 2 * count(float64)) + (sum(float64) - 3 * count(float64)) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT (sum(float64) - 2 * count(float64)) - (sum(float64) - 3 * count(float64)) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT (2 * count(float64) - sum(float64)) + (3 * count(float64) - sum(float64)) From test_table SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (SELECT sum(float64 + 2) + sum(float64 + 3) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(float64 + 2) - sum(float64 + 3) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(float64 - 2) + sum(float64 - 3) From test_table SETTINGS allow_experimental_analyzer=1);
@@ -202,7 +182,6 @@ EXPLAIN QUERY TREE (SELECT (sum(float64) + 2 * count(float64)) - (sum(float64) +
 EXPLAIN QUERY TREE (SELECT (sum(float64) - 2 * count(float64)) + (sum(float64) - 3 * count(float64)) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT (sum(float64) - 2 * count(float64)) - (sum(float64) - 3 * count(float64)) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT (2 * count(float64) - sum(float64)) + (3 * count(float64) - sum(float64)) From test_table SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
 
 SELECT sum(decimal32 + 2) + sum(decimal32 + 3) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT sum(decimal32 + 2) - sum(decimal32 + 3) From test_table SETTINGS allow_experimental_analyzer=1;
@@ -214,7 +193,6 @@ SELECT (sum(decimal32) + 2 * count(decimal32)) - (sum(decimal32) + 3 * count(dec
 SELECT (sum(decimal32) - 2 * count(decimal32)) + (sum(decimal32) - 3 * count(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT (sum(decimal32) - 2 * count(decimal32)) - (sum(decimal32) - 3 * count(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1;
 SELECT (2 * count(decimal32) - sum(decimal32)) + (3 * count(decimal32) - sum(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1;
-SELECT '--';
 EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) + sum(decimal32 + 3) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) - sum(decimal32 + 3) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) + sum(decimal32 - 3) From test_table SETTINGS allow_experimental_analyzer=1);
@@ -225,6 +203,6 @@ EXPLAIN QUERY TREE (SELECT (sum(decimal32) + 2 * count(decimal32)) - (sum(decima
 EXPLAIN QUERY TREE (SELECT (sum(decimal32) - 2 * count(decimal32)) + (sum(decimal32) - 3 * count(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT (sum(decimal32) - 2 * count(decimal32)) - (sum(decimal32) - 3 * count(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1);
 EXPLAIN QUERY TREE (SELECT (2 * count(decimal32) - sum(decimal32)) + (3 * count(decimal32) - sum(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1);
-SELECT '--';
+-- { echoOff }
 
 DROP TABLE IF EXISTS test_table;

@@ -13,7 +13,7 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(ASTPtr & ast, const Data & 
         visit(*func, ast, data);
 }
 
-/** Rewrite the following AST to break the function `sum(column +/- literal)` into two individual functions
+/** Rewrites `sum(column +/- literal)` into two individual functions
  * `sum(column)` and `literal * count(column)`.
  * sum(column + literal) -> sum(column) + literal * count(column)
  * sum(literal + column) -> literal * count(column) + sum(column)
@@ -35,15 +35,12 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
     if (!func_plus_minus || !function_supported.contains(Poco::toLower(func_plus_minus->name)) || func_plus_minus->arguments->children.size() != 2)
         return;
 
-    size_t column_id = func_plus_minus->arguments->children.size();
-
-    for (size_t i = 0; i < func_plus_minus->arguments->children.size(); i++)
-    {
-        if (func_plus_minus->arguments->children[i]->as<ASTIdentifier>())
-            column_id = i;
-    }
-
-    if (column_id == func_plus_minus->arguments->children.size())
+    size_t column_id;
+    if (func_plus_minus->arguments->children[0]->as<ASTIdentifier>() && func_plus_minus->arguments->children[1]->as<ASTLiteral>())
+        column_id = 0;
+    else if (func_plus_minus->arguments->children[0]->as<ASTLiteral>() && func_plus_minus->arguments->children[1]->as<ASTIdentifier>())
+        column_id = 1;
+    else
         return;
 
     size_t literal_id = 1 - column_id;
@@ -51,6 +48,7 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
     if (!literal)
         return;
 
+    ///all the types listed are numbers and supported by 'plus' and 'minus'.
     Field::Types::Which literal_type = literal->value.getType();
     if (literal_type != Field::Types::UInt64 &&
         literal_type != Field::Types::Int64 &&

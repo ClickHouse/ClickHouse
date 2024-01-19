@@ -1,8 +1,13 @@
+-- { echoOn }
+Select sum(number + 1) from numbers(10) SETTINGS allow_experimental_analyzer=1;
 55
+Select sum(1 + number) from numbers(10) SETTINGS allow_experimental_analyzer=1;
 55
+Select sum(number - 1) from numbers(10) SETTINGS allow_experimental_analyzer=1;
 35
+Select sum(1 - number) from numbers(10) SETTINGS allow_experimental_analyzer=1;
 -35
---
+EXPLAIN QUERY TREE (Select sum(number + 1) from numbers(10) SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(plus(number, 1)) UInt64
@@ -29,6 +34,7 @@ QUERY id: 0
         LIST id: 13, nodes: 1
           CONSTANT id: 14, constant_value: UInt64_10, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (Select sum(1 + number) from numbers(10) SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(plus(1, number)) UInt64
@@ -55,6 +61,7 @@ QUERY id: 0
         LIST id: 13, nodes: 1
           CONSTANT id: 14, constant_value: UInt64_10, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (Select sum(number - 1) from numbers(10) SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(minus(number, 1)) Int64
@@ -81,6 +88,7 @@ QUERY id: 0
         LIST id: 13, nodes: 1
           CONSTANT id: 14, constant_value: UInt64_10, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (Select sum(1 - number) from numbers(10) SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(minus(1, number)) Int64
@@ -107,10 +115,11 @@ QUERY id: 0
         LIST id: 13, nodes: 1
           CONSTANT id: 14, constant_value: UInt64_10, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
---
+WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0) SETTINGS allow_experimental_analyzer=1;
 \N
+WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0) SETTINGS allow_experimental_analyzer=1;
 0
---
+EXPLAIN QUERY TREE (WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0) SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(plus(number, my_literal)) Nullable(UInt64)
@@ -136,6 +145,7 @@ QUERY id: 0
         LIST id: 13, nodes: 1
           CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0) SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(sum(number), multiply(my_literal, count())) Nullable(UInt64)
@@ -165,13 +175,18 @@ QUERY id: 0
         LIST id: 16, nodes: 1
           CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
---
+-- { echoOn }
+SELECT sum(uint64 + 1 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1;
 20
+SELECT sum(uint64 + 1) AS j from test_table having j > 0 SETTINGS allow_experimental_analyzer=1;
 20
+SELECT sum(uint64 + 1 AS i) j from test_table where i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 20
+SELECT sum((uint64 AS m) + (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 20
+SELECT sum(((uint64 AS m) + (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 20
---
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 1 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(i) UInt64
@@ -205,6 +220,7 @@ QUERY id: 0
                 CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
           CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 1) AS j from test_table having j > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j UInt64
@@ -248,6 +264,7 @@ QUERY id: 0
                             COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
           CONSTANT id: 23, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 1 AS i) j from test_table where i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j UInt64
@@ -301,6 +318,7 @@ QUERY id: 0
                             COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
           CONSTANT id: 28, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum((uint64 AS m) + (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j UInt64
@@ -360,6 +378,7 @@ QUERY id: 0
                             COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
           CONSTANT id: 32, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(((uint64 AS m) + (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j UInt64
@@ -428,13 +447,17 @@ QUERY id: 0
                             COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
           CONSTANT id: 37, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
---
+SELECT sum(1 + uint64 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1;
 20
+SELECT sum(1 + uint64) AS j from test_table having j > 0 SETTINGS allow_experimental_analyzer=1;
 20
+SELECT sum(1 + uint64 AS i) j from test_table where i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 20
+SELECT sum((1 AS m) + (uint64 AS n)) j from test_table where m > 0 and n > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 20
+SELECT sum(((1 AS m) + (uint64 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 20
---
+EXPLAIN QUERY TREE (SELECT sum(1 + uint64 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(i) UInt64
@@ -468,6 +491,7 @@ QUERY id: 0
                 COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
           CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(1 + uint64) AS j from test_table having j > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j UInt64
@@ -511,6 +535,7 @@ QUERY id: 0
                       COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
           CONSTANT id: 23, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(1 + uint64 AS i) j from test_table where i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j UInt64
@@ -564,6 +589,7 @@ QUERY id: 0
                       COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
           CONSTANT id: 28, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum((1 AS m) + (uint64 AS n)) j from test_table where m > 0 and n > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j UInt64
@@ -623,6 +649,7 @@ QUERY id: 0
                       COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
           CONSTANT id: 32, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(((1 AS m) + (uint64 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j UInt64
@@ -691,13 +718,17 @@ QUERY id: 0
                       COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
           CONSTANT id: 37, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
---
+SELECT sum(uint64 - 1 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1;
 10
+SELECT sum(uint64 - 1) AS j from test_table having j > 0 SETTINGS allow_experimental_analyzer=1;
 10
+SELECT sum(uint64 - 1 AS i) j from test_table where i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 10
+SELECT sum((uint64 AS m) - (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 10
+SELECT sum(((uint64 AS m) - (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1;
 10
---
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 1 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(i) Int64
@@ -731,6 +762,7 @@ QUERY id: 0
                 CONSTANT id: 10, constant_value: UInt64_1, constant_value_type: UInt8
           CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 1) AS j from test_table having j > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j Int64
@@ -774,6 +806,7 @@ QUERY id: 0
                             COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
           CONSTANT id: 23, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 1 AS i) j from test_table where i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j Int64
@@ -827,6 +860,7 @@ QUERY id: 0
                             COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
           CONSTANT id: 28, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum((uint64 AS m) - (1 AS n)) j from test_table where m > 0 and n > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j Int64
@@ -886,6 +920,7 @@ QUERY id: 0
                             COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
           CONSTANT id: 32, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(((uint64 AS m) - (1 AS n)) AS i) j from test_table where m > 0 and n > 0 and i > 0 having j > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j Int64
@@ -954,13 +989,17 @@ QUERY id: 0
                             COLUMN id: 6, column_name: uint64, result_type: UInt64, source_id: 7
           CONSTANT id: 37, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
---
+SELECT sum(1 - uint64 AS i) from test_table SETTINGS allow_experimental_analyzer=1;
 -10
+SELECT sum(1 - uint64) AS j from test_table SETTINGS allow_experimental_analyzer=1;
 -10
+SELECT sum(1 - uint64 AS i) j from test_table SETTINGS allow_experimental_analyzer=1;
 -10
+SELECT sum((1 AS m) - (uint64 AS n)) j from test_table SETTINGS allow_experimental_analyzer=1;
 -10
+SELECT sum(((1 AS m) - (uint64 AS n)) AS i) j from test_table SETTINGS allow_experimental_analyzer=1;
 -10
---
+EXPLAIN QUERY TREE (SELECT sum(1 - uint64 AS i) from test_table where i > 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(i) Int64
@@ -994,6 +1033,7 @@ QUERY id: 0
                 COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
           CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(1 - uint64) AS j from test_table having j < 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j Int64
@@ -1037,6 +1077,7 @@ QUERY id: 0
                       COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
           CONSTANT id: 23, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(1 - uint64 AS i) j from test_table where i > 0 having j < 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j Int64
@@ -1090,6 +1131,7 @@ QUERY id: 0
                       COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
           CONSTANT id: 28, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum((1 AS m) - (uint64 AS n)) j from test_table where m > 0 and n > 0 having j < 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j Int64
@@ -1149,6 +1191,7 @@ QUERY id: 0
                       COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
           CONSTANT id: 32, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(((1 AS m) - (uint64 AS n)) AS i) j from test_table where m > 0 and n > 0 and i < 0 having j < 0 SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     j Int64
@@ -1217,16 +1260,23 @@ QUERY id: 0
                       COLUMN id: 9, column_name: uint64, result_type: UInt64, source_id: 10
           CONSTANT id: 37, constant_value: UInt64_0, constant_value_type: UInt8
   SETTINGS allow_experimental_analyzer=1
---
+SELECT sum(uint64 + 2.11) From test_table SETTINGS allow_experimental_analyzer=1;
 25.549999999999997
+SELECT sum(2.11 + uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 25.549999999999997
+SELECT sum(uint64 - 2.11) From test_table SETTINGS allow_experimental_analyzer=1;
 4.450000000000001
+SELECT sum(2.11 - uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 -4.450000000000001
+SELECT sum(uint64) + 2.11 * count(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 25.549999999999997
+SELECT 2.11 * count(uint64) + sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 25.549999999999997
+SELECT sum(uint64) - 2.11 * count(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 4.450000000000001
+SELECT 2.11 * count(uint64) - sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 -4.450000000000001
---
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 2.11) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(plus(uint64, 2.11)) Float64
@@ -1250,6 +1300,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(2.11 + uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(plus(2.11, uint64)) Float64
@@ -1273,6 +1324,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 2.11) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(minus(uint64, 2.11)) Float64
@@ -1296,6 +1348,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(2.11 - uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(minus(2.11, uint64)) Float64
@@ -1319,6 +1372,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64) + 2.11 * count(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(sum(uint64), multiply(2.11, count(uint64))) Float64
@@ -1342,6 +1396,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT 2.11 * count(uint64) + sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(multiply(2.11, count(uint64)), sum(uint64)) Float64
@@ -1365,6 +1420,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64) - 2.11 * count(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(uint64), multiply(2.11, count(uint64))) Float64
@@ -1388,6 +1444,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT 2.11 * count(uint64) - sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(multiply(2.11, count(uint64)), sum(uint64)) Float64
@@ -1411,16 +1468,23 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
---
+SELECT sum(uint64 + 2) From test_table SETTINGS allow_experimental_analyzer=1;
 25
+SELECT sum(2 + uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 25
+SELECT sum(uint64 - 2) From test_table SETTINGS allow_experimental_analyzer=1;
 5
+SELECT sum(2 - uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 -5
+SELECT sum(uint64) + 2 * count(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 25
+SELECT 2 * count(uint64) + sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 25
+SELECT sum(uint64) - 2 * count(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 5
+SELECT 2 * count(uint64) - sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 -5
---
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 2) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(plus(uint64, 2)) UInt64
@@ -1444,6 +1508,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(2 + uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(plus(2, uint64)) UInt64
@@ -1467,6 +1532,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 2) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(minus(uint64, 2)) Int64
@@ -1490,6 +1556,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(2 - uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(minus(2, uint64)) Int64
@@ -1513,6 +1580,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64) + 2 * count(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(sum(uint64), multiply(2, count(uint64))) UInt64
@@ -1536,6 +1604,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT 2 * count(uint64) + sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(multiply(2, count(uint64)), sum(uint64)) UInt64
@@ -1559,6 +1628,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64) - 2 * count(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(uint64), multiply(2, count(uint64))) Int64
@@ -1582,6 +1652,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT 2 * count(uint64) - sum(uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(multiply(2, count(uint64)), sum(uint64)) Int64
@@ -1605,16 +1676,23 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
---
+SELECT sum(float64 + 2) From test_table SETTINGS allow_experimental_analyzer=1;
 26.5
+SELECT sum(2 + float64) From test_table SETTINGS allow_experimental_analyzer=1;
 26.5
+SELECT sum(float64 - 2) From test_table SETTINGS allow_experimental_analyzer=1;
 6.5
+SELECT sum(2 - float64) From test_table SETTINGS allow_experimental_analyzer=1;
 -6.5
+SELECT sum(float64) + 2 * count(float64) From test_table SETTINGS allow_experimental_analyzer=1;
 26.5
+SELECT 2 * count(float64) + sum(float64) From test_table SETTINGS allow_experimental_analyzer=1;
 26.5
+SELECT sum(float64) - 2 * count(float64) From test_table SETTINGS allow_experimental_analyzer=1;
 6.5
+SELECT 2 * count(float64) - sum(float64) From test_table SETTINGS allow_experimental_analyzer=1;
 -6.5
---
+EXPLAIN QUERY TREE (SELECT sum(float64 + 2) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(plus(float64, 2)) Float64
@@ -1638,6 +1716,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(2 + float64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(plus(2, float64)) Float64
@@ -1661,6 +1740,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(float64 - 2) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(minus(float64, 2)) Float64
@@ -1684,6 +1764,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(2 - float64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(minus(2, float64)) Float64
@@ -1707,6 +1788,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(float64) + 2 * count(float64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(sum(float64), multiply(2, count(float64))) Float64
@@ -1730,6 +1812,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT 2 * count(float64) + sum(float64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(multiply(2, count(float64)), sum(float64)) Float64
@@ -1753,6 +1836,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(float64) - 2 * count(float64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(float64), multiply(2, count(float64))) Float64
@@ -1776,6 +1860,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT 2 * count(float64) - sum(float64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(multiply(2, count(float64)), sum(float64)) Float64
@@ -1799,16 +1884,23 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
---
+SELECT sum(decimal32 + 2) From test_table SETTINGS allow_experimental_analyzer=1;
 26.65
+SELECT sum(2 + decimal32) From test_table SETTINGS allow_experimental_analyzer=1;
 26.65
+SELECT sum(decimal32 - 2) From test_table SETTINGS allow_experimental_analyzer=1;
 6.65
+SELECT sum(2 - decimal32) From test_table SETTINGS allow_experimental_analyzer=1;
 -6.65
+SELECT sum(decimal32) + 2 * count(decimal32) From test_table SETTINGS allow_experimental_analyzer=1;
 26.65
+SELECT 2 * count(decimal32) + sum(decimal32) From test_table SETTINGS allow_experimental_analyzer=1;
 26.65
+SELECT sum(decimal32) - 2 * count(decimal32) From test_table SETTINGS allow_experimental_analyzer=1;
 6.65
+SELECT 2 * count(decimal32) - sum(decimal32) From test_table SETTINGS allow_experimental_analyzer=1;
 -6.65
---
+EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(plus(decimal32, 2)) Decimal(38, 5)
@@ -1832,6 +1924,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(2 + decimal32) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(plus(2, decimal32)) Decimal(38, 5)
@@ -1855,6 +1948,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(minus(decimal32, 2)) Decimal(38, 5)
@@ -1878,6 +1972,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(2 - decimal32) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     sum(minus(2, decimal32)) Decimal(38, 5)
@@ -1901,6 +1996,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(decimal32) + 2 * count(decimal32) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(sum(decimal32), multiply(2, count(decimal32))) Decimal(38, 5)
@@ -1924,6 +2020,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT 2 * count(decimal32) + sum(decimal32) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(multiply(2, count(decimal32)), sum(decimal32)) Decimal(38, 5)
@@ -1947,6 +2044,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(decimal32) - 2 * count(decimal32) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(decimal32), multiply(2, count(decimal32))) Decimal(38, 5)
@@ -1970,6 +2068,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT 2 * count(decimal32) - sum(decimal32) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(multiply(2, count(decimal32)), sum(decimal32)) Decimal(38, 5)
@@ -1993,17 +2092,25 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 10, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
---
+SELECT sum(uint64 + 2) + sum(uint64 + 3) From test_table SETTINGS allow_experimental_analyzer=1;
 55
+SELECT sum(uint64 + 2) - sum(uint64 + 3) From test_table SETTINGS allow_experimental_analyzer=1;
 -5
+SELECT sum(uint64 - 2) - sum(uint64 - 3) From test_table SETTINGS allow_experimental_analyzer=1;
 5
+SELECT sum(2 - uint64) - sum(3 - uint64) From test_table SETTINGS allow_experimental_analyzer=1;
 -5
+SELECT (sum(uint64) + 2 * count(uint64)) + (sum(uint64) + 3 * count(uint64)) From test_table SETTINGS allow_experimental_analyzer=1;
 55
+SELECT (sum(uint64) + 2 * count(uint64)) - (sum(uint64) + 3 * count(uint64)) From test_table SETTINGS allow_experimental_analyzer=1;
 -5
+SELECT (sum(uint64) - 2 * count(uint64)) + (sum(uint64) - 3 * count(uint64)) From test_table SETTINGS allow_experimental_analyzer=1;
 5
+SELECT (sum(uint64) - 2 * count(uint64)) - (sum(uint64) - 3 * count(uint64)) From test_table SETTINGS allow_experimental_analyzer=1;
 5
+SELECT (2 * count(uint64) - sum(uint64)) + (3 * count(uint64) - sum(uint64)) From test_table SETTINGS allow_experimental_analyzer=1;
 -5
---
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 2) + sum(uint64 + 3) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(sum(plus(uint64, 2)), sum(plus(uint64, 3))) UInt64
@@ -2045,6 +2152,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64 + 2) - sum(uint64 + 3) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(plus(uint64, 2)), sum(plus(uint64, 3))) Int64
@@ -2086,6 +2194,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 2) + sum(uint64 - 3) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(sum(minus(uint64, 2)), sum(minus(uint64, 3))) Int64
@@ -2127,6 +2236,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(uint64 - 2) - sum(uint64 - 3) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(minus(uint64, 2)), sum(minus(uint64, 3))) Int64
@@ -2168,6 +2278,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(2 - uint64) - sum(3 - uint64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(minus(2, uint64)), sum(minus(3, uint64))) Int64
@@ -2209,6 +2320,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 12, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (sum(uint64) + 2 * count(uint64)) + (sum(uint64) + 3 * count(uint64)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(plus(sum(uint64), multiply(2, count(uint64))), plus(sum(uint64), multiply(3, count(uint64)))) UInt64
@@ -2250,6 +2362,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (sum(uint64) + 2 * count(uint64)) - (sum(uint64) + 3 * count(uint64)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(plus(sum(uint64), multiply(2, count(uint64))), plus(sum(uint64), multiply(3, count(uint64)))) Int64
@@ -2291,6 +2404,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (sum(uint64) - 2 * count(uint64)) + (sum(uint64) - 3 * count(uint64)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(minus(sum(uint64), multiply(2, count(uint64))), minus(sum(uint64), multiply(3, count(uint64)))) Int64
@@ -2332,6 +2446,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (sum(uint64) - 2 * count(uint64)) - (sum(uint64) - 3 * count(uint64)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(minus(sum(uint64), multiply(2, count(uint64))), minus(sum(uint64), multiply(3, count(uint64)))) Int64
@@ -2373,6 +2488,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (2 * count(uint64) - sum(uint64)) + (3 * count(uint64) - sum(uint64)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(minus(multiply(2, count(uint64)), sum(uint64)), minus(multiply(3, count(uint64)), sum(uint64))) Int64
@@ -2414,18 +2530,27 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 12, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
---
+SELECT sum(float64 + 2) + sum(float64 + 3) From test_table SETTINGS allow_experimental_analyzer=1;
 58
+SELECT sum(float64 + 2) - sum(float64 + 3) From test_table SETTINGS allow_experimental_analyzer=1;
 -5
+SELECT sum(float64 - 2) + sum(float64 - 3) From test_table SETTINGS allow_experimental_analyzer=1;
 8
+SELECT sum(float64 - 2) - sum(float64 - 3) From test_table SETTINGS allow_experimental_analyzer=1;
 5
+SELECT sum(2 - float64) - sum(3 - float64) From test_table SETTINGS allow_experimental_analyzer=1;
 -5
+SELECT (sum(float64) + 2 * count(float64)) + (sum(float64) + 3 * count(float64)) From test_table SETTINGS allow_experimental_analyzer=1;
 58
+SELECT (sum(float64) + 2 * count(float64)) - (sum(float64) + 3 * count(float64)) From test_table SETTINGS allow_experimental_analyzer=1;
 -5
+SELECT (sum(float64) - 2 * count(float64)) + (sum(float64) - 3 * count(float64)) From test_table SETTINGS allow_experimental_analyzer=1;
 8
+SELECT (sum(float64) - 2 * count(float64)) - (sum(float64) - 3 * count(float64)) From test_table SETTINGS allow_experimental_analyzer=1;
 5
+SELECT (2 * count(float64) - sum(float64)) + (3 * count(float64) - sum(float64)) From test_table SETTINGS allow_experimental_analyzer=1;
 -8
---
+EXPLAIN QUERY TREE (SELECT sum(float64 + 2) + sum(float64 + 3) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(sum(plus(float64, 2)), sum(plus(float64, 3))) Float64
@@ -2467,6 +2592,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(float64 + 2) - sum(float64 + 3) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(plus(float64, 2)), sum(plus(float64, 3))) Float64
@@ -2508,6 +2634,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(float64 - 2) + sum(float64 - 3) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(sum(minus(float64, 2)), sum(minus(float64, 3))) Float64
@@ -2549,6 +2676,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(float64 - 2) - sum(float64 - 3) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(minus(float64, 2)), sum(minus(float64, 3))) Float64
@@ -2590,6 +2718,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(2 - float64) - sum(3 - float64) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(minus(2, float64)), sum(minus(3, float64))) Float64
@@ -2631,6 +2760,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 12, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (sum(float64) + 2 * count(float64)) + (sum(float64) + 3 * count(float64)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(plus(sum(float64), multiply(2, count(float64))), plus(sum(float64), multiply(3, count(float64)))) Float64
@@ -2672,6 +2802,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (sum(float64) + 2 * count(float64)) - (sum(float64) + 3 * count(float64)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(plus(sum(float64), multiply(2, count(float64))), plus(sum(float64), multiply(3, count(float64)))) Float64
@@ -2713,6 +2844,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (sum(float64) - 2 * count(float64)) + (sum(float64) - 3 * count(float64)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(minus(sum(float64), multiply(2, count(float64))), minus(sum(float64), multiply(3, count(float64)))) Float64
@@ -2754,6 +2886,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (sum(float64) - 2 * count(float64)) - (sum(float64) - 3 * count(float64)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(minus(sum(float64), multiply(2, count(float64))), minus(sum(float64), multiply(3, count(float64)))) Float64
@@ -2795,6 +2928,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (2 * count(float64) - sum(float64)) + (3 * count(float64) - sum(float64)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(minus(multiply(2, count(float64)), sum(float64)), minus(multiply(3, count(float64)), sum(float64))) Float64
@@ -2836,18 +2970,27 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 12, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
---
+SELECT sum(decimal32 + 2) + sum(decimal32 + 3) From test_table SETTINGS allow_experimental_analyzer=1;
 58.3
+SELECT sum(decimal32 + 2) - sum(decimal32 + 3) From test_table SETTINGS allow_experimental_analyzer=1;
 -5
+SELECT sum(decimal32 - 2) + sum(decimal32 - 3) From test_table SETTINGS allow_experimental_analyzer=1;
 8.3
+SELECT sum(decimal32 - 2) - sum(decimal32 - 3) From test_table SETTINGS allow_experimental_analyzer=1;
 5
+SELECT sum(2 - decimal32) - sum(3 - decimal32) From test_table SETTINGS allow_experimental_analyzer=1;
 -5
+SELECT (sum(decimal32) + 2 * count(decimal32)) + (sum(decimal32) + 3 * count(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1;
 58.3
+SELECT (sum(decimal32) + 2 * count(decimal32)) - (sum(decimal32) + 3 * count(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1;
 -5
+SELECT (sum(decimal32) - 2 * count(decimal32)) + (sum(decimal32) - 3 * count(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1;
 8.3
+SELECT (sum(decimal32) - 2 * count(decimal32)) - (sum(decimal32) - 3 * count(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1;
 5
+SELECT (2 * count(decimal32) - sum(decimal32)) + (3 * count(decimal32) - sum(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1;
 -8.3
---
+EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) + sum(decimal32 + 3) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(sum(plus(decimal32, 2)), sum(plus(decimal32, 3))) Decimal(38, 5)
@@ -2889,6 +3032,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(decimal32 + 2) - sum(decimal32 + 3) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(plus(decimal32, 2)), sum(plus(decimal32, 3))) Decimal(38, 5)
@@ -2930,6 +3074,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) + sum(decimal32 - 3) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(sum(minus(decimal32, 2)), sum(minus(decimal32, 3))) Decimal(38, 5)
@@ -2971,6 +3116,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(decimal32 - 2) - sum(decimal32 - 3) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(minus(decimal32, 2)), sum(minus(decimal32, 3))) Decimal(38, 5)
@@ -3012,6 +3158,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT sum(2 - decimal32) - sum(3 - decimal32) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(sum(minus(2, decimal32)), sum(minus(3, decimal32))) Decimal(38, 5)
@@ -3053,6 +3200,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 12, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (sum(decimal32) + 2 * count(decimal32)) + (sum(decimal32) + 3 * count(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(plus(sum(decimal32), multiply(2, count(decimal32))), plus(sum(decimal32), multiply(3, count(decimal32)))) Decimal(38, 5)
@@ -3094,6 +3242,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (sum(decimal32) + 2 * count(decimal32)) - (sum(decimal32) + 3 * count(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(plus(sum(decimal32), multiply(2, count(decimal32))), plus(sum(decimal32), multiply(3, count(decimal32)))) Decimal(38, 5)
@@ -3135,6 +3284,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (sum(decimal32) - 2 * count(decimal32)) + (sum(decimal32) - 3 * count(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(minus(sum(decimal32), multiply(2, count(decimal32))), minus(sum(decimal32), multiply(3, count(decimal32)))) Decimal(38, 5)
@@ -3176,6 +3326,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (sum(decimal32) - 2 * count(decimal32)) - (sum(decimal32) - 3 * count(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     minus(minus(sum(decimal32), multiply(2, count(decimal32))), minus(sum(decimal32), multiply(3, count(decimal32)))) Decimal(38, 5)
@@ -3217,6 +3368,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
+EXPLAIN QUERY TREE (SELECT (2 * count(decimal32) - sum(decimal32)) + (3 * count(decimal32) - sum(decimal32)) From test_table SETTINGS allow_experimental_analyzer=1);
 QUERY id: 0
   PROJECTION COLUMNS
     plus(minus(multiply(2, count(decimal32)), sum(decimal32)), minus(multiply(3, count(decimal32)), sum(decimal32))) Decimal(38, 5)
@@ -3258,4 +3410,3 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 12, alias: __table1, table_name: default.test_table
   SETTINGS allow_experimental_analyzer=1
---

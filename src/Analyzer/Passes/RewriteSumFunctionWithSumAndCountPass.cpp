@@ -50,13 +50,12 @@ public:
         if (func_plus_minus_nodes.size() != 2)
             return;
 
-        size_t column_id = func_plus_minus_nodes.size();
-        for (size_t i = 0; i < func_plus_minus_nodes.size(); i++)
-        {
-            if (const auto * column_node = func_plus_minus_nodes[i]->as<ColumnNode>())
-                column_id = i;
-        }
-        if (column_id == func_plus_minus_nodes.size())
+        size_t column_id;
+        if (func_plus_minus_nodes[0]->as<ColumnNode>() && func_plus_minus_nodes[1]->as<ConstantNode>())
+            column_id = 0;
+        else if (func_plus_minus_nodes[0]->as<ConstantNode>() && func_plus_minus_nodes[1]->as<ColumnNode>())
+            column_id = 1;
+        else
             return;
 
         size_t literal_id = 1 - column_id;
