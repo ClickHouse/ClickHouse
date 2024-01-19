@@ -262,7 +262,7 @@ MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command)
 
     auto alter_command = std::make_shared<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
-    alter_command->partition = command.partition;
+    alter_command->partition = alter_command->children.emplace_back(command.partition).get();
 
     auto row_exists_predicate = makeASTFunction("equals",
         std::make_shared<ASTIdentifier>(LightweightDeleteDescription::FILTER_COLUMN.name),
@@ -271,7 +271,7 @@ MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command)
     if (command.predicate)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutation command APPLY DELETED MASK does not support WHERE clause");
 
-    alter_command->predicate = row_exists_predicate;
+    alter_command->predicate = alter_command->children.emplace_back(std::move(row_exists_predicate)).get();
 
     auto mutation_command = MutationCommand::parse(alter_command.get());
     if (!mutation_command)

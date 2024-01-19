@@ -384,22 +384,22 @@ BlockIO InterpreterSystemQuery::execute()
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data->cache->removeAllReleasable();
+                    cache_data->cache->removeAllReleasable(FileCache::getCommonUser().user_id);
             }
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
                 if (query.key_to_drop.empty())
                 {
-                    cache->removeAllReleasable();
+                    cache->removeAllReleasable(FileCache::getCommonUser().user_id);
                 }
                 else
                 {
                     auto key = FileCacheKey::fromKeyString(query.key_to_drop);
                     if (query.offset_to_drop.has_value())
-                        cache->removeFileSegment(key, query.offset_to_drop.value());
+                        cache->removeFileSegment(key, query.offset_to_drop.value(), FileCache::getCommonUser().user_id);
                     else
-                        cache->removeKey(key);
+                        cache->removeKey(key, FileCache::getCommonUser().user_id);
                 }
             }
             break;
@@ -424,7 +424,9 @@ BlockIO InterpreterSystemQuery::execute()
                 for (const auto & file_segment : file_segments)
                 {
                     size_t i = 0;
-                    const auto path = cache->getPathInLocalCache(file_segment.key, file_segment.offset, file_segment.kind);
+                    const auto path = cache->getFileSegmentPath(
+                        file_segment.key, file_segment.offset, file_segment.kind,
+                        FileCache::UserInfo(file_segment.user_id, file_segment.user_weight));
                     res_columns[i++]->insert(cache_name);
                     res_columns[i++]->insert(path);
                     res_columns[i++]->insert(file_segment.downloaded_size);
@@ -1070,7 +1072,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
         auto sync_timeout = getContext()->getSettingsRef().receive_timeout.totalMilliseconds();
-        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode))
+        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.sync_replica_mode, query.src_replicas))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \

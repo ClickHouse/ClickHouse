@@ -137,7 +137,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.clear = true;
 
         if (command_ast->partition)
-            command.partition = command_ast->partition;
+            command.partition = command_ast->partition->clone();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_COLUMN)
@@ -206,7 +206,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_ORDER_BY;
-        command.order_by = command_ast->order_by;
+        command.order_by = command_ast->order_by->clone();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_SAMPLE_BY)
@@ -214,7 +214,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SAMPLE_BY;
-        command.sample_by = command_ast->sample_by;
+        command.sample_by = command_ast->sample_by->clone();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::REMOVE_SAMPLE_BY)
@@ -228,7 +228,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.index_decl = command_ast->index_decl;
+        command.index_decl = command_ast->index_decl->clone();
         command.type = AlterCommand::ADD_INDEX;
 
         const auto & ast_index_decl = command_ast->index_decl->as<ASTIndexDeclaration &>();
@@ -247,7 +247,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.statistic_decl = command_ast->statistic_decl;
+        command.statistic_decl = command_ast->statistic_decl->clone();
         command.type = AlterCommand::ADD_STATISTIC;
 
         const auto & ast_stat_decl = command_ast->statistic_decl->as<ASTStatisticDeclaration &>();
@@ -262,7 +262,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.constraint_decl = command_ast->constraint_decl;
+        command.constraint_decl = command_ast->constraint_decl->clone();
         command.type = AlterCommand::ADD_CONSTRAINT;
 
         const auto & ast_constraint_decl = command_ast->constraint_decl->as<ASTConstraintDeclaration &>();
@@ -277,7 +277,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.projection_decl = command_ast->projection_decl;
+        command.projection_decl = command_ast->projection_decl->clone();
         command.type = AlterCommand::ADD_PROJECTION;
 
         const auto & ast_projection_decl = command_ast->projection_decl->as<ASTProjectionDeclaration &>();
@@ -313,7 +313,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.clear = true;
 
         if (command_ast->partition)
-            command.partition = command_ast->partition;
+            command.partition = command_ast->partition->clone();
 
         return command;
     }
@@ -330,7 +330,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.clear = command_ast->clear_statistic;
 
         if (command_ast->partition)
-            command.partition = command_ast->partition;
+            command.partition = command_ast->partition->clone();
 
         return command;
     }
@@ -345,7 +345,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.clear = true;
 
         if (command_ast->partition)
-            command.partition = command_ast->partition;
+            command.partition = command_ast->partition->clone();
 
         return command;
     }
@@ -354,7 +354,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_TTL;
-        command.ttl = command_ast->ttl;
+        command.ttl = command_ast->ttl->clone();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::REMOVE_TTL)
@@ -399,7 +399,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_QUERY;
-        command.select = command_ast->select;
+        command.select = command_ast->select->clone();
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_REFRESH)

@@ -45,11 +45,14 @@
         dest-file (str dest-folder "/clickhouse")
         dest-symlink (str root-folder "/" expected-file-name)
         wget-opts (concat cu/std-wget-opts [:-O dest-file])]
-    (when-not (cu/exists? dest-file)
-      (info "Downloading" url)
-      (do (c/exec :mkdir :-p dest-folder)
-          (c/cd dest-folder
+    (if-not (cu/exists? dest-file)
+      (do
+        (info "Downloading" url)
+        (do (c/exec :mkdir :-p dest-folder)
+            (c/cd dest-folder
                 (cu/wget-helper! wget-opts url))))
+      (info "Binary is already downloaded"))
+
     (c/exec :rm :-rf dest-symlink)
     (c/exec :ln :-s dest-file dest-symlink)
     dest-symlink))
