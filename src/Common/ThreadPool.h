@@ -44,7 +44,7 @@ public:
     /// Maximum number of threads is based on the number of physical cores.
     ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_);
 
-    /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
+    /// Size is constant. Up to max_threads are created on demand and then run until shutdown.
     explicit ThreadPoolImpl(
         Metric metric_threads_,
         Metric metric_active_threads_,
