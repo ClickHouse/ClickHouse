@@ -188,17 +188,17 @@ def test_both_replicated_different_exp_same_id(start_cluster):
 
     create_tables([replica1, replica2])
 
-    replica1.query("INSERT INTO source (a, b, c, extra, sign) VALUES (1, 5, 9, 1000, 1)")
-    replica1.query("INSERT INTO source (a, b, c, extra, sign) VALUES (2, 6, 10, 1000, 1)")
+    replica1.query(
+        "INSERT INTO source (a, b, c, extra, sign) VALUES (1, 5, 9, 1000, 1)"
+    )
+    replica1.query(
+        "INSERT INTO source (a, b, c, extra, sign) VALUES (2, 6, 10, 1000, 1)"
+    )
     replica1.query("SYSTEM SYNC REPLICA source")
     replica1.query("SYSTEM SYNC REPLICA destination")
 
-    replica1.query(
-        f"ALTER TABLE destination ATTACH PARTITION 1 FROM source"
-    )
-    replica1.query(
-        f"ALTER TABLE destination ATTACH PARTITION 2 FROM source"
-    )
+    replica1.query(f"ALTER TABLE destination ATTACH PARTITION 1 FROM source")
+    replica1.query(f"ALTER TABLE destination ATTACH PARTITION 2 FROM source")
 
     assert_eq_with_retry(
         replica1,
