@@ -152,7 +152,10 @@ public:
     {
         size_t new_size = 0;
         auto * const position = in.position();
-        DB::readVarUInt(new_size, in);
+        readVarUInt(new_size, in);
+        if (new_size > 100'000'000'000)
+            throw DB::Exception(
+                DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized hash table is suspiciously large: {}", new_size);
 
         if (worthConvertingToTwoLevel(new_size))
         {
