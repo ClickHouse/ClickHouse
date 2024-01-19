@@ -31,9 +31,9 @@
 ┌─database─┬─name─┐
 │ system   │ one  │
 └──────────┴──────┘
-┌─database─┬─name─┐
-│ system   │ one  │
-└──────────┴──────┘
+┌─database─┬─t.name─┐
+│ system   │ one    │
+└──────────┴────────┘
 2
 2
 2

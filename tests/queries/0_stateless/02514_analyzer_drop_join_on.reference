@@ -52,27 +52,27 @@ Expression ((Project names + (Projection + DROP unused columns after JOIN)))
 Header: a2 String
         d2 String
   Join (JOIN FillRightFirst)
-  Header: __table1.a2 String
-          __table1.k UInt64
+  Header: __table1.k UInt64
+          __table1.a2 String
           __table4.d2 String
     Expression ((Actions for left table alias column keys + DROP unused columns after JOIN))
-    Header: __table1.a2 String
-            __table1.k UInt64
+    Header: __table1.k UInt64
+            __table1.a2 String
       Join (JOIN FillRightFirst)
-      Header: __table1.a2 String
-              __table1.k UInt64
+      Header: __table1.k UInt64
+              __table1.a2 String
         Expression ((Actions for left table alias column keys + DROP unused columns after JOIN))
-        Header: __table1.a2 String
-                __table1.k UInt64
+        Header: __table1.k UInt64
+                __table1.a2 String
           Join (JOIN FillRightFirst)
-          Header: __table1.a2 String
-                  __table1.k UInt64
+          Header: __table1.k UInt64
+                  __table1.a2 String
             Expression ((Actions for left table alias column keys + Change column names to column identifiers))
-            Header: __table1.a2 String
-                    __table1.k UInt64
+            Header: __table1.k UInt64
+                    __table1.a2 String
               ReadFromMemoryStorage
-              Header: a2 String
-                      k UInt64
+              Header: k UInt64
+                      a2 String
             Expression ((Actions for right table alias column keys + Change column names to column identifiers))
             Header: __table2.k UInt64
               ReadFromMemoryStorage
@@ -82,11 +82,11 @@ Header: a2 String
           ReadFromMemoryStorage
           Header: k UInt64
     Expression ((Actions for right table alias column keys + Change column names to column identifiers))
-    Header: __table4.d2 String
-            __table4.k UInt64
+    Header: __table4.k UInt64
+            __table4.d2 String
       ReadFromMemoryStorage
-      Header: d2 String
-              k UInt64
+      Header: k UInt64
+              d2 String
 EXPLAIN PLAN header = 1
 SELECT b.bx FROM a
 JOIN (SELECT b1, b2 || 'x'  AS bx FROM b ) AS b ON b.b1 = a.a1

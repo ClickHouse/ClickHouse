@@ -56,20 +56,20 @@ Header: id UInt64
         rhs.id UInt64
         rhs.value_1 String
 Actions: INPUT : 0 -> __table1.id UInt64 : 0
-         INPUT : 1 -> __table1.value_1 String : 1
-         INPUT :: 2 -> __table1.value_2 UInt64 : 2
+         INPUT :: 1 -> __table1.value_2 UInt64 : 1
+         INPUT : 2 -> __table1.value_1 String : 2
          INPUT : 3 -> __table2.value_1 String : 3
          INPUT :: 4 -> __table2.value_2 UInt64 : 4
          INPUT : 5 -> __table2.id UInt64 : 5
          ALIAS __table1.id :: 0 -> id UInt64 : 6
-         ALIAS __table1.value_1 :: 1 -> value_1 String : 0
-         ALIAS __table2.value_1 :: 3 -> rhs.value_1 String : 1
+         ALIAS __table1.value_1 :: 2 -> value_1 String : 0
+         ALIAS __table2.value_1 :: 3 -> rhs.value_1 String : 2
          ALIAS __table2.id :: 5 -> rhs.id UInt64 : 3
-Positions: 6 0 3 1
+Positions: 6 0 3 2
   Join (JOIN FillRightFirst)
   Header: __table1.id UInt64
-          __table1.value_1 String
           __table1.value_2 UInt64
+          __table1.value_1 String
           __table2.value_1 String
           __table2.value_2 UInt64
           __table2.id UInt64
@@ -80,37 +80,37 @@ Positions: 6 0 3 1
   Clauses: [(__table1.id, __table1.value_2) = (__table2.id, __table2.value_2)]
     Expression ((JOIN actions + Change column names to column identifiers))
     Header: __table1.id UInt64
-            __table1.value_1 String
             __table1.value_2 UInt64
+            __table1.value_1 String
     Actions: INPUT : 0 -> id UInt64 : 0
-             INPUT : 1 -> value_1 String : 1
-             INPUT : 2 -> value_2 UInt64 : 2
+             INPUT : 1 -> value_2 UInt64 : 1
+             INPUT : 2 -> value_1 String : 2
              ALIAS id :: 0 -> __table1.id UInt64 : 3
-             ALIAS value_1 :: 1 -> __table1.value_1 String : 0
-             ALIAS value_2 :: 2 -> __table1.value_2 UInt64 : 1
+             ALIAS value_2 :: 1 -> __table1.value_2 UInt64 : 0
+             ALIAS value_1 :: 2 -> __table1.value_1 String : 1
     Positions: 3 0 1
       ReadFromMergeTree (default.test_table_1)
       Header: id UInt64
-              value_1 String
               value_2 UInt64
+              value_1 String
       ReadType: Default
       Parts: 1
       Granules: 1
     Expression ((JOIN actions + Change column names to column identifiers))
     Header: __table2.id UInt64
-            __table2.value_1 String
             __table2.value_2 UInt64
+            __table2.value_1 String
     Actions: INPUT : 0 -> id UInt64 : 0
-             INPUT : 1 -> value_1 String : 1
-             INPUT : 2 -> value_2 UInt64 : 2
+             INPUT : 1 -> value_2 UInt64 : 1
+             INPUT : 2 -> value_1 String : 2
              ALIAS id :: 0 -> __table2.id UInt64 : 3
-             ALIAS value_1 :: 1 -> __table2.value_1 String : 0
-             ALIAS value_2 :: 2 -> __table2.value_2 UInt64 : 1
+             ALIAS value_2 :: 1 -> __table2.value_2 UInt64 : 0
+             ALIAS value_1 :: 2 -> __table2.value_1 String : 1
     Positions: 3 0 1
       ReadFromMergeTree (default.test_table_2)
       Header: id UInt64
-              value_1 String
               value_2 UInt64
+              value_1 String
       ReadType: Default
       Parts: 1
       Granules: 1

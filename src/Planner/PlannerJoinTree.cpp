@@ -990,40 +990,42 @@ struct UsingAliasKeyActions
     )
         : left_alias_columns_keys(std::make_shared<ActionsDAG>(left_plan_output_columns))
         , right_alias_columns_keys(std::make_shared<ActionsDAG>(right_plan_output_columns))
-    {}
-
-    void addLeftColumn(QueryTreeNodePtr & node, const ColumnsWithTypeAndName & plan_output_columns, const PlannerContextPtr & planner_context)
     {
-        addColumnImpl(left_alias_columns_keys, node, plan_output_columns, planner_context);
+        for (const auto * input_node : left_alias_columns_keys->getInputs())
+            left_alias_columns_keys->addOrReplaceInOutputs(*input_node);
+
+        for (const auto * input_node : right_alias_columns_keys->getInputs())
+            right_alias_columns_keys->addOrReplaceInOutputs(*input_node);
     }
 
-    void addRightColumn(QueryTreeNodePtr & node, const ColumnsWithTypeAndName & plan_output_columns, const PlannerContextPtr & planner_context)
+    void addLeftColumn(QueryTreeNodePtr & node, const PlannerContextPtr & planner_context)
     {
-        addColumnImpl(right_alias_columns_keys, node, plan_output_columns, planner_context);
+        addColumnImpl(left_alias_columns_keys, node, planner_context);
     }
 
-    ActionsDAGPtr getLeftActions()
+    void addRightColumn(QueryTreeNodePtr & node, const PlannerContextPtr & planner_context)
     {
-        left_alias_columns_keys->projectInput();
-        return std::move(left_alias_columns_keys);
+        addColumnImpl(right_alias_columns_keys, node, planner_context);
     }
 
-    ActionsDAGPtr getRightActions()
-    {
-        right_alias_columns_keys->projectInput();
-        return std::move(right_alias_columns_keys);
-    }
+    ActionsDAGPtr getLeftActions() { return left_alias_columns_keys; }
+    ActionsDAGPtr getRightActions() { return right_alias_columns_keys; }
 
 private:
-    void addColumnImpl(ActionsDAGPtr & alias_columns_keys, QueryTreeNodePtr & node, const ColumnsWithTypeAndName & plan_output_columns, const PlannerContextPtr & planner_context)
+
+    void addColumnImpl(ActionsDAGPtr & actions_dag, QueryTreeNodePtr & node, const PlannerContextPtr & planner_context)
     {
-        auto & column_node = node->as<ColumnNode&>();
+        auto & column_node = node->as<ColumnNode &>();
         if (column_node.hasExpression())
         {
-            auto dag = buildActionsDAGFromExpressionNode(column_node.getExpressionOrThrow(), plan_output_columns, planner_context);
+            PlannerActionsVisitor actions_visitor(planner_context);
+            auto expression_dag_index_nodes = actions_visitor.visit(actions_dag, column_node.getExpressionOrThrow());
+            for (const auto * out_node : expression_dag_index_nodes)
+                actions_dag->addOrReplaceInOutputs(*out_node);
+
             const auto & left_inner_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(node);
-            dag->addOrReplaceInOutputs(dag->addAlias(*dag->getOutputs().front(), left_inner_column_identifier));
-            alias_columns_keys->mergeInplace(std::move(*dag));
+            const auto & alias_output = actions_dag->addAlias(*actions_dag->getOutputs().back(), left_inner_column_identifier);
+            actions_dag->addOrReplaceInOutputs(alias_output);
         }
     }
 
@@ -1110,12 +1112,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
             auto & left_inner_column_node = inner_columns_list.getNodes().at(0);
             auto & left_inner_column = left_inner_column_node->as<ColumnNode &>();
 
-            using_alias_key_actions.addLeftColumn(left_inner_column_node, left_plan_output_columns, planner_context);
+            using_alias_key_actions.addLeftColumn(left_inner_column_node, planner_context);
 
             auto & right_inner_column_node = inner_columns_list.getNodes().at(1);
             auto & right_inner_column = right_inner_column_node->as<ColumnNode &>();
 
-            using_alias_key_actions.addRightColumn(right_inner_column_node, right_plan_output_columns, planner_context);
+            using_alias_key_actions.addRightColumn(right_inner_column_node, planner_context);
 
             const auto & join_node_using_column_node_type = join_node_using_column_node.getColumnType();
             if (!left_inner_column.getColumnType()->equals(*join_node_using_column_node_type))
