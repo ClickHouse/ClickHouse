@@ -840,6 +840,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::applyLimitForRangesInDataParts(
     RangesInDataParts && parts_with_ranges,
     size_t limit)
 {
+    std::cerr << "MergeTreeDataSelectExecutor::applyLimitForRangesInDataParts parts with ranges before " << parts_with_ranges.size() << '\n';
+    for (auto & part_with_ranges : parts_with_ranges)
+    {
+        std::cerr << "Part with range " << part_with_ranges.data_part->name;
+        std::cerr << " ranges " << part_with_ranges.getDescription().describe() << '\n';
+    }
+
     chassert(limit > 0);
     RangesInDataParts result_parts_with_ranges;
     size_t remaining_limit = limit;
@@ -901,6 +908,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::applyLimitForRangesInDataParts(
         }
 
         result_part_with_ranges.ranges.erase(ranges_it, ranges_end_it);
+    }
+
+    std::cerr << "MergeTreeDataSelectExecutor::applyLimitForRangesInDataParts parts with ranges after " << result_parts_with_ranges.size() << '\n';
+    for (auto & part_with_ranges : result_parts_with_ranges)
+    {
+        std::cerr << "Part with range " << part_with_ranges.data_part->name;
+        std::cerr << " ranges " << part_with_ranges.getDescription().describe() << '\n';
     }
 
     return result_parts_with_ranges;

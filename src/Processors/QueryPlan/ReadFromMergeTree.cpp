@@ -423,8 +423,9 @@ Pipe ReadFromMergeTree::readFromPool(
       * execution for big tables with small limit.
       */
     bool use_prefetched_read_pool = query_info.limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
+    (void)(use_prefetched_read_pool);
 
-    if (use_prefetched_read_pool)
+    // if (use_prefetched_read_pool)
     {
         pool = std::make_shared<MergeTreePrefetchedReadPool>(
             std::move(parts_with_range),
@@ -437,19 +438,19 @@ Pipe ReadFromMergeTree::readFromPool(
             pool_settings,
             context);
     }
-    else
-    {
-        pool = std::make_shared<MergeTreeReadPool>(
-            std::move(parts_with_range),
-            storage_snapshot,
-            prewhere_info,
-            actions_settings,
-            reader_settings,
-            required_columns,
-            virt_column_names,
-            pool_settings,
-            context);
-    }
+    // else
+    // {
+    //     pool = std::make_shared<MergeTreeReadPool>(
+    //         std::move(parts_with_range),
+    //         storage_snapshot,
+    //         prewhere_info,
+    //         actions_settings,
+    //         reader_settings,
+    //         required_columns,
+    //         virt_column_names,
+    //         pool_settings,
+    //         context);
+    // }
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
 
@@ -1604,7 +1605,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
           * For query with FINAL we cannot apply LIMIT.
           */
         if (query_info.limit > 0 && !query_info.isFinal())
+        {
+            Stopwatch apply_limit_watch;
+            apply_limit_watch.start();
+
             result.parts_with_ranges = MergeTreeDataSelectExecutor::applyLimitForRangesInDataParts(std::move(result.parts_with_ranges), query_info.limit);
+
+            apply_limit_watch.stop();
+            std::cerr << "MergeTreeDataSelectExecutor::applyLimitForRangesInDataParts elapsed ms " << apply_limit_watch.elapsedMilliseconds() << '\n';
+        }
     }
 
     size_t sum_marks_pk = total_marks_pk;
