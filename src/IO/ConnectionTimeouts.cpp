@@ -17,7 +17,7 @@ Poco::Timespan ConnectionTimeouts::saturate(Poco::Timespan timespan, Poco::Times
 ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithoutFailover(const Settings & settings)
 {
     return ConnectionTimeouts()
-        .withAnyConnectionTimeout(settings.connect_timeout)
+        .withConnectionTimeout(settings.connect_timeout)
         .withSendTimeout(settings.send_timeout)
         .withReceiveTimeout(settings.receive_timeout)
         .withTcpKeepAliveTimeout(settings.tcp_keep_alive_timeout)
@@ -30,14 +30,14 @@ ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithoutFailover(const Setti
 ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithFailover(const Settings & settings)
 {
     return getTCPTimeoutsWithoutFailover(settings)
-        .withConnectionTimeout(settings.connect_timeout_with_failover_ms)
-        .withSslConnectionTimeout(settings.connect_timeout_with_failover_secure_ms);
+        .withUnsecureConnectionTimeout(settings.connect_timeout_with_failover_ms)
+        .withSecureConnectionTimeout(settings.connect_timeout_with_failover_secure_ms);
 }
 
 ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings, Poco::Timespan http_keep_alive_timeout)
 {
     return ConnectionTimeouts()
-        .withAnyConnectionTimeout(settings.http_connection_timeout)
+        .withConnectionTimeout(settings.http_connection_timeout)
         .withSendTimeout(settings.http_send_timeout)
         .withReceiveTimeout(settings.http_receive_timeout)
         .withHttpKeepAliveTimeout(http_keep_alive_timeout)

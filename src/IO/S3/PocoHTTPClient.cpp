@@ -143,7 +143,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
 ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
 {
     return ConnectionTimeouts()
-        .withAnyConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
+        .withConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
         .withSendTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
         .withReceiveTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
         .withTcpKeepAliveTimeout(Poco::Timespan(

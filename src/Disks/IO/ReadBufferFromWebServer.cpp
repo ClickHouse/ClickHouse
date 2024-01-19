@@ -58,7 +58,6 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
 
     auto connection_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings.keep_alive_timeout);
     connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings.http_connection_timeout, Poco::Timespan(20, 0)));
-    connection_timeouts.withSslConnectionTimeout(std::max<Poco::Timespan>(settings.http_connection_timeout, Poco::Timespan(20, 0)));
     connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings.http_receive_timeout, Poco::Timespan(20, 0)));
 
     auto res = std::make_unique<ReadWriteBufferFromHTTP>(

@@ -104,7 +104,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
                   ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 
     timeouts = ConnectionTimeouts()
-            .withAnyConnectionTimeout(
+            .withConnectionTimeout(
                 Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0))
             .withSendTimeout(
                 Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0))

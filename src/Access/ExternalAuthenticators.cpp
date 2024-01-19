@@ -243,7 +243,7 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
     size_t receive_timeout_ms = config.getInt(prefix + ".receive_timeout_ms", 1000);
     size_t send_timeout_ms = config.getInt(prefix + ".send_timeout_ms", 1000);
     http_auth_params.timeouts = ConnectionTimeouts()
-        .withAnyConnectionTimeout(Poco::Timespan(connection_timeout_ms * 1000))
+        .withConnectionTimeout(Poco::Timespan(connection_timeout_ms * 1000))
         .withReceiveTimeout(Poco::Timespan(receive_timeout_ms * 1000))
         .withSendTimeout(Poco::Timespan(send_timeout_ms * 1000));
 

@@ -988,7 +988,7 @@ private:
 
                 /// One second for connect/send/receive. Just in case.
                 auto timeouts = ConnectionTimeouts()
-                    .withAnyConnectionTimeout(1)
+                    .withConnectionTimeout(1)
                     .withSendTimeout(1)
                     .withReceiveTimeout(1);
 

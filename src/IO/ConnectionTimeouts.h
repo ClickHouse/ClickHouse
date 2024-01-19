@@ -12,12 +12,12 @@ namespace DB
 struct Settings;
 
 #define APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(M) \
-    M(connection_timeout, withConnectionTimeout) \
+    M(connection_timeout, withUnsecureConnectionTimeout) \
+    M(secure_connection_timeout, withSecureConnectionTimeout) \
     M(send_timeout, withSendTimeout) \
     M(receive_timeout, withReceiveTimeout) \
     M(tcp_keep_alive_timeout, withTcpKeepAliveTimeout) \
     M(http_keep_alive_timeout, withHttpKeepAliveTimeout) \
-    M(secure_connection_timeout, withSslConnectionTimeout) \
     M(hedged_connection_timeout, withHedgedConnectionTimeout) \
     M(receive_data_timeout, withReceiveDataTimeout) \
     M(handshake_timeout, withHandshakeTimeout) \
@@ -66,8 +66,8 @@ struct ConnectionTimeouts
 APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DECLARE_BUILDER_FOR_MEMBER)
 #undef DECLARE_BUILDER_FOR_MEMBER
 
-    ConnectionTimeouts & withAnyConnectionTimeout(size_t seconds);
-    ConnectionTimeouts & withAnyConnectionTimeout(Poco::Timespan span);
+    ConnectionTimeouts & withConnectionTimeout(size_t seconds);
+    ConnectionTimeouts & withConnectionTimeout(Poco::Timespan span);
 };
 
 #define DEFINE_BUILDER_FOR_MEMBER(member, setter_func) \
@@ -77,10 +77,10 @@ APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DECLARE_BUILDER_FOR_MEMBER)
     } \
     inline ConnectionTimeouts & ConnectionTimeouts::setter_func(Poco::Timespan span) \
     { \
-        member = span \
+        member = span; \
         return *this; \
     } \
-                                                            \
+
     APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DEFINE_BUILDER_FOR_MEMBER)
 
 #undef DEFINE_BUILDER_FOR_MEMBER
@@ -99,12 +99,12 @@ APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(SATURATE_MEMBER);
 
 #undef APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS
 
-inline ConnectionTimeouts & ConnectionTimeouts::withAnyConnectionTimeout(size_t seconds)
+inline ConnectionTimeouts & ConnectionTimeouts::withConnectionTimeout(size_t seconds)
 {
-    return withAnyConnectionTimeout(Poco::Timespan(seconds, 0));
+    return withConnectionTimeout(Poco::Timespan(seconds, 0));
 }
 
-inline ConnectionTimeouts & ConnectionTimeouts::withAnyConnectionTimeout(Poco::Timespan span) \
+inline ConnectionTimeouts & ConnectionTimeouts::withConnectionTimeout(Poco::Timespan span)
 {
     connection_timeout = span;
     secure_connection_timeout = span;
