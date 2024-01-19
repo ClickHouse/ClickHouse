@@ -262,6 +262,8 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             }
 
             ShuffledPool & shuffled_pool = shuffled_pools[i];
+            LOG_TRACE(log, "Considering address to connect to: {}", shuffled_pool.pool->getAddress());
+
             TryResult & result = try_results[i];
             if (max_tries && (shuffled_pool.error_count >= max_tries || !result.entry.isNull()))
                 continue;
@@ -270,16 +272,29 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             result = try_get_entry(*shuffled_pool.pool, fail_message);
 
             if (!fail_message.empty())
+            {
+                LOG_WARNING(log, "Failed message: {}", fail_message);
                 fail_messages += fail_message + '\n';
+            }
 
             if (!result.entry.isNull())
             {
+                LOG_TRACE(log, "Got connection to {}", shuffled_pool.pool->getAddress());
                 ++entries_count;
                 if (result.is_usable)
                 {
                     ++usable_count;
                     if (result.is_up_to_date)
+                    {
+                        LOG_TRACE(log, "Got not up to date connection {}. Will try again", shuffled_pool.pool->getAddress());
                         ++up_to_date_count;
+                    }
+                    else
+                        LOG_TRACE(log, "Got not up to date connection {}. Will try again", shuffled_pool.pool->getAddress());
+                }
+                else
+                {
+                    LOG_TRACE(log, "Got unusable connection to {}. Will try again", shuffled_pool.pool->getAddress());
                 }
             }
             else
