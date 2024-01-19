@@ -208,7 +208,7 @@ then
       mv new_settings.txt /test_output/
       echo -e "New settings are not reflected in settings changes history (see new_settings.txt)$FAIL$(head_escaped /test_output/new_settings.txt)" >> /test_output/test_results.tsv
   else
-      echo -e "There are no new settings or they are reflected in settings changes history\tOK" >> /test_output/test_results.tsv
+      echo -e "There are no new settings or they are reflected in settings changes history$OK" >> /test_output/test_results.tsv
   fi
 fi
 
