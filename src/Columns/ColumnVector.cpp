@@ -12,7 +12,6 @@
 #include <base/sort.h>
 #include <base/unaligned.h>
 #include <base/types.h>
-#include <base/scope_guard.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>

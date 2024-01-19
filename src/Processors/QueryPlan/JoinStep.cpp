@@ -6,7 +6,6 @@
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/Optimizations/dataHints.h>
 
 namespace DB

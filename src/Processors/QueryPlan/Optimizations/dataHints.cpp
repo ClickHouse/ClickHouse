@@ -377,12 +377,14 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
                 }
                 else if (name == "toYear")
                 {
-                    if (node_to_hint[node].lower_boundary.has_value()) {
+                    if (node_to_hint[node].lower_boundary.has_value())
+                    {
                         const auto& col1 = info->result_type->createColumnConst(1, node_to_hint[node].lower_boundary.value());
                         const auto& result1 = info->executable_function->execute({{col1, info->hinted_node->result_type, "lower_boundary_hint"}}, info->result_type, 1, false);
                         node_to_hint[node].lower_boundary = result1->getUInt(0);
                     }
-                    if (node_to_hint[node].upper_boundary.has_value()) {
+                    if (node_to_hint[node].upper_boundary.has_value())
+                    {
                         const auto& col2 = info->result_type->createColumnConst(1, node_to_hint[node].upper_boundary.value());
                         const auto& result2 = info->executable_function->execute({{col2, info->hinted_node->result_type, "upper_boundary_hint"}}, info->result_type, 1, false);
                         node_to_hint[node].upper_boundary = result2->getUInt(0);
