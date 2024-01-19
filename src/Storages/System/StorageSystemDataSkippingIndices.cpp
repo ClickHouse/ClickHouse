@@ -23,16 +23,16 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
         {
-            { "database", std::make_shared<DataTypeString>() },
-            { "table", std::make_shared<DataTypeString>() },
-            { "name", std::make_shared<DataTypeString>() },
-            { "type", std::make_shared<DataTypeString>() },
-            { "type_full", std::make_shared<DataTypeString>() },
-            { "expr", std::make_shared<DataTypeString>() },
-            { "granularity", std::make_shared<DataTypeUInt64>() },
-            { "data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
-            { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>() },
-            { "marks", std::make_shared<DataTypeUInt64>()}
+            { "database", std::make_shared<DataTypeString>(), "Database name."},
+            { "table", std::make_shared<DataTypeString>(), "Table name."},
+            { "name", std::make_shared<DataTypeString>(), "Index name."},
+            { "type", std::make_shared<DataTypeString>(), "Index type."},
+            { "type_full", std::make_shared<DataTypeString>(), "Index type expression from create statement."},
+            { "expr", std::make_shared<DataTypeString>(), "Expression for the index calculation."},
+            { "granularity", std::make_shared<DataTypeUInt64>(), "The number of granules in the block."},
+            { "data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
+            { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
+            { "marks", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."}
         }));
     setInMemoryMetadata(storage_metadata);
 }

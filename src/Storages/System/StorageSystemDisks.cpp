@@ -18,12 +18,12 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
     {
-        {"name", std::make_shared<DataTypeString>()},
-        {"path", std::make_shared<DataTypeString>()},
-        {"free_space", std::make_shared<DataTypeUInt64>()},
-        {"total_space", std::make_shared<DataTypeUInt64>()},
-        {"unreserved_space", std::make_shared<DataTypeUInt64>()},
-        {"keep_free_space", std::make_shared<DataTypeUInt64>()},
+        {"name", std::make_shared<DataTypeString>(), "Name of a disk in the server configuration."},
+        {"path", std::make_shared<DataTypeString>(), "Path to the mount point in the file system."},
+        {"free_space", std::make_shared<DataTypeUInt64>(), "Free space on disk in bytes."},
+        {"total_space", std::make_shared<DataTypeUInt64>(), "Disk volume in bytes."},
+        {"unreserved_space", std::make_shared<DataTypeUInt64>(), "Free space which is not taken by reservations (free_space minus the size of reservations taken by merges, inserts, and other disk write operations currently running)."},
+        {"keep_free_space", std::make_shared<DataTypeUInt64>(), "Amount of disk space that should stay free on disk in bytes. Defined in the keep_free_space_bytes parameter of disk configuration."},
         {"type", std::make_shared<DataTypeString>()},
         {"is_encrypted", std::make_shared<DataTypeUInt8>()},
         {"is_read_only", std::make_shared<DataTypeUInt8>()},
