@@ -384,4 +384,37 @@ void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfig
         memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
 }
 
+bool KeeperContext::setShutdownCalled()
+{
+    std::unique_lock lock(local_logs_preprocessed_cv_mutex);
+    if (!shutdown_called.exchange(true))
+    {
+        lock.unlock();
+        local_logs_preprocessed_cv.notify_all();
+        return true;
+    }
+
+    return false;
+}
+
+void KeeperContext::setLocalLogsPreprocessed()
+{
+    {
+        std::lock_guard lock(local_logs_preprocessed_cv_mutex);
+        local_logs_preprocessed = true;
+    }
+    local_logs_preprocessed_cv.notify_all();
+}
+
+bool KeeperContext::localLogsPreprocessed() const
+{
+    return local_logs_preprocessed;
+}
+
+void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
+{
+    std::unique_lock lock(local_logs_preprocessed_cv_mutex);
+    local_logs_preprocessed_cv.wait(lock, [this]{ return shutdown_called || local_logs_preprocessed; });
+}
+
 }

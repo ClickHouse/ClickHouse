@@ -215,6 +215,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
 
+    ConfigurationPtr sensitive_data_masker_config;
+
 #if USE_NURAFT
     mutable std::mutex keeper_dispatcher_mutex;
     mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
@@ -235,6 +237,7 @@ struct ContextSharedPart : boost::noncopyable
     String dictionaries_lib_path TSA_GUARDED_BY(mutex);      /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path TSA_GUARDED_BY(mutex);          /// Path to the directory with user provided scripts.
     String filesystem_caches_path TSA_GUARDED_BY(mutex);     /// Path to the directory with filesystem caches.
+    String filesystem_cache_user TSA_GUARDED_BY(mutex);
     ConfigurationPtr config TSA_GUARDED_BY(mutex);           /// Global configuration settings.
     String tmp_path TSA_GUARDED_BY(mutex);                   /// Path to the temporary files that occur when processing the request.
 
@@ -615,6 +618,7 @@ struct ContextSharedPart : boost::noncopyable
         const auto & caches = FileCacheFactory::instance().getAll();
         for (const auto & [_, cache] : caches)
             cache->cache->deactivateBackgroundOperations();
+        FileCacheFactory::instance().clear();
 
         {
             // Disk selector might not be initialized if there was some error during
@@ -886,6 +890,12 @@ String Context::getFilesystemCachesPath() const
     return shared->filesystem_caches_path;
 }
 
+String Context::getFilesystemCacheUser() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->filesystem_cache_user;
+}
+
 Strings Context::getWarnings() const
 {
     Strings common_warnings;
@@ -991,6 +1001,12 @@ void Context::setFilesystemCachesPath(const String & path)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem caches path must be absolute: {}", path);
 
     shared->filesystem_caches_path = path;
+}
+
+void Context::setFilesystemCacheUser(const String & user)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->filesystem_cache_user = user;
 }
 
 static void setupTmpPath(Poco::Logger * log, const std::string & path)
@@ -3369,6 +3385,16 @@ bool Context::hasAuxiliaryZooKeeper(const String & name) const
     return getConfigRef().has("auxiliary_zookeepers." + name);
 }
 
+void Context::reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const
+{
+    const auto old_config = shared->sensitive_data_masker_config;
+    if (old_config && isSameConfiguration(*config, *old_config, "query_masking_rules"))
+        return;
+
+    SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(*config, "query_masking_rules"));
+    shared->sensitive_data_masker_config = config;
+}
+
 InterserverCredentialsPtr Context::getInterserverCredentials() const
 {
     return shared->interserver_io_credentials.get();
@@ -5085,12 +5111,6 @@ bool Context::canUseParallelReplicasOnInitiator() const
 bool Context::canUseParallelReplicasOnFollower() const
 {
     return canUseTaskBasedParallelReplicas() && getClientInfo().collaborate_with_initiator;
-}
-
-bool Context::canUseParallelReplicasCustomKey(const Cluster & cluster) const
-{
-    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
-        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)

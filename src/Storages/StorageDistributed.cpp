@@ -429,10 +429,15 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
-    query_info.cluster = cluster;
-
-    if (!local_context->canUseParallelReplicasCustomKey(*cluster))
+    if (query_info.use_custom_key)
     {
+        LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
+        query_info.cluster = cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
+    }
+    else
+    {
+        query_info.cluster = cluster;
+
         if (nodes > 1 && settings.optimize_skip_unused_shards)
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
@@ -875,22 +880,30 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
-    const auto & settings = local_context->getSettingsRef();
+    auto settings = local_context->getSettingsRef();
 
     ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
-    if (local_context->canUseParallelReplicasCustomKey(*query_info.getCluster()))
+    if (query_info.use_custom_key)
     {
         if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *local_context))
         {
+            if (query_info.getCluster()->getShardCount() == 1)
+            {
+                // we are reading from single shard with multiple replicas but didn't transform replicas
+                // into virtual shards with custom_key set
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Replicas weren't transformed into virtual shards");
+            }
+
             additional_shard_filter_generator =
-                [my_custom_key_ast = std::move(custom_key_ast),
-                 column_description = this->getInMemoryMetadataPtr()->columns,
-                 custom_key_type = settings.parallel_replicas_custom_key_filter_type.value,
-                 context = local_context,
-                 replica_count = query_info.getCluster()->getShardsInfo().front().per_replica_pools.size()](uint64_t replica_num) -> ASTPtr
+                [&, my_custom_key_ast = std::move(custom_key_ast), shard_count = query_info.cluster->getShardCount()](uint64_t shard_num) -> ASTPtr
             {
                 return getCustomKeyFilterForParallelReplica(
-                    replica_count, replica_num - 1, my_custom_key_ast, custom_key_type, column_description, context);
+                    shard_count,
+                    shard_num - 1,
+                    my_custom_key_ast,
+                    settings.parallel_replicas_custom_key_filter_type,
+                    this->getInMemoryMetadataPtr()->columns,
+                    local_context);
             };
         }
     }
