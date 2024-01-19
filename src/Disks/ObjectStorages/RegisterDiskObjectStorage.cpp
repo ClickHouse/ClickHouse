@@ -44,7 +44,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
         auto object_storage = ObjectStorageFactory::instance().create(name, config, config_prefix, context, skip_access_check);
         std::string compatibility_metadata_type_hint;
-        if (!config.has("metadata_type"))
+        if (!config.has(config_prefix + ".metadata_type"))
         {
             compatibility_metadata_type_hint = getCompatibilityMetadataTypeHint(object_storage->getType());
         }
