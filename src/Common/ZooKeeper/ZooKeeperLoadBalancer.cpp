@@ -48,6 +48,7 @@ public:
     {
         String address;
         bool secure = false;
+        size_t id;
     };
 
     size_t addEndpoint(Endpoint endpoint)
@@ -186,13 +187,14 @@ public:
 
     explicit IBalancerWithEndpointStatuses(std::vector<std::string> hosts)
     {
-        for (const auto & host : hosts)
+        for (size_t i = 0; i < hosts.size(); i++)
         {
-            auto [address, secure] = parseForSocketAddress(host);
+            auto [address, secure] = parseForSocketAddress(hosts[i]);
             registry.addEndpoint(
                 EndpointRegistry::Endpoint{
                     .address = address,
                     .secure = secure,
+                    .id = i,
                 });
         }
     }
@@ -271,7 +273,6 @@ protected:
         return registry.getRangeSizeByStatus(status);
     }
 
-private:
     EndpointRegistry registry;
 };
 
@@ -502,60 +503,40 @@ public:
 class IBalancerWithConstPriorities : public IBalancerWithPriorities
 {
 public:
+    using PriorityCalculator = std::function<size_t(const RegisterEndpoint)>;
+
     explicit IBalancerWithConstPriorities(std::vector<std::string> hosts)
         : IBalancerWithPriorities(std::move(hosts))
     {}
+
+    IBalancerWithConstPriorities(std::vector<std::string> hosts, PriorityCalculator priority_calculator)
+        : IBalancerWithPriorities(std::move(hosts))
+    {
+        // TODO: test this change.
+        // priorities.reserve(getEndpointsCount()
+        for (size_t i = 0; i < getEndpointsCount(); ++i)
+            priorities.push_back(priority_calculator(registry.findEndpointById(i)));
+    }
+
+    static size_t priorityAsNearestHostname(const RegisterEndpoint endpoint)
+    {
+        return Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), endpoint.address);
+    }
+
+    static size_t priorityAsInOrer(const RegisterEndpoint endpoint)
+    {
+        return endpoint.id;
+    }
+
+    static size_t priorityAsLevenshtein(const RegisterEndpoint endpoint)
+    {
+        return Coordination::getHostNameLevenshteinDistance(getFQDNOrHostName(), endpoint.address);
+    }
 
 private:
     bool isOptimalEndpoint(size_t id) override
     {
         return priorities[id] == *std::min(priorities.begin(), priorities.end());
-    }
-};
-
-class NearestHostname: public IBalancerWithConstPriorities
-{
-public:
-    explicit NearestHostname(std::vector<std::string> hosts, const std::string & client_hostname)
-        : IBalancerWithConstPriorities(std::move(hosts))
-    {
-        priorities.resize(getEndpointsCount());
-        for (size_t i = 0; i < getEndpointsCount(); ++i)
-        {
-            priorities.push_back(
-                Coordination::getHostNamePrefixDistance(client_hostname, findEndpointById(i).address));
-        }
-    }
-};
-
-class Levenshtein: public IBalancerWithConstPriorities
-{
-public:
-    explicit Levenshtein(std::vector<std::string> hosts, const std::string & client_hostname)
-        : IBalancerWithConstPriorities(hosts)
-    {
-        priorities.resize(getEndpointsCount());
-        for (size_t i = 0; i < getEndpointsCount(); ++i)
-        {
-            priorities.push_back(
-                Coordination::getHostNameLevenshteinDistance(client_hostname, findEndpointById(i).address));
-        }
-    }
-};
-
-class InOrder: public IBalancerWithConstPriorities
-{
-public:
-    explicit InOrder(std::vector<std::string> hosts)
-        : IBalancerWithConstPriorities(std::move(hosts))
-    {
-        priorities.reserve(getEndpointsCount());
-        LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "InOrder getEndpointsCount {}", getEndpointsCount());
-        for (size_t i = 0; i < getEndpointsCount(); ++i)
-        {
-            priorities.push_back(i);
-            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "InOrder priorities size {}", priorities.size());
-        }
     }
 };
 
@@ -569,11 +550,11 @@ ClientsConnectionBalancerPtr getConnectionBalancer(LoadBalancing load_balancing_
         case LoadBalancing::RANDOM:
             return std::make_unique<Random>(hosts);
         case LoadBalancing::NEAREST_HOSTNAME:
-            return std::make_unique<NearestHostname>(hosts,getFQDNOrHostName());
+            return std::make_unique<IBalancerWithConstPriorities>(hosts,  IBalancerWithConstPriorities::priorityAsNearestHostname);
         case LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE:
-            return std::make_unique<Levenshtein>(hosts, getFQDNOrHostName());
+            return std::make_unique<IBalancerWithConstPriorities>(hosts, IBalancerWithConstPriorities::priorityAsLevenshtein);
         case LoadBalancing::IN_ORDER:
-            return std::make_unique<InOrder>(hosts);
+            return std::make_unique<IBalancerWithConstPriorities>(hosts, IBalancerWithConstPriorities::priorityAsInOrer);
         case LoadBalancing::FIRST_OR_RANDOM:
             return std::make_unique<FirstOrRandom>(hosts);
         case LoadBalancing::ROUND_ROBIN:
