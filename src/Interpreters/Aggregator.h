@@ -1380,7 +1380,7 @@ private:
     std::vector<bool> is_aggregate_function_compiled;
 
     // Limit the max keys of adaptive aggregation. Avoid overflow the value id range.
-    static constexpr auto max_adaptive_aggregating_keys = 8l;
+    static constexpr auto max_adaptive_aggregating_keys = 4l;
 
     /** Try to compile aggregate functions.
       */
