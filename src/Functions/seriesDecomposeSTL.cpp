@@ -128,7 +128,7 @@ public:
                 res_data.insert(residue.begin(), residue.end());
                 res_col_offsets_data.push_back(res_data.size());
 
-                // Create Baseline = seasonal + trend 
+                // Create Baseline = seasonal + trend
                 std::transform(seasonal.begin(), seasonal.end(), trend.begin(), std::back_inserter(res_data), std::plus<Float32>());
                 res_col_offsets_data.push_back(res_data.size());
 
@@ -205,7 +205,7 @@ The number of data points in `series` should be at least twice the value of `per
 
 **Returned value**
 
-- An array of four arrays where the first array include seasonal components, the second array - trend, the third array - residue component, and the fourth array - baseline component.
+- An array of four arrays where the first array include seasonal components, the second array - trend, the third array - residue component, and the fourth array - baseline(seasoanl + trend) component.
 
 Type: [Array](../../sql-reference/data-types/array.md).
 
