@@ -65,7 +65,7 @@ public:
     // load balancer instance for different config name.
     static ZooKeeperLoadBalancer & instance(const std::string & config_name);
 
-    ZooKeeperLoadBalancer(const std::string & config_name);
+    explicit ZooKeeperLoadBalancer(const std::string & config_name);
 
     void init(zkutil::ZooKeeperArgs args_, std::shared_ptr<ZooKeeperLog> zk_log_);
     std::unique_ptr<Coordination::ZooKeeper> createClient();

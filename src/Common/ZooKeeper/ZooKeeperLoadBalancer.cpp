@@ -38,9 +38,8 @@ class EndpointRegistry
 {
 public:
     EndpointRegistry()
-        : endpoints_by_id(endpoints_indexes.get<TagById>())
-        , endpoints_by_address(endpoints_indexes.get<TagByAddress>())
-        , endpoints_by_status(endpoints_indexes.get<TagByStatus>())
+        : endpoints_by_id(endpoints_indexes.get<TagById>()),
+         endpoints_by_status(endpoints_indexes.get<TagByStatus>())
     {}
 
     struct Endpoint
@@ -66,14 +65,7 @@ public:
     {
         return endpoints.size();
     }
-
-    size_t getIdByAddress(std::string_view address)
-    {
-        auto infoIt = endpoints_by_address.find(address);
-        chassert(infoIt != endpoints_by_address.end());
-        return infoIt->id;
-    }
-
+    
     void putToIndexWithStatus(size_t id, Status status)
     {
         popFromIndex(id);
@@ -93,12 +85,12 @@ public:
 
     Status getStatus(size_t id) const
     {
-        auto infoIt = endpoints_by_id.find(id);
-        chassert(infoIt != endpoints_by_id.end());
+        auto info_it = endpoints_by_id.find(id);
+        chassert(info_it != endpoints_by_id.end());
         // auto *log = &Poco::Logger::get("ZooKeeperLoadBalancerEndpoint");
         // LOG_INFO(log, "getStatus id {}, status {} ", id, infoIt->current_status);
 
-        return infoIt->current_status;
+        return info_it->current_status;
     }
 
     void atHostIsOffline(size_t id)
@@ -150,7 +142,6 @@ private:
     };
 
     struct TagById{};
-    struct TagByAddress{};
     struct TagByStatus{};
 
     using EndpointsIndex = boost::multi_index_container<
@@ -159,10 +150,6 @@ private:
             boost::multi_index::ordered_unique<
                 boost::multi_index::tag<TagById>,
                 boost::multi_index::member<IdxInfo, size_t, &IdxInfo::id>
-                >,
-            boost::multi_index::hashed_unique<
-                boost::multi_index::tag<TagByAddress>,
-                boost::multi_index::member<IdxInfo, std::string_view, &IdxInfo::address>
                 >,
             boost::multi_index::ordered_unique<
                 boost::multi_index::tag<TagByStatus>,
@@ -179,7 +166,6 @@ private:
 
     EndpointsIndex endpoints_indexes;
     EndpointsIndex::index<TagById>::type & endpoints_by_id;
-    EndpointsIndex::index<TagByAddress>::type & endpoints_by_address;
     EndpointsIndex::index<TagByStatus>::type & endpoints_by_status;
 };
 
@@ -227,7 +213,7 @@ protected:
 
     EndpointInfo asOptimalEndpoint(size_t id)
     {
-        auto & endpoint = findEndpointById(id);
+        const auto & endpoint = findEndpointById(id);
         return EndpointInfo{
             .address = endpoint.address,
             .secure = endpoint.secure,
@@ -240,7 +226,7 @@ protected:
 
     EndpointInfo asTemporaryEndpoint(size_t id)
     {
-        auto & endpoint = findEndpointById(id);
+        const auto & endpoint = findEndpointById(id);
         return EndpointInfo {
             .address = endpoint.address,
             .secure = endpoint.secure,
@@ -249,11 +235,6 @@ protected:
                 .use_fallback_session_lifetime = true,
             },
         };
-    }
-
-    size_t findIdByAddress(std::string_view address)
-    {
-        return registry.getIdByAddress(address);
     }
 
     const RegisterEndpoint & findEndpointById(size_t id) const
@@ -326,6 +307,15 @@ public:
         , priority_by_status(priority_indexes.get<TagByStatus>())
     {}
 
+    size_t addEndpoint(const String & address, bool secure) override
+    {
+        IBalancerWithEndpointStatuses::addEndpoint(address, secure);
+        // not great because we are reindex multiple times.
+        // TODO: fix this.
+        resetIndexes();
+        return priority_indexes.size() - 1;
+    }
+
     void atHostIsOffline(size_t id) override
     {
         IBalancerWithEndpointStatuses::atHostIsOffline(id);
@@ -369,15 +359,36 @@ public:
 
     EndpointInfo getHostToConnect() override
     {
+        LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "Begin of reporting");
+        for (const auto id : getRangeByStatus(ONLINE))
+        {
+            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "getHostToConnect id ONLINE {}, status {} ", id, getStatus(id));
+        }
+        for (const auto id : getRangeByStatus(UNDEF))
+        {
+            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "getHostToConnect id UNDEF {}, status {} ", id, getStatus(id));
+        }
+        for (const auto id : getRangeByStatus(OFFLINE))
+        {
+            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "getHostToConnect id OFFLINE {}, status {} ", id, getStatus(id));
+        }
+        LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "End of reporting");
+
         auto id = getMostPriority(ONLINE);
 
         if (id != getEndpointsCount())
+        {
+            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "getHostToConnect id online {}, status {} ", id, getStatus(id));
             return getHostWithSetting(id);
+        }
 
         id = getMostPriority(UNDEF);
 
         if (id != getEndpointsCount())
+        {
+            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "getHostToConnect id undef {}, status {} ", id, getStatus(id));
             return getHostWithSetting(id);
+        }
 
         chassert(getAvailableEndpointsCount() == 0);
         resetOfflineStatuses();
@@ -752,14 +763,7 @@ void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<Zo
 std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
 {
     bool dns_error_occurred = false;
-
     size_t attempts = 0;
-
-    /// Since we do not have background checker aliveness of endpoint
-    /// we are giving all offline endpoint second chance
-    /// offline->undef, thy will be offered after all online
-    connection_balancer->resetOfflineStatuses();
-
     while (true)
     {
         ++attempts;
@@ -792,11 +796,12 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
 
             // This is the client we expect to be actually used, therefore we set the callback to monitor the potential send/receive errors.
             client->setSendRecvErrorCallback(
-                [log_=log, address=endpoint.address, id=endpoint.id]()
+                [logger=log, address=endpoint.address, id=endpoint.id]()
                 {
-                    LOG_DEBUG(log_, "Load Balancer records a failure on host {}, original index {}", address, id);
+                    LOG_DEBUG(logger, "Load Balancer records a failure on host {}, original index {}", address, id);
                 });
 
+            connection_balancer->atHostIsOnline(endpoint.id);
             return client;
         }
         catch (DB::Exception& ex)
