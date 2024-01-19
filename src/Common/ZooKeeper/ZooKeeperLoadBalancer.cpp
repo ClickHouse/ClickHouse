@@ -509,9 +509,8 @@ public:
 private:
     bool isOptimalEndpoint(size_t id) override
     {
-        return optimal_priority == priorities[id];
+        return priorities[id] == *std::min(priorities.begin(), priorities.end());
     }
-    size_t optimal_priority = 0;
 };
 
 class NearestHostname: public IBalancerWithConstPriorities
