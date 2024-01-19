@@ -6,6 +6,7 @@
 #include "IO/Lz4InflatingReadBuffer.h"
 #include "IO/ReadBufferFromEmptyFile.h"
 #include "IO/ReadHelpers.h"
+#include "IO/S3Common.h"
 
 namespace ProfileEvents
 {
@@ -140,6 +141,36 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpoin
         ? object_storage.readObject(old_snapshot)
         : std::unique_ptr<ReadBufferFromFileBase>(std::make_unique<ReadBufferFromEmptyFile>());
     Lz4InflatingReadBuffer old_snapshot_buf{std::move(old_snapshot_uncompressed_buf)};
+
+    auto next_snapshot_exists = [&] { return object_storage.exists(getSnapshotObject(end_logpointer)); };
+    auto log_already_processed = [&]
+    {
+        LOG_INFO(
+            log,
+            "Snapshot for {} doesn't exist but found snapshot for {}, discarding this batch",
+            should_have_previous_snapshot ? start_logpointer - 1 : 0,
+            end_logpointer);
+    };
+
+    try
+    {
+        if (should_have_previous_snapshot)
+            old_snapshot_buf.eof(); // throws if file not found
+        else if (next_snapshot_exists())
+            return log_already_processed();
+    }
+#if USE_AWS_S3
+    catch (const S3Exception & e) // TODO myrrc this works only for s3
+    {
+        if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY && next_snapshot_exists())
+            return log_already_processed();
+        throw;
+    }
+#endif
+    catch (...)
+    {
+        throw;
+    }
 
     const StoredObject new_snapshot = getSnapshotObject(end_logpointer);
     auto new_snapshot_uncompressed_buf = object_storage.writeObject(new_snapshot, WriteMode::Rewrite);

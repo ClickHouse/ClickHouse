@@ -1,20 +1,28 @@
 <clickhouse>
     <storage_configuration>
         <disks>
-            <s3>
+            <already>
                 <type>s3</type>
                 <allow_vfs>true</allow_vfs>
                 <vfs_gc_sleep_ms>5000</vfs_gc_sleep_ms>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
-            </s3>
+            </already>
+            <reacquire>
+                <type>s3</type>
+                <allow_vfs>true</allow_vfs>
+                <vfs_gc_sleep_ms>5000</vfs_gc_sleep_ms>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </reacquire>
         </disks>
         <policies>
             <default>
                 <volumes>
                     <main>
-                        <disk>s3</disk>
+                        <disk>reacquire</disk>
                     </main>
                 </volumes>
             </default>
