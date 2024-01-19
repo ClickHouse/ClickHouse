@@ -22,7 +22,7 @@ public:
 
     IntervalKind getKind() const { return kind; }
 
-    explicit DataTypeInterval(IntervalKind kind_) : kind(kind_) {}
+    explicit DataTypeInterval(IntervalKind kind_ = {}) : kind(kind_) {}
 
     SerializationPtr doGetDefaultSerialization() const override;
     std::string doGetName() const override { return fmt::format("Interval{}", kind.toString()); }

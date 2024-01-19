@@ -64,8 +64,9 @@ template <typename A, typename B>
 struct DivideIntegralImpl
 {
     using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
-    static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
+    static constexpr bool allow_fixed_string = false;
+    static constexpr bool allow_interval = true;
+    static constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -116,8 +117,9 @@ struct ModuloImpl
     using IntegerAType = typename NumberTraits::ToInteger<A>::Type;
     using IntegerBType = typename NumberTraits::ToInteger<B>::Type;
 
-    static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
+    static constexpr bool allow_fixed_string = false;
+    static constexpr bool allow_interval = true;
+    static constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)

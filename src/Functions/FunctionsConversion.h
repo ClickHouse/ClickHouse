@@ -2920,7 +2920,17 @@ using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToD
 using FunctionToDateTime32 = FunctionConvert<DataTypeDateTime, NameToDateTime32, ToDateTimeMonotonicity>;
 
 using FunctionToDateTime64 = FunctionConvert<DataTypeDateTime64, NameToDateTime64, ToDateTimeMonotonicity>;
-
+using FunctionToIntervalNanosecond = FunctionConvert<DataTypeInterval, NameToIntervalNanosecond, PositiveMonotonicity>;
+using FunctionToIntervalMicrosecond = FunctionConvert<DataTypeInterval, NameToIntervalMicrosecond, PositiveMonotonicity>;
+using FunctionToIntervalMillisecond = FunctionConvert<DataTypeInterval, NameToIntervalMillisecond, PositiveMonotonicity>;
+using FunctionToIntervalSecond = FunctionConvert<DataTypeInterval, NameToIntervalSecond, PositiveMonotonicity>;
+using FunctionToIntervalMinute = FunctionConvert<DataTypeInterval, NameToIntervalMinute, PositiveMonotonicity>;
+using FunctionToIntervalHour = FunctionConvert<DataTypeInterval, NameToIntervalHour, PositiveMonotonicity>;
+using FunctionToIntervalDay = FunctionConvert<DataTypeInterval, NameToIntervalDay, PositiveMonotonicity>;
+using FunctionToIntervalWeek = FunctionConvert<DataTypeInterval, NameToIntervalWeek, PositiveMonotonicity>;
+using FunctionToIntervalMonth = FunctionConvert<DataTypeInterval, NameToIntervalMonth, PositiveMonotonicity>;
+using FunctionToIntervalQuarter = FunctionConvert<DataTypeInterval, NameToIntervalQuarter, PositiveMonotonicity>;
+using FunctionToIntervalYear = FunctionConvert<DataTypeInterval, NameToIntervalYear, PositiveMonotonicity>;
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToNumberMonotonicity<UInt128>>;
 using FunctionToIPv4 = FunctionConvert<DataTypeIPv4, NameToIPv4, ToNumberMonotonicity<UInt32>>;
 using FunctionToIPv6 = FunctionConvert<DataTypeIPv6, NameToIPv6, ToNumberMonotonicity<UInt128>>;
@@ -3277,8 +3287,8 @@ private:
     {
         TypeIndex from_type_index = from_type->getTypeId();
         WhichDataType which(from_type_index);
-        bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
-            && (which.isInt() || which.isUInt() || which.isFloat());
+        const bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
+            && (which.isInt() || which.isUInt() || which.isFloat() || which.isInterval());
 
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
         if (context)
@@ -3293,8 +3303,30 @@ private:
         }
         else if (!can_apply_accurate_cast)
         {
-            FunctionPtr function = FunctionTo<ToDataType>::Type::create(context);
-            return createFunctionAdaptor(function, from_type);
+            if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
+            {
+                const auto to_interval_function = std::invoke(
+                    [interval_kind = to_type->getKind()]
+                    {
+                        switch (interval_kind)
+                        {
+#define DECLARE_CASE(NAME) \
+    case IntervalKind::NAME: \
+        return FunctionToInterval##NAME::create();
+                            FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
+#undef DECLARE_CASE
+                        }
+
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected interval kind");
+                    });
+
+                return createFunctionAdaptor(to_interval_function, from_type);
+            }
+            else
+            {
+                FunctionPtr function = FunctionTo<ToDataType>::Type::create(context);
+                return createFunctionAdaptor(function, from_type);
+            }
         }
 
         auto wrapper_cast_type = cast_type;
@@ -3308,9 +3340,9 @@ private:
                 using LeftDataType = typename Types::LeftType;
                 using RightDataType = typename Types::RightType;
 
-                if constexpr (IsDataTypeNumber<LeftDataType>)
+                if constexpr (IsDataTypeNumber<LeftDataType> || IsDataTypeInterval<LeftDataType>)
                 {
-                    if constexpr (IsDataTypeNumber<RightDataType>)
+                    if constexpr (IsDataTypeNumber<RightDataType> || IsDataTypeInterval<RightDataType>)
                     {
 #define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE, ADDITIONS) \
             case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
@@ -4469,6 +4501,7 @@ arguments, result_type, input_rows_count); \
                 std::is_same_v<ToDataType, DataTypeDate> ||
                 std::is_same_v<ToDataType, DataTypeDate32> ||
                 std::is_same_v<ToDataType, DataTypeDateTime> ||
+                std::is_same_v<ToDataType, DataTypeInterval> ||
                 std::is_same_v<ToDataType, DataTypeUUID> ||
                 std::is_same_v<ToDataType, DataTypeIPv4> ||
                 std::is_same_v<ToDataType, DataTypeIPv6>)

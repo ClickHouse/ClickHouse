@@ -17,6 +17,7 @@ struct BitAndImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
     static constexpr bool allow_fixed_string = true;
+    static constexpr bool allow_interval = false;
     static constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>

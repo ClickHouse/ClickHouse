@@ -16,8 +16,9 @@ template <typename A>
 struct FactorialImpl
 {
     using ResultType = UInt64;
-    static const constexpr bool allow_decimal = false;
-    static const constexpr bool allow_string_or_fixed_string = false;
+    static constexpr bool allow_decimal = false;
+    static constexpr bool allow_interval = true;
+    static constexpr bool allow_string_or_fixed_string = false;
 
     static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {

@@ -389,7 +389,7 @@ struct WhichDataType
     constexpr bool isDateTime() const { return idx == TypeIndex::DateTime; }
     constexpr bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
     constexpr bool isDateTimeOrDateTime64() const { return isDateTime() || isDateTime64(); }
-    constexpr bool isDateOrDate32OrDateTimeOrDateTime64() const { return isDateOrDate32() || isDateTimeOrDateTime64(); }
+    constexpr bool isDateOrDate32OrDateTimeOrDateTime64() const { return isDate() || isDate32() || isDateTime() || isDateTime64(); }
 
     constexpr bool isString() const { return idx == TypeIndex::String; }
     constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
@@ -516,6 +516,7 @@ template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
 template <typename DataType> constexpr bool IsDataTypeDate = false;
+template <typename DataType> constexpr bool IsDataTypeInterval = false;
 template <typename DataType> constexpr bool IsDataTypeEnum = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
@@ -531,6 +532,8 @@ class DataTypeDate32;
 class DataTypeDateTime;
 class DataTypeDateTime64;
 
+class DataTypeInterval;
+
 template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
@@ -543,6 +546,8 @@ template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
+
+template <> inline constexpr bool IsDataTypeInterval<DataTypeInterval> = true;
 
 template <typename T>
 class DataTypeEnum;

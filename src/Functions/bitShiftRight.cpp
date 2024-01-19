@@ -17,8 +17,9 @@ template <typename A, typename B>
 struct BitShiftRightImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
-    static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = true;
+    static constexpr bool allow_fixed_string = false;
+    static constexpr bool allow_interval = false;
+    static constexpr bool allow_string_integer = true;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])

@@ -16,6 +16,7 @@ struct BitHammingDistanceImpl
 {
     using ResultType = std::conditional_t<(sizeof(A) * 8 >= 256), UInt16, UInt8>;
     static constexpr bool allow_fixed_string = true;
+    static constexpr bool allow_interval = false;
     static constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>

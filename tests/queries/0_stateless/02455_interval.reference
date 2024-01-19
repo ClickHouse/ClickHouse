@@ -1,0 +1,21 @@
+-- Interval --
+1000	IntervalNanosecond
+-- Unary Operations --
+-1000	IntervalNanosecond
+-1	Int8
+-- Binary Operations --
+-1000	Nullable(IntervalNanosecond)
+3000	Nullable(IntervalNanosecond)
+2.5	Nullable(Float64)
+500	Nullable(IntervalNanosecond)
+\N
+inf
+2500	IntervalNanosecond
+2	Nullable(Int64)
+0	Nullable(Int64)
+1000	IntervalNanosecond
+0	Nullable(IntervalNanosecond)
+-- Conversion --
+1000
+1000
+1000

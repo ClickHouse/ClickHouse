@@ -11,6 +11,7 @@ template <typename A>
 struct BitCountImpl
 {
     using ResultType = std::conditional_t<(sizeof(A) * 8 >= 256), UInt16, UInt8>;
+    static constexpr bool allow_interval = false;
     static constexpr bool allow_string_or_fixed_string = true;
 
     static inline ResultType apply(A a)

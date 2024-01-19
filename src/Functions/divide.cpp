@@ -12,8 +12,9 @@ template <typename A, typename B>
 struct DivideFloatingImpl
 {
     using ResultType = typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type;
-    static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
+    static constexpr bool allow_fixed_string = false;
+    static constexpr bool allow_interval = true;
+    static constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a [[maybe_unused]], B b [[maybe_unused]])

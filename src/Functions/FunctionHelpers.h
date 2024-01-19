@@ -10,6 +10,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/callOnTypeIndex.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -169,4 +170,15 @@ struct NullPresence
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
 
 bool isDecimalOrNullableDecimal(const DataTypePtr & type);
+
+template <typename T, typename... Args>
+ColumnWithTypeAndName createConstColumnWithTypeAndName(const typename T::FieldType & value, const std::string & name, Args&&... args)
+{
+    return {T().createColumnConst(1, toField(value)), std::make_shared<T>(std::forward<Args>(args)...), name};
+}
+
+std::pair<ColumnPtr, DataTypePtr> executeFunctionCall(
+    const ContextPtr & context, const std::string & name, const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
+
+ColumnWithTypeAndName asArgument(const std::pair<ColumnPtr, DataTypePtr> & column_with_type, std::string_view name);
 }

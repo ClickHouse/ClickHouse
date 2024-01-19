@@ -10,6 +10,7 @@ template <typename A>
 struct AbsImpl
 {
     using ResultType = std::conditional_t<is_decimal<A>, A, typename NumberTraits::ResultOfAbs<A>::Type>;
+    static constexpr bool allow_interval = false;
     static constexpr bool allow_string_or_fixed_string = false;
 
     static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)

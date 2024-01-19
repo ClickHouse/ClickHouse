@@ -17,7 +17,8 @@ template <typename A>
 struct IntExp10Impl
 {
     using ResultType = UInt64;
-    static constexpr const bool allow_string_or_fixed_string = false;
+    static constexpr bool allow_interval = false;
+    static constexpr bool allow_string_or_fixed_string = false;
 
     static inline ResultType apply([[maybe_unused]] A a)
     {

@@ -16,7 +16,8 @@ struct BitXorImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
     static constexpr bool allow_fixed_string = true;
-    static const constexpr bool allow_string_integer = false;
+    static constexpr bool allow_interval = false;
+    static constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)

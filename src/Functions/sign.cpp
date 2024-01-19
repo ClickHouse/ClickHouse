@@ -9,6 +9,7 @@ template <typename A>
 struct SignImpl
 {
     using ResultType = Int8;
+    static constexpr bool allow_interval = true;
     static constexpr bool allow_string_or_fixed_string = false;
 
     static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)

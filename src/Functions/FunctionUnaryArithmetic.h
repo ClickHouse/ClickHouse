@@ -307,11 +307,12 @@ public:
                         result = std::make_shared<DataType>();
                 }
             }
-            else if constexpr (std::is_same_v<DataTypeInterval, DataType>)
+            else if constexpr (std::is_same_v<DataTypeInterval, DataType> && !is_sign_function)
             {
-                if constexpr (!IsUnaryOperation<Op>::negate)
+                if constexpr (!Op<DataTypeInterval>::allow_interval)
                     return false;
-                result = std::make_shared<DataTypeInterval>(type.getKind());
+
+                result = std::make_shared<DataType>(type.getKind());
             }
             else
             {

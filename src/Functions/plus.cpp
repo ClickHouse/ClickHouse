@@ -9,9 +9,10 @@ template <typename A, typename B>
 struct PlusImpl
 {
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
-    static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
-    static const constexpr bool is_commutative = true;
+    static constexpr bool allow_fixed_string = false;
+    static constexpr bool allow_interval = true;
+    static constexpr bool allow_string_integer = false;
+    static constexpr bool is_commutative = true;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
@@ -28,7 +29,7 @@ struct PlusImpl
             return static_cast<Result>(a) + static_cast<Result>(b);
     }
 
-    /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false otherwise.
+    /// Apply operation and check overflow. It's used for Decimal operations. @returns true if overflowed, false otherwise.
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {

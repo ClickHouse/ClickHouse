@@ -1,4 +1,3 @@
-
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -32,7 +31,7 @@ PreformattedMessage getExceptionMessage(
 
 template <typename T, ArgumentKind Kind>
 std::conditional_t<Kind == ArgumentKind::Optional, std::optional<T>, T>
-getArgument(const ASTPtr & arguments, size_t argument_index, const char * argument_name [[maybe_unused]], const std::string context_data_type_name)
+getArgument(const ASTPtr & arguments, size_t argument_index, const char * argument_name [[maybe_unused]], const std::string & context_data_type_name)
 {
     using NearestResultType = NearestFieldType<T>;
     const auto field_type = Field::TypeToEnum<NearestResultType>::value;

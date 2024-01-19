@@ -1,3 +1,5 @@
+#include "FunctionFactory.h"
+
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnTuple.h>
@@ -298,4 +300,16 @@ bool isDecimalOrNullableDecimal(const DataTypePtr & type)
     return isDecimal(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
 }
 
+std::pair<ColumnPtr, DataTypePtr> executeFunctionCall(
+    const ContextPtr & context, const std::string & name, const ColumnsWithTypeAndName & arguments, const size_t input_rows_count)
+{
+    const auto function = FunctionFactory::instance().get(name, context)->build(arguments);
+    const auto & result_data_type = function->getResultType();
+    return {function->execute(arguments, result_data_type, input_rows_count), result_data_type};
+}
+
+ColumnWithTypeAndName asArgument(const std::pair<ColumnPtr, DataTypePtr> & column_with_type, const std::string_view name)
+{
+    return {column_with_type.first, column_with_type.second, std::string(name)};
+}
 }

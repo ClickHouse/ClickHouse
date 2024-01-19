@@ -117,17 +117,17 @@ REGISTER_FUNCTION(Conversion)
     factory.registerFunction<FunctionParseDateTime64BestEffortUSOrZero>();
     factory.registerFunction<FunctionParseDateTime64BestEffortUSOrNull>();
 
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalNanosecond, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMicrosecond, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMillisecond, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalSecond, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMinute, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalHour, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalDay, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalWeek, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMonth, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalQuarter, PositiveMonotonicity>>();
-    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalYear, PositiveMonotonicity>>();
+    factory.registerFunction<FunctionToIntervalNanosecond>();
+    factory.registerFunction<FunctionToIntervalMicrosecond>();
+    factory.registerFunction<FunctionToIntervalMillisecond>();
+    factory.registerFunction<FunctionToIntervalSecond>();
+    factory.registerFunction<FunctionToIntervalMinute>();
+    factory.registerFunction<FunctionToIntervalHour>();
+    factory.registerFunction<FunctionToIntervalDay>();
+    factory.registerFunction<FunctionToIntervalWeek>();
+    factory.registerFunction<FunctionToIntervalMonth>();
+    factory.registerFunction<FunctionToIntervalQuarter>();
+    factory.registerFunction<FunctionToIntervalYear>();
 }
 
 }
