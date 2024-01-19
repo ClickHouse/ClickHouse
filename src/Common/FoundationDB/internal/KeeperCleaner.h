@@ -1,38 +1,33 @@
 #pragma once
 
-#include <future>
 #include <Core/BackgroundSchedulePool.h>
 #include <Poco/Logger.h>
 
+#include "Coroutine.h"
 #include "KeeperCommon.h"
-#include "AsyncTrx.h"
 
 namespace DB::FoundationDB
 {
 class KeeperCleaner
 {
 public:
-    KeeperCleaner(BackgroundSchedulePool & pool, const KeeperKeys & keys_, FDBTransaction * tr);
-    ~KeeperCleaner();
-
-    // Create a cleaner without cleaner thread. Useful for testing.
-    explicit KeeperCleaner(const KeeperKeys & keys_);
+    KeeperCleaner(const KeeperKeys & keys_, FDBTransaction * tr);
+    ~KeeperCleaner() = default;
 
     // clean specific session. clean() will take the ownership of tr.
     // clean() is inefficient. You should only use it in test.
-    std::future<void> clean(SessionID session, FDBTransaction * tr);
+    Coroutine::Task<void> clean(FDBTransaction & tr, SessionID session);
 
 private:
     Poco::Logger * log;
     const KeeperKeys & keys;
 
-    AsyncTrxCancelSource clear_trx_cancel;
-    BackgroundSchedulePoolTaskHolder clear_task;
-    AsyncTrx::Ptr clear_trx;
+    AsyncTrxTracker clear_trx_cancel;
 
-    AsyncTrx::Ptr buildClearTrx(FDBTransaction * tr);
-    void tryGetRound(AsyncTrxBuilder & trxb, AsyncTrxVar<BigEndianTimestamp> var_round_start_ts);
-    void clearSessions(AsyncTrxBuilder & trxb, AsyncTrxVar<std::deque<String>> var_session_keys);
+    Coroutine::Task<void> cleaner(std::shared_ptr<FDBTransaction> trx);
+    Coroutine::Task<void> doCleanRound(FDBTransaction & trx);
+    Coroutine::Task<BigEndianTimestamp> tryGetRound(FDBTransaction & trx);
+    Coroutine::Task<void> clearSession(FDBTransaction & trx, const String & session_key);
 
     class OtherCleanerRunningException : public std::exception
     {

@@ -1,11 +1,13 @@
 #pragma once
 #include <atomic>
 #include <condition_variable>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <unordered_set>
 #include <Common/FoundationDB/fdb_c_fwd.h>
+
+/// TODO: We need more test for cancel token.
+/// For now, there is a small simple tests in gtest_fdb_coro.cpp
 
 namespace DB::FoundationDB
 {

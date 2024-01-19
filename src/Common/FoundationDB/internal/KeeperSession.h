@@ -1,10 +1,9 @@
 #pragma once
 
 #include <shared_mutex>
-#include <Core/BackgroundSchedulePool.h>
 #include <Common/FoundationDB/fdb_error_definitions.h>
 
-#include "AsyncTrx.h"
+#include "Coroutine.h"
 #include "KeeperCommon.h"
 
 namespace DB::FoundationDB
@@ -13,28 +12,24 @@ class KeeperSession
 {
 public:
     /// KeeperSession will take the ownership of tr
-    KeeperSession(BackgroundSchedulePool & pool, KeeperKeys & keys_, FDBTransaction * tr);
-    ~KeeperSession();
+    KeeperSession(KeeperKeys & keys_, FDBTransaction * tr);
+    ~KeeperSession() = default;
 
-    void currentSession(AsyncTrxBuilder & trxb, AsyncTrxVar<SessionID> var_session);
+    Coroutine::Task<SessionID> currentSession(FDBTransaction & trx);
     SessionID currentSessionSync() { return curSessionID(); }
 
     bool isExpired() const { return expired; }
 
     /// onExpired will be invoked on session expired.
     /// It should be quick.
-    std::function<void()> onExpired;
+    std::function<void()> on_expired;
 
 private:
     KeeperKeys & keys;
     Poco::Logger * log;
 
-    AsyncTrxCancelSource heartbeat_trx_cancel;
-    AsyncTrx::Ptr heartbeat_trx;
-    BackgroundSchedulePool::TaskHolder heartbeat_task;
-
-    void buildHeartbeatTrx(FDBTransaction * tr);
     void heartbeat();
+    Coroutine::Task<void> heartbeatLoop(std::shared_ptr<FDBTransaction> trx);
 
     /// Session expired
     std::atomic<bool> expired = false;
@@ -68,5 +63,7 @@ private:
         std::unique_lock lock(cur_session_key_mutex);
         cur_session_key.assign(new_session_key_template.data(), new_session_key_template.size() - 4);
     }
+
+    AsyncTrxTracker heartbeat_trx_cancel;
 };
 }

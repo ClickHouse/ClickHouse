@@ -55,9 +55,6 @@ constexpr int znode_stats_total_size = []()
     return i;
 }();
 
-#define TRX_STEP(...) \
-    [__VA_ARGS__]([[maybe_unused]] ::DB::FoundationDB::AsyncTrx::Context & ctx, [[maybe_unused]] FDBFuture * f) -> FDBFuture *
-
 namespace DB::FoundationDB
 {
 using SessionID = int64_t;
@@ -237,14 +234,14 @@ public:
     /// (serialized in big-endian order).
     /// As a result, session id may be duplicated, even they are is obtained from
     /// different transactions.
-    static SessionID extractSessionFromSessionKey(String & key, bool include_vs_index)
+    static SessionID extractSessionFromSessionKey(const String & key, bool include_vs_index)
     {
-        auto * vs_bytes = key.data() + key.size() - sizeof(FDBVersionstamp) + 2;
+        const auto * vs_bytes = key.data() + key.size() - sizeof(FDBVersionstamp) + 2;
 
         if (include_vs_index)
             vs_bytes -= 4;
 
-        return *reinterpret_cast<SessionID *>(vs_bytes);
+        return *reinterpret_cast<const SessionID *>(vs_bytes);
     }
 
     String getEphemeral(SessionID session, const String & path) const

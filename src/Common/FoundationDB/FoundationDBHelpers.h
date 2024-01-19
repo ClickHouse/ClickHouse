@@ -40,7 +40,7 @@ inline std::shared_ptr<FDBObject> fdb_manage_object(FDBObject * obj);
     template <> \
     inline std::shared_ptr<FDBObject> fdb_manage_object(FDBObject * obj) \
     { \
-        return std::shared_ptr<FDBObject>(obj, Deleter); \
+        return obj ? std::shared_ptr<FDBObject>(obj, Deleter) : std::shared_ptr<FDBObject>(nullptr); \
     }
 
 FDB_OBJECT_DELETER(FDBDatabase, fdb_database_destroy);

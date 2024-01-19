@@ -1504,6 +1504,7 @@ TEST_P(FDBKeeperChrootSuite, MultiRead)
         ASSERT_EQ(resps.responses.size(), 5);
 
         auto resp0 = dynamic_cast<const Coordination::GetResponse &>(*resps.responses[0]);
+        ASSERT_EQ(resp0.error, Error::ZOK);
         ASSERT_EQ(resp0.data, "aaa");
 
         auto resp1 = dynamic_cast<const Coordination::GetResponse &>(*resps.responses[1]);

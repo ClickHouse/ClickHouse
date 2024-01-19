@@ -29,492 +29,387 @@ constexpr size_t zk_max_value_size = 1'048'576;
 constexpr char fdb_max_value_splits = zk_max_value_size / fdb_max_value_size + 1;
 static_assert(zk_max_value_size / fdb_max_value_size + 1 < std::numeric_limits<char>::max());
 
-void ZNodeLayer::assertExists()
+Coroutine::Task<void> ZNodeLayer::assertExists()
 {
-    assertExists(path, true, Error::ZNONODE);
+    return assertExists(path, true, Error::ZNONODE);
 }
 
-void ZNodeLayer::assertExists(const String & target_path, bool should_exists, Error error)
+Coroutine::Task<void> ZNodeLayer::assertExists(const String & target_path, bool should_exists, Coordination::Error error)
 {
     /// Root node always exists
     if (isRootPath(target_path))
-        return;
+        co_return;
 
     auto child_key = keys.getChild(target_path);
-    trxb.then(TRX_STEP(child_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(child_key), 0); })
-        .then(TRX_STEP(child_key, should_exists, error)
-        {
-            fdb_bool_t exists;
-            const uint8_t * data;
-            int len;
+    auto future = co_await fdb_transaction_get(&trx, FDB_KEY_FROM_STRING(child_key), 0);
 
-            throwIfFDBError(fdb_future_get_value(f, &exists, &data, &len));
+    fdb_bool_t exists;
+    const uint8_t * data;
+    int len;
 
-            if (should_exists != exists)
-                throw KeeperException(error);
-            return nullptr;
-        });
+    throwIfFDBError(fdb_future_get_value(future.get(), &exists, &data, &len));
+
+    if (should_exists != exists)
+        throw KeeperException(error);
 }
 
-void ZNodeLayer::create(const String & data, bool is_sequential, AsyncTrxVar<CreateResponse> var_resp, bool ignore_exists)
+Coroutine::Task<void>
+ZNodeLayer::create(const String & data, bool is_sequential, Coordination::CreateResponse & resp, bool ignore_exists)
 {
-    trxb.lockExclusive(path);
-
     if (isRootPath(path))
     {
         if (!ignore_exists)
-            trxb.then(TRX_STEP() { throw KeeperException(Error::ZNODEEXISTS); });
+            throw KeeperException(Error::ZNODEEXISTS);
         else
-            trxb.then(TRX_STEP(var_resp)
-            {
-                auto & resp = *ctx.getVar(var_resp);
-                resp.path_created = "/";
-                return nullptr;
-            });
-        return;
+            resp.path_created = "/";
+        co_return;
     }
 
     const auto parent_path = getParentPath(path).toString();
-    assertExists(parent_path, true, Error::ZNONODE);
+    co_await assertExists(parent_path, true, Error::ZNONODE);
 
-    if (!isRootPath(parent_path))
+    /// Parent node should not be ephemeral
     {
-        trxb.lockShared(parent_path);
-
-        /// Parent node should not be ephemeral
         const auto parent_owner_key = keys.getMetaPrefix(parent_path) + static_cast<char>(KeeperKeys::ephemeralOwner);
-        trxb.then(TRX_STEP(parent_owner_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(parent_owner_key), false); })
-            .then(TRX_STEP()
-            {
-                fdb_bool_t exists;
-                const uint8_t * data_bytes;
-                int data_len;
-                throwIfFDBError(fdb_future_get_value(f, &exists, &data_bytes, &data_len));
-                if (exists)
-                    throw KeeperException(Error::ZNOCHILDRENFOREPHEMERALS);
-                return nullptr;
-            });
+        auto future = co_await fdb_transaction_get(&trx, FDB_KEY_FROM_STRING(parent_owner_key), false);
+
+        fdb_bool_t exists;
+        const uint8_t * data_bytes;
+        int data_len;
+        throwIfFDBError(fdb_future_get_value(future.get(), &exists, &data_bytes, &data_len));
+        if (exists)
+            throw KeeperException(Error::ZNOCHILDRENFOREPHEMERALS);
     }
 
     /// Find actual path to create
     if (is_sequential)
     {
         const auto parent_numcreate_key = keys.getMetaPrefix(parent_path) + static_cast<char>(KeeperKeys::numCreate);
-        trxb.then(
-                TRX_STEP(parent_numcreate_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(parent_numcreate_key), 0); })
-            .then(TRX_STEP(parent_numcreate_key, var_resp, local_path = path)
-            {
-                fdb_bool_t exists_seq;
-                const uint8_t * seq_bytes;
-                int seq_len;
-                UInt32 seq;
+        auto future = co_await fdb_transaction_get(&trx, FDB_KEY_FROM_STRING(parent_numcreate_key), 0);
 
-                throwIfFDBError(fdb_future_get_value(f, &exists_seq, &seq_bytes, &seq_len));
-                if (!exists_seq)
-                    seq = 0;
-                else
-                    seq = *reinterpret_cast<const UInt32 *>(seq_bytes);
+        fdb_bool_t exists_seq;
+        const uint8_t * seq_bytes;
+        int seq_len;
+        UInt32 seq;
 
-                auto & resp = *ctx.getVar(var_resp);
-                resp.path_created = fmt::format("{}{:010}", local_path, seq);
-                return nullptr;
-            });
+        throwIfFDBError(fdb_future_get_value(future.get(), &exists_seq, &seq_bytes, &seq_len));
+        if (!exists_seq)
+            seq = 0;
+        else
+            seq = *reinterpret_cast<const UInt32 *>(seq_bytes);
+
+        resp.path_created = fmt::format("{}{:010}", path, seq);
     }
     else
     {
+        resp.path_created = path;
+
         auto child_key = keys.getChild(path);
-        trxb.then(TRX_STEP(child_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(child_key), 0); })
-            .then(TRX_STEP(var_resp, ignore_exists, local_path = path)
-            {
-                fdb_bool_t exists;
-                const uint8_t * value;
-                int len;
+        auto future = co_await fdb_transaction_get(&trx, FDB_KEY_FROM_STRING(child_key), 0);
+        fdb_bool_t exists;
+        const uint8_t * value;
+        int len;
 
-                throwIfFDBError(fdb_future_get_value(f, &exists, &value, &len));
+        throwIfFDBError(fdb_future_get_value(future.get(), &exists, &value, &len));
 
-                if (exists)
-                {
-                    if (!ignore_exists)
-                        throw KeeperException(Error::ZNODEEXISTS);
-                    else
-                        ctx.gotoCur(2);
-                }
-
-                auto & resp = *ctx.getVar(var_resp);
-                resp.path_created = local_path;
-                return nullptr;
-            });
+        if (exists)
+        {
+            if (!ignore_exists)
+                throw KeeperException(Error::ZNODEEXISTS);
+            else
+                co_return;
+        }
     }
 
-    trxb.then(TRX_STEP(data, local_keys = keys, local_path = path, parent_path, var_resp)
+    auto data_key = keys.getData(resp.path_created);
+    auto child_key = keys.getChild(resp.path_created);
+    auto meta_key_prefix = keys.getMetaPrefix(resp.path_created);
+    auto parent_meta_key_prefix = keys.getMetaPrefix(parent_path);
+
+    /// Set child key
+    fdb_transaction_set(&trx, FDB_KEY_FROM_STRING(child_key), nullptr, 0);
+
+    /// Set data
+    if (data.size() > zk_max_value_size)
+        throw KeeperException(Error::ZBADARGUMENTS);
+    auto & data_split = data_key.back();
+    size_t data_offset = 0;
+    for (; data_split < fdb_max_value_splits && data_offset < data.size(); ++data_split)
     {
-        auto & resp = *ctx.getVar(var_resp);
-        auto data_key = local_keys.getData(resp.path_created);
-        auto child_key = local_keys.getChild(resp.path_created);
-        auto meta_key_prefix = local_keys.getMetaPrefix(resp.path_created);
-        auto parent_meta_key_prefix = local_keys.getMetaPrefix(parent_path);
+        size_t split_size = std::min(data.size() - data_offset, fdb_max_value_size);
+        fdb_transaction_set(
+            &trx,
+            FDB_KEY_FROM_STRING(data_key),
+            reinterpret_cast<const uint8_t *>(data.data() + data_offset),
+            static_cast<int>(split_size));
+        data_offset += split_size;
+    }
 
-        /// Set child key
-        fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(child_key), nullptr, 0);
+    /// Set meta
+    auto meta_key = meta_key_prefix + '_';
+    auto & meta_field = meta_key.back();
 
-        /// Set data
-        if (data.size() > zk_max_value_size)
-            throw KeeperException(Error::ZBADARGUMENTS);
-        auto & data_split = data_key.back();
-        size_t data_offset = 0;
-        for (; data_split < fdb_max_value_splits && data_offset < data.size(); ++data_split)
-        {
-            size_t split_size = std::min(data.size() - data_offset, fdb_max_value_size);
-            fdb_transaction_set(
-                ctx.getTrx(),
-                FDB_KEY_FROM_STRING(data_key),
-                reinterpret_cast<const uint8_t *>(data.data() + data_offset),
-                static_cast<int>(split_size));
-            data_offset += split_size;
-        }
+    auto parent_meta_key = parent_meta_key_prefix + '_';
+    auto & parent_meta_field = parent_meta_key.back();
 
-        /// Set meta
-        auto meta_key = meta_key_prefix + '_';
-        auto & meta_field = meta_key.back();
-
-        auto parent_meta_key = parent_meta_key_prefix + '_';
-        auto & parent_meta_field = parent_meta_key.back();
-
-        const UInt32 zero = static_cast<UInt32>(0);
-        const UInt32 data_length = static_cast<UInt32>(data.length());
-        const UInt64 timestamp_now
-            = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    const UInt32 zero = static_cast<UInt32>(0);
+    const UInt32 data_length = static_cast<UInt32>(data.length());
+    const UInt64 timestamp_now
+        = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
 #define SET_META(NAME, OP, ...) \
     meta_field = KeeperKeys::NAME; \
-    fdb_transaction_##OP(ctx.getTrx(), FDB_KEY_FROM_STRING(meta_key), __VA_ARGS__)
-        SET_META(czxid, atomic_op, FDB_ATOMIC_SET_VERSIONSTAMPED_VALUE);
-        SET_META(mzxid, atomic_op, FDB_ATOMIC_SET_VERSIONSTAMPED_VALUE);
-        SET_META(pzxid, atomic_op, FDB_ATOMIC_SET_VERSIONSTAMPED_VALUE);
-        SET_META(ctime, set, FDB_VALUE_FROM_POD(timestamp_now));
-        SET_META(mtime, set, FDB_VALUE_FROM_POD(timestamp_now));
-        SET_META(dataLength, set, reinterpret_cast<const uint8_t *>(&data_length), sizeof(data_length));
-        SET_META(version, set, FDB_VALUE_FROM_POD(zero));
-        SET_META(cversion, set, FDB_VALUE_FROM_POD(zero));
+    fdb_transaction_##OP(&trx, FDB_KEY_FROM_STRING(meta_key), __VA_ARGS__)
+    SET_META(czxid, atomic_op, FDB_ATOMIC_SET_VERSIONSTAMPED_VALUE);
+    SET_META(mzxid, atomic_op, FDB_ATOMIC_SET_VERSIONSTAMPED_VALUE);
+    SET_META(pzxid, atomic_op, FDB_ATOMIC_SET_VERSIONSTAMPED_VALUE);
+    SET_META(ctime, set, FDB_VALUE_FROM_POD(timestamp_now));
+    SET_META(mtime, set, FDB_VALUE_FROM_POD(timestamp_now));
+    SET_META(dataLength, set, reinterpret_cast<const uint8_t *>(&data_length), sizeof(data_length));
+    SET_META(version, set, FDB_VALUE_FROM_POD(zero));
+    SET_META(cversion, set, FDB_VALUE_FROM_POD(zero));
 #undef SET_META
 
 #define SET_META_PARENT(NAME, OP, ...) \
     parent_meta_field = KeeperKeys::NAME; \
-    fdb_transaction_##OP(ctx.getTrx(), FDB_KEY_FROM_STRING(parent_meta_key), __VA_ARGS__)
-        SET_META_PARENT(pzxid, atomic_op, FDB_ATOMIC_SET_VERSIONSTAMPED_VALUE);
-        SET_META_PARENT(numChildren, atomic_op, FDB_ATOMIC_PLUS_ONE_32);
-        SET_META_PARENT(cversion, atomic_op, FDB_ATOMIC_PLUS_ONE_32);
-        SET_META_PARENT(numCreate, atomic_op, FDB_ATOMIC_PLUS_ONE_32);
+    fdb_transaction_##OP(&trx, FDB_KEY_FROM_STRING(parent_meta_key), __VA_ARGS__)
+    SET_META_PARENT(pzxid, atomic_op, FDB_ATOMIC_SET_VERSIONSTAMPED_VALUE);
+    SET_META_PARENT(numChildren, atomic_op, FDB_ATOMIC_PLUS_ONE_32);
+    SET_META_PARENT(cversion, atomic_op, FDB_ATOMIC_PLUS_ONE_32);
+    SET_META_PARENT(numCreate, atomic_op, FDB_ATOMIC_PLUS_ONE_32);
 #undef SET_META_PARENT
-
-        return nullptr;
-    });
 }
 
-void ZNodeLayer::registerEphemeralUnsafe(AsyncTrxVar<SessionID> var_session, AsyncTrxVar<CreateResponse> var_resp)
+void ZNodeLayer::registerEphemeralUnsafe(int64_t session, const Coordination::CreateResponse & resp)
 {
-    trxb.then(TRX_STEP(local_keys = keys, var_session, var_resp)
-    {
-        auto & session = *ctx.getVar(var_session);
-        auto & resp = *ctx.getVar(var_resp);
-
-        auto ephemeral_key = local_keys.getEphemeral(session, resp.path_created);
-        auto meta_owner_key = local_keys.getMetaPrefix(resp.path_created) + static_cast<char>(KeeperKeys::ephemeralOwner);
-        auto child_key = local_keys.getChild(resp.path_created);
-        fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(ephemeral_key), nullptr, 0);
-        fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(meta_owner_key), FDB_VALUE_FROM_POD(session));
-        fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(child_key), FDB_VALUE_FROM_POD(KeeperKeys::ListFilterEphemeral));
-
-        return nullptr;
-    });
+    auto ephemeral_key = keys.getEphemeral(session, resp.path_created);
+    auto meta_owner_key = keys.getMetaPrefix(resp.path_created) + static_cast<char>(KeeperKeys::ephemeralOwner);
+    auto child_key = keys.getChild(resp.path_created);
+    fdb_transaction_set(&trx, FDB_KEY_FROM_STRING(ephemeral_key), nullptr, 0);
+    fdb_transaction_set(&trx, FDB_KEY_FROM_STRING(meta_owner_key), FDB_VALUE_FROM_POD(session));
+    fdb_transaction_set(&trx, FDB_KEY_FROM_STRING(child_key), FDB_VALUE_FROM_POD(KeeperKeys::ListFilterEphemeral));
 }
 
 void ZNodeLayer::setUnsafe(const String & data)
 {
-    trxb.lockExclusive(path);
-    trxb.then(TRX_STEP(local_keys = keys, local_path = path, data)
+    auto data_key = keys.getData(path);
+    if (data.size() > zk_max_value_size)
+        throw KeeperException(Error::ZBADARGUMENTS);
+    auto & data_split = data_key.back();
+    size_t data_offset = 0;
+    for (data_split = 0; data_split < fdb_max_value_splits && data_offset < data.size(); ++data_split)
     {
-        auto data_key = local_keys.getData(local_path);
-        if (data.size() > zk_max_value_size)
-            throw KeeperException(Error::ZBADARGUMENTS);
-        auto & data_split = data_key.back();
-        size_t data_offset = 0;
-        for (data_split = 0; data_split < fdb_max_value_splits && data_offset < data.size(); ++data_split)
-        {
-            size_t split_size = std::min(data.size() - data_offset, fdb_max_value_size);
-            fdb_transaction_set(
-                ctx.getTrx(),
-                FDB_KEY_FROM_STRING(data_key),
-                reinterpret_cast<const uint8_t *>(data.data() + data_offset),
-                static_cast<int>(split_size));
-            data_offset += split_size;
-        }
+        size_t split_size = std::min(data.size() - data_offset, fdb_max_value_size);
+        fdb_transaction_set(
+            &trx,
+            FDB_KEY_FROM_STRING(data_key),
+            reinterpret_cast<const uint8_t *>(data.data() + data_offset),
+            static_cast<int>(split_size));
+        data_offset += split_size;
+    }
 
-        auto meta_key_prefix = local_keys.getMetaPrefix(local_path);
-        auto meta_key = meta_key_prefix + static_cast<char>(KeeperKeys::version);
-        fdb_transaction_atomic_op(ctx.getTrx(), FDB_KEY_FROM_STRING(meta_key), FDB_ATOMIC_PLUS_ONE_32);
+    auto meta_key_prefix = keys.getMetaPrefix(path);
+    auto meta_key = meta_key_prefix + static_cast<char>(KeeperKeys::version);
+    fdb_transaction_atomic_op(&trx, FDB_KEY_FROM_STRING(meta_key), FDB_ATOMIC_PLUS_ONE_32);
 
-        auto data_length = data.size();
-        meta_key.back() = static_cast<char>(KeeperKeys::dataLength);
-        fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(meta_key), FDB_VALUE_FROM_POD(data_length));
+    auto data_length = data.size();
+    meta_key.back() = static_cast<char>(KeeperKeys::dataLength);
+    fdb_transaction_set(&trx, FDB_KEY_FROM_STRING(meta_key), FDB_VALUE_FROM_POD(data_length));
 
-        meta_key.back() = static_cast<char>(KeeperKeys::mzxid);
-        fdb_transaction_atomic_op(ctx.getTrx(), FDB_KEY_FROM_STRING(meta_key), FDB_ATOMIC_SET_VERSIONSTAMPED_VALUE);
+    meta_key.back() = static_cast<char>(KeeperKeys::mzxid);
+    fdb_transaction_atomic_op(&trx, FDB_KEY_FROM_STRING(meta_key), FDB_ATOMIC_SET_VERSIONSTAMPED_VALUE);
 
-        const UInt64 timestamp_now
-            = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        meta_key.back() = static_cast<char>(KeeperKeys::mtime);
-        fdb_transaction_set(ctx.getTrx(), FDB_KEY_FROM_STRING(meta_key), FDB_VALUE_FROM_POD(timestamp_now));
-
-        return nullptr;
-    });
+    const UInt64 timestamp_now
+        = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    meta_key.back() = static_cast<char>(KeeperKeys::mtime);
+    fdb_transaction_set(&trx, FDB_KEY_FROM_STRING(meta_key), FDB_VALUE_FROM_POD(timestamp_now));
 }
 
 template <typename StatResponse>
-void ZNodeLayer::stat(AsyncTrxVar<StatResponse> var_resp, bool throw_on_non_exists, StatSkip skip)
+Coroutine::Task<void> ZNodeLayer::stat(StatResponse & resp, bool throw_on_non_exists, StatSkip skip)
 {
     auto meta_key_prefix = keys.getMetaPrefix(path);
+    auto begin = meta_key_prefix + static_cast<char>(skip);
+    auto end = meta_key_prefix + '\xff';
+    auto f = co_await fdb_transaction_get_range(
+        &trx,
+        FDB_KEYSEL_FIRST_GREATER_THAN_STRING(begin),
+        FDB_KEYSEL_FIRST_GREATER_OR_EQUAL_STRING(end),
+        znode_stats_total_size,
+        0,
+        FDB_STREAMING_MODE_EXACT,
+        0,
+        0,
+        0);
 
-    trxb.then(TRX_STEP(begin = meta_key_prefix + static_cast<char>(skip), end = meta_key_prefix + '\xff')
+    auto & stat = resp.stat;
+    memset(&stat, 0, sizeof(stat)); /// Clear stat
+
+    const FDBKeyValue * kvs;
+    int kvs_len;
+    fdb_bool_t more;
+
+    throwIfFDBError(fdb_future_get_keyvalue_array(f.get(), &kvs, &kvs_len, &more));
+
+    if (more)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Found more meta keys than expected (expect < {})", znode_stats_total_size);
+
+    /// Non-root znode must have meta keys.
+    /// Root znode is always exists. Root's stat is zero by default.
+    if (kvs_len == 0 && !isRootPath(path))
+    {
+        if (throw_on_non_exists)
         {
-            return fdb_transaction_get_range(
-                ctx.getTrx(),
-                FDB_KEYSEL_FIRST_GREATER_THAN_STRING(begin),
-                FDB_KEYSEL_FIRST_GREATER_OR_EQUAL_STRING(end),
-                znode_stats_total_size,
-                0,
-                FDB_STREAMING_MODE_EXACT,
-                0,
-                0,
-                0);
-        })
-        .then(TRX_STEP(var_resp, meta_key_prefix, is_root = isRootPath(path), throw_on_non_exists)
+            throw KeeperException(Error::ZNONODE);
+        }
+        else
         {
-            auto & resp = *ctx.getVar(var_resp);
-            auto & stat = resp.stat;
-            memset(&stat, 0, sizeof(stat)); /// Clear stat
+            resp.error = Error::ZNONODE;
+            co_return;
+        }
+    }
 
-            const FDBKeyValue * kvs;
-            int kvs_len;
-            fdb_bool_t more;
+    const int expect_key_lens = static_cast<int>(meta_key_prefix.size() + 1);
+    for (int i = 0; i < kvs_len; i++)
+    {
+        const auto & kv = kvs[i];
 
-            throwIfFDBError(fdb_future_get_keyvalue_array(f, &kvs, &kvs_len, &more));
+        if (kv.key_length != expect_key_lens)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid meta key {}", fdb_print_key(kv.key, kv.key_length));
 
-            if (more)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Found more meta keys than expected (expect < {})", znode_stats_total_size);
-
-            /// Non-root znode must have meta keys.
-            /// Root znode is always exists. Root's stat is zero by default.
-            if (kvs_len == 0 && !is_root)
-            {
-                if (throw_on_non_exists)
-                {
-                    throw KeeperException(Error::ZNONODE);
-                }
-                else
-                {
-                    resp.error = Error::ZNONODE;
-                    return nullptr;
-                }
-            }
-
-            const int expect_key_lens = static_cast<int>(meta_key_prefix.size() + 1);
-            for (int i = 0; i < kvs_len; i++)
-            {
-                const auto & kv = kvs[i];
-
-                if (kv.key_length != expect_key_lens)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid meta key {}", fdb_print_key(kv.key, kv.key_length));
-
-                switch (reinterpret_cast<const char *>(kv.key)[kv.key_length - 1])
-                {
+        switch (reinterpret_cast<const char *>(kv.key)[kv.key_length - 1])
+        {
 #define M(K, V) \
     case V: \
         stat.K = *reinterpret_cast<const decltype(stat.K) *>(kv.value); \
         break;
-                    APPLY_FOR_ZNODE_STATS_WITHOUT_HIDDEN(M)
+            APPLY_FOR_ZNODE_STATS_WITHOUT_HIDDEN(M)
 #undef M
 #define M(K, V) \
     case V: \
         break;
-                    APPLY_FOR_ZNODE_STATS_HIDDEN(M)
+            APPLY_FOR_ZNODE_STATS_HIDDEN(M)
 #undef M
-                    default:
-                        throw Exception(
-                            ErrorCodes::INCORRECT_DATA,
-                            "Invalid meta key {} due to unknown meta field",
-                            fdb_print_key(kv.key, kv.key_length));
-                }
-            }
-
-            return nullptr;
-        });
+            default:
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA, "Invalid meta key {} due to unknown meta field", fdb_print_key(kv.key, kv.key_length));
+        }
+    }
 }
 
-template void ZNodeLayer::stat(AsyncTrxVar<SetResponse> var_resp, bool throw_on_non_exists, StatSkip skip);
-template void ZNodeLayer::stat(AsyncTrxVar<ExistsResponse> var_resp, bool throw_on_non_exists, StatSkip skip);
+template Coroutine::Task<void> ZNodeLayer::stat(SetResponse & resp, bool throw_on_non_exists, StatSkip skip);
+template Coroutine::Task<void> ZNodeLayer::stat(ExistsResponse & resp, bool throw_on_non_exists, StatSkip skip);
 
-void ZNodeLayer::get(AsyncTrxVar<GetResponse> var_resp, bool throw_on_non_exists)
+Coroutine::Task<void> ZNodeLayer::get(Coordination::GetResponse & resp, bool throw_on_non_exists)
 {
-    stat(var_resp, throw_on_non_exists);
-    auto var_data_key = trxb.var<String>();
-
+    co_await stat(resp, throw_on_non_exists);
     if (!throw_on_non_exists)
     {
-        trxb.then(TRX_STEP(var_resp)
-        {
-            auto & resp = *ctx.getVar(var_resp);
-            if (resp.error != Error::ZOK)
-                ctx.gotoCur(3);
-            return nullptr;
-        });
+        if (resp.error != Error::ZOK)
+            co_return;
     }
 
-    trxb.then(TRX_STEP(var_data_key, local_keys = keys, local_path = path)
-        {
-            auto & data_key = *ctx.getVar(var_data_key);
-            data_key = local_keys.getData(local_path);
-            data_key.back() = 0;
-            return nullptr;
-        })
-        .then(TRX_STEP(var_data_key, var_resp)
-        {
-            auto & data_key = *ctx.getVar(var_data_key);
-            auto & data_split_idx = data_key.back();
-            auto & resp = *ctx.getVar(var_resp);
+    auto data_key = keys.getData(path);
+    auto & data_split_idx = data_key.back();
+    data_split_idx = 0;
+    resp.data.clear();
 
-            if (data_split_idx == 0)
-            {
-                resp.data.clear();
-            }
-            else
-            {
-                fdb_bool_t exists = false;
-                const uint8_t * data_split = nullptr;
-                int len = 0;
-                throwIfFDBError(fdb_future_get_value(f, &exists, &data_split, &len));
+    while (data_split_idx < fdb_max_value_splits && static_cast<int>(data_split_idx * fdb_max_value_size) < resp.stat.dataLength)
+    {
+        auto future = co_await fdb_transaction_get(&trx, FDB_KEY_FROM_STRING(data_key), 0);
+        data_split_idx++;
 
-                if (!exists)
-                    return nullptr;
-                resp.data.append(reinterpret_cast<const char *>(data_split), len);
-            }
+        fdb_bool_t exists = false;
+        const uint8_t * data_split = nullptr;
+        int len = 0;
+        throwIfFDBError(fdb_future_get_value(future.get(), &exists, &data_split, &len));
 
-            if (data_split_idx >= fdb_max_value_splits || static_cast<int>(data_split_idx * fdb_max_value_size) >= resp.stat.dataLength)
-            {
-                return nullptr;
-            }
-            else
-            {
-                ctx.gotoCur(0);
-                auto * future = fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(data_key), 0);
-                data_split_idx++;
-                return future;
-            }
-        });
+        if (!exists)
+            co_return;
+        resp.data.append(reinterpret_cast<const char *>(data_split), len);
+    }
 }
 
-void ZNodeLayer::check(int32_t version)
+Coroutine::Task<void> ZNodeLayer::check(int32_t version)
 {
-    auto version_key = keys.getMetaPrefix(path) + static_cast<char>(KeeperKeys::version);
-
-    assertExists(path, true, Error::ZNONODE);
+    co_await assertExists(path, true, Error::ZNONODE);
     if (version == -1)
-        return;
+        co_return;
 
-    trxb.then(TRX_STEP(version_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(version_key), 0); })
-        .then(TRX_STEP(version)
-        {
-            fdb_bool_t exists;
-            const uint8_t * version_bytes;
-            int len;
+    auto version_key = keys.getMetaPrefix(path) + static_cast<char>(KeeperKeys::version);
+    auto f = co_await fdb_transaction_get(&trx, FDB_KEY_FROM_STRING(version_key), 0);
 
-            throwIfFDBError(fdb_future_get_value(f, &exists, &version_bytes, &len));
-            if (exists)
-            {
-                if (*(reinterpret_cast<const int32_t *>(version_bytes)) != version)
-                    throw KeeperException(Error::ZBADVERSION);
-            }
-            else if (version != 0)
-            {
-                throw KeeperException(Error::ZBADVERSION);
-            }
+    fdb_bool_t exists;
+    const uint8_t * version_bytes;
+    int len;
 
-            return nullptr;
-        });
+    throwIfFDBError(fdb_future_get_value(f.get(), &exists, &version_bytes, &len));
+    if (exists)
+    {
+        if (*(reinterpret_cast<const int32_t *>(version_bytes)) != version)
+            throw KeeperException(Error::ZBADVERSION);
+    }
+    else if (version != 0)
+    {
+        throw KeeperException(Error::ZBADVERSION);
+    }
 }
 
-void ZNodeLayer::checkNotExists(int32_t version)
+Coroutine::Task<void> ZNodeLayer::checkNotExists(int32_t version)
 {
     if (isRootPath(path))
-    {
-        trxb.then(TRX_STEP() { throw KeeperException(Error::ZNODEEXISTS); });
-        return;
-    }
+        throw KeeperException(Error::ZNODEEXISTS);
 
     auto version_key = keys.getMetaPrefix(path) + static_cast<char>(KeeperKeys::version);
-    trxb.then(TRX_STEP(version_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(version_key), 0); })
-        .then(TRX_STEP(version)
-        {
-            fdb_bool_t exists;
-            const uint8_t * version_bytes;
-            int len;
+    auto f = co_await fdb_transaction_get(&trx, FDB_KEY_FROM_STRING(version_key), 0);
 
-            throwIfFDBError(fdb_future_get_value(f, &exists, &version_bytes, &len));
-            if (exists && (version == -1 || *(reinterpret_cast<const int32_t *>(version_bytes)) == version))
-                throw KeeperException(Error::ZNODEEXISTS);
+    fdb_bool_t exists;
+    const uint8_t * version_bytes;
+    int len;
 
-            return nullptr;
-        });
+    throwIfFDBError(fdb_future_get_value(f.get(), &exists, &version_bytes, &len));
+    if (exists && (version == -1 || *(reinterpret_cast<const int32_t *>(version_bytes)) == version))
+        throw KeeperException(Error::ZNODEEXISTS);
 }
 
-void ZNodeLayer::remove(int32_t version)
+Coroutine::Task<void> ZNodeLayer::remove(int32_t version)
 {
-    trxb.lockExclusive(path);
-    trxb.lockShared(getParentPath(path).toString());
-
     if (version != -1)
-        check(version); /// check() implied assertExists()
+        co_await check(version); /// check() implied assertExists()
     else
-        assertExists(path, true, Error::ZNONODE);
+        co_await assertExists(path, true, Error::ZNONODE);
 
     auto meta_prefix = keys.getMetaPrefix(path);
     auto children_key = meta_prefix + static_cast<char>(KeeperKeys::numChildren);
     auto owner_key = meta_prefix + static_cast<char>(KeeperKeys::ephemeralOwner);
 
     /// Remove ephemeral key if exists
-    trxb.then(TRX_STEP(owner_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(owner_key), false); })
-        .then(TRX_STEP(local_keys = keys, local_path = path)
+    {
+        auto future = co_await fdb_transaction_get(&trx, FDB_KEY_FROM_STRING(owner_key), false);
+        fdb_bool_t exists;
+        const uint8_t * session_bytes;
+        int len;
+        throwIfFDBError(fdb_future_get_value(future.get(), &exists, &session_bytes, &len));
+
+        if (exists)
         {
-            fdb_bool_t exists;
-            const uint8_t * session_bytes;
-            int len;
-            throwIfFDBError(fdb_future_get_value(f, &exists, &session_bytes, &len));
-
-            /// Not exists or not ephemeral node
-            if (!exists)
-                return nullptr;
-
             assert(len == sizeof(SessionID));
-            auto ephemeral_key = local_keys.getEphemeral(*reinterpret_cast<const SessionID *>(session_bytes), local_path);
-            fdb_transaction_clear(ctx.getTrx(), FDB_KEY_FROM_STRING(ephemeral_key));
-            return nullptr;
-        });
+            auto ephemeral_key = keys.getEphemeral(*reinterpret_cast<const SessionID *>(session_bytes), path);
+            fdb_transaction_clear(&trx, FDB_KEY_FROM_STRING(ephemeral_key));
+        }
+    }
 
-    trxb.then(TRX_STEP(children_key) { return fdb_transaction_get(ctx.getTrx(), FDB_KEY_FROM_STRING(children_key), 0); })
-        .then(TRX_STEP(local_path = path, local_keys = keys)
-        {
-            fdb_bool_t children_key_exists;
-            const uint8_t * children_bytes;
-            int children_bytes_len;
-            throwIfFDBError(fdb_future_get_value(f, &children_key_exists, &children_bytes, &children_bytes_len));
+    auto future = co_await fdb_transaction_get(&trx, FDB_KEY_FROM_STRING(children_key), 0);
 
-            if (children_key_exists && *(reinterpret_cast<const int32_t *>(children_bytes)) > 0)
-                throw KeeperException(Error::ZNOTEMPTY);
+    fdb_bool_t children_key_exists;
+    const uint8_t * children_bytes;
+    int children_bytes_len;
+    throwIfFDBError(fdb_future_get_value(future.get(), &children_key_exists, &children_bytes, &children_bytes_len));
 
-            removeUnsafeTrx(ctx.getTrx(), local_keys, local_path);
+    if (children_key_exists && *(reinterpret_cast<const int32_t *>(children_bytes)) > 0)
+        throw KeeperException(Error::ZNOTEMPTY);
 
-            return nullptr;
-        });
+    removeUnsafeTrx(&trx, keys, path);
 }
 
 void ZNodeLayer::removeUnsafeTrx(FDBTransaction * tr, const KeeperKeys & keys, const String & path)
@@ -544,54 +439,21 @@ void ZNodeLayer::removeUnsafeTrx(FDBTransaction * tr, const KeeperKeys & keys, c
 #undef SET_META_PARENT
 }
 
-void ZNodeLayer::list(AsyncTrxVar<ListResponse> var_resp, Coordination::ListRequestType list_request_type)
+Coroutine::Task<void> ZNodeLayer::list(Coordination::ListResponse & resp, Coordination::ListRequestType list_request_type)
 {
     auto children_key_prefix = keys.getChildrenPrefix(path);
-    auto var_iterator = trxb.varDefault<int>(0);
-    stat(var_resp);
-    trxb.then(TRX_STEP(var_iterator, var_resp, children_key_prefix, list_request_type)
+    co_await stat(resp);
+
+    int iterator = 0;
+    auto & list = resp.names;
+
+    auto children_key_begin = children_key_prefix;
+    fdb_bool_t more = true;
+    while (more)
     {
-        auto & iterator = *ctx.getVar(var_iterator);
-        auto & list = ctx.getVar(var_resp)->names;
-        String children_key_begin;
-
-        if (iterator != 0)
-        {
-            const FDBKeyValue * kvs;
-            int kvs_len;
-            fdb_bool_t more;
-            throwIfFDBError(fdb_future_get_keyvalue_array(f, &kvs, &kvs_len, &more));
-
-            if (kvs_len == 0)
-                return nullptr;
-
-            for (int i = 0; i < kvs_len; i++)
-            {
-                const auto & kv = kvs[i];
-
-                bool is_ephemeral = kv.value_length > 0 && (*kv.value & KeeperKeys::ListFilterEphemeral) == KeeperKeys::ListFilterEphemeral;
-
-                if (list_request_type == Coordination::ListRequestType::ALL
-                    || (is_ephemeral && list_request_type == Coordination::ListRequestType::EPHEMERAL_ONLY)
-                    || (!is_ephemeral && list_request_type == Coordination::ListRequestType::PERSISTENT_ONLY))
-                    list.emplace_back(
-                        reinterpret_cast<const char *>(kv.key) + children_key_prefix.size(), kv.key_length - children_key_prefix.size());
-            }
-
-            if (!more)
-                return nullptr;
-
-            children_key_begin.assign(reinterpret_cast<const char *>(kvs[kvs_len - 1].key), kvs[kvs_len - 1].key_length);
-        }
-        else
-        {
-            children_key_begin = children_key_prefix;
-        }
-
-        ctx.repeat();
         auto children_key_end = children_key_prefix + '\xff';
-        return fdb_transaction_get_range(
-            ctx.getTrx(),
+        auto f = co_await fdb_transaction_get_range(
+            &trx,
             FDB_KEYSEL_FIRST_GREATER_THAN_STRING(children_key_begin),
             FDB_KEYSEL_FIRST_GREATER_OR_EQUAL_STRING(children_key_end),
             0,
@@ -600,69 +462,75 @@ void ZNodeLayer::list(AsyncTrxVar<ListResponse> var_resp, Coordination::ListRequ
             ++iterator,
             0,
             0);
-    });
+
+        const FDBKeyValue * kvs;
+        int kvs_len;
+        throwIfFDBError(fdb_future_get_keyvalue_array(f.get(), &kvs, &kvs_len, &more));
+
+        if (kvs_len == 0)
+            break;
+
+        for (int i = 0; i < kvs_len; i++)
+        {
+            const auto & kv = kvs[i];
+
+            bool is_ephemeral = kv.value_length > 0 && (*kv.value & KeeperKeys::ListFilterEphemeral) == KeeperKeys::ListFilterEphemeral;
+
+            if (list_request_type == Coordination::ListRequestType::ALL
+                || (is_ephemeral && list_request_type == Coordination::ListRequestType::EPHEMERAL_ONLY)
+                || (!is_ephemeral && list_request_type == Coordination::ListRequestType::PERSISTENT_ONLY))
+                list.emplace_back(
+                    reinterpret_cast<const char *>(kv.key) + children_key_prefix.size(), kv.key_length - children_key_prefix.size());
+        }
+
+        children_key_begin.assign(reinterpret_cast<const char *>(kvs[kvs_len - 1].key), kvs[kvs_len - 1].key_length);
+    }
 }
 
-void ZNodeLayer::watch(WatchCallbackPtr cb, const String & request_path)
+Coroutine::Task<void> ZNodeLayer::watch(Coordination::WatchCallbackPtr cb, const String & request_path)
 {
     auto version_key = keys.getMetaPrefix(path) + static_cast<char>(KeeperKeys::version);
-    trxb.then(TRX_STEP(cb, version_key, request_path)
-    {
-        auto * watch_future = fdb_transaction_watch(ctx.getTrx(), FDB_KEY_FROM_STRING(version_key));
 
-        auto * payload = new WatchPayload{request_path, cb, nullptr};
-        if (ctx.trackerToken)
-        {
-            payload->trackerToken = ctx.trackerToken->splitToken();
-            payload->trackerToken->setCancelPoint(watch_future);
-        }
+    auto * watch_future = fdb_transaction_watch(&trx, FDB_KEY_FROM_STRING(version_key));
 
-        throwIfFDBError(fdb_future_set_callback(watch_future, ZNodeLayer::onWatch<Event::CHANGED>, payload));
-        return nullptr;
-    });
+    auto * payload = new WatchPayload{request_path, cb, nullptr};
+    payload->tracker_token = co_await Coroutine::ForkCancelTokenTag{};
+    if (payload->tracker_token)
+        payload->tracker_token->setCancelPoint(watch_future);
+
+    throwIfFDBError(fdb_future_set_callback(watch_future, ZNodeLayer::onWatch<Event::CHANGED>, payload));
 }
 
-void ZNodeLayer::watchChildren(WatchCallbackPtr cb, const String & request_path)
+Coroutine::Task<void> ZNodeLayer::watchChildren(Coordination::WatchCallbackPtr cb, const String & request_path)
 {
     auto cversion_key = keys.getMetaPrefix(path) + static_cast<char>(KeeperKeys::cversion);
-    trxb.then(TRX_STEP(cb, cversion_key, request_path)
-    {
-        auto * watch_future = fdb_transaction_watch(ctx.getTrx(), FDB_KEY_FROM_STRING(cversion_key));
 
-        auto * payload = new WatchPayload{request_path, cb, nullptr};
-        if (ctx.trackerToken)
-        {
-            payload->trackerToken = ctx.trackerToken->splitToken();
-            payload->trackerToken->setCancelPoint(watch_future);
-        }
+    auto * watch_future = fdb_transaction_watch(&trx, FDB_KEY_FROM_STRING(cversion_key));
 
-        throwIfFDBError(fdb_future_set_callback(watch_future, ZNodeLayer::onWatch<Event::CHILD>, payload));
-        return nullptr;
-    });
+    auto * payload = new WatchPayload{request_path, cb, nullptr};
+    payload->tracker_token = co_await Coroutine::ForkCancelTokenTag{};
+    if (payload->tracker_token)
+        payload->tracker_token->setCancelPoint(watch_future);
+
+    throwIfFDBError(fdb_future_set_callback(watch_future, ZNodeLayer::onWatch<Event::CHILD>, payload));
 }
 
-void ZNodeLayer::watchExists(AsyncTrxVar<ExistsResponse> var_exists_resp, WatchCallbackPtr cb, const String & request_path)
+Coroutine::Task<void> ZNodeLayer::watchExists(
+    const Coordination::ExistsResponse & exists_resp, Coordination::WatchCallbackPtr cb, const String & request_path)
 {
     auto child_key = keys.getChild(path);
-    trxb.then(TRX_STEP(cb, child_key, var_exists_resp, request_path)
-    {
-        auto * exists_resp = ctx.getVar(var_exists_resp);
-        auto * watch_future = fdb_transaction_watch(ctx.getTrx(), FDB_KEY_FROM_STRING(child_key));
 
-        auto * payload = new WatchPayload{request_path, cb, nullptr};
-        if (ctx.trackerToken)
-        {
-            payload->trackerToken = ctx.trackerToken->splitToken();
-            payload->trackerToken->setCancelPoint(watch_future);
-        }
+    auto * watch_future = fdb_transaction_watch(&trx, FDB_KEY_FROM_STRING(child_key));
 
-        throwIfFDBError(fdb_future_set_callback(
-            watch_future,
-            exists_resp->error == Error::ZOK ? ZNodeLayer::onWatch<Event::DELETED> : ZNodeLayer::onWatch<Event::CREATED>,
-            payload));
+    auto * payload = new WatchPayload{request_path, cb, nullptr};
+    payload->tracker_token = co_await Coroutine::ForkCancelTokenTag{};
+    if (payload->tracker_token)
+        payload->tracker_token->setCancelPoint(watch_future);
 
-        return nullptr;
-    });
+    throwIfFDBError(fdb_future_set_callback(
+        watch_future,
+        exists_resp.error == Error::ZOK ? ZNodeLayer::onWatch<Event::DELETED> : ZNodeLayer::onWatch<Event::CREATED>,
+        payload));
 }
 
 template <Event resp_event>

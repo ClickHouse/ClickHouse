@@ -1,21 +1,25 @@
 #include <chrono>
+#include <exception>
 #include <filesystem>
+#include <type_traits>
 #include <unistd.h>
 #include <Coordination/KeeperConstants.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/FoundationDB/FDBKeeper.h>
+#include <Common/FoundationDB/FoundationDBCommon.h>
+#include <Common/FoundationDB/fdb_error_definitions.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
-#include "internal/AsyncTrx.h"
 #include "internal/KeeperCleaner.h"
 #include "internal/KeeperCommon.h"
 #include "internal/KeeperOperationLogger.h"
 #include "internal/KeeperSession.h"
 #include "internal/ZNodeLayer.h"
+#include "internal/ZNodeLocker.h"
 
 namespace DB
 {
@@ -56,60 +60,86 @@ namespace Coordination
 {
 using namespace DB::FoundationDB;
 
-template <typename Callable>
-struct keeper_callback_response;
-
-template <typename R, typename Arg, typename... Args>
-struct keeper_callback_response<std::function<R(Arg, Args...)>>
+template <typename... Args>
+std::tuple<std::remove_cvref_t<Args>...> packArgs(Args &&... args)
 {
-    using type = std::remove_cvref_t<Arg>;
-};
+    return {std::forward<Args>(args)...};
+}
 
-template <typename Callable>
-using first_arg_t = typename keeper_callback_response<Callable>::type;
+// NOLINTBEGIN(bugprone-macro-parentheses)
+#define COROUTINE_INHERIT_SELF(X) auto & X = self->X
+// NOLINTEND(bugprone-macro-parentheses)
 
-template <typename VarResp, typename Callback>
-auto handleKeeperCallback(
-    VarResp var_resp,
-    Callback callback,
+// clang-format off
+#define COROUTINE_BEGIN(...) \
+    { \
+        auto _args_pack = packArgs(__VA_ARGS__); \
+        _Pragma("clang diagnostic push") \
+        _Pragma("clang diagnostic ignored \"-Wunused-variable\"") \
+        _Pragma("clang diagnostic ignored \"-Wshadow\"") \
+        []( \
+            decltype(this) self, \
+            decltype(_args_pack) _args \
+        ) -> Coroutine::Task<void> \
+        { \
+            const auto & [__VA_ARGS__] = _args; \
+            COROUTINE_INHERIT_SELF(log); \
+            COROUTINE_INHERIT_SELF(keeper_logger); \
+            COROUTINE_INHERIT_SELF(session); \
+            COROUTINE_INHERIT_SELF(chroot); \
+            COROUTINE_INHERIT_SELF(keys); \
+        _Pragma("clang diagnostic pop") \
+
+#define COROUTINE_END \
+        co_return; \
+        } \
+        (this, std::move(_args_pack)).start({}, trx_tracker.newToken()); \
+    }
+// clang-format on
+
+template <typename Response, typename TrxFn>
+Coroutine::Task<void> runTrx(
+    FDBTransaction * tr,
+    Response & resp,
+    const String & error_message,
 #ifdef ZOOKEEPER_LOG
-    KeeperResponseLogger resp_logger,
+    const KeeperResponseLogger & resp_logger,
 #endif
-    const String & message)
+    const TrxFn & fn) noexcept
 {
-    static_assert(std::is_same_v<VarResp, AsyncTrxBuilder::VarDesc<first_arg_t<Callback>>>);
+    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
     auto request_time = std::chrono::steady_clock::now();
-    return [
-#ifdef ZOOKEEPER_LOG
-               resp_logger,
-#endif
-               var_resp,
-               callback,
-               message,
-               request_time](AsyncTrxBuilder::Context & ctx, std::exception_ptr eptr)
+    auto trx = fdb_manage_object(tr);
+    try
     {
-        auto elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - request_time).count();
-
-        if (eptr)
+        while (true)
         {
-            first_arg_t<Callback> resp;
-            resp.error = DB::FoundationDB::getKeeperErrorFromException(eptr, message);
-            callback(resp);
-#ifdef ZOOKEEPER_LOG
-            resp_logger.response(resp, elapsed_ms);
-#endif
+            fdb_error_t fdb_error = FDBErrorCode::success;
+            try
+            {
+                co_await fn(*trx);
+            }
+            catch (FoundationDBException & e)
+            {
+                fdb_error = e.code;
+            }
+            if (fdb_error == FDBErrorCode::success)
+                break;
+            co_await fdb_transaction_on_error(trx.get(), fdb_error);
         }
-        else
-        {
-            auto & resp = *ctx.getVar(var_resp);
-            callback(resp);
-#ifdef ZOOKEEPER_LOG
-            resp_logger.response(resp, elapsed_ms);
-#endif
-        }
+    }
+    catch (...)
+    {
+        resp.error = getKeeperErrorFromException(std::current_exception(), error_message);
+    }
 
-        ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_ms);
-    };
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - request_time).count();
+    ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_ms);
+
+#ifdef ZOOKEEPER_LOG
+    resp_logger.response(resp, elapsed_ms);
+#endif
 }
 
 static String chroot_path(const String & root, const String & path)
@@ -165,14 +195,14 @@ FDBKeeper::FDBKeeper(const zkutil::ZooKeeperArgs & args, std::shared_ptr<ZooKeep
     throwIfFDBError(fdb_database_set_option(db, FDB_DB_OPTION_TRANSACTION_TIMEOUT, FDB_VALUE_FROM_POD(timeout_ms)));
 
     /// Setup fdbkeeper threads
-    session = std::make_unique<FoundationDB::KeeperSession>(*bg_pool, *keys, newTrx());
-    session->onExpired = [this]()
+    session = std::make_unique<FoundationDB::KeeperSession>(*keys, newTrx());
+    session->on_expired = [this]()
     {
         /// onExpired may be invoked on fdb network thread.
         /// Waiting for all trx to finish on network thread will lead to a deadlock.
         trx_tracker.gracefullyCancelAll(false);
     };
-    cleaner = std::make_unique<FoundationDB::KeeperCleaner>(*bg_pool, *keys, newTrx());
+    cleaner = std::make_unique<FoundationDB::KeeperCleaner>(*keys, newTrx());
 
 #ifdef ZOOKEEPER_LOG
     /// Setup logger
@@ -182,15 +212,17 @@ FDBKeeper::FDBKeeper(const zkutil::ZooKeeperArgs & args, std::shared_ptr<ZooKeep
     // Wait session ready
     {
         std::promise<void> promise;
-        AsyncTrxBuilder trxb;
-        session->currentSession(trxb, trxb.var<SessionID>());
-        trxb.exec(
-            newTrx(),
-            [&promise, lambda_log = log](AsyncTrx::Context &, std::exception_ptr eptr)
+        auto wait_session = [&]() -> Coroutine::Task<void>
+        {
+            auto trx = fdb_manage_object(newTrx());
+            co_await session->currentSession(*trx);
+        };
+        wait_session().start(
+            [&](std::exception_ptr eptr)
             {
                 if (eptr)
                 {
-                    LOG_ERROR(lambda_log, "Failed to wait session ready");
+                    LOG_ERROR(log, "Failed to wait session ready");
                     promise.set_exception(eptr);
                 }
                 else
@@ -231,286 +263,267 @@ void FDBKeeper::create(
     if (!acls.empty())
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "create with acl is not support yet");
 
-    AsyncTrxBuilder trxb;
-    auto resp = trxb.var<CreateResponse>();
-
-#ifdef ZOOKEEPER_LOG
-    auto resp_logger = keeper_logger->createRequest(path, data, is_ephemeral, is_sequential);
-#endif
-
-    AsyncTrxBuilder::VarDesc<SessionID> var_session;
-    if (is_ephemeral)
-    {
-        var_session = trxb.var<SessionID>();
-        session->currentSession(trxb, var_session);
-    }
-
-    String chrooted_path = chroot_path(chroot, path);
-    ZNodeLayer znode(trxb, chrooted_path, *keys);
-    znode.create(data, is_sequential, resp);
-
-    if (is_ephemeral)
-        znode.registerEphemeralUnsafe(var_session, resp);
-
-    if (!chroot.empty())
-        trxb.then(TRX_STEP(resp, local_chroot = chroot)
-        {
-            removeRootPath(ctx.getVar(resp)->path_created, local_chroot);
-            return nullptr;
-        });
-    trxb.commit().exec(
-        newTrx(),
-        handleKeeperCallback(
-            resp,
-            callback,
-#ifdef ZOOKEEPER_LOG
-            resp_logger,
-#endif
-            " during create " + chrooted_path),
-        trx_tracker.newToken());
-
     ProfileEvents::increment(ProfileEvents::ZooKeeperCreate);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
+    COROUTINE_BEGIN(path, data, is_ephemeral, is_sequential, acls, callback)
+
+    CreateResponse resp;
+    String chrooted_path = chroot_path(chroot, path);
+
+    auto lock_guard = co_await ZNodeLocker::Builder().create(chrooted_path).lock();
+
+    co_await runTrx(
+        self->newTrx(),
+        resp,
+        " during create " + chrooted_path,
+#ifdef ZOOKEEPER_LOG
+        keeper_logger->createRequest(path, data, is_ephemeral, is_sequential),
+#endif
+        [&](FDBTransaction & trx) -> Coroutine::Task<void>
+        {
+            SessionID session_id = 0;
+            if (is_ephemeral)
+                session_id = co_await session->currentSession(trx);
+
+            ZNodeLayer znode(trx, chrooted_path, *keys);
+            co_await znode.create(data, is_sequential, resp);
+
+            if (is_ephemeral)
+                znode.registerEphemeralUnsafe(session_id, resp);
+
+            if (!chroot.empty())
+                removeRootPath(resp.path_created, chroot);
+
+            co_await fdb_transaction_commit(&trx);
+        });
+
+    callback(resp);
+    COROUTINE_END
 };
 
 void FDBKeeper::remove(const String & path, int32_t version, RemoveCallback callback)
 {
-    String chrooted_path = chroot_path(chroot, path);
+    ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
 
-    AsyncTrxBuilder trxb;
-    auto resp = trxb.var<RemoveResponse>();
-    ZNodeLayer znode(trxb, chrooted_path, *keys);
-    znode.remove(version);
+    COROUTINE_BEGIN(path, version, callback)
+    String chrooted_path = chroot_path(chroot, path);
+    RemoveResponse resp;
 
 #ifdef ZOOKEEPER_LOG
     auto resp_logger = keeper_logger->removeRequest(path, version);
 #endif
 
-    trxb.commit().exec(
-        newTrx(),
-        handleKeeperCallback(
-            resp,
-            callback,
-#ifdef ZOOKEEPER_LOG
-            resp_logger,
-#endif
-            " during remove " + chrooted_path),
-        trx_tracker.newToken());
+    auto lock = co_await ZNodeLocker::Builder().remove(chrooted_path).lock();
 
-    ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+    co_await runTrx(
+        self->newTrx(),
+        resp,
+        " during remove " + chrooted_path,
+#ifdef ZOOKEEPER_LOG
+        resp_logger,
+#endif
+        [&](FDBTransaction & trx) -> Coroutine::Task<void>
+        {
+            ZNodeLayer znode(trx, chrooted_path, *keys);
+            co_await znode.remove(version);
+            co_await fdb_transaction_commit(&trx);
+        });
+
+    callback(resp);
+    COROUTINE_END
 };
 
 void FDBKeeper::exists(const String & path, ExistsCallback callback, WatchCallbackPtr watch)
 {
+    ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
+
+    COROUTINE_BEGIN(path, callback, watch)
     String chrooted_path = chroot_path(chroot, path);
-
-    AsyncTrxBuilder trxb;
-    ZNodeLayer znode(trxb, chrooted_path, *keys);
-    auto var_resp = trxb.var<ExistsResponse>();
-
-    if (watch)
-    {
-        znode.stat(var_resp, false);
-        znode.watchExists(var_resp, watch, path);
-        trxb.commit();
-    }
-    else
-    {
-        znode.stat(var_resp);
-    }
+    ExistsResponse resp;
 
 #ifdef ZOOKEEPER_LOG
     auto resp_logger = keeper_logger->existsRequest(path, watch != nullptr);
 #endif
 
-    trxb.exec(
-        newTrx(),
-        handleKeeperCallback(
-            var_resp,
-            callback,
+    co_await runTrx(
+        self->newTrx(),
+        resp,
+        " during exists " + chrooted_path,
 #ifdef ZOOKEEPER_LOG
-            resp_logger,
+        resp_logger,
 #endif
-            " during exists " + chrooted_path),
-        trx_tracker.newToken());
+        [&](FDBTransaction & trx) -> Coroutine::Task<void>
+        {
+            ZNodeLayer znode(trx, chrooted_path, *keys);
+            if (watch)
+            {
+                co_await znode.stat(resp, false);
+                co_await znode.watchExists(resp, watch, path);
+                co_await fdb_transaction_commit(&trx);
+            }
+            else
+            {
+                co_await znode.stat(resp);
+            }
+        });
 
-    ProfileEvents::increment(ProfileEvents::ZooKeeperExists);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+    callback(resp);
+    COROUTINE_END
 };
 
 void FDBKeeper::get(const String & path, GetCallback callback, WatchCallbackPtr watch)
 {
+    ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
+
+    COROUTINE_BEGIN(path, callback, watch)
+
     String chrooted_path = chroot_path(chroot, path);
-
-    AsyncTrxBuilder trxb;
-    ZNodeLayer znode(trxb, chrooted_path, *keys);
-    auto var_resp = trxb.var<GetResponse>();
-    znode.get(var_resp);
-
-    if (watch)
-    {
-        znode.watch(watch, path);
-        trxb.commit();
-    }
+    GetResponse resp;
 
 #ifdef ZOOKEEPER_LOG
     auto resp_logger = keeper_logger->getRequest(path, watch != nullptr);
 #endif
 
-    trxb.exec(
-        newTrx(),
-        handleKeeperCallback(
-            var_resp,
-            callback,
+    co_await runTrx(
+        self->newTrx(),
+        resp,
+        " during get " + chrooted_path,
 #ifdef ZOOKEEPER_LOG
-            resp_logger,
+        resp_logger,
 #endif
-            " during get " + chrooted_path),
-        trx_tracker.newToken());
+        [&](FDBTransaction & trx) -> Coroutine::Task<void>
+        {
+            ZNodeLayer znode(trx, chrooted_path, *keys);
 
-    ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+            co_await znode.get(resp);
+
+            if (watch)
+            {
+                co_await znode.watch(watch, path);
+                co_await fdb_transaction_commit(&trx);
+            }
+        });
+
+    callback(resp);
+    COROUTINE_END
 };
 
 void FDBKeeper::set(const String & path, const String & data, int32_t version, SetCallback callback)
 {
+    ProfileEvents::increment(ProfileEvents::ZooKeeperSet);
+
+    COROUTINE_BEGIN(path, data, version, callback)
     String chrooted_path = chroot_path(chroot, path);
-
-    AsyncTrxBuilder trxb;
-    ZNodeLayer znode(trxb, chrooted_path, *keys);
-    auto var_resp = trxb.var<SetResponse>();
-    znode.stat(var_resp);
-    trxb.then(TRX_STEP(var_resp, version, data_length = data.size())
-    {
-        auto & resp = *ctx.getVar(var_resp);
-        if (version >= 0 && resp.stat.version != version)
-            throw DB::FoundationDB::KeeperException(Error::ZBADVERSION);
-
-        resp.stat.version++;
-        resp.stat.dataLength = static_cast<int32_t>(data_length);
-        return nullptr;
-    });
-    znode.setUnsafe(data);
-
-    auto var_vs = trxb.var<FDBVersionstamp>();
-    trxb.commit(var_vs);
-    trxb.then(TRX_STEP(var_vs, var_resp)
-    {
-        auto & resp = *ctx.getVar(var_resp);
-        auto & vs = *ctx.getVar(var_vs);
-
-        resp.stat.mzxid = *reinterpret_cast<const int64_t *>(vs.bytes);
-        return nullptr;
-    });
+    SetResponse resp;
 
 #ifdef ZOOKEEPER_LOG
     auto resp_logger = keeper_logger->setRequest(path, data, version);
 #endif
 
-    trxb.exec(
-        newTrx(),
-        handleKeeperCallback(
-            var_resp,
-            callback,
-#ifdef ZOOKEEPER_LOG
-            resp_logger,
-#endif
-            " during set " + chrooted_path),
-        trx_tracker.newToken());
+    auto lock = co_await ZNodeLocker::Builder().set(chrooted_path).lock();
 
-    ProfileEvents::increment(ProfileEvents::ZooKeeperSet);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+    co_await runTrx(
+        self->newTrx(),
+        resp,
+        " during set " + chrooted_path,
+#ifdef ZOOKEEPER_LOG
+        resp_logger,
+#endif
+        [&](FDBTransaction & trx) -> Coroutine::Task<void>
+        {
+            ZNodeLayer znode(trx, chrooted_path, *keys);
+
+            co_await znode.stat(resp);
+
+            if (version >= 0 && resp.stat.version != version)
+                throw DB::FoundationDB::KeeperException(Error::ZBADVERSION);
+
+            resp.stat.version++;
+            resp.stat.dataLength = static_cast<int32_t>(data.size());
+
+            znode.setUnsafe(data);
+
+            auto future_vs = fdb_manage_object(fdb_transaction_get_versionstamp(&trx));
+            co_await fdb_transaction_commit(&trx);
+
+            const uint8_t * vs_bytes;
+            int vs_len;
+            throwIfFDBError(fdb_future_get_key(future_vs.get(), &vs_bytes, &vs_len));
+            assert(vs_len == 10);
+            resp.stat.mzxid = *reinterpret_cast<const int64_t *>(vs_bytes);
+        });
+
+    callback(resp);
+    COROUTINE_END
 };
 
 void FDBKeeper::list(const String & path, ListRequestType list_request_type, ListCallback callback, WatchCallbackPtr watch)
 {
+    ProfileEvents::increment(ProfileEvents::ZooKeeperList);
+
+    COROUTINE_BEGIN(path, list_request_type, callback, watch)
     String chrooted_path = chroot_path(chroot, path);
-
-    AsyncTrxBuilder trxb;
-    ZNodeLayer znode(trxb, chrooted_path, *keys);
-    auto var_resp = trxb.var<ListResponse>();
-    znode.list(var_resp, list_request_type);
-
-    if (watch)
-    {
-        znode.watchChildren(watch, path);
-        trxb.commit();
-    }
+    ListResponse resp;
 
 #ifdef ZOOKEEPER_LOG
     auto resp_logger = keeper_logger->listRequest(path, watch != nullptr);
 #endif
 
-    trxb.exec(
-        newTrx(),
-        handleKeeperCallback(
-            var_resp,
-            callback,
+    co_await runTrx(
+        self->newTrx(),
+        resp,
+        " during list " + chrooted_path,
 #ifdef ZOOKEEPER_LOG
-            resp_logger,
+        resp_logger,
 #endif
-            " during list " + chrooted_path),
-        trx_tracker.newToken());
+        [&](FDBTransaction & trx) -> Coroutine::Task<void>
+        {
+            ZNodeLayer znode(trx, chrooted_path, *keys);
+            co_await znode.list(resp, list_request_type);
 
-    ProfileEvents::increment(ProfileEvents::ZooKeeperList);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+            if (watch)
+            {
+                co_await znode.watchChildren(watch, path);
+                co_await fdb_transaction_commit(&trx);
+            }
+        });
+
+    callback(resp);
+    COROUTINE_END
 };
 
 void FDBKeeper::check(const String & path, int32_t version, CheckCallback callback)
 {
-    String chrooted_path = chroot_path(chroot, path);
+    ProfileEvents::increment(ProfileEvents::ZooKeeperCheck);
 
-    AsyncTrxBuilder trxb;
-    ZNodeLayer znode(trxb, chrooted_path, *keys);
-    auto resp = trxb.var<CheckResponse>();
-    znode.check(version);
+    COROUTINE_BEGIN(path, version, callback)
+    String chrooted_path = chroot_path(chroot, path);
+    CheckResponse resp;
 
 #ifdef ZOOKEEPER_LOG
     auto resp_logger = keeper_logger->checkRequest(path, version);
 #endif
 
-    trxb.exec(
-        newTrx(),
-        handleKeeperCallback(
-            resp,
-            callback,
+    co_await runTrx(
+        self->newTrx(),
+        resp,
+        " during check " + chrooted_path,
 #ifdef ZOOKEEPER_LOG
-            resp_logger,
+        resp_logger,
 #endif
-            " during check " + chrooted_path),
-        trx_tracker.newToken());
+        [&](FDBTransaction & trx) -> Coroutine::Task<void>
+        {
+            ZNodeLayer znode(trx, chrooted_path, *keys);
+            co_await znode.check(version);
+        });
 
-    ProfileEvents::increment(ProfileEvents::ZooKeeperCheck);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+    callback(resp);
+    COROUTINE_END
 };
 
-template <typename TResponse>
-static std::shared_ptr<Response> createResponseInMulti(AsyncTrxBuilder::Context & ctx, AsyncTrxBuilder::VarDesc<Response> var, Error error)
+Coroutine::Task<bool>
+checkMultiRequest(const Requests & requests, const String & chroot, MultiResponse & out_response, ZNodeLocker & out_lock)
 {
-    TResponse & resp = *ctx.getVar(var.as<TResponse>());
-    auto out_resp = std::make_shared<TResponse>();
-    if (likely(error == Error::ZOK))
-        *out_resp = std::move(resp);
-    else
-        out_resp->error = error;
-    return out_resp;
-}
-
-void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
-{
-    AsyncTrxBuilder trxb;
-
-    std::vector<std::pair<AsyncTrxBuilder::VarDesc<Response>, decltype(&createResponseInMulti<Response>)>> all_responses_var;
-
-    auto curr_request_var = trxb.varDefault<size_t>(0);
-    auto add_curr_request = TRX_STEP(curr_request_var)
-    {
-        ++(*ctx.getVar(curr_request_var));
-        return nullptr;
-    };
-    bool need_commit = false;
-
     std::optional<bool> is_multi_read;
     auto assert_is_read = [&is_multi_read](bool is_read)
     {
@@ -518,6 +531,123 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
         is_multi_read = is_read;
     };
 
+    auto lock_builder = ZNodeLocker::Builder();
+    out_response.responses.reserve(requests.size());
+    for (const auto & request : requests)
+    {
+        String chrooted_path = chroot_path(chroot, request->getPath());
+
+        if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(request.get()))
+        {
+            assert_is_read(false);
+            out_response.responses.emplace_back(std::make_shared<CreateResponse>());
+            lock_builder.create(chrooted_path);
+        }
+        else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(request.get()))
+        {
+            assert_is_read(false);
+            out_response.responses.emplace_back(std::make_shared<RemoveResponse>());
+            lock_builder.remove(chrooted_path);
+        }
+        else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(request.get()))
+        {
+            assert_is_read(false);
+            out_response.responses.emplace_back(std::make_shared<SetResponse>());
+            lock_builder.set(chrooted_path);
+        }
+        else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(request.get()))
+        {
+            assert_is_read(false);
+            out_response.responses.emplace_back(std::make_shared<CheckResponse>());
+        }
+        else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(request.get()))
+        {
+            assert_is_read(true);
+            out_response.responses.emplace_back(std::make_shared<GetResponse>());
+        }
+        else if (const auto * concrete_request_exists = dynamic_cast<const ExistsRequest *>(request.get()))
+        {
+            assert_is_read(true);
+            out_response.responses.emplace_back(std::make_shared<ExistsResponse>());
+        }
+        else if (const auto * concrete_request_simple_list = dynamic_cast<const ZooKeeperSimpleListRequest *>(request.get()))
+        {
+            assert_is_read(true);
+            out_response.responses.emplace_back(std::make_shared<ListResponse>());
+        }
+        else if (const auto * concrete_request_filted_list = dynamic_cast<const ZooKeeperFilteredListRequest *>(request.get()))
+        {
+            assert_is_read(true);
+            out_response.responses.emplace_back(std::make_shared<ListResponse>());
+        }
+        else
+            throw Exception(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
+
+        out_response.responses.back()->error = Error::ZRUNTIMEINCONSISTENCY;
+    }
+
+    out_lock = co_await lock_builder.lock();
+
+    co_return is_multi_read.value_or(false);
+}
+
+Coroutine::Task<void>
+doMultiRead(FDBTransaction & trx, const String & chroot, const KeeperKeys & keys, const Requests & requests, MultiResponse & out_reponse)
+{
+    for (size_t i = 0; i < requests.size(); ++i)
+    {
+        const auto & request = requests[i];
+        auto response = out_reponse.responses[i];
+
+        String chrooted_path = chroot_path(chroot, request->getPath());
+        ZNodeLayer znode(trx, chrooted_path, keys);
+
+        try
+        {
+            response->error = Error::ZOK;
+
+            if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(request.get()))
+            {
+                auto & resp_get = dynamic_cast<GetResponse &>(*response);
+                co_await znode.get(resp_get, false);
+            }
+            else if (const auto * concrete_request_exists = dynamic_cast<const ExistsRequest *>(request.get()))
+            {
+                auto & resp_exists = dynamic_cast<ExistsResponse &>(*response);
+                co_await znode.stat(resp_exists, false);
+            }
+            else if (const auto * concrete_request_simple_list = dynamic_cast<const ZooKeeperSimpleListRequest *>(request.get()))
+            {
+                auto & resp_list = dynamic_cast<ListResponse &>(*response);
+                co_await znode.list(resp_list);
+            }
+            else if (const auto * concrete_request_filted_list = dynamic_cast<const ZooKeeperFilteredListRequest *>(request.get()))
+            {
+                auto & resp_list = dynamic_cast<ListResponse &>(*response);
+                co_await znode.list(resp_list, concrete_request_filted_list->list_request_type);
+            }
+            else
+                throw Exception(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
+        }
+        catch (...)
+        {
+            if (out_reponse.error != Error::ZOK)
+                out_reponse.error = response->error;
+
+            if (response->error != Error::ZNONODE)
+                throw;
+        }
+    }
+}
+
+Coroutine::Task<void> doMultiWrite(
+    FDBTransaction & trx,
+    KeeperSession & session,
+    const String & chroot,
+    const KeeperKeys & keys,
+    const Requests & requests,
+    MultiResponse & out_response)
+{
     /// CreateRequest set <path><meta><*zxid> = versionstamp.
     /// SetRequest require <path><meta><{c,p}zxid> to build stat in response.
     /// But versionstamp is not available until commit.
@@ -528,255 +658,177 @@ void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
     std::unordered_set<std::string> pathset_children_changed;
 
     /// set_resps_*zxid record SetResponse that needs to set the *zxid.
-    std::vector<AsyncTrxBuilder::VarDesc<SetResponse>> resps_need_cpmzxid;
-    std::vector<AsyncTrxBuilder::VarDesc<SetResponse>> resps_need_pmzxid;
-    std::vector<AsyncTrxBuilder::VarDesc<SetResponse>> resps_need_mzxid;
+    std::vector<SetResponse *> resps_need_cpmzxid;
+    std::vector<SetResponse *> resps_need_pmzxid;
+    std::vector<SetResponse *> resps_need_mzxid;
 
-    AsyncTrxBuilder::VarDesc<SessionID> var_session;
-    bool session_filled = false;
+    std::optional<SessionID> session_id;
 
-#ifdef ZOOKEEPER_LOG
-    auto resp_logger = keeper_logger->multiRequest(requests);
-#endif
+    bool need_commit = false;
 
-    for (const auto & request : requests)
+    for (size_t i = 0; i < requests.size(); ++i)
     {
-        String chrooted_path = chroot_path(chroot, request->getPath());
+        const auto & request = requests[i];
+        auto response = out_response.responses[i];
 
-        if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(request.get()))
+        try
         {
-            assert_is_read(false);
+            response->error = Error::ZOK;
 
-            if (concrete_request_create->is_ephemeral && !session_filled)
+            String chrooted_path = chroot_path(chroot, request->getPath());
+            ZNodeLayer znode(trx, chrooted_path, keys);
+
+            if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(request.get()))
             {
-                session_filled = true;
-                var_session = trxb.var<SessionID>();
-                session->currentSession(trxb, var_session);
+                auto & resp_create = dynamic_cast<CreateResponse &>(*response);
+
+                if (concrete_request_create->is_ephemeral && !session_id.has_value())
+                    session_id = co_await session.currentSession(trx);
+
+                co_await znode.create(
+                    concrete_request_create->data,
+                    concrete_request_create->is_sequential,
+                    resp_create,
+                    concrete_request_create->not_exists);
+
+                if (concrete_request_create->is_ephemeral)
+                    znode.registerEphemeralUnsafe(session_id.value(), resp_create);
+
+                if (!chroot.empty())
+                    removeRootPath(resp_create.path_created, chroot);
+
+                /// Record create log
+                pathset_create.emplace(chrooted_path);
+                pathset_children_changed.emplace(getParentPath(chrooted_path));
+
+                /// Register response
+                need_commit = true;
             }
-
-            ZNodeLayer znode(trxb, chrooted_path, *keys);
-            auto resp = trxb.var<CreateResponse>();
-            znode.create(concrete_request_create->data, concrete_request_create->is_sequential, resp, concrete_request_create->not_exists);
-
-            if (concrete_request_create->is_ephemeral)
-                znode.registerEphemeralUnsafe(var_session, resp);
-
-            if (!chroot.empty())
+            else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(request.get()))
             {
-                trxb.then(TRX_STEP(resp, local_chroot = chroot)
+                co_await znode.remove(concrete_request_remove->version);
+
+                /// Record create log
+                pathset_children_changed.emplace(getParentPath(chrooted_path));
+                need_commit = true;
+            }
+            else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(request.get()))
+            {
+                auto & resp_set = dynamic_cast<SetResponse &>(*response);
+
+                /// Check version
+                if (concrete_request_set->version >= 0)
+                    co_await znode.check(concrete_request_set->version);
+                else
+                    co_await znode.assertExists();
+
+                /// Set data
+                znode.setUnsafe(concrete_request_set->data);
+
+                /// Fill stat in SetResponse
+                using StatMask = DB::FoundationDB::ZNodeLayer::StatSkip;
+                if (pathset_create.contains(chrooted_path))
                 {
-                    removeRootPath(ctx.getVar(resp)->path_created, local_chroot);
-                    return nullptr;
-                });
+                    /// New ZNode in trx. Its {c,p,m}zxid is versionstamp.
+                    co_await znode.stat(resp_set, true, StatMask::SKIP_MPCZXID);
+                    resps_need_cpmzxid.emplace_back(&resp_set);
+                }
+                else if (pathset_children_changed.contains(chrooted_path))
+                {
+                    /// ZNodes that children changed in trx. Its {p,m}zxid is versionstamp
+                    co_await znode.stat(resp_set, true, StatMask::SKIP_MPZXID);
+                    resps_need_pmzxid.emplace_back(&resp_set);
+                }
+                else
+                {
+                    /// Modify data. Its mzxid is versionstamp
+                    co_await znode.stat(resp_set, true, StatMask::SKIP_MZXID);
+                    resps_need_mzxid.emplace_back(&resp_set);
+                }
+
+                need_commit = true;
             }
-
-            /// Record create log
-            pathset_create.emplace(chrooted_path);
-            pathset_children_changed.emplace(getParentPath(chrooted_path));
-
-            /// Register response
-            all_responses_var.emplace_back(resp.as<Response>(), createResponseInMulti<CreateResponse>);
-            need_commit = true;
-        }
-        else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(request.get()))
-        {
-            assert_is_read(false);
-
-            ZNodeLayer znode(trxb, chrooted_path, *keys);
-            auto resp = trxb.var<RemoveResponse>();
-            znode.remove(concrete_request_remove->version);
-
-            /// Record create log
-            pathset_children_changed.emplace(getParentPath(chrooted_path));
-
-            /// Register response
-            all_responses_var.emplace_back(resp.as<Response>(), createResponseInMulti<RemoveResponse>);
-            need_commit = true;
-        }
-        else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(request.get()))
-        {
-            assert_is_read(false);
-
-            ZNodeLayer znode(trxb, chrooted_path, *keys);
-            auto resp = trxb.var<SetResponse>();
-
-            /// Check version
-            if (concrete_request_set->version >= 0)
-                znode.check(concrete_request_set->version);
-            else
-                znode.assertExists();
-
-            /// Set data
-            znode.setUnsafe(concrete_request_set->data);
-
-            /// Fill stat in SetResponse
-            using StatMask = DB::FoundationDB::ZNodeLayer::StatSkip;
-            if (pathset_create.contains(chrooted_path))
+            else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(request.get()))
             {
-                /// New ZNode in trx. Its {c,p,m}zxid is versionstamp.
-                znode.stat(resp, true, StatMask::SKIP_MPCZXID);
-                resps_need_cpmzxid.emplace_back(resp);
+                if (concrete_request_check->not_exists)
+                    co_await znode.checkNotExists(concrete_request_check->version);
+                else
+                    co_await znode.check(concrete_request_check->version);
             }
-            else if (pathset_children_changed.contains(chrooted_path))
-            {
-                /// ZNodes that children changed in trx. Its {p,m}zxid is versionstamp
-                znode.stat(resp, true, StatMask::SKIP_MPZXID);
-                resps_need_pmzxid.emplace_back(resp);
-            }
-            else
-            {
-                /// Modify data. Its mzxid is versionstamp
-                znode.stat(resp, true, StatMask::SKIP_MZXID);
-                resps_need_mzxid.emplace_back(resp);
-            }
-
-            /// Register response
-            all_responses_var.emplace_back(resp.as<Response>(), createResponseInMulti<SetResponse>);
-            need_commit = true;
         }
-        else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(request.get()))
+        catch (...)
         {
-            assert_is_read(false);
-
-            ZNodeLayer znode(trxb, chrooted_path, *keys);
-            auto resp = trxb.var<CheckResponse>();
-            if (concrete_request_check->not_exists)
-                znode.checkNotExists(concrete_request_check->version);
-            else
-                znode.check(concrete_request_check->version);
-
-            /// Register response
-            all_responses_var.emplace_back(resp.as<Response>(), createResponseInMulti<CheckResponse>);
+            response->error = getKeeperErrorFromException(std::current_exception());
+            throw;
         }
-        else if (const auto * concrete_request_get = dynamic_cast<const GetRequest *>(request.get()))
-        {
-            assert_is_read(true);
-
-            ZNodeLayer znode(trxb, chrooted_path, *keys);
-            auto var_resp = trxb.var<GetResponse>();
-            znode.get(var_resp, false);
-
-            all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<GetResponse>);
-        }
-        else if (const auto * concrete_request_exists = dynamic_cast<const ExistsRequest *>(request.get()))
-        {
-            assert_is_read(true);
-
-            ZNodeLayer znode(trxb, chrooted_path, *keys);
-            auto var_resp = trxb.var<ExistsResponse>();
-            znode.stat(var_resp, false);
-
-            all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<ExistsResponse>);
-        }
-        else if (const auto * concrete_request_simple_list = dynamic_cast<const ZooKeeperSimpleListRequest *>(request.get()))
-        {
-            assert_is_read(true);
-
-            ZNodeLayer znode(trxb, chrooted_path, *keys);
-            auto var_resp = trxb.var<ListResponse>();
-            znode.list(var_resp);
-            ListResponse resp;
-
-            all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<ListResponse>);
-        }
-        else if (const auto * concrete_request_filted_list = dynamic_cast<const ZooKeeperFilteredListRequest *>(request.get()))
-        {
-            assert_is_read(true);
-
-            ZNodeLayer znode(trxb, chrooted_path, *keys);
-            auto var_resp = trxb.var<ListResponse>();
-            znode.list(var_resp, concrete_request_filted_list->list_request_type);
-            ListResponse resp;
-
-            all_responses_var.emplace_back(var_resp.as<Response>(), createResponseInMulti<ListResponse>);
-        }
-        else
-            throw Exception(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
-
-        trxb.then(add_curr_request);
     }
 
     if (need_commit)
     {
         if (resps_need_cpmzxid.empty() && resps_need_pmzxid.empty() && resps_need_mzxid.empty())
         {
-            trxb.commit();
+            co_await fdb_transaction_commit(&trx);
         }
         else
         {
-            auto var_vs = trxb.var<FDBVersionstamp>();
-            trxb.commit(var_vs);
-            trxb.then(TRX_STEP(var_vs, resps_need_cpmzxid, resps_need_pmzxid, resps_need_mzxid)
+            auto future_vs = fdb_manage_object(fdb_transaction_get_versionstamp(&trx));
+            co_await fdb_transaction_commit(&trx);
+
+            const uint8_t * vs_bytes;
+            int vs_len;
+            throwIfFDBError(fdb_future_get_key(future_vs.get(), &vs_bytes, &vs_len));
+            assert(vs_len == 10);
+            const auto & zxid = *reinterpret_cast<const int64_t *>(vs_bytes);
+
+            for (auto * resp_set : resps_need_cpmzxid)
             {
-                auto & zxid = *ctx.getVar(var_vs.as<int64_t>());
-                for (const auto & var_resp : resps_need_cpmzxid)
-                {
-                    auto & resp = *ctx.getVar(var_resp);
-                    resp.stat.czxid = zxid;
-                    resp.stat.mzxid = zxid;
-                    resp.stat.pzxid = zxid;
-                }
-                for (const auto & var_resp : resps_need_pmzxid)
-                {
-                    auto & resp = *ctx.getVar(var_resp);
-                    resp.stat.mzxid = zxid;
-                    resp.stat.pzxid = zxid;
-                }
-                for (const auto & var_resp : resps_need_mzxid)
-                {
-                    auto & resp = *ctx.getVar(var_resp);
-                    resp.stat.mzxid = zxid;
-                }
-                return nullptr;
-            });
+                resp_set->stat.czxid = zxid;
+                resp_set->stat.mzxid = zxid;
+                resp_set->stat.pzxid = zxid;
+            }
+            for (auto * resp_set : resps_need_pmzxid)
+            {
+                resp_set->stat.mzxid = zxid;
+                resp_set->stat.pzxid = zxid;
+            }
+            for (auto * resp_set : resps_need_mzxid)
+                resp_set->stat.mzxid = zxid;
         }
     }
+}
 
-    trxb.exec(
-        newTrx(),
-        [
-#ifdef ZOOKEEPER_LOG
-            resp_logger,
-            request_time = std::chrono::steady_clock::now(),
-#endif
-            curr_request_var,
-            all_responses_var,
-            callback](AsyncTrxBuilder::Context & ctx, std::exception_ptr eptr)
-        {
-            MultiResponse multi_resp;
-            auto resp_cnt = all_responses_var.size();
-            auto & curr_request = *ctx.getVar(curr_request_var);
-
-            if (unlikely(eptr))
-                multi_resp.error = DB::FoundationDB::getKeeperErrorFromException(eptr);
-            else
-                multi_resp.error = Error::ZOK;
-
-            size_t i = 0;
-
-            /// Success requests
-            for (; i < curr_request; i++)
-                multi_resp.responses.emplace_back(all_responses_var[i].second(ctx, all_responses_var[i].first, Error::ZOK));
-
-            /// Failed request
-            if (i < resp_cnt)
-                multi_resp.responses.emplace_back(all_responses_var[i].second(ctx, all_responses_var[i].first, multi_resp.error));
-
-            /// Remaining unexecuted requests
-            for (i += 1; i < resp_cnt; i++)
-                multi_resp.responses.emplace_back(
-                    all_responses_var[i].second(ctx, all_responses_var[i].first, Error::ZRUNTIMEINCONSISTENCY));
-
-#ifdef ZOOKEEPER_LOG
-            auto elapsed_ms = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - request_time).count();
-            resp_logger.response(multi_resp, elapsed_ms);
-#endif
-            callback(multi_resp);
-        },
-        trx_tracker.newToken());
-
+void FDBKeeper::multi(const Requests & requests, MultiCallback callback)
+{
     ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
-    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
+    COROUTINE_BEGIN(requests, callback)
+
+    MultiResponse resp;
+
+#ifdef ZOOKEEPER_LOG
+    auto resp_logger = keeper_logger->multiRequest(requests);
+#endif
+
+    ZNodeLocker lock;
+    bool is_multi_read = co_await checkMultiRequest(requests, chroot, resp, lock);
+
+    co_await runTrx(
+        self->newTrx(),
+        resp,
+        " during multi requests",
+#ifdef ZOOKEEPER_LOG
+        resp_logger,
+#endif
+        [&](FDBTransaction & trx) -> Coroutine::Task<void>
+        {
+            if (is_multi_read)
+                co_await doMultiRead(trx, chroot, *keys, requests, resp);
+            else
+                co_await doMultiWrite(trx, *session, chroot, *keys, requests, resp);
+        });
+
+    callback(resp);
+    COROUTINE_END
 };
 
 void FDBKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
@@ -807,7 +859,19 @@ void FDBKeeper::sync(const String & path, SyncCallback callback)
 
 std::future<void> FDBKeeper::cleanSession(int64_t session_id)
 {
-    KeeperCleaner temp_cleaner(*keys);
-    return temp_cleaner.clean(session_id, newTrx());
+    auto * trx = newTrx();
+    auto trx_guard = fdb_manage_object(trx);
+    auto task = cleaner->clean(*trx, session_id);
+
+    auto promise = std::make_shared<std::promise<void>>();
+    task.start(
+        [promise, trx_guard](std::exception_ptr eptr)
+        {
+            if (eptr)
+                promise->set_exception(eptr);
+            else
+                promise->set_value();
+        });
+    return promise->get_future();
 }
 }
