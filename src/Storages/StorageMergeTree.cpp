@@ -534,7 +534,7 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             MergeTreeMutationEntry & entry = it->second;
-            auto failed_part = result_part->parts.at(0);
+            auto & failed_part = result_part->parts.at(0);
             if (is_successful)
             {
                 if (!entry.latest_failed_part.empty() && result_part->part_info.contains(entry.latest_failed_part_info))
@@ -1320,7 +1320,10 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         }
     }
     if (exist_posponed_failed_part)
+    {
+        std::lock_guard lock(mutation_wait_mutex);
         mutation_wait_event.notify_all();
+    }
     return {};
 }
 
