@@ -987,7 +987,10 @@ private:
                 LOG_TRACE((&Poco::Logger::get("AvroConfluentRowInputFormat")), "Fetching schema id = {} from url {}", id, url.toString());
 
                 /// One second for connect/send/receive. Just in case.
-                ConnectionTimeouts timeouts({1, 0}, {1, 0}, {1, 0});
+                auto timeouts = ConnectionTimeouts()
+                    .withAnyConnectionTimeout(1)
+                    .withSendTimeout(1)
+                    .withReceiveTimeout(1);
 
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
                 request.setHost(url.getHost());

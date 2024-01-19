@@ -50,11 +50,10 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 
     /// 1 second is enough for now.
     /// TODO: Make timeouts configurable.
-    ConnectionTimeouts timeouts(
-        Poco::Timespan(1000000), /// Connection timeout.
-        Poco::Timespan(1000000), /// Send timeout.
-        Poco::Timespan(1000000)  /// Receive timeout.
-    );
+    auto timeouts = ConnectionTimeouts()
+        .withAnyConnectionTimeout(1)
+        .withSendTimeout(1)
+        .withReceiveTimeout(1);
 
     try
     {

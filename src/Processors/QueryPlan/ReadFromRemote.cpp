@@ -156,9 +156,9 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         -> QueryPipelineBuilder
     {
         auto current_settings = my_context->getSettingsRef();
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
-            current_settings).getSaturated(
-                current_settings.max_execution_time);
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings)
+                            .getSaturated(current_settings.max_execution_time);
+
         std::vector<ConnectionPoolWithFailover::TryResult> try_results;
         try
         {
