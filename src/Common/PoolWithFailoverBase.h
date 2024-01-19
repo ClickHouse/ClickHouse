@@ -272,14 +272,12 @@ PoolWithFailoverBase<TNestedPool>::getMany(
             result = try_get_entry(*shuffled_pool.pool, fail_message);
 
             if (!fail_message.empty())
-            {
-                LOG_WARNING(log, "Failed message: {}", fail_message);
                 fail_messages += fail_message + '\n';
-            }
 
             if (!result.entry.isNull())
             {
-                LOG_TRACE(log, "Got connection to {}", shuffled_pool.pool->getAddress());
+                LOG_TRACE(log, "Got connection to {}. {}", shuffled_pool.pool->getAddress(), fail_message);
+
                 ++entries_count;
                 if (result.is_usable)
                 {
