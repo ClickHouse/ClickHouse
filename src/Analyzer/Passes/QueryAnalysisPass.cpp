@@ -2245,19 +2245,17 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     if (table_expression_has_alias)
         return;
 
+    if (join_node->as<JoinNode &>().getKind() == JoinKind::Paste)
+        return;
+
     auto * query_node = table_expression_node->as<QueryNode>();
     auto * union_node = table_expression_node->as<UnionNode>();
     if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
         return;
 
     auto table_expression_node_type = table_expression_node->getNodeType();
-    auto * join_typed = join_node->as<JoinNode>();
-    if (table_expression_node_type == QueryTreeNodeType::QUERY && join_typed->getKind() == JoinKind::Paste)
-    {
-        checkDuplicateTableNamesOrAlias(join_node, join_typed->getLeftTableExpression(), join_typed->getRightTableExpression(), scope);
-        return;
-    }
-    else if (table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
+    
+    if (table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
         table_expression_node_type == QueryTreeNodeType::QUERY ||
         table_expression_node_type == QueryTreeNodeType::UNION)
         throw Exception(ErrorCodes::ALIAS_REQUIRED,
@@ -6797,6 +6795,9 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & joi
     auto * left_node = left_table_expr->as<QueryNode>();
     auto * right_node = right_table_expr->as<QueryNode>();
 
+    if (!left_node && !right_node)
+        return;
+
     if (left_node)
         for (const auto & name_and_type : left_node->getProjectionColumns())
             column_names.push_back(name_and_type.name);
@@ -6811,7 +6812,7 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & joi
     for (size_t i = 0; i < column_names.size() - 1; i++) // Check if there is no any duplicates because it will lead to broken result
         if (column_names[i] == column_names[i+1])
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Name of columns and aliases should be unique for this query (you can add/change aliases so they will not be duplicated)"
+                            "Name of columns and aliases should be unique for this query (you can add/change aliases to avoid duplication)"
                             "While processing '{}'", join_node->formatASTForErrorMessage());
 }
 
@@ -6825,6 +6826,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     resolveQueryJoinTreeNode(join_node_typed.getRightTableExpression(), scope, expressions_visitor);
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
+
+    if (!join_node_typed.getLeftTableExpression()->hasAlias() && !join_node_typed.getRightTableExpression()->hasAlias())
+        checkDuplicateTableNamesOrAlias(join_node, join_node_typed.getLeftTableExpression(), join_node_typed.getRightTableExpression(), scope);
 
     if (join_node_typed.isOnJoinExpression())
     {
