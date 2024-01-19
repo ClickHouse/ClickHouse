@@ -20,6 +20,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/registerInterpreters.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/scope_guard_safe.h>
 #include <Interpreters/Session.h>
@@ -289,6 +290,11 @@ void LocalServer::cleanup()
     {
         connection.reset();
 
+        /// Suggestions are loaded async in a separate thread and it can use global context.
+        /// We should reset it before resetting global_context.
+        if (suggest)
+            suggest.reset();
+
         if (global_context)
         {
             global_context->shutdown();
@@ -486,6 +492,7 @@ try
         Poco::ErrorHandler::set(&error_handler);
     }
 
+    registerInterpreters();
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();

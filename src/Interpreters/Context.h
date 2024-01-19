@@ -529,6 +529,7 @@ public:
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
     String getFilesystemCachesPath() const;
+    String getFilesystemCacheUser() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
@@ -540,6 +541,7 @@ public:
     void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
 
     void setFilesystemCachesPath(const String & path);
+    void setFilesystemCacheUser(const String & user);
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
@@ -693,13 +695,14 @@ public:
     void addSpecialScalar(const String & name, const Block & block);
 
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
+
     void addQueryAccessInfo(
         const String & quoted_database_name,
         const String & full_quoted_table_name,
-        const Names & column_names,
-        const String & projection_name = {},
-        const String & view_name = {});
+        const Names & column_names);
+
     void addQueryAccessInfo(const Names & partition_names);
+    void addViewAccessInfo(const String & view_name);
 
     struct QualifiedProjectionName
     {
@@ -707,8 +710,8 @@ public:
         String projection_name;
         explicit operator bool() const { return !projection_name.empty(); }
     };
-    void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
 
+    void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories
@@ -962,6 +965,8 @@ public:
     void resetZooKeeper() const;
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
+
+    void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
@@ -1241,6 +1246,7 @@ public:
     bool canUseTaskBasedParallelReplicas() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
+    bool canUseParallelReplicasCustomKey(const Cluster & cluster) const;
 
     enum class ParallelReplicasMode : uint8_t
     {
@@ -1327,6 +1333,9 @@ public:
     ThrottlerPtr getLocalWriteThrottler() const;
 
     ThrottlerPtr getBackupsThrottler() const;
+
+    ThrottlerPtr getMutationsThrottler() const;
+    ThrottlerPtr getMergesThrottler() const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;

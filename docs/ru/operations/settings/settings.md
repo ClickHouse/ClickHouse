@@ -2796,6 +2796,17 @@ SELECT TOP 3 name, value FROM system.settings;
 3. │ max_block_size          │ 65505   │
    └─────────────────────────┴─────────┘
 ```
+### output_format_pretty_color {#output_format_pretty_color}
+
+Включает/выключает управляющие последовательности ANSI в форматах Pretty. 
+
+Возможные значения:
+
+-   `0` — выключена. Не исползует ANSI последовательности в форматах Pretty.
+-   `1` — включена. Исползует ANSI последовательности с исключением форматов `NoEscapes`.
+-   `auto` - включена если `stdout` является терминалом с исключением форматов `NoEscapes`.
+
+Значение по умолчанию: `auto`
 
 ## system_events_show_zero_values {#system_events_show_zero_values}
 

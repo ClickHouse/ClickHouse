@@ -1,7 +1,7 @@
 [multi] insert into foo settings max_threads=1
 Syntax error (query): failed at position 40 (end of query):
 [multi] insert into foo format tsv settings max_threads=1
-Can't format ASTInsertQuery with data, since data will be lost.
+NOT_IMPLEMENTED
 [multi] insert into foo format tsv settings max_threads=1
 INSERT INTO foo
 SETTINGS max_threads = 1

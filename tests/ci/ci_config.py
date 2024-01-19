@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-from enum import Enum
 import logging
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Literal, Optional, Union
 
@@ -47,7 +47,7 @@ class JobConfig:
     @num_batches - sets number of batches for multi-batch job
     """
 
-    digest: DigestConfig = DigestConfig()
+    digest: DigestConfig = field(default_factory=DigestConfig)
     run_command: str = ""
     timeout: Optional[int] = None
     num_batches: int = 1
@@ -67,20 +67,32 @@ class BuildConfig:
     sparse_checkout: bool = False
     comment: str = ""
     static_binary_name: str = ""
-    job_config: JobConfig = JobConfig(
-        digest=DigestConfig(
-            include_paths=[
-                "./src",
-                "./contrib/*-cmake",
-                "./cmake",
-                "./base",
-                "./programs",
-                "./packages",
-            ],
-            exclude_files=[".md"],
-            docker=["clickhouse/binary-builder"],
-            git_submodules=True,
-        ),
+    job_config: JobConfig = field(
+        default_factory=lambda: JobConfig(
+            digest=DigestConfig(
+                include_paths=[
+                    "./src",
+                    "./contrib/*-cmake",
+                    "./contrib/consistent-hashing",
+                    "./contrib/murmurhash",
+                    "./contrib/libfarmhash",
+                    "./contrib/pdqsort",
+                    "./contrib/cityhash102",
+                    "./contrib/sparse-checkout",
+                    "./contrib/libmetrohash",
+                    "./contrib/update-submodules.sh",
+                    "./contrib/CMakeLists.txt",
+                    "./cmake",
+                    "./base",
+                    "./programs",
+                    "./packages",
+                    "./docker/packager/packager",
+                ],
+                exclude_files=[".md"],
+                docker=["clickhouse/binary-builder"],
+                git_submodules=True,
+            ),
+        )
     )
 
     def export_env(self, export: bool = False) -> str:
@@ -97,14 +109,14 @@ class BuildConfig:
 @dataclass
 class BuildReportConfig:
     builds: List[str]
-    job_config: JobConfig = JobConfig()
+    job_config: JobConfig = field(default_factory=JobConfig)
 
 
 @dataclass
 class TestConfig:
     required_build: str
     force_tests: bool = False
-    job_config: JobConfig = JobConfig()
+    job_config: JobConfig = field(default_factory=JobConfig)
 
 
 BuildConfigs = Dict[str, BuildConfig]
@@ -462,7 +474,7 @@ CI_CONFIG = CiConfig(
             compiler="clang-17",
             debug_build=True,
             package_type="deb",
-            sparse_checkout=True,
+            sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
         ),
         "binary_release": BuildConfig(
             name="binary_release",
@@ -483,7 +495,7 @@ CI_CONFIG = CiConfig(
             compiler="clang-17-darwin",
             package_type="binary",
             static_binary_name="macos",
-            sparse_checkout=True,
+            sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
         ),
         "binary_aarch64": BuildConfig(
             name="binary_aarch64",
@@ -813,10 +825,18 @@ CI_CONFIG = CiConfig(
             "package_asan",
             job_config=JobConfig(**{**statless_test_common_params, "timeout": 3600}),  # type: ignore
         ),
-        # FIXME: add digest and params
-        "ClickHouse Keeper Jepsen": TestConfig("binary_release"),
-        # FIXME: add digest and params
-        "ClickHouse Server Jepsen": TestConfig("binary_release"),
+        "ClickHouse Keeper Jepsen": TestConfig(
+            "binary_release",
+            job_config=JobConfig(
+                run_by_label="jepsen-test", run_command="jepsen_check.py keeper"
+            ),
+        ),
+        "ClickHouse Server Jepsen": TestConfig(
+            "binary_release",
+            job_config=JobConfig(
+                run_by_label="jepsen-test", run_command="jepsen_check.py server"
+            ),
+        ),
         "Performance Comparison": TestConfig(
             "package_release",
             job_config=JobConfig(num_batches=4, **perf_test_common_params),  # type: ignore
