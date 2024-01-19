@@ -31,9 +31,9 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-void WebObjectStorage::initialize(const String & uri_path, const std::unique_lock<std::shared_mutex> & lock) const
+std::vector<fs::path> WebObjectStorage::loadFiles(const String & uri_path, const std::unique_lock<std::shared_mutex> &) const
 {
-    std::vector<String> directories_to_load;
+    std::vector<fs::path> loaded_files;
     LOG_TRACE(log, "Loading metadata for directory: {}", uri_path);
 
     try
@@ -74,15 +74,12 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
 
             file_data.type = is_directory ? FileType::Directory : FileType::File;
             String file_path = fs::path(uri_path) / file_name;
-            if (file_data.type == FileType::Directory)
-            {
-                directories_to_load.push_back(file_path);
-            }
 
             file_path = file_path.substr(url.size());
             LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding file: {}, size: {}", file_path, file_data.size);
 
             files.emplace(std::make_pair(file_path, file_data));
+            loaded_files.emplace_back(file_path);
         }
 
         files.emplace(std::make_pair(dir_name, FileData({ .type = FileType::Directory })));
@@ -91,7 +88,7 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
     {
         /// 404 - no files
         if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            return;
+            return loaded_files;
 
         e.addMessage("while loading disk metadata");
         throw;
@@ -102,8 +99,7 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
         throw;
     }
 
-    for (const auto & directory_path : directories_to_load)
-        initialize(directory_path, lock);
+    return loaded_files;
 }
 
 
@@ -135,6 +131,34 @@ WebObjectStorage::FileData WebObjectStorage::getFileInfo(const String & path) co
     return file_info.value();
 }
 
+std::vector<std::filesystem::path> WebObjectStorage::listDirectory(const String & path) const
+{
+    auto file_info = tryGetFileInfo(path);
+    if (!file_info)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No such file: {}", path);
+
+    if (file_info->type != FileType::Directory)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} is not a directory", path);
+
+    std::vector<std::filesystem::path> result;
+    if (!file_info->loaded_children)
+    {
+        std::unique_lock unique_lock(metadata_mutex);
+        result = loadFiles(fs::path(url) / path, unique_lock);
+        file_info->loaded_children = true;
+    }
+    else
+    {
+        std::shared_lock shared_lock(metadata_mutex);
+        for (const auto & [file_path, _] : files)
+        {
+            if (fs::path(parentPath(file_path)) / "" == fs::path(path) / "")
+                result.emplace_back(file_path);
+        }
+    }
+    return result;
+}
+
 std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const String & path) const
 {
     std::shared_lock shared_lock(metadata_mutex);
@@ -142,17 +166,32 @@ std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const
     if (files.find(path) == files.end())
     {
         shared_lock.unlock();
-        std::unique_lock unique_lock(metadata_mutex);
-        if (files.find(path) == files.end())
-        {
-            fs::path index_file_dir = fs::path(url) / path;
-            if (index_file_dir.has_extension())
-                index_file_dir = index_file_dir.parent_path();
 
-            initialize(index_file_dir, unique_lock);
+        bool is_file = fs::path(path).has_extension();
+        if (is_file)
+        {
+            const auto parent_path = fs::path(path).parent_path();
+            auto parent_info = tryGetFileInfo(parent_path);
+            if (!parent_info)
+                return std::nullopt; /// Even parent path does not exist.
+
+            if (parent_info->loaded_children)
+            {
+                return std::nullopt;
+            }
+            else
+            {
+                std::unique_lock unique_lock(metadata_mutex);
+                loadFiles(fs::path(url) / parent_path, unique_lock);
+                parent_info->loaded_children = true;
+            }
         }
-        /// Files are never deleted from `files` as disk is read only, so no worry that we unlock now.
-        unique_lock.unlock();
+        else
+        {
+            std::unique_lock unique_lock(metadata_mutex);
+            loadFiles(fs::path(url) / path, unique_lock);
+        }
+
         shared_lock.lock();
     }
 
