@@ -365,7 +365,7 @@ void ZNodeLayer::get(AsyncTrxVar<GetResponse> var_resp, bool throw_on_non_exists
         {
             auto & resp = *ctx.getVar(var_resp);
             if (resp.error != Error::ZOK)
-                ctx.gotoCur(2);
+                ctx.gotoCur(3);
             return nullptr;
         });
     }
