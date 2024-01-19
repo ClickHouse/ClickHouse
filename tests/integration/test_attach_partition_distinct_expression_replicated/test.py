@@ -145,13 +145,13 @@ def test_both_replicated_partitioned_to_unpartitioned(start_cluster):
 
     assert_eq_with_retry(
         replica1,
-        f"SELECT * FROM destination",
+        f"SELECT * FROM destination ORDER BY timestamp",
         "2010-03-02 02:01:01\n2010-03-03 02:01:01\n",
     )
     assert_eq_with_retry(
         replica1,
-        f"SELECT * FROM destination",
-        replica2.query(f"SELECT * FROM destination"),
+        f"SELECT * FROM destination ORDER BY timestamp",
+        replica2.query(f"SELECT * FROM destination ORDER BY timestamp"),
     )
 
     cleanup([replica1, replica2])
@@ -202,13 +202,13 @@ def test_both_replicated_different_exp_same_id(start_cluster):
 
     assert_eq_with_retry(
         replica1,
-        f"SELECT * FROM destination",
+        f"SELECT * FROM destination ORDER BY a",
         "1\t5\t9\t1000\t\t1970-01-01 00:00:00\t0\t0\t1\n2\t6\t10\t1000\t\t1970-01-01 00:00:00\t0\t0\t1\n",
     )
     assert_eq_with_retry(
         replica1,
-        f"SELECT * FROM destination",
-        replica2.query(f"SELECT * FROM destination"),
+        f"SELECT * FROM destination ORDER BY a",
+        replica2.query(f"SELECT * FROM destination ORDER BY a"),
     )
 
     cleanup([replica1, replica2])
