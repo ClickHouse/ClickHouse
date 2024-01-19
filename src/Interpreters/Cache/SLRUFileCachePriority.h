@@ -79,7 +79,10 @@ private:
     SLRUFileCachePriority * cache_priority;
     LRUFileCachePriority::LRUIterator lru_iterator;
     const EntryPtr entry;
-    bool is_protected;
+    /// Atomic,
+    /// but needed only in order to do FileSegment::getInfo() without any lock,
+    /// which is done for system tables and logging.
+    std::atomic<bool> is_protected;
 };
 
 }
