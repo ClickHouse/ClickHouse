@@ -79,7 +79,7 @@ DiskObjectStorage::DiskObjectStorage(
         .type = DataSourceType::ObjectStorage,
         .object_storage_type = object_storage->getType(),
         .metadata_type = metadata_storage->getType(),
-        .description = object_storage->getCommonKeyPrefix(),
+        .description = object_storage->getDescription(),
         .is_encrypted = false,
         .is_cached = object_storage->supportsCache(),
     };

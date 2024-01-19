@@ -74,6 +74,8 @@ public:
 
     std::string getCommonKeyPrefix() const override { return uri.key; }
 
+    std::string getDescription() const override { return uri.endpoint; }
+
     ObjectStorageType getType() const override { return ObjectStorageType::S3; }
 
     bool exists(const StoredObject & object) const override;

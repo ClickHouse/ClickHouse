@@ -56,6 +56,8 @@ public:
 
     std::string getCommonKeyPrefix() const override { return hdfs_root_path; }
 
+    std::string getDescription() const override { return hdfs_root_path; }
+
     ObjectStorageType getType() const override { return ObjectStorageType::HDFS; }
 
     bool exists(const StoredObject & object) const override;

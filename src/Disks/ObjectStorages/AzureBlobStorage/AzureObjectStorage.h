@@ -63,7 +63,9 @@ public:
 
     ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
 
-    std::string getCommonKeyPrefix() const override { return client.get()->GetUrl(); }
+    std::string getCommonKeyPrefix() const override { return ""; }
+
+    std::string getDescription() const override { return client.get()->GetUrl(); }
 
     bool exists(const StoredObject & object) const override;
 

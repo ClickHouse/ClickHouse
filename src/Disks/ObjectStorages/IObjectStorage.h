@@ -86,6 +86,8 @@ public:
 
     virtual std::string getCommonKeyPrefix() const = 0;
 
+    virtual std::string getDescription() const = 0;
+
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
 

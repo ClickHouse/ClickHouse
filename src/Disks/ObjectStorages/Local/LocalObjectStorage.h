@@ -24,6 +24,8 @@ public:
 
     std::string getCommonKeyPrefix() const override { return key_prefix; }
 
+    std::string getDescription() const override { return description; }
+
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
