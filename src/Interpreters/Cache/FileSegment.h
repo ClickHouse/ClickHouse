@@ -112,7 +112,7 @@ public:
 
     bool isUnbound() const { return is_unbound; }
 
-    String getPathInLocalCache() const;
+    String getPath() const;
 
     int getFlagsForLocalRead() const { return O_RDONLY | O_CLOEXEC; }
 
@@ -243,7 +243,7 @@ private:
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
     FileSegmentGuard::Lock lockFileSegment() const;
 
-    String tryGetPathInLocalCache() const;
+    String tryGetPath() const;
 
     Key file_key;
     Range segment_range;

@@ -58,6 +58,8 @@ jobs:
     env:
       GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}
     steps:
+      - name: DebugInfo
+        uses: hmarr/debug-action@a701ed95a46e6f2fb0df25e1a558c16356fae35a
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:

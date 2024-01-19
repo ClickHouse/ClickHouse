@@ -235,6 +235,17 @@ clickhouse-client -q "system flush logs" ||:
 # stop logs replication to make it possible to dump logs tables via clickhouse-local
 stop_logs_replication
 
+# Try to get logs while server is running
+successfuly_saved=0
+for table in query_log zookeeper_log trace_log transactions_info_log
+do
+    clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst || successfuly_saved=$((successfuly_saved+$?))
+    if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+        clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst || successfuly_saved=$((successfuly_saved+$?))
+        clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst || successfuly_saved=$((successfuly_saved+$?))
+    fi
+done
+
 # Stop server so we can safely read data with clickhouse-local.
 # Why do we read data with clickhouse-local?
 # Because it's the simplest way to read it when server has crashed.
@@ -254,21 +265,25 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
     data_path_config="--config-file=/etc/clickhouse-server/config.xml"
 fi
 
-# Compress tables.
-#
-# NOTE:
-# - that due to tests with s3 storage we cannot use /var/lib/clickhouse/data
-#   directly
-# - even though ci auto-compress some files (but not *.tsv) it does this only
-#   for files >64MB, we want this files to be compressed explicitly
-for table in query_log zookeeper_log trace_log transactions_info_log
-do
-    clickhouse-local "$data_path_config" --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
-    if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
-        clickhouse-local --path /var/lib/clickhouse2/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
-    fi
-done
+
+# If server crashed dump system logs with clickhouse-local
+if [ $successfuly_saved -ne 0 ]; then
+    # Compress tables.
+    #
+    # NOTE:
+    # - that due to tests with s3 storage we cannot use /var/lib/clickhouse/data
+    #   directly
+    # - even though ci auto-compress some files (but not *.tsv) it does this only
+    #   for files >64MB, we want this files to be compressed explicitly
+    for table in query_log zookeeper_log trace_log transactions_info_log
+    do
+        clickhouse-local "$data_path_config" --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
+        if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+            clickhouse-local --path /var/lib/clickhouse1/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
+            clickhouse-local --path /var/lib/clickhouse2/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
+        fi
+    done
+fi
 
 # Also export trace log in flamegraph-friendly format.
 for trace_type in CPU Memory Real

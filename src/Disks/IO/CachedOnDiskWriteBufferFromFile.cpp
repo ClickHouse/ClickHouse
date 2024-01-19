@@ -1,10 +1,10 @@
 #include "CachedOnDiskWriteBufferFromFile.h"
 
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileSegment.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/Context.h>
 #include <IO/SwapHelper.h>
 
 
@@ -25,6 +25,7 @@ namespace ErrorCodes
 FileSegmentRangeWriter::FileSegmentRangeWriter(
     FileCache * cache_,
     const FileSegment::Key & key_,
+    const FileCacheUserInfo & user_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
     const String & query_id_,
     const String & source_path_)
@@ -34,6 +35,7 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
     , cache_log(cache_log_)
     , query_id(query_id_)
     , source_path(source_path_)
+    , user(user_)
 {
 }
 
@@ -148,7 +150,7 @@ FileSegment & FileSegmentRangeWriter::allocateFileSegment(size_t offset, FileSeg
 
     /// We set max_file_segment_size to be downloaded,
     /// if we have less size to write, file segment will be resized in complete() method.
-    file_segments = cache->set(key, offset, cache->getMaxFileSegmentSize(), create_settings);
+    file_segments = cache->set(key, offset, cache->getMaxFileSegmentSize(), create_settings, user);
     chassert(file_segments->size() == 1);
     return file_segments->front();
 }
@@ -193,7 +195,6 @@ void FileSegmentRangeWriter::completeFileSegment()
     appendFilesystemCacheLog(file_segment);
 }
 
-
 CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     std::unique_ptr<WriteBuffer> impl_,
     FileCachePtr cache_,
@@ -201,6 +202,7 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     const FileCache::Key & key_,
     const String & query_id_,
     const WriteSettings & settings_,
+    const FileCacheUserInfo & user_,
     std::shared_ptr<FilesystemCacheLog> cache_log_)
     : WriteBufferFromFileDecorator(std::move(impl_))
     , log(&Poco::Logger::get("CachedOnDiskWriteBufferFromFile"))
@@ -208,6 +210,7 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     , source_path(source_path_)
     , key(key_)
     , query_id(query_id_)
+    , user(user_)
     , throw_on_error_from_cache(settings_.throw_on_error_from_cache)
     , cache_log(!query_id_.empty() && settings_.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
@@ -235,7 +238,7 @@ void CachedOnDiskWriteBufferFromFile::nextImpl()
 
         /// If something was already written to cache, remove it.
         cache_writer.reset();
-        cache->removeKeyIfExists(key);
+        cache->removeKeyIfExists(key, user.user_id);
 
         throw;
     }
@@ -248,7 +251,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
 
     if (!cache_writer)
     {
-        cache_writer = std::make_unique<FileSegmentRangeWriter>(cache.get(), key, cache_log, query_id, source_path);
+        cache_writer = std::make_unique<FileSegmentRangeWriter>(cache.get(), key, user, cache_log, query_id, source_path);
     }
 
     Stopwatch watch(CLOCK_MONOTONIC);
