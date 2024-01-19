@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
 template <typename SingleLevelSet, typename TwoLevelSet>
 class UniqExactSet
 {
