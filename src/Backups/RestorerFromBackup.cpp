@@ -140,7 +140,7 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 void RestorerFromBackup::setStage(const String & new_stage, const String & message)
 {
     LOG_TRACE(log, "Setting stage: {}", new_stage);
-    checkQueryNotCancelled();
+    checkIsQueryCancelled();
 
     current_stage = new_stage;
 
@@ -154,7 +154,7 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
     }
 }
 
-void RestorerFromBackup::checkQueryNotCancelled() const
+void RestorerFromBackup::checkIsQueryCancelled() const
 {
     if (process_list_element)
         process_list_element->checkTimeLimit();
@@ -573,7 +573,7 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
     if (database_info.is_predefined_database)
         return;
 
-    checkQueryNotCancelled();
+    checkIsQueryCancelled();
 
     auto create_database_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(database_info.create_database_query->clone());
 
@@ -721,7 +721,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
     if (table_info.is_predefined_table)
         return;
 
-    checkQueryNotCancelled();
+    checkIsQueryCancelled();
 
     auto create_table_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(table_info.create_table_query->clone());
 
@@ -804,7 +804,7 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
     auto & table_info = table_infos.at(table_name);
     auto storage = table_info.storage;
 
-    checkQueryNotCancelled();
+    checkIsQueryCancelled();
 
     try
     {

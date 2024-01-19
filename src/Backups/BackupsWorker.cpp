@@ -529,18 +529,16 @@ void BackupsWorker::doBackup(
     bool called_async)
 {
     SCOPE_EXIT_SAFE(
-        if (called_async)
+        if (called_async && thread_group)
             CurrentThread::detachFromGroupIfNotDetached();
     );
 
     try
     {
+        if (called_async && thread_group)
+            CurrentThread::attachToGroup(thread_group);
         if (called_async)
-        {
-            if (thread_group)
-                CurrentThread::attachToGroup(thread_group);
             setThreadName("BackupWorker");
-        }
 
         bool on_cluster = !backup_query->cluster.empty();
         assert(mutable_context || (!on_cluster && !called_async));
@@ -908,18 +906,16 @@ void BackupsWorker::doRestore(
     bool called_async)
 {
     SCOPE_EXIT_SAFE(
-        if (called_async)
+        if (called_async && thread_group)
             CurrentThread::detachFromGroupIfNotDetached();
     );
 
     try
     {
+        if (called_async && thread_group)
+            CurrentThread::attachToGroup(thread_group);
         if (called_async)
-        {
-            if (thread_group)
-                CurrentThread::attachToGroup(thread_group);
             setThreadName("RestoreWorker");
-        }
 
         /// Open the backup for reading.
         BackupFactory::CreateParams backup_open_params;

@@ -101,7 +101,7 @@ private:
     Strings setStage(const String & new_stage, const String & message = "");
 
     /// Throws an exception if the BACKUP query was cancelled.
-    void checkQueryNotCancelled() const;
+    void checkIsQueryCancelled() const;
 
     const ASTBackupQuery::Elements backup_query_elements;
     const BackupSettings backup_settings;

@@ -111,7 +111,7 @@ private:
     void setStage(const String & new_stage, const String & message = "");
 
     /// Throws an exception if the RESTORE query was cancelled.
-    void checkQueryNotCancelled() const;
+    void checkIsQueryCancelled() const;
 
     struct DatabaseInfo
     {
