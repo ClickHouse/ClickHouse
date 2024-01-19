@@ -214,8 +214,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
         outputs.resize(size);
     }
 
-    // std::cerr << "!!!!!!!!!!!!!!!!\n";
-
     // if (!optimize_result.fully_moved_to_prewhere)
     // {
     auto split_result = filter_step->getExpression()->split(optimize_result.prewhere_nodes, true);
@@ -282,8 +280,6 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     }
     // return;
     // }
-
-    // std::cerr << "!!!!!!!!!!!!!!!!\n";
 
     // prewhere_info->prewhere_actions = filter_step->getExpression();
     // prewhere_info->prewhere_actions->projectInput(false);
