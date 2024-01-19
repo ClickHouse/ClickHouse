@@ -115,7 +115,7 @@ void validateCredentials(const Aws::Auth::AWSCredentials& auth_credentials)
     /// Follow https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
     if (!std::all_of(auth_credentials.GetAWSAccessKeyId().begin(), auth_credentials.GetAWSAccessKeyId().end(), isWordCharASCII))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Access key id has invalid character");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Access key id has an invalid character");
     }
 }
 
