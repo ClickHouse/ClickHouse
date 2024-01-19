@@ -5113,12 +5113,6 @@ bool Context::canUseParallelReplicasOnFollower() const
     return canUseTaskBasedParallelReplicas() && getClientInfo().collaborate_with_initiator;
 }
 
-bool Context::canUseParallelReplicasCustomKey(const Cluster & cluster) const
-{
-    return settings.max_parallel_replicas > 1 && getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
-        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
-}
-
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
 {
     prepared_sets_cache = cache;
