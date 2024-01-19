@@ -89,6 +89,10 @@ namespace
         BlobStorageLogWriterPtr blob_storage_log;
         const Poco::Logger * log;
 
+        /// Represents a task uploading a single part.
+        /// Keep this struct small because there can be thousands of parts.
+        /// For example, `UploadPartTask` must not contain a read buffer or `S3::UploadPartRequest`
+        /// because such read buffer can consume about 1MB memory and it could cause memory issues when the number of parts is big enough.
         struct UploadPartTask
         {
             size_t part_number;
@@ -423,7 +427,8 @@ namespace
                       task.part_number, dest_key, multipart_upload_id, task.tag, bg_tasks.size(), num_finished_parts, num_parts);
         }
 
-        virtual std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) = 0;
+        /// These functions can be called from multiple threads, so derived class needs to take care about synchronization.
+        virtual std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const = 0;
         virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) = 0;
 
         void waitForAllBackgroundTasks()
@@ -591,7 +596,7 @@ namespace
 
         void performMultipartUpload() { UploadHelper::performMultipartUpload(offset, size); }
 
-        std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) override
+        std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const override
         {
             auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
 
@@ -805,7 +810,7 @@ namespace
 
         void performMultipartUploadCopy() { UploadHelper::performMultipartUpload(offset, size); }
 
-        std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) override
+        std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const override
         {
             auto request = std::make_unique<S3::UploadPartCopyRequest>();
 
