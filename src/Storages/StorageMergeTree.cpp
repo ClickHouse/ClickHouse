@@ -2065,11 +2065,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     static const String TMP_PREFIX = "tmp_replace_from_";
 
-    auto query_to_string = [](const ASTPtr & ast) { return ast ? queryToString(ast) : ""; };
-
     const auto my_partition_expression = my_metadata_snapshot->getPartitionKeyAST();
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
-    const auto is_partition_exp_different = query_to_string(my_partition_expression) != query_to_string(src_partition_expression);
+    const auto is_partition_exp_different = queryToStringNullable(my_partition_expression) != queryToStringNullable(src_partition_expression);
 
     if (is_partition_exp_different && !src_parts.empty())
         MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_parts);

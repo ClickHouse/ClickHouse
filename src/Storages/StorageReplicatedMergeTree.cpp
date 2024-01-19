@@ -2715,7 +2715,12 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
 
-            if (part_desc->src_table_part->info.partition_id != part_desc->new_part_info.partition_id)
+            const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
+            const auto src_partition_expression = source_table->getInMemoryMetadataPtr()->getPartitionKeyAST();
+
+            const auto is_partition_exp_different = queryToStringNullable(my_partition_expression) != queryToStringNullable(src_partition_expression);
+
+            if (is_partition_exp_different)
             {
                 auto [new_partition, new_min_max_index] = createPartitionAndMinMaxIndexFromSourcePart(
                     part_desc->src_table_part, metadata_snapshot, getContext());
@@ -7890,11 +7895,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     if (attach_empty_partition)
         return;
 
-    auto query_to_string = [](const ASTPtr & ast) { return ast ? queryToString(ast) : ""; };
-
     const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
     const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
-    const auto is_partition_exp_different = query_to_string(my_partition_expression) != query_to_string(src_partition_expression);
+    const auto is_partition_exp_different = queryToStringNullable(my_partition_expression) != queryToStringNullable(src_partition_expression);
 
     if (is_partition_exp_different && !src_all_parts.empty())
         MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_all_parts);
