@@ -270,9 +270,9 @@ sql_test_params = {
 
 
 @dataclass
-class CiConfig:
+class CIConfig:
     """
-    Contains configs for ALL jobs in CI pipeline
+    Contains configs for all jobs in the CI pipeline
     each config item in the below dicts should be an instance of JobConfig class or inherited from it
     """
 
@@ -435,7 +435,7 @@ class CiConfig:
             raise KeyError("config contains errors", errors)
 
 
-CI_CONFIG = CiConfig(
+CI_CONFIG = CIConfig(
     label_configs={
         Labels.DO_NOT_TEST_LABEL.value: LabelConfig(run_jobs=["Style check"]),
     },
