@@ -3,13 +3,16 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/ArenaUtils.h>
-#include <unordered_map>
 #include <list>
-#include <atomic>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 template<typename V>
 struct ListNode
@@ -17,16 +20,76 @@ struct ListNode
     StringRef key;
     V value;
 
-    /// Monotonically increasing version info for snapshot
-    size_t version{0};
-    bool active_in_map{true};
-    bool free_key{false};
+    /// |*                *            ****** |
+    ///  ^                ^            ^
+    ///  active_in_map    free_key     version
+    ///  (1 byte)         (1 byte)     (6 bytes)
+    uint64_t node_metadata = 0;
+
+    void setInactiveInMap()
+    {
+        node_metadata &= ~active_in_map_mask;
+    }
+
+    void setActiveInMap()
+    {
+        node_metadata |= active_in_map_mask;
+    }
+
+    bool isActiveInMap()
+    {
+        return node_metadata & active_in_map_mask;
+    }
+
+    void setFreeKey()
+    {
+        node_metadata |= free_key_mask;
+    }
+
+    bool getFreeKey()
+    {
+        return node_metadata & free_key_mask;
+    }
+
+    uint64_t getVersion()
+    {
+        return node_metadata & version_mask;
+    }
+
+    void setVersion(uint64_t version)
+    {
+        if (version > version_mask)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Snapshot version {} is larger than maximum allowed value {}",
+                version,
+                ListNode<V>::version_mask);
+
+        node_metadata &= ~version_mask;
+        node_metadata |= version;
+    }
+
+    static constexpr uint64_t active_in_map_mask = static_cast<uint64_t>(1) << 63;
+    static constexpr uint64_t free_key_mask      = static_cast<uint64_t>(1) << 62;
+    static constexpr uint64_t version_mask       = ~(static_cast<uint64_t>(3) << 62);
 };
 
 template <class V>
 class SnapshotableHashTable
 {
 private:
+    struct GlobalArena
+    {
+        char * alloc(const size_t size)
+        {
+            return new char[size];
+        }
+
+        void free(const char * ptr, size_t /*size*/)
+        {
+            delete [] ptr;
+        }
+    };
 
     using ListElem = ListNode<V>;
     using List = std::list<ListElem>;
@@ -39,7 +102,12 @@ private:
     /// Allows to avoid additional copies in updateValue function
     size_t current_version{0};
     size_t snapshot_up_to_version{0};
-    ArenaWithFreeLists arena;
+
+    /// Arena used for keys
+    /// we don't use std::string because it uses 24 bytes (because of SSO)
+    /// we want to always allocate the key on heap and use StringRef to it
+    GlobalArena arena;
+
     /// Collect invalid iterators to avoid traversing the whole list
     std::vector<Mapped> snapshot_invalid_iters;
 
@@ -132,11 +200,13 @@ public:
 
         if (!it)
         {
-            ListElem elem{copyStringInArena(arena, key), value, current_version};
+            ListElem elem{copyStringInArena(arena, key), value};
+            elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
-            assert(inserted);
+            itr->setActiveInMap();
+            chassert(inserted);
 
             it->getMapped() = itr;
             updateDataSize(INSERT, key.size(), value.sizeInBytes(), 0);
@@ -154,11 +224,13 @@ public:
 
         if (it == map.end())
         {
-            ListElem elem{copyStringInArena(arena, key), value, current_version};
+            ListElem elem{copyStringInArena(arena, key), value};
+            elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
-            assert(inserted);
+            itr->setActiveInMap();
+            chassert(inserted);
             it->getMapped() = itr;
         }
         else
@@ -166,8 +238,9 @@ public:
             auto list_itr = it->getMapped();
             if (snapshot_mode)
             {
-                ListElem elem{list_itr->key, value, current_version};
-                list_itr->active_in_map = false;
+                ListElem elem{list_itr->key, value};
+                elem.setVersion(current_version);
+                list_itr->setInactiveInMap();
                 auto new_list_itr = list.insert(list.end(), std::move(elem));
                 it->getMapped() = new_list_itr;
                 snapshot_invalid_iters.push_back(list_itr);
@@ -190,9 +263,9 @@ public:
         uint64_t old_data_size = list_itr->value.sizeInBytes();
         if (snapshot_mode)
         {
-            list_itr->active_in_map = false;
+            list_itr->setInactiveInMap();
             snapshot_invalid_iters.push_back(list_itr);
-            list_itr->free_key = true;
+            list_itr->setFreeKey();
             map.erase(it->getKey());
         }
         else
@@ -215,7 +288,7 @@ public:
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
-        assert(it != map.end());
+        chassert(it != map.end());
 
         auto list_itr = it->getMapped();
         uint64_t old_value_size = list_itr->value.sizeInBytes();
@@ -228,13 +301,14 @@ public:
             /// We in snapshot mode but updating some node which is already more
             /// fresh than snapshot distance. So it will not participate in
             /// snapshot and we don't need to copy it.
-            if (list_itr->version <= snapshot_up_to_version)
+            if (list_itr->getVersion() <= snapshot_up_to_version)
             {
                 auto elem_copy = *(list_itr);
-                list_itr->active_in_map = false;
+                list_itr->setInactiveInMap();
                 snapshot_invalid_iters.push_back(list_itr);
                 updater(elem_copy.value);
-                elem_copy.version = current_version;
+
+                elem_copy.setVersion(current_version);
                 auto itr = list.insert(list.end(), std::move(elem_copy));
                 it->getMapped() = itr;
                 ret = itr;
@@ -269,17 +343,17 @@ public:
     const V & getValue(StringRef key) const
     {
         auto it = map.find(key);
-        assert(it);
+        chassert(it);
         return it->getMapped()->value;
     }
 
     void clearOutdatedNodes()
     {
-        for (auto & itr: snapshot_invalid_iters)
+        for (auto & itr : snapshot_invalid_iters)
         {
-            assert(!itr->active_in_map);
+            chassert(!itr->isActiveInMap());
             updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
-            if (itr->free_key)
+            if (itr->getFreeKey())
                 arena.free(const_cast<char *>(itr->key.data), itr->key.size);
             list.erase(itr);
         }
@@ -327,13 +401,12 @@ public:
         approximate_data_size = 0;
         for (auto & node : list)
         {
-            node.value.recalculateSize();
             approximate_data_size += node.key.size;
             approximate_data_size += node.value.sizeInBytes();
         }
     }
 
-    uint64_t keyArenaSize() const { return arena.allocatedBytes(); }
+    uint64_t keyArenaSize() const { return 0; }
 
     iterator begin() { return list.begin(); }
     const_iterator begin() const { return list.cbegin(); }
