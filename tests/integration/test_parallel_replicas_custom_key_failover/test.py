@@ -108,8 +108,10 @@ def test_parallel_replicas_custom_key_failover(
             == "subqueries\t4\n"
         )
 
-
-        if not node1.is_built_with_thread_sanitizer() and not node1.is_built_with_address_sanitizer():
+        if (
+            not node1.is_built_with_thread_sanitizer()
+            and not node1.is_built_with_address_sanitizer()
+        ):
             assert (
                 node1.query(
                     f"SELECT h, count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
