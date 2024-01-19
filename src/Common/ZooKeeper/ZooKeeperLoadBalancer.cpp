@@ -401,40 +401,28 @@ protected:
     std::vector<size_t> priorities;
 };
 
-class RoundRobin: public IBalancerWithPriorities
+class RoundRobin: public IBalancerWithEndpointStatuses
 {
 public:
     explicit RoundRobin(std::vector<std::string> hosts)
-        : IBalancerWithPriorities(std::move(hosts)) {}
+        : IBalancerWithEndpointStatuses(std::move(hosts)) {}
 private:
     EndpointInfo getHostToConnect() override
     {
-        size_t next_id = round_robin_id;
-        size_t total_count = getEndpointsCount();
-        round_robin_id = (round_robin_id + 1) % total_count;
-
-        auto round_robin_status = getStatus(next_id);
+        auto round_robin_status = getStatus(round_robin_id);
         if (round_robin_status == ONLINE)
-            return asOptimalEndpoint(next_id);
+            return selectEndpoint(round_robin_id);
 
-        auto id = getMostPriority(ONLINE);
-
-        if (id != total_count)
-        {
-            round_robin_id = (id + 1) % total_count;
-            return getHostWithSetting(id);
-        }
+        auto online_endpoints = getRangeByStatus(ONLINE);
+        if (!online_endpoints.empty())
+            return selectEndpoint(online_endpoints[0]);
 
         if (round_robin_status == UNDEF)
-            return asOptimalEndpoint(next_id);
+            return asOptimalEndpoint(round_robin_id);
 
-        id = getMostPriority(UNDEF);
-
-        if (id != total_count)
-        {
-            round_robin_id = id;
-            return getHostWithSetting(next_id);
-        }
+        auto undef_endpoints = getRangeByStatus(UNDEF);
+        if (!undef_endpoints.empty())
+            return selectEndpoint(undef_endpoints[0]);
 
         chassert(getAvailableEndpointsCount() == 0);
 
@@ -448,9 +436,10 @@ private:
             getEndpointsCount());
     }
 
-    bool isOptimalEndpoint(size_t) override
+    EndpointInfo selectEndpoint(size_t id)
     {
-        return true;
+        round_robin_id = (id + 1 ) % getEndpointsCount();
+        return asOptimalEndpoint(id);
     }
 
     size_t round_robin_id = 0;
