@@ -191,12 +191,7 @@ public:
         {
             for (UInt64 i = range_min; i <= range_max; ++i)
             {
-                size_t alloc_size = 0;
-                if (__builtin_add_overflow(sizeof(UInt64), pad_left + pad_right, &alloc_size))
-                    throw DB::Exception(
-                        DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
-                /// need to pad the address.
-                auto * range_values_ptr = pool.alloc(alloc_size) + pad_left;
+                auto * range_values_ptr = pool.alignedAlloc(sizeof(UInt64), pad_left);
                 UInt64 value_id = i - range_min + is_nullable;
                 memcpy(range_values_ptr, reinterpret_cast<const UInt8 *>(&i), sizeof(UInt64));
                 StringRef raw_value(range_values_ptr, row_bytes);
@@ -263,11 +258,8 @@ protected:
     /// need to pad the address.
     ALWAYS_INLINE StringRef buildMapStringKey(const StringRef & raw_value)
     {
-        size_t alloc_size = 0;
-        if (__builtin_add_overflow(raw_value.size, pad_left + pad_right, &alloc_size))
-            throw DB::Exception(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Amount of memory requested to allocate is more than allowed");
         /// need to pad the address.
-        auto * new_str = pool.alloc(alloc_size) + pad_left;
+        auto * new_str = pool.alignedAlloc(raw_value.size, pad_left);
         memcpy(new_str, raw_value.data, raw_value.size);
         return StringRef(new_str, raw_value.size);
 
