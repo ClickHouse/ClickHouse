@@ -45,7 +45,9 @@ void SerializationNullable::enumerateStreams(
     const auto * type_nullable = data.type ? &assert_cast<const DataTypeNullable &>(*data.type) : nullptr;
     const auto * column_nullable = data.column ? &assert_cast<const ColumnNullable &>(*data.column) : nullptr;
 
-    auto null_map_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", false);
+    auto null_map_serialization = std::make_shared<SerializationNamed>(
+        std::make_shared<SerializationNumber<UInt8>>(),
+        "null", SubstreamType::NamedNullMap);
 
     settings.path.push_back(Substream::NullMap);
     auto null_map_data = SubstreamData(null_map_serialization)

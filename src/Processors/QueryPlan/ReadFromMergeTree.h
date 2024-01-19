@@ -160,7 +160,6 @@ public:
         std::vector<AlterConversionsPtr> alter_conversions,
         const PrewhereInfoPtr & prewhere_info,
         const ActionDAGNodes & added_filter_nodes,
-        const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -210,7 +209,6 @@ private:
     static AnalysisResultPtr selectRangesToReadImpl(
         MergeTreeData::DataPartsVector parts,
         std::vector<AlterConversionsPtr> alter_conversions,
-        const StorageMetadataPtr & metadata_snapshot_base,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -297,6 +295,7 @@ private:
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
+    bool enable_vertical_final = false;
 };
 
 }
