@@ -78,7 +78,7 @@ The number of data points in `series` should be at least twice the value of `per
 **Returned value**
 
 - An array of four arrays where the first array include seasonal components, the second array - trend,
-the third array - residue component, and the fourth array - baseline(seasoanl + trend) component.
+the third array - residue component, and the fourth array - baseline(seasonal + trend) component.
 
 Type: [Array](../../sql-reference/data-types/array.md).
 
