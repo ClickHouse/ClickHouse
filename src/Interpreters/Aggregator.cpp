@@ -734,6 +734,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     bool has_nullable_key = false;
     bool has_low_cardinality = false;
     bool is_all_number_or_string = true;
+    bool has_string = false;
 
     for (const auto & key : params.keys)
     {
@@ -750,6 +751,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             has_nullable_key = true;
             type = removeNullable(type);
         }
+
+        if (isStringOrFixedString(*type))
+            has_string = true;
 
         if (!isColumnedAsNumber(*type) && !isStringOrFixedString(*type))
         {
@@ -839,7 +843,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         }
 
         /// Fallback case.
-        if (is_all_number_or_string && 1 < params.keys_size && params.keys_size <= max_adaptive_aggregating_keys
+        if (is_all_number_or_string && has_string && 1ul < params.keys_size && params.keys_size <= max_adaptive_aggregating_keys
             && params.enable_adaptive_aggregation_method)
         {
             return AggregatedDataVariants::Type::adaptive;
