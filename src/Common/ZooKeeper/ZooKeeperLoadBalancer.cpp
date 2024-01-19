@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <memory>
 #include <mutex>
 
 #include <base/types.h>
 #include <base/sort.h>
 #include <base/getFQDNOrHostName.cpp>
+#include "Common/Priority.h"
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeperLoadBalancer.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
@@ -87,8 +89,6 @@ public:
     {
         auto info_it = endpoints_by_id.find(id);
         chassert(info_it != endpoints_by_id.end());
-        // auto *log = &Poco::Logger::get("ZooKeeperLoadBalancerEndpoint");
-        // LOG_INFO(log, "getStatus id {}, status {} ", id, infoIt->current_status);
 
         return info_it->current_status;
     }
@@ -115,12 +115,10 @@ public:
         auto start = endpoints_by_status.lower_bound(boost::make_tuple(status));
         auto end = endpoints_by_status.upper_bound(boost::make_tuple(status));
 
-        // auto *log = &Poco::Logger::get("ZooKeeperLoadBalancerEndpoint");
         std::vector<size_t> ids;
         for (auto it =start; it != end; ++it)
         {
             ids.push_back(it->id);
-            // LOG_INFO(log, "getRangeByStatus status {}, endpoint {}", status, it->id);
         }
 
         return ids;
@@ -169,10 +167,35 @@ private:
     EndpointsIndex::index<TagByStatus>::type & endpoints_by_status;
 };
 
+std::pair<std::string, bool> parseForSocketAddress(const std::string & raw_host)
+{
+    std::pair<std::string, bool> result;
+    bool secure = startsWith(raw_host, "secure://");
+    if (secure)
+        result.first = raw_host.substr(strlen("secure://"));
+    else
+        result.first = raw_host;
+    result.second = secure;
+    return result;
+}
+
 class IBalancerWithEndpointStatuses: public Coordination::IClientsConnectionBalancer
 {
 public:
     using EndpointInfo = Coordination::IClientsConnectionBalancer::EndpointInfo;
+
+    explicit IBalancerWithEndpointStatuses(std::vector<std::string> hosts)
+    {
+        for (const auto & host : hosts)
+        {
+            auto [address, secure] = parseForSocketAddress(host);
+            registry.addEndpoint(
+                EndpointRegistry::Endpoint{
+                    .address = address,
+                    .secure = secure,
+                });
+        }
+    }
 
     void atHostIsOffline(size_t id) override
     {
@@ -182,15 +205,6 @@ public:
     void atHostIsOnline(size_t id) override
     {
         registry.atHostIsOnline(id);
-    }
-
-    size_t addEndpoint(const String & address, bool secure) override
-    {
-        return registry.addEndpoint(
-            EndpointRegistry::Endpoint{
-            .address = address,
-            .secure = secure,
-        });
     }
 
     void resetOfflineStatuses() override
@@ -264,6 +278,9 @@ private:
 class Random : public IBalancerWithEndpointStatuses
 {
 public:
+    explicit Random(std::vector<std::string> hosts)
+        : IBalancerWithEndpointStatuses(std::move(hosts)) {}
+
     EndpointInfo getHostFrom(const std::vector<size_t> & range)
     {
         chassert(!range.empty());
@@ -299,41 +316,13 @@ public:
     }
 };
 
+// Other cls init in the constructor.
 class IBalancerWithPriorities : public IBalancerWithEndpointStatuses
 {
 public:
-    IBalancerWithPriorities()
-        : priority_by_id(priority_indexes.get<TagById>())
-        , priority_by_status(priority_indexes.get<TagByStatus>())
-    {}
-
-    size_t addEndpoint(const String & address, bool secure) override
+    explicit IBalancerWithPriorities(std::vector<std::string> hosts)
+        : IBalancerWithEndpointStatuses(std::move(hosts))
     {
-        IBalancerWithEndpointStatuses::addEndpoint(address, secure);
-        // not great because we are reindex multiple times.
-        // TODO: fix this.
-        resetIndexes();
-        return priority_indexes.size() - 1;
-    }
-
-    void atHostIsOffline(size_t id) override
-    {
-        IBalancerWithEndpointStatuses::atHostIsOffline(id);
-        reindex(id);
-        // auto *log = &Poco::Logger::get("ZooKeeperLoadBalancerEndpoint");
-        // LOG_INFO(log, "Set the endpoint {} to OFFLINE", id);
-    }
-
-    void atHostIsOnline(size_t id) override
-    {
-        IBalancerWithEndpointStatuses::atHostIsOnline(id);
-        reindex(id);
-    }
-
-    void resetOfflineStatuses() override
-    {
-        IBalancerWithEndpointStatuses::resetOfflineStatuses();
-        resetIndexes();
     }
 
     EndpointInfo getHostWithSetting(size_t id)
@@ -346,15 +335,20 @@ public:
     // TODO: use optional to make more readable.
     size_t getMostPriority(Status status) const
     {
-        auto it = priority_by_status.lower_bound(boost::make_tuple(status));
-
-        if (it == priority_by_status.end())
-            return getEndpointsCount();
-
-        if (it->status != status)
-            return getEndpointsCount();
-
-        return it->id;
+        auto endpoints_index = getRangeByStatus(status);
+        size_t min_priority = std::numeric_limits<size_t>::max();
+        size_t min_id = getEndpointsCount();
+        for (size_t id : endpoints_index)
+        {
+            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "getMostPriority id {}, size of priorrities {} ", id, priorities.size());
+            size_t p = priorities[id];
+            if (min_priority > p)
+            {
+                min_priority = p;
+                min_id = id;
+            }
+        }
+        return min_id;
     }
 
     EndpointInfo getHostToConnect() override
@@ -401,76 +395,16 @@ public:
     }
 
 protected:
-    struct TagById{};
-    struct TagByStatus{};
-
-    struct IdxPriority
-    {
-        size_t id = 0;
-        Status status = UNDEF;
-        size_t priority = 0;
-    };
-
-    using PriorityIndex = boost::multi_index_container<
-        IdxPriority,
-        boost::multi_index::indexed_by<
-            /// Index by address, it is a map
-            boost::multi_index::ordered_unique<
-                boost::multi_index::tag<TagById>,
-                boost::multi_index::member<IdxPriority, size_t, &IdxPriority::id>
-                >,
-            boost::multi_index::ordered_unique<
-                boost::multi_index::tag<TagByStatus>,
-                boost::multi_index::composite_key<
-                    IdxPriority,
-                    boost::multi_index::member<IdxPriority, Status, &IdxPriority::status>,
-                    boost::multi_index::member<IdxPriority, size_t, &IdxPriority::priority>,
-                    boost::multi_index::member<IdxPriority, size_t, &IdxPriority::id>
-                    >
-                >
-            >
-        >;
-
-    PriorityIndex priority_indexes;
-    PriorityIndex::index<TagById>::type & priority_by_id;
-    PriorityIndex::index<TagByStatus>::type & priority_by_status;
-
-    void reindex(size_t id)
-    {
-        auto it = priority_by_id.find(id);
-        chassert(it != priority_by_id.end());
-        priority_indexes.erase(it);
-        priority_indexes.insert(
-            IdxPriority{
-                .id = id,
-                .status = getStatus(id),
-                .priority = getPriority(id),
-            }
-        );
-    }
-
-    void resetIndexes()
-    {
-        priority_indexes.clear();
-
-        for (size_t id = 0; id < getEndpointsCount(); ++id)
-        {
-            priority_indexes.insert(
-                IdxPriority{
-                    .id = id,
-                    .status = getStatus(id),
-                    .priority = getPriority(id),
-                }
-            );
-        }
-    }
-
     virtual bool isOptimalEndpoint(size_t id) = 0;
-    virtual size_t getPriority(size_t id) = 0;
+    // Not idea to check the fields to initialize, but let's do it for now.
+    std::vector<size_t> priorities;
 };
 
 class RoundRobin: public IBalancerWithPriorities
 {
+public:
+    explicit RoundRobin(std::vector<std::string> hosts)
+        : IBalancerWithPriorities(std::move(hosts)) {}
 private:
     EndpointInfo getHostToConnect() override
     {
@@ -513,11 +447,6 @@ private:
             getEndpointsCount());
     }
 
-    size_t getPriority(size_t) override
-    {
-        return 0;
-    }
-
     bool isOptimalEndpoint(size_t) override
     {
         return true;
@@ -529,6 +458,9 @@ private:
 class FirstOrRandom : public IBalancerWithEndpointStatuses
 {
 public:
+    explicit FirstOrRandom(std::vector<std::string> hosts)
+        : IBalancerWithEndpointStatuses(std::move(hosts)) {}
+
     EndpointInfo getHostFrom(const std::vector<size_t> & range)
     {
         chassert(!range.empty());
@@ -569,130 +501,87 @@ public:
 
 class IBalancerWithConstPriorities : public IBalancerWithPriorities
 {
+public:
+    explicit IBalancerWithConstPriorities(std::vector<std::string> hosts)
+        : IBalancerWithPriorities(std::move(hosts))
+    {}
+
 private:
-    void initPriorities()
-    {
-        if (priorities.size() == getEndpointsCount())
-            return;
-
-        priorities = getPriorities();
-        optimal_priority = *std::min_element(priorities.begin(), priorities.end());
-
-        resetIndexes();
-    }
-
-    size_t getPriority(size_t id) override
-    {
-        initPriorities();
-        return priorities[id];
-    }
-
     bool isOptimalEndpoint(size_t id) override
     {
         return optimal_priority == priorities[id];
     }
-
-    virtual std::vector<size_t> getPriorities() = 0;
-
-    std::vector<size_t> priorities;
     size_t optimal_priority = 0;
 };
 
 class NearestHostname: public IBalancerWithConstPriorities
 {
 public:
-    explicit NearestHostname(const String client_hostname_)
-        : client_hostname(client_hostname_)
-    { }
-
-private:
-    std::vector<size_t> getPriorities() override
+    explicit NearestHostname(std::vector<std::string> hosts, const std::string & client_hostname)
+        : IBalancerWithConstPriorities(std::move(hosts))
     {
-        std::vector<size_t> priorities;
         priorities.resize(getEndpointsCount());
         for (size_t i = 0; i < getEndpointsCount(); ++i)
         {
             priorities.push_back(
                 Coordination::getHostNamePrefixDistance(client_hostname, findEndpointById(i).address));
         }
-        return priorities;
     }
-
-    const String client_hostname;
 };
 
 class Levenshtein: public IBalancerWithConstPriorities
 {
 public:
-    explicit Levenshtein(const String client_hostname_)
-        : client_hostname(client_hostname_)
-    { }
-
-private:
-    std::vector<size_t> getPriorities() override
+    explicit Levenshtein(std::vector<std::string> hosts, const std::string & client_hostname)
+        : IBalancerWithConstPriorities(hosts)
     {
-        std::vector<size_t> priorities;
         priorities.resize(getEndpointsCount());
         for (size_t i = 0; i < getEndpointsCount(); ++i)
         {
             priorities.push_back(
                 Coordination::getHostNameLevenshteinDistance(client_hostname, findEndpointById(i).address));
         }
-        return priorities;
     }
-
-    const String client_hostname;
 };
 
 class InOrder: public IBalancerWithConstPriorities
 {
-private:
-    std::vector<size_t> getPriorities() override
+public:
+    explicit InOrder(std::vector<std::string> hosts)
+        : IBalancerWithConstPriorities(std::move(hosts))
     {
-        std::vector<size_t> priorities;
         priorities.reserve(getEndpointsCount());
+        LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "InOrder getEndpointsCount {}", getEndpointsCount());
         for (size_t i = 0; i < getEndpointsCount(); ++i)
         {
             priorities.push_back(i);
+            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "InOrder priorities size {}", priorities.size());
         }
-        return priorities;
     }
 };
 
 namespace Coordination
 {
 
-ClientsConnectionBalancerPtr getConnectionBalancer(LoadBalancing load_balancing_type)
+ClientsConnectionBalancerPtr getConnectionBalancer(LoadBalancing load_balancing_type, std::vector<std::string> hosts)
 {
     switch (load_balancing_type)
     {
         case LoadBalancing::RANDOM:
-            return std::make_unique<Random>();
+            return std::make_unique<Random>(hosts);
         case LoadBalancing::NEAREST_HOSTNAME:
-            return std::make_unique<NearestHostname>(getFQDNOrHostName());
+            return std::make_unique<NearestHostname>(hosts,getFQDNOrHostName());
         case LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE:
-            return std::make_unique<Levenshtein>(getFQDNOrHostName());
+            return std::make_unique<Levenshtein>(hosts, getFQDNOrHostName());
         case LoadBalancing::IN_ORDER:
-            return std::make_unique<InOrder>();
+            return std::make_unique<InOrder>(hosts);
         case LoadBalancing::FIRST_OR_RANDOM:
-            return std::make_unique<FirstOrRandom>();
+            return std::make_unique<FirstOrRandom>(hosts);
         case LoadBalancing::ROUND_ROBIN:
-            return std::make_unique<RoundRobin>();
+            return std::make_unique<RoundRobin>(hosts);
     }
 
     return nullptr;
-}
-
-std::pair<std::string, bool> parseForSocketAddress(const std::string & raw_host)
-{
-    std::pair<std::string, bool> result;
-    bool secure = startsWith(raw_host, "secure://");
-    if (secure)
-        result.first = raw_host.substr(strlen("secure://"));
-    else
-        result.first = raw_host;
-    result.second = secure;
-    return result;
 }
 
 bool isKeeperHostDNSAvailable(Poco::Logger* log, const std::string & address, bool & dns_error_occurred)
@@ -741,14 +630,10 @@ void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<Zo
     args = args_;
     zk_log = std::move(zk_log_);
 
-    connection_balancer = getConnectionBalancer(args.get_priority_load_balancing.load_balancing);
-
-    for (size_t i = 0; i < args_.hosts.size(); ++i)
-    {
-        auto [address, secure] =  parseForSocketAddress(args_.hosts[i]);
-        [[maybe_unused]] auto id = connection_balancer->addEndpoint(address, secure);
-        chassert(id == i);
-    }
+    std::vector<std::string> hosts;
+    for (const auto & host : args_.hosts)
+        hosts.push_back(host);
+    connection_balancer = getConnectionBalancer(args.get_priority_load_balancing.load_balancing, hosts);
 }
 
 

@@ -42,7 +42,7 @@ public:
     };
 
     virtual EndpointInfo getHostToConnect() = 0;
-    virtual size_t addEndpoint(const String & address, bool secure) = 0;
+    // virtual size_t addEndpoint(const String & address, bool secure) = 0;
 
     virtual void atHostIsOffline(size_t id) = 0;
     virtual void atHostIsOnline(size_t id) = 0;
