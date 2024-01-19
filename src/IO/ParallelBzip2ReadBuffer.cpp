@@ -177,6 +177,7 @@ void ParallelBzip2ReadBuffer::readerThreadFunction(CompressedReadWorkerPtr worke
                 worker->uncompressed_segment.reserve(worker->segment.size() * 9);
                 worker->uncompressed = std::make_unique<WriteBufferFromString>(worker->uncompressed_segment);
                 copyData(*worker->decompressor, *worker->uncompressed);
+                worker->uncompressed->finalize();
                 worker->uncompressed_segment.resize(worker->uncompressed->count());
                 LOG_TRACE(
                     &Poco::Logger::get("ParallelBzip2ReadBuffer"),
