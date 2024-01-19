@@ -589,8 +589,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             }
         }
         else if (auto * distributed = dynamic_cast<StorageDistributed *>(storage.get());
-                 distributed && context->canUseParallelReplicasCustomKey(*distributed->getCluster()))
+                 distributed && canUseCustomKey(settings, *distributed->getCluster(), *context))
         {
+            query_info.use_custom_key = true;
             context->setSetting("distributed_group_by_no_merge", 2);
         }
     }
