@@ -13,7 +13,6 @@ namespace DB
 /// the head of the queue, and the record with the highest priority is stored at the tail.
 class LRUFileCachePriority final : public IFileCachePriority
 {
-    friend class OvercommitFileCachePriority;
 protected:
     struct State
     {

@@ -71,7 +71,7 @@ KeyMetadata::KeyMetadata(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata with internal user id");
 
     if (!user_.weight.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata withouot user weight");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create key metadata without user weight");
 
     chassert(!created_base_directory || fs::exists(getPath()));
 }
