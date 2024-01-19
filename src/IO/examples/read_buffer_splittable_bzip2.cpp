@@ -19,10 +19,11 @@
 using namespace DB;
 namespace fs = std::filesystem;
 
-static const String compressed_file = "/data1/liyang/root/2.bz2";
-static const String decompressed1_file = "/data1/liyang/root/2.1.txt";
-static const String decompressed2_file = "/data1/liyang/root/2.2.txt";
-static const String decompressed3_file = "/data1/liyang/root/2.3.txt";
+static const String compressed_file = "/path/to/2.bz2";
+static const String decompressed1_file = "/path/to/2.1.txt";
+static const String decompressed2_file = "/path/to/2.2.txt";
+static const String decompressed3_file = "/path/to/2.3.txt";
+static const String decompressed4_file = "/path/to/2.4.txt";
 static constexpr size_t max_split_bytes = 2 * 1024 * 1024UL;
 static constexpr size_t max_working_readers = 16;
 static size_t file_size = 0;
@@ -90,11 +91,22 @@ static void parallelDecompressFromSplits()
     copyData(*rb, *out);
 }
 
+
+static void decompressFromSingleSplit()
+{
+    auto in = std::make_unique<ReadBufferFromFile>(compressed_file);
+    in->seek(2097152UL, SEEK_SET);
+    auto rb = std::make_unique<SplittableBzip2ReadBuffer>(std::move(in));
+    auto out = std::make_unique<WriteBufferFromFile>(decompressed4_file);
+    copyData(*rb, *out);
+}
+
 int main()
 {
     Poco::AutoPtr<Poco::ConsoleChannel> chan(new Poco::ConsoleChannel);
     Poco::Logger::root().setChannel(chan);
     Poco::Logger::root().setLevel("trace");
+
     getIOThreadPool().initialize(100, 0, 10000);
 
     fs::path path(compressed_file);
@@ -109,7 +121,6 @@ int main()
     }
 
     Stopwatch watch;
-
     watch.restart();
     decompressFromSplits();
     std::cout << "decompressFromSplits cost " << watch.elapsedSeconds() << " seconds" << std::endl;
@@ -121,5 +132,10 @@ int main()
     watch.restart();
     decompressFromFile();
     std::cout << "decompressFromFile cost " << watch.elapsedSeconds() << " seconds" << std::endl;
+
+    watch.restart();
+    decompressFromSingleSplit();
+    std::cout << "decompressFromSingleSplit cost " << watch.elapsedSeconds() << " seconds" << std::endl;
+
     return 0;
 }

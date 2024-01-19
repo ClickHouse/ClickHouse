@@ -2,6 +2,7 @@
 
 #if USE_BZIP2
 #include <IO/SeekableReadBuffer.h>
+#include <IO/VarInt.h>
 
 namespace DB
 {
@@ -152,10 +153,9 @@ SplittableBzip2ReadBuffer::SplittableBzip2ReadBuffer(
     , bsLive(0)
     , last(0)
 {
-    skipResult = skipToNextMarker(BLOCK_DELIMITER, DELIMITER_BIT_LENGTH);
-
-    /// Update adjusted_start
     auto * seekable = dynamic_cast<SeekableReadBuffer*>(in.get());
+    skipResult = skipToNextMarker(BLOCK_DELIMITER, DELIMITER_BIT_LENGTH);
+    /// Update adjusted_start
     if (seekable && skipResult)
     {
         adjusted_start = seekable->getPosition();
@@ -197,7 +197,7 @@ bool SplittableBzip2ReadBuffer::nextImpl()
         result = read(dest, dest_size, offset, dest_size - offset);
         if (result > 0)
             offset += result;
-    } while (result != -1 && offset < dest_size);
+    } while (result != BZip2Constants::END_OF_STREAM && offset < dest_size);
 
     if (offset)
     {
@@ -221,9 +221,9 @@ Int32 SplittableBzip2ReadBuffer::read0()
         case STATE::NO_PROCESS_STATE:
             return BZip2Constants::END_OF_BLOCK;
         case STATE::START_BLOCK_STATE:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "wrong state {}", magic_enum::enum_name(currentState));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong state {}", magic_enum::enum_name(currentState));
         case STATE::RAND_PART_A_STATE:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "wrong state {}", magic_enum::enum_name(currentState));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong state {}", magic_enum::enum_name(currentState));
         case STATE::RAND_PART_B_STATE:
             setupRandPartB();
             break;
@@ -231,7 +231,7 @@ Int32 SplittableBzip2ReadBuffer::read0()
             setupRandPartC();
             break;
         case STATE::NO_RAND_PART_A_STATE:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "wrong state {}", magic_enum::enum_name(currentState));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong state {}", magic_enum::enum_name(currentState));
         case STATE::NO_RAND_PART_B_STATE:
             setupNoRandPartB();
             break;
@@ -286,7 +286,7 @@ bool SplittableBzip2ReadBuffer::skipToNextMarker(Int64 marker, Int32 markerBitLe
             }
         }
     }
-    catch (Exception &)
+    catch (const Exception &)
     {
         return false;
     }
@@ -369,7 +369,7 @@ Int64 SplittableBzip2ReadBuffer::bsR(Int64 n, ReadBuffer & in_, Int64 & bsBuff_,
         {
             Int32 thech = readAByte(in_);
             if (thech < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "unexpected end of stream");
+                DB::throwReadAfterEOF();
 
             bsBuffShadow = (bsBuffShadow << 8) | thech;
             bsLiveShadow += 8;
@@ -395,7 +395,7 @@ bool SplittableBzip2ReadBuffer::bsGetBit()
     {
         Int32 thech = readAByte(*in);
         if (thech < 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "unexpected end of stream");
+            DB::throwReadAfterEOF();
 
         bsBuffShadow = (bsBuffShadow << 8) | thech;
         bsLiveShadow += 8;
@@ -572,7 +572,7 @@ void SplittableBzip2ReadBuffer::getAndMoveToFrontDecode()
                 {
                     Int32 thech = readAByte(*inShadow);
                     if (thech < 0)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "unexpected end of stream");
+                        DB::throwReadAfterEOF();
 
                     bsBuffShadow = (bsBuffShadow << 8) | thech;
                     bsLiveShadow += 8;
@@ -587,7 +587,7 @@ void SplittableBzip2ReadBuffer::getAndMoveToFrontDecode()
                     {
                         Int32 thech = readAByte(*inShadow);
                         if (thech < 0)
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "unexpected end of stream");
+                            DB::throwReadAfterEOF();
 
                         bsBuffShadow = (bsBuffShadow << 8) | thech;
                         bsLiveShadow += 8;
@@ -603,12 +603,12 @@ void SplittableBzip2ReadBuffer::getAndMoveToFrontDecode()
             while (s-- >= 0)
                 ll8[++lastShadow] = ch;
             if (lastShadow >= limitLast)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "block overrun");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Block overrun");
         }
         else
         {
             if (++lastShadow >= limitLast)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "block overrun");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Block overrun");
             auto tmp = yy[nextSym - 1];
             unzftab[seqToUnseq[tmp] & 0xff]++;
             ll8[lastShadow] = seqToUnseq[tmp];
@@ -639,7 +639,7 @@ void SplittableBzip2ReadBuffer::getAndMoveToFrontDecode()
             {
                 Int32 thech = readAByte(*inShadow);
                 if (thech < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "unexpected end of stream");
+                    DB::throwReadAfterEOF();
 
                 bsBuffShadow = (bsBuffShadow << 8) | thech;
                 bsLiveShadow += 8;
@@ -654,7 +654,7 @@ void SplittableBzip2ReadBuffer::getAndMoveToFrontDecode()
                 {
                     Int32 thech = readAByte(*inShadow);
                     if (thech < 0)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "unexpected end of stream");
+                        DB::throwReadAfterEOF();
 
                     bsBuffShadow = (bsBuffShadow << 8) | thech;
                     bsLiveShadow += 8;
@@ -688,7 +688,7 @@ Int32 SplittableBzip2ReadBuffer::getAndMoveToFrontDecode0(Int32 groupNo)
         {
             Int32 thech = readAByte(*inShadow);
             if (thech < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "unexpected end of stream");
+                DB::throwReadAfterEOF();
 
             bsBuffShadow = (bsBuffShadow << 8) | thech;
             bsLiveShadow += 8;
@@ -721,7 +721,7 @@ void SplittableBzip2ReadBuffer::setupBlock()
         tt[cftab[ll8[i] & 0xff]++] = i;
 
     if (origPtr < 0 || static_cast<size_t>(origPtr) >= tt.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "stream corrupted");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream corrupted");
 
     su_tPos = tt[origPtr];
     su_count = 0;
