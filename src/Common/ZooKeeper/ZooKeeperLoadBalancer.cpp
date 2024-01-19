@@ -90,16 +90,15 @@ public:
     {
         auto info_it = endpoints_by_id.find(id);
         chassert(info_it != endpoints_by_id.end());
-
         return info_it->current_status;
     }
 
-    void atHostIsOffline(size_t id)
+    void markHostOffline(size_t id)
     {
         putToIndexWithStatus(id, OFFLINE);
     }
 
-    void atHostIsOnline(size_t id)
+    void markHostOnline(size_t id)
     {
         putToIndexWithStatus(id, ONLINE);
     }
@@ -118,9 +117,7 @@ public:
 
         std::vector<size_t> ids;
         for (auto it =start; it != end; ++it)
-        {
             ids.push_back(it->id);
-        }
 
         return ids;
     }
@@ -130,6 +127,14 @@ public:
         auto start = endpoints_by_status.lower_bound(boost::make_tuple(status));
         auto end = endpoints_by_status.upper_bound(boost::make_tuple(status));
         return std::distance(start, end);
+    }
+
+    void logAllEndpoints() const
+    {
+        auto *logger = &Poco::Logger::get("ZooKeeperLoadBalancerEndpoint");
+        LOG_INFO(logger, "Reporting Endpoint status information.");
+        for (const auto & endpoint : endpoints)
+            LOG_INFO(logger, "Endpoint ID {}, address {}, status {}", endpoint.id, endpoint.address, getStatus(endpoint.id));
     }
 
 private:
@@ -199,14 +204,14 @@ public:
         }
     }
 
-    void atHostIsOffline(size_t id) override
+    void markHostOffline(size_t id) override
     {
-        registry.atHostIsOffline(id);
+        registry.markHostOffline(id);
     }
 
-    void atHostIsOnline(size_t id) override
+    void markHostOnline(size_t id) override
     {
-        registry.atHostIsOnline(id);
+        registry.markHostOnline(id);
     }
 
     void resetOfflineStatuses() override
@@ -317,7 +322,6 @@ public:
     }
 };
 
-// Other cls init in the constructor.
 class IBalancerWithPriorities : public IBalancerWithEndpointStatuses
 {
 public:
@@ -333,8 +337,7 @@ public:
         return asTemporaryEndpoint(id);
     }
 
-    // TODO: use optional to make more readable.
-    size_t getMostPriority(Status status) const
+    std::optional<size_t> getMostPriority(Status status) const
     {
         auto endpoints_index = getRangeByStatus(status);
         size_t min_priority = std::numeric_limits<size_t>::max();
@@ -349,41 +352,22 @@ public:
                 min_id = id;
             }
         }
+        if (min_id == getEndpointsCount())
+            return {};
         return min_id;
     }
 
     EndpointInfo getHostToConnect() override
     {
-        LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "Begin of reporting");
-        for (const auto id : getRangeByStatus(ONLINE))
-        {
-            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "getHostToConnect id ONLINE {}, status {} ", id, getStatus(id));
-        }
-        for (const auto id : getRangeByStatus(UNDEF))
-        {
-            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "getHostToConnect id UNDEF {}, status {} ", id, getStatus(id));
-        }
-        for (const auto id : getRangeByStatus(OFFLINE))
-        {
-            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "getHostToConnect id OFFLINE {}, status {} ", id, getStatus(id));
-        }
-        LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "End of reporting");
-
+        registry.logAllEndpoints();
         auto id = getMostPriority(ONLINE);
-
-        if (id != getEndpointsCount())
-        {
-            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "getHostToConnect id online {}, status {} ", id, getStatus(id));
-            return getHostWithSetting(id);
-        }
+        if (id.has_value())
+            return getHostWithSetting(id.value());
 
         id = getMostPriority(UNDEF);
 
-        if (id != getEndpointsCount())
-        {
-            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "getHostToConnect id undef {}, status {} ", id, getStatus(id));
-            return getHostWithSetting(id);
-        }
+        if (id.has_value())
+            return getHostWithSetting(id.value());
 
         chassert(getAvailableEndpointsCount() == 0);
         resetOfflineStatuses();
@@ -395,9 +379,37 @@ public:
             getEndpointsCount());
     }
 
-protected:
-    virtual bool isOptimalEndpoint(size_t id) = 0;
-    // Not idea to check the fields to initialize, but let's do it for now.
+
+    using PriorityCalculator = std::function<size_t(const RegisterEndpoint)>;
+
+    IBalancerWithPriorities(std::vector<std::string> hosts, PriorityCalculator priority_calculator)
+        : IBalancerWithPriorities(std::move(hosts))
+    {
+        for (size_t i = 0; i < getEndpointsCount(); ++i)
+            priorities.push_back(priority_calculator(registry.findEndpointById(i)));
+    }
+
+    static size_t priorityAsNearestHostname(const RegisterEndpoint endpoint)
+    {
+        return Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), endpoint.address);
+    }
+
+    static size_t priorityAsInOrer(const RegisterEndpoint endpoint)
+    {
+        return endpoint.id;
+    }
+
+    static size_t priorityAsLevenshtein(const RegisterEndpoint endpoint)
+    {
+        return Coordination::getHostNameLevenshteinDistance(getFQDNOrHostName(), endpoint.address);
+    }
+
+private:
+    bool isOptimalEndpoint(size_t id)
+    {
+        return priorities[id] == *std::min(priorities.begin(), priorities.end());
+    }
+
     std::vector<size_t> priorities;
 };
 
@@ -409,6 +421,7 @@ public:
 private:
     EndpointInfo getHostToConnect() override
     {
+        registry.logAllEndpoints();
         auto round_robin_status = getStatus(round_robin_id);
         if (round_robin_status == ONLINE)
             return selectEndpoint(round_robin_id);
@@ -489,46 +502,6 @@ public:
     }
 };
 
-class IBalancerWithConstPriorities : public IBalancerWithPriorities
-{
-public:
-    using PriorityCalculator = std::function<size_t(const RegisterEndpoint)>;
-
-    explicit IBalancerWithConstPriorities(std::vector<std::string> hosts)
-        : IBalancerWithPriorities(std::move(hosts))
-    {}
-
-    IBalancerWithConstPriorities(std::vector<std::string> hosts, PriorityCalculator priority_calculator)
-        : IBalancerWithPriorities(std::move(hosts))
-    {
-        // TODO: test this change.
-        // priorities.reserve(getEndpointsCount()
-        for (size_t i = 0; i < getEndpointsCount(); ++i)
-            priorities.push_back(priority_calculator(registry.findEndpointById(i)));
-    }
-
-    static size_t priorityAsNearestHostname(const RegisterEndpoint endpoint)
-    {
-        return Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), endpoint.address);
-    }
-
-    static size_t priorityAsInOrer(const RegisterEndpoint endpoint)
-    {
-        return endpoint.id;
-    }
-
-    static size_t priorityAsLevenshtein(const RegisterEndpoint endpoint)
-    {
-        return Coordination::getHostNameLevenshteinDistance(getFQDNOrHostName(), endpoint.address);
-    }
-
-private:
-    bool isOptimalEndpoint(size_t id) override
-    {
-        return priorities[id] == *std::min(priorities.begin(), priorities.end());
-    }
-};
-
 namespace Coordination
 {
 
@@ -539,11 +512,11 @@ ClientsConnectionBalancerPtr getConnectionBalancer(LoadBalancing load_balancing_
         case LoadBalancing::RANDOM:
             return std::make_unique<Random>(hosts);
         case LoadBalancing::NEAREST_HOSTNAME:
-            return std::make_unique<IBalancerWithConstPriorities>(hosts,  IBalancerWithConstPriorities::priorityAsNearestHostname);
+            return std::make_unique<IBalancerWithPriorities>(hosts,  IBalancerWithPriorities::priorityAsNearestHostname);
         case LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE:
-            return std::make_unique<IBalancerWithConstPriorities>(hosts, IBalancerWithConstPriorities::priorityAsLevenshtein);
+            return std::make_unique<IBalancerWithPriorities>(hosts, IBalancerWithPriorities::priorityAsLevenshtein);
         case LoadBalancing::IN_ORDER:
-            return std::make_unique<IBalancerWithConstPriorities>(hosts, IBalancerWithConstPriorities::priorityAsInOrer);
+            return std::make_unique<IBalancerWithPriorities>(hosts, IBalancerWithPriorities::priorityAsInOrer);
         case LoadBalancing::FIRST_OR_RANDOM:
             return std::make_unique<FirstOrRandom>(hosts);
         case LoadBalancing::ROUND_ROBIN:
@@ -624,7 +597,7 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
         auto endpoint = connection_balancer->getHostToConnect();
 
         if (!isKeeperHostDNSAvailable(log, endpoint.address, dns_error_occurred))
-            connection_balancer->atHostIsOffline(endpoint.id);
+            connection_balancer->markHostOffline(endpoint.id);
 
         LOG_INFO(log, "Connecting to ZooKeeper host {},"
                       " number of attempted hosts {}/{}",
@@ -655,12 +628,12 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
                     LOG_DEBUG(logger, "Load Balancer records a failure on host {}, original index {}", address, id);
                 });
 
-            connection_balancer->atHostIsOnline(endpoint.id);
+            connection_balancer->markHostOnline(endpoint.id);
             return client;
         }
         catch (DB::Exception& ex)
         {
-            connection_balancer->atHostIsOffline(endpoint.id);
+            connection_balancer->markHostOffline(endpoint.id);
             LOG_ERROR(log, "Failed to connect to ZooKeeper host {}, error {}", endpoint.address, ex.what());
         }
     }
