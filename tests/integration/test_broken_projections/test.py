@@ -159,6 +159,19 @@ def get_broken_projections_info(node, table):
     ).strip()
 
 
+def get_projections_info(node, table):
+    return node.query(
+        f"""
+    SELECT parent_name, name, is_broken
+    FROM system.projection_parts
+    WHERE table='{table}'
+    AND active = 1
+    AND database=currentDatabase()
+    ORDER BY parent_name, name
+    """
+    ).strip()
+
+
 def optimize(node, table, final, no_wait):
     query = f"OPTIMIZE TABLE {table}"
     if final:
@@ -389,6 +402,11 @@ def test_broken_ignored_replicated(cluster):
     assert "has a broken projection" not in check_table_full(node, table_name)
 
 
+def get_random_string(string_length=8):
+    alphabet = string.ascii_letters + string.digits
+    return "".join((random.choice(alphabet) for _ in range(string_length)))
+
+
 def test_broken_projections_in_backups(cluster):
     node = cluster.instances["node"]
 
@@ -400,6 +418,10 @@ def test_broken_projections_in_backups(cluster):
     insert(node, table_name, 10, 5)
     insert(node, table_name, 15, 5)
 
+    assert ["all_0_0_0", "all_1_1_0", "all_2_2_0", "all_3_3_0"] == get_parts(
+        node, table_name
+    )
+
     check(node, table_name, 1)
 
     break_projection(node, table_name, "proj", "all_2_2_0", "data")
@@ -409,10 +431,23 @@ def test_broken_projections_in_backups(cluster):
         node, table_name
     )
 
+    assert (
+        "all_0_0_0\tproj\t0\n"
+        "all_0_0_0\tproj_2\t0\n"
+        "all_1_1_0\tproj\t0\n"
+        "all_1_1_0\tproj_2\t0\n"
+        "all_2_2_0\tproj\t1\n"
+        "all_2_2_0\tproj_2\t0\n"
+        "all_3_3_0\tproj\t0\n"
+        "all_3_3_0\tproj_2\t0"
+        == get_projections_info(node, table_name)
+    )
+
+    backup_name = f"b1-{get_random_string()}"
     assert "BACKUP_CREATED" in node.query(
         f"""
     set backup_restore_keeper_fault_injection_probability=0.0;
-    backup table {table_name} to Disk('backups', 'b1') settings check_projection_parts=false;
+    backup table {table_name} to Disk('backups', '{backup_name}') settings check_projection_parts=false;
     """
     )
 
@@ -420,18 +455,30 @@ def test_broken_projections_in_backups(cluster):
         f"""
     drop table {table_name} sync;
     set backup_restore_keeper_fault_injection_probability=0.0;
-    restore table {table_name} from Disk('backups', 'b1');
+    restore table {table_name} from Disk('backups', '{backup_name}');
     """
+    )
+
+    assert (
+        "all_0_0_0\tproj\t0\n"
+        "all_0_0_0\tproj_2\t0\n"
+        "all_1_1_0\tproj\t0\n"
+        "all_1_1_0\tproj_2\t0\n"
+        "all_2_2_0\tproj\t0\n"
+        "all_2_2_0\tproj_2\t0\n"
+        "all_3_3_0\tproj\t0\n"
+        "all_3_3_0\tproj_2\t0"
+        == get_projections_info(node, table_name)
     )
 
     check(node, table_name, 1)
     assert "" == get_broken_projections_info(node, table_name)
 
-    break_projection(node, table_name, "proj", "all_2_2_0", "part")
+    break_projection(node, table_name, "proj_2", "all_2_2_0", "part")
 
-    check(node, table_name, 0, "proj", "ErrnoException")
+    check(node, table_name, 0, "proj_2", "ErrnoException")
 
-    assert "all_2_2_0\tproj\tFILE_DOESNT_EXIST" == get_broken_projections_info(
+    assert "all_2_2_0\tproj_2\tFILE_DOESNT_EXIST" == get_broken_projections_info(
         node, table_name
     )
 
@@ -442,13 +489,14 @@ def test_broken_projections_in_backups(cluster):
     """
     )
 
-    materialize_projection(node, table_name, "proj")
+    materialize_projection(node, table_name, "proj_2")
     check(node, table_name, 1)
 
+    backup_name = f"b3-{get_random_string()}"
     assert "BACKUP_CREATED" in node.query(
         f"""
     set backup_restore_keeper_fault_injection_probability=0.0;
-    backup table {table_name} to Disk('backups', 'b3') settings check_projection_parts=false;
+    backup table {table_name} to Disk('backups', '{backup_name}') settings check_projection_parts=false;
     """
     )
 
@@ -456,10 +504,22 @@ def test_broken_projections_in_backups(cluster):
         f"""
     drop table {table_name} sync;
     set backup_restore_keeper_fault_injection_probability=0.0;
-    restore table {table_name} from Disk('backups', 'b3');
+    restore table {table_name} from Disk('backups', '{backup_name}');
     """
     )
     check(node, table_name, 1)
+
+    assert (
+        "all_0_0_0\tproj\t0\n"
+        "all_0_0_0\tproj_2\t0\n"
+        "all_1_1_0\tproj\t0\n"
+        "all_1_1_0\tproj_2\t0\n"
+        "all_2_2_0\tproj\t0\n"
+        "all_2_2_0\tproj_2\t0\n"
+        "all_3_3_0\tproj\t0\n"
+        "all_3_3_0\tproj_2\t0"
+        == get_projections_info(node, table_name)
+    )
 
     break_projection(node, table_name, "proj", "all_1_1_0", "part")
     assert "Part all_1_1_0 has a broken projection proj" in check_table_full(
@@ -469,10 +529,11 @@ def test_broken_projections_in_backups(cluster):
         node, table_name
     )
 
+    backup_name = f"b4-{get_random_string()}"
     assert "BACKUP_CREATED" in node.query(
         f"""
     set backup_restore_keeper_fault_injection_probability=0.0;
-    backup table {table_name} to Disk('backups', 'b4') settings check_projection_parts=false, allow_backup_broken_projections=true;
+    backup table {table_name} to Disk('backups', '{backup_name}') settings check_projection_parts=false, allow_backup_broken_projections=true;
     """
     )
 
@@ -480,9 +541,22 @@ def test_broken_projections_in_backups(cluster):
         f"""
     drop table {table_name} sync;
     set backup_restore_keeper_fault_injection_probability=0.0;
-    restore table {table_name} from Disk('backups', 'b4');
+    restore table {table_name} from Disk('backups', '{backup_name}');
     """
     )
+
+    assert (
+        "all_0_0_0\tproj\t0\n"
+        "all_0_0_0\tproj_2\t0\n"
+        "all_1_1_0\tproj\t1\n"
+        "all_1_1_0\tproj_2\t0\n"
+        "all_2_2_0\tproj\t0\n"
+        "all_2_2_0\tproj_2\t0\n"
+        "all_3_3_0\tproj\t0\n"
+        "all_3_3_0\tproj_2\t0"
+        == get_projections_info(node, table_name)
+    )
+
     check(node, table_name, 0)
     assert "all_1_1_0\tproj\tNO_FILE_IN_DATA_PART" == get_broken_projections_info(
         node, table_name
