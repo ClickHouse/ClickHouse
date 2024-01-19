@@ -439,8 +439,7 @@ def test_broken_projections_in_backups(cluster):
         "all_2_2_0\tproj\t1\n"
         "all_2_2_0\tproj_2\t0\n"
         "all_3_3_0\tproj\t0\n"
-        "all_3_3_0\tproj_2\t0"
-        == get_projections_info(node, table_name)
+        "all_3_3_0\tproj_2\t0" == get_projections_info(node, table_name)
     )
 
     backup_name = f"b1-{get_random_string()}"
@@ -467,8 +466,7 @@ def test_broken_projections_in_backups(cluster):
         "all_2_2_0\tproj\t0\n"
         "all_2_2_0\tproj_2\t0\n"
         "all_3_3_0\tproj\t0\n"
-        "all_3_3_0\tproj_2\t0"
-        == get_projections_info(node, table_name)
+        "all_3_3_0\tproj_2\t0" == get_projections_info(node, table_name)
     )
 
     check(node, table_name, 1)
@@ -517,8 +515,7 @@ def test_broken_projections_in_backups(cluster):
         "all_2_2_0\tproj\t0\n"
         "all_2_2_0\tproj_2\t0\n"
         "all_3_3_0\tproj\t0\n"
-        "all_3_3_0\tproj_2\t0"
-        == get_projections_info(node, table_name)
+        "all_3_3_0\tproj_2\t0" == get_projections_info(node, table_name)
     )
 
     break_projection(node, table_name, "proj", "all_1_1_0", "part")
@@ -553,8 +550,7 @@ def test_broken_projections_in_backups(cluster):
         "all_2_2_0\tproj\t0\n"
         "all_2_2_0\tproj_2\t0\n"
         "all_3_3_0\tproj\t0\n"
-        "all_3_3_0\tproj_2\t0"
-        == get_projections_info(node, table_name)
+        "all_3_3_0\tproj_2\t0" == get_projections_info(node, table_name)
     )
 
     check(node, table_name, 0)
