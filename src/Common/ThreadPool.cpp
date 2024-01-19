@@ -1,4 +1,5 @@
 #include <Common/ThreadPool.h>
+#include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -26,6 +27,16 @@ namespace CurrentMetrics
     extern const Metric GlobalThread;
     extern const Metric GlobalThreadActive;
     extern const Metric GlobalThreadScheduled;
+}
+
+namespace ProfileEvents
+{
+    extern const Event GlobalThreadPoolExpansions;
+    extern const Event GlobalThreadPoolShrinks;
+    extern const Event GlobalThreadPoolJobScheduleMicroseconds;
+    extern const Event LocalThreadPoolExpansions;
+    extern const Event LocalThreadPoolShrinks;
+    extern const Event LocalThreadPoolJobScheduleMicroseconds;
 }
 
 class JobWithPriority
@@ -162,6 +173,7 @@ template <typename Thread>
 template <typename ReturnType>
 ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
+    Stopwatch watch;
     auto on_error = [&](const std::string & reason)
     {
         if constexpr (std::is_same_v<ReturnType, void>)
@@ -215,6 +227,10 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             try
             {
                 threads.front() = Thread([this, it = threads.begin()] { worker(it); });
+                ProfileEvents::increment(
+                    std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions
+                );
+
             }
             catch (...)
             {
@@ -236,7 +252,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
     /// Wake up a free thread to run the new job.
     new_job_or_shutdown.notify_one();
-
+    ProfileEvents::increment(
+        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobScheduleMicroseconds : ProfileEvents::LocalThreadPoolJobScheduleMicroseconds,
+        watch.elapsedMicroseconds());
     return static_cast<ReturnType>(true);
 }
 
@@ -261,6 +279,9 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
         try
         {
             threads.front() = Thread([this, it = threads.begin()] { worker(it); });
+            ProfileEvents::increment(
+                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions
+            );
         }
         catch (...)
         {
@@ -332,7 +353,12 @@ void ThreadPoolImpl<Thread>::finalize()
 
     /// Wait for all currently running jobs to finish (we don't wait for all scheduled jobs here like the function wait() does).
     for (auto & thread : threads)
+    {
         thread.join();
+        ProfileEvents::increment(
+            std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks
+        );
+    }
 
     threads.clear();
 }
@@ -422,6 +448,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 {
                     thread_it->detach();
                     threads.erase(thread_it);
+                    ProfileEvents::increment(
+                        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks
+                    );
                 }
                 return;
             }
