@@ -394,9 +394,13 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
 
     auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
     String backup_name_for_logging = backup_info.toStringForLogging();
+    String base_backup_name;
+    if (backup_settings.base_backup_info)
+        base_backup_name = backup_settings.base_backup_info->toStringForLogging();
+
     try
     {
-        addInfo(backup_id, backup_name_for_logging, backup_settings.internal, BackupStatus::CREATING_BACKUP);
+        addInfo(backup_id, backup_name_for_logging, base_backup_name, backup_settings.internal, BackupStatus::CREATING_BACKUP);
 
         /// Prepare context to use.
         ContextPtr context_in_use = context;
@@ -606,7 +610,6 @@ void BackupsWorker::doBackup(
 
 void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination)
 {
-    LOG_TRACE(log, "{}", Stage::BUILDING_FILE_INFOS);
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "");
     backup_coordination->waitForStage(Stage::BUILDING_FILE_INFOS);
     backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(ThreadPoolId::BACKUP_MAKE_FILES_LIST)));
@@ -745,8 +748,11 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     {
         auto backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         String backup_name_for_logging = backup_info.toStringForLogging();
+        String base_backup_name;
+        if (restore_settings.base_backup_info)
+            base_backup_name = restore_settings.base_backup_info->toStringForLogging();
 
-        addInfo(restore_id, backup_name_for_logging, restore_settings.internal, BackupStatus::RESTORING);
+        addInfo(restore_id, backup_name_for_logging, base_backup_name, restore_settings.internal, BackupStatus::RESTORING);
 
         /// Prepare context to use.
         ContextMutablePtr context_in_use = context;
@@ -1005,11 +1011,12 @@ void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr 
 }
 
 
-void BackupsWorker::addInfo(const OperationID & id, const String & name, bool internal, BackupStatus status)
+void BackupsWorker::addInfo(const OperationID & id, const String & name, const String & base_backup_name, bool internal, BackupStatus status)
 {
     BackupOperationInfo info;
     info.id = id;
     info.name = name;
+    info.base_backup_name = base_backup_name;
     info.internal = internal;
     info.status = status;
     info.start_time = std::chrono::system_clock::now();

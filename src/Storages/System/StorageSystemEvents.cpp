@@ -7,20 +7,20 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemEvents::getNamesAndTypes()
+ColumnsDescription StorageSystemEvents::getColumnsDescription()
 {
-    return {
-        {"event", std::make_shared<DataTypeString>()},
-        {"value", std::make_shared<DataTypeUInt64>()},
-        {"description", std::make_shared<DataTypeString>()},
+    auto description = ColumnsDescription
+    {
+        {"event", std::make_shared<DataTypeString>(), "Event name."},
+        {"value", std::make_shared<DataTypeUInt64>(), "Number of events occurred."},
+        {"description", std::make_shared<DataTypeString>(), "Event description."},
     };
-}
 
-NamesAndAliases StorageSystemEvents::getNamesAndAliases()
-{
-    return {
+    description.setAliases({
         {"name", std::make_shared<DataTypeString>(), "event"}
-    };
+    });
+
+    return description;
 }
 
 void StorageSystemEvents::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const

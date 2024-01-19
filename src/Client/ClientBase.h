@@ -321,6 +321,9 @@ protected:
     bool allow_merge_tree_settings = false;
 
     bool cancelled = false;
+
+    /// Does log_comment has specified by user?
+    bool has_log_comment = false;
 };
 
 }

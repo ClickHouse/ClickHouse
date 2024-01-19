@@ -779,7 +779,7 @@ void KeeperSnapshotManager::removeSnapshot(uint64_t log_idx)
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
     const auto & [path, disk] = itr->second;
-    disk->removeFile(path);
+    disk->removeFileIfExists(path);
     existing_snapshots.erase(itr);
 }
 
@@ -809,8 +809,16 @@ SnapshotFileInfo KeeperSnapshotManager::serializeSnapshotToDisk(const KeeperStor
     disk->removeFile(tmp_snapshot_file_name);
 
     existing_snapshots.emplace(up_to_log_idx, SnapshotFileInfo{snapshot_file_name, disk});
-    removeOutdatedSnapshotsIfNeeded();
-    moveSnapshotsIfNeeded();
+
+    try
+    {
+        removeOutdatedSnapshotsIfNeeded();
+        moveSnapshotsIfNeeded();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to cleanup and/or move older snapshots");
+    }
 
     return {snapshot_file_name, disk};
 }

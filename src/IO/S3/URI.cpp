@@ -6,17 +6,9 @@
 #if USE_AWS_S3
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
-
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-#include <re2/re2.h>
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
 
 namespace DB
 {
@@ -26,7 +18,7 @@ struct URIConverter
     static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper)
     {
         Macros macros({{"bucket", uri.getHost()}});
-        uri = macros.expand(mapper[uri.getScheme()]).empty()? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + "/" + uri.getPathAndQuery());
+        uri = macros.expand(mapper[uri.getScheme()]).empty() ? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + uri.getPathAndQuery());
     }
 };
 
@@ -144,6 +136,12 @@ URI::URI(const std::string & uri_)
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bucket or key name are invalid in S3 URI.");
+}
+
+void URI::addRegionToURI(const std::string &region)
+{
+    if (auto pos = endpoint.find("amazonaws.com"); pos != std::string::npos)
+        endpoint = endpoint.substr(0, pos) + region + "." + endpoint.substr(pos);
 }
 
 void URI::validateBucket(const String & bucket, const Poco::URI & uri)

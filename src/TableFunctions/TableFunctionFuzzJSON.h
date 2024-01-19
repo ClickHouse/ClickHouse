@@ -5,6 +5,9 @@
 #include <Storages/StorageFuzzJSON.h>
 #include <TableFunctions/ITableFunction.h>
 
+#include "config.h"
+
+#if USE_RAPIDJSON || USE_SIMDJSON
 namespace DB
 {
 
@@ -37,3 +40,4 @@ private:
 };
 
 }
+#endif

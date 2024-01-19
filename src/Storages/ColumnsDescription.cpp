@@ -53,15 +53,14 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
 {
 }
 
-bool ColumnDescription::identical(const ColumnDescription & other) const
+ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, String comment_)
+    : name(std::move(name_)), type(std::move(type_)), comment(comment_)
 {
-    auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
+}
 
-    return name == other.name
-        && type->identical(*other.type)
-        && default_desc == other.default_desc
-        && ast_to_str(codec) == ast_to_str(other.codec)
-        && ast_to_str(ttl) == ast_to_str(other.ttl);
+ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_)
+    : name(std::move(name_)), type(std::move(type_)), comment(comment_), codec(codec_)
+{
 }
 
 bool ColumnDescription::operator==(const ColumnDescription & other) const
@@ -71,6 +70,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
+        && stat == other.stat
         && ast_to_str(codec) == ast_to_str(other.codec)
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
@@ -102,6 +102,12 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
     {
         writeChar('\t', buf);
         writeEscapedString(queryToString(codec), buf);
+    }
+
+    if (stat)
+    {
+        writeChar('\t', buf);
+        writeEscapedString(queryToString(stat->ast), buf);
     }
 
     if (ttl)
@@ -144,7 +150,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -154,16 +160,18 @@ void ColumnDescription::readText(ReadBuffer & buf)
     }
 }
 
-ColumnsDescription::ColumnsDescription(std::initializer_list<NameAndTypePair> ordinary)
+ColumnsDescription::ColumnsDescription(std::initializer_list<ColumnDescription> ordinary)
 {
-    for (const auto & elem : ordinary)
-        add(ColumnDescription(elem.name, elem.type));
+    for (auto && elem : ordinary)
+        add(elem);
 }
 
-ColumnsDescription::ColumnsDescription(NamesAndTypes ordinary)
+ColumnsDescription ColumnsDescription::fromNamesAndTypes(NamesAndTypes ordinary)
 {
+    ColumnsDescription result;
     for (auto & elem : ordinary)
-        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
+        result.add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
+    return result;
 }
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
@@ -177,6 +185,11 @@ ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, NamesAndAlias
     for (auto & elem : ordinary)
         add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
 
+    setAliases(std::move(aliases));
+}
+
+void ColumnsDescription::setAliases(NamesAndAliases aliases)
+{
     for (auto & alias : aliases)
     {
         ColumnDescription description(std::move(alias.name), std::move(alias.type));
@@ -318,6 +331,12 @@ void ColumnsDescription::flattenNested()
 {
     for (auto it = columns.begin(); it != columns.end();)
     {
+        if (!isNested(it->type))
+        {
+            ++it;
+            continue;
+        }
+
         const auto * type_arr = typeid_cast<const DataTypeArray *>(it->type.get());
         if (!type_arr)
         {
@@ -672,6 +691,12 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
         it->default_desc.kind != ColumnDefaultKind::Alias && it->default_desc.kind != ColumnDefaultKind::Ephemeral;
 }
 
+bool ColumnsDescription::hasNotAlias(const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    return it != columns.get<1>().end() && it->default_desc.kind != ColumnDefaultKind::Alias;
+}
+
 bool ColumnsDescription::hasAlias(const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
@@ -887,13 +912,4 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
     }
 }
 
-bool ColumnsDescription::identical(const ColumnsDescription & other) const
-{
-    if (columns.size() != other.columns.size())
-        return false;
-    for (auto it1 = columns.begin(), it2 = other.columns.begin(); it1 != columns.end(); ++it1, ++it2)
-        if (!it1->identical(*it2))
-            return false;
-    return true;
-}
 }

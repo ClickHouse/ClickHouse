@@ -331,7 +331,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     if (!table_id)
     {
         if (exception)
-            exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Cannot find table: StorageID is empty");
+            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot find table: StorageID is empty"));
         return {};
     }
 
@@ -353,6 +353,9 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
+
+        /// Wait for table to be started because we are going to return StoragePtr
+        db_and_table.first->waitTableStarted(table_id.getTableName());
 
 #if USE_LIBPQXX
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))

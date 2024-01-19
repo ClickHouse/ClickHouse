@@ -7,6 +7,7 @@ Contains information about all successful and failed login and logout events.
 
 Columns:
 
+- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Login/logout result. Possible values:
     - `LoginFailure` — Login error.
     - `LoginSuccess` — Successful login.
@@ -57,6 +58,7 @@ Result:
 ``` text
 Row 1:
 ──────
+hostname:                clickhouse.eu-central1.internal
 type:                    LoginSuccess
 auth_id:                 45e6bd83-b4aa-4a23-85e6-bd83b4aa1a23
 session_id:

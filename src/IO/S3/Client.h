@@ -92,6 +92,23 @@ private:
     std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches;
 };
 
+struct ClientSettings
+{
+    bool use_virtual_addressing;
+    /// Disable checksum to avoid extra read of the input stream
+    bool disable_checksum;
+    /// Should client send ComposeObject request after upload to GCS.
+    ///
+    /// Previously ComposeObject request was required to make Copy possible,
+    /// but not anymore (see [1]).
+    ///
+    ///   [1]: https://cloud.google.com/storage/docs/release-notes#June_23_2023
+    ///
+    /// Ability to enable it preserved since likely it is required for old
+    /// files.
+    bool gcs_issue_compose_request;
+};
+
 /// Client that improves the client from the AWS SDK
 /// - inject region and URI into requests so they are rerouted to the correct destination if needed
 /// - automatically detect endpoint and regions for each bucket and cache them
@@ -116,7 +133,7 @@ public:
             const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
             const PocoHTTPClientConfiguration & client_configuration,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-            bool use_virtual_addressing);
+            const ClientSettings & client_settings);
 
     std::unique_ptr<Client> clone() const;
 
@@ -125,18 +142,7 @@ public:
     Client(Client && other) = delete;
     Client & operator=(Client &&) = delete;
 
-    ~Client() override
-    {
-        try
-        {
-            ClientCacheRegistry::instance().unregisterClient(cache.get());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            throw;
-        }
-    }
+    ~Client() override;
 
     /// Returns the initial endpoint.
     const String & getInitialEndpoint() const { return initial_endpoint; }
@@ -153,7 +159,7 @@ public:
     class RetryStrategy : public Aws::Client::RetryStrategy
     {
     public:
-        RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
+        explicit RetryStrategy(uint32_t maxRetries_ = 10, uint32_t scaleFactor_ = 25, uint32_t maxDelayMs_ = 90000);
 
         /// NOLINTNEXTLINE(google-runtime-int)
         bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
@@ -194,7 +200,6 @@ public:
     Model::DeleteObjectsOutcome DeleteObjects(DeleteObjectsRequest & request) const;
 
     using ComposeObjectOutcome = Aws::Utils::Outcome<Aws::NoResult, Aws::S3::S3Error>;
-    ComposeObjectOutcome ComposeObject(ComposeObjectRequest & request) const;
 
     using Aws::S3::S3Client::EnableRequestProcessing;
     using Aws::S3::S3Client::DisableRequestProcessing;
@@ -211,7 +216,7 @@ private:
            const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
            const PocoHTTPClientConfiguration & client_configuration,
            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-           bool use_virtual_addressing);
+           const ClientSettings & client_settings_);
 
     Client(
         const Client & other, const PocoHTTPClientConfiguration & client_configuration);
@@ -233,6 +238,8 @@ private:
     using Aws::S3::S3Client::PutObject;
     using Aws::S3::S3Client::DeleteObject;
     using Aws::S3::S3Client::DeleteObjects;
+
+    ComposeObjectOutcome ComposeObject(ComposeObjectRequest & request) const;
 
     template <typename RequestType, typename RequestFn>
     std::invoke_result_t<RequestFn, RequestType>
@@ -256,7 +263,7 @@ private:
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
     PocoHTTPClientConfiguration client_configuration;
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads;
-    bool use_virtual_addressing;
+    ClientSettings client_settings;
 
     std::string explicit_region;
     mutable bool detect_region = true;
@@ -286,7 +293,7 @@ public:
 
     std::unique_ptr<S3::Client> create(
         const PocoHTTPClientConfiguration & cfg,
-        bool is_virtual_hosted_style,
+        ClientSettings client_settings,
         const String & access_key_id,
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,

@@ -516,7 +516,7 @@ public:
 
                 if (record.header.version > CURRENT_CHANGELOG_VERSION)
                     throw Exception(
-                        ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported changelog version {} on path {}", record.header.version, filepath);
+                        ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported changelog version {} on path {}", static_cast<uint8_t>(record.header.version), filepath);
 
                 /// Read data
                 if (record.header.blob_size != 0)
@@ -1478,6 +1478,11 @@ void Changelog::setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_serv
 {
     assert(raft_server_);
     raft_server = raft_server_;
+}
+
+bool Changelog::isInitialized() const
+{
+    return initialized;
 }
 
 }

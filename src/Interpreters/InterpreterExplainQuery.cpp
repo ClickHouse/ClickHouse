@@ -1,3 +1,4 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
 #include <QueryPipeline/BlockIO.h>
@@ -66,8 +67,10 @@ namespace
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
+            /// we need to read statistic when `allow_statistic_optimize` is enabled.
+            bool only_analyze = !data.getContext()->getSettings().allow_statistic_optimize;
             InterpreterSelectQuery interpreter(
-                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze(only_analyze).modify());
 
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
@@ -603,6 +606,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     }
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(sample_block.cloneWithColumns(std::move(res_columns))));
+}
+
+void registerInterpreterExplainQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterExplainQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterExplainQuery", create_fn);
 }
 
 }

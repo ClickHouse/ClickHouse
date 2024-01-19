@@ -4,6 +4,9 @@
 #include <Storages/StorageConfiguration.h>
 #include <Common/randomSeed.h>
 
+#include "config.h"
+
+#if USE_SIMDJSON || USE_RAPIDJSON
 namespace DB
 {
 
@@ -24,6 +27,7 @@ public:
         String json_str = "{}";
         UInt64 random_seed = randomSeed();
         bool should_reuse_output = false;
+        bool should_malform_output = false;
         Float64 probability = 0.25;
 
         UInt64 max_output_length = 1024;
@@ -66,3 +70,4 @@ private:
 };
 
 }
+#endif

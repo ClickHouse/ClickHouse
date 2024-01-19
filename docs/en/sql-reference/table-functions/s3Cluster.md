@@ -10,14 +10,15 @@ Allows processing files from [Amazon S3](https://aws.amazon.com/s3/) and Google 
 **Syntax**
 
 ``` sql
-s3Cluster(cluster_name, source, [,access_key_id, secret_access_key] [,format] [,structure])
+s3Cluster(cluster_name, source, [,access_key_id, secret_access_key, [session_token]] [,format] [,structure])
 ```
 
 **Arguments**
 
 - `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
 - `source` — URL to a file or a bunch of files. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{'abc','def'}` and `{N..M}` where `N`, `M` — numbers, `abc`, `def` — strings. For more information see [Wildcards In Path](../../engines/table-engines/integrations/s3.md#wildcards-in-path).
-- `access_key_id` and `secret_access_key` — Keys that specify credentials to use with given endpoint. Optional.
+- `access_key_id`, `secret_access_key` — Keys that specify credentials to use with given endpoint. Optional.
+- `session_token` - Session token to use with the given keys. Optional when passing keys.
 - `format` — The [format](../../interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 

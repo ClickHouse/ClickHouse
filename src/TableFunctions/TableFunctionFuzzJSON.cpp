@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionFuzzJSON.h>
 
+#if USE_RAPIDJSON || USE_SIMDJSON
 #include <DataTypes/DataTypeString.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -57,3 +58,4 @@ void registerTableFunctionFuzzJSON(TableFunctionFactory & factory)
 }
 
 }
+#endif

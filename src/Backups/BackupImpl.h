@@ -89,7 +89,7 @@ private:
     void close();
 
     void openArchive();
-    void closeArchive();
+    void closeArchive(bool finalize);
 
     /// Writes the file ".backup" containing backup's metadata.
     void writeBackupMetadata() TSA_REQUIRES(mutex);

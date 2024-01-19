@@ -28,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 void WebObjectStorage::initialize(const String & uri_path, const std::unique_lock<std::shared_mutex> & lock) const
@@ -39,14 +40,13 @@ void WebObjectStorage::initialize(const String & uri_path, const std::unique_loc
     {
         Poco::Net::HTTPBasicCredentials credentials{};
 
-
         ReadWriteBufferFromHTTP metadata_buf(
             Poco::URI(fs::path(uri_path) / ".index"),
             Poco::Net::HTTPRequest::HTTP_GET,
             ReadWriteBufferFromHTTP::OutStreamCallback(),
             ConnectionTimeouts::getHTTPTimeouts(
                 getContext()->getSettingsRef(),
-                {getContext()->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
+                getContext()->getServerSettings().keep_alive_timeout),
             credentials,
             /* max_redirects= */ 0,
             /* buffer_size_= */ DBMS_DEFAULT_BUFFER_SIZE,
@@ -124,7 +124,19 @@ bool WebObjectStorage::exists(const StoredObject & object) const
 bool WebObjectStorage::exists(const std::string & path) const
 {
     LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Checking existence of path: {}", path);
+    return tryGetFileInfo(path) != std::nullopt;
+}
 
+WebObjectStorage::FileData WebObjectStorage::getFileInfo(const String & path) const
+{
+    auto file_info = tryGetFileInfo(path);
+    if (!file_info)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No such file: {}", path);
+    return file_info.value();
+}
+
+std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const String & path) const
+{
     std::shared_lock shared_lock(metadata_mutex);
 
     if (files.find(path) == files.end())
@@ -145,10 +157,10 @@ bool WebObjectStorage::exists(const std::string & path) const
     }
 
     if (files.empty())
-        return false;
+        return std::nullopt;
 
-    if (files.contains(path))
-        return true;
+    if (auto it = files.find(path); it != files.end())
+        return it->second;
 
     /// `object_storage.files` contains files + directories only inside `metadata_path / uuid_3_digit / uuid /`
     /// (specific table files only), but we need to be able to also tell if `exists(<metadata_path>)`, for example.
@@ -158,7 +170,7 @@ bool WebObjectStorage::exists(const std::string & path) const
     );
 
     if (it == files.end())
-        return false;
+        return std::nullopt;
 
     if (startsWith(it->first, path)
         || (it != files.begin() && startsWith(std::prev(it)->first, path)))
@@ -166,20 +178,15 @@ bool WebObjectStorage::exists(const std::string & path) const
         shared_lock.unlock();
         std::unique_lock unique_lock(metadata_mutex);
 
-        /// The code relies on invariant that if this function returned true
-        /// the file exists in files.
-        /// In this case we have a directory which doesn't explicitly exists (like store/xxx/yyy)
-        ///                                                        ^^^^^
-        /// Adding it to the files
+        /// Add this directory path not files cache to simplify further checks for this path.
         files.emplace(std::make_pair(path, FileData({.type = FileType::Directory})));
 
         unique_lock.unlock();
         shared_lock.lock();
 
-        return true;
+        return FileData{ .type = FileType::Directory };
     }
-
-    return false;
+    return std::nullopt;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObjects( /// NOLINT
@@ -246,7 +253,7 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
 
 void WebObjectStorage::throwNotAllowed()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only read-only operations are supported");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only read-only operations are supported in WebObjectStorage");
 }
 
 std::unique_ptr<WriteBufferFromFileBase> WebObjectStorage::writeObject( /// NOLINT

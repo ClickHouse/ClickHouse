@@ -153,6 +153,8 @@ public:
 
     void setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server_);
 
+    bool isInitialized() const;
+
     /// Fsync log to disk
     ~Changelog();
 

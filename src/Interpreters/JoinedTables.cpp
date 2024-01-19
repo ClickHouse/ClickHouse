@@ -308,6 +308,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
 
     auto settings = context->getSettingsRef();
     MultiEnum<JoinAlgorithm> join_algorithm = settings.join_algorithm;
+    bool try_use_direct_join = join_algorithm.isSet(JoinAlgorithm::DIRECT) || join_algorithm.isSet(JoinAlgorithm::DEFAULT);
     auto table_join = std::make_shared<TableJoin>(settings, context->getGlobalTemporaryVolume());
 
     const ASTTablesInSelectQueryElement * ast_join = select_query_.join();
@@ -325,8 +326,8 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                 table_join->setStorageJoin(storage_join);
             }
 
-            if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage);
-                storage_dict && join_algorithm.isSet(JoinAlgorithm::DIRECT))
+            auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage);
+            if (storage_dict && try_use_direct_join && storage_dict->getDictionary()->getSpecialKeyType() != DictionarySpecialKeyType::Range)
             {
                 FunctionDictHelper dictionary_helper(context);
 
@@ -347,8 +348,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                 table_join->setStorageJoin(dictionary_kv);
             }
 
-            if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueEntity>(storage);
-                storage_kv && join_algorithm.isSet(JoinAlgorithm::DIRECT))
+            if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_kv && try_use_direct_join)
             {
                 table_join->setStorageJoin(storage_kv);
             }

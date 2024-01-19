@@ -20,6 +20,7 @@
 
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
+#include <Common/thread_local_rng.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 

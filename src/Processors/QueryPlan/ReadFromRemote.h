@@ -60,6 +60,7 @@ private:
     Poco::Logger * log;
     UInt32 shard_count;
     const String cluster_name;
+    std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
     void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
     void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
