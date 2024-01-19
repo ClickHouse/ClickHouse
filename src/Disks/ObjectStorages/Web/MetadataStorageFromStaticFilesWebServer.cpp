@@ -109,13 +109,7 @@ DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(c
     if (!exists(path))
         return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
 
-    std::shared_lock shared_lock(object_storage.metadata_mutex);
-    for (const auto & [file_path, _] : object_storage.files)
-    {
-        if (fs::path(parentPath(file_path)) / "" == fs::path(path) / "")
-            dir_file_paths.emplace_back(file_path);
-    }
-
+    dir_file_paths = object_storage.listDirectory(path);
     LOG_TRACE(object_storage.log, "Iterate directory {} with {} files", path, dir_file_paths.size());
     return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
 }

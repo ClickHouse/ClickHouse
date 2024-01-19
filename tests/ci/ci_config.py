@@ -483,7 +483,7 @@ CI_CONFIG = CiConfig(
             compiler="clang-17",
             debug_build=True,
             package_type="deb",
-            sparse_checkout=True,
+            sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
         ),
         "package_release_coverage": BuildConfig(
             name="package_release_coverage",
@@ -511,7 +511,7 @@ CI_CONFIG = CiConfig(
             compiler="clang-17-darwin",
             package_type="binary",
             static_binary_name="macos",
-            sparse_checkout=True,
+            sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
         ),
         "binary_aarch64": BuildConfig(
             name="binary_aarch64",
@@ -844,10 +844,18 @@ CI_CONFIG = CiConfig(
             "package_asan",
             job_config=JobConfig(**{**statless_test_common_params, "timeout": 3600}),  # type: ignore
         ),
-        # FIXME: add digest and params
-        "ClickHouse Keeper Jepsen": TestConfig("binary_release"),
-        # FIXME: add digest and params
-        "ClickHouse Server Jepsen": TestConfig("binary_release"),
+        "ClickHouse Keeper Jepsen": TestConfig(
+            "binary_release",
+            job_config=JobConfig(
+                run_by_label="jepsen-test", run_command="jepsen_check.py keeper"
+            ),
+        ),
+        "ClickHouse Server Jepsen": TestConfig(
+            "binary_release",
+            job_config=JobConfig(
+                run_by_label="jepsen-test", run_command="jepsen_check.py server"
+            ),
+        ),
         "Performance Comparison": TestConfig(
             "package_release",
             job_config=JobConfig(num_batches=4, **perf_test_common_params),  # type: ignore

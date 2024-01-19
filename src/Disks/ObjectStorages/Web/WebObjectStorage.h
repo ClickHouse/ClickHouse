@@ -114,6 +114,7 @@ protected:
     {
         FileType type{};
         size_t size = 0;
+        bool loaded_children = false;
     };
 
     using Files = std::map<String, FileData>; /// file path -> file data
@@ -121,10 +122,11 @@ protected:
     mutable std::shared_mutex metadata_mutex;
 
     std::optional<FileData> tryGetFileInfo(const String & path) const;
+    std::vector<std::filesystem::path> listDirectory(const String & path) const;
     FileData getFileInfo(const String & path) const;
 
 private:
-    void initialize(const String & path, const std::unique_lock<std::shared_mutex> &) const;
+    std::vector<std::filesystem::path> loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const;
 
     const String url;
     Poco::Logger * log;

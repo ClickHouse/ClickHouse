@@ -974,13 +974,20 @@ jobs:
 #############################################################################################
 ###################################### JEPSEN TESTS #########################################
 #############################################################################################
+  # This is special test NOT INCLUDED in FinishCheck
+  # When it's skipped, all dependent tasks will be skipped too.
+  # DO NOT add it there
   Jepsen:
-    # This is special test NOT INCLUDED in FinishCheck
-    # When it's skipped, all dependent tasks will be skipped too.
-    # DO NOT add it there
-    if: ${{ !failure() && !cancelled() && contains(github.event.pull_request.labels.*.name, 'jepsen-test') }}
+    # we need concurrency as the job uses dedicated instances in the cloud
+    concurrency:
+      group: jepsen
+    if: ${{ !failure() && !cancelled() }}
     needs: [RunConfig, BuilderBinRelease]
-    uses: ./.github/workflows/jepsen.yml
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: ClickHouse Keeper Jepsen
+      runner_type: style-checker
+      data: ${{ needs.RunConfig.outputs.data }}
 #############################################################################################
 ####################################### libFuzzer ###########################################
 #############################################################################################

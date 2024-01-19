@@ -1390,7 +1390,7 @@ void Planner::buildPlanForQueryNode()
         }
     }
 
-    if (query_context->canUseTaskBasedParallelReplicas() || !settings.parallel_replicas_custom_key.value.empty())
+    if (!settings.parallel_replicas_custom_key.value.empty())
     {
         /// Check support for JOIN for parallel replicas with custom key
         if (planner_context->getTableExpressionNodeToData().size() > 1)
