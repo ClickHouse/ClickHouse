@@ -49,6 +49,9 @@ public:
         if (!first_argument_column_node)
             return;
 
+        if (first_argument_column_node->getColumnName() == "__grouping_set")
+            return;
+
         auto column_source = first_argument_column_node->getColumnSource();
         auto * table_node = column_source->as<TableNode>();
 

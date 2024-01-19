@@ -87,9 +87,9 @@ private:
                 return;
             finalized = true;
 
-            if (out_maybe_compressed)
-                out_maybe_compressed->finalize();
-            else if (out)
+            if (out_compressed_holder)
+                out_compressed_holder->finalize();
+            if (out)
                 out->finalize();
         }
 

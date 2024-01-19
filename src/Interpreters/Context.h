@@ -964,6 +964,8 @@ public:
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
+    void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
+
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
     /// --- Caches ------------------------------------------------------------------------------------------
