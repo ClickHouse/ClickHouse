@@ -156,7 +156,6 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         return;
     }
 
-    size_t prev_variant_size = variant_element_state->variant->size();
     addVariantToPath(settings.path);
     nested_serialization->deserializeBinaryBulkWithMultipleStreams(variant_element_state->variant, variant_limit, settings, variant_element_state->variant_element_state, cache);
     removeVariantFromPath(settings.path);
@@ -170,9 +169,6 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         mutable_column->insertManyDefaults(limit);
         return;
     }
-
-    if (variant_element_state->variant->size() != prev_variant_size + variant_limit)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected variant column size after deserialization. Expected {}, got {}", prev_variant_size + variant_limit, variant_element_state->variant->size());
 
     size_t variant_offset = variant_element_state->variant->size() - variant_limit;
 
