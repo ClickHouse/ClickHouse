@@ -7,6 +7,7 @@
 #include <optional>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/Context.h>
 
 using namespace Azure::Storage::Blobs;
 
@@ -157,7 +158,7 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
     }
 }
 
-std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /*context*/)
+std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
 {
     return std::make_unique<AzureObjectStorageSettings>(
         config.getUInt64(config_prefix + ".max_single_part_upload_size", 100 * 1024 * 1024),
@@ -165,7 +166,7 @@ std::unique_ptr<AzureObjectStorageSettings> getAzureBlobStorageSettings(const Po
         config.getInt(config_prefix + ".max_single_read_retries", 3),
         config.getInt(config_prefix + ".max_single_download_retries", 3),
         config.getInt(config_prefix + ".list_object_keys_size", 1000),
-        config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", 4)
+        config.getUInt64(config_prefix + ".max_unexpected_write_error_retries", context->getSettings().azure_max_unexpected_write_error_retries)
     );
 }
 
