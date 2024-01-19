@@ -82,6 +82,8 @@ class BuildConfig:
                     "./contrib/libmetrohash",
                     "./contrib/update-submodules.sh",
                     "./contrib/CMakeLists.txt",
+                    "./CMakeLists.txt",
+                    "./PreLoad.cmake",
                     "./cmake",
                     "./base",
                     "./programs",
@@ -133,19 +135,32 @@ install_check_digest = DigestConfig(
     include_paths=["./tests/ci/install_check.py"],
     docker=["clickhouse/install-deb-test", "clickhouse/install-rpm-test"],
 )
-statless_check_digest = DigestConfig(
-    include_paths=["./tests/queries/0_stateless/"],
+stateless_check_digest = DigestConfig(
+    include_paths=[
+        "./tests/queries/0_stateless/",
+        "./tests/clickhouse-test",
+        "./tests/*.txt",
+    ],
     exclude_files=[".md"],
     docker=["clickhouse/stateless-test"],
 )
 stateful_check_digest = DigestConfig(
-    include_paths=["./tests/queries/1_stateful/"],
+    include_paths=[
+        "./tests/queries/1_stateful/",
+        "./tests/clickhouse-test",
+        "./tests/*.txt",
+    ],
     exclude_files=[".md"],
     docker=["clickhouse/stateful-test"],
 )
-# FIXME: which tests are stresstest? stateless?
+
 stress_check_digest = DigestConfig(
-    include_paths=["./tests/queries/0_stateless/"],
+    include_paths=[
+        "./tests/queries/0_stateless/",
+        "./tests/queries/1_stateful/",
+        "./tests/clickhouse-test",
+        "./tests/*.txt",
+    ],
     exclude_files=[".md"],
     docker=["clickhouse/stress-test"],
 )
@@ -209,7 +224,7 @@ bugfix_validate_check = DigestConfig(
 )
 # common test params
 statless_test_common_params = {
-    "digest": statless_check_digest,
+    "digest": stateless_check_digest,
     "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
     "timeout": 10800,
 }
@@ -474,7 +489,7 @@ CI_CONFIG = CiConfig(
             compiler="clang-17",
             debug_build=True,
             package_type="deb",
-            sparse_checkout=True,
+            sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
         ),
         "binary_release": BuildConfig(
             name="binary_release",
@@ -495,7 +510,7 @@ CI_CONFIG = CiConfig(
             compiler="clang-17-darwin",
             package_type="binary",
             static_binary_name="macos",
-            sparse_checkout=True,
+            sparse_checkout=True,  # Check that it works with at least one build, see also update-submodules.sh
         ),
         "binary_aarch64": BuildConfig(
             name="binary_aarch64",

@@ -57,7 +57,7 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
             return Exception(ErrorCodes::BAD_ARGUMENTS, "Names of tuple elements cannot be empty");
 
         if (!names_set.insert(name).second)
-            return Exception(ErrorCodes::DUPLICATE_COLUMN, "Names of tuple elements must be unique");
+            return Exception(ErrorCodes::DUPLICATE_COLUMN, "Names of tuple elements must be unique. Duplicate name: {}", name);
     }
 
     return {};
