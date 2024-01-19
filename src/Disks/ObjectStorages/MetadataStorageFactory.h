@@ -16,7 +16,7 @@ public:
 
     static MetadataStorageFactory & instance();
 
-    void registerMetadataStorageType(const std::string & type_str, Creator creator);
+    void registerMetadataStorageType(const std::string & metadata_type, Creator creator);
 
     MetadataStoragePtr create(
         const std::string & name,
