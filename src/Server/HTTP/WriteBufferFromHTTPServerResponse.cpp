@@ -1,4 +1,3 @@
-#include "Common/StackTrace.h"
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>

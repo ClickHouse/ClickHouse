@@ -295,7 +295,10 @@ public:
 
     static Configuration getConfiguration(ASTs & args, ContextPtr context);
 
-    static ASTs::iterator collectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, ContextPtr context);
+    /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
+    /// If `headers(...)` argument is present, parses it and moves it to the end of the array.
+    /// Returns number of arguments excluding `headers(...)`.
+    static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, ContextPtr context);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 };
