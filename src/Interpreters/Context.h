@@ -1246,6 +1246,7 @@ public:
     bool canUseTaskBasedParallelReplicas() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
+    bool canUseParallelReplicasCustomKey(const Cluster & cluster) const;
 
     enum class ParallelReplicasMode : uint8_t
     {
