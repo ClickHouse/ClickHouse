@@ -90,36 +90,92 @@ struct L2Distance
         size_t & i_y,
         State<ResultType> & state)
     {
-        __m512 sums;
-        if constexpr (std::is_same_v<ResultType, Float32>)
-            sums = _mm512_setzero_ps();
-        else
-            sums = _mm512_setzero_pd();
+        __m512 sums1;
+        __m512 sums2;
+        __m512 sums3;
+        __m512 sums4;
 
-        const size_t n = (std::is_same_v<ResultType, Float32>) ? 16 : 8;
+        if constexpr (std::is_same_v<ResultType, Float32>)
+        {
+            sums1 = _mm512_setzero_ps();
+            sums2 = _mm512_setzero_ps();
+            sums3 = _mm512_setzero_ps();
+            sums4 = _mm512_setzero_ps();
+        }
+        else
+        {
+            sums1 = _mm512_setzero_pd();
+            sums2 = _mm512_setzero_pd();
+            sums3 = _mm512_setzero_pd();
+            sums4 = _mm512_setzero_pd();
+        }
+
+        const size_t n = (std::is_same_v<ResultType, Float32>) ? 64 : 32;
 
         for (; i_x + n < i_max; i_x += n, i_y += n)
         {
             if constexpr (std::is_same_v<ResultType, Float32>)
             {
-                __m512 x = _mm512_loadu_ps(data_x + i_x);
-                __m512 y = _mm512_loadu_ps(data_y + i_y);
-                __m512 differences = _mm512_sub_ps(x, y);
-                sums = _mm512_fmadd_ps(differences, differences, sums);
+                __m512 x1 = _mm512_loadu_ps(data_x + i_x);
+                __m512 y1 = _mm512_loadu_ps(data_y + i_y);
+                __m512 diff1 = _mm512_sub_ps(x1, y1);
+                sums1 = _mm512_fmadd_ps(diff1, diff1, sums1);
+
+                __m512 x2 = _mm512_loadu_ps(data_x + i_x + 16);
+                __m512 y2 = _mm512_loadu_ps(data_y + i_y + 16);
+                __m512 diff2 = _mm512_sub_ps(x2, y2);
+                sums2 = _mm512_fmadd_ps(diff2, diff2, sums2);
+
+                __m512 x3 = _mm512_loadu_ps(data_x + i_x + 32);
+                __m512 y3 = _mm512_loadu_ps(data_y + i_y + 32);
+                __m512 diff3 = _mm512_sub_ps(x3, y3);
+                sums3 = _mm512_fmadd_ps(diff3, diff3, sums3);
+
+                __m512 x4 = _mm512_loadu_ps(data_x + i_x + 48);
+                __m512 y4 = _mm512_loadu_ps(data_y + i_y + 48);
+                __m512 diff4 = _mm512_sub_ps(x4, y4);
+                sums4 = _mm512_fmadd_ps(diff4, diff4, sums4);
             }
             else
             {
-                __m512 x = _mm512_loadu_pd(data_x + i_x);
-                __m512 y = _mm512_loadu_pd(data_y + i_y);
-                __m512 differences = _mm512_sub_pd(x, y);
-                sums = _mm512_fmadd_pd(differences, differences, sums);
+                __m512 x1 = _mm512_loadu_pd(data_x + i_x);
+                __m512 y1 = _mm512_loadu_pd(data_y + i_y);
+                __m512 diff1 = _mm512_sub_pd(x1, y1);
+                sums1 = _mm512_fmadd_pd(diff1, diff1, sums1);
+
+                __m512 x2 = _mm512_loadu_pd(data_x + i_x + 8);
+                __m512 y2 = _mm512_loadu_pd(data_y + i_y + 8);
+                __m512 diff2 = _mm512_sub_pd(x2, y2);
+                sums2 = _mm512_fmadd_pd(diff2, diff2, sums2);
+
+                __m512 x3 = _mm512_loadu_pd(data_x + i_x + 16);
+                __m512 y3 = _mm512_loadu_pd(data_y + i_y + 16);
+                __m512 diff3 = _mm512_sub_pd(x3, y3);
+                sums3 = _mm512_fmadd_pd(diff3, diff3, sums3);
+
+                __m512 x4 = _mm512_loadu_pd(data_x + i_x + 24);
+                __m512 y4 = _mm512_loadu_pd(data_y + i_y + 24);
+                __m512 diff4 = _mm512_sub_pd(x4, y4);
+                sums4 = _mm512_fmadd_pd(diff4, diff4, sums4);
             }
         }
 
         if constexpr (std::is_same_v<ResultType, Float32>)
-            state.sum = _mm512_reduce_add_ps(sums);
+        {
+            Float32 sum1 = _mm512_reduce_add_ps(sums1);
+            Float32 sum2 = _mm512_reduce_add_ps(sums2);
+            Float32 sum3 = _mm512_reduce_add_ps(sums3);
+            Float32 sum4 = _mm512_reduce_add_ps(sums4);
+            state.sum = sum1 + sum2 + sum3 + sum4;
+        }
         else
-            state.sum = _mm512_reduce_add_pd(sums);
+        {
+            Float64 sum1 = _mm512_reduce_add_pd(sums1);
+            Float64 sum2 = _mm512_reduce_add_pd(sums2);
+            Float64 sum3 = _mm512_reduce_add_pd(sums3);
+            Float64 sum4 = _mm512_reduce_add_pd(sums4);
+            state.sum = sum1 + sum2 + sum3 + sum4;
+        }
     }
 #endif
 
