@@ -2894,7 +2894,7 @@ def parse_args():
     parser.add_argument(
         "--reset-coverage-before-every-test",
         action="store_true",
-        default=False,
+        default=True,
         help="Collect isolated test coverage for every test instead of a cumulative. Useful only when tests are run sequentially.",
     )
     parser.add_argument(
