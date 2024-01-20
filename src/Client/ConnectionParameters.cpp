@@ -23,16 +23,25 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, const std::string & connection_host)
+{
+    if (config.getBool("secure", false))
+        return true;
+
+    if (config.getBool("no-secure", false))
+        return false;
+
+    bool is_clickhouse_cloud = connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com");
+    return is_clickhouse_cloud;
+}
+
 ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config,
                                            std::string connection_host,
                                            std::optional<UInt16> connection_port)
     : host(connection_host)
     , port(connection_port.value_or(getPortFromConfig(config, connection_host)))
 {
-    bool is_secure = config.getBool("secure", false);
-    bool is_clickhouse_cloud = connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com");
-    bool force_secure = !config.getBool("no-secure", false);
-    security = (is_secure || (is_clickhouse_cloud && force_secure)) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    security = enableSecureConnection(config, connection_host) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
 
     default_database = config.getString("database", "");
 
@@ -123,10 +132,9 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfiguration & config,
                                                std::string connection_host)
 {
-    bool is_secure = config.getBool("secure", false);
-    bool is_clickhouse_cloud = connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com");
+    bool is_secure = enableSecureConnection(config, connection_host);
     return config.getInt("port",
-        config.getInt(is_secure || is_clickhouse_cloud ? "tcp_port_secure" : "tcp_port",
-            is_secure || is_clickhouse_cloud ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
+        config.getInt(is_secure ? "tcp_port_secure" : "tcp_port",
+            is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 }
 }
