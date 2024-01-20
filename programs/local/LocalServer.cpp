@@ -290,6 +290,11 @@ void LocalServer::cleanup()
     {
         connection.reset();
 
+        /// Suggestions are loaded async in a separate thread and it can use global context.
+        /// We should reset it before resetting global_context.
+        if (suggest)
+            suggest.reset();
+
         if (global_context)
         {
             global_context->shutdown();

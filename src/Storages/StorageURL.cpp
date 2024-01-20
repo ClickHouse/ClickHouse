@@ -1324,7 +1324,7 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     return format_settings;
 }
 
-ASTs::iterator StorageURL::collectHeaders(
+size_t StorageURL::evalArgsAndCollectHeaders(
     ASTs & url_function_args, HTTPHeaderEntries & header_entries, ContextPtr context)
 {
     ASTs::iterator headers_it = url_function_args.end();
@@ -1382,7 +1382,11 @@ ASTs::iterator StorageURL::collectHeaders(
         (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
     }
 
-    return headers_it;
+    if (headers_it == url_function_args.end())
+        return url_function_args.size();
+
+    std::rotate(headers_it, std::next(headers_it), url_function_args.end());
+    return url_function_args.size() - 1;
 }
 
 void StorageURL::processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection)
@@ -1412,21 +1416,19 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, ContextPtr l
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
-        collectHeaders(args, configuration.headers, local_context);
+        evalArgsAndCollectHeaders(args, configuration.headers, local_context);
     }
     else
     {
-        if (args.empty() || args.size() > 3)
+        size_t count = evalArgsAndCollectHeaders(args, configuration.headers, local_context);
+
+        if (count == 0 || count > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, bad_arguments_error_message);
 
-        auto * header_it = collectHeaders(args, configuration.headers, local_context);
-        if (header_it != args.end())
-            args.erase(header_it);
-
         configuration.url = checkAndGetLiteralArgument<String>(args[0], "url");
-        if (args.size() > 1)
+        if (count > 1)
             configuration.format = checkAndGetLiteralArgument<String>(args[1], "format");
-        if (args.size() == 3)
+        if (count == 3)
             configuration.compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
 

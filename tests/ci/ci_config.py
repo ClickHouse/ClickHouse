@@ -91,6 +91,8 @@ class BuildConfig:
                     "./contrib/libmetrohash",
                     "./contrib/update-submodules.sh",
                     "./contrib/CMakeLists.txt",
+                    "./CMakeLists.txt",
+                    "./PreLoad.cmake",
                     "./cmake",
                     "./base",
                     "./programs",
@@ -142,19 +144,32 @@ install_check_digest = DigestConfig(
     include_paths=["./tests/ci/install_check.py"],
     docker=["clickhouse/install-deb-test", "clickhouse/install-rpm-test"],
 )
-statless_check_digest = DigestConfig(
-    include_paths=["./tests/queries/0_stateless/"],
+stateless_check_digest = DigestConfig(
+    include_paths=[
+        "./tests/queries/0_stateless/",
+        "./tests/clickhouse-test",
+        "./tests/*.txt",
+    ],
     exclude_files=[".md"],
     docker=["clickhouse/stateless-test"],
 )
 stateful_check_digest = DigestConfig(
-    include_paths=["./tests/queries/1_stateful/"],
+    include_paths=[
+        "./tests/queries/1_stateful/",
+        "./tests/clickhouse-test",
+        "./tests/*.txt",
+    ],
     exclude_files=[".md"],
     docker=["clickhouse/stateful-test"],
 )
-# FIXME: which tests are stresstest? stateless?
+
 stress_check_digest = DigestConfig(
-    include_paths=["./tests/queries/0_stateless/"],
+    include_paths=[
+        "./tests/queries/0_stateless/",
+        "./tests/queries/1_stateful/",
+        "./tests/clickhouse-test",
+        "./tests/*.txt",
+    ],
     exclude_files=[".md"],
     docker=["clickhouse/stress-test"],
 )
@@ -218,7 +233,7 @@ bugfix_validate_check = DigestConfig(
 )
 # common test params
 statless_test_common_params = {
-    "digest": statless_check_digest,
+    "digest": stateless_check_digest,
     "run_command": 'functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT',
     "timeout": 10800,
 }
