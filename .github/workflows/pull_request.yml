@@ -761,12 +761,44 @@ jobs:
       test_name: Integration tests (asan, analyzer)
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
+  IntegrationTestsAnalyzerAsan1:
+    needs: [RunConfig, BuilderDebAsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Integration tests 1 (asan, analyzer)
+      runner_type: stress-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  IntegrationTestsAnalyzerAsan2:
+    needs: [RunConfig, BuilderDebAsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Integration tests 2 (asan, analyzer)
+      runner_type: stress-tester
+      data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsTsan:
     needs: [RunConfig, BuilderDebTsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (tsan)
+      runner_type: stress-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  IntegrationTestsTsan1:
+    needs: [RunConfig, BuilderDebTsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Integration tests 1 (tsan)
+      runner_type: stress-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  IntegrationTestsTsan2:
+    needs: [RunConfig, BuilderDebTsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Integration tests 2 (tsan)
       runner_type: stress-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsRelease:
