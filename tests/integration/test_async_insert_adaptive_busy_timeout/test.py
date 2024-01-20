@@ -199,7 +199,7 @@ def test_compare_sequential_inserts_durations_for_adaptive_and_fixed_async_timeo
     )
 
     fixed_tm_settings = copy.copy(_query_settings)
-    fixed_tm_settings["allow_experimental_async_insert_adaptive_busy_timeout"] = 0
+    fixed_tm_settings["async_insert_use_adaptive_busy_timeout"] = 0
     fixed_tm_settings["async_insert_busy_timeout_ms"] = 200
 
     fixed_tm_run_duration = timeit.timeit(
@@ -267,7 +267,7 @@ def test_compare_parallel_inserts_durations_for_adaptive_and_fixed_async_timeout
     )
 
     fixed_tm_settings = copy.copy(_query_settings)
-    fixed_tm_settings["allow_experimental_async_insert_adaptive_busy_timeout"] = 0
+    fixed_tm_settings["async_insert_use_adaptive_busy_timeout"] = 0
     fixed_tm_settings["async_insert_busy_timeout_ms"] = 200
 
     fixed_tm_run_duration = timeit.timeit(

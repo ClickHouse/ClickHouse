@@ -10,6 +10,7 @@
 #include <Processors/Chunk.h>
 
 #include <future>
+#include <shared_mutex>
 #include <variant>
 
 namespace DB
@@ -186,6 +187,8 @@ private:
     using QueueIterator = Queue::iterator;
     using QueueIteratorByKey = std::unordered_map<UInt128, QueueIterator>;
 
+    using OptionalTimePoint = std::optional<std::chrono::steady_clock::time_point>;
+
     struct QueueShard
     {
         mutable std::mutex mutex;
@@ -194,16 +197,29 @@ private:
         Queue queue;
         QueueIteratorByKey iterators;
 
-        using OptionalTimePoint = std::optional<std::chrono::steady_clock::time_point>;
         OptionalTimePoint last_insert_time;
-
         std::chrono::milliseconds busy_timeout_ms;
+    };
+
+    /// Times of the two most recent queue flushes.
+    /// Used to calculate adaptive timeout.
+    struct QueueShardFlushTimeHistory
+    {
+    public:
+        using TimePoints = std::pair<OptionalTimePoint, OptionalTimePoint>;
+        TimePoints getRecentTimePoints() const;
+        void updateWithCurrentTime();
+
+    private:
+        mutable std::shared_mutex mutex;
+        TimePoints time_points;
     };
 
     const size_t pool_size;
     const bool flush_on_shutdown;
 
     std::vector<QueueShard> queue_shards;
+    std::vector<QueueShardFlushTimeHistory> flush_time_history_per_queue_shard;
 
     /// Logic and events behind queue are as follows:
     ///  - async_insert_busy_timeout_ms:
@@ -231,16 +247,18 @@ private:
 
     Milliseconds getBusyWaitTimeoutMs(
         const Settings & settings,
-        const AsynchronousInsertQueue::QueueShard & shard,
+        const QueueShard & shard,
         size_t shard_num,
+        const QueueShardFlushTimeHistory::TimePoints & flush_time_points,
         std::chrono::steady_clock::time_point now) const;
 
     void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
 
     void processBatchDeadlines(size_t shard_num);
-    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
+    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num);
 
-    static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
+    static void processData(
+        InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(
