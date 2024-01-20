@@ -413,6 +413,8 @@ def test_broken_projections_in_backups(cluster):
     table_name = "test4"
     create_table(node, table_name, 1)
 
+    node.qeury("SYSTEM STOP MERGES")
+
     insert(node, table_name, 0, 5)
     insert(node, table_name, 5, 5)
     insert(node, table_name, 10, 5)
@@ -557,3 +559,4 @@ def test_broken_projections_in_backups(cluster):
     assert "all_1_1_0\tproj\tNO_FILE_IN_DATA_PART" == get_broken_projections_info(
         node, table_name
     )
+    node.qeury("SYSTEM START MERGES")
