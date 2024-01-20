@@ -49,6 +49,9 @@ public:
         if (!first_argument_column_node)
             return;
 
+        if (first_argument_column_node->getColumnName() == "__grouping_set")
+            return;
+
         auto column_source = first_argument_column_node->getColumnSource();
         auto * table_node = column_source->as<TableNode>();
 
@@ -72,6 +75,7 @@ public:
                 {
                     /// Replace `length(array_argument)` with `array_argument.size0`
                     column.name += ".size0";
+                    column.type = std::make_shared<DataTypeUInt64>();
 
                     node = std::make_shared<ColumnNode>(column, column_source);
                 }
@@ -106,6 +110,7 @@ public:
                 {
                     /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
                     column.name += ".null";
+                    column.type = std::make_shared<DataTypeUInt8>();
 
                     node = std::make_shared<ColumnNode>(column, column_source);
                 }

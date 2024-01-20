@@ -29,6 +29,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/NaNUtils.h>
+#include <Common/typeid_cast.h>
 
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
@@ -36,6 +37,7 @@
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 
 #ifdef __clang__
 #pragma clang diagnostic push
@@ -1404,6 +1406,12 @@ struct PcgSerializer
 void writePointerHex(const void * ptr, WriteBuffer & buf);
 
 String fourSpaceIndent(size_t indent);
+
+bool inline isWritingToTerminal(const WriteBuffer & buf)
+{
+    const auto * write_buffer_to_descriptor = typeid_cast<const WriteBufferFromFileDescriptor *>(&buf);
+    return write_buffer_to_descriptor && write_buffer_to_descriptor->getFD() == STDOUT_FILENO && isatty(STDOUT_FILENO);
+}
 
 }
 

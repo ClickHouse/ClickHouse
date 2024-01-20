@@ -1,6 +1,5 @@
 #include "CachedObjectStorage.h"
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
@@ -28,13 +27,6 @@ CachedObjectStorage::CachedObjectStorage(
     , log(&Poco::Logger::get(getName()))
 {
     cache->initialize();
-}
-
-DataSourceDescription CachedObjectStorage::getDataSourceDescription() const
-{
-    auto wrapped_object_storage_data_source = object_storage->getDataSourceDescription();
-    wrapped_object_storage_data_source.is_cached = true;
-    return wrapped_object_storage_data_source;
 }
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
@@ -114,6 +106,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             key,
             CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             modified_write_settings,
+            FileCache::getCommonUser(),
             Context::getGlobalContextInstance()->getFilesystemCacheLog());
     }
 
@@ -126,7 +119,7 @@ void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_c
         return;
 
     /// Add try catch?
-    cache->removeKeyIfExists(getCacheKey(path_key_for_cache));
+    cache->removeKeyIfExists(getCacheKey(path_key_for_cache), FileCache::getCommonUser().user_id);
 }
 
 void CachedObjectStorage::removeObject(const StoredObject & object)

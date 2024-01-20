@@ -58,6 +58,7 @@ jobs:
       - name: Apply sparse checkout for contrib # in order to check that it doesn't break build
         # This step is done in GITHUB_WORKSPACE,
         # because it's broken in REPO_COPY for some reason
+        # See also update-submodules.sh
         if: ${{ env.BUILD_SPARSE_CHECKOUT == 'true' }}
         run: |
           rm -rf "$GITHUB_WORKSPACE/contrib" && echo 'removed'
