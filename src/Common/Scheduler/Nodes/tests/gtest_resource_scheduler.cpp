@@ -73,7 +73,7 @@ struct ResourceHolder
     }
 };
 
-TEST(IOSchedulerRoot, Smoke)
+TEST(SchedulerRoot, Smoke)
 {
     ResourceTest t;
 

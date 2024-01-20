@@ -12,7 +12,7 @@ using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
-TEST(IOResourceThrottlerConstraint, LeakyBucketConstraint)
+TEST(SchedulerThrottlerConstraint, LeakyBucketConstraint)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -42,7 +42,7 @@ TEST(IOResourceThrottlerConstraint, LeakyBucketConstraint)
     t.consumed("A", 10);
 }
 
-TEST(IOResourceThrottlerConstraint, Unlimited)
+TEST(SchedulerThrottlerConstraint, Unlimited)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -59,7 +59,7 @@ TEST(IOResourceThrottlerConstraint, Unlimited)
     }
 }
 
-TEST(IOResourceThrottlerConstraint, Pacing)
+TEST(SchedulerThrottlerConstraint, Pacing)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -79,7 +79,7 @@ TEST(IOResourceThrottlerConstraint, Pacing)
     }
 }
 
-TEST(IOResourceThrottlerConstraint, BucketFilling)
+TEST(SchedulerThrottlerConstraint, BucketFilling)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -113,7 +113,7 @@ TEST(IOResourceThrottlerConstraint, BucketFilling)
     t.consumed("A", 3);
 }
 
-TEST(IOResourceThrottlerConstraint, PeekAndAvgLimits)
+TEST(SchedulerThrottlerConstraint, PeekAndAvgLimits)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();
@@ -141,7 +141,7 @@ TEST(IOResourceThrottlerConstraint, PeekAndAvgLimits)
     }
 }
 
-TEST(IOResourceThrottlerConstraint, ThrottlerAndFairness)
+TEST(SchedulerThrottlerConstraint, ThrottlerAndFairness)
 {
     ResourceTest t;
     EventQueue::TimePoint start = std::chrono::system_clock::now();

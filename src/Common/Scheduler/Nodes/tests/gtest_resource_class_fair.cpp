@@ -8,7 +8,7 @@ using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
-TEST(IOResourceFairPolicy, Factory)
+TEST(SchedulerFairPolicy, Factory)
 {
     ResourceTest t;
 
@@ -17,7 +17,7 @@ TEST(IOResourceFairPolicy, Factory)
     EXPECT_TRUE(dynamic_cast<FairPolicy *>(fair.get()) != nullptr);
 }
 
-TEST(IOResourceFairPolicy, FairnessWeights)
+TEST(SchedulerFairPolicy, FairnessWeights)
 {
     ResourceTest t;
 
@@ -41,7 +41,7 @@ TEST(IOResourceFairPolicy, FairnessWeights)
     t.consumed("B", 20);
 }
 
-TEST(IOResourceFairPolicy, Activation)
+TEST(SchedulerFairPolicy, Activation)
 {
     ResourceTest t;
 
@@ -77,7 +77,7 @@ TEST(IOResourceFairPolicy, Activation)
     t.consumed("B", 10);
 }
 
-TEST(IOResourceFairPolicy, FairnessMaxMin)
+TEST(SchedulerFairPolicy, FairnessMaxMin)
 {
     ResourceTest t;
 
@@ -101,7 +101,7 @@ TEST(IOResourceFairPolicy, FairnessMaxMin)
     t.consumed("A", 20);
 }
 
-TEST(IOResourceFairPolicy, HierarchicalFairness)
+TEST(SchedulerFairPolicy, HierarchicalFairness)
 {
     ResourceTest t;
 

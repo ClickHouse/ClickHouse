@@ -8,7 +8,7 @@ using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
-TEST(IOResourcePriorityPolicy, Factory)
+TEST(SchedulerPriorityPolicy, Factory)
 {
     ResourceTest t;
 
@@ -17,7 +17,7 @@ TEST(IOResourcePriorityPolicy, Factory)
     EXPECT_TRUE(dynamic_cast<PriorityPolicy *>(prio.get()) != nullptr);
 }
 
-TEST(IOResourcePriorityPolicy, Priorities)
+TEST(SchedulerPriorityPolicy, Priorities)
 {
     ResourceTest t;
 
@@ -51,7 +51,7 @@ TEST(IOResourcePriorityPolicy, Priorities)
     t.consumed("C", 0);
 }
 
-TEST(IOResourcePriorityPolicy, Activation)
+TEST(SchedulerPriorityPolicy, Activation)
 {
     ResourceTest t;
 
@@ -92,7 +92,7 @@ TEST(IOResourcePriorityPolicy, Activation)
     t.consumed("C", 0);
 }
 
-TEST(IOResourcePriorityPolicy, SinglePriority)
+TEST(SchedulerPriorityPolicy, SinglePriority)
 {
     ResourceTest t;
 

@@ -10,7 +10,7 @@ using namespace DB;
 using ResourceTest = ResourceTestManager<DynamicResourceManager>;
 using TestGuard = ResourceTest::Guard;
 
-TEST(IOResourceDynamicResourceManager, Smoke)
+TEST(SchedulerDynamicResourceManager, Smoke)
 {
     ResourceTest t;
 
@@ -45,7 +45,7 @@ TEST(IOResourceDynamicResourceManager, Smoke)
     }
 }
 
-TEST(IOResourceDynamicResourceManager, Fairness)
+TEST(SchedulerDynamicResourceManager, Fairness)
 {
     // Total cost for A and B cannot differ for more than 1 (every request has cost equal to 1).
     // Requests from A use `value = 1` and from B `value = -1` is used.

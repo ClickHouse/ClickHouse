@@ -10,7 +10,7 @@ using namespace DB;
 using ResourceTest = ResourceTestManager<StaticResourceManager>;
 using TestGuard = ResourceTest::Guard;
 
-TEST(IOResourceStaticResourceManager, Smoke)
+TEST(SchedulerStaticResourceManager, Smoke)
 {
     ResourceTest t;
 
@@ -42,7 +42,7 @@ TEST(IOResourceStaticResourceManager, Smoke)
     }
 }
 
-TEST(IOResourceStaticResourceManager, Prioritization)
+TEST(SchedulerStaticResourceManager, Prioritization)
 {
     std::optional<Priority> last_priority;
     auto check = [&] (Priority priority)
