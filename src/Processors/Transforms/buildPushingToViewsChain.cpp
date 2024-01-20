@@ -482,24 +482,20 @@ Chain buildPushingToViewsChain(
     /// Do not push to destination table if the flag is set
     else if (!no_destination)
     {
-        auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert);
-        metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
-        sink->setRuntimeData(thread_status, elapsed_counter_ms);
-        result_chain.addSource(std::move(sink));
+        auto sink_to_storage = storage->write(query_ptr, metadata_snapshot, context, async_insert);
+        metadata_snapshot->check(sink_to_storage->getHeader().getColumnsWithTypeAndName());
+        sink_to_storage->setRuntimeData(thread_status, elapsed_counter_ms);
 
         if (context->getSettingsRef().allow_experimental_streaming)
         {
+            // -> [sink-to-storage] -> [to-subscribers-chain] ->
             auto to_subscribers_chain = storage->toSubscribersWrite(metadata_snapshot, context);
+            to_subscribers_chain.addSource(std::move(sink_to_storage));
 
-            if (!blocksHaveEqualStructure(result_chain.getOutputHeader(), to_subscribers_chain.getInputHeader()))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Headers for write and toSubscribersWrite does not match, write header: {}, toSubscribersWrite header: {}",
-                    result_chain.getOutputHeader().dumpStructure(),
-                    to_subscribers_chain.getInputHeader().dumpStructure());
-
-            result_chain.appendChain(std::move(to_subscribers_chain));
-        }
+            // -> [sink-to-storage] -> [to-subscribers-chain] -> [views...] ->
+            result_chain = Chain::concat(std::move(to_subscribers_chain), std::move(result_chain));
+        } else
+            result_chain.addSource(std::move(sink_to_storage));
     }
 
     /// TODO: add pushing to live view
