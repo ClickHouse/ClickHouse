@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
+#include <Common/formatReadable.h>
 #include <Common/ProfileEvents.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypeArray.h>
@@ -473,8 +474,6 @@ GinIndexStoreFactory::GinIndexStoreFactory(Poco::Logger * log_)
         std::make_unique<PerUserTTLCachePolicyUserQuota>()))
     , log(log_)
 { }
-
-const String GinIndexStoreFactory::CacheKey::user_name;
 
 GinIndexStoreFactory & GinIndexStoreFactory::instance()
 {

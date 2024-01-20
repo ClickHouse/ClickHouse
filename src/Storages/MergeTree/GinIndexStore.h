@@ -309,7 +309,7 @@ public:
     {
         const String key;
         const std::chrono::time_point<std::chrono::system_clock> expires_at;
-        static const String user_name; // required by TTLCachePolicy, leave it empty.
+        static const std::optional<UUID> user_id; // required by TTLCachePolicy, leave it empty.
 
         bool operator==(const CacheKey & other) const { return key == other.key; }
 
