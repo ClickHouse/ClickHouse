@@ -475,6 +475,8 @@ GinIndexStoreFactory::GinIndexStoreFactory(Poco::Logger * log_)
     , log(log_)
 { }
 
+const std::optional<UUID> GinIndexStoreFactory::CacheKey::user_id;
+
 GinIndexStoreFactory & GinIndexStoreFactory::instance()
 {
     static GinIndexStoreFactory instance(&Poco::Logger::get("GinIndexStoreFactory"));
