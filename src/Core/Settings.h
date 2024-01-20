@@ -26,9 +26,8 @@ class IColumn;
   * `flags` can be either 0 or IMPORTANT.
   * A setting is "IMPORTANT" if it affects the results of queries and can't be ignored by older versions.
   *
-  * When adding new settings that control some backward incompatible changes or when changing some settings values,
-  * consider adding them to settings changes history in SettingsChangesHistory.h for special `compatibility` setting
-  * to work correctly.
+  * When adding new or changing existing settings add them to settings changes history in SettingsChangesHistory.h
+  * for tracking settings changes in different versions and for special `compatibility` setting to work correctly.
   */
 
 #define COMMON_SETTINGS(M, ALIAS) \
