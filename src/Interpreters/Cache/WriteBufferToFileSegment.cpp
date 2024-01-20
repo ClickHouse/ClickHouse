@@ -58,8 +58,8 @@ void WriteBufferToFileSegment::nextImpl()
             reserve_stat_msg += fmt::format("{} hold {}, can release {}; ",
                 toString(kind), ReadableSize(stat.non_releasable_size), ReadableSize(stat.releasable_size));
 
-        if (std::filesystem::exists(file_segment->getPathInLocalCache()))
-            std::filesystem::remove(file_segment->getPathInLocalCache());
+        if (std::filesystem::exists(file_segment->getPath()))
+            std::filesystem::remove(file_segment->getPath());
 
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: {}(segment info: {})",
             bytes_to_write,

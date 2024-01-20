@@ -347,7 +347,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         assertNotDetachedUnlocked(lock);
     }
 
-    const auto file_segment_path = getPathInLocalCache();
+    const auto file_segment_path = getPath();
 
     {
         if (download_state != State::DOWNLOADING)
@@ -816,7 +816,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         chassert(entry->offset == offset());
     };
 
-    const auto file_path = getPathInLocalCache();
+    const auto file_path = getPath();
     if (segment_kind != FileSegmentKind::Temporary)
     {
         std::lock_guard lk(write_mutex);
