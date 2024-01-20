@@ -56,23 +56,38 @@ public:
     /// Takes already set connection.
     RemoteQueryExecutor(
         Connection & connection,
-        const String & query_, const Block & header_, ContextPtr context_,
-        ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        ThrottlerPtr throttler_ = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
         std::shared_ptr<Connection> connection,
-        const String & query_, const Block & header_, ContextPtr context_,
-        ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        ThrottlerPtr throttler_ = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt);
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
-        std::vector<IConnectionPool::Entry> && connections_,
-        const String & query_, const Block & header_, ContextPtr context_,
-        const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
+        std::vector<IConnectionPool::Entry> connections_,
+        const String & query_,
+        const Block & header_,
+        ContextPtr context_,
+        const ThrottlerPtr & throttler = nullptr,
+        const Scalars & scalars_ = Scalars(),
+        const Tables & external_tables_ = Tables(),
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
+        std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
@@ -193,8 +208,6 @@ public:
     IConnections & getConnections() { return *connections; }
 
     bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
-
-    bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
 private:
     RemoteQueryExecutor(

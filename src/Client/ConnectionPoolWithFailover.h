@@ -58,7 +58,6 @@ public:
         const ConnectionTimeouts & timeouts,
         const Settings & settings,
         PoolMode pool_mode,
-        AsyncCallback async_callback = {},
         std::optional<bool> skip_unavailable_endpoints = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
 

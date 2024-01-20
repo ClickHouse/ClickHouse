@@ -8,8 +8,7 @@ SELECT count() FROM test_parallel_replicas_unavailable_shards WHERE NOT ignore(*
 
 SYSTEM FLUSH LOGS;
 SET allow_experimental_parallel_reading_from_replicas=0;
--- DO NOT MERGE - just to pass fast test check, - need to change test
-SELECT ProfileEvents['ParallelReplicasUsedCount'] > 0 FROM system.query_log WHERE yesterday() <= event_date AND
-    query_id in (select query_id from system.query_log where current_database = currentDatabase() AND log_comment='02769_c4589ffa-f6df-4ae9-83b6-214105d1927e') and type = 'QueryFinish';
+SELECT ProfileEvents['DistributedConnectionFailTry'] > 1 FROM system.query_log WHERE yesterday() <= event_date AND
+    query_id in (select query_id from system.query_log where current_database = currentDatabase() AND log_comment='02769_c4589ffa-f6df-4ae9-83b6-214105d1927e') and query_id = initial_query_id and type = 'QueryFinish';
 
 DROP TABLE test_parallel_replicas_unavailable_shards;

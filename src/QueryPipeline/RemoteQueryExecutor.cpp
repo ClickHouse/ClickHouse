@@ -64,9 +64,14 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
-    const String & query_, const Block & header_, ContextPtr context_,
-    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
+    const String & query_,
+    const Block & header_,
+    ContextPtr context_,
+    ThrottlerPtr throttler,
+    const Scalars & scalars_,
+    const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_,
+    std::optional<Extension> extension_)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
 {
     create_connections = [this, &connection, throttler, extension_](AsyncCallback)
@@ -80,9 +85,14 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::shared_ptr<Connection> connection_ptr,
-    const String & query_, const Block & header_, ContextPtr context_,
-    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
+    const String & query_,
+    const Block & header_,
+    ContextPtr context_,
+    ThrottlerPtr throttler,
+    const Scalars & scalars_,
+    const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_,
+    std::optional<Extension> extension_)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
 {
     create_connections = [this, connection_ptr, throttler, extension_](AsyncCallback)
@@ -95,13 +105,19 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    std::vector<IConnectionPool::Entry> && connections_,
-    const String & query_, const Block & header_, ContextPtr context_,
-    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
+    std::vector<IConnectionPool::Entry> connections_,
+    const String & query_,
+    const Block & header_,
+    ContextPtr context_,
+    const ThrottlerPtr & throttler,
+    const Scalars & scalars_,
+    const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_,
+    std::optional<Extension> extension_)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
 {
-    create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable {
+    create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable
+    {
         auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
         if (extension_ && extension_->replica_info)
             res->setReplicaInfo(*extension_->replica_info);
@@ -164,7 +180,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         else
         {
             connection_entries = pool->getMany(
-                timeouts, current_settings, pool_mode, std::move(async_callback), skip_unavailable_endpoints, priority_func);
+                timeouts, current_settings, pool_mode, skip_unavailable_endpoints, priority_func);
         }
 
         auto res = std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
@@ -265,21 +281,16 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     connections = create_connections(async_callback);
     AsyncCallbackSetter async_callback_setter(connections.get(), async_callback);
 
+    if (extension && extension->parallel_reading_coordinator)
+        chassert(connections->size() == 1);
+
     const auto & settings = context->getSettingsRef();
-    if (isReplicaUnavailable() || needToSkipUnavailableShard())
+    if (needToSkipUnavailableShard())
     {
         /// To avoid sending the query again in the read(), we need to update the following flags:
         was_cancelled = true;
         finished = true;
         sent_query = true;
-
-        /// We need to tell the coordinator not to wait for this replica.
-        if (extension && extension->parallel_reading_coordinator)
-        {
-            chassert(extension->replica_info);
-            extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
-        }
-
         return;
     }
 
@@ -392,17 +403,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 
         read_context->resume();
 
-        if (isReplicaUnavailable() || needToSkipUnavailableShard())
+        if (needToSkipUnavailableShard())
         {
-            /// We need to tell the coordinator not to wait for this replica.
-            /// But at this point it may lead to an incomplete result set, because
-            /// this replica committed to read some part of there data and then died.
-            if (extension && extension->parallel_reading_coordinator)
-            {
-                chassert(extension->parallel_reading_coordinator);
-                extension->parallel_reading_coordinator->markReplicaAsUnavailable(extension->replica_info->number_of_current_replica);
-            }
-
             return ReadResult(Block());
         }
 

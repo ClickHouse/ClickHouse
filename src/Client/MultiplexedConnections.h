@@ -27,7 +27,7 @@ public:
 
     /// Accepts a vector of connections to replicas of one shard already taken from pool.
     MultiplexedConnections(
-        std::vector<IConnectionPool::Entry> && connections,
+        std::vector<IConnectionPool::Entry> connections,
         const Settings & settings_, const ThrottlerPtr & throttler_);
 
     void sendScalarsData(Scalars & data) override;

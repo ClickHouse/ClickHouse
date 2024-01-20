@@ -50,7 +50,7 @@ MultiplexedConnections::MultiplexedConnections(std::shared_ptr<Connection> conne
 }
 
 MultiplexedConnections::MultiplexedConnections(
-        std::vector<IConnectionPool::Entry> && connections,
+        std::vector<IConnectionPool::Entry>  connections,
         const Settings & settings_, const ThrottlerPtr & throttler)
     : settings(settings_)
 {

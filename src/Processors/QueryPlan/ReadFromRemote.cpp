@@ -409,8 +409,12 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         all_replicas_count = shard.getAllNodeCount();
     }
 
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+    std::optional<bool> skip_unavailable_endpoints{true};
+    auto connections = shard.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY, skip_unavailable_endpoints);
+
     Pipes pipes;
-    for (size_t i = 0; i < all_replicas_count; ++i)
+    for (size_t i = 0, s = connections.size(); i < s; ++i)
     {
         IConnections::ReplicaInfo replica_info
         {
@@ -420,7 +424,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
             .number_of_current_replica = i,
         };
 
-        addPipeForSingeReplica(pipes, shard.pool, replica_info);
+        addPipeForSingeReplica(pipes, std::move(connections[i]), replica_info);
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -432,7 +436,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
 
 }
 
-void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, std::shared_ptr<ConnectionPoolWithFailover> pool, IConnections::ReplicaInfo replica_info)
+void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, IConnectionPool::Entry connection, IConnections::ReplicaInfo replica_info)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -452,7 +456,7 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
     assert(output_stream);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-        pool,
+        std::vector<IConnectionPool::Entry>{std::move(connection)},
         query_string,
         output_stream->header,
         context,
@@ -460,9 +464,8 @@ void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, s
         scalars,
         external_tables,
         stage,
-        RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)},
-        GetPriorityForLoadBalancing(LoadBalancing::ROUND_ROBIN, randomSeed())
-            .getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, replica_info.all_replicas_count));
+        RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)});
+
     remote_query_executor->setPoolMode(PoolMode::GET_ONE);
     remote_query_executor->setLogger(log);
 

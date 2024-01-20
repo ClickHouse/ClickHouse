@@ -92,7 +92,7 @@ public:
 
 private:
 
-    void addPipeForSingeReplica(Pipes & pipes, std::shared_ptr<ConnectionPoolWithFailover> pool, IConnections::ReplicaInfo replica_info);
+    void addPipeForSingeReplica(Pipes & pipes, IConnectionPool::Entry connection, IConnections::ReplicaInfo replica_info);
 
     ClusterPtr cluster;
     ASTPtr query_ast;

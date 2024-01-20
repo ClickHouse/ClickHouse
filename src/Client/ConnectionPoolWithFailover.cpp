@@ -122,12 +122,11 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(
     const ConnectionTimeouts & timeouts,
     const Settings & settings,
     PoolMode pool_mode,
-    AsyncCallback async_callback,
     std::optional<bool> skip_unavailable_endpoints,
     GetPriorityForLoadBalancing::Func priority_func)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
-    { return tryGetEntry(pool, timeouts, fail_message, settings, nullptr, async_callback); };
+    { return tryGetEntry(pool, timeouts, fail_message, settings, nullptr, {}); };
 
     std::vector<TryResult> results = getManyImpl(settings, pool_mode, try_get_entry, skip_unavailable_endpoints, priority_func);
 
