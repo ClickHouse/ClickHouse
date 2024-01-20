@@ -331,20 +331,28 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
                 {
                     if (info->value.has_value())
                         node_to_hint[node].plusConst(info->value.value());
+                    else
+                        node_to_hint[node] = {};
                 }
                 else if (name == "minus")
                 {
-                    if (info->reversed)
+                    if (!info->value.has_value())
+                        node_to_hint[node] = {};
+                    else if (info->reversed)
                     {
                         node_to_hint[node].multiplyConst(-1);
-                        if (info->value.has_value())
                             node_to_hint[node].plusConst(info->value.value());
                     }
-                    else if (info->value.has_value())
+                    else
                         node_to_hint[node].minusConst(info->value.value());
                 }
                 else if (name == "multiply")
-                    node_to_hint[node].multiplyConst(info->value.value());
+                {
+                    if (info->value.has_value())
+                        node_to_hint[node].multiplyConst(info->value.value());
+                    else
+                        node_to_hint[node] = {};
+                }
                 else if (name == "toHour")
                     node_to_hint[node] = {0, 23, true};
                 else if (name == "toMinute" || name == "toSecond")
