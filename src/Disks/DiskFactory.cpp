@@ -25,7 +25,9 @@ DiskPtr DiskFactory::create(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     ContextPtr context,
-    const DisksMap & map) const
+    const DisksMap & map,
+    bool attach,
+    bool custom_disk) const
 {
     const auto disk_type = config.getString(config_prefix + ".type", "local");
 
@@ -37,7 +39,7 @@ DiskPtr DiskFactory::create(
     }
 
     const auto & disk_creator = found->second;
-    return disk_creator(name, config, config_prefix, context, map);
+    return disk_creator(name, config, config_prefix, context, map, attach, custom_disk);
 }
 
 }

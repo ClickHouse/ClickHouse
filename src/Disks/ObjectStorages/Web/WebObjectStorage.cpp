@@ -31,17 +31,21 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-std::vector<fs::path> WebObjectStorage::loadFiles(const String & uri_path, const std::unique_lock<std::shared_mutex> &) const
+std::pair<WebObjectStorage::FileDataPtr, std::vector<fs::path>>
+WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const
 {
     std::vector<fs::path> loaded_files;
-    LOG_TRACE(log, "Loading metadata for directory: {}", uri_path);
+    auto full_url = fs::path(url) / path;
 
+    LOG_TRACE(log, "Adding directory: {} ({})", path, full_url);
+
+    FileDataPtr result;
     try
     {
         Poco::Net::HTTPBasicCredentials credentials{};
 
         ReadWriteBufferFromHTTP metadata_buf(
-            Poco::URI(fs::path(uri_path) / ".index"),
+            Poco::URI(fs::path(full_url) / ".index"),
             Poco::Net::HTTPRequest::HTTP_GET,
             ReadWriteBufferFromHTTP::OutStreamCallback(),
             ConnectionTimeouts::getHTTPTimeouts(
@@ -53,10 +57,6 @@ std::vector<fs::path> WebObjectStorage::loadFiles(const String & uri_path, const
             getContext()->getReadSettings());
 
         String file_name;
-        FileData file_data{};
-
-        String dir_name = fs::path(uri_path.substr(url.size())) / "";
-        LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding directory: {}", dir_name);
 
         while (!metadata_buf.eof())
         {
@@ -65,30 +65,43 @@ std::vector<fs::path> WebObjectStorage::loadFiles(const String & uri_path, const
 
             bool is_directory;
             readBoolText(is_directory, metadata_buf);
+            size_t size = 0;
             if (!is_directory)
             {
                 assertChar('\t', metadata_buf);
-                readIntText(file_data.size, metadata_buf);
+                readIntText(size, metadata_buf);
             }
             assertChar('\n', metadata_buf);
 
-            file_data.type = is_directory ? FileType::Directory : FileType::File;
-            String file_path = fs::path(uri_path) / file_name;
+            FileDataPtr file_data = is_directory
+                ? FileData::createDirectoryInfo(false)
+                : FileData::createFileInfo(size);
 
-            file_path = file_path.substr(url.size());
-            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding file: {}, size: {}", file_path, file_data.size);
+            auto file_path = fs::path(path) / file_name;
+            const bool inserted = files.add(file_path, file_data).second;
+            if (!inserted)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Loading data for {} more than once", file_path);
 
-            files.emplace(std::make_pair(file_path, file_data));
+            LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding file: {}, size: {}", file_path, size);
             loaded_files.emplace_back(file_path);
         }
 
-        files.emplace(std::make_pair(dir_name, FileData({ .type = FileType::Directory })));
+        auto [it, inserted] = files.add(path, FileData::createDirectoryInfo(true));
+        if (!inserted)
+        {
+             if (it->second->loaded_children)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Loading data for {} more than once", path);
+
+             it->second->loaded_children = true;
+        }
+
+        return std::pair(it->second, loaded_files);
     }
     catch (HTTPException & e)
     {
         /// 404 - no files
         if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            return loaded_files;
+            return {};
 
         e.addMessage("while loading disk metadata");
         throw;
@@ -98,8 +111,6 @@ std::vector<fs::path> WebObjectStorage::loadFiles(const String & uri_path, const
         e.addMessage("while loading disk metadata");
         throw;
     }
-
-    return loaded_files;
 }
 
 
@@ -120,15 +131,15 @@ bool WebObjectStorage::exists(const StoredObject & object) const
 bool WebObjectStorage::exists(const std::string & path) const
 {
     LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Checking existence of path: {}", path);
-    return tryGetFileInfo(path) != std::nullopt;
+    return tryGetFileInfo(path) != nullptr;
 }
 
-WebObjectStorage::FileData WebObjectStorage::getFileInfo(const String & path) const
+WebObjectStorage::FileDataPtr WebObjectStorage::getFileInfo(const String & path) const
 {
     auto file_info = tryGetFileInfo(path);
     if (!file_info)
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No such file: {}", path);
-    return file_info.value();
+    return file_info;
 }
 
 std::vector<std::filesystem::path> WebObjectStorage::listDirectory(const String & path) const
@@ -144,88 +155,80 @@ std::vector<std::filesystem::path> WebObjectStorage::listDirectory(const String 
     if (!file_info->loaded_children)
     {
         std::unique_lock unique_lock(metadata_mutex);
-        result = loadFiles(fs::path(url) / path, unique_lock);
-        file_info->loaded_children = true;
+        if (!file_info->loaded_children)
+            return loadFiles(path, unique_lock).second;
     }
-    else
+    std::shared_lock shared_lock(metadata_mutex);
+    for (const auto & [file_path, _] : files)
     {
-        std::shared_lock shared_lock(metadata_mutex);
-        for (const auto & [file_path, _] : files)
-        {
-            if (fs::path(parentPath(file_path)) / "" == fs::path(path) / "")
-                result.emplace_back(file_path);
-        }
+        if (fs::path(parentPath(file_path)) / "" == fs::path(path) / "")
+            result.emplace_back(file_path);
     }
     return result;
 }
 
-std::optional<WebObjectStorage::FileData> WebObjectStorage::tryGetFileInfo(const String & path) const
+WebObjectStorage::FileDataPtr WebObjectStorage::tryGetFileInfo(const String & path) const
 {
     std::shared_lock shared_lock(metadata_mutex);
 
-    if (files.find(path) == files.end())
+    bool is_file = fs::path(path).has_extension();
+    if (auto it = files.find(path, is_file); it != files.end())
+        return it->second;
+
+    if (is_file)
     {
         shared_lock.unlock();
 
-        bool is_file = fs::path(path).has_extension();
-        if (is_file)
+        const auto parent_path = fs::path(path).parent_path();
+        auto parent_info = tryGetFileInfo(parent_path);
+        if (!parent_info)
         {
-            const auto parent_path = fs::path(path).parent_path();
-            auto parent_info = tryGetFileInfo(parent_path);
-            if (!parent_info)
-                return std::nullopt; /// Even parent path does not exist.
-
-            if (parent_info->loaded_children)
-            {
-                return std::nullopt;
-            }
-            else
-            {
-                std::unique_lock unique_lock(metadata_mutex);
-                loadFiles(fs::path(url) / parent_path, unique_lock);
-                parent_info->loaded_children = true;
-            }
+            return nullptr;
         }
-        else
+
+        if (!parent_info->loaded_children)
         {
             std::unique_lock unique_lock(metadata_mutex);
-            loadFiles(fs::path(url) / path, unique_lock);
+            if (!parent_info->loaded_children)
+                loadFiles(parent_path, unique_lock);
         }
 
         shared_lock.lock();
+
+        if (auto jt = files.find(path, is_file); jt != files.end())
+            return jt->second;
+        else
+        {
+            return nullptr;
+        }
     }
-
-    if (files.empty())
-        return std::nullopt;
-
-    if (auto it = files.find(path); it != files.end())
-        return it->second;
-
-    /// `object_storage.files` contains files + directories only inside `metadata_path / uuid_3_digit / uuid /`
-    /// (specific table files only), but we need to be able to also tell if `exists(<metadata_path>)`, for example.
-    auto it = std::lower_bound(
-        files.begin(), files.end(), path,
-        [](const auto & file, const std::string & path_) { return file.first < path_; }
-    );
-
-    if (it == files.end())
-        return std::nullopt;
-
-    if (startsWith(it->first, path)
-        || (it != files.begin() && startsWith(std::prev(it)->first, path)))
+    else
     {
+        auto it = std::lower_bound(
+            files.begin(), files.end(), path,
+            [](const auto & file, const std::string & path_) { return file.first < path_; }
+        );
+        if (it != files.end())
+        {
+            if (startsWith(it->first, path)
+                || (it != files.begin() && startsWith(std::prev(it)->first, path)))
+            {
+                shared_lock.unlock();
+                std::unique_lock unique_lock(metadata_mutex);
+
+                /// Add this directory path not files cache to simplify further checks for this path.
+                return files.add(path, FileData::createDirectoryInfo(false)).first->second;
+            }
+        }
+
         shared_lock.unlock();
         std::unique_lock unique_lock(metadata_mutex);
 
-        /// Add this directory path not files cache to simplify further checks for this path.
-        files.emplace(std::make_pair(path, FileData({.type = FileType::Directory})));
-
-        unique_lock.unlock();
-        shared_lock.lock();
-
-        return FileData{ .type = FileType::Directory };
+        if (auto jt = files.find(path, is_file); jt != files.end())
+            return jt->second;
+        else
+            return loadFiles(path, unique_lock).first;
     }
-    return std::nullopt;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObjects( /// NOLINT
