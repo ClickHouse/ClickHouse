@@ -98,10 +98,6 @@ AzureObjectStorage::AzureObjectStorage(
     , settings(std::move(settings_))
     , log(&Poco::Logger::get("AzureObjectStorage"))
 {
-    data_source_description.type = DataSourceType::AzureBlobStorage;
-    data_source_description.description = client.get()->GetUrl();
-    data_source_description.is_cached = false;
-    data_source_description.is_encrypted = false;
 }
 
 ObjectStorageKey AzureObjectStorage::generateObjectKeyForPath(const std::string & /* path */) const
