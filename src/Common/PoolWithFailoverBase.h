@@ -284,7 +284,6 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                     ++usable_count;
                     if (result.is_up_to_date)
                     {
-                        LOG_TRACE(log, "Got not up to date connection {}. Will try again", shuffled_pool.pool->getAddress());
                         ++up_to_date_count;
                     }
                     else
