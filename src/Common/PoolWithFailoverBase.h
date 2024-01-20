@@ -230,6 +230,9 @@ PoolWithFailoverBase<TNestedPool>::getMany(
         const GetPriorityFunc & get_priority)
 {
     std::vector<ShuffledPool> shuffled_pools = getShuffledPools(max_ignored_errors, get_priority);
+    LOG_TRACE(log, "Get priority function from outside: {}", get_priority.operator bool());
+    for(size_t i=0; i < shuffled_pools.size(); ++i)
+        LOG_TRACE(log, "Shuffled pools: i={} address={}", i, shuffled_pools[i].pool->getAddress());
 
     /// Limit `max_tries` value by `max_error_cap` to avoid unlimited number of retries
     if (max_tries > max_error_cap)
@@ -249,63 +252,57 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     });
 
     std::string fail_messages;
-    bool finished = false;
-    while (!finished)
+    for (size_t i = 0; i < shuffled_pools.size(); ++i)
     {
-        for (size_t i = 0; i < shuffled_pools.size(); ++i)
+        if (up_to_date_count >= max_entries /// Already enough good entries.
+            || entries_count + failed_pools_count >= nested_pools.size()) /// No more good entries will be produced.
+            break;
+
+        ShuffledPool & shuffled_pool = shuffled_pools[i];
+        LOG_TRACE(log, "Considering address to connect to: {}", shuffled_pool.pool->getAddress());
+
+        TryResult & result = try_results[i];
+        if (max_tries && shuffled_pool.error_count >= max_tries)
         {
-            if (up_to_date_count >= max_entries /// Already enough good entries.
-                || entries_count + failed_pools_count >= nested_pools.size()) /// No more good entries will be produced.
+            LOG_TRACE(log, "Reach max tries to get connection");
+            break;
+        }
+
+        std::string fail_message;
+        result = try_get_entry(*shuffled_pool.pool, fail_message);
+
+        if (!fail_message.empty())
+            fail_messages += fail_message + '\n';
+
+        if (!result.entry.isNull())
+        {
+            LOG_TRACE(log, "Got connection to {}. {}", shuffled_pool.pool->getAddress(), fail_message);
+
+            ++entries_count;
+            if (result.is_usable)
             {
-                finished = true;
-                break;
-            }
-
-            ShuffledPool & shuffled_pool = shuffled_pools[i];
-            LOG_TRACE(log, "Considering address to connect to: {}", shuffled_pool.pool->getAddress());
-
-            TryResult & result = try_results[i];
-            if (max_tries && (shuffled_pool.error_count >= max_tries || !result.entry.isNull()))
-                continue;
-
-            std::string fail_message;
-            result = try_get_entry(*shuffled_pool.pool, fail_message);
-
-            if (!fail_message.empty())
-                fail_messages += fail_message + '\n';
-
-            if (!result.entry.isNull())
-            {
-                LOG_TRACE(log, "Got connection to {}. {}", shuffled_pool.pool->getAddress(), fail_message);
-
-                ++entries_count;
-                if (result.is_usable)
-                {
-                    ++usable_count;
-                    if (result.is_up_to_date)
-                    {
-                        ++up_to_date_count;
-                    }
-                    else
-                        LOG_TRACE(log, "Got not up to date connection {}. Will try again", shuffled_pool.pool->getAddress());
-                }
+                ++usable_count;
+                if (result.is_up_to_date)
+                    ++up_to_date_count;
                 else
-                {
-                    LOG_TRACE(log, "Got unusable connection to {}. Will try again", shuffled_pool.pool->getAddress());
-                }
+                    LOG_TRACE(log, "Got not up to date connection {}. Will try again", shuffled_pool.pool->getAddress());
             }
             else
             {
-                LOG_WARNING(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
-                ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
+                LOG_TRACE(log, "Got unusable connection to {}. Will try again", shuffled_pool.pool->getAddress());
+            }
+        }
+        else
+        {
+            LOG_WARNING(log, "Connection failed at try №{}, reason: {}", (shuffled_pool.error_count + 1), fail_message);
+            ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
-                shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
+            shuffled_pool.error_count = std::min(max_error_cap, shuffled_pool.error_count + 1);
 
-                if (shuffled_pool.error_count >= max_tries)
-                {
-                    ++failed_pools_count;
-                    ProfileEvents::increment(ProfileEvents::DistributedConnectionFailAtAll);
-                }
+            if (shuffled_pool.error_count >= max_tries)
+            {
+                ++failed_pools_count;
+                ProfileEvents::increment(ProfileEvents::DistributedConnectionFailAtAll);
             }
         }
     }
