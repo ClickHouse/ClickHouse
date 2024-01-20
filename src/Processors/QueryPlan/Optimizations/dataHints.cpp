@@ -329,52 +329,36 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
 
                 if (name == "plus")
                 {
-                    node_to_hint[node].plusConst(info->value.value());
+                    if (info->value.has_value())
+                        node_to_hint[node].plusConst(info->value.value());
                 }
                 else if (name == "minus")
                 {
                     if (info->reversed)
                     {
                         node_to_hint[node].multiplyConst(-1);
-                        node_to_hint[node].plusConst(info->value.value());
+                        if (info->value.has_value())
+                            node_to_hint[node].plusConst(info->value.value());
                     }
-                    else
-                    {
+                    else if (info->value.has_value())
                         node_to_hint[node].minusConst(info->value.value());
-                    }
                 }
                 else if (name == "multiply")
-                {
                     node_to_hint[node].multiplyConst(info->value.value());
-                }
                 else if (name == "toHour")
-                {
                     node_to_hint[node] = {0, 23, true};
-                }
                 else if (name == "toMinute" || name == "toSecond")
-                {
                     node_to_hint[node] = {0, 59, true};
-                }
                 else if (name == "toDayOfYear")
-                {
                     node_to_hint[node] = {1, 366, true};
-                }
                 else if (name == "toDayOfMonth")
-                {
                     node_to_hint[node] = {1, 31, true};
-                }
                 else if (name == "toDayOfWeek")
-                {
                     node_to_hint[node] = {1, 7, true};
-                }
                 else if (name == "toMonth")
-                {
                     node_to_hint[node] = {1, 12, true};
-                }
                 else if (name == "toQuarter")
-                {
                     node_to_hint[node] = {1, 4, true};
-                }
                 else if (name == "toYear")
                 {
                     if (node_to_hint[node].lower_boundary.has_value())
@@ -409,9 +393,7 @@ void intersectDataHints(DataHints & left_hints, const DataHints & right_hints)
     for (const auto & right_hint : right_hints)
     {
         if (!left_hints.contains(right_hint.first))
-        {
             left_hints[right_hint.first] = right_hint.second;
-        }
         else
         {
             left_hints[right_hint.first].intersectLowerBoundary(right_hint.second.lower_boundary);
@@ -425,9 +407,7 @@ void unionDataHints(DataHints & left_hints, const DataHints & right_hints)
     for (const auto & right_hint : right_hints)
     {
         if (!left_hints.contains(right_hint.first))
-        {
             left_hints[right_hint.first] = right_hint.second;
-        }
         else
         {
             left_hints[right_hint.first].unionLowerBoundary(right_hint.second.lower_boundary);
@@ -442,9 +422,7 @@ void unionJoinDataHints(DataHints & left_hints, const DataHints & right_hints, c
     {
         const auto & renamed_key = table_join.renamedRightColumnName(right_hint.first);
         if (!left_hints.contains(renamed_key))
-        {
             left_hints[renamed_key] = right_hint.second;
-        }
         else
         {
             left_hints[renamed_key].unionLowerBoundary(right_hint.second.lower_boundary);
