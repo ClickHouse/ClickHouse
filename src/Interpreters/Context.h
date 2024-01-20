@@ -21,7 +21,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <IO/IResourceManager.h>
+#include <Common/Scheduler/IResourceManager.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
@@ -1246,6 +1246,7 @@ public:
     bool canUseTaskBasedParallelReplicas() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
+    bool canUseParallelReplicasCustomKey(const Cluster & cluster) const;
 
     enum class ParallelReplicasMode : uint8_t
     {

@@ -195,7 +195,7 @@ std::string DataPartStorageOnDiskBase::getDiskName() const
 
 std::string DataPartStorageOnDiskBase::getDiskType() const
 {
-    return toString(volume->getDisk()->getDataSourceDescription().type);
+    return volume->getDisk()->getDataSourceDescription().toString();
 }
 
 bool DataPartStorageOnDiskBase::isStoredOnRemoteDisk() const

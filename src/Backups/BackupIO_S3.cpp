@@ -126,7 +126,7 @@ BackupReaderS3::BackupReaderS3(
     const ContextPtr & context_)
     : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderS3"))
     , s3_uri(s3_uri_)
-    , data_source_description{DataSourceType::S3, s3_uri.endpoint, false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
     , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()))
 {
     auto & request_settings = s3_settings.request_settings;
@@ -216,7 +216,7 @@ BackupWriterS3::BackupWriterS3(
     const ContextPtr & context_)
     : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterS3"))
     , s3_uri(s3_uri_)
-    , data_source_description{DataSourceType::S3, s3_uri.endpoint, false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
     , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()))
 {
     auto & request_settings = s3_settings.request_settings;
