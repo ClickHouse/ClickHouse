@@ -126,6 +126,18 @@ std::optional<ProcessedFunction> processFunction(const ActionsDAG::Node & node)
     return result;
 }
 
+void logDataHintForNode(const std::string & node_name, const DataHint & hint)
+{
+    if (hint.lower_boundary && hint.upper_boundary)
+        LOG_DEBUG(&Poco::Logger::get("DataHints"), "node {} is between {} and {}", node_name, hint.lower_boundary.value(), hint.upper_boundary.value());
+    else if (hint.lower_boundary)
+        LOG_DEBUG(&Poco::Logger::get("DataHints"), "node {} is between {} and Null", node_name, hint.lower_boundary.value());
+    else if (hint.upper_boundary)
+        LOG_DEBUG(&Poco::Logger::get("DataHints"), "node {} is between Null and {}", node_name, hint.upper_boundary.value());
+    else
+        LOG_DEBUG(&Poco::Logger::get("DataHints"), "node {} is between Null and Null", node_name);
+}
+
 }
 
 void updateDataHintsWithFilterActionsDAG(DataHints & hints, const ActionsDAG::Node & actions)
@@ -311,11 +323,20 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
                 node_to_hint[node] = {};
                 if (!info->reversed && info->value.has_value() && info->value.value().getTypeName() == "UInt64")
                 {
-                    node_to_hint[node] = {false};
-                    node_to_hint[node].setStrictLowerBoundary(-info->value.value().get<int64_t>()); // May be problems with that
-                    node_to_hint[node].setStrictUpperBoundary(info->value.value().get<uint64_t>());
+                    if (node->result_type->isValueRepresentedByUnsignedInteger())
+                    {
+                        node_to_hint[node] = {true};
+                        node_to_hint[node].setLowerBoundary(0);
+                        node_to_hint[node].setStrictUpperBoundary(info->value.value().get<uint64_t>());
+                    } else
+                    {
+                        node_to_hint[node] = {false};
+                        node_to_hint[node].setStrictLowerBoundary(-info->value.value().get<int64_t>()); // May be problems with that
+                        node_to_hint[node].setStrictUpperBoundary(info->value.value().get<int64_t>());
+                    }
                 }
                 stack.pop();
+                logDataHintForNode(node->result_name, node_to_hint[node]);
                 continue;
             }
 
@@ -386,6 +407,7 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
                     }
                 }
             }
+            logDataHintForNode(node->result_name, node_to_hint[node]);
         }
 
         stack.pop();
