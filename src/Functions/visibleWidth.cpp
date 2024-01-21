@@ -33,7 +33,7 @@ public:
         return std::make_shared<FunctionVisibleWidth>(context);
     }
 
-    FunctionVisibleWidth(ContextPtr context)
+    explicit FunctionVisibleWidth(ContextPtr context)
     {
         behavior = context->getSettingsRef().function_visible_width_behavior;
     }
