@@ -275,10 +275,10 @@ private:
     /// without locks.
     MultiVersionStorageMetadataPtr metadata;
 
+protected:
     /// Structure for managing subscriptions
     mutable StreamSubscriptionManager subscription_manager;
 
-protected:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 
