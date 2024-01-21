@@ -231,7 +231,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 {
     std::vector<ShuffledPool> shuffled_pools = getShuffledPools(max_ignored_errors, get_priority);
     LOG_TRACE(log, "Get priority function from outside: {}", get_priority.operator bool());
-    for(size_t i=0; i < shuffled_pools.size(); ++i)
+    for (size_t i = 0; i < shuffled_pools.size(); ++i)
         LOG_TRACE(log, "Shuffled pools: i={} address={}", i, shuffled_pools[i].pool->getAddress());
 
     /// Limit `max_tries` value by `max_error_cap` to avoid unlimited number of retries
