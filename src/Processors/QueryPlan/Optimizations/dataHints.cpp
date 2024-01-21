@@ -115,7 +115,7 @@ std::optional<ProcessedFunction> processFunction(const ActionsDAG::Node & node)
     result.hinted_node = maybe_hinted_node;
     result.result_type = node.result_type;
     result.executable_function = node.function;
-    if (maybe_constant_node && !maybe_constant_node->result_type->isNullable())
+    if (maybe_constant_node && maybe_constant_node->result_type->isValueRepresentedByNumber())
     {
         if (maybe_constant_node->result_type->isValueRepresentedByUnsignedInteger())
             result.value = maybe_constant_node->column->getUInt(0);
@@ -311,8 +311,8 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
                 node_to_hint[node] = {};
                 if (!info->reversed && info->value.has_value() && info->value.value().getTypeName() == "UInt64")
                 {
-                    node_to_hint[node] = {true};
-                    node_to_hint[node].setLowerBoundary(0);
+                    node_to_hint[node] = {false};
+                    node_to_hint[node].setStrictLowerBoundary(-info->value.value().get<uint64_t>());
                     node_to_hint[node].setStrictUpperBoundary(info->value.value().get<uint64_t>());
                 }
                 stack.pop();
