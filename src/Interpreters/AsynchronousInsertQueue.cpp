@@ -430,7 +430,7 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
             std::unique_lock lock(shard.mutex);
 
             shard.are_tasks_available.wait_for(lock,
-                Milliseconds(getContext()->getSettingsRef().async_insert_busy_timeout_ms), [&shard, this]
+                Milliseconds(getContext()->getSettingsRef().async_insert_poll_timeout_ms), [&shard, this]
             {
                 if (shutdown)
                     return true;
