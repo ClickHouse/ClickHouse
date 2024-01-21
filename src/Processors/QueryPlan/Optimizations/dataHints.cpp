@@ -57,10 +57,13 @@ std::optional<ProcessedPredicate> processPredicate(const ActionsDAG::Node & node
 
     ProcessedPredicate result;
     result.column_name = maybe_input_column->result_name;
-    if (maybe_constant_column->result_type->isValueRepresentedByUnsignedInteger())
-        result.value = maybe_constant_column->column->getUInt(0);
-    else
-        result.value = maybe_constant_column->column->getInt(0);
+    if (!maybe_constant_column->result_type->isNullable())
+    {
+        if (maybe_constant_column->result_type->isValueRepresentedByUnsignedInteger())
+            result.value = maybe_constant_column->column->getUInt(0);
+        else
+            result.value = maybe_constant_column->column->getInt(0);
+    }
     result.reversed = maybe_input_column == node.children[1];
     result.is_column_unsigned = maybe_input_column->result_type->isValueRepresentedByUnsignedInteger();
     return result;
