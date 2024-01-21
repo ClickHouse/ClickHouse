@@ -163,7 +163,6 @@ public:
 
     virtual ParallelReadResponse handleRequest(ParallelReadRequest request) = 0;
     virtual void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
-    virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
 
     void setProgressCallback(ProgressCallback callback) { progress_callback = std::move(callback); }
 };
@@ -201,8 +200,6 @@ public:
     ParallelReadResponse handleRequest(ParallelReadRequest request) override;
 
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) override;
-
-    void markReplicaAsUnavailable(size_t replica_number) override;
 
 private:
     /// This many granules will represent a single segment of marks that will be assigned to a replica
@@ -370,24 +367,6 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     source_replica_for_parts_snapshot = announcement.replica_num;
 
     LOG_DEBUG(log, "Reading state is fully initialized: {}", fmt::join(all_parts_to_read, "; "));
-}
-
-void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
-{
-    LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
-
-    ++unavailable_replicas_count;
-    stats[replica_number].is_unavailable = true;
-
-    if (sent_initial_requests == replicas_count - unavailable_replicas_count)
-        setProgressCallback();
-
-    for (const auto & segment : distribution_by_hash_queue[replica_number])
-    {
-        chassert(segment.ranges.size() == 1);
-        enqueueToStealerOrStealingQueue(segment.info, segment.ranges.front());
-    }
-    distribution_by_hash_queue[replica_number].clear();
 }
 
 void DefaultCoordinator::setProgressCallback()
@@ -810,25 +789,12 @@ public:
 
     ParallelReadResponse handleRequest([[ maybe_unused ]]  ParallelReadRequest request) override;
     void handleInitialAllRangesAnnouncement([[ maybe_unused ]]  InitialAllRangesAnnouncement announcement) override;
-    void markReplicaAsUnavailable(size_t replica_number) override;
 
     Parts all_parts_to_read;
     size_t total_rows_to_read = 0;
 
     Poco::Logger * log = &Poco::Logger::get(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
-
-template <CoordinationMode mode>
-void InOrderCoordinator<mode>::markReplicaAsUnavailable(size_t replica_number)
-{
-    if (stats[replica_number].is_unavailable == false)
-    {
-        LOG_DEBUG(log, "Replica number {} is unavailable", replica_number);
-
-        stats[replica_number].is_unavailable = true;
-        ++unavailable_replicas_count;
-    }
-}
 
 template <CoordinationMode mode>
 void InOrderCoordinator<mode>::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
@@ -1003,16 +969,6 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
     return response;
 }
 
-void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica_number)
-{
-    std::lock_guard lock(mutex);
-
-    if (!pimpl)
-        unavailable_nodes_registered_before_initialization.push_back(replica_number);
-    else
-        pimpl->markReplicaAsUnavailable(replica_number);
-}
-
 void ParallelReplicasReadingCoordinator::initialize()
 {
     switch (mode)
@@ -1030,9 +986,6 @@ void ParallelReplicasReadingCoordinator::initialize()
 
     if (progress_callback)
         pimpl->setProgressCallback(std::move(progress_callback));
-
-    for (const auto replica : unavailable_nodes_registered_before_initialization)
-        pimpl->markReplicaAsUnavailable(replica);
 }
 
 ParallelReplicasReadingCoordinator::ParallelReplicasReadingCoordinator(size_t replicas_count_, size_t mark_segment_size_)
