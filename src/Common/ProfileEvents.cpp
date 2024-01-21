@@ -616,6 +616,7 @@ The server successfully detected this situation and will download merged part fr
     M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces") \
     \
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas") \
+    M(ParallelReplicasAvailableCount, "Number of replicas available to execute a query with task-based parallel replicas") \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)

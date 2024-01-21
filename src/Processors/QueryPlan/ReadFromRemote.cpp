@@ -22,6 +22,11 @@
 
 #include <boost/algorithm/string/join.hpp>
 
+namespace ProfileEvents
+{
+extern const Event ParallelReplicasAvailableCount;
+}
+
 namespace DB
 {
 
@@ -412,6 +417,7 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
     std::optional<bool> skip_unavailable_endpoints{true};
     auto connections = shard.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY, skip_unavailable_endpoints);
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount, connections.size());
 
     Pipes pipes;
     for (size_t i = 0, s = connections.size(); i < s; ++i)
@@ -433,7 +439,6 @@ void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder
         processor->setStorageLimits(storage_limits);
 
     pipeline.init(std::move(pipe));
-
 }
 
 void ReadFromParallelRemoteReplicasStep::addPipeForSingeReplica(Pipes & pipes, IConnectionPool::Entry connection, IConnections::ReplicaInfo replica_info)

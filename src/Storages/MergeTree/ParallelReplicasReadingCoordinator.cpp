@@ -1,15 +1,12 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <iterator>
-#include <map>
 #include <mutex>
 #include <numeric>
 #include <set>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 #include <vector>
 #include <consistent_hashing.h>
@@ -71,11 +68,8 @@ extern const Event ParallelReplicasCollectingOwnedSegmentsMicroseconds;
 extern const Event ParallelReplicasReadAssignedMarks;
 extern const Event ParallelReplicasReadUnassignedMarks;
 extern const Event ParallelReplicasReadAssignedForStealingMarks;
-}
 
-namespace ProfileEvents
-{
-    extern const Event ParallelReplicasUsedCount;
+extern const Event ParallelReplicasUsedCount;
 }
 
 namespace DB
