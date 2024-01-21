@@ -228,8 +228,6 @@ private:
     zkutil::ZooKeeperArgs args;
     Int8 original_index = -1;
 
-    std::function<void()> send_recv_error_callback;
-
     /// Fault injection
     void maybeInjectSendFault();
     void maybeInjectRecvFault();

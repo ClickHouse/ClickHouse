@@ -16,12 +16,6 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/String.h>
 
-#include <boost/multi_index_container.hpp>
-#include <boost/multi_index/hashed_index.hpp>
-#include <boost/multi_index/ordered_index.hpp>
-#include <boost/multi_index/composite_key.hpp>
-#include <boost/multi_index/member.hpp>
-
 
 namespace DB::ErrorCodes
 {
@@ -39,23 +33,21 @@ enum Status
 class EndpointRegistry
 {
 public:
-    EndpointRegistry()
-        : endpoints_by_id(endpoints_indexes.get<TagById>()),
-         endpoints_by_status(endpoints_indexes.get<TagByStatus>())
-    {}
+    EndpointRegistry() = default;
+    using clock = std::chrono::steady_clock;
 
     struct Endpoint
     {
         String address;
         bool secure = false;
         size_t id;
+        Status status = UNDEF;
     };
 
     size_t addEndpoint(Endpoint endpoint)
     {
         size_t id = endpoints.size();
         endpoints.push_back(std::move(endpoint));
-        putToIndexWithStatus(id, UNDEF);
         return id;
     }
 
@@ -69,64 +61,34 @@ public:
         return endpoints.size();
     }
     
-    void putToIndexWithStatus(size_t id, Status status)
-    {
-        popFromIndex(id);
-        endpoints_indexes.insert(IdxInfo{
-            .address = endpoints[id].address,
-            .current_status = status,
-            .id = id,
-        });
-    }
-
-    void popFromIndex(size_t id)
-    {
-        auto it = endpoints_by_id.find(id);
-        if (it != endpoints_by_id.end())
-            endpoints_indexes.erase(it);
-    }
-
-    Status getStatus(size_t id) const
-    {
-        auto info_it = endpoints_by_id.find(id);
-        chassert(info_it != endpoints_by_id.end());
-        return info_it->current_status;
-    }
-
     void markHostOffline(size_t id)
     {
-        putToIndexWithStatus(id, OFFLINE);
+        endpoints[id].status = OFFLINE;
     }
 
     void markHostOnline(size_t id)
     {
-        putToIndexWithStatus(id, ONLINE);
+        endpoints[id].status = ONLINE;
     }
 
     void resetOfflineStatuses()
     {
-        std::vector<size_t> offline_ids = getRangeByStatus(OFFLINE);
-        for (auto id : offline_ids)
-            putToIndexWithStatus(id, UNDEF);
+        for (auto & endpoint : endpoints)
+        {
+            if (endpoint.status == OFFLINE)
+                endpoint.status = UNDEF;
+        }
     }
 
     std::vector<size_t> getRangeByStatus(Status status) const
     {
-        auto start = endpoints_by_status.lower_bound(boost::make_tuple(status));
-        auto end = endpoints_by_status.upper_bound(boost::make_tuple(status));
-
         std::vector<size_t> ids;
-        for (auto it =start; it != end; ++it)
-            ids.push_back(it->id);
-
+        for (const auto & endpoint : endpoints)
+        {
+            if (endpoint.status == status)
+                ids.push_back(endpoint.id);
+        }
         return ids;
-    }
-
-    size_t getRangeSizeByStatus(Status status) const
-    {
-        auto start = endpoints_by_status.lower_bound(boost::make_tuple(status));
-        auto end = endpoints_by_status.upper_bound(boost::make_tuple(status));
-        return std::distance(start, end);
     }
 
     void logAllEndpoints() const
@@ -134,43 +96,11 @@ public:
         auto *logger = &Poco::Logger::get("ZooKeeperLoadBalancerEndpoint");
         LOG_INFO(logger, "Reporting Endpoint status information.");
         for (const auto & endpoint : endpoints)
-            LOG_INFO(logger, "Endpoint ID {}, address {}, status {}", endpoint.id, endpoint.address, getStatus(endpoint.id));
+            LOG_INFO(logger, "Endpoint ID {}, address {}, status {}", endpoint.id, endpoint.address, endpoint.status);
     }
 
 private:
-    struct IdxInfo
-    {
-        std::string_view address = {};
-        Status current_status = UNDEF;
-        size_t id = 0;
-    };
-
-    struct TagById{};
-    struct TagByStatus{};
-
-    using EndpointsIndex = boost::multi_index_container<
-        IdxInfo,
-        boost::multi_index::indexed_by<
-            boost::multi_index::ordered_unique<
-                boost::multi_index::tag<TagById>,
-                boost::multi_index::member<IdxInfo, size_t, &IdxInfo::id>
-                >,
-            boost::multi_index::ordered_unique<
-                boost::multi_index::tag<TagByStatus>,
-                boost::multi_index::composite_key<
-                    IdxInfo,
-                    boost::multi_index::member<IdxInfo, Status, &IdxInfo::current_status>,
-                    boost::multi_index::member<IdxInfo, size_t, &IdxInfo::id>
-                    >
-                >
-            >
-        >;
-
     std::vector<Endpoint> endpoints;
-
-    EndpointsIndex endpoints_indexes;
-    EndpointsIndex::index<TagById>::type & endpoints_by_id;
-    EndpointsIndex::index<TagByStatus>::type & endpoints_by_status;
 };
 
 std::pair<std::string, bool> parseForSocketAddress(const std::string & raw_host)
@@ -226,13 +156,13 @@ public:
 
     size_t getAvailableEndpointsCount() const override
     {
-        return getRangeSizeByStatus(ONLINE) + getRangeSizeByStatus(UNDEF);
+        return registry.getRangeByStatus(ONLINE).size() + registry.getRangeByStatus(UNDEF).size();
     }
 
 protected:
     using RegisterEndpoint = EndpointRegistry::Endpoint;
 
-    EndpointInfo asOptimalEndpoint(size_t id)
+    EndpointInfo asOptimalEndpoint(size_t id) const
     {
         const auto & endpoint = findEndpointById(id);
         return EndpointInfo{
@@ -245,7 +175,7 @@ protected:
         };
     }
 
-    EndpointInfo asTemporaryEndpoint(size_t id)
+    EndpointInfo asTemporaryEndpoint(size_t id) const
     {
         const auto & endpoint = findEndpointById(id);
         return EndpointInfo {
@@ -263,19 +193,9 @@ protected:
         return registry.findEndpointById(id);
     }
 
-    Status getStatus(size_t id) const
-    {
-        return registry.getStatus(id);
-    }
-
     std::vector<size_t> getRangeByStatus(Status status) const
     {
         return registry.getRangeByStatus(status);
-    }
-
-    size_t getRangeSizeByStatus(Status status) const
-    {
-        return registry.getRangeSizeByStatus(status);
     }
 
     EndpointRegistry registry;
@@ -320,6 +240,17 @@ public:
             " Endpoints count is {}",
             getEndpointsCount());
     }
+
+    std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t>) const override
+    {
+        return {};
+    }
+
+    bool hasBetterHostToConnect(size_t) const override
+    {
+        return false;
+    }
+
 };
 
 class IBalancerWithPriorities : public IBalancerWithEndpointStatuses
@@ -330,7 +261,7 @@ public:
     {
     }
 
-    EndpointInfo getHostWithSetting(size_t id)
+    EndpointInfo getHostWithSetting(size_t id) const
     {
         if (isOptimalEndpoint(id))
             return asOptimalEndpoint(id);
@@ -378,7 +309,28 @@ public:
             " Endpoints count is {}",
             getEndpointsCount());
     }
+    
+    std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t> current_endpoint_id) const override
+    {
+        std::vector<EndpointInfo> endpoints;
+        const size_t current = current_endpoint_id.value_or(getEndpointsCount());
+        const bool current_id_set = current_endpoint_id.has_value();
+        for (const auto & endpoint : registry.getRangeByStatus(UNDEF))
+            if (current_id_set|| priorities[endpoint] < priorities[current])
+                endpoints.push_back(getHostWithSetting(endpoint));
+        for (const auto & endpoint : registry.getRangeByStatus(OFFLINE))
+            if (current_id_set || priorities[endpoint] < priorities[current])
+                endpoints.push_back(getHostWithSetting(endpoint));
+        return endpoints;
+    }
 
+    bool hasBetterHostToConnect(size_t current_endpoint_id) const override
+    {
+        auto id = getMostPriority(ONLINE);
+        if (id.has_value() && id.value() != current_endpoint_id)
+            return true;
+        return false;
+    }
 
     using PriorityCalculator = std::function<size_t(const RegisterEndpoint)>;
 
@@ -405,7 +357,7 @@ public:
     }
 
 private:
-    bool isOptimalEndpoint(size_t id)
+    bool isOptimalEndpoint(size_t id) const
     {
         return priorities[id] == *std::min(priorities.begin(), priorities.end());
     }
@@ -418,11 +370,22 @@ class RoundRobin: public IBalancerWithEndpointStatuses
 public:
     explicit RoundRobin(std::vector<std::string> hosts)
         : IBalancerWithEndpointStatuses(std::move(hosts)) {}
+
+    std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t>) const override
+    {
+        return {};
+    }
+
+    bool hasBetterHostToConnect(size_t) const override
+    {
+        return false;
+    }
 private:
     EndpointInfo getHostToConnect() override
     {
+        // TODO: disable this.
         registry.logAllEndpoints();
-        auto round_robin_status = getStatus(round_robin_id);
+        auto round_robin_status = registry.findEndpointById(round_robin_id).status;
         if (round_robin_status == ONLINE)
             return selectEndpoint(round_robin_id);
 
@@ -474,7 +437,7 @@ public:
 
     EndpointInfo getHostToConnect() override
     {
-        auto first_status = getStatus(0);
+        auto first_status = registry.findEndpointById(0).status;
 
         if (first_status == ONLINE)
             return asOptimalEndpoint(0);
@@ -499,6 +462,19 @@ public:
             " Endpoints count is {}",
             getEndpointsCount());
 
+    }
+
+    std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t> current_endpoint_id) const override
+    {
+        if (current_endpoint_id.has_value() && current_endpoint_id == 0)
+            return {};
+        return {asOptimalEndpoint(0)};
+    }
+
+    bool hasBetterHostToConnect(size_t current_endpoint_id) const override
+    {
+        auto first_status = registry.findEndpointById(0).status;
+        return first_status == ONLINE && current_endpoint_id != 0;
     }
 };
 
@@ -597,7 +573,10 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
         auto endpoint = connection_balancer->getHostToConnect();
 
         if (!isKeeperHostDNSAvailable(log, endpoint.address, dns_error_occurred))
+        {
             connection_balancer->markHostOffline(endpoint.id);
+            continue;
+        }
 
         LOG_INFO(log, "Connecting to ZooKeeper host {},"
                       " number of attempted hosts {}/{}",
@@ -610,26 +589,24 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
                 .original_index = UInt8(endpoint.id),
                 .secure = endpoint.secure,
             };
-
             auto client  = std::make_unique<Coordination::ZooKeeper>(zknode, args, zk_log);
 
             if (endpoint.settings.use_fallback_session_lifetime)
             {
                 auto session_timeout_seconds = client->setClientSessionDeadline(
                     args.fallback_session_lifetime.min_sec, args.fallback_session_lifetime.max_sec);
-
-                LOG_INFO(log, "Connecting to a different az ZooKeeper with session timeout {} seconds", session_timeout_seconds);
+                LOG_INFO(log, "Connecting to a sub-optimal ZooKeeper with session timeout {} seconds", session_timeout_seconds);
             }
-
-            // This is the client we expect to be actually used, therefore we set the callback to monitor the potential send/receive errors.
-            client->setSendRecvErrorCallback(
-                [logger=log, address=endpoint.address, id=endpoint.id]()
-                {
-                    LOG_DEBUG(logger, "Load Balancer records a failure on host {}, original index {}", address, id);
-                });
-
             connection_balancer->markHostOnline(endpoint.id);
-            return client;
+
+            if (connection_balancer->hasBetterHostToConnect(endpoint.id))
+            {
+                LOG_INFO(log, "Hosts better than {} exist, would try more.", endpoint.address);
+                continue;
+            } else {
+                LOG_INFO(log, "No more better host exists for now, will return with host {}.", endpoint.address);
+                return client;
+            }
         }
         catch (DB::Exception& ex)
         {

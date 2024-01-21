@@ -340,12 +340,6 @@ ZooKeeper::~ZooKeeper()
     }
 }
 
-void ZooKeeper::setSendRecvErrorCallback(std::function<void()> callback)
-{
-    send_recv_error_callback = std::move(callback);
-}
-
-
 ZooKeeper::ZooKeeper(
     const Node & node,
     const zkutil::ZooKeeperArgs & args_,
@@ -970,9 +964,6 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
-
-    if (send_recv_error_callback)
-        send_recv_error_callback();
 
     /// Reset the original index.
     original_index = -1;
