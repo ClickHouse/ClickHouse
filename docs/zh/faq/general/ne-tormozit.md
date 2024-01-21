@@ -8,7 +8,7 @@ sidebar_position: 11
 
 # “Не тормозит” 是什么意思？ {#what-does-ne-tormozit-mean}
 
-这个问题通常出现在人们看到官方 ClickHouse T恤时。它们的正面印有大字**“ClickHouse Не тормозит”**。
+这个问题通常出现在人们看到官方 ClickHouse T恤时。它们的正面印有大字**“ClickHouse не тормозит”**。
 
 在 ClickHouse 开源之前，它作为俄罗斯最大的 IT 公司 [Yandex](https://yandex.com/company/) 的内部存储系统而开发。这就是为什么它最初获得了俄文口号“Не тормозит”（发音为“ne tormozit”）。在开源发布后，我们首先为俄罗斯的活动制作了一些这样的 T恤，使用原汁原味的口号是理所当然的。
 
