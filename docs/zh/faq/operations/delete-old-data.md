@@ -23,7 +23,7 @@ TTL 也可以用来将数据移动到非 [/dev/null](https://en.wikipedia.org/wi
 
 ## ALTER DELETE {#alter-delete}
 
-ClickHouse没有像[OLTP](https://en.wikipedia.org/wiki/Online_transaction_processing)数据库那样的实时点删除。最接近的东西是突变。它们被发布为`ALTER ... DELETE`或`ALTER ... UPDATE`查询，以区别于普通的`DELETE`或`UPDATE`，因为它们是异步批处理操作，而不是立即修改。`ALTER TABLE`前缀后的其余语法相似。
+ClickHouse没有像[OLTP](https://en.wikipedia.org/wiki/Online_transaction_processing)数据库那样的实时点删除。最接近的东西是 `Mutation`，执行 `ALTER ... DELETE` 或 `ALTER ... UPDATE` 查询，以区别于普通的`DELETE`或`UPDATE`。因为它们是异步批处理操作，而不是立即修改。`ALTER TABLE`前缀后的其余语法相似。
 
 `ALTER DELETE`可以灵活地用来删除旧数据。如果你需要定期这样做，主要缺点将是需要有一个外部系统来提交查询。还有一些性能方面的考虑，因为即使只有一行要被删除，突变也会重写完整部分。
 
