@@ -31,5 +31,5 @@ $ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSO
 -   `input_format_import_nested_json` 允许将嵌套 JSON 对象插入到 [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) 类型的列中。
 
 :::note
-对于 HTTP 接口，设置作为 GET 参数指定；对于 CLI 接口，则作为前缀为 -- 的附加命令行参数。
+对于 HTTP 接口，设置作为 `GET` 参数指定；对于 `CLI` 接口，则作为前缀为 -- 的附加命令行参数。
 :::
