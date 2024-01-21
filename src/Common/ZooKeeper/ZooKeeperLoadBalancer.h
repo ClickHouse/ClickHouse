@@ -41,14 +41,14 @@ public:
         ClientSettings settings = {};
     };
 
-    virtual EndpointInfo getHostToConnect() = 0;
+    virtual std::optional<EndpointInfo> getHostToConnect() = 0;
     virtual std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t> current_endpoint_id) const = 0;
     virtual bool hasBetterHostToConnect(size_t current_id) const = 0;
 
     virtual void markHostOffline(size_t id) = 0;
     virtual void markHostOnline(size_t id) = 0;
 
-    virtual void resetOfflineStatuses() = 0;
+    virtual void resetAllOffline() = 0;
     virtual size_t getAvailableEndpointsCount() const = 0;
     virtual size_t getEndpointsCount() const = 0;
 

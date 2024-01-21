@@ -71,13 +71,10 @@ public:
         endpoints[id].status = ONLINE;
     }
 
-    void resetOfflineStatuses()
+    void resetAllOffline()
     {
         for (auto & endpoint : endpoints)
-        {
-            if (endpoint.status == OFFLINE)
-                endpoint.status = UNDEF;
-        }
+            endpoint.status = UNDEF;
     }
 
     std::vector<size_t> getRangeByStatus(Status status) const
@@ -144,9 +141,9 @@ public:
         registry.markHostOnline(id);
     }
 
-    void resetOfflineStatuses() override
+    void resetAllOffline() override
     {
-        registry.resetOfflineStatuses();
+        registry.resetAllOffline();
     }
 
     size_t getEndpointsCount() const override
@@ -217,7 +214,7 @@ public:
         return asOptimalEndpoint(range[chosen]);
     }
 
-    EndpointInfo getHostToConnect() override
+    std::optional<EndpointInfo> getHostToConnect() override
     {
         auto range = getRangeByStatus(ONLINE);
         if (!range.empty())
@@ -232,13 +229,7 @@ public:
         }
 
         chassert(getAvailableEndpointsCount() == 0);
-        resetOfflineStatuses();
-        throw DB::Exception(
-            DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
-            "No available endpoints left."
-            " All offline endpoints are reset in undefined status."
-            " Endpoints count is {}",
-            getEndpointsCount());
+        return {};
     }
 
     std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t>) const override
@@ -288,7 +279,7 @@ public:
         return min_id;
     }
 
-    EndpointInfo getHostToConnect() override
+    std::optional<EndpointInfo> getHostToConnect() override
     {
         registry.logAllEndpoints();
         auto id = getMostPriority(ONLINE);
@@ -301,13 +292,7 @@ public:
             return getHostWithSetting(id.value());
 
         chassert(getAvailableEndpointsCount() == 0);
-        resetOfflineStatuses();
-        throw DB::Exception(
-            DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
-            "No available endpoints left."
-            " All offline endpoints are reset in undefined status."
-            " Endpoints count is {}",
-            getEndpointsCount());
+        return {};
     }
     
     std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t> current_endpoint_id) const override
@@ -381,7 +366,7 @@ public:
         return false;
     }
 private:
-    EndpointInfo getHostToConnect() override
+    std::optional<EndpointInfo> getHostToConnect() override
     {
         // TODO: disable this.
         registry.logAllEndpoints();
@@ -401,15 +386,7 @@ private:
             return selectEndpoint(undef_endpoints[0]);
 
         chassert(getAvailableEndpointsCount() == 0);
-
-        // TODO: consider not reset here. instead before the createClient. because it's already reset anyway.
-        resetOfflineStatuses();
-        throw DB::Exception(
-            DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
-            "No available endpoints left."
-            " All offline endpoints are reset in undefined status."
-            " Endpoints count is {}",
-            getEndpointsCount());
+        return {};
     }
 
     EndpointInfo selectEndpoint(size_t id)
@@ -435,7 +412,7 @@ public:
         return asTemporaryEndpoint(range[chosen]);
     }
 
-    EndpointInfo getHostToConnect() override
+    std::optional<EndpointInfo> getHostToConnect() override
     {
         auto first_status = registry.findEndpointById(0).status;
 
@@ -454,13 +431,7 @@ public:
             return getHostFrom(range);
 
         chassert(getAvailableEndpointsCount() == 0);
-        resetOfflineStatuses();
-        throw DB::Exception(
-            DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
-            "No available endpoints left."
-            " All offline endpoints are reset in undefined status."
-            " Endpoints count is {}",
-            getEndpointsCount());
+        return {};
 
     }
 
@@ -565,13 +536,24 @@ void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<Zo
 
 std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
 {
+    // Currently we don't have background thread to check endpoint status. When an optiomal host is offline,
+    // we have no way to detect when it becomes online again. So we reset all offline status when creating a new client.
+    // TODO: add background thread to check endpoint status.
+    connection_balancer->resetAllOffline();
+
     bool dns_error_occurred = false;
     size_t attempts = 0;
     while (true)
     {
         ++attempts;
-        auto endpoint = connection_balancer->getHostToConnect();
+        auto endpoint_or = connection_balancer->getHostToConnect();
+        if (!endpoint_or.has_value())
+        {
+            LOG_ERROR(log, "No available endpoints left, all of them are in offline status.");
+            throwWhenNoHostAvailable(dns_error_occurred);
+        }
 
+        const auto endpoint = endpoint_or.value();
         if (!isKeeperHostDNSAvailable(log, endpoint.address, dns_error_occurred))
         {
             connection_balancer->markHostOffline(endpoint.id);
@@ -614,8 +596,6 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
             LOG_ERROR(log, "Failed to connect to ZooKeeper host {}, error {}", endpoint.address, ex.what());
         }
     }
-    // now get host returned the error not sure if dns error make sense or not.
-    // throwWhenNoHostAvailable(dns_error_occurred);
 }
 
 }
