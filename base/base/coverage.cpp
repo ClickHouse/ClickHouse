@@ -62,6 +62,7 @@ namespace
 
     uintptr_t * allocate(size_t size)
     {
+        /// Note: mmap return zero-initialized memory, and we count on that.
         void * map = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (MAP_FAILED == map)
             return nullptr;
@@ -91,8 +92,6 @@ void __sanitizer_cov_trace_pc_guard_init(uint32_t * start, uint32_t * stop)
     /// Note: we will leak this.
     current_coverage_array = allocate(sizeof(uintptr_t) * coverage_array_size);
     cumulative_coverage_array = allocate(sizeof(uintptr_t) * coverage_array_size);
-
-    resetCoverage();
 }
 
 /// This is called at least once for every DSO for initialization
