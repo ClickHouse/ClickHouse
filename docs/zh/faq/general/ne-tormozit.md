@@ -16,7 +16,7 @@ sidebar_position: 11
 
 那么，它是什么意思呢？以下是翻译“не тормозит”的一些方式：
 
--   如果你直译，那就是“ClickHouse 不拖后腿”。
+-   如果你直译，那就是“ClickHouse 不踩刹车”。
 -   如果你想尽可能接近一个有 IT 背景的俄罗斯人的听觉感受，那就是“如果你的大型系统延迟，不是因为它使用了 ClickHouse”。
 -   更短，但不那么精确的版本可能是“ClickHouse 不慢”，“ClickHouse 不卡顿”或仅仅“ClickHouse 很快”。
 
