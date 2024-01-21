@@ -40,7 +40,6 @@ public:
     void enqueueRequest(ResourceRequest * request) override
     {
         std::unique_lock lock(mutex);
-        request->enqueue_ns = clock_gettime_ns();
         queue_cost += request->cost;
         bool was_empty = requests.empty();
         requests.push_back(request);
@@ -61,6 +60,26 @@ public:
         dequeued_requests++;
         dequeued_cost += result->cost;
         return {result, !requests.empty()};
+    }
+
+    bool cancelRequest(ResourceRequest * request) override
+    {
+        std::unique_lock lock(mutex);
+        // TODO(serxa): reimplement queue as intrusive list of ResourceRequest to make this O(1) instead of O(N)
+        for (auto i = requests.begin(), e = requests.end(); i != e; ++i)
+        {
+            if (*i == request)
+            {
+                requests.erase(i);
+                if (requests.empty())
+                    busy_periods++;
+                queue_cost -= request->cost;
+                canceled_requests++;
+                canceled_cost += request->cost;
+                return true;
+            }
+        }
+        return false;
     }
 
     bool isActive() override
@@ -105,7 +124,7 @@ public:
 private:
     std::mutex mutex;
     Int64 queue_cost = 0;
-    std::deque<ResourceRequest *> requests;
+    std::deque<ResourceRequest *> requests; // TODO(serxa): reimplement it using intrusive list to avoid allocations/deallocations and O(N) during cancel
 };
 
 }

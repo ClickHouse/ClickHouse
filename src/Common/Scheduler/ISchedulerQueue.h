@@ -50,6 +50,12 @@ public:
     /// Should be called outside of scheduling subsystem, implementation must be thread-safe.
     virtual void enqueueRequest(ResourceRequest * request) = 0;
 
+    /// Cancel previously enqueued request.
+    /// Returns `false` and does nothing given unknown or already executed request.
+    /// Returns `true` if requests has been found and canceled.
+    /// Should be called outside of scheduling subsystem, implementation must be thread-safe.
+    virtual bool cancelRequest(ResourceRequest * request) = 0;
+
     /// For introspection
     ResourceCost getBudget() const
     {

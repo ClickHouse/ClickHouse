@@ -38,7 +38,6 @@ TEST(SchedulerDynamicResourceManager, Smoke)
     {
         ResourceGuard gA(cA->get("res1"), ResourceGuard::PostponeLocking);
         gA.lock();
-        gA.setFailure();
         gA.unlock();
 
         ResourceGuard gB(cB->get("res1"));
