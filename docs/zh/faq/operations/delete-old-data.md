@@ -41,4 +41,4 @@ ClickHouse没有像[OLTP](https://en.wikipedia.org/wiki/Online_transaction_proce
 
 从表中删除所有数据是相当激进的，但在某些情况下可能正是您所需要的。
 
-有关[表截断](../../sql-reference/statements/truncate.md)的更多详细信息。
+有关[truncate](../../sql-reference/statements/truncate.md)的更多详细信息。
