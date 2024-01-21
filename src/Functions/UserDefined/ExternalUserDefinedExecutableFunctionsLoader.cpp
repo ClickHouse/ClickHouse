@@ -100,7 +100,8 @@ ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunct
 {
     setConfigSettings({"function", "name", "database", "uuid"});
     enableAsyncLoading(false);
-    enablePeriodicUpdates(true);
+    if (getContext()->getApplicationType() == Context::ApplicationType::SERVER)
+        enablePeriodicUpdates(true);
     enableAlwaysLoadEverything(true);
 }
 

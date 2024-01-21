@@ -63,7 +63,7 @@ if __name__ == "__main__":
 Let's invoke the script and have it generate 10 random strings:
 
 ```sql
-SELECT * FROM executable('my_script.py', TabSeparated, 'id UInt32, random String', (SELECT 10))
+SELECT * FROM executable('generate_random.py', TabSeparated, 'id UInt32, random String', (SELECT 10))
 ```
 
 The response looks like:
