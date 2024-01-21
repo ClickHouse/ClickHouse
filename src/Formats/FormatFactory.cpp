@@ -166,7 +166,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.template_settings.resultset_format = settings.format_template_resultset;
     format_settings.template_settings.row_between_delimiter = settings.format_template_rows_between_delimiter;
     format_settings.template_settings.row_format = settings.format_template_row;
-    format_settings.template_settings.row_format_schema_string = settings.format_schema_rows_template;
+    format_settings.template_settings.row_format_schema = settings.format_schema_rows_template;
+    format_settings.template_settings.row_between_delimiter_schema = settings.format_schema_rows_between_delimiter;
     format_settings.tsv.crlf_end_of_line = settings.output_format_tsv_crlf_end_of_line;
     format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
     format_settings.tsv.enum_as_number = settings.input_format_tsv_enum_as_number;

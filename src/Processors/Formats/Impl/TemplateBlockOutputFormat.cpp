@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int INVALID_TEMPLATE_FORMAT;
 }
 
 TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
@@ -213,14 +214,34 @@ void registerOutputFormatTemplate(FormatFactory & factory)
                     });
         }
 
-        ParsedTemplateFormatString row_format = ParsedTemplateFormatString(
+        ParsedTemplateFormatString row_format;
+        auto idx_by_name = [&](const String & colName)
+        {
+            return sample.getPositionByName(colName);
+        };
+        if (settings.template_settings.row_format.empty())
+        {
+            if (settings.template_settings.row_format_schema.empty())
+            {
+                throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_row or format_schema_rows_template");
+            }
+            else
+            {
+                row_format = ParsedTemplateFormatString();
+                row_format.parse(settings.template_settings.row_format_schema,idx_by_name);
+            }
+        }
+        else
+        {
+            if (settings.template_settings.row_format_schema.empty())
+            {
+                throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_row or format_schema_rows_template");
+            }
+            row_format = ParsedTemplateFormatString(
                 FormatSchemaInfo(settings.template_settings.row_format, "Template", false,
                         settings.schema.is_server, settings.schema.format_schema_path),
-                [&](const String & colName)
-                {
-                    return sample.getPositionByName(colName);
-                });
-
+                idx_by_name);
+        }
         return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
     });
 

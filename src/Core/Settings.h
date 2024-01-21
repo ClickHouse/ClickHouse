@@ -1078,8 +1078,8 @@ class IColumn;
     M(String, format_schema, "", "Schema identifier (used by schema-based formats)", 0) \
     M(String, format_template_resultset, "", "Path to file which contains format string for result set (for Template format)", 0) \
     M(String, format_template_row, "", "Path to file which contains format string for rows (for Template format)", 0) \
-    M(String, format_template_rows_between_delimiter, "\n", "Delimiter between rows (for Template format)", 0) \
     M(String, format_schema_rows_template, "\n", "Format string for rows (for Template format)", 0) \
+    M(String, format_template_rows_between_delimiter, "\n", "Delimiter between rows (for Template format)", 0) \
     \
     M(EscapingRule, format_custom_escaping_rule, "Escaped", "Field escaping rule (for CustomSeparated format)", 0) \
     M(String, format_custom_field_delimiter, "\t", "Delimiter between fields (for CustomSeparated format)", 0) \
