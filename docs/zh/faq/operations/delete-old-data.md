@@ -19,7 +19,7 @@ ClickHouse 允许在某些条件发生时自动删除值。这个条件被配置
 TTL也可以用来将数据移动到非 [/dev/null](https://en.wikipedia.org/wiki/Null_device) 的不同存储系统，例如从SSD到HDD。
 :::
 
-有关 [配置TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) 的更多详细信息。
+有关 [配置 TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) 的更多详细信息。
 
 ## ALTER DELETE {#alter-delete}
 
