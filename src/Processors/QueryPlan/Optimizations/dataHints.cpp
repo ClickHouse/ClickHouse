@@ -312,7 +312,7 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
                 if (!info->reversed && info->value.has_value() && info->value.value().getTypeName() == "UInt64")
                 {
                     node_to_hint[node] = {false};
-                    node_to_hint[node].setStrictLowerBoundary(-info->value.value().get<uint64_t>());
+                    node_to_hint[node].setStrictLowerBoundary(-info->value.value().get<int64_t>()); // May be problems with that
                     node_to_hint[node].setStrictUpperBoundary(info->value.value().get<uint64_t>());
                 }
                 stack.pop();
@@ -344,7 +344,7 @@ void updateDataHintsWithExpressionActionsDAG(DataHints & hints, const ActionsDAG
                     else if (info->reversed)
                     {
                         node_to_hint[node].multiplyConst(-1);
-                            node_to_hint[node].plusConst(info->value.value());
+                        node_to_hint[node].plusConst(info->value.value());
                     }
                     else
                         node_to_hint[node].minusConst(info->value.value());
