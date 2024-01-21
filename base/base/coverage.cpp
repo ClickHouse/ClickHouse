@@ -92,6 +92,8 @@ void __sanitizer_cov_trace_pc_guard_init(uint32_t * start, uint32_t * stop)
     /// Note: we will leak this.
     current_coverage_array = allocate(sizeof(uintptr_t) * coverage_array_size);
     cumulative_coverage_array = allocate(sizeof(uintptr_t) * coverage_array_size);
+
+    resetCoverage();
 }
 
 /// This is called at least once for every DSO for initialization
@@ -102,8 +104,8 @@ void __sanitizer_cov_pcs_init(const uintptr_t * pcs_begin, const uintptr_t * pcs
         return;
     pc_table_initialized = true;
 
-    all_addresses_array = allocate(sizeof(uintptr_t) * coverage_array_size);
     all_addresses_array_size = pcs_end - pcs_begin;
+    all_addresses_array = allocate(sizeof(uintptr_t) * all_addresses_array_size);
 
     /// They are not a real pointers, but also contain a flag in the most significant bit,
     /// in which we are not interested for now. Reset it.
@@ -125,10 +127,10 @@ void __sanitizer_cov_trace_pc_guard(uint32_t * guard)
     /// The values of `*guard` are as you set them in
     /// __sanitizer_cov_trace_pc_guard_init and so you can make them consecutive
     /// and use them to dereference an array or a bit vector.
-    void * pc = __builtin_return_address(0);
+    intptr_t pc = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
 
-    current_coverage_array[guard - guards_start] = reinterpret_cast<uintptr_t>(pc);
-    cumulative_coverage_array[guard - guards_start] = reinterpret_cast<uintptr_t>(pc);
+    current_coverage_array[guard - guards_start] = pc;
+    cumulative_coverage_array[guard - guards_start] = pc;
 }
 
 }
