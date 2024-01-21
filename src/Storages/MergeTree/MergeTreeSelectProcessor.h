@@ -82,7 +82,7 @@ private:
     };
 
     /// Used for filling header with no rows as well as block with data
-    static void injectVirtualColumns(Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
+    static void injectVirtualColumns(Block & block, const DataTypePtr & partition_value_type, const Names & virtual_columns);
     static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
 
     /// Sets up range readers corresponding to data readers
@@ -104,10 +104,6 @@ private:
     MergeTreeReadTaskPtr task;
     /// This step is added when the part has lightweight delete mask
     PrewhereExprStepPtr lightweight_delete_filter_step;
-    /// These columns will be filled by the merge tree range reader
-    Names non_const_virtual_column_names;
-    /// This header is used for chunks from readFromPart().
-    Block header_without_const_virtual_columns;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
 

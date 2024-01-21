@@ -808,8 +808,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     IMergeTreeReader * merge_tree_reader_,
     MergeTreeRangeReader * prev_reader_,
     const PrewhereExprStep * prewhere_info_,
-    bool last_reader_in_chain_,
-    const Names & non_const_virtual_column_names_)
+    bool last_reader_in_chain_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
     , prev_reader(prev_reader_)
@@ -824,21 +823,6 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     {
         read_sample_block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
         result_sample_block.insert({name_and_type.type->createColumn(), name_and_type.type, name_and_type.name});
-    }
-
-    for (const auto & column_name : non_const_virtual_column_names_)
-    {
-        if (result_sample_block.has(column_name))
-            continue;
-
-        non_const_virtual_column_names.push_back(column_name);
-
-        if (column_name == "_part_offset" && !prev_reader)
-        {
-            /// _part_offset column is filled by the first reader.
-            read_sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
-            result_sample_block.insert(ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name));
-        }
     }
 
     if (prewhere_info)
@@ -1006,6 +990,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             if (num_read_rows == 0)
                 num_read_rows = read_result.num_rows;
 
+            merge_tree_reader->fillVirtualColumns(columns, num_read_rows);
+
             /// fillMissingColumns() must be called after reading but befoe any filterings because
             /// some columns (e.g. arrays) might be only partially filled and thus not be valid and
             /// fillMissingColumns() fixes this.
@@ -1056,22 +1042,23 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
         {
             /// Physical columns go first and then some virtual columns follow
-            size_t physical_columns_count = merge_tree_reader->getColumns().size();
-            Columns physical_columns(read_result.columns.begin(), read_result.columns.begin() + physical_columns_count);
+            size_t columns_count = merge_tree_reader->getColumns().size();
+            Columns columns(read_result.columns.begin(), read_result.columns.begin() + columns_count);
+            merge_tree_reader->fillVirtualColumns(columns, read_result.num_rows);
 
             bool should_evaluate_missing_defaults;
-            merge_tree_reader->fillMissingColumns(physical_columns, should_evaluate_missing_defaults, read_result.num_rows);
+            merge_tree_reader->fillMissingColumns(columns, should_evaluate_missing_defaults, read_result.num_rows);
 
             /// If some columns absent in part, then evaluate default values
             if (should_evaluate_missing_defaults)
-                merge_tree_reader->evaluateMissingDefaults({}, physical_columns);
+                merge_tree_reader->evaluateMissingDefaults({}, columns);
 
             /// If result not empty, then apply on-fly alter conversions if any required
             if (!prewhere_info || prewhere_info->perform_alter_conversions)
-                merge_tree_reader->performRequiredConversions(physical_columns);
+                merge_tree_reader->performRequiredConversions(columns);
 
-            for (size_t i = 0; i < physical_columns.size(); ++i)
-                read_result.columns[i] = std::move(physical_columns[i]);
+            for (size_t i = 0; i < columns.size(); ++i)
+                read_result.columns[i] = std::move(columns[i]);
         }
 
         size_t total_bytes = 0;
@@ -1163,12 +1150,17 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     if (read_sample_block.has("_part_offset"))
-        fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+    {
+        size_t pos = read_sample_block.getPositionByName("_part_offset");
+        chassert(pos < result.columns.size());
+        chassert(result.columns[pos] == nullptr);
+        result.columns[pos] = fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
+    }
 
     return result;
 }
 
-void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
+ColumnPtr MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
 {
     size_t num_rows = result.numReadRows();
 
@@ -1194,7 +1186,7 @@ void MergeTreeRangeReader::fillPartOffsetColumn(ReadResult & result, UInt64 lead
             *pos++ = start_part_offset++;
     }
 
-    result.columns.emplace_back(std::move(column));
+    return column;
 }
 
 Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, size_t & num_rows)

@@ -24,6 +24,7 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const Names & virtual_column_names_,
+        const DataTypePtr & partition_value_type_,
         const PoolSettings & settings_,
         const ContextPtr & context_);
 
@@ -67,7 +68,7 @@ private:
 
     struct ThreadTask
     {
-        using InfoPtr = MergeTreeReadTask::InfoPtr;
+        using InfoPtr = MergeTreeReadTaskInfoPtr;
 
         ThreadTask(InfoPtr read_info_, MarkRanges ranges_, Priority priority_)
             : read_info(std::move(read_info_)), ranges(std::move(ranges_)), priority(priority_)

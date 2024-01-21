@@ -40,6 +40,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const Names & virtual_column_names_,
+    const DataTypePtr & partition_value_type_,
     const PoolSettings & settings_,
     const ContextPtr & context_)
     : MergeTreeReadPoolBase(
@@ -50,6 +51,7 @@ MergeTreeReadPool::MergeTreeReadPool(
         reader_settings_,
         column_names_,
         virtual_column_names_,
+        partition_value_type_,
         settings_,
         context_)
     , min_marks_for_concurrent_read(pool_settings.min_marks_for_concurrent_read)

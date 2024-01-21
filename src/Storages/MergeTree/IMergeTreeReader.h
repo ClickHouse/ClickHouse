@@ -23,6 +23,7 @@ public:
     IMergeTreeReader(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         const NamesAndTypesList & columns_,
+        const MergeTreeReadTaskInfoPtr & read_task_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
@@ -41,6 +42,9 @@ public:
     virtual ~IMergeTreeReader() = default;
 
     const ValueSizeMap & getAvgValueSizeHints() const;
+
+    /// Add virtual columns that are not present in the block.
+    void fillVirtualColumns(Columns & columns, size_t rows) const;
 
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
@@ -113,6 +117,12 @@ private:
 
     /// Actual columns description in part.
     const ColumnsDescription & part_columns;
+
+    /// Shared information required for reading.
+    MergeTreeReadTaskInfoPtr read_task_info;
+
+    /// Map of positions in requested_columns which are virtual columns to their names.
+    std::map<size_t, String> virt_column_pos_to_name;
 };
 
 }

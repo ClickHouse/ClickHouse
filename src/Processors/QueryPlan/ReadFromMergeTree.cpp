@@ -353,6 +353,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         reader_settings,
         required_columns,
         virt_column_names,
+        data.getPartitionValueType(),
         pool_settings,
         context);
 
@@ -434,6 +435,7 @@ Pipe ReadFromMergeTree::readFromPool(
             reader_settings,
             required_columns,
             virt_column_names,
+            data.getPartitionValueType(),
             pool_settings,
             context);
     }
@@ -447,6 +449,7 @@ Pipe ReadFromMergeTree::readFromPool(
             reader_settings,
             required_columns,
             virt_column_names,
+            data.getPartitionValueType(),
             pool_settings,
             context);
     }
@@ -523,6 +526,7 @@ Pipe ReadFromMergeTree::readInOrder(
             reader_settings,
             required_columns,
             virt_column_names,
+            data.getPartitionValueType(),
             pool_settings,
             context);
     }
@@ -538,6 +542,7 @@ Pipe ReadFromMergeTree::readInOrder(
             reader_settings,
             required_columns,
             virt_column_names,
+            data.getPartitionValueType(),
             pool_settings,
             context);
     }

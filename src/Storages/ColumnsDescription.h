@@ -32,6 +32,7 @@ struct GetColumnsOptions
 {
     enum Kind : UInt8
     {
+        None = 0,
         Ordinary = 1,
         Materialized = 2,
         Aliases = 4,
