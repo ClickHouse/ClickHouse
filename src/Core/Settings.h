@@ -407,6 +407,7 @@ class IColumn;
     M(UInt64, min_execution_speed_bytes, 0, "Minimum number of execution bytes per second.", 0) \
     M(UInt64, max_execution_speed_bytes, 0, "Maximum number of execution bytes per second.", 0) \
     M(Seconds, timeout_before_checking_execution_speed, 10, "Check that the speed is not too low after the specified time has elapsed.", 0) \
+    M(Seconds, max_estimated_execution_time, 0, "Maximum query estimate execution time in seconds.", 0) \
     \
     M(UInt64, max_columns_to_read, 0, "If a query requires reading more than specified number of columns, exception is thrown. Zero value means unlimited. This setting is useful to prevent too complex queries.", 0) \
     M(UInt64, max_temporary_columns, 0, "If a query generates more than the specified number of temporary columns in memory as a result of intermediate calculation, exception is thrown. Zero value means unlimited. This setting is useful to prevent too complex queries.", 0) \
