@@ -224,9 +224,10 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
         else
         {
             auto & out = column->getData();
+            size_t keys_found;
 
             if (is_attribute_nullable)
-                getItemsShortCircuitImpl<ValueType, true>(
+                keys_found = getItemsShortCircuitImpl<ValueType, true>(
                     attribute,
                     ids,
                     [&](size_t row, const auto value, bool is_null)
@@ -236,11 +237,13 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
                     },
                     default_mask);
             else
-                getItemsShortCircuitImpl<ValueType, false>(
+                keys_found = getItemsShortCircuitImpl<ValueType, false>(
                     attribute,
                     ids,
                     [&](size_t row, const auto value, bool) { out[row] = value; },
                     default_mask);
+
+            out.resize(keys_found);
         }
 
         result = std::move(column);
@@ -673,7 +676,7 @@ void FlatDictionary::getItemsImpl(
 }
 
 template <typename AttributeType, bool is_nullable, typename ValueSetter>
-void FlatDictionary::getItemsShortCircuitImpl(
+size_t FlatDictionary::getItemsShortCircuitImpl(
     const Attribute & attribute,
     const PaddedPODArray<UInt64> & keys,
     ValueSetter && set_value,
@@ -705,6 +708,7 @@ void FlatDictionary::getItemsShortCircuitImpl(
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
+    return keys_found;
 }
 
 template <typename T>

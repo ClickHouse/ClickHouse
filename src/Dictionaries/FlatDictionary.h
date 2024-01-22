@@ -173,7 +173,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    void getItemsShortCircuitImpl(
+    size_t getItemsShortCircuitImpl(
         const Attribute & attribute,
         const PaddedPODArray<UInt64> & keys,
         ValueSetter && set_value,
