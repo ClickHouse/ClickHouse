@@ -19,7 +19,7 @@ function run_test
     $CLICKHOUSE_CLIENT "${opts[@]}" -q "CREATE TABLE t_streaming_test (a String, b UInt64) ENGINE = $1"
     $CLICKHOUSE_CLIENT "${opts[@]}" -q "INSERT INTO t_streaming_test VALUES ('started', 0)"
 
-    read fifo_1 pid_1 < <(spawn $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a, a || '-' || a, b * b FROM t_streaming_test STREAM")
+    read -r fifo_1 pid_1 < <(spawn $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a, a || '-' || a, b * b FROM t_streaming_test STREAM")
     read_until "$fifo_1" "started"
 
     # insert some data into stream
@@ -38,8 +38,8 @@ function run_test
     $CLICKHOUSE_CLIENT "${opts[@]}" -q "INSERT INTO t_streaming_test_2 VALUES ('started', 0) ('started', 1)"
 
     # spawn 2 streams
-    read fifo_1 pid_1 < <(spawn $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a FROM t_streaming_test_2 STREAM WHERE b % 2 == 0")
-    read fifo_2 pid_2 < <(spawn $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a FROM t_streaming_test_2 STREAM WHERE b % 2 == 1")
+    read -r fifo_1 pid_1 < <(spawn $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a FROM t_streaming_test_2 STREAM WHERE b % 2 == 0")
+    read -r fifo_2 pid_2 < <(spawn $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT a FROM t_streaming_test_2 STREAM WHERE b % 2 == 1")
     read_until "$fifo_1" "started"
     read_until "$fifo_2" "started"
 
