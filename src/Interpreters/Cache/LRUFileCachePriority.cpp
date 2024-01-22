@@ -29,12 +29,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+LRUFileCachePriority::LRUFileCachePriority(size_t max_size_, size_t max_elements_, StatePtr state_)
+    : IFileCachePriority(max_size_, max_elements_)
+{
+    if (state_)
+        state = state_;
+    else
+        state = std::make_shared<State>();
+}
+
 IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
+    const UserInfo &,
     const CacheGuard::Lock & lock,
-    bool /* is_startup */)
+    bool)
 {
     return std::make_shared<LRUIterator>(add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock));
 }
@@ -63,12 +73,12 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, cons
 #endif
 
     const auto & size_limit = getSizeLimit(lock);
-    if (size_limit && current_size + entry->size > size_limit)
+    if (size_limit && state->current_size + entry->size > size_limit)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Not enough space to add {}:{} with size {}: current size: {}/{}",
-            entry->key, entry->offset, entry->size, current_size, size_limit);
+            entry->key, entry->offset, entry->size, state->current_size, size_limit);
     }
 
     auto iterator = queue.insert(queue.end(), entry);
@@ -102,13 +112,13 @@ LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::remove(LRUQueue::
 
 void LRUFileCachePriority::updateSize(int64_t size)
 {
-    current_size += size;
+    state->current_size += size;
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
 }
 
 void LRUFileCachePriority::updateElementsCount(int64_t num)
 {
-    current_elements_num += num;
+    state->current_elements_num += num;
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements, num);
 }
 
@@ -189,7 +199,11 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CacheGuard::Lock &
     }
 }
 
-bool LRUFileCachePriority::canFit(size_t size, const CacheGuard::Lock & lock) const
+bool LRUFileCachePriority::canFit( /// NOLINT
+    size_t size,
+    const CacheGuard::Lock & lock,
+    IteratorPtr,
+    bool) const
 {
     return canFit(size, 0, 0, lock);
 }
@@ -200,8 +214,8 @@ bool LRUFileCachePriority::canFit(
     size_t released_elements_assumption,
     const CacheGuard::Lock &) const
 {
-    return (max_size == 0 || (current_size + size - released_size_assumption <= max_size))
-        && (max_elements == 0 || current_elements_num + 1 - released_elements_assumption <= max_elements);
+    return (max_size == 0 || (state->current_size + size - released_size_assumption <= max_size))
+        && (max_elements == 0 || state->current_elements_num + 1 - released_elements_assumption <= max_elements);
 }
 
 bool LRUFileCachePriority::collectCandidatesForEviction(
@@ -210,6 +224,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr,
     FinalizeEvictionFunc &,
+    const UserID &,
     const CacheGuard::Lock & lock)
 {
     if (canFit(size, lock))
@@ -282,7 +297,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(LRUIterator & it, L
     return LRUIterator(this, it.iterator);
 }
 
-std::vector<FileSegmentInfo> LRUFileCachePriority::dump(const CacheGuard::Lock & lock)
+IFileCachePriority::PriorityDumpPtr LRUFileCachePriority::dump(const CacheGuard::Lock & lock)
 {
     std::vector<FileSegmentInfo> res;
     iterate([&](LockedKey &, const FileSegmentMetadataPtr & segment_metadata)
@@ -290,7 +305,7 @@ std::vector<FileSegmentInfo> LRUFileCachePriority::dump(const CacheGuard::Lock &
         res.emplace_back(FileSegment::getInfo(segment_metadata->file_segment));
         return IterationResult::CONTINUE;
     }, lock);
-    return res;
+    return std::make_shared<LRUPriorityDump>(res);
 }
 
 bool LRUFileCachePriority::modifySizeLimits(
@@ -301,8 +316,8 @@ bool LRUFileCachePriority::modifySizeLimits(
 
     auto check_limits_satisfied = [&]()
     {
-        return (max_size_ == 0 || current_size <= max_size_)
-            && (max_elements_ == 0 || current_elements_num <= max_elements_);
+        return (max_size_ == 0 || state->current_size <= max_size_)
+            && (max_elements_ == 0 || state->current_elements_num <= max_elements_);
     };
 
     if (check_limits_satisfied())

@@ -14,6 +14,7 @@ jobs:
     with:
       test_name: Jepsen keeper check
       runner_type: style-checker
+      report_required: true
       run_command: |
         python3 jepsen_check.py keeper
   # ServerJepsenRelease:

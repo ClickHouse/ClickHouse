@@ -49,7 +49,7 @@ Columns:
 
 - `last_attempt_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was last attempted.
 
-- `num_postponed` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of postponed tasks.
+- `num_postponed` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of times the action was postponed.
 
 - `postpone_reason` ([String](../../sql-reference/data-types/string.md)) — The reason why the task was postponed.
 
