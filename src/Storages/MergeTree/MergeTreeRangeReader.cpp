@@ -362,7 +362,7 @@ void MergeTreeRangeReader::ReadResult::shrink(Columns & old_columns, const NumRo
     }
 }
 
-/// The main invariant of the data in the read result is that he number of rows is
+/// The main invariant of the data in the read result is that the number of rows is
 /// either equal to total_rows_per_granule (if filter has not been applied) or to the number of
 /// 1s in the filter (if filter has been applied).
 void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
@@ -1200,7 +1200,7 @@ Columns MergeTreeRangeReader::continueReadingChain(const ReadResult & result, si
 
     if (result.rows_per_granule.empty())
     {
-        /// If zero rows were read on prev step, than there is no more rows to read.
+        /// If zero rows were read on prev step, there is no more rows to read.
         /// Last granule may have less rows than index_granularity, so finish reading manually.
         stream.finish();
         return columns;
