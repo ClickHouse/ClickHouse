@@ -85,20 +85,25 @@ public:
 
 SensitiveDataMasker::~SensitiveDataMasker() = default;
 
-std::unique_ptr<SensitiveDataMasker> SensitiveDataMasker::sensitive_data_masker = nullptr;
+SensitiveDataMasker::MaskerMultiVersion SensitiveDataMasker::sensitive_data_masker{};
 
-void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker_)
+void SensitiveDataMasker::setInstance(std::unique_ptr<SensitiveDataMasker>&& sensitive_data_masker_)
 {
+
     if (!sensitive_data_masker_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: the 'sensitive_data_masker' is not set");
 
     if (sensitive_data_masker_->rulesCount() > 0)
     {
-        sensitive_data_masker = std::move(sensitive_data_masker_);
+        sensitive_data_masker.set(std::move(sensitive_data_masker_));
+    }
+    else
+    {
+        sensitive_data_masker.set(nullptr);
     }
 }
 
-SensitiveDataMasker * SensitiveDataMasker::getInstance()
+SensitiveDataMasker::MaskerMultiVersion::Version SensitiveDataMasker::getInstance()
 {
     return sensitive_data_masker.get();
 }
@@ -197,7 +202,7 @@ std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_
 {
     std::string res = str;
 
-    if (auto * masker = SensitiveDataMasker::getInstance())
+    if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
     size_t length = res.length();

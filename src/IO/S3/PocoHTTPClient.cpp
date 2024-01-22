@@ -497,11 +497,11 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     LOG_TEST(log, "Written {} bytes to request body", size);
             }
 
+            setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
+
             if (enable_s3_requests_logging)
                 LOG_TEST(log, "Receiving response...");
             auto & response_body_stream = session->receiveResponse(poco_response);
-
-            setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
 
             watch.stop();
             addMetric(request, S3MetricType::Microseconds, watch.elapsedMicroseconds());
