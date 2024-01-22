@@ -179,11 +179,11 @@ def get_file_flag_name(
 
 
 def get_s3_path(build_digest: str) -> str:
-    return f"CI_data/BUILD-{build_digest}/"
+    return f"CI_cache/BUILD-{build_digest}/"
 
 
 def get_s3_path_docs(digest: str) -> str:
-    return f"CI_data/DOCS-{digest}/"
+    return f"CI_cache/DOCS-{digest}/"
 
 
 def check_missing_images_on_dockerhub(
