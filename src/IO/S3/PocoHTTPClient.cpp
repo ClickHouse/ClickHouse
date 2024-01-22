@@ -140,16 +140,22 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     }
 }
 
+ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
+{
+    return ConnectionTimeouts()
+        .withConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
+        .withSendTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
+        .withReceiveTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
+        .withTcpKeepAliveTimeout(Poco::Timespan(
+            client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0))
+        .withHttpKeepAliveTimeout(Poco::Timespan(
+            client_configuration.http_keep_alive_timeout_ms * 1000)); /// flag indicating whether keep-alive is enabled is set to each session upon creation
+}
 
 PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration)
     : per_request_configuration(client_configuration.per_request_configuration)
     , error_report(client_configuration.error_report)
-    , timeouts(ConnectionTimeouts(
-          Poco::Timespan(client_configuration.connectTimeoutMs * 1000), /// connection timeout.
-          Poco::Timespan(client_configuration.requestTimeoutMs * 1000), /// send timeout.
-          Poco::Timespan(client_configuration.requestTimeoutMs * 1000), /// receive timeout.
-          Poco::Timespan(client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0),
-          Poco::Timespan(client_configuration.http_keep_alive_timeout_ms * 1000))) /// flag indicating whether keep-alive is enabled is set to each session upon creation
+    , timeouts(getTimeoutsFromConfiguration(client_configuration))
     , remote_host_filter(client_configuration.remote_host_filter)
     , s3_max_redirects(client_configuration.s3_max_redirects)
     , s3_use_adaptive_timeouts(client_configuration.s3_use_adaptive_timeouts)
