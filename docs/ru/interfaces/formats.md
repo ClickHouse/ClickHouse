@@ -201,7 +201,7 @@ SELECT * FROM nestedt FORMAT TSV
 
 Этот формат позволяет указать произвольную форматную строку, в которую подставляются значения, сериализованные выбранным способом.
 
-Для этого используются настройки `format_template_resultset`, `format_template_row`, `format_template_rows_between_delimiter` и настройки экранирования других форматов (например, `output_format_json_quote_64bit_integers` при экранировании как в `JSON`, см. далее)
+Для этого используются настройки `format_template_resultset`, `format_template_row` (`format_schema_rows_template`), `format_template_rows_between_delimiter` и настройки экранирования других форматов (например, `output_format_json_quote_64bit_integers` при экранировании как в `JSON`, см. далее)
 
 Настройка `format_template_row` задаёт путь к файлу, содержащему форматную строку для строк таблицы, которая должна иметь вид:
 
@@ -226,6 +226,8 @@ SELECT * FROM nestedt FORMAT TSV
     между разделителями `Search phrase: `, `, count: `, `, ad price: $` и `;` при выводе будут подставлены (при вводе - будут ожидаться) значения столбцов `SearchPhrase`, `c` и `price`, сериализованные как `Quoted`, `Escaped` и `JSON` соответственно, например:
 
     `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
+
+В тех случаях, когда не удобно или не возможно указать произвольную форматную строку в файле, можно использовать `format_schema_rows_template` указать произвольную форматную строку в запросе.    
 
 Настройка `format_template_rows_between_delimiter` задаёт разделитель между строками, который выводится (или ожмдается при вводе) после каждой строки, кроме последней. По умолчанию `\n`.
 

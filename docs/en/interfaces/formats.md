@@ -253,7 +253,7 @@ This format is also available under the name `TSVRawWithNamesAndNames`.
 
 This format allows specifying a custom format string with placeholders for values with a specified escaping rule.
 
-It uses settings `format_template_resultset`, `format_template_row`, `format_template_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
+It uses settings `format_template_resultset`, `format_template_row` (`format_schema_rows_template`), `format_template_rows_between_delimiter` and some settings of other formats (e.g. `output_format_json_quote_64bit_integers` when using `JSON` escaping, see further)
 
 Setting `format_template_row` specifies the path to the file containing format strings for rows with the following syntax:
 
@@ -278,6 +278,8 @@ So, for the following format string:
 the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase:`, `, count:`, `, ad price: $` and `;` delimiters respectively. For example:
 
 `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
+
+In cases where it is challenging or not possible to deploy format output configuration for the template format to a directory on all nodes in a cluste, or if the format is trivial then `format_schema_rows_template` can be used to pass the template string directly in the query, rather than a path to the file which contains it.
 
 The `format_template_rows_between_delimiter` setting specifies the delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
 
