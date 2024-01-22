@@ -7,6 +7,8 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <Interpreters/ProcessList.h>
+
 #include <base/hex.h>
 
 
@@ -203,7 +205,7 @@ BackupFileInfo buildFileInfoForBackupEntry(
     return info;
 }
 
-BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool)
+BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
@@ -225,7 +227,7 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
             ++num_active_jobs;
         }
 
-        auto job = [&mutex, &num_active_jobs, &event, &exception, &infos, &backup_entries, &read_settings, &base_backup, &thread_group, i, log]()
+        auto job = [&mutex, &num_active_jobs, &event, &exception, &infos, &backup_entries, &read_settings, &base_backup, &thread_group, &process_list_element, i, log]()
         {
             SCOPE_EXIT_SAFE({
                 std::lock_guard lock{mutex};
@@ -249,6 +251,9 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
                     if (exception)
                         return;
                 }
+
+                if (process_list_element)
+                    process_list_element->checkTimeLimit();
 
                 infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, read_settings, log);
             }

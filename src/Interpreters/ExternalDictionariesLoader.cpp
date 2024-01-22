@@ -27,7 +27,8 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context
 {
     setConfigSettings({"dictionary", "name", "database", "uuid"});
     enableAsyncLoading(true);
-    enablePeriodicUpdates(true);
+    if (getContext()->getApplicationType() == Context::ApplicationType::SERVER)
+        enablePeriodicUpdates(true);
 }
 
 ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
