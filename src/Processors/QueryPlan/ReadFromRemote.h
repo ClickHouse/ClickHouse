@@ -60,6 +60,7 @@ private:
     Poco::Logger * log;
     UInt32 shard_count;
     const String cluster_name;
+    std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
     void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
     void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
@@ -75,6 +76,7 @@ public:
         ParallelReplicasReadingCoordinatorPtr coordinator_,
         Block header_,
         QueryProcessingStage::Enum stage_,
+        StorageID main_table_,
         ContextMutablePtr context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
@@ -97,6 +99,7 @@ private:
     ASTPtr query_ast;
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
+    StorageID main_table;
     ContextMutablePtr context;
     ThrottlerPtr throttler;
     Scalars scalars;

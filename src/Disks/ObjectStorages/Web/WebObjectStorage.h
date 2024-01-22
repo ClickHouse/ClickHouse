@@ -21,19 +21,13 @@ class WebObjectStorage : public IObjectStorage, WithContext
 public:
     WebObjectStorage(const String & url_, ContextPtr context_);
 
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        return DataSourceDescription{
-            .type = DataSourceType::WebServer,
-            .description = url,
-            .is_encrypted = false,
-            .is_cached = false,
-        };
-    }
-
     std::string getName() const override { return "WebObjectStorage"; }
 
-    std::string getCommonKeyPrefix() const override { return ""; }
+    ObjectStorageType getType() const override { return ObjectStorageType::Web; }
+
+    std::string getCommonKeyPrefix() const override { return url; }
+
+    std::string getDescription() const override { return url; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -110,23 +104,58 @@ protected:
         Directory
     };
 
+    struct FileData;
+    using FileDataPtr = std::shared_ptr<FileData>;
+
     struct FileData
     {
-        FileType type{};
-        size_t size = 0;
-        bool loaded_children = false;
+        FileData(FileType type_, size_t size_, bool loaded_children_ = false)
+            : type(type_), size(size_), loaded_children(loaded_children_) {}
+
+        static FileDataPtr createFileInfo(size_t size_)
+        {
+            return std::make_shared<FileData>(FileType::File, size_, false);
+        }
+
+        static FileDataPtr createDirectoryInfo(bool loaded_childrent_)
+        {
+            return std::make_shared<FileData>(FileType::Directory, 0, loaded_childrent_);
+        }
+
+        FileType type;
+        size_t size;
+        std::atomic<bool> loaded_children;
     };
 
-    using Files = std::map<String, FileData>; /// file path -> file data
+    struct Files : public std::map<String, FileDataPtr>
+    {
+        auto find(const String & path, bool is_file) const
+        {
+            if (is_file)
+                return std::map<String, FileDataPtr>::find(path);
+            else
+                return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
+        }
+
+        auto add(const String & path, FileDataPtr data)
+        {
+            if (data->type == FileType::Directory)
+                return emplace(path.ends_with("/") ? path : path + '/', data);
+            else
+                return emplace(path, data);
+        }
+    };
+
     mutable Files files;
     mutable std::shared_mutex metadata_mutex;
 
-    std::optional<FileData> tryGetFileInfo(const String & path) const;
+    FileDataPtr tryGetFileInfo(const String & path) const;
     std::vector<std::filesystem::path> listDirectory(const String & path) const;
-    FileData getFileInfo(const String & path) const;
+    FileDataPtr getFileInfo(const String & path) const;
 
 private:
-    std::vector<std::filesystem::path> loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const;
+    std::pair<WebObjectStorage::FileDataPtr, std::vector<std::filesystem::path>>
+    loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const;
 
     const String url;
     Poco::Logger * log;

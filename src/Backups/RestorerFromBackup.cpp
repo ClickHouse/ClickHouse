@@ -16,6 +16,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ProcessList.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Storages/IStorage.h>
@@ -85,6 +86,7 @@ RestorerFromBackup::RestorerFromBackup(
     , restore_coordination(restore_coordination_)
     , backup(backup_)
     , context(context_)
+    , process_list_element(context->getProcessListElement())
     , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
     , log(&Poco::Logger::get("RestorerFromBackup"))
@@ -138,6 +140,8 @@ RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 void RestorerFromBackup::setStage(const String & new_stage, const String & message)
 {
     LOG_TRACE(log, "Setting stage: {}", new_stage);
+    checkIsQueryCancelled();
+
     current_stage = new_stage;
 
     if (restore_coordination)
@@ -148,6 +152,12 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
         else
             restore_coordination->waitForStage(new_stage);
     }
+}
+
+void RestorerFromBackup::checkIsQueryCancelled() const
+{
+    if (process_list_element)
+        process_list_element->checkTimeLimit();
 }
 
 void RestorerFromBackup::findRootPathsInBackup()
@@ -563,6 +573,8 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
     if (database_info.is_predefined_database)
         return;
 
+    checkIsQueryCancelled();
+
     auto create_database_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(database_info.create_database_query->clone());
 
     /// Generate a new UUID for a database.
@@ -709,6 +721,8 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
     if (table_info.is_predefined_table)
         return;
 
+    checkIsQueryCancelled();
+
     auto create_table_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(table_info.create_table_query->clone());
 
     /// Generate a new UUID for a table (the same table on different hosts must use the same UUID, `restore_coordination` will make it so).
@@ -789,6 +803,8 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
 
     auto & table_info = table_infos.at(table_name);
     auto storage = table_info.storage;
+
+    checkIsQueryCancelled();
 
     try
     {
