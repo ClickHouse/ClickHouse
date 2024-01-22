@@ -13,8 +13,7 @@ extern const int BAD_ARGUMENTS;
 
 DiskObjectStorageVFS::DiskObjectStorageVFS(
     const String & name_,
-    const String & object_storage_root_path_,
-    const String & log_name,
+    const String & object_key_prefix_,
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
     const Poco::Util::AbstractConfiguration & config,
@@ -22,8 +21,7 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     bool enable_gc_)
     : DiskObjectStorage( //
         name_,
-        object_storage_root_path_,
-        log_name,
+        object_key_prefix_,
         std::move(metadata_storage_),
         std::move(object_storage_),
         config,
@@ -31,9 +29,12 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     , enable_gc(enable_gc_)
     , settings(config, config_prefix, name)
 {
+    if (object_storage_->getType() != ObjectStorageType::S3)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS supports only 's3' disk type");
     if (send_metadata)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS doesn't support send_metadata");
     zookeeper()->createAncestors(settings.log_item);
+    log = &Poco::Logger::get("DiskVFS(" + name + ")");
 }
 
 DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
@@ -42,7 +43,6 @@ DiskObjectStoragePtr DiskObjectStorageVFS::createDiskObjectStorage()
     return std::make_shared<DiskObjectStorageVFS>(
         getName(),
         object_key_prefix,
-        log->name(),
         metadata_storage,
         object_storage,
         Context::getGlobalContextInstance()->getConfigRef(),

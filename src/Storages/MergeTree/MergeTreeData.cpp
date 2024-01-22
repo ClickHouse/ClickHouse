@@ -6299,7 +6299,7 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
             "Trying to reserve {} on the selected disk: {} (with type {})",
             ReadableSize(expected_size),
             selected_disk->getName(),
-            toString(selected_disk->getDataSourceDescription().type));
+            selected_disk->getDataSourceDescription().toString());
         reservation = selected_disk->reserve(expected_size);
     }
 

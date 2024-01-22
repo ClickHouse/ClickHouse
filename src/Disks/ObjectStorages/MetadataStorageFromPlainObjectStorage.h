@@ -38,6 +38,8 @@ public:
 
     const std::string & getPath() const override;
 
+    MetadataStorageType getType() const override { return MetadataStorageType::Plain; }
+
     bool exists(const std::string & path) const override;
 
     bool isFile(const std::string & path) const override;

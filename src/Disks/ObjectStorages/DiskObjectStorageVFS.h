@@ -13,8 +13,7 @@ class DiskObjectStorageVFS final : public DiskObjectStorage
 public:
     DiskObjectStorageVFS(
         const String & name,
-        const String & object_storage_root_path_,
-        const String & log_name,
+        const String & object_key_prefix_,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
         const Poco::Util::AbstractConfiguration & config,

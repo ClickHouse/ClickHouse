@@ -30,7 +30,6 @@ public:
     DiskObjectStorage(
         const String & name_,
         const String & object_key_prefix_,
-        const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
         const Poco::Util::AbstractConfiguration & config,
@@ -39,7 +38,7 @@ public:
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
-    DataSourceDescription getDataSourceDescription() const override { return object_storage->getDataSourceDescription(); }
+    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
     bool supportZeroCopyReplication() const override { return true; }
 
@@ -222,6 +221,7 @@ protected:
 
     MetadataStoragePtr metadata_storage;
     ObjectStoragePtr object_storage;
+    DataSourceDescription data_source_description;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
