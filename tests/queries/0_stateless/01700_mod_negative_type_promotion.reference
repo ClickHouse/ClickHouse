@@ -1,8 +1,8 @@
+-199	Int16
+-199	Int32
 -199	Int64
 -199	Int64
--199	Int64
--199	Int64
--199	Int64
+-199	Int32
 9	UInt8
 199	UInt16
 -199	Float64
