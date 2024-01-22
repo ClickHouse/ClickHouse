@@ -731,7 +731,7 @@ Alias: `FROM_BASE64`.
 
 Like `base64Decode` but returns an empty string in case of error.
 
-## endsWith
+## endsWith {#endswith}
 
 Returns whether string `str` ends with `suffix`.
 
@@ -765,7 +765,7 @@ Result:
 └──────────────────────────┴──────────────────────┘
 ```
 
-## startsWith
+## startsWith {#startswith}
 
 Returns whether string `str` starts with `prefix`.
 
@@ -1604,6 +1604,78 @@ Result:
 ```
 
 Alias: levenshteinDistance
+
+## damerauLevenshteinDistance
+
+Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance) between two byte strings.
+
+**Syntax**
+
+```sql
+damerauLevenshteinDistance(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT damerauLevenshteinDistance('clickhouse', 'mouse');
+```
+
+Result:
+
+``` text
+┌─damerauLevenshteinDistance('clickhouse', 'mouse')─┐
+│                                                 6 │
+└───────────────────────────────────────────────────┘
+```
+
+## jaroSimilarity
+
+Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro_similarity) between two byte strings.
+
+**Syntax**
+
+```sql
+jaroSimilarity(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT jaroSimilarity('clickhouse', 'click');
+```
+
+Result:
+
+``` text
+┌─jaroSimilarity('clickhouse', 'click')─┐
+│                    0.8333333333333333 │
+└───────────────────────────────────────┘
+```
+
+## jaroWinklerSimilarity
+
+Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro%E2%80%93Winkler_similarity) between two byte strings.
+
+**Syntax**
+
+```sql
+jaroWinklerSimilarity(string1, string2)
+```
+
+**Examples**
+
+``` sql
+SELECT jaroWinklerSimilarity('clickhouse', 'click');
+```
+
+Result:
+
+``` text
+┌─jaroWinklerSimilarity('clickhouse', 'click')─┐
+│                           0.8999999999999999 │
+└──────────────────────────────────────────────┘
+```
 
 ## initcap
 

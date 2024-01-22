@@ -58,6 +58,7 @@ jobs:
       - name: Apply sparse checkout for contrib # in order to check that it doesn't break build
         # This step is done in GITHUB_WORKSPACE,
         # because it's broken in REPO_COPY for some reason
+        # See also update-submodules.sh
         if: ${{ env.BUILD_SPARSE_CHECKOUT == 'true' }}
         run: |
           rm -rf "$GITHUB_WORKSPACE/contrib" && echo 'removed'
@@ -72,12 +73,15 @@ jobs:
       - name: Pre
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre --job-name '${{inputs.build_name}}'
-      - name: Build
+      - name: Run
         run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/build_check.py" "$BUILD_NAME"
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" \
+            --infile ${{ toJson(inputs.data) }} \
+            --job-name "$BUILD_NAME" \
+            --run
       - name: Post
         # it still be build report to upload for failed build job
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --post --job-name '${{inputs.build_name}}'
       - name: Mark as done

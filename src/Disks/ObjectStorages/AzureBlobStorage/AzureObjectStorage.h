@@ -3,7 +3,6 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/MultiVersion.h>
@@ -60,9 +59,13 @@ public:
 
     ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
 
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
-
     std::string getName() const override { return "AzureObjectStorage"; }
+
+    ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
+
+    std::string getCommonKeyPrefix() const override { return ""; }
+
+    std::string getDescription() const override { return client.get()->GetUrl(); }
 
     bool exists(const StoredObject & object) const override;
 
@@ -132,8 +135,6 @@ private:
     MultiVersion<AzureObjectStorageSettings> settings;
 
     Poco::Logger * log;
-
-    DataSourceDescription data_source_description;
 };
 
 }

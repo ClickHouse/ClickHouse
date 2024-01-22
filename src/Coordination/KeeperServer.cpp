@@ -203,6 +203,11 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         return std::unique_lock(lock_);
     }
 
+    bool isCommitInProgress() const
+    {
+        return sm_commit_exec_in_progress_;
+    }
+
     using nuraft::raft_server::raft_server;
 
     // peers are initially marked as responding because at least one cycle
@@ -423,7 +428,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     last_log_idx_on_disk = log_store->next_slot() - 1;
     LOG_TRACE(log, "Last local log idx {}", last_log_idx_on_disk);
     if (state_machine->last_commit_index() >= last_log_idx_on_disk)
-        keeper_context->local_logs_preprocessed = true;
+        keeper_context->setLocalLogsPreprocessed();
 
     loadLatestConfig();
 
@@ -548,6 +553,12 @@ bool KeeperServer::isLeaderAlive() const
     return raft_instance && raft_instance->is_leader_alive();
 }
 
+bool KeeperServer::isExceedingMemorySoftLimit() const
+{
+    Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
+    return mem_soft_limit > 0 && total_memory_tracker.get() >= mem_soft_limit;
+}
+
 /// TODO test whether taking failed peer in count
 uint64_t KeeperServer::getFollowerCount() const
 {
@@ -625,16 +636,16 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
         }
     }
 
-    if (!keeper_context->local_logs_preprocessed)
+    if (!keeper_context->localLogsPreprocessed())
     {
         const auto preprocess_logs = [&]
         {
             auto lock = raft_instance->lockRaft();
 
-            if (keeper_context->local_logs_preprocessed)
+            if (keeper_context->localLogsPreprocessed())
                 return;
 
-            keeper_context->local_logs_preprocessed = true;
+            keeper_context->setLocalLogsPreprocessed();
             auto log_store = state_manager->load_log_store();
             auto log_entries = log_store->log_entries(state_machine->last_commit_index() + 1, log_store->next_slot());
 
@@ -669,15 +680,24 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 /// until we preprocess all stored logs
                 return nuraft::cb_func::ReturnCode::ReturnNull;
             }
+            case nuraft::cb_func::ProcessReq:
+            {
+                auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
+
+                if (req.get_type() != nuraft::msg_type::append_entries_request)
+                    break;
+
+                /// maybe we got snapshot installed
+                if (state_machine->last_commit_index() >= last_log_idx_on_disk && !raft_instance->isCommitInProgress())
+                    preprocess_logs();
+                /// we don't want to append new logs if we are committing local logs
+                else if (raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk)
+                    keeper_context->waitLocalLogsPreprocessedOrShutdown();
+
+                break;
+            }
             case nuraft::cb_func::GotAppendEntryReqFromLeader:
             {
-                /// maybe we got snapshot installed
-                if (state_machine->last_commit_index() >= last_log_idx_on_disk)
-                {
-                    preprocess_logs();
-                    break;
-                }
-
                 auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
 
                 if (req.log_entries().empty())
@@ -685,11 +705,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 if (req.get_last_log_idx() < last_log_idx_on_disk)
                     last_log_idx_on_disk = req.get_last_log_idx();
-                /// we don't want to accept too many new logs before we preprocess all the local logs
-                /// because the next log index is decreased on each failure we need to also accept requests when it's near last_log_idx_on_disk
-                /// so the counter is reset on the leader side
-                else if (raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk && req.get_last_log_idx() > last_log_idx_on_disk)
-                    return nuraft::cb_func::ReturnNull;
 
                 break;
             }
@@ -1075,6 +1090,7 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
         result.follower_count = getFollowerCount();
         result.synced_follower_count = getSyncedFollowerCount();
     }
+    result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
     result.total_nodes_count = getKeeperStateMachine()->getNodesCount();
     result.last_zxid = getKeeperStateMachine()->getLastProcessedZxid();
     return result;
