@@ -35,9 +35,14 @@ public:
 
     struct EndpointInfo
     {
-        const String & address;
+        // address is in format <host>:<port>
+        const String address;
+        // host is the same as address, but without port
+        const String host;
+        // secure is true if the connection should be encrypted.
         bool secure = false;
-        size_t id = 0;
+        // id is the index of the endpoint appeared in the list of hosts configuration.
+        const size_t id;
         ClientSettings settings = {};
     };
 

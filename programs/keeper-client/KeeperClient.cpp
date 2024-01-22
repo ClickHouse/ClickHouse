@@ -400,7 +400,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
-    zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_args, "zookeeper");
+    zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_args);
 
     if (config().has("no-confirmation") || config().has("query"))
         ask_confirmation = false;

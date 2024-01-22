@@ -185,7 +185,10 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
     using ErrorsList = std::initializer_list<Coordination::Error>;
 
-    explicit ZooKeeper(const ZooKeeperArgs & args_, const std::string & config_name_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+    explicit ZooKeeper(const ZooKeeperArgs & args_,
+        std::string config_name_ = "zookeeper",
+        bool reload_load_balancer_ = true,
+        std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /** Config of the form:
         <zookeeper>
@@ -569,8 +572,6 @@ public:
 
 private:
     void init(ZooKeeperArgs args_);
-
-    void updateWithBetterKeeperHost(std::unique_ptr<Coordination::IKeeper> better_keeper);
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);

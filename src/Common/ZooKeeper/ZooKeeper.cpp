@@ -111,14 +111,11 @@ void ZooKeeper::init(ZooKeeperArgs args_)
     }
 }
 
-void ZooKeeper::updateWithBetterKeeperHost(std::unique_ptr<Coordination::IKeeper> better_keeper)
-{
-    impl = std::move(better_keeper);
-}
-
-ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, const std::string & config_name_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+ZooKeeper::ZooKeeper(const ZooKeeperArgs & args_, std::string config_name_, bool reload_load_balancer_, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
     : config_name(config_name_), zk_log(std::move(zk_log_))
 {
+    if (reload_load_balancer_)
+        Coordination::ZooKeeperLoadBalancer::instance(config_name).init(args_, zk_log);
     init(args_);
 }
 
@@ -884,7 +881,7 @@ Coordination::ReconfigResponse ZooKeeper::reconfig(
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-    return std::make_shared<ZooKeeper>(args, config_name, zk_log);
+    return std::make_shared<ZooKeeper>(args, config_name, false, zk_log);
 }
 
 

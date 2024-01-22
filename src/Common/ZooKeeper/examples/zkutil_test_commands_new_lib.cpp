@@ -27,7 +27,7 @@ try
     Poco::Logger::root().setChannel(channel);
     Poco::Logger::root().setLevel("trace");
 
-    auto & zk_lb = ZooKeeperLoadBalancer::instance();
+    auto & zk_lb = ZooKeeperLoadBalancer::instance("zookeeper");
     zkutil::ZooKeeperArgs args(argv[1]);
     zk_lb.init(args, nullptr);
     auto  zk = zk_lb.createClient();

@@ -103,6 +103,25 @@ std::pair<std::string, bool> parseForSocketAddress(const std::string & raw_host)
     return result;
 }
 
+Coordination::IClientsConnectionBalancer::EndpointInfo parseEndpoint(size_t id, const std::string & raw_host)
+{
+    bool secure = startsWith(raw_host, "secure://");
+    std::string address;
+    if (secure)
+        address = raw_host.substr(strlen("secure://"));
+    else
+        address = raw_host;
+    return Coordination::IClientsConnectionBalancer::EndpointInfo{
+        .address = address,
+        .host = address.substr(0, address.find_last_of(':')),
+        .secure = secure,
+        .id = id,
+        .settings = Coordination::IClientsConnectionBalancer::ClientSettings{
+            .use_fallback_session_lifetime = false,
+        },
+    };
+}
+
 class IBalancerWithEndpointStatuses: public Coordination::IClientsConnectionBalancer
 {
 public:
@@ -380,9 +399,7 @@ class NearestHostname : public IBalancerWithPriorities
 public:
     size_t getPriority(const EndpointInfo & endpoint) const override
     {
-        const auto & address = endpoint.address;
-        const std::string & zk_host = address.substr(0, address.find_last_of(':'));
-        return Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), zk_host);
+        return Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), endpoint.host);
     }
 };
 
@@ -391,9 +408,7 @@ class Levenshtein : public IBalancerWithPriorities
 public:
     size_t getPriority(const EndpointInfo & endpoint) const override
     {
-        const auto & address = endpoint.address;
-        const std::string & zk_host = address.substr(0, address.find_last_of(':'));
-        return Coordination::getHostNameLevenshteinDistance(getFQDNOrHostName(), zk_host);
+        return Coordination::getHostNameLevenshteinDistance(getFQDNOrHostName(), endpoint.host);
     }
 };
 
@@ -460,6 +475,8 @@ ZooKeeperLoadBalancer & ZooKeeperLoadBalancer::instance(const std::string & conf
     static std::mutex mutex;
 
     std::lock_guard<std::mutex> lock{mutex};
+    if (load_balancer_by_name.contains(config_name))
+        return load_balancer_by_name.at(config_name);
     return load_balancer_by_name.emplace(config_name, ZooKeeperLoadBalancer(config_name)).first->second;
 }
 
@@ -478,14 +495,7 @@ void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<Zo
 
     connection_balancer = getConnectionBalancer(args.get_priority_load_balancing.load_balancing);
     for (size_t i = 0; i < args_.hosts.size(); ++i)
-    {
-        auto [address, secure] =  parseForSocketAddress(args_.hosts[i]);
-        connection_balancer->addEndpoint(IClientsConnectionBalancer::EndpointInfo{
-            .address = address,
-            .secure = secure,
-            .id = i,
-        });
-    }
+        connection_balancer->addEndpoint(parseEndpoint(i, args_.hosts[i]));
 }
 
 
