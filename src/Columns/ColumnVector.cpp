@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <IO/WriteHelpers.h>
@@ -940,7 +941,7 @@ ColumnPtr ColumnVector<T>::compress() const
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
+ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -949,7 +950,7 @@ ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, c
     auto res = this->create();
     auto & res_data = res->getData();
 
-    T default_value = static_cast<T>(default_field.safeGet<T>());
+    T default_value = assert_cast<const ColumnVector<T> &>(column_with_default_value.getDataColumn()).getElement(0);
     res_data.resize_fill(total_rows, default_value);
     for (size_t i = 0; i < offsets.size(); ++i)
         res_data[offsets[i]] = data[i + shift];

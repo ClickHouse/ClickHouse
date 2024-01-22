@@ -35,7 +35,7 @@ void IColumn::insertFrom(const IColumn & src, size_t n)
     insert(src[n]);
 }
 
-ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
+ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
 {
     if (offsets.size() + shift != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -51,14 +51,14 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const Field & defa
         current_offset = offsets[i];
 
         if (offsets_diff > 1)
-            res->insertMany(default_field, offsets_diff - 1);
+            res->insertManyFrom(column_with_default_value.getDataColumn(), 0, offsets_diff - 1);
 
         res->insertFrom(*this, i + shift);
     }
 
     ssize_t offsets_diff = static_cast<ssize_t>(total_rows) - current_offset;
     if (offsets_diff > 1)
-        res->insertMany(default_field, offsets_diff - 1);
+        res->insertManyFrom(column_with_default_value.getDataColumn(), 0, offsets_diff - 1);
 
     return res;
 }

@@ -159,4 +159,26 @@ void ColumnConst::compareColumn(
     std::fill(compare_results.begin(), compare_results.end(), res);
 }
 
+ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value)
+{
+    auto data = column->cloneEmpty();
+    data->insert(value);
+    return ColumnConst::create(std::move(data), 1);
+}
+
+ColumnConst::Ptr createColumnConst(const ColumnPtr & column, size_t const_value_index)
+{
+    auto data = column->cloneEmpty();
+    data->insertFrom(*column, const_value_index);
+    return ColumnConst::create(std::move(data), 1);
+}
+
+ColumnConst::Ptr createColumnConstWithDefaultValue(const ColumnPtr & column)
+{
+    auto data = column->cloneEmpty();
+    data->insertDefault();
+    return ColumnConst::create(std::move(data), 1);
+}
+
+
 }
