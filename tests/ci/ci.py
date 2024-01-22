@@ -846,7 +846,7 @@ def main() -> int:
     )
     args = parse_args(parser)
 
-    if args.mark_success or args.pre or args.post or args.run:
+    if args.mark_success or args.pre or args.run:
         assert args.infile, "Run config must be provided via --infile"
         assert args.job_name, "Job name must be provided via --job-name"
 
