@@ -80,6 +80,9 @@
     M(GlobalThreadPoolJobEmplacementMicroseconds, "") \
     M(GlobalThreadPoolCondVarWaitingMicroseconds, "") \
     M(GlobalThreadPoolJobsCounter, "") \
+    M(GlobalThreadPoolWorkerLoops, "") \
+    M(GlobalThreadPoolWorkerLockWaitMicroseconds, "") \
+    M(GlobalThreadPoolWorkerLockHoldingMicroseconds, "") \
     \
     M(LocalThreadPoolExpansions, "Counts the total number of times threads were borrowed from the global thread pool to expand local thread pools.") \
     M(LocalThreadPoolShrinks, "Counts the total number of times threads were returned to the global thread pool from local thread pools.") \
@@ -89,6 +92,9 @@
     M(LocalThreadPoolJobEmplacementMicroseconds, "") \
     M(LocalThreadPoolCondVarWaitingMicroseconds, "") \
     M(LocalThreadPoolJobsCounter, "") \
+    M(LocalThreadPoolWorkerLoops, "") \
+    M(LocalThreadPoolWorkerLockWaitMicroseconds, "") \
+    M(LocalThreadPoolWorkerLockHoldingMicroseconds, "") \
     \
     M(DiskS3GetRequestThrottlerCount, "Number of DiskS3 GET and SELECT requests passed through throttler.") \
     M(DiskS3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskS3 GET and SELECT request throttling.") \

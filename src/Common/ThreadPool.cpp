@@ -39,6 +39,10 @@ namespace ProfileEvents
     extern const Event GlobalThreadPoolJobEmplacementMicroseconds;
     extern const Event GlobalThreadPoolJobsCounter;
     extern const Event GlobalThreadPoolCondVarWaitingMicroseconds;
+    extern const Event GlobalThreadPoolWorkerLoops;
+    extern const Event GlobalThreadPoolWorkerLockWaitMicroseconds;
+    extern const Event GlobalThreadPoolWorkerLockHoldingMicroseconds;
+
 
     extern const Event LocalThreadPoolExpansions;
     extern const Event LocalThreadPoolShrinks;
@@ -48,6 +52,10 @@ namespace ProfileEvents
     extern const Event LocalThreadPoolJobEmplacementMicroseconds;
     extern const Event LocalThreadPoolJobsCounter;
     extern const Event LocalThreadPoolCondVarWaitingMicroseconds;
+    extern const Event LocalThreadPoolWorkerLoops;
+    extern const Event LocalThreadPoolWorkerLockWaitMicroseconds;
+    extern const Event LocalThreadPoolWorkerLockHoldingMicroseconds;
+
 }
 
 class JobWithPriority
@@ -463,11 +471,20 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
         /// This is inside the loop to also reset previous thread names set inside the jobs.
         setThreadName(DEFAULT_THREAD_NAME);
 
+        ProfileEvents::increment( std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolWorkerLoops : ProfileEvents::LocalThreadPoolWorkerLoops);
+
+
         /// Get a job from the queue.
         std::optional<JobWithPriority> job_data;
 
         {
+            Stopwatch watch;
             std::unique_lock lock(mutex);
+            ProfileEvents::increment(
+                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolWorkerLockWaitMicroseconds : ProfileEvents::LocalThreadPoolWorkerLockWaitMicroseconds,
+                watch.elapsedMicroseconds());
+
+            watch.restart();
 
             // Finish with previous job if any
             if (job_is_done)
@@ -518,6 +535,10 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 job_is_done = true;
                 continue;
             }
+
+            ProfileEvents::increment(
+                std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolWorkerLockHoldingMicroseconds : ProfileEvents::LocalThreadPoolWorkerLockHoldingMicroseconds,
+                watch.elapsedMicroseconds());
         }
 
         ALLOW_ALLOCATIONS_IN_SCOPE;
