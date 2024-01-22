@@ -1041,7 +1041,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             return read_result;
 
         {
-            /// Physical columns go first and then some virtual columns follow
             size_t columns_count = merge_tree_reader->getColumns().size();
             Columns columns(read_result.columns.begin(), read_result.columns.begin() + columns_count);
             merge_tree_reader->fillVirtualColumns(columns, read_result.num_rows);
