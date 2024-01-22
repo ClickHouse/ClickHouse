@@ -266,7 +266,6 @@ public:
         size_t min_id = getEndpointsCount();
         for (size_t id : endpoints_index)
         {
-            LOG_INFO(&Poco::Logger::get("ZooKeeperLoadBalancerEndpoint"), "getMostPriority id {}, size of priorrities {} ", id, priorities.size());
             size_t p = priorities[id];
             if (min_priority > p)
             {
@@ -328,7 +327,9 @@ public:
 
     static size_t priorityAsNearestHostname(const RegisterEndpoint endpoint)
     {
-        return Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), endpoint.address);
+        const auto & address = endpoint.address;
+        const std::string & zk_host = address.substr(0, address.find_last_of(':'));
+        return Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), zk_host);
     }
 
     static size_t priorityAsInOrer(const RegisterEndpoint endpoint)
@@ -338,7 +339,9 @@ public:
 
     static size_t priorityAsLevenshtein(const RegisterEndpoint endpoint)
     {
-        return Coordination::getHostNameLevenshteinDistance(getFQDNOrHostName(), endpoint.address);
+        const auto & address = endpoint.address;
+        const std::string & zk_host = address.substr(0, address.find_last_of(':'));
+        return Coordination::getHostNameLevenshteinDistance(getFQDNOrHostName(), zk_host);
     }
 
 private:
@@ -536,9 +539,9 @@ void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<Zo
 
 std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
 {
-    // Currently we don't have background thread to check endpoint status. When an optiomal host is offline,
-    // we have no way to detect when it becomes online again. So we reset all offline status when creating a new client.
-    // TODO: add background thread to check endpoint status.
+    // We want to retry a better host later if it becomes offline temporarily. But currently we don't have background thread to check endpoint status,
+    // so instead we reset all offline status when creating a new client.
+    // TODO: add background thread to refresh the host status instead.
     connection_balancer->resetAllOffline();
 
     bool dns_error_occurred = false;
@@ -554,15 +557,15 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
         }
 
         const auto endpoint = endpoint_or.value();
-        if (!isKeeperHostDNSAvailable(log, endpoint.address, dns_error_occurred))
-        {
-            connection_balancer->markHostOffline(endpoint.id);
-            continue;
-        }
-
         LOG_INFO(log, "Connecting to ZooKeeper host {},"
                       " number of attempted hosts {}/{}",
                  endpoint.address, attempts, connection_balancer->getEndpointsCount());
+        if (!isKeeperHostDNSAvailable(log, endpoint.address, dns_error_occurred))
+        {
+            LOG_ERROR(log, "Skip the host {} due to DNS error.", endpoint.address);
+            connection_balancer->markHostOffline(endpoint.id);
+            continue;
+        }
 
         try
         {
