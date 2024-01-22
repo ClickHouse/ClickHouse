@@ -7,11 +7,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 void registerObjectStorages();
 void registerMetadataStorages();
 
