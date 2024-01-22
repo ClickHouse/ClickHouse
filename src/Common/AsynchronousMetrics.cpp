@@ -98,7 +98,7 @@ AsynchronousMetrics::AsynchronousMetrics(
 }
 
 #if defined(OS_LINUX)
-void AsynchronousMetrics::openSensors()
+void AsynchronousMetrics::openSensors() TSA_REQUIRES(data_mutex)
 {
     LOG_TRACE(log, "Scanning /sys/class/thermal");
 
@@ -136,7 +136,7 @@ void AsynchronousMetrics::openSensors()
     }
 }
 
-void AsynchronousMetrics::openBlockDevices()
+void AsynchronousMetrics::openBlockDevices() TSA_REQUIRES(data_mutex)
 {
     LOG_TRACE(log, "Scanning /sys/block");
 
@@ -163,7 +163,7 @@ void AsynchronousMetrics::openBlockDevices()
     }
 }
 
-void AsynchronousMetrics::openEDAC()
+void AsynchronousMetrics::openEDAC() TSA_REQUIRES(data_mutex)
 {
     LOG_TRACE(log, "Scanning /sys/devices/system/edac");
 
@@ -194,7 +194,7 @@ void AsynchronousMetrics::openEDAC()
     }
 }
 
-void AsynchronousMetrics::openSensorsChips()
+void AsynchronousMetrics::openSensorsChips() TSA_REQUIRES(data_mutex)
 {
     LOG_TRACE(log, "Scanning /sys/class/hwmon");
 
@@ -306,7 +306,7 @@ AsynchronousMetrics::~AsynchronousMetrics()
 
 AsynchronousMetricValues AsynchronousMetrics::getValues() const
 {
-    std::lock_guard lock(thread_mutex);
+    std::lock_guard lock(data_mutex);
     return values;
 }
 
@@ -562,6 +562,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
     Stopwatch watch;
 
     AsynchronousMetricValues new_values;
+
+    std::lock_guard lock(data_mutex);
 
     auto current_time = std::chrono::system_clock::now();
     auto time_since_previous_update = current_time - previous_update_time;
@@ -1591,7 +1593,6 @@ void AsynchronousMetrics::update(TimePoint update_time)
     first_run = false;
 
     // Finally, update the current metrics.
-    std::lock_guard lock(thread_mutex);
     values = new_values;
 }
 
