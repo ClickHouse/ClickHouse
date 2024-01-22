@@ -181,7 +181,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
-    extern const int ABORTED;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -4845,9 +4844,7 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 AsynchronousInsertQueue * Context::getAsynchronousInsertQueue() const
 {
     std::lock_guard lock(mutex);
-    if (auto res = shared->async_insert_queue.get())
-        return res;
-    throw Exception(ErrorCodes::ABORTED, "AsynchronousInsertQueue is not initialized yet or has been already shutdown");
+    return shared->async_insert_queue.get();
 }
 
 void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
