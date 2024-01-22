@@ -338,7 +338,7 @@ def main():
     )
 
     if release_tag:
-        GitRunner(f"git -C {repo_path} checkout {release_tag} -- tests/config")
+        GitRunner(f"git -C {repo_path} restore --source={release_tag} --staged --worktree -- tests/config")
         GitRunner(f"git -C {repo_path} diff --cached --stat -- tests/config")
 
     run_command = get_run_command(
