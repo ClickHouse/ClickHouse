@@ -13,6 +13,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include "base/types.h"
 
 
 namespace ProfileEvents
@@ -38,7 +39,7 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
 {
     if (total && (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS)))
     {
-        LOG_INFO(log, "Processed: {}%", processed * 100.0 / total);
+        LOG_INFO(log, "Processed: {}%", static_cast<Int64>(processed * 1000.0 / total) * 0.1);
         watch.restart();
     }
 }
@@ -241,12 +242,15 @@ void AsyncLoader::wait()
 
 void AsyncLoader::stop()
 {
-    {
-        std::unique_lock lock{mutex};
-        is_running = false;
-        // NOTE: there is no need to notify because workers never wait
-    }
+    stopAndDoNotWait();
     wait();
+}
+
+void AsyncLoader::stopAndDoNotWait()
+{
+    std::unique_lock lock{mutex};
+    is_running = false;
+    // NOTE: there is no need to notify because workers never wait
 }
 
 void AsyncLoader::schedule(LoadTask & task)

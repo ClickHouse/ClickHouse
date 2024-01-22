@@ -215,8 +215,11 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
                 logAboutProgress(log, ++tables_started, total_tables_to_startup, startup_watch);
             }
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {}.{} doesn't exist during startup",
+            {
+                // This might happen if synchronous metadata loading failed and server is going to shutdown.
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist during startup",
                     backQuote(name.database), backQuote(name.table));
+            }
         });
 
     return startup_table[name.table] = makeLoadTask(async_loader, {job});

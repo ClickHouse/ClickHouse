@@ -348,6 +348,9 @@ public:
     //  - or canceled using ~Task() or remove() later.
     void stop();
 
+    // Do not run new jobs
+    void stopAndDoNotWait();
+
     // Schedule all jobs of given `task` and their dependencies (even if they are not in task).
     // All dependencies of a scheduled job inherit its pool if it has higher priority. This way higher priority job
     // never waits for (blocked by) lower priority jobs. No priority inversion is possible.
