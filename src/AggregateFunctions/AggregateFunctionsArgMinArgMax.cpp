@@ -22,63 +22,56 @@ extern const int LOGICAL_ERROR;
 namespace
 {
 
+template <class ValueType>
 struct AggregateFunctionArgMinMaxData
 {
 private:
-    SingleValueDataBase::memory_block r_data;
-    SingleValueDataBase::memory_block v_data;
+    SingleValueDataBaseMemoryBlock result_data;
+    ValueType value_data;
 
 public:
-    SingleValueDataBase & result() { return r_data.get(); }
-    const SingleValueDataBase & result() const { return r_data.get(); }
-    SingleValueDataBase & value() { return v_data.get(); }
-    const SingleValueDataBase & value() const { return v_data.get(); }
+    SingleValueDataBase & result() { return result_data.get(); }
+    const SingleValueDataBase & result() const { return result_data.get(); }
+    ValueType & value() { return value_data; }
+    const ValueType & value() const { return value_data; }
 
     [[noreturn]] explicit AggregateFunctionArgMinMaxData()
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionArgMinMaxData initialized empty");
     }
 
-    explicit AggregateFunctionArgMinMaxData(TypeIndex result_type, TypeIndex value_type)
+    explicit AggregateFunctionArgMinMaxData(TypeIndex result_type) : value_data()
     {
-        generateSingleValueFromTypeIndex(result_type, r_data);
-        generateSingleValueFromTypeIndex(value_type, v_data);
+        generateSingleValueFromTypeIndex(result_type, result_data);
     }
 
-    ~AggregateFunctionArgMinMaxData()
-    {
-        result().~SingleValueDataBase();
-        value().~SingleValueDataBase();
-    }
+    ~AggregateFunctionArgMinMaxData() { result().~SingleValueDataBase(); }
 };
 
 static_assert(
-    sizeof(AggregateFunctionArgMinMaxData) == 2 * SingleValueDataBase::MAX_STORAGE_SIZE,
+    sizeof(AggregateFunctionArgMinMaxData<Int8>) <= 2 * SingleValueDataBase::MAX_STORAGE_SIZE,
     "Incorrect size of AggregateFunctionArgMinMaxData struct");
 
 /// Returns the first arg value found for the minimum/maximum value. Example: argMin(arg, value).
-template <bool isMin>
+template <typename ValueData, bool isMin>
 class AggregateFunctionArgMinMax final
-    : public IAggregateFunctionDataHelper<AggregateFunctionArgMinMaxData, AggregateFunctionArgMinMax<isMin>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionArgMinMaxData<ValueData>, AggregateFunctionArgMinMax<ValueData, isMin>>
 {
 private:
     const DataTypePtr & type_val;
     const SerializationPtr serialization_res;
     const SerializationPtr serialization_val;
-
     const TypeIndex result_type_index;
-    const TypeIndex value_type_index;
 
-    using Base = IAggregateFunctionDataHelper<AggregateFunctionArgMinMaxData, AggregateFunctionArgMinMax<isMin>>;
+    using Base = IAggregateFunctionDataHelper<AggregateFunctionArgMinMaxData<ValueData>, AggregateFunctionArgMinMax<ValueData, isMin>>;
 
 public:
-    AggregateFunctionArgMinMax(const DataTypePtr & type_res_, const DataTypePtr & type_val_)
-        : Base({type_res_, type_val_}, {}, type_res_)
+    AggregateFunctionArgMinMax(const DataTypes & argument_types_)
+        : Base(argument_types_, {}, argument_types_[0])
         , type_val(this->argument_types[1])
-        , serialization_res(type_res_->getDefaultSerialization())
-        , serialization_val(type_val->getDefaultSerialization())
-        , result_type_index(WhichDataType(type_res_).idx)
-        , value_type_index(WhichDataType(type_val_).idx)
+        , serialization_res(this->argument_types[0]->getDefaultSerialization())
+        , serialization_val(this->argument_types[1]->getDefaultSerialization())
+        , result_type_index(WhichDataType(this->argument_types[0]).idx)
     {
         if (!type_val->isComparable())
             throw Exception(
@@ -90,7 +83,7 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        new (place) AggregateFunctionArgMinMaxData(result_type_index, value_type_index);
+        new (place) AggregateFunctionArgMinMaxData<ValueData>(result_type_index);
     }
 
     String getName() const override
@@ -214,7 +207,7 @@ public:
 
     bool allocatesMemoryInArena() const override
     {
-        return singleValueTypeAllocatesMemoryInArena(result_type_index) || singleValueTypeAllocatesMemoryInArena(value_type_index);
+        return singleValueTypeAllocatesMemoryInArena(result_type_index) || ValueData::allocatesMemoryInArena();
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -224,16 +217,11 @@ public:
 };
 
 template <bool isMin>
-AggregateFunctionPtr
-createAggregateFunctionArgMinMax(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr createAggregateFunctionArgMinMax(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    assertNoParameters(name, parameters);
-    assertBinary(name, argument_types);
-
-    const DataTypePtr & res_type = argument_types[0];
-    const DataTypePtr & val_type = argument_types[1];
-
-    return AggregateFunctionPtr(new AggregateFunctionArgMinMax<isMin>(res_type, val_type));
+    return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionArgMinMax, /* unary */ false, isMin>(
+        name, argument_types, parameters, settings));
 }
 
 }

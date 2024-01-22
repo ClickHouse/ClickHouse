@@ -1380,13 +1380,14 @@ bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Are
         return false;
 }
 
-void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBase::memory_block & data)
+void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBaseMemoryBlock & data)
 {
 #define DISPATCH(TYPE) \
     if (idx == TypeIndex::TYPE) \
     { \
-        static_assert(sizeof(SingleValueDataNumeric<TYPE>) <= SingleValueDataBase::MAX_STORAGE_SIZE); \
-        new (data.memory) SingleValueDataNumeric<TYPE>; \
+        static_assert(sizeof(SingleValueDataNumeric<TYPE>) <= sizeof(SingleValueDataBaseMemoryBlock::memory)); \
+        static_assert(alignof(SingleValueDataNumeric<TYPE>) <= alignof(SingleValueDataBaseMemoryBlock)); \
+        new (&data.memory) SingleValueDataNumeric<TYPE>; \
         return; \
     }
 
@@ -1395,24 +1396,28 @@ void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBase::memory
 
     if (idx == TypeIndex::Date)
     {
-        static_assert(sizeof(SingleValueDataFixed<DataTypeDate::FieldType>) <= SingleValueDataBase::MAX_STORAGE_SIZE);
-        new (data.memory) SingleValueDataNumeric<DataTypeDate::FieldType>;
+        static_assert(sizeof(SingleValueDataNumeric<DataTypeDate::FieldType>) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
+        static_assert(alignof(SingleValueDataNumeric<DataTypeDate::FieldType>) <= alignof(SingleValueDataBaseMemoryBlock));
+        new (&data.memory) SingleValueDataNumeric<DataTypeDate::FieldType>;
         return;
     }
     if (idx == TypeIndex::DateTime)
     {
-        static_assert(sizeof(SingleValueDataFixed<DataTypeDateTime::FieldType>) <= SingleValueDataBase::MAX_STORAGE_SIZE);
-        new (data.memory) SingleValueDataNumeric<DataTypeDateTime::FieldType>;
+        static_assert(sizeof(SingleValueDataNumeric<DataTypeDateTime::FieldType>) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
+        static_assert(alignof(SingleValueDataNumeric<DataTypeDateTime::FieldType>) <= alignof(SingleValueDataBaseMemoryBlock));
+        new (&data.memory) SingleValueDataNumeric<DataTypeDateTime::FieldType>;
         return;
     }
     if (idx == TypeIndex::String)
     {
-        static_assert(sizeof(SingleValueDataString) <= SingleValueDataBase::MAX_STORAGE_SIZE);
-        new (data.memory) SingleValueDataString;
+        static_assert(sizeof(SingleValueDataString) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
+        static_assert(alignof(SingleValueDataString) <= alignof(SingleValueDataBaseMemoryBlock));
+        new (&data.memory) SingleValueDataString;
         return;
     }
-    static_assert(sizeof(SingleValueDataGeneric) <= SingleValueDataBase::MAX_STORAGE_SIZE);
-    new (data.memory) SingleValueDataGeneric;
+    static_assert(sizeof(SingleValueDataGeneric) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
+    static_assert(alignof(SingleValueDataGeneric) <= alignof(SingleValueDataBaseMemoryBlock));
+    new (&data.memory) SingleValueDataGeneric;
 }
 
 bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx)

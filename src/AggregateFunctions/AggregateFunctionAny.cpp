@@ -24,8 +24,9 @@ private:
     SerializationPtr serialization;
 
 public:
-    explicit AggregateFunctionAny(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionAny<Data>>({type}, {}, type), serialization(type->getDefaultSerialization())
+    explicit AggregateFunctionAny(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionAny<Data>>(argument_types_, {}, argument_types_[0])
+        , serialization(this->result_type->getDefaultSerialization())
     {
     }
 
@@ -179,7 +180,8 @@ public:
 AggregateFunctionPtr
 createAggregateFunctionAny(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionAny>(name, argument_types, parameters, settings));
+    return AggregateFunctionPtr(
+        createAggregateFunctionSingleValue<AggregateFunctionAny, /* unary */ true>(name, argument_types, parameters, settings));
 }
 
 
@@ -190,9 +192,9 @@ private:
     SerializationPtr serialization;
 
 public:
-    explicit AggregateFunctionAnyLast(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionAnyLast<Data>>({type}, {}, type)
-        , serialization(type->getDefaultSerialization())
+    explicit AggregateFunctionAnyLast(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionAnyLast<Data>>(argument_types_, {}, argument_types_[0])
+        , serialization(this->result_type->getDefaultSerialization())
     {
     }
 
@@ -348,7 +350,8 @@ public:
 AggregateFunctionPtr createAggregateFunctionAnyLast(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    return AggregateFunctionPtr(createAggregateFunctionSingleValue<AggregateFunctionAnyLast>(name, argument_types, parameters, settings));
+    return AggregateFunctionPtr(
+        createAggregateFunctionSingleValue<AggregateFunctionAnyLast, /* unary */ true>(name, argument_types, parameters, settings));
 }
 
 }

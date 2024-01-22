@@ -16,7 +16,7 @@ namespace
 struct AggregateFunctionCombinatorArgMinArgMaxData
 {
 private:
-    SingleValueDataBase::memory_block v_data;
+    SingleValueDataBaseMemoryBlock v_data;
 
 public:
     explicit AggregateFunctionCombinatorArgMinArgMaxData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
@@ -93,7 +93,7 @@ public:
 
     size_t sizeOfData() const override { return key_offset + sizeof(Key); }
 
-    size_t alignOfData() const override { return std::max(nested_function->alignOfData(), alignof(SingleValueDataBase::memory_block)); }
+    size_t alignOfData() const override { return std::max(nested_function->alignOfData(), alignof(SingleValueDataBaseMemoryBlock)); }
 
     void create(AggregateDataPtr __restrict place) const override
     {

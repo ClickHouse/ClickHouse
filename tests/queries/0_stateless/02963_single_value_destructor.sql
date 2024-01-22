@@ -1,4 +1,4 @@
--- When we use SingleValueDataBase::memory_block we must ensure we call the class destructor on destroy
+-- When we use SingleValueDataBaseMemoryBlock we must ensure we call the class destructor on destroy
 
 Select argMax((number, number), (number, number)) FROM numbers(100000) format Null;
 Select argMin((number, number), (number, number)) FROM numbers(100000) format Null;

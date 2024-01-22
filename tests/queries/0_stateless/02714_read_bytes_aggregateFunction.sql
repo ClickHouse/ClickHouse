@@ -42,8 +42,10 @@ ORDER BY event_time_microseconds;
 -- 1 * 8 + AggregateFunction(argMax, String, DateTime)
 --
 -- Size of AggregateFunction(argMax, String, DateTime):
--- 2 * MAX(sizeOf(SingleValueDataFixed<T>), sizeOf(SingleValueDataString), sizeOf(SingleValueDataGeneric))
--- Which is the same as 2 * SingleValueDataBase::MAX_STORAGE_SIZE (64)
+-- 1 Base class + 1 specific/value class:
+-- Base class: MAX(sizeOf(SingleValueDataFixed<T>), sizeOf(SingleValueDataString), sizeOf(SingleValueDataGeneric)) = 64
+-- Specific class: SingleValueDataFixed(DateTime) = 4 + 1. With padding = 8
+-- Total: 8 + 64 + 8 = 80
 --
 -- ColumnAggregateFunction total: 8 + 2 * 64 = 136
 SELECT 'AggregateFunction(argMax, String, DateTime)',

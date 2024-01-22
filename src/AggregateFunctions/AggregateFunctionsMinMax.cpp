@@ -25,15 +25,15 @@ private:
     SerializationPtr serialization;
 
 public:
-    explicit AggregateFunctionMinMax(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionMinMax<Data, isMin>>({type}, {}, type)
-        , serialization(type->getDefaultSerialization())
+    explicit AggregateFunctionMinMax(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionMinMax<Data, isMin>>(argument_types_, {}, argument_types_[0])
+        , serialization(this->result_type->getDefaultSerialization())
     {
-        if (!type->isComparable())
+        if (!this->result_type->isComparable())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of aggregate function {} because the values of that data type are not comparable",
-                type->getName(),
+                this->result_type->getName(),
                 getName());
     }
 
@@ -189,7 +189,7 @@ AggregateFunctionPtr createAggregateFunctionMinMax(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
     return AggregateFunctionPtr(
-        createAggregateFunctionSingleValue<AggregateFunctionMinMax, isMin>(name, argument_types, parameters, settings));
+        createAggregateFunctionSingleValue<AggregateFunctionMinMax, /* unary */ true, isMin>(name, argument_types, parameters, settings));
 }
 }
 

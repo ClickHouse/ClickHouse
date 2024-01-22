@@ -21,18 +21,8 @@ struct SingleValueDataBase
     static constexpr int nan_direction_hint = 1;
     /// Any subclass (numeric, string, generic) must be smaller than MAX_STORAGE_SIZE
     /// We use this knowledge to create composite data classes that use them directly by reserving a 'memory_block'
-    /// For example argMin holds 2 of these objects
+    /// For example argMin holds 1 of these (for the result), while keeping a template for the value
     static constexpr UInt32 MAX_STORAGE_SIZE = 64;
-
-    /// Helper to allocate enough memory to store any derived class and subclasses will be misaligned
-    /// alignas is necessary as otherwise alignof(memory_block) == 1
-    struct alignas(MAX_STORAGE_SIZE) memory_block
-    {
-        char memory[SingleValueDataBase::MAX_STORAGE_SIZE];
-        SingleValueDataBase & get() { return *reinterpret_cast<SingleValueDataBase *>(memory); }
-        const SingleValueDataBase & get() const { return *reinterpret_cast<const SingleValueDataBase *>(memory); }
-    };
-    static_assert(alignof(memory_block) == SingleValueDataBase::MAX_STORAGE_SIZE);
 
     virtual ~SingleValueDataBase() { }
     virtual bool has() const = 0;
@@ -353,37 +343,52 @@ public:
 static_assert(sizeof(SingleValueDataGeneric) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueDataGeneric struct");
 
 /// min, max, any, anyLast, anyHeavy, etc...
-template <template <typename, bool...> class AggregateFunctionTemplate, bool... isMin>
+template <template <typename, bool...> class AggregateFunctionTemplate, bool unary, bool... isMin>
 static IAggregateFunction *
 createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertNoParameters(name, parameters);
-    assertUnary(name, argument_types);
+    if constexpr (unary)
+        assertUnary(name, argument_types);
+    else
+        assertBinary(name, argument_types);
 
-    const DataTypePtr & argument_type = argument_types[0];
-    WhichDataType which(argument_type);
+    const DataTypePtr & value_type = unary ? argument_types[0] : argument_types[1];
+    WhichDataType which(value_type);
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) \
-        return new AggregateFunctionTemplate<SingleValueDataFixed<TYPE>, isMin...>(argument_type); /// NOLINT
+        return new AggregateFunctionTemplate<SingleValueDataFixed<TYPE>, isMin...>(argument_types); /// NOLINT
     FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
     if (which.idx == TypeIndex::Date)
-        return new AggregateFunctionTemplate<SingleValueDataFixed<DataTypeDate::FieldType>, isMin...>(argument_type);
+        return new AggregateFunctionTemplate<SingleValueDataFixed<DataTypeDate::FieldType>, isMin...>(argument_types);
     if (which.idx == TypeIndex::DateTime)
-        return new AggregateFunctionTemplate<SingleValueDataFixed<DataTypeDateTime::FieldType>, isMin...>(argument_type);
+        return new AggregateFunctionTemplate<SingleValueDataFixed<DataTypeDateTime::FieldType>, isMin...>(argument_types);
     if (which.idx == TypeIndex::String)
-        return new AggregateFunctionTemplate<SingleValueDataString, isMin...>(argument_type);
+        return new AggregateFunctionTemplate<SingleValueDataString, isMin...>(argument_types);
 
-    return new AggregateFunctionTemplate<SingleValueDataGeneric, isMin...>(argument_type);
+    return new AggregateFunctionTemplate<SingleValueDataGeneric, isMin...>(argument_types);
 }
 
-/// Helper when you want to build SingleValueNumeric
-void generateSingleValueNumericFromTypeIndex(TypeIndex idx, SingleValueDataBase::memory_block & data);
+/// Helper to allocate enough memory to store any derived class
+struct SingleValueDataBaseMemoryBlock
+{
+    std::aligned_union_t<
+        SingleValueDataBase::MAX_STORAGE_SIZE,
+        SingleValueDataNumeric<Decimal256>, /// We check all types in generateSingleValueFromTypeIndex
+        SingleValueDataString,
+        SingleValueDataGeneric>
+        memory;
+    SingleValueDataBase & get() { return *reinterpret_cast<SingleValueDataBase *>(&memory); }
+    const SingleValueDataBase & get() const { return *reinterpret_cast<const SingleValueDataBase *>(&memory); }
+};
+
+static_assert(alignof(SingleValueDataBaseMemoryBlock) == 8);
 
 /// For Data classes that want to compose on top of SingleValueDataBase values, like argMax or singleValueOrNull
 /// It will build the object based on the type idx on the memory block provided
-void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBase::memory_block & data);
+void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBaseMemoryBlock & data);
 
 bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx);
 }
