@@ -373,37 +373,11 @@ QueryTreeNodePtr buildQueryTreeForShard(SelectQueryInfo & query_info, QueryTreeN
 
     removeGroupingFunctionSpecializations(query_tree_to_modify);
 
+    // std::cerr << "====================== build 1 \n" << query_tree_to_modify->dumpTree() << std::endl;
     createUniqueTableAliases(query_tree_to_modify, nullptr, planner_context->getQueryContext());
+    // std::cerr << "====================== build 2 \n" << query_tree_to_modify->dumpTree() << std::endl;
 
     return query_tree_to_modify;
-}
-
-class RewriteJoinToGlobalJoinVisitor : public InDepthQueryTreeVisitor<RewriteJoinToGlobalJoinVisitor>
-{
-public:
-    using Base = InDepthQueryTreeVisitor<RewriteJoinToGlobalJoinVisitor>;
-    using Base::Base;
-
-    void visitImpl(QueryTreeNodePtr & node)
-    {
-        if (auto * join_node = node->as<JoinNode>())
-            join_node->setLocality(JoinLocality::Global);
-    }
-
-    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
-    {
-        auto * join_node = parent->as<JoinNode>();
-        if (join_node && join_node->getRightTableExpression() == child)
-            return false;
-
-        return true;
-    }
-};
-
-void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify)
-{
-    RewriteJoinToGlobalJoinVisitor visitor;
-    visitor.visit(query_tree_to_modify);
 }
 
 }

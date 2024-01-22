@@ -63,7 +63,7 @@ def test_parallel_replicas_custom_key_load_balancing(
     custom_key,
     filter_type,
 ):
-    cluster = "test_single_shard_multiple_replicas"
+    cluster_name = "test_single_shard_multiple_replicas"
     table = "test_table"
 
     create_tables(table)
@@ -75,7 +75,7 @@ def test_parallel_replicas_custom_key_load_balancing(
     log_comment = uuid.uuid4()
     assert (
         node1.query(
-            f"SELECT key, count() FROM cluster('{cluster}', currentDatabase(), test_table) GROUP BY key ORDER BY key",
+            f"SELECT key, count() FROM cluster('{cluster_name}', currentDatabase(), test_table) GROUP BY key ORDER BY key",
             settings={
                 "log_comment": log_comment,
                 "prefer_localhost_replica": 0,
@@ -83,8 +83,10 @@ def test_parallel_replicas_custom_key_load_balancing(
                 "parallel_replicas_custom_key": custom_key,
                 "parallel_replicas_custom_key_filter_type": filter_type,
                 "use_hedged_requests": use_hedged_requests,
-                # "async_socket_for_remote": 0,
-                # "async_query_sending_for_remote": 0,
+                # avoid considering replica delay on connection choice
+                # otherwise connection can be not distributed evenly among available nodes
+                # and so custom key secondary queries (we check it bellow)
+                "max_replica_delay_for_distributed_queries": 0,
             },
         )
         == expected_result
@@ -102,7 +104,7 @@ def test_parallel_replicas_custom_key_load_balancing(
 
     assert (
         node1.query(
-            f"SELECT 'subqueries', count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id SETTINGS skip_unavailable_shards=1"
+            f"SELECT 'subqueries', count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' AND query_id != initial_query_id SETTINGS skip_unavailable_shards=1"
         )
         == "subqueries\t4\n"
     )
@@ -110,7 +112,7 @@ def test_parallel_replicas_custom_key_load_balancing(
     # check queries per node
     assert (
         node1.query(
-            f"SELECT h, count() FROM clusterAllReplicas({cluster}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
+            f"SELECT h, count() FROM clusterAllReplicas({cluster_name}, system.query_log) WHERE initial_query_id = '{query_id}' AND type ='QueryFinish' GROUP BY hostname() as h ORDER BY h SETTINGS skip_unavailable_shards=1"
         )
         == "n1\t2\nn2\t1\nn3\t1\nn4\t1\n"
     )

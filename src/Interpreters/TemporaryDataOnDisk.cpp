@@ -105,7 +105,9 @@ FileSegmentsHolderPtr TemporaryDataOnDisk::createCacheFile(size_t max_file_size)
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
 
     const auto key = FileSegment::Key::random();
-    auto holder = file_cache->set(key, 0, std::max(10_MiB, max_file_size), CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true));
+    auto holder = file_cache->set(
+        key, 0, std::max(10_MiB, max_file_size),
+        CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true), FileCache::getCommonUser());
 
     chassert(holder->size() == 1);
     holder->back().getKeyMetadata()->createBaseDirectory();
@@ -377,7 +379,7 @@ String TemporaryFileStream::getPath() const
     if (file)
         return file->getAbsolutePath();
     if (segment_holder && !segment_holder->empty())
-        return segment_holder->front().getPathInLocalCache();
+        return segment_holder->front().getPath();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream has no file");
 }

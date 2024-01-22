@@ -11,6 +11,8 @@ from sys import modules
 from docker_images_helper import get_images_info
 from ci_config import DigestConfig
 from git_helper import Runner
+from env_helper import ROOT_DIR
+from ci_utils import cd
 
 DOCKER_DIGEST_LEN = 12
 JOB_DIGEST_LEN = 10
@@ -67,17 +69,18 @@ def digest_paths(
     The order is processed as given"""
     hash_object = hash_object or md5()
     paths_all: List[Path] = []
-    for p in paths:
-        if isinstance(p, str) and "*" in p:
-            for path in Path(".").glob(p):
-                bisect.insort(paths_all, path.absolute())  # type: ignore[misc]
-        else:
-            bisect.insort(paths_all, Path(p).absolute())  # type: ignore[misc]
-    for path in paths_all:  # type: ignore
-        if path.exists():
-            digest_path(path, hash_object, exclude_files, exclude_dirs)
-        else:
-            raise AssertionError(f"Invalid path: {path}")
+    with cd(ROOT_DIR):
+        for p in paths:
+            if isinstance(p, str) and "*" in p:
+                for path in Path(".").glob(p):
+                    bisect.insort(paths_all, path.absolute())  # type: ignore[misc]
+            else:
+                bisect.insort(paths_all, Path(p).absolute())  # type: ignore[misc]
+        for path in paths_all:  # type: ignore
+            if path.exists():
+                digest_path(path, hash_object, exclude_files, exclude_dirs)
+            else:
+                raise AssertionError(f"Invalid path: {path}")
     return hash_object
 
 
@@ -86,15 +89,16 @@ def digest_script(path_str: str) -> HASH:
     path = Path(path_str)
     parent = path.parent
     md5_hash = md5()
-    try:
-        for script in modules.values():
-            script_path = getattr(script, "__file__", "")
-            if parent.absolute().as_posix() in script_path:
-                logger.debug("Updating the hash with %s", script_path)
-                _digest_file(Path(script_path), md5_hash)
-    except RuntimeError:
-        logger.warning("The modules size has changed, retry calculating digest")
-        return digest_script(path_str)
+    with cd(ROOT_DIR):
+        try:
+            for script in modules.values():
+                script_path = getattr(script, "__file__", "")
+                if parent.absolute().as_posix() in script_path:
+                    logger.debug("Updating the hash with %s", script_path)
+                    _digest_file(Path(script_path), md5_hash)
+        except RuntimeError:
+            logger.warning("The modules size has changed, retry calculating digest")
+            return digest_script(path_str)
     return md5_hash
 
 
@@ -113,17 +117,18 @@ class DockerDigester:
 
     def get_image_digest(self, name: str) -> str:
         assert isinstance(name, str)
-        deps = [name]
-        digest = None
-        while deps:
-            dep_name = deps.pop(0)
-            digest = digest_path(
-                self.images_info[dep_name]["path"],
-                digest,
-                exclude_files=self.EXCLUDE_FILES,
-            )
-            deps += self.images_info[dep_name]["deps"]
-        assert digest
+        with cd(ROOT_DIR):
+            deps = [name]
+            digest = None
+            while deps:
+                dep_name = deps.pop(0)
+                digest = digest_path(
+                    self.images_info[dep_name]["path"],
+                    digest,
+                    exclude_files=self.EXCLUDE_FILES,
+                )
+                deps += self.images_info[dep_name]["deps"]
+            assert digest
         return digest.hexdigest()[0:DOCKER_DIGEST_LEN]
 
     def get_all_digests(self) -> Dict:

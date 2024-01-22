@@ -514,7 +514,7 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
                 }
                 else if (initialization_error == InitializeError::RETRYABLE_ERROR)
                 {
-                    LOG_ERROR(
+                    LOG_TRACE(
                         log,
                         "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
                         "(Current backoff wait is {}/{} ms)",
