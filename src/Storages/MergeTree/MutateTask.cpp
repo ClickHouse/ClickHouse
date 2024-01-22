@@ -674,15 +674,21 @@ static NameToNameVector collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx2"))
+            const std::vector<String> suffixes = {".idx2", ".idx", ".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"};
+
+            for (const auto& suffix : suffixes)
             {
-                add_rename(INDEX_FILE_PREFIX + command.column_name + ".idx2", "");
-                add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
-            }
-            else if (source_part->checksums.has(INDEX_FILE_PREFIX + command.column_name + ".idx"))
-            {
-                add_rename(INDEX_FILE_PREFIX + command.column_name + ".idx", "");
-                add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
+                String filename = INDEX_FILE_PREFIX + command.column_name + suffix;
+
+                if ((suffix == ".idx2" || suffix == ".idx") && source_part->checksums.has(filename))
+                {
+                    add_rename(filename, "");
+                    add_rename(INDEX_FILE_PREFIX + command.column_name + mrk_extension, "");
+                }
+                else if (source_part->checksums.has(filename))
+                {
+                    add_rename(filename, "");
+                }
             }
         }
         else if (command.type == MutationCommand::Type::DROP_PROJECTION)
