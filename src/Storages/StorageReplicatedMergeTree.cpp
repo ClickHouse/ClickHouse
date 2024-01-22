@@ -5385,9 +5385,7 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
-        QueryTreeNodePtr modified_query_tree = query_info.query_tree->clone();
-        rewriteJoinToGlobalJoin(modified_query_tree);
-        modified_query_tree = buildQueryTreeForShard(query_info, modified_query_tree);
+        auto modified_query_tree = buildQueryTreeForShard(query_info, query_info.query_tree);
 
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(
             modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
@@ -5410,6 +5408,7 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
 
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
+        getStorageID(),
         select_stream_factory,
         modified_query_ast,
         local_context,
