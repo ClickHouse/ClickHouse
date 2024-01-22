@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <city.h>
 #include <Disks/IDisk.h>
 #include <IO/CompressionMethod.h>
@@ -23,7 +22,6 @@ using LogEntries = std::vector<LogEntryPtr>;
 using LogEntriesPtr = nuraft::ptr<LogEntries>;
 using BufferPtr = nuraft::ptr<nuraft::buffer>;
 
-using IndexToOffset = std::unordered_map<uint64_t, off_t>;
 using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
 
 enum class ChangelogVersion : uint8_t
@@ -63,6 +61,8 @@ struct ChangelogFileDescription
     DiskPtr disk;
     std::string path;
 
+    std::mutex file_mutex;
+
     bool deleted = false;
 
     /// How many entries should be stored in this log
@@ -85,6 +85,43 @@ struct LogFileSettings
 struct FlushSettings
 {
     uint64_t max_flush_batch_size = 1000;
+};
+
+struct LogLocation
+{
+    ChangelogFileDescriptionPtr file_description;
+    size_t position;
+};
+
+struct LogEntryStorage
+{
+    size_t size() const;
+
+    void addEntry(uint64_t index, const LogEntryPtr & log_entry);
+    void addEntryWithLocation(uint64_t index, const LogEntryPtr & log_entry, LogLocation log_location);
+    void eraseIf(std::function<bool(size_t)> index_predicate);
+    bool contains(uint64_t index) const;
+    LogEntryPtr getEntry(uint64_t index) const;
+    void clear();
+    LogEntryPtr getLatestConfigChange() const;
+
+    using IndexWithLogLocation = std::pair<uint64_t, LogLocation>;
+
+    void addLogLocations(std::vector<IndexWithLogLocation> indices_with_log_locations);
+
+    void refreshCache();
+
+    LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end) const;
+private:
+    /// Mapping log_id -> log_entry
+    IndexToLogEntry logs_cache;
+    size_t min_index_in_cache = 0;
+
+    size_t total_entries = 0;
+    mutable std::mutex logs_location_mutex;
+    std::vector<IndexWithLogLocation> unapplied_indices_with_log_locations;
+    std::unordered_map<uint64_t, LogLocation> logs_location;
+    size_t max_index_with_location = 0;
 };
 
 /// Simplest changelog with files rotation.
@@ -143,7 +180,7 @@ public:
 
     void shutdown();
 
-    uint64_t size() const { return logs.size(); }
+    uint64_t size() const { return entry_storage.size(); }
 
     uint64_t lastDurableIndex() const
     {
@@ -190,8 +227,9 @@ private:
     std::mutex writer_mutex;
     /// Current writer for changelog file
     std::unique_ptr<ChangelogWriter> current_writer;
-    /// Mapping log_id -> log_entry
-    IndexToLogEntry logs;
+
+    LogEntryStorage entry_storage;
+
     /// Start log_id which exists in all "active" logs
     /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
     uint64_t min_log_id = 0;
