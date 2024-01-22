@@ -241,15 +241,12 @@ void AsyncLoader::wait()
 
 void AsyncLoader::stop()
 {
-    stopAndDoNotWait();
+    {
+        std::unique_lock lock{mutex};
+        is_running = false;
+        // NOTE: there is no need to notify because workers never wait
+    }
     wait();
-}
-
-void AsyncLoader::stopAndDoNotWait()
-{
-    std::unique_lock lock{mutex};
-    is_running = false;
-    // NOTE: there is no need to notify because workers never wait
 }
 
 void AsyncLoader::schedule(LoadTask & task)
