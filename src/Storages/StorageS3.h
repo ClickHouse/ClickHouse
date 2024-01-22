@@ -304,6 +304,7 @@ public:
 
         std::shared_ptr<const S3::Client> client;
         std::vector<String> keys;
+        bool is_broken = false;
     };
 
     StorageS3(
