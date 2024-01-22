@@ -36,7 +36,9 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
         "SELECT value FROM system.asynchronous_metrics WHERE metric = 'NumberOfTables'"
     )
 
-    node.query("CREATE TABLE tab (col UInt64) ENGINE MergeTree ORDER BY tuple()") # do anything dumb
+    node.query(
+        "CREATE TABLE tab (col UInt64) ENGINE MergeTree ORDER BY tuple()"
+    ) # do anything dumb
 
     node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
 
