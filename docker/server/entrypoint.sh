@@ -49,17 +49,10 @@ CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
 CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
 CLICKHOUSE_ACCESS_MANAGEMENT="${CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT:-0}"
 
-for dir in "$DATA_DIR" \
-  "$ERROR_LOG_DIR" \
-  "$LOG_DIR" \
-  "$TMP_DIR" \
-  "$USER_PATH" \
-  "$FORMAT_SCHEMA_PATH" \
-  "${DISKS_PATHS[@]}" \
-  "${DISKS_METADATA_PATHS[@]}"
-do
+function create_directory_and_do_chown() {
+    local dir=$1
     # check if variable not empty
-    [ -z "$dir" ] && continue
+    [ -z "$dir" ] && return
     # ensure directories exist
     if [ "$DO_CHOWN" = "1" ]; then
         mkdir="mkdir"
@@ -81,6 +74,23 @@ do
             chown -R "$USER:$GROUP" "$dir"
         fi
     fi
+}
+
+create_directory_and_do_chown "$DATA_DIR"
+
+# Change working directory to $DATA_DIR in case there're paths relative to $DATA_DIR, also avoids running
+# clickhouse-server at root directory.
+cd "$DATA_DIR"
+
+for dir in "$ERROR_LOG_DIR" \
+  "$LOG_DIR" \
+  "$TMP_DIR" \
+  "$USER_PATH" \
+  "$FORMAT_SCHEMA_PATH" \
+  "${DISKS_PATHS[@]}" \
+  "${DISKS_METADATA_PATHS[@]}"
+do
+    create_directory_and_do_chown "$dir"
 done
 
 # if clickhouse user is defined - create it (user "default" already exists out of box)
