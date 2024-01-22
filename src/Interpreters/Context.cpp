@@ -1646,7 +1646,6 @@ void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_proje
 
 Context::QueryFactoriesInfo Context::getQueryFactoriesInfo() const
 {
-    std::lock_guard lock(query_factories_info.mutex);
     return query_factories_info;
 }
 
