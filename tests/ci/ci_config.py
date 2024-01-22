@@ -534,7 +534,7 @@ class CiConfig:
 
     @classmethod
     def is_docs_job(cls, job: str) -> bool:
-        return job != JobNames.DOCS_CHECK
+        return job == JobNames.DOCS_CHECK
 
     def validate(self) -> None:
         errors = []
