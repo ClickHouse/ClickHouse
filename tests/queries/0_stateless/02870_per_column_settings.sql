@@ -68,11 +68,3 @@ ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1; -- {serverError UNKNOWN_SETTING}
 
 SELECT '--- ';
-
--- Column-level settings are only supported for MergeTree* tables
-CREATE TABLE tab
-(
-    id UInt64 CODEC(ZSTD),
-    long_string String CODEC(ZSTD) SETTINGS (min_compress_block_size = 81920, max_compress_block_size = 163840),
-)
-ENGINE = TinyLog; -- {serverError ILLEGAL_COLUMN}

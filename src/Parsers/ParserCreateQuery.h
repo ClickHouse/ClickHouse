@@ -329,10 +329,17 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         primary_key_specifier = true;
     }
 
+    auto old_pos = pos;
     if (s_settings.ignore(pos, expected))
     {
+        /// When the keyword `SETTINGS` appear here, it can be a column settings declaration or query settings
+        /// For example:
+        /// - Column settings: `ALTER TABLE xx MODIFY COLUMN yy <new_type> SETTINGS (name = value)`
+        /// - Query settings: ` ALTER TABLE xx MODIFY COLUMN yy <new_type> SETTINGS mutation_sync = 2`
+        /// So after parsing keyword `SETTINGS`, we check if it's followed by an `(` then it's the column
+        /// settings, otherwise it's the query settings and we need to move `pos` back to origin position.
         ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
-        if (parser_opening_bracket.check(pos, expected))
+        if (parser_opening_bracket.ignore(pos, expected))
         {
             if (!settings_parser.parse(pos, settings, expected))
                 return false;
@@ -340,8 +347,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             if (!parser_closing_bracket.ignore(pos, expected))
                 return false;
         }
-        /// This could be settings in alter query
-        /// E.g: ALTER TABLE alter_enum_array MODIFY COLUMN x String SETTINGS mutations_sync=2;
+        else
+            pos = old_pos;
     }
 
     node = column_declaration;
