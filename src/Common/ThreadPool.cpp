@@ -568,9 +568,8 @@ template class ThreadPoolImpl<std::thread>;
 template class ThreadPoolImpl<ThreadFromGlobalPoolImpl<false>>;
 template class ThreadFromGlobalPoolImpl<true>;
 
-/// std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
-std::vector<std::unique_ptr<GlobalThreadPool>> GlobalThreadPool::the_pools;
-size_t GlobalThreadPool::next_pool_index = 0;
+std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
+
 
 GlobalThreadPool::GlobalThreadPool(
     size_t max_threads_,
@@ -590,34 +589,30 @@ GlobalThreadPool::GlobalThreadPool(
 
 void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
 {
-    if (!the_pools.empty()) {
+    if (the_instance)
+    {
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
-            "The global thread pools are already initialized");
+            "The global thread pool is initialized twice");
     }
 
-    next_pool_index = 0;
-
-    // Initialize 5 instances of GlobalThreadPool
-    for (int i = 0; i < 5; ++i) {
-        the_pools.push_back(std::make_unique<GlobalThreadPool>(max_threads, max_free_threads, queue_size, false));
-    }
+    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/));
 }
 
 GlobalThreadPool & GlobalThreadPool::instance()
 {
-    if (the_pools.empty()) {
-        initialize(); // Default initialization if not already done
+    if (!the_instance)
+    {
+        // Allow implicit initialization. This is needed for old code that is
+        // impractical to redo now, especially Arcadia users and unit tests.
+        initialize();
     }
 
-    GlobalThreadPool &pool = *the_pools[next_pool_index];
-    next_pool_index = (next_pool_index + 1) % the_pools.size(); // Round-robin selection
-    return pool;
+    return *the_instance;
 }
 void GlobalThreadPool::shutdown()
 {
-    for (auto &pool : the_pools) {
-        if (pool) {
-            pool->finalize();
-        }
+    if (the_instance)
+    {
+        the_instance->finalize();
     }
 }
