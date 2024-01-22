@@ -129,7 +129,7 @@ public:
                 res_col_offsets_data.push_back(res_data.size());
 
                 // Create Baseline = seasonal + trend
-                std::transform(seasonal.begin(), seasonal.end(), trend.begin(), std::back_inserter(res_data), std::plus<Float32>());
+                std::transform(seasonal.begin(), seasonal.end(), trend.begin(), std::back_inserter(res_data), std::plus<>());
                 res_col_offsets_data.push_back(res_data.size());
 
                 root_offsets_data.push_back(res_col_offsets->size());
