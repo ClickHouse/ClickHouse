@@ -676,7 +676,7 @@ static NameToNameVector collectFilesForRenames(
         {
             const std::vector<String> suffixes = {".idx2", ".idx", ".gin_dict", ".gin_post", ".gin_seg", ".gin_sid"};
 
-            for (const auto& suffix : suffixes)
+            for (const auto & suffix : suffixes)
             {
                 String filename = INDEX_FILE_PREFIX + command.column_name + suffix;
 
