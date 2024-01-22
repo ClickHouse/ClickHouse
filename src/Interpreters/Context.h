@@ -727,7 +727,7 @@ public:
         TableFunction
     };
 
-    const QueryFactoriesInfo & getQueryFactoriesInfo() const { return query_factories_info; }
+    QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
     /// For table functions s3/file/url/hdfs/input we can use structure from
