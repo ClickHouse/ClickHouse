@@ -215,7 +215,7 @@ JSONColumnsSchemaReaderBase::JSONColumnsSchemaReaderBase(
 {
 }
 
-void JSONColumnsSchemaReaderBase::setContext(ContextPtr & ctx)
+void JSONColumnsSchemaReaderBase::setContext(const ContextPtr & ctx)
 {
     ColumnsDescription columns;
     if (tryParseColumnsListFromString(hints_str, columns, ctx, hints_parsing_error))

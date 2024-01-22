@@ -84,7 +84,7 @@ public:
     void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     bool needContext() const override { return !hints_str.empty(); }
-    void setContext(ContextPtr & ctx) override;
+    void setContext(const ContextPtr & ctx) override;
 
     void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
     {

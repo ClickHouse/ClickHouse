@@ -348,7 +348,7 @@ std::string LocalServer::getInitialCreateTableQuery()
         /// Use regular file
         auto file_name = config().getString("table-file");
         table_file = quoteString(file_name);
-        format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
+        format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name);
     }
 
     auto data_format = backQuoteIfNeed(

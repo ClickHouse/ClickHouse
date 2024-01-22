@@ -40,7 +40,7 @@ StorageIceberg::StorageIceberg(
 ColumnsDescription StorageIceberg::getTableStructureFromData(
     Configuration & base_configuration,
     const std::optional<FormatSettings> &,
-    ContextPtr local_context)
+    const ContextPtr & local_context)
 {
     auto configuration{base_configuration};
     configuration.update(local_context);
@@ -48,7 +48,7 @@ ColumnsDescription StorageIceberg::getTableStructureFromData(
     return ColumnsDescription(metadata->getTableSchema());
 }
 
-void StorageIceberg::updateConfigurationImpl(ContextPtr local_context)
+void StorageIceberg::updateConfigurationImpl(const ContextPtr & local_context)
 {
     const bool updated = base_configuration.update(local_context);
     auto new_metadata = parseIcebergMetadata(base_configuration, local_context);
