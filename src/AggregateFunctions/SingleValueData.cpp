@@ -34,7 +34,7 @@ mergeIfAndNullFlags(const UInt8 * __restrict null_map, const UInt8 * __restrict 
 
 }
 
-std::optional<size_t> SingleValueDataBase::getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end)
+std::optional<size_t> SingleValueDataBase::getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const
 {
     if (row_begin >= row_end)
         return std::nullopt;
@@ -59,7 +59,7 @@ std::optional<size_t> SingleValueDataBase::getSmallestIndex(const IColumn & colu
     }
 }
 
-std::optional<size_t> SingleValueDataBase::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end)
+std::optional<size_t> SingleValueDataBase::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const
 {
     if (row_begin >= row_end)
         return std::nullopt;
@@ -85,7 +85,7 @@ std::optional<size_t> SingleValueDataBase::getGreatestIndex(const IColumn & colu
 }
 
 std::optional<size_t> SingleValueDataBase::getSmallestIndexNotNullIf(
-    const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end)
+    const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const
 {
     size_t index = row_begin;
     while ((index < row_end) && ((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)))
@@ -100,7 +100,7 @@ std::optional<size_t> SingleValueDataBase::getSmallestIndexNotNullIf(
 }
 
 std::optional<size_t> SingleValueDataBase::getGreatestIndexNotNullIf(
-    const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end)
+    const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const
 {
     size_t index = row_begin;
     while ((index < row_end) && ((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)))
@@ -409,7 +409,7 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
 }
 
 template <typename T>
-std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end)
+std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const
 {
     if (row_begin >= row_end)
         return std::nullopt;
@@ -430,7 +430,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
 }
 
 template <typename T>
-std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end)
+std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const
 {
     if (row_begin >= row_end)
         return std::nullopt;
@@ -447,6 +447,134 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & 
             if (vec.getData()[i] > vec.getData()[index])
                 index = i;
         return index;
+    }
+}
+
+template <typename T>
+std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
+    const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const
+{
+    if (row_begin >= row_end)
+        return std::nullopt;
+
+    const auto & vec = assert_cast<const ColVecType &>(column);
+
+    if constexpr (has_find_extreme_implementation<T>)
+    {
+        std::optional<T> opt;
+        if (!if_map)
+        {
+            opt = findExtremeMinNotNull(vec.getData().data(), null_map, row_begin, row_end);
+            if (!opt.has_value())
+                return opt;
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if (!null_map[i] && vec[i] == *opt)
+                    return {i};
+            }
+        }
+        else if (!null_map)
+        {
+            opt = findExtremeMinIf(vec.getData().data(), if_map, row_begin, row_end);
+            if (!opt.has_value())
+                return opt;
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if (if_map[i] && vec[i] == *opt)
+                    return {i};
+            }
+        }
+        else
+        {
+            auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
+            opt = findExtremeMinIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
+            if (!opt.has_value())
+                return std::nullopt;
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if (final_flags[i] && vec[i] == *opt)
+                    return {i};
+            }
+        }
+        UNREACHABLE();
+    }
+    else
+    {
+        size_t index = row_begin;
+        while ((index < row_end) && ((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)))
+            index++;
+        if (index >= row_end)
+            return std::nullopt;
+
+        for (size_t i = index + 1; i < row_end; i++)
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec[i] < vec[index]))
+                index = i;
+        return {index};
+    }
+}
+
+template <typename T>
+std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
+    const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const
+{
+    if (row_begin >= row_end)
+        return std::nullopt;
+
+    const auto & vec = assert_cast<const ColVecType &>(column);
+
+    if constexpr (has_find_extreme_implementation<T>)
+    {
+        std::optional<T> opt;
+        if (!if_map)
+        {
+            opt = findExtremeMaxNotNull(vec.getData().data(), null_map, row_begin, row_end);
+            if (!opt.has_value())
+                return opt;
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if (!null_map[i] && vec[i] == *opt)
+                    return {i};
+            }
+            return opt;
+        }
+        else if (!null_map)
+        {
+            opt = findExtremeMaxIf(vec.getData().data(), if_map, row_begin, row_end);
+            if (!opt.has_value())
+                return opt;
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if (if_map[i] && vec[i] == *opt)
+                    return {i};
+            }
+            return opt;
+        }
+        else
+        {
+            auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
+            opt = findExtremeMaxIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
+            if (!opt.has_value())
+                return std::nullopt;
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if (final_flags[i] && vec[i] == *opt)
+                    return {i};
+            }
+        }
+        UNREACHABLE();
+    }
+    else
+    {
+        size_t index = row_begin;
+        while ((index < row_end) && ((if_map && if_map[index] == 0) || (null_map && null_map[index] != 0)))
+            index++;
+        if (index >= row_end)
+            return std::nullopt;
+
+        for (size_t i = index + 1; i < row_end; i++)
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec[i] < vec[index]))
+                index = i;
+        return {index};
     }
 }
 
@@ -864,15 +992,29 @@ void SingleValueDataNumeric<T>::setGreatestNotNullIf(
 }
 
 template <typename T>
-std::optional<size_t> SingleValueDataNumeric<T>::getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end)
+std::optional<size_t> SingleValueDataNumeric<T>::getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const
 {
     return memory.get().getSmallestIndex(column, row_begin, row_end);
 }
 
 template <typename T>
-std::optional<size_t> SingleValueDataNumeric<T>::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end)
+std::optional<size_t> SingleValueDataNumeric<T>::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const
 {
     return memory.get().getGreatestIndex(column, row_begin, row_end);
+}
+
+template <typename T>
+std::optional<size_t> SingleValueDataNumeric<T>::getSmallestIndexNotNullIf(
+    const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const
+{
+    return memory.get().getSmallestIndexNotNullIf(column, null_map, if_map, row_begin, row_end);
+}
+
+template <typename T>
+std::optional<size_t> SingleValueDataNumeric<T>::getGreatestIndexNotNullIf(
+    const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const
+{
+    return memory.get().getGreatestIndexNotNullIf(column, null_map, if_map, row_begin, row_end);
 }
 
 #define DISPATCH(TYPE) template struct SingleValueDataNumeric<TYPE>;
