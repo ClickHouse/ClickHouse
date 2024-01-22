@@ -174,19 +174,23 @@ void ParallelBzip2ReadBuffer::readerThreadFunction(CompressedReadWorkerPtr worke
                 Stopwatch watch;
                 worker->compressed = std::make_unique<ReadBufferFromMemory>(worker->segment.data(), worker->segment.size());
                 worker->decompressor = std::make_unique<SplittableBzip2ReadBuffer>(std::move(worker->compressed), buf_size);
-                worker->uncompressed_segment.reserve(worker->segment.size() * 9);
+                worker->uncompressed_segment.reserve(worker->segment.size() * 6);
                 worker->uncompressed = std::make_unique<WriteBufferFromString>(worker->uncompressed_segment);
                 copyData(*worker->decompressor, *worker->uncompressed);
+                worker->uncompressed->sync();
                 worker->uncompressed->finalize();
                 worker->uncompressed_segment.resize(worker->uncompressed->count());
                 LOG_TRACE(
                     &Poco::Logger::get("ParallelBzip2ReadBuffer"),
-                    "Read and decompressed range: [{}, {}) in {} seconds, compressed size: {}, uncompressed size: {}",
+                    "Read and decompressed range: [{}, {}) in {} seconds, compressed size: {}, uncompressed size: {} read bytes: {}, write "
+                    "bytes: {}",
                     worker->start_offset,
                     worker->start_offset + worker->segment.size(),
                     watch.elapsedSeconds(),
                     worker->segment.size(),
-                    worker->uncompressed_segment.size());
+                    worker->uncompressed_segment.size(),
+                    worker->decompressor->getWrappedReadBuffer().count(),
+                    worker->uncompressed->count());
 
 
                 worker->bytes_consumed = worker->bytes_produced;
