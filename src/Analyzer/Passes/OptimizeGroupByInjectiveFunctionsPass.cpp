@@ -70,7 +70,6 @@ private:
     void optimizeGroupingSet(QueryTreeNodes & grouping_set)
     {
         auto context = getContext();
-        const FunctionFactory & function_factory = FunctionFactory::instance();
 
         QueryTreeNodes new_group_by_keys;
         new_group_by_keys.reserve(grouping_set.size());
@@ -85,13 +84,8 @@ private:
                 }
                 else
                 {
-                    FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function_node->getFunctionName(), context);
-
-                    // TODO: fix me
-                    if (!function_builder)
-                        function_builder = function_factory.get(function_node->getFunctionName(), context);
-
-                    can_be_eliminated = function_builder->isInjective({});
+                    auto function = function_node->getFunctionOrThrow();
+                    can_be_eliminated = function->isInjective(function_node->getArgumentColumns());
                 }
 
                 if (can_be_eliminated)
@@ -114,17 +108,18 @@ private:
 
     bool canBeEliminated(const FunctionNode * function_node, const ContextPtr & context)
     {
-        auto const * dict_name_arg = function_node->getArguments().getNodes()[0]->as<ConstantNode>();
-        if (!dict_name_arg || isString(dict_name_arg->getResultType()))
+        const auto & function_arguments = function_node->getArguments().getNodes();
+        auto const * dict_name_arg = function_arguments[0]->as<ConstantNode>();
+        if (!dict_name_arg || !isString(dict_name_arg->getResultType()))
             return false;
         auto dict_name = dict_name_arg->getValue().safeGet<String>();
 
         const auto & dict_ptr = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
 
-        auto const * attr_arg = function_node->getArguments().getNodes()[0]->as<ConstantNode>();
-        if (!attr_arg || isString(attr_arg->getResultType()))
+        auto const * attr_name_arg = function_arguments[1]->as<ConstantNode>();
+        if (!attr_name_arg || !isString(attr_name_arg->getResultType()))
             return false;
-        auto attr_name = attr_arg->getValue().safeGet<String>();
+        auto attr_name = attr_name_arg->getValue().safeGet<String>();
 
         return dict_ptr->isInjective(attr_name);
     }
