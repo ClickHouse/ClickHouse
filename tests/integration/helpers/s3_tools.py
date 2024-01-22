@@ -40,9 +40,7 @@ def list_s3_objects(minio_client, bucket, prefix=""):
     prefix_len = len(prefix)
     return [
         obj.object_name[prefix_len:]
-        for obj in minio_client.list_objects(
-            bucket, prefix=prefix, recursive=True
-        )
+        for obj in minio_client.list_objects(bucket, prefix=prefix, recursive=True)
     ]
 
 
