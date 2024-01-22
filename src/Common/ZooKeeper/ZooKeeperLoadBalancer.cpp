@@ -17,11 +17,6 @@
 #include <Poco/String.h>
 
 
-namespace DB::ErrorCodes
-{
-extern const int ALL_CONNECTION_TRIES_FAILED;
-}
-
 enum Status
 {
     UNDEF = 0,
@@ -33,9 +28,6 @@ enum Status
 class EndpointRegistry
 {
 public:
-    EndpointRegistry() = default;
-    using clock = std::chrono::steady_clock;
-
     struct EndpointInternal
     {
         String address;
@@ -60,7 +52,7 @@ public:
     {
         return endpoints.size();
     }
-    
+
     void markHostOffline(size_t id)
     {
         endpoints[id].status = OFFLINE;
@@ -88,9 +80,8 @@ public:
         return ids;
     }
 
-    void logAllEndpoints() const
+    void logAllEndpoints(Poco::Logger* logger) const
     {
-        auto *logger = &Poco::Logger::get("ZooKeeperLoadBalancerEndpoint");
         LOG_INFO(logger, "Reporting Endpoint status information.");
         for (const auto & endpoint : endpoints)
             LOG_INFO(logger, "Endpoint ID {}, address {}, status {}", endpoint.id, endpoint.address, endpoint.status);
@@ -116,8 +107,6 @@ class IBalancerWithEndpointStatuses: public Coordination::IClientsConnectionBala
 {
 public:
     using EndpointInfo = Coordination::IClientsConnectionBalancer::EndpointInfo;
-
-    IBalancerWithEndpointStatuses() = default;
 
     void addEndpoint(EndpointInfo endpoint) override
     {
@@ -155,9 +144,9 @@ public:
         return registry.getRangeByStatus(ONLINE).size() + registry.getRangeByStatus(UNDEF).size();
     }
 
-    void logAllEndpoints() const override
+    void logAllEndpoints(Poco::Logger *logger) const override
     {
-        registry.logAllEndpoints();
+        registry.logAllEndpoints(logger);
     }
 
 protected:
@@ -233,11 +222,6 @@ public:
         return {};
     }
 
-    std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t>) const override
-    {
-        return {};
-    }
-
     bool hasBetterHostToConnect(size_t) const override
     {
         return false;
@@ -248,8 +232,6 @@ public:
 class IBalancerWithPriorities : public IBalancerWithEndpointStatuses
 {
 public:
-    IBalancerWithPriorities() = default;
-
     void addEndpoint(EndpointInfo endpoint) override
     {
         IBalancerWithEndpointStatuses::addEndpoint(endpoint);
@@ -298,20 +280,6 @@ public:
         chassert(getAvailableEndpointsCount() == 0);
         return {};
     }
-    
-    std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t> current_endpoint_id) const override
-    {
-        std::vector<EndpointInfo> endpoints;
-        const size_t current = current_endpoint_id.value_or(getEndpointsCount());
-        const bool current_id_set = current_endpoint_id.has_value();
-        for (const auto & endpoint : registry.getRangeByStatus(UNDEF))
-            if (current_id_set|| priorities[endpoint] < priorities[current])
-                endpoints.push_back(getHostWithSetting(endpoint));
-        for (const auto & endpoint : registry.getRangeByStatus(OFFLINE))
-            if (current_id_set || priorities[endpoint] < priorities[current])
-                endpoints.push_back(getHostWithSetting(endpoint));
-        return endpoints;
-    }
 
     bool hasBetterHostToConnect(size_t current_endpoint_id) const override
     {
@@ -332,11 +300,6 @@ private:
 class RoundRobin: public IBalancerWithEndpointStatuses
 {
 public:
-    std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t>) const override
-    {
-        return {};
-    }
-
     bool hasBetterHostToConnect(size_t) const override
     {
         return false;
@@ -365,7 +328,7 @@ private:
 
     EndpointInfo selectEndpoint(size_t id)
     {
-        round_robin_id = (id + 1 ) % getEndpointsCount();
+        round_robin_id = (id + 1) % getEndpointsCount();
         return asOptimalEndpoint(id);
     }
 
@@ -403,13 +366,6 @@ public:
 
         chassert(getAvailableEndpointsCount() == 0);
         return {};
-    }
-
-    std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t> current_endpoint_id) const override
-    {
-        if (current_endpoint_id.has_value() && current_endpoint_id == 0)
-            return {};
-        return {asOptimalEndpoint(0)};
     }
 
     bool hasBetterHostToConnect(size_t current_endpoint_id) const override
@@ -553,7 +509,7 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
     while (true)
     {
         ++attempts;
-        connection_balancer->logAllEndpoints();
+        connection_balancer->logAllEndpoints(log);
         auto endpoint_or = connection_balancer->getHostToConnect();
         if (!endpoint_or.has_value())
         {
@@ -593,12 +549,14 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
             {
                 LOG_INFO(log, "Hosts better than {} exist, would try more.", endpoint.address);
                 continue;
-            } else {
+            }
+            else
+            {
                 LOG_INFO(log, "No more better host exists for now, will return with host {}.", endpoint.address);
                 return client;
             }
         }
-        catch (DB::Exception& ex)
+        catch (DB::Exception & ex)
         {
             connection_balancer->markHostOffline(endpoint.id);
             LOG_ERROR(log, "Failed to connect to ZooKeeper host {}, error {}", endpoint.address, ex.what());

@@ -45,9 +45,6 @@ public:
 
     virtual std::optional<EndpointInfo> getHostToConnect() = 0;
 
-    // Returns the set of Endpoint that are worth checking for connection. When not connected to any endpoint, passed-in current_endpoint_id is empty.
-    virtual std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t> current_endpoint_id) const = 0;
-
     // Returns true if there is a host that is better than one currently connected to.
     virtual bool hasBetterHostToConnect(size_t current_id) const = 0;
 
@@ -58,7 +55,7 @@ public:
     virtual size_t getAvailableEndpointsCount() const = 0;
     virtual size_t getEndpointsCount() const = 0;
 
-    virtual void logAllEndpoints() const = 0;
+    virtual void logAllEndpoints(Poco::Logger *log) const = 0;
 
     virtual ~IClientsConnectionBalancer() = default;
 };
