@@ -29,7 +29,7 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     , enable_gc(enable_gc_)
     , settings(config, config_prefix, name)
 {
-    if (object_storage_->getType() != ObjectStorageType::S3)
+    if (object_storage->getType() != ObjectStorageType::S3)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS supports only 's3' disk type");
     if (send_metadata)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS doesn't support send_metadata");
