@@ -1,52 +1,152 @@
-=====
-running test for engine: MergeTree() ORDER BY (a)
-0
-a	a-a	10000
-0	0-0	0
-1	1-1	1
-2	2-2	4
-3	3-3	9
-4	4-4	16
-5	5-5	25
-6	6-6	36
+=== Test Single Streams (MergeTree() ORDER BY (a)) ===
+started started-started 0
+0 0-0 0
+1 1-1 1
+2 2-2 4
+3 3-3 9
+4 4-4 16
+0 0-0 0
+1 1-1 1
+2 2-2 4
+3 3-3 9
+4 4-4 16
+5 5-5 25
+6 6-6 36
+
+****************
+Killing process
+Removing FIFO
+****************
+
+=== Test Multiple Streams (MergeTree() ORDER BY (a)) ===
+started
+started
 same-x-2
 same-x-2
-=====
-running test for engine: TinyLog
-0
-a	a-a	10000
-0	0-0	0
-1	1-1	1
-2	2-2	4
-3	3-3	9
-4	4-4	16
-5	5-5	25
-6	6-6	36
+
+****************
+Killing process
+Removing FIFO
+****************
+
+only-for-1
+
+****************
+Killing process
+Removing FIFO
+****************
+
+=== Test Single Streams (TinyLog) ===
+started started-started 0
+0 0-0 0
+1 1-1 1
+2 2-2 4
+3 3-3 9
+4 4-4 16
+0 0-0 0
+1 1-1 1
+2 2-2 4
+3 3-3 9
+4 4-4 16
+5 5-5 25
+6 6-6 36
+
+****************
+Killing process
+Removing FIFO
+****************
+
+=== Test Multiple Streams (TinyLog) ===
+started
+started
 same-x-2
 same-x-2
-=====
-running test for engine: StripeLog
-0
-a	a-a	10000
-0	0-0	0
-1	1-1	1
-2	2-2	4
-3	3-3	9
-4	4-4	16
-5	5-5	25
-6	6-6	36
+
+****************
+Killing process
+Removing FIFO
+****************
+
+only-for-1
+
+****************
+Killing process
+Removing FIFO
+****************
+
+=== Test Single Streams (StripeLog) ===
+started started-started 0
+0 0-0 0
+1 1-1 1
+2 2-2 4
+3 3-3 9
+4 4-4 16
+0 0-0 0
+1 1-1 1
+2 2-2 4
+3 3-3 9
+4 4-4 16
+5 5-5 25
+6 6-6 36
+
+****************
+Killing process
+Removing FIFO
+****************
+
+=== Test Multiple Streams (StripeLog) ===
+started
+started
 same-x-2
 same-x-2
-=====
-running test for engine: Memory
-0
-a	a-a	10000
-0	0-0	0
-1	1-1	1
-2	2-2	4
-3	3-3	9
-4	4-4	16
-5	5-5	25
-6	6-6	36
+
+****************
+Killing process
+Removing FIFO
+****************
+
+only-for-1
+
+****************
+Killing process
+Removing FIFO
+****************
+
+=== Test Single Streams (Memory) ===
+started started-started 0
+0 0-0 0
+1 1-1 1
+2 2-2 4
+3 3-3 9
+4 4-4 16
+0 0-0 0
+1 1-1 1
+2 2-2 4
+3 3-3 9
+4 4-4 16
+5 5-5 25
+6 6-6 36
+
+****************
+Killing process
+Removing FIFO
+****************
+
+=== Test Multiple Streams (Memory) ===
+started
+started
 same-x-2
 same-x-2
+
+****************
+Killing process
+Removing FIFO
+****************
+
+only-for-1
+
+****************
+Killing process
+Removing FIFO
+****************
+
