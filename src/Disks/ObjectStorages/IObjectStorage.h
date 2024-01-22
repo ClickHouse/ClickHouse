@@ -15,7 +15,6 @@
 
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskType.h>
-#include <Common/ThreadPool_fwd.h>
 #include <Common/ObjectStorageKey.h>
 #include <Disks/WriteMode.h>
 #include <Interpreters/Context_fwd.h>

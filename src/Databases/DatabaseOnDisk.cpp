@@ -19,6 +19,7 @@
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
 #include <Common/assert_cast.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>

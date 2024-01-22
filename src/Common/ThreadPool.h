@@ -115,6 +115,7 @@ private:
     mutable std::mutex mutex;
     std::condition_variable job_finished;
     std::condition_variable new_job_or_shutdown;
+    std::condition_variable no_jobs;
 
     Metric metric_threads;
     Metric metric_active_threads;
@@ -139,8 +140,8 @@ private:
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
-    /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with `mutex` locked.
-    void startNewThreadsNoLock();
+    /// starts one thread (unless limit is reached). Must be called with `mutex` locked.
+    void createThreadNoLock();
 
     void finalize();
     void onDestroy();

@@ -75,9 +75,14 @@
     M(GlobalThreadPoolExpansions, "Counts the total number of times new threads were added to the global thread pool. This metric indicates the frequency of global thread pool expansions to accommodate increased processing demands.") \
     M(GlobalThreadPoolShrinks, "Counts the total number of times the global thread pool was shrunk by removing threads, triggered when the number of idle threads exceeded max_thread_pool_free_size. This metric highlights the adjustments in the global thread pool size in response to decreased thread utilization") \
     M(GlobalThreadPoolJobScheduleMicroseconds, "Total time spent waiting to schedule a job in the global thread pool. This metric accounts for the time elapsed from the moment a job scheduling request is made until the job is successfully queued in the global thread pool, reflecting the responsiveness and scheduling efficiency of the pool.") \
+    M(GlobalThreadPoolThreadCreationMicroseconds, "") \
+    M(GlobalThreadPoolJobScheduleLockWaitMicroseconds, "") \
+    \
     M(LocalThreadPoolExpansions, "Counts the total number of times threads were borrowed from the global thread pool to expand local thread pools.") \
     M(LocalThreadPoolShrinks, "Counts the total number of times threads were returned to the global thread pool from local thread pools.") \
     M(LocalThreadPoolJobScheduleMicroseconds, "Total time spent waiting to schedule a job in a local thread pool. This metric measures the time elapsed from when a job scheduling request is initiated until the job is successfully queued in the local thread pool. Shows how much time the jobs were waiting for a free slot in the local pool.") \
+    M(LocalThreadPoolThreadCreationMicroseconds, "") \
+    M(LocalThreadPoolJobScheduleLockWaitMicroseconds, "") \
     \
     M(DiskS3GetRequestThrottlerCount, "Number of DiskS3 GET and SELECT requests passed through throttler.") \
     M(DiskS3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskS3 GET and SELECT request throttling.") \
