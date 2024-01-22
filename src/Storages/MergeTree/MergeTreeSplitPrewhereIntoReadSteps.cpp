@@ -232,7 +232,6 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
 
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns
     /// TODO: not sorting for now because the conditions are already sorted by Where Optimizer
-    /// TODO(amos): _part_offset must come first
 
     /// 4. Group conditions with the same set of columns into a single read/compute step
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
