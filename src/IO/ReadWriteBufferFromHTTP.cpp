@@ -216,6 +216,9 @@ void ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::getHeadResponse(Poco::Net
             if (i == settings.http_max_tries - 1 || !isRetriableError(response.getStatus()))
                 throw;
 
+            if (e.code() == ErrorCodes::TOO_MANY_REDIRECTS)
+                throw;
+
             LOG_ERROR(log, "Failed to make HTTP_HEAD request to {}. Error: {}", uri.toString(), e.displayText());
         }
     }
@@ -543,6 +546,9 @@ bool ReadWriteBufferFromHTTPBase<UpdatableSessionPtr>::nextImpl()
         {
             /// Too many open files - non-retryable.
             if (e.code() == POCO_EMFILE)
+                throw;
+
+            if (e.code() == ErrorCodes::TOO_MANY_REDIRECTS)
                 throw;
 
             /** Retry request unconditionally if nothing has been read yet.
