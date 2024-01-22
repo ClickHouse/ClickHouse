@@ -103,14 +103,19 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     compression = config.getBool("compression", host != "localhost" && !isLocalAddress(DNSResolver::instance().resolveHost(host)))
                   ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 
-    timeouts = ConnectionTimeouts(
-            Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
-            Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0),
-            Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
-            Poco::Timespan(config.getInt("tcp_keep_alive_timeout", 0), 0),
-            Poco::Timespan(config.getInt("handshake_timeout_ms", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC * 1000), 0));
-
-    timeouts.sync_request_timeout = Poco::Timespan(config.getInt("sync_request_timeout", DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC), 0);
+    timeouts = ConnectionTimeouts()
+            .withConnectionTimeout(
+                Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0))
+            .withSendTimeout(
+                Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0))
+            .withReceiveTimeout(
+                Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0))
+            .withTcpKeepAliveTimeout(
+                Poco::Timespan(config.getInt("tcp_keep_alive_timeout", DEFAULT_TCP_KEEP_ALIVE_TIMEOUT), 0))
+            .withHandshakeTimeout(
+                Poco::Timespan(config.getInt("handshake_timeout_ms", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC * 1000) * 1000))
+            .withSyncRequestTimeout(
+                Poco::Timespan(config.getInt("sync_request_timeout", DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC), 0));
 }
 
 ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config,

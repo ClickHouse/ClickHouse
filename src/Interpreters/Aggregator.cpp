@@ -3054,6 +3054,8 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
     size_t row_end,
     const AggregateColumnsConstData & aggregate_columns_data) const
 {
+    using namespace CurrentMetrics;
+
     AggregatedDataWithoutKey & res = result.without_key;
     if (!res)
     {
@@ -3062,11 +3064,26 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
         res = place;
     }
 
+    ThreadPool thread_pool{AggregatorThreads, AggregatorThreadsActive, AggregatorThreadsScheduled, params.max_threads};
+
     for (size_t row = row_begin; row < row_end; ++row)
     {
         /// Adding Values
         for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->merge(res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], result.aggregates_pool);
+        {
+            if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
+            {
+                std::vector<AggregateDataPtr> data_vec{res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row]};
+                aggregate_functions[i]->parallelizeMergePrepare(data_vec, thread_pool);
+            }
+
+            if (aggregate_functions[i]->isAbleToParallelizeMerge())
+                aggregate_functions[i]->merge(
+                    res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], thread_pool, result.aggregates_pool);
+            else
+                aggregate_functions[i]->merge(
+                    res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], result.aggregates_pool);
+        }
     }
 }
 
