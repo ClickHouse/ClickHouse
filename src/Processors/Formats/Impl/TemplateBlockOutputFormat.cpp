@@ -221,21 +221,14 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         };
         if (settings.template_settings.row_format.empty())
         {
-            if (settings.template_settings.row_format_schema.empty())
-            {
-                throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_row or format_schema_rows_template");
-            }
-            else
-            {
-                row_format = ParsedTemplateFormatString();
-                row_format.parse(settings.template_settings.row_format_schema,idx_by_name);
-            }
+            row_format = ParsedTemplateFormatString();
+            row_format.parse(settings.template_settings.row_format_schema,idx_by_name);
         }
         else
         {
-            if (settings.template_settings.row_format_schema.empty())
+            if (!settings.template_settings.row_format_schema.empty())
             {
-                throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_row or format_schema_rows_template");
+                throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_row or format_schema_rows_template, but not both");
             }
             row_format = ParsedTemplateFormatString(
                 FormatSchemaInfo(settings.template_settings.row_format, "Template", false,
