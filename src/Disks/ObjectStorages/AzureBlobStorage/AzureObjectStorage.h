@@ -139,7 +139,12 @@ public:
 
     bool isRemote() const override { return true; }
 
-    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & getClient() { return client; }
+    MultiVersion<AzureObjectStorageSettings> & getSettings() { return settings; }
+
+    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & getAzureBlobStorageClient() override
+    {
+        return client;
+    }
 
 private:
     const String name;

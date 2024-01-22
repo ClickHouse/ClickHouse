@@ -23,7 +23,12 @@
 #include <Disks/DirectoryIterator.h>
 #include <Common/ThreadPool.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
+#include "config.h"
 
+#if USE_AZURE_BLOB_STORAGE
+#include <Common/MultiVersion.h>
+#include <azure/storage/blobs.hpp>
+#endif
 
 namespace DB
 {
@@ -211,6 +216,14 @@ public:
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
+
+#if USE_AZURE_BLOB_STORAGE
+    virtual MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & getAzureBlobStorageClient()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
+    }
+#endif
+
 
 private:
     mutable std::mutex throttlers_mutex;

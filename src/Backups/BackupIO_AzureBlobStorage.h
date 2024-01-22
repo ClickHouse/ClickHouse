@@ -31,7 +31,7 @@ private:
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     StorageAzureBlob::Configuration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    std::shared_ptr<AzureObjectStorageSettings> settings;
+    MultiVersion<AzureObjectStorageSettings> settings;
 };
 
 class BackupWriterAzureBlobStorage : public BackupWriterDefault
@@ -60,7 +60,7 @@ private:
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> client;
     StorageAzureBlob::Configuration configuration;
     std::unique_ptr<AzureObjectStorage> object_storage;
-    std::shared_ptr<AzureObjectStorageSettings> settings;
+    MultiVersion<AzureObjectStorageSettings> settings;
 };
 
 }

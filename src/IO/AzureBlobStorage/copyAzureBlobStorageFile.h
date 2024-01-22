@@ -29,7 +29,7 @@ void copyAzureBlobStorageFile(
     size_t src_size,
     const String & dest_container,
     const String & dest_blob,
-    std::shared_ptr<AzureObjectStorageSettings> settings,
+    MultiVersion<AzureObjectStorageSettings> settings,
     const ReadSettings & read_settings,
     const std::optional<std::map<String, String>> & object_metadata = std::nullopt,
     ThreadPoolCallbackRunner<void> schedule_ = {},
@@ -48,7 +48,7 @@ void copyDataToAzureBlobStorageFile(
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & client,
     const String & dest_container,
     const String & dest_blob,
-    std::shared_ptr<AzureObjectStorageSettings> settings,
+    MultiVersion<AzureObjectStorageSettings> settings,
     const std::optional<std::map<String, String>> & object_metadata = std::nullopt,
     ThreadPoolCallbackRunner<void> schedule_ = {},
     bool for_disk_azure_blob_storage = false);

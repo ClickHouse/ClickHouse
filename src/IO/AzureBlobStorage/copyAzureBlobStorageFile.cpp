@@ -49,7 +49,7 @@ namespace
             size_t total_size_,
             const String & dest_container_,
             const String & dest_blob_,
-            std::shared_ptr<AzureObjectStorageSettings> settings_,
+            MultiVersion<AzureObjectStorageSettings> settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunner<void> schedule_,
             bool for_disk_azure_blob_storage_,
@@ -65,7 +65,7 @@ namespace
             , schedule(schedule_)
             , for_disk_azure_blob_storage(for_disk_azure_blob_storage_)
             , log(log_)
-            , max_single_part_upload_size(settings_->max_single_part_upload_size)
+            , max_single_part_upload_size(settings_.get()->max_single_part_upload_size)
         {
         }
 
@@ -78,7 +78,7 @@ namespace
         size_t total_size;
         const String & dest_container;
         const String & dest_blob;
-        std::shared_ptr<AzureObjectStorageSettings> settings;
+        MultiVersion<AzureObjectStorageSettings> settings;
         const std::optional<std::map<String, String>> & object_metadata;
         ThreadPoolCallbackRunner<void> schedule;
         bool for_disk_azure_blob_storage;
@@ -114,9 +114,9 @@ namespace
             if (!total_size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
 
-            auto max_part_number = settings->max_part_number;
-            auto min_upload_part_size = settings->min_upload_part_size;
-            auto max_upload_part_size = settings->max_upload_part_size;
+            auto max_part_number = settings.get()->max_part_number;
+            auto min_upload_part_size = settings.get()->min_upload_part_size;
+            auto max_upload_part_size = settings.get()->max_upload_part_size;
 
             if (!max_part_number)
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_part_number must not be 0");
@@ -333,7 +333,7 @@ void copyDataToAzureBlobStorageFile(
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & dest_client,
     const String & dest_container,
     const String & dest_blob,
-    std::shared_ptr<AzureObjectStorageSettings> settings,
+    MultiVersion<AzureObjectStorageSettings> settings,
     const std::optional<std::map<String, String>> & object_metadata,
     ThreadPoolCallbackRunner<void> schedule,
     bool for_disk_azure_blob_storage)
@@ -352,14 +352,14 @@ void copyAzureBlobStorageFile(
     size_t size,
     const String & dest_container,
     const String & dest_blob,
-    std::shared_ptr<AzureObjectStorageSettings> settings,
+    MultiVersion<AzureObjectStorageSettings> settings,
     const ReadSettings & read_settings,
     const std::optional<std::map<String, String>> & object_metadata,
     ThreadPoolCallbackRunner<void> schedule,
     bool for_disk_azure_blob_storage)
 {
 
-    if (settings->use_native_copy)
+    if (settings.get()->use_native_copy)
     {
         ProfileEvents::increment(ProfileEvents::AzureCopyObject);
         if (for_disk_azure_blob_storage)
@@ -393,8 +393,8 @@ void copyAzureBlobStorageFile(
         LOG_TRACE(&Poco::Logger::get("copyAzureBlobStorageFile"), "Reading from Container: {}, Blob: {}", src_container, src_blob);
         auto create_read_buffer = [&]
         {
-            return std::make_unique<ReadBufferFromAzureBlobStorage>(src_client.get(), src_blob, read_settings, settings->max_single_read_retries,
-            settings->max_single_download_retries);
+            return std::make_unique<ReadBufferFromAzureBlobStorage>(src_client.get(), src_blob, read_settings, settings.get()->max_single_read_retries,
+            settings.get()->max_single_download_retries);
         };
 
         UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container, dest_blob, settings, object_metadata, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyAzureBlobStorageFile")};

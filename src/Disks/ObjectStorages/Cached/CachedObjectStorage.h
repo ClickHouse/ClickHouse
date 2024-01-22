@@ -3,6 +3,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
+#include "config.h"
 
 namespace Poco
 {
@@ -117,6 +118,13 @@ public:
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
     static bool canUseReadThroughCache(const ReadSettings & settings);
+
+#if USE_AZURE_BLOB_STORAGE
+    MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & getAzureBlobStorageClient() override
+    {
+        return object_storage->getAzureBlobStorageClient();
+    }
+#endif
 
 private:
     FileCache::Key getCacheKey(const std::string & path) const;
