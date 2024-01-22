@@ -17,6 +17,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -178,12 +179,12 @@ private:
             }
             else if (column_type.isNullable())
             {
-                if (function_name == "isNull" || function_name == "isNotNull")
+                if (function_name == "count" || function_name == "isNull" || function_name == "isNotNull")
                     ++data.optimized_identifiers_count[qualified_name];
             }
             else if (column_type.isMap())
             {
-                if (function_name == "mapKeys" || function_name == "mapValues")
+                if (function_name == "length" || function_name == "mapKeys" || function_name == "mapValues")
                     ++data.optimized_identifiers_count[qualified_name];
             }
         }
@@ -192,10 +193,10 @@ private:
             const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
             if (function_name == "tupleElement" && column_type.isTuple() && second_argument_constant_node)
             {
-                const auto & tuple_element_constant_value = second_argument_constant_node->getValue();
-                const auto & tuple_element_constant_value_type = tuple_element_constant_value.getType();
+                const auto & constant_value = second_argument_constant_node->getValue();
+                const auto & constant_value_type = constant_value.getType();
 
-                if (tuple_element_constant_value_type == Field::Types::String || tuple_element_constant_value_type == Field::Types::UInt64)
+                if (constant_value_type == Field::Types::String || constant_value_type == Field::Types::UInt64)
                     ++data.optimized_identifiers_count[qualified_name];
             }
             else if (function_name == "mapContains" && column_type.isMap())
@@ -209,6 +210,9 @@ private:
 /// Second pass optimizes functions to subcolumns for allowed identifiers.
 class FunctionToSubcolumnsVisitorSecondPass : public InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>
 {
+private:
+    std::unordered_set<Identifier> identifiers_to_optimize;
+
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
     using Base::Base;
@@ -262,7 +266,7 @@ public:
                     function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, column_source));
                     function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
 
-                    resolveOrdinaryFunctionNode(*function_node, "equals");
+                    resolveOrdinaryFunctionNodeByName(*function_node, "equals", getContext());
                 }
                 else if (function_name == "notEmpty")
                 {
@@ -274,12 +278,27 @@ public:
                     function_arguments_nodes.push_back(std::make_shared<ColumnNode>(column, column_source));
                     function_arguments_nodes.push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(0)));
 
-                    resolveOrdinaryFunctionNode(*function_node, "notEquals");
+                    resolveOrdinaryFunctionNodeByName(*function_node, "notEquals", getContext());
                 }
             }
             else if (column_type.isNullable())
             {
-                if (function_name == "isNull")
+                if (function_name == "count")
+                {
+                    /// Replace `count(nullable_argument)` with `sum(not(nullable_argument.null))`
+                    column.name += ".null";
+                    column.type = std::make_shared<DataTypeUInt8>();
+
+                    auto column_node = std::make_shared<ColumnNode>(column, column_source);
+                    auto function_node_not = std::make_shared<FunctionNode>("not");
+
+                    function_node_not->getArguments().getNodes().push_back(std::move(column_node));
+                    resolveOrdinaryFunctionNodeByName(*function_node_not, "not", getContext());
+
+                    function_arguments_nodes = {std::move(function_node_not)};
+                    resolveAggregateFunctionNodeByName(*function_node, "sum", {column.type});
+                }
+                else if (function_name == "isNull")
                 {
                     /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
                     column.name += ".null";
@@ -295,12 +314,20 @@ public:
 
                     function_arguments_nodes = {std::make_shared<ColumnNode>(column, column_source)};
 
-                    resolveOrdinaryFunctionNode(*function_node, "not");
+                    resolveOrdinaryFunctionNodeByName(*function_node, "not", getContext());
                 }
             }
             else if (column_type.isMap())
             {
-                if (function_name == "mapKeys")
+                if (function_name == "length")
+                {
+                    /// Replace `length(map_argument)` with `map_argument.size0`
+                    column.name += ".size0";
+                    column.type = std::make_shared<DataTypeUInt64>();
+
+                    node = std::make_shared<ColumnNode>(column, column_source);
+                }
+                else if (function_name == "mapKeys")
                 {
                     /// Replace `mapKeys(map_argument)` with `map_argument.keys`
                     column.name += ".keys";
@@ -364,18 +391,9 @@ public:
                 auto has_function_argument = std::make_shared<ColumnNode>(column, column_source);
                 function_arguments_nodes[0] = std::move(has_function_argument);
 
-                resolveOrdinaryFunctionNode(*function_node, "has");
+                resolveOrdinaryFunctionNodeByName(*function_node, "has", getContext());
             }
         }
-    }
-
-private:
-    std::unordered_set<Identifier> identifiers_to_optimize;
-
-    inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
-    {
-        auto function = FunctionFactory::instance().get(function_name, getContext());
-        function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
     }
 };
 

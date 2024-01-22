@@ -102,4 +102,12 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 /// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
+/// Resolves function node as ordinary function with given name.
+/// Arguments and parameters are taken from the node.
+void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context);
+
+/// Resolves function node as aggregate function with given name.
+/// Arguments and parameters are taken from the node.
+void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name, const DataTypes & argument_types);
+
 }

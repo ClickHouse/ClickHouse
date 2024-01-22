@@ -1,4 +1,4 @@
-SELECT has(`m.keys`, \'a\')
+SELECT has(`m.keys`, \'a\') AS `mapContains(m, \'a\')`
 FROM t_map_contains
 1
 0

@@ -40,27 +40,16 @@ ASTPtr transformCountNullableToSubcolumn(const String & name_in_storage, const S
     return makeASTFunction("sum", makeASTFunction("not", ast));
 }
 
-ASTPtr transformMapContainsToSubcolumn(const String & name_in_storage, const String & subcolumn_name, const ASTPtr & arg)
+const std::unordered_map<String, std::tuple<std::set<TypeIndex>, String, decltype(&transformToSubcolumn)>> unary_function_to_subcolumn =
 {
-    auto ast = transformToSubcolumn(name_in_storage, subcolumn_name);
-    return makeASTFunction("has", ast, arg);
-}
-
-const std::unordered_map<String, std::tuple<TypeIndex, String, decltype(&transformToSubcolumn)>> unary_function_to_subcolumn =
-{
-    {"length",    {TypeIndex::Array, "size0", transformToSubcolumn}},
-    {"empty",     {TypeIndex::Array, "size0", transformEmptyToSubcolumn}},
-    {"notEmpty",  {TypeIndex::Array, "size0", transformNotEmptyToSubcolumn}},
-    {"isNull",    {TypeIndex::Nullable, "null", transformToSubcolumn}},
-    {"isNotNull", {TypeIndex::Nullable, "null", transformIsNotNullToSubcolumn}},
-    {"count",     {TypeIndex::Nullable, "null", transformCountNullableToSubcolumn}},
-    {"mapKeys",   {TypeIndex::Map, "keys", transformToSubcolumn}},
-    {"mapValues", {TypeIndex::Map, "values", transformToSubcolumn}},
-};
-
-const std::unordered_map<String, std::tuple<TypeIndex, String, decltype(&transformMapContainsToSubcolumn)>> binary_function_to_subcolumn
-{
-    {"mapContains", {TypeIndex::Map, "keys", transformMapContainsToSubcolumn}},
+    {"length",    {{TypeIndex::Array, TypeIndex::Map}, "size0", transformToSubcolumn}},
+    {"empty",     {{TypeIndex::Array, TypeIndex::Map}, "size0", transformEmptyToSubcolumn}},
+    {"notEmpty",  {{TypeIndex::Array, TypeIndex::Map}, "size0", transformNotEmptyToSubcolumn}},
+    {"isNull",    {{TypeIndex::Nullable}, "null", transformToSubcolumn}},
+    {"isNotNull", {{TypeIndex::Nullable}, "null", transformIsNotNullToSubcolumn}},
+    {"count",     {{TypeIndex::Nullable}, "null", transformCountNullableToSubcolumn}},
+    {"mapKeys",   {{TypeIndex::Map}, "keys", transformToSubcolumn}},
+    {"mapValues", {{TypeIndex::Map}, "values", transformToSubcolumn}},
 };
 
 std::optional<NameAndTypePair> getColumnFromArgumentsToOptimize(
@@ -116,10 +105,14 @@ void RewriteFunctionToSubcolumnFirstPassMatcher::visit(const ASTFunction & funct
     if (arguments.size() == 1)
     {
         auto it = unary_function_to_subcolumn.find(function.name);
-        if (it != unary_function_to_subcolumn.end() && std::get<0>(it->second) == column_type_id)
+        if (it == unary_function_to_subcolumn.end())
+            return;
+
+        const auto & expected_types_id = std::get<0>(it->second);
+        if (expected_types_id.contains(column_type_id))
             ++data.optimized_identifiers_count[column->name];
     }
-    else
+    else if (arguments.size() == 2)
     {
         if (function.name == "tupleElement" && column_type_id == TypeIndex::Tuple)
         {
@@ -131,11 +124,9 @@ void RewriteFunctionToSubcolumnFirstPassMatcher::visit(const ASTFunction & funct
             if (value_type == Field::Types::UInt64 || value_type == Field::Types::String)
                 ++data.optimized_identifiers_count[column->name];
         }
-        else
+        else if (function.name == "mapContains" && column_type_id == TypeIndex::Map)
         {
-            auto it = binary_function_to_subcolumn.find(function.name);
-            if (it != binary_function_to_subcolumn.end() && std::get<0>(it->second) == column_type_id)
-                ++data.optimized_identifiers_count[column->name];
+            ++data.optimized_identifiers_count[column->name];
         }
     }
 }
@@ -148,7 +139,7 @@ void RewriteFunctionToSubcolumnSecondPassData::visit(ASTFunction & function, AST
         return;
 
     auto column_type_id = column->type->getTypeId();
-    const auto & alias = function.tryGetAlias();
+    auto alias = function.getAliasOrColumnName();
 
     if (arguments.size() == 1)
     {
@@ -156,8 +147,8 @@ void RewriteFunctionToSubcolumnSecondPassData::visit(ASTFunction & function, AST
         if (it == unary_function_to_subcolumn.end())
             return;
 
-        const auto & [expected_type_id, subcolumn_name, transformer] = it->second;
-        if (column_type_id != expected_type_id)
+        const auto & [expected_types_id, subcolumn_name, transformer] = it->second;
+        if (!expected_types_id.contains(column_type_id))
             return;
 
         ast = transformer(column->name, subcolumn_name);
@@ -191,17 +182,10 @@ void RewriteFunctionToSubcolumnSecondPassData::visit(ASTFunction & function, AST
             ast = transformToSubcolumn(column->name, subcolumn_name);
             ast->setAlias(alias);
         }
-        else
+        else if (function.name == "mapContains" && column_type_id == TypeIndex::Map)
         {
-            auto it = binary_function_to_subcolumn.find(function.name);
-            if (it == binary_function_to_subcolumn.end())
-                return;
-
-            const auto & [expected_type_id, subcolumn_name, transformer] = it->second;
-            if (column_type_id != expected_type_id)
-                return;
-
-            ast = transformer(column->name, subcolumn_name, arguments[1]);
+            auto subcolumn = transformToSubcolumn(column->name, "keys");
+            ast = makeASTFunction("has", subcolumn, arguments[1]);
             ast->setAlias(alias);
         }
     }

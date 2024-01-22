@@ -1,0 +1,50 @@
+0	0	1
+0	1	0
+SELECT
+    __table1.id IS NULL AS `isNull(id)`,
+    __table1.`n.null` AS `isNull(n)`,
+    NOT __table1.`n.null` AS `isNotNull(n)`
+FROM default.t_func_to_subcolumns AS __table1
+3	0	1	0
+0	1	0	\N
+SELECT
+    __table1.`arr.size0` AS `length(arr)`,
+    __table1.`arr.size0` = 0 AS `empty(arr)`,
+    __table1.`arr.size0` != 0 AS `notEmpty(arr)`,
+    empty(__table1.n) AS `empty(n)`
+FROM default.t_func_to_subcolumns AS __table1
+['foo','bar']	[1,2]
+[]	[]
+SELECT
+    __table1.`m.keys` AS `mapKeys(m)`,
+    __table1.`m.values` AS `mapValues(m)`
+FROM default.t_func_to_subcolumns AS __table1
+1
+SELECT sum(NOT __table1.`n.null`) AS `count(n)`
+FROM default.t_func_to_subcolumns AS __table1
+2
+SELECT count(__table1.id) AS `count(id)`
+FROM default.t_func_to_subcolumns AS __table1
+1	0	0
+2	1	0
+3	0	0
+SELECT
+    __table1.id AS id,
+    __table1.`n.null` AS `isNull(n)`,
+    __table2.n IS NULL AS `isNull(right.n)`
+FROM default.t_func_to_subcolumns AS __table1
+ALL FULL OUTER JOIN
+(
+
+        SELECT
+        1 AS id,
+        \'qqq\' AS n
+    FROM system.one AS __table4
+    UNION ALL
+        SELECT
+        3 AS id,
+        \'www\' AS `\'www\'`
+    FROM system.one AS __table6
+) AS __table2 USING (id)
+0	10
+0	20

@@ -6,6 +6,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 
@@ -140,16 +141,16 @@ private:
             const auto lhs = std::make_shared<FunctionNode>("greaterOrEquals");
             lhs->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
             lhs->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(start_date_or_date_time));
-            resolveOrdinaryFunctionNode(*lhs, lhs->getFunctionName());
+            resolveOrdinaryFunctionNodeByName(*lhs, lhs->getFunctionName(), getContext());
 
             const auto rhs = std::make_shared<FunctionNode>("less");
             rhs->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
             rhs->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(end_date_or_date_time));
-            resolveOrdinaryFunctionNode(*rhs, rhs->getFunctionName());
+            resolveOrdinaryFunctionNodeByName(*rhs, rhs->getFunctionName(), getContext());
 
             const auto new_date_filter = std::make_shared<FunctionNode>("and");
             new_date_filter->getArguments().getNodes() = {lhs, rhs};
-            resolveOrdinaryFunctionNode(*new_date_filter, new_date_filter->getFunctionName());
+            resolveOrdinaryFunctionNodeByName(*new_date_filter, new_date_filter->getFunctionName(), getContext());
 
             return new_date_filter;
         }
@@ -158,16 +159,16 @@ private:
             const auto lhs = std::make_shared<FunctionNode>("less");
             lhs->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
             lhs->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(start_date_or_date_time));
-            resolveOrdinaryFunctionNode(*lhs, lhs->getFunctionName());
+            resolveOrdinaryFunctionNodeByName(*lhs, lhs->getFunctionName(), getContext());
 
             const auto rhs = std::make_shared<FunctionNode>("greaterOrEquals");
             rhs->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
             rhs->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(end_date_or_date_time));
-            resolveOrdinaryFunctionNode(*rhs, rhs->getFunctionName());
+            resolveOrdinaryFunctionNodeByName(*rhs, rhs->getFunctionName(), getContext());
 
             const auto new_date_filter = std::make_shared<FunctionNode>("or");
             new_date_filter->getArguments().getNodes() = {lhs, rhs};
-            resolveOrdinaryFunctionNode(*new_date_filter, new_date_filter->getFunctionName());
+            resolveOrdinaryFunctionNodeByName(*new_date_filter, new_date_filter->getFunctionName(), getContext());
 
             return new_date_filter;
         }
@@ -176,7 +177,7 @@ private:
             const auto new_date_filter = std::make_shared<FunctionNode>("greaterOrEquals");
             new_date_filter->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
             new_date_filter->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(end_date_or_date_time));
-            resolveOrdinaryFunctionNode(*new_date_filter, new_date_filter->getFunctionName());
+            resolveOrdinaryFunctionNodeByName(*new_date_filter, new_date_filter->getFunctionName(), getContext());
 
             return new_date_filter;
         }
@@ -185,7 +186,7 @@ private:
             const auto new_date_filter = std::make_shared<FunctionNode>("less");
             new_date_filter->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
             new_date_filter->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(end_date_or_date_time));
-            resolveOrdinaryFunctionNode(*new_date_filter, new_date_filter->getFunctionName());
+            resolveOrdinaryFunctionNodeByName(*new_date_filter, new_date_filter->getFunctionName(), getContext());
 
             return new_date_filter;
         }
@@ -194,7 +195,7 @@ private:
             const auto new_date_filter = std::make_shared<FunctionNode>(comparator);
             new_date_filter->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column_node.getColumn(), column_node.getColumnSource()));
             new_date_filter->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(start_date_or_date_time));
-            resolveOrdinaryFunctionNode(*new_date_filter, new_date_filter->getFunctionName());
+            resolveOrdinaryFunctionNodeByName(*new_date_filter, new_date_filter->getFunctionName(), getContext());
 
             return new_date_filter;
         }
@@ -204,12 +205,6 @@ private:
                 "Expected equals, notEquals, less, lessOrEquals, greater, greaterOrEquals. Actual {}",
                 comparator);
         }
-    }
-
-    void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
-    {
-        auto function = FunctionFactory::instance().get(function_name, getContext());
-        function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
     }
 };
 

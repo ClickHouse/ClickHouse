@@ -685,4 +685,26 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
     return function_node;
 }
 
+void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
+{
+    auto function = FunctionFactory::instance().get(function_name, context);
+    function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
+}
+
+void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name, const DataTypes & argument_types)
+{
+    chassert(function_node.isAggregateFunction());
+    auto old_aggregate_function = function_node.getAggregateFunction();
+
+    AggregateFunctionProperties properties;
+    auto aggregate_function = AggregateFunctionFactory::instance().get(
+        function_name,
+        function_node.getNullsAction(),
+        argument_types,
+        old_aggregate_function->getParameters(),
+        properties);
+
+    function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+}
+
 }

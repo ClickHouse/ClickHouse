@@ -2,25 +2,25 @@
 0	1	0
 SELECT
     id IS NULL,
-    `n.null`,
-    NOT `n.null`
+    `n.null` AS `isNull(n)`,
+    NOT `n.null` AS `isNotNull(n)`
 FROM t_func_to_subcolumns
 3	0	1	0
 0	1	0	\N
 SELECT
-    `arr.size0`,
-    `arr.size0` = 0,
-    `arr.size0` != 0,
+    `arr.size0` AS `length(arr)`,
+    `arr.size0` = 0 AS `empty(arr)`,
+    `arr.size0` != 0 AS `notEmpty(arr)`,
     empty(n)
 FROM t_func_to_subcolumns
 ['foo','bar']	[1,2]
 []	[]
 SELECT
-    `m.keys`,
-    `m.values`
+    `m.keys` AS `mapKeys(m)`,
+    `m.values` AS `mapValues(m)`
 FROM t_func_to_subcolumns
 1
-SELECT sum(NOT `n.null`)
+SELECT sum(NOT `n.null`) AS `count(n)`
 FROM t_func_to_subcolumns
 2
 SELECT count(id)
@@ -30,7 +30,7 @@ FROM t_func_to_subcolumns
 3	0	0
 SELECT
     id,
-    `n.null`,
+    `n.null` AS `isNull(n)`,
     right.n IS NULL
 FROM t_func_to_subcolumns AS left
 ALL FULL OUTER JOIN

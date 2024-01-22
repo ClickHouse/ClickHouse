@@ -11,6 +11,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 
 namespace DB
 {
@@ -171,13 +172,13 @@ private:
     {
         auto result_function = std::make_shared<FunctionNode>("and");
         result_function->getArguments().getNodes() = std::move(tuple_arguments_equals_functions);
-        resolveOrdinaryFunctionNode(*result_function, result_function->getFunctionName());
+        resolveOrdinaryFunctionNodeByName(*result_function, result_function->getFunctionName(), context);
 
         if (comparison_function_name == "notEquals")
         {
             auto not_function = std::make_shared<FunctionNode>("not");
             not_function->getArguments().getNodes().push_back(std::move(result_function));
-            resolveOrdinaryFunctionNode(*not_function, not_function->getFunctionName());
+            resolveOrdinaryFunctionNodeByName(*not_function, not_function->getFunctionName(), context);
             result_function = std::move(not_function);
         }
 
@@ -197,15 +198,9 @@ private:
         comparison_function->getArguments().getNodes().push_back(std::move(lhs_argument));
         comparison_function->getArguments().getNodes().push_back(std::move(rhs_argument));
 
-        resolveOrdinaryFunctionNode(*comparison_function, comparison_function->getFunctionName());
+        resolveOrdinaryFunctionNodeByName(*comparison_function, comparison_function->getFunctionName(), context);
 
         return comparison_function;
-    }
-
-    void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
-    {
-        auto function = FunctionFactory::instance().get(function_name, context);
-        function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
     }
 
     ContextPtr context;

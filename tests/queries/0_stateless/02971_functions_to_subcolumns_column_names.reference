@@ -1,0 +1,14 @@
+SELECT
+    `arr.size0` AS `length(arr)`,
+    `n.null` AS `isNull(n)`
+FROM t_column_names
+┌─length(arr)─┬─isNull(n)─┐
+│           3 │         0 │
+└─────────────┴───────────┘
+SELECT
+    __table1.`arr.size0` AS `length(arr)`,
+    __table1.`n.null` AS `isNull(n)`
+FROM default.t_column_names AS __table1
+┌─length(arr)─┬─isNull(n)─┐
+│           3 │         0 │
+└─────────────┴───────────┘
