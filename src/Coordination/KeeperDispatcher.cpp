@@ -11,6 +11,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
 
 #include <atomic>
 #include <future>
