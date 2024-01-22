@@ -45,10 +45,7 @@ struct ChangelogDirTest
     bool drop;
     explicit ChangelogDirTest(std::string path_, bool drop_ = true) : path(path_), drop(drop_)
     {
-        if (fs::exists(path))
-        {
-            EXPECT_TRUE(false) << "Path " << path << " already exists, remove it to run test";
-        }
+        EXPECT_FALSE(fs::exists(path)) << "Path " << path << " already exists, remove it to run test";
         fs::create_directory(path);
     }
 

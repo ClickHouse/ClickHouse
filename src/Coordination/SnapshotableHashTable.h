@@ -1,7 +1,6 @@
 #pragma once
 #include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/ArenaWithFreeLists.h>
 #include <Common/ArenaUtils.h>
 #include <list>
 
@@ -60,10 +59,7 @@ struct ListNode
     {
         if (version > version_mask)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Snapshot version {} is larger than maximum allowed value {}",
-                version,
-                ListNode<V>::version_mask);
+                ErrorCodes::LOGICAL_ERROR, "Snapshot version {} is larger than maximum allowed value {}", version, version_mask);
 
         node_metadata &= ~version_mask;
         node_metadata |= version;
@@ -192,6 +188,11 @@ public:
     using iterator = typename List::iterator;
     using const_iterator = typename List::const_iterator;
     using ValueUpdater = std::function<void(V & value)>;
+
+    ~SnapshotableHashTable()
+    {
+        clear();
+    }
 
     std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, const V & value)
     {
@@ -362,6 +363,7 @@ public:
 
     void clear()
     {
+        clearOutdatedNodes();
         map.clear();
         for (auto itr = list.begin(); itr != list.end(); ++itr)
             arena.free(const_cast<char *>(itr->key.data), itr->key.size);
