@@ -21,7 +21,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <IO/IResourceManager.h>
+#include <Common/Scheduler/IResourceManager.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/ColumnsDescription.h>
@@ -529,6 +529,7 @@ public:
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
     String getFilesystemCachesPath() const;
+    String getFilesystemCacheUser() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
@@ -540,6 +541,7 @@ public:
     void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
 
     void setFilesystemCachesPath(const String & path);
+    void setFilesystemCacheUser(const String & user);
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
@@ -817,6 +819,7 @@ public:
 #endif
 
     BackupsWorker & getBackupsWorker() const;
+    void waitAllBackupsAndRestores() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
@@ -963,6 +966,8 @@ public:
     void resetZooKeeper() const;
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
+
+    void reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const;
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 

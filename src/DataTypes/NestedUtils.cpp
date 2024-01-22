@@ -16,6 +16,7 @@
 #include <Columns/ColumnConst.h>
 
 #include <Parsers/IAST.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -292,6 +293,12 @@ Names getAllNestedColumnsForTable(const Block & block, const std::string & table
             names.push_back(name);
     }
     return names;
+}
+
+bool isSubcolumnOfNested(const String & column_name, const ColumnsDescription & columns)
+{
+    auto nested_subcolumn = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    return nested_subcolumn && isNested(nested_subcolumn->getTypeInStorage()) && nested_subcolumn->isSubcolumn() && isArray(nested_subcolumn->type);
 }
 
 }

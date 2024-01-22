@@ -224,6 +224,8 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Seek is not supported when reading from archive");
     }
 
+    bool checkIfActuallySeekable() override { return false; }
+
     off_t getPosition() override
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getPosition is not supported when reading from archive");
