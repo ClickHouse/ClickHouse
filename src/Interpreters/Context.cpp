@@ -181,6 +181,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
+    extern const int ABORTED;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -556,7 +557,12 @@ struct ContextSharedPart : boost::noncopyable
             return;
 
         /// Need to flush the async insert queue before shutting down the database catalog
-        async_insert_queue.reset();
+        std::shared_ptr<AsynchronousInsertQueue> delete_async_insert_queue;
+        {
+            std::lock_guard lock(mutex);
+            delete_async_insert_queue = std::move(async_insert_queue);
+        }
+        delete_async_insert_queue.reset();
 
         /// Stop periodic reloading of the configuration files.
         /// This must be done first because otherwise the reloading may pass a changed config
@@ -4838,11 +4844,15 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
 
 AsynchronousInsertQueue * Context::getAsynchronousInsertQueue() const
 {
-    return shared->async_insert_queue.get();
+    std::lock_guard lock(mutex);
+    if (auto res = shared->async_insert_queue.get())
+        return res;
+    throw Exception(ErrorCodes::ABORTED, "AsynchronousInsertQueue is not initialized yet or has been already shutdown");
 }
 
 void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
 {
+    std::lock_guard lock(mutex);
     using namespace std::chrono;
 
     if (std::chrono::milliseconds(settings.async_insert_busy_timeout_ms) == 0ms)
