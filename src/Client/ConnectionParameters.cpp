@@ -23,6 +23,9 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace
+{
+
 bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, const std::string & connection_host)
 {
     if (config.getBool("secure", false))
@@ -33,6 +36,8 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
 
     bool is_clickhouse_cloud = connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com");
     return is_clickhouse_cloud;
+}
+
 }
 
 ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config,
