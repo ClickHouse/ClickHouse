@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+spawn()
+{
+    # Create a unique name for the FIFO using mktemp
+    local fifo=$(mktemp -u)
+    mkfifo "$fifo"
+
+    # Cycle fifo reading
+    exec {fd}<>$fifo
+
+    "${@}" > "$fifo" 2>&1 &
+    local pid=$!
+
+    echo "$fifo" "$pid"
+}
+
+read_until()
+{
+    local fifo="$1"
+    local stop_string="$2"
+
+    # Check if the FIFO file exists
+    if [[ ! -p "$fifo" ]]; then
+        echo "Error: '$fifo' is not a FIFO (named pipe)" >&2
+        return 1
+    fi
+
+    while IFS= read -r line; do
+        echo $line
+
+        if [[ "$line" == *"$stop_string"* ]]; then
+            break
+        fi
+    done <"$fifo"
+}
+
+cleanup()
+{
+    local fifo=$1
+    local pid=$2
+
+    echo
+    echo "****************"
+
+    # Kill the process if it's still running
+    if kill -0 "$pid" 2>/dev/null; then
+        echo "Killing process"
+        kill "$pid"
+        wait "$pid" 2>/dev/null
+    else
+        echo "Process with PID $pid does not exist or is already terminated."
+    fi
+
+    # Check if the FIFO exists and remove it
+    if [[ -p "$fifo" ]]; then
+        echo "Removing FIFO"
+        rm "$fifo"
+    else
+        echo "FIFO $fifo does not exist or has already been removed."
+    fi
+
+    echo "****************"
+    echo
+}
+
+export -f spawn
+export -f read_until
+export -f cleanup
+
+# vi: ft=bash
