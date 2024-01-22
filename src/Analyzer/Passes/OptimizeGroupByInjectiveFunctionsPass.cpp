@@ -1,13 +1,10 @@
 #include <Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include "Analyzer/ConstantNode.h"
-#include "Analyzer/FunctionNode.h"
-#include "Analyzer/IQueryTreeNode.h"
-#include "DataTypes/IDataType.h"
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
-#include "Functions/FunctionFactory.h"
-#include "Interpreters/Context_fwd.h"
-#include "Interpreters/ExternalDictionariesLoader.h"
+#include <Analyzer/IQueryTreeNode.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/ExternalDictionariesLoader.h>
 
 namespace DB
 {
