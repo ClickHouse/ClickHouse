@@ -41,7 +41,7 @@ public:
 
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}
-    virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/,  const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
+    virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
 
 private:
     Poco::Logger * log;

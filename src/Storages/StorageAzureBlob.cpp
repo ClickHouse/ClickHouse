@@ -1335,7 +1335,7 @@ namespace
                             "in AzureBlobStorage. You can specify table structure manually", *format);
 
                     throw Exception(
-                        ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                        ErrorCodes::CANNOT_DETECT_FORMAT,
                         "The data format cannot be detected by the contents of the files, because there are no files with provided path "
                         "in AzureBlobStorage. You can specify table structure manually");
                 }
@@ -1407,7 +1407,7 @@ namespace
         {
             format = format_name;
         }
-        
+
         String getLastFileName() const override { return current_path_with_metadata.relative_path; }
 
         bool supportsLastReadBufferRecreation() const override { return true; }

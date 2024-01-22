@@ -1988,7 +1988,7 @@ Note:
 - If you have a lot of files, reading schema from all of them can take a lot of time.
 
 
-## Automatic format detection {#autimatic-format-detection}
+## Automatic format detection {#automatic-format-detection}
 
 If data format is not specified and cannot be determined by the file extension, ClickHouse will try to detect the file format by its content.
 

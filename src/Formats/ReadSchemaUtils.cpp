@@ -379,7 +379,7 @@ try
 
                     /// We choose the format with larger number of columns in inferred schema.
                     size_t max_number_of_columns = 0;
-                    for (const auto & [format_to_detect, schema] : format_to_schema )
+                    for (const auto & [format_to_detect, schema] : format_to_schema)
                     {
                         if (schema.size() > max_number_of_columns)
                         {
