@@ -28,9 +28,16 @@ def cluster():
         cluster.shutdown()
 
 
-def create_table(node, table, replica, data_prefix=""):
+def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
     if data_prefix == "":
         data_prefix = table
+
+    if aggressive_merge:
+        vertical_merge_algorithm_min_rows_to_activate = 1
+        vertical_merge_algorithm_min_columns_to_activate = 1
+    else:
+        vertical_merge_algorithm_min_rows_to_activate = 100000
+        vertical_merge_algorithm_min_columns_to_activate = 100
 
     node.query(
         f"""
@@ -56,9 +63,8 @@ def create_table(node, table, replica, data_prefix=""):
     SETTINGS min_bytes_for_wide_part = 0,
         max_parts_to_merge_at_once=3,
         enable_vertical_merge_algorithm=1,
-        vertical_merge_algorithm_min_rows_to_activate = 1,
-        vertical_merge_algorithm_min_columns_to_activate = 1,
-        vertical_merge_algorithm_min_columns_to_activate = 1,
+        vertical_merge_algorithm_min_rows_to_activate = {vertical_merge_algorithm_min_rows_to_activate},
+        vertical_merge_algorithm_min_columns_to_activate = {vertical_merge_algorithm_min_columns_to_activate},
         compress_primary_key=0;
     """
     )
@@ -411,7 +417,7 @@ def test_broken_projections_in_backups(cluster):
     node = cluster.instances["node"]
 
     table_name = "test4"
-    create_table(node, table_name, 1)
+    create_table(node, table_name, 1, aggressive_merge=False)
 
     node.query("SYSTEM STOP MERGES")
 
