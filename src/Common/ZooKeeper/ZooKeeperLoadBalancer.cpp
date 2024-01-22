@@ -36,7 +36,7 @@ public:
     EndpointRegistry() = default;
     using clock = std::chrono::steady_clock;
 
-    struct Endpoint
+    struct EndpointInternal
     {
         String address;
         bool secure = false;
@@ -44,14 +44,14 @@ public:
         Status status = UNDEF;
     };
 
-    size_t addEndpoint(Endpoint endpoint)
+    size_t addEndpoint(EndpointInternal endpoint)
     {
         size_t id = endpoints.size();
         endpoints.push_back(std::move(endpoint));
         return id;
     }
 
-    const Endpoint & findEndpointById(size_t id) const
+    const EndpointInternal & findEndpointById(size_t id) const
     {
         return endpoints[id];
     }
@@ -97,7 +97,7 @@ public:
     }
 
 private:
-    std::vector<Endpoint> endpoints;
+    std::vector<EndpointInternal> endpoints;
 };
 
 std::pair<std::string, bool> parseForSocketAddress(const std::string & raw_host)
@@ -117,18 +117,17 @@ class IBalancerWithEndpointStatuses: public Coordination::IClientsConnectionBala
 public:
     using EndpointInfo = Coordination::IClientsConnectionBalancer::EndpointInfo;
 
-    explicit IBalancerWithEndpointStatuses(std::vector<std::string> hosts)
+    IBalancerWithEndpointStatuses() = default;
+
+    void addEndpoint(EndpointInfo endpoint) override
     {
-        for (size_t i = 0; i < hosts.size(); i++)
-        {
-            auto [address, secure] = parseForSocketAddress(hosts[i]);
-            registry.addEndpoint(
-                EndpointRegistry::Endpoint{
-                    .address = address,
-                    .secure = secure,
-                    .id = i,
-                });
-        }
+        registry.addEndpoint(
+            EndpointRegistry::EndpointInternal{
+                .address = endpoint.address,
+                .secure = endpoint.secure,
+                .id = registry.getEndpointsCount(),
+                .status = UNDEF,
+            });
     }
 
     void markHostOffline(size_t id) override
@@ -156,8 +155,13 @@ public:
         return registry.getRangeByStatus(ONLINE).size() + registry.getRangeByStatus(UNDEF).size();
     }
 
+    void logAllEndpoints() const override
+    {
+        registry.logAllEndpoints();
+    }
+
 protected:
-    using RegisterEndpoint = EndpointRegistry::Endpoint;
+    using EndpointInternal = EndpointRegistry::EndpointInternal;
 
     EndpointInfo asOptimalEndpoint(size_t id) const
     {
@@ -185,7 +189,7 @@ protected:
         };
     }
 
-    const RegisterEndpoint & findEndpointById(size_t id) const
+    const EndpointInternal & findEndpointById(size_t id) const
     {
         return registry.findEndpointById(id);
     }
@@ -201,9 +205,6 @@ protected:
 class Random : public IBalancerWithEndpointStatuses
 {
 public:
-    explicit Random(std::vector<std::string> hosts)
-        : IBalancerWithEndpointStatuses(std::move(hosts)) {}
-
     EndpointInfo getHostFrom(const std::vector<size_t> & range)
     {
         chassert(!range.empty());
@@ -247,10 +248,15 @@ public:
 class IBalancerWithPriorities : public IBalancerWithEndpointStatuses
 {
 public:
-    explicit IBalancerWithPriorities(std::vector<std::string> hosts)
-        : IBalancerWithEndpointStatuses(std::move(hosts))
+    IBalancerWithPriorities() = default;
+
+    void addEndpoint(EndpointInfo endpoint) override
     {
+        IBalancerWithEndpointStatuses::addEndpoint(endpoint);
+        priorities.push_back(getPriority(endpoint));
     }
+
+    virtual size_t getPriority(const EndpointInfo & endpoint) const = 0;
 
     EndpointInfo getHostWithSetting(size_t id) const
     {
@@ -280,7 +286,6 @@ public:
 
     std::optional<EndpointInfo> getHostToConnect() override
     {
-        registry.logAllEndpoints();
         auto id = getMostPriority(ONLINE);
         if (id.has_value())
             return getHostWithSetting(id.value());
@@ -315,35 +320,6 @@ public:
             return true;
         return false;
     }
-
-    using PriorityCalculator = std::function<size_t(const RegisterEndpoint)>;
-
-    IBalancerWithPriorities(std::vector<std::string> hosts, PriorityCalculator priority_calculator)
-        : IBalancerWithPriorities(std::move(hosts))
-    {
-        for (size_t i = 0; i < getEndpointsCount(); ++i)
-            priorities.push_back(priority_calculator(registry.findEndpointById(i)));
-    }
-
-    static size_t priorityAsNearestHostname(const RegisterEndpoint endpoint)
-    {
-        const auto & address = endpoint.address;
-        const std::string & zk_host = address.substr(0, address.find_last_of(':'));
-        return Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), zk_host);
-    }
-
-    static size_t priorityAsInOrer(const RegisterEndpoint endpoint)
-    {
-        return endpoint.id;
-    }
-
-    static size_t priorityAsLevenshtein(const RegisterEndpoint endpoint)
-    {
-        const auto & address = endpoint.address;
-        const std::string & zk_host = address.substr(0, address.find_last_of(':'));
-        return Coordination::getHostNameLevenshteinDistance(getFQDNOrHostName(), zk_host);
-    }
-
 private:
     bool isOptimalEndpoint(size_t id) const
     {
@@ -356,9 +332,6 @@ private:
 class RoundRobin: public IBalancerWithEndpointStatuses
 {
 public:
-    explicit RoundRobin(std::vector<std::string> hosts)
-        : IBalancerWithEndpointStatuses(std::move(hosts)) {}
-
     std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t>) const override
     {
         return {};
@@ -371,8 +344,6 @@ public:
 private:
     std::optional<EndpointInfo> getHostToConnect() override
     {
-        // TODO: disable this.
-        registry.logAllEndpoints();
         auto round_robin_status = registry.findEndpointById(round_robin_id).status;
         if (round_robin_status == ONLINE)
             return selectEndpoint(round_robin_id);
@@ -404,9 +375,6 @@ private:
 class FirstOrRandom : public IBalancerWithEndpointStatuses
 {
 public:
-    explicit FirstOrRandom(std::vector<std::string> hosts)
-        : IBalancerWithEndpointStatuses(std::move(hosts)) {}
-
     EndpointInfo getHostFrom(const std::vector<size_t> & range)
     {
         chassert(!range.empty());
@@ -435,7 +403,6 @@ public:
 
         chassert(getAvailableEndpointsCount() == 0);
         return {};
-
     }
 
     std::vector<EndpointInfo> endpointsWorthChecking(std::optional<size_t> current_endpoint_id) const override
@@ -452,25 +419,56 @@ public:
     }
 };
 
+class NearestHostname : public IBalancerWithPriorities
+{
+public:
+    size_t getPriority(const EndpointInfo & endpoint) const override
+    {
+        const auto & address = endpoint.address;
+        const std::string & zk_host = address.substr(0, address.find_last_of(':'));
+        return Coordination::getHostNamePrefixDistance(getFQDNOrHostName(), zk_host);
+    }
+};
+
+class Levenshtein : public IBalancerWithPriorities
+{
+public:
+    size_t getPriority(const EndpointInfo & endpoint) const override
+    {
+        const auto & address = endpoint.address;
+        const std::string & zk_host = address.substr(0, address.find_last_of(':'));
+        return Coordination::getHostNameLevenshteinDistance(getFQDNOrHostName(), zk_host);
+    }
+};
+
+class InOrder : public IBalancerWithPriorities
+{
+public:
+    size_t getPriority(const EndpointInfo & endpoint) const override
+    {
+        return endpoint.id;
+    }
+};
+
 namespace Coordination
 {
 
-ClientsConnectionBalancerPtr getConnectionBalancer(LoadBalancing load_balancing_type, std::vector<std::string> hosts)
+ClientsConnectionBalancerPtr getConnectionBalancer(LoadBalancing load_balancing_type)
 {
     switch (load_balancing_type)
     {
         case LoadBalancing::RANDOM:
-            return std::make_unique<Random>(hosts);
+            return std::make_unique<Random>();
         case LoadBalancing::NEAREST_HOSTNAME:
-            return std::make_unique<IBalancerWithPriorities>(hosts,  IBalancerWithPriorities::priorityAsNearestHostname);
+            return std::make_unique<NearestHostname>();
         case LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE:
-            return std::make_unique<IBalancerWithPriorities>(hosts, IBalancerWithPriorities::priorityAsLevenshtein);
+            return std::make_unique<Levenshtein>();
         case LoadBalancing::IN_ORDER:
-            return std::make_unique<IBalancerWithPriorities>(hosts, IBalancerWithPriorities::priorityAsInOrer);
+            return std::make_unique<InOrder>();
         case LoadBalancing::FIRST_OR_RANDOM:
-            return std::make_unique<FirstOrRandom>(hosts);
+            return std::make_unique<FirstOrRandom>();
         case LoadBalancing::ROUND_ROBIN:
-            return std::make_unique<RoundRobin>(hosts);
+            return std::make_unique<RoundRobin>();
     }
 
     return nullptr;
@@ -522,10 +520,16 @@ void ZooKeeperLoadBalancer::init(zkutil::ZooKeeperArgs args_, std::shared_ptr<Zo
     args = args_;
     zk_log = std::move(zk_log_);
 
-    std::vector<std::string> hosts;
-    for (const auto & host : args_.hosts)
-        hosts.push_back(host);
-    connection_balancer = getConnectionBalancer(args.get_priority_load_balancing.load_balancing, hosts);
+    connection_balancer = getConnectionBalancer(args.get_priority_load_balancing.load_balancing);
+    for (size_t i = 0; i < args_.hosts.size(); ++i)
+    {
+        auto [address, secure] =  parseForSocketAddress(args_.hosts[i]);
+        connection_balancer->addEndpoint(IClientsConnectionBalancer::EndpointInfo{
+            .address = address,
+            .secure = secure,
+            .id = i,
+        });
+    }
 }
 
 
@@ -549,6 +553,7 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
     while (true)
     {
         ++attempts;
+        connection_balancer->logAllEndpoints();
         auto endpoint_or = connection_balancer->getHostToConnect();
         if (!endpoint_or.has_value())
         {
@@ -600,5 +605,4 @@ std::unique_ptr<Coordination::ZooKeeper> ZooKeeperLoadBalancer::createClient()
         }
     }
 }
-
 }
