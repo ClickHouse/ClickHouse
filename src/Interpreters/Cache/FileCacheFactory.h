@@ -55,6 +55,8 @@ public:
 
     void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
 
+    void clear();
+
 private:
     std::mutex mutex;
     CacheByName caches_by_name;

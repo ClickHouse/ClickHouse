@@ -660,7 +660,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     if (endsWith(engine.name, "MergeTree"))
     {
         auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
-        storage_settings->loadFromQuery(*create->storage, getContext());
+        storage_settings->loadFromQuery(*create->storage, getContext(), false);
     }
 
     return create;
