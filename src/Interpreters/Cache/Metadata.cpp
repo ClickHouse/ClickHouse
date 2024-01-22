@@ -351,7 +351,10 @@ CacheMetadata::removeEmptyKey(
     try
     {
         if (fs::exists(key_directory))
+        {
             fs::remove_all(key_directory);
+            LOG_TEST(log, "Directory ({}) for key {} removed", key_directory.string(), key);
+        }
     }
     catch (...)
     {
@@ -364,7 +367,10 @@ CacheMetadata::removeEmptyKey(
     {
         std::unique_lock mutex(key_prefix_directory_mutex);
         if (fs::exists(key_prefix_directory) && fs::is_empty(key_prefix_directory))
+        {
             fs::remove(key_prefix_directory);
+            LOG_TEST(log, "Prefix directory ({}) for key {} removed", key_prefix_directory.string(), key);
+        }
     }
     catch (...)
     {

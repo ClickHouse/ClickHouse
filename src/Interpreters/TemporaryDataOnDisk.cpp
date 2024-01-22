@@ -99,7 +99,10 @@ FileSegmentsHolderPtr TemporaryDataOnDisk::createCacheFile(size_t max_file_size)
 
     const auto key = FileSegment::Key::random();
     auto holder = file_cache->set(key, 0, std::max(10_MiB, max_file_size), CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true));
-    fs::create_directories(file_cache->getPathInLocalCache(key));
+
+    chassert(holder->size() == 1);
+    holder->back().getKeyMetadata()->createBaseDirectory();
+
     return holder;
 }
 
