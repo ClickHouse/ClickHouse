@@ -2551,15 +2551,22 @@ BackupsWorker & Context::getBackupsWorker() const
         const auto & config = getConfigRef();
         const bool allow_concurrent_backups = config.getBool("backups.allow_concurrent_backups", true);
         const bool allow_concurrent_restores = config.getBool("backups.allow_concurrent_restores", true);
+        const bool test_inject_sleep = config.getBool("backups.test_inject_sleep", false);
 
         const auto & settings_ref = getSettingsRef();
         UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
         UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
 
-        shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
+        shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores, test_inject_sleep);
     });
 
     return *shared->backups_worker;
+}
+
+void Context::waitAllBackupsAndRestores() const
+{
+    if (shared->backups_worker)
+        shared->backups_worker->waitAll();
 }
 
 

@@ -22,7 +22,7 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     size_t key_arena_size = 0;
     size_t latest_snapshot_size = 0;
     size_t open_file_descriptor_count = 0;
-    size_t max_file_descriptor_count = 0;
+    std::optional<size_t> max_file_descriptor_count = 0;
     size_t followers = 0;
     size_t synced_followers = 0;
     size_t zxid = 0;
@@ -79,7 +79,10 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     new_values["KeeperLatestSnapshotSize"] = { latest_snapshot_size, "The uncompressed size in bytes of the latest snapshot created by ClickHouse Keeper." };
 
     new_values["KeeperOpenFileDescriptorCount"] = { open_file_descriptor_count, "The number of open file descriptors in ClickHouse Keeper." };
-    new_values["KeeperMaxFileDescriptorCount"] = { max_file_descriptor_count, "The maximum number of open file descriptors in ClickHouse Keeper." };
+    if (max_file_descriptor_count.has_value())
+        new_values["KeeperMaxFileDescriptorCount"] = { *max_file_descriptor_count, "The maximum number of open file descriptors in ClickHouse Keeper." };
+    else
+        new_values["KeeperMaxFileDescriptorCount"] = { -1, "The maximum number of open file descriptors in ClickHouse Keeper." };
 
     new_values["KeeperFollowers"] = { followers, "The number of followers of ClickHouse Keeper." };
     new_values["KeeperSyncedFollowers"] = { synced_followers, "The number of followers of ClickHouse Keeper who are also in-sync." };

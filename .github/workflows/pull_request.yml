@@ -22,6 +22,8 @@ jobs:
     outputs:
       data: ${{ steps.runconfig.outputs.CI_DATA }}
     steps:
+      - name: DebugInfo
+        uses: hmarr/debug-action@a701ed95a46e6f2fb0df25e1a558c16356fae35a
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
         with:
@@ -44,11 +46,9 @@ jobs:
       - name: PrepareRunConfig
         id: runconfig
         run: |
-            echo "::group::configure CI run"
             python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --configure --outfile ${{ runner.temp }}/ci_run_data.json
-            echo "::endgroup::"
 
-            echo "::group::CI run configure results"
+            echo "::group::CI configuration"
             python3 -m json.tool ${{ runner.temp }}/ci_run_data.json
             echo "::endgroup::"
 
@@ -67,6 +67,7 @@ jobs:
           DOCKER_TAG=$(echo '${{ toJson(fromJson(steps.runconfig.outputs.CI_DATA).docker_data.images) }}' | tr -d '\n')
           export DOCKER_TAG=$DOCKER_TAG
           python3 ./tests/ci/style_check.py --no-push
+          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ runner.temp }}/ci_run_data.json --post --job-name 'Style check'
   BuildDockers:
     needs: [RunConfig]
     if: ${{ !failure() && !cancelled() }}
@@ -828,7 +829,7 @@ jobs:
       test_name: Unit tests (asan)
       runner_type: fuzzer-unit-tester
       data: ${{ needs.RunConfig.outputs.data }}
-  UnitTestsReleaseClang:
+  UnitTestsRelease:
     needs: [RunConfig, BuilderBinRelease]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
@@ -955,7 +956,7 @@ jobs:
       - UnitTestsTsan
       - UnitTestsMsan
       - UnitTestsUBsan
-      - UnitTestsReleaseClang
+      - UnitTestsRelease
       - CompatibilityCheckX86
       - CompatibilityCheckAarch64
       - SQLancerTestRelease
