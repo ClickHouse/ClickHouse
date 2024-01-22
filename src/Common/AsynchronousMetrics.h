@@ -78,22 +78,22 @@ protected:
 
     const Duration update_period;
 
-    /// Some values are incremental and we have to calculate the difference.
-    /// On first run we will only collect the values to subtract later.
-    bool first_run = true;
-    TimePoint previous_update_time;
-
     Poco::Logger * log;
 private:
-    virtual void updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time) = 0;
+    virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool first_run, AsynchronousMetricValues & new_values) = 0;
     virtual void logImpl(AsynchronousMetricValues &) {}
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
-    mutable std::mutex mutex;
+    mutable std::mutex thread_mutex;
     std::condition_variable wait_cond;
-    bool quit {false};
-    AsynchronousMetricValues values;
+    bool quit TSA_GUARDED_BY(thread_mutex) = false;
+    AsynchronousMetricValues values TSA_GUARDED_BY(thread_mutex);
+
+    /// Some values are incremental and we have to calculate the difference.
+    /// On first run we will only collect the values to subtract later.
+    bool first_run = true;
+    TimePoint previous_update_time;
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat;

@@ -69,7 +69,7 @@ ServerAsynchronousMetrics::~ServerAsynchronousMetrics()
     stop();
 }
 
-void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values, TimePoint update_time, TimePoint current_time)
+void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint current_time, bool first_run, AsynchronousMetricValues & new_values)
 {
     if (auto mark_cache = getContext()->getMarkCache())
     {
@@ -377,7 +377,7 @@ void ServerAsynchronousMetrics::updateImpl(AsynchronousMetricValues & new_values
     }
 #endif
 
-    updateHeavyMetricsIfNeeded(current_time, update_time, new_values);
+    updateHeavyMetricsIfNeeded(current_time, update_time, first_run, new_values);
 }
 
 void ServerAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
@@ -421,10 +421,10 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
     detached_parts_stats = current_values;
 }
 
-void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, AsynchronousMetricValues & new_values)
+void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool first_run, AsynchronousMetricValues & new_values)
 {
-    const auto time_after_previous_update = current_time - heavy_metric_previous_update_time;
-    const bool update_heavy_metric = time_after_previous_update >= heavy_metric_update_period || first_run;
+    const auto time_since_previous_update = current_time - heavy_metric_previous_update_time;
+    const bool update_heavy_metric = (time_since_previous_update >= heavy_metric_update_period) || first_run;
 
     Stopwatch watch;
     if (update_heavy_metric)
@@ -433,7 +433,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
         if (first_run)
             heavy_update_interval = heavy_metric_update_period.count();
         else
-            heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_after_previous_update).count() / 1e6;
+            heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
         updateDetachedPartsStats();

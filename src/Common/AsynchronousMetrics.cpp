@@ -281,7 +281,7 @@ void AsynchronousMetrics::stop()
     try
     {
         {
-            std::lock_guard lock{mutex};
+            std::lock_guard lock(thread_mutex);
             quit = true;
         }
 
@@ -306,11 +306,14 @@ AsynchronousMetrics::~AsynchronousMetrics()
 
 AsynchronousMetricValues AsynchronousMetrics::getValues() const
 {
-    std::lock_guard lock{mutex};
+    std::lock_guard lock(thread_mutex);
     return values;
 }
 
-static auto get_next_update_time(std::chrono::seconds update_period)
+namespace
+{
+
+auto get_next_update_time(std::chrono::seconds update_period)
 {
     using namespace std::chrono;
 
@@ -334,6 +337,8 @@ static auto get_next_update_time(std::chrono::seconds update_period)
     return time_next;
 }
 
+}
+
 void AsynchronousMetrics::run()
 {
     setThreadName("AsyncMetrics");
@@ -344,9 +349,9 @@ void AsynchronousMetrics::run()
 
         {
             // Wait first, so that the first metric collection is also on even time.
-            std::unique_lock lock{mutex};
+            std::unique_lock lock(thread_mutex);
             if (wait_cond.wait_until(lock, next_update_time,
-                [this] { return quit; }))
+                [this] TSA_REQUIRES(thread_mutex) { return quit; }))
             {
                 break;
             }
@@ -364,6 +369,9 @@ void AsynchronousMetrics::run()
 }
 
 #if USE_JEMALLOC
+namespace
+{
+
 uint64_t updateJemallocEpoch()
 {
     uint64_t value = 0;
@@ -373,7 +381,7 @@ uint64_t updateJemallocEpoch()
 }
 
 template <typename Value>
-static Value saveJemallocMetricImpl(
+Value saveJemallocMetricImpl(
     AsynchronousMetricValues & values,
     const std::string & jemalloc_full_name,
     const std::string & clickhouse_full_name)
@@ -386,7 +394,7 @@ static Value saveJemallocMetricImpl(
 }
 
 template<typename Value>
-static Value saveJemallocMetric(AsynchronousMetricValues & values,
+Value saveJemallocMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
     return saveJemallocMetricImpl<Value>(values,
@@ -395,12 +403,14 @@ static Value saveJemallocMetric(AsynchronousMetricValues & values,
 }
 
 template<typename Value>
-static Value saveAllArenasMetric(AsynchronousMetricValues & values,
+Value saveAllArenasMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
     return saveJemallocMetricImpl<Value>(values,
         fmt::format("stats.arenas.{}.{}", MALLCTL_ARENAS_ALL, metric_name),
         fmt::format("jemalloc.arenas.all.{}", metric_name));
+}
+
 }
 #endif
 
@@ -554,14 +564,14 @@ void AsynchronousMetrics::update(TimePoint update_time)
     AsynchronousMetricValues new_values;
 
     auto current_time = std::chrono::system_clock::now();
-    auto time_after_previous_update = current_time - previous_update_time;
+    auto time_since_previous_update = current_time - previous_update_time;
     previous_update_time = update_time;
 
     double update_interval = 0.;
     if (first_run)
         update_interval = update_period.count();
     else
-        update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_after_previous_update).count() / 1e6;
+        update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
     new_values["AsynchronousMetricsUpdateInterval"] = { update_interval, "Metrics update interval" };
 
     /// This is also a good indicator of system responsiveness.
@@ -815,7 +825,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
             if (-1 == hz)
                 throw ErrnoException(ErrorCodes::CANNOT_SYSCONF, "Cannot call 'sysconf' to obtain system HZ");
 
-            double multiplier = 1.0 / hz / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_after_previous_update).count() / 1e9);
+            double multiplier = 1.0 / hz / (std::chrono::duration_cast<std::chrono::nanoseconds>(time_since_previous_update).count() / 1e9);
             size_t num_cpus = 0;
 
             ProcStatValuesOther current_other_values{};
@@ -1572,7 +1582,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
 
     /// Add more metrics as you wish.
 
-    updateImpl(new_values, update_time, current_time);
+    updateImpl(update_time, current_time, first_run, new_values);
 
     new_values["AsynchronousMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous metrics (this is the overhead of asynchronous metrics)." };
 
@@ -1581,7 +1591,7 @@ void AsynchronousMetrics::update(TimePoint update_time)
     first_run = false;
 
     // Finally, update the current metrics.
-    std::lock_guard lock(mutex);
+    std::lock_guard lock(thread_mutex);
     values = new_values;
 }
 
