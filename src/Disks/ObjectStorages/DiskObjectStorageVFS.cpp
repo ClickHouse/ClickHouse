@@ -19,13 +19,7 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     bool enable_gc_)
-    : DiskObjectStorage( //
-        name_,
-        object_key_prefix_,
-        std::move(metadata_storage_),
-        std::move(object_storage_),
-        config,
-        config_prefix)
+    : DiskObjectStorage(name_, object_key_prefix_, std::move(metadata_storage_), std::move(object_storage_), config, config_prefix)
     , enable_gc(enable_gc_)
     , settings(config, config_prefix, name)
 {
@@ -126,7 +120,7 @@ bool DiskObjectStorageVFS::tryDownloadMetadata(std::string_view remote_from, con
 
     try
     {
-        buf->eof(); // TODO myrrc do not write error message with "Information" level as it's a normal situation
+        buf->eof();
     }
 #if USE_AWS_S3
     catch (const S3Exception & e) // TODO myrrc this works only for s3

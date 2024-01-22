@@ -4,6 +4,7 @@ import logging
 import random
 import string
 import time
+
 from multiprocessing.dummy import Pool
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -29,14 +30,16 @@ def started_cluster(request):
         )
         cluster.start()
 
-        yield cluster
+        testing_vfs = len(request.param) != 0
+        yield cluster, testing_vfs
     finally:
         cluster.shutdown()
 
 
 def test_fetch_correct_volume(started_cluster):
-    node1 = started_cluster.instances["node1"]
-    node2 = started_cluster.instances["node2"]
+    cluster, _ = started_cluster
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
 
     node1.query(
         """
@@ -104,8 +107,9 @@ SETTINGS index_granularity = 8192, storage_policy = 's3'"""
 
 
 def test_concurrent_move_to_s3(started_cluster):
-    node1 = started_cluster.instances["node1"]
-    node2 = started_cluster.instances["node2"]
+    cluster, _ = started_cluster
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
 
     node1.query(
         """
@@ -180,8 +184,9 @@ SETTINGS index_granularity = 8192, storage_policy = 's3'"""
 
 
 def test_zero_copy_mutation(started_cluster):
-    node1 = started_cluster.instances["node1"]
-    node2 = started_cluster.instances["node2"]
+    cluster, testing_vfs = started_cluster
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
 
     node1.query(
         """
@@ -228,7 +233,8 @@ SETTINGS index_granularity = 8192, storage_policy = 's3_only'"""
 
     job.get()
 
-    # TODO myrrc this fails for me in local execution with zero-copy, muting
-    # assert node2.contains_in_log("all_0_0_0_1/part_exclusive_lock exists")
-    # assert node2.contains_in_log("Removing zero-copy lock on")
-    # assert node2.contains_in_log("all_0_0_0_1/part_exclusive_lock doesn't exist")
+    if testing_vfs:
+        return
+    assert node2.contains_in_log("all_0_0_0_1/part_exclusive_lock exists")
+    assert node2.contains_in_log("Removing zero-copy lock on")
+    assert node2.contains_in_log("all_0_0_0_1/part_exclusive_lock doesn't exist")

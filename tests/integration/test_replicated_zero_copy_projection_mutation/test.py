@@ -153,14 +153,11 @@ def test_all_projection_files_are_dropped_when_part_is_dropped(
             "ALTER TABLE test_all_projection_files_are_dropped DROP PARTITION ID 'all'"
         )
 
-        # TODO myrrc better lower down VFS GC timeout as config variable
-        if testing_vfs:
-            time.sleep(11)
+        time.sleep(2 * testing_vfs)  # Wait for next GC run to complete
 
         objects_at_the_end = list_objects(cluster)
 
-        if testing_vfs:
-            # objects_at_the_end should contain a snapshot as an extra file
+        if testing_vfs:  # objects_at_the_end should contain a snapshot as an extra file
             assert len(set(objects_at_the_end) - set(objects_empty_table)) == 1
         else:
             assert objects_at_the_end == objects_empty_table

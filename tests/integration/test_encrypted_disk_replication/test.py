@@ -3,12 +3,9 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 
-# TODO myrrc this is a bit ugly as we need to test 3 scenarios, one needing configs at start time (vfs)
-# thus we can't use pytest.mark.parametrize. The tradeoff is cluster setup/teardown for every scenario
 @pytest.fixture(
     scope="module",
     params=[
-        # vfs_configs, s3_policy, 0copy
         ([], "s3_encrypted_policy_with_diff_keys", False),
         ([], "s3_encrypted_policy", True),
         (["configs/vfs.xml"], "s3_encrypted_policy", False),
