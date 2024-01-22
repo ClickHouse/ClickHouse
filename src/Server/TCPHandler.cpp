@@ -907,7 +907,7 @@ void TCPHandler::processInsertQuery()
     Block processed_block;
     const auto & settings = query_context->getSettingsRef();
 
-    auto * insert_queue = query_context->getAsynchronousInsertQueue();
+    auto * insert_queue = query_context->tryGetAsynchronousInsertQueue();
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*state.parsed_query);
 
     bool async_insert_enabled = settings.async_insert;

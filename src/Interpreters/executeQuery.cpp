@@ -924,7 +924,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         std::unique_ptr<IInterpreter> interpreter;
 
         bool async_insert = false;
-        auto * queue = context->getAsynchronousInsertQueue();
+        auto * queue = context->tryGetAsynchronousInsertQueue();
         auto * logger = &Poco::Logger::get("executeQuery");
 
         if (insert_query && async_insert_enabled)

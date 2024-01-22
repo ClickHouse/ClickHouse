@@ -4841,7 +4841,7 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs() const
     return ignored_part_uuids;
 }
 
-AsynchronousInsertQueue * Context::getAsynchronousInsertQueue() const
+AsynchronousInsertQueue * Context::tryGetAsynchronousInsertQueue() const
 {
     std::lock_guard lock(mutex);
     return shared->async_insert_queue.get();
