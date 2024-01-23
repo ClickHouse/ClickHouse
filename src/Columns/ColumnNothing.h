@@ -23,6 +23,18 @@ public:
     MutableColumnPtr cloneDummy(size_t s_) const override { return ColumnNothing::create(s_); }
     TypeIndex getDataType() const override { return TypeIndex::Nothing; }
 
+    Field operator[](size_t) const override { return Null{}; }
+
+    void get(size_t, Field & field) const override { field = Null{}; }
+
+    void insert(const Field &) override { addSize(1); }
+
+    bool isDefaultAt(size_t) const override { return true; }
+
+    double getRatioOfDefaultRows(double) const override { return 1.0; }
+
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override {}
+
     bool canBeInsideNullable() const override { return true; }
 
     bool structureEquals(const IColumn & rhs) const override

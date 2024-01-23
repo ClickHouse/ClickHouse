@@ -6,6 +6,21 @@
 namespace DB
 {
 
+void SerializationNothing::deserializeBinary(Field & field, ReadBuffer &, const FormatSettings &) const
+{
+    field = Null{};
+}
+
+void SerializationNothing::deserializeBinary(IColumn & column, ReadBuffer &, const FormatSettings &) const
+{
+    typeid_cast<ColumnNothing &>(column).addSize(1);
+}
+
+void SerializationNothing::deserializeText(IColumn & column, ReadBuffer &, const FormatSettings &, bool) const
+{
+    typeid_cast<ColumnNothing &>(column).addSize(1);
+}
+
 void SerializationNothing::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     size_t size = column.size();

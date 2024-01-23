@@ -217,6 +217,14 @@ Field DataTypeTuple::getDefault() const
     return Tuple(collections::map<Tuple>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
 }
 
+bool DataTypeTuple::cannotBeStoredInTables() const
+{
+    bool ret = false;
+    for (const auto & elem : elems)
+        ret |= elem->cannotBeStoredInTables();
+    return ret;
+}
+
 void DataTypeTuple::insertDefaultInto(IColumn & column) const
 {
     addElementSafe(elems, column, [&]
