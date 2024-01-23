@@ -193,13 +193,13 @@ try
                 if (format_name)
                     throw Exception(
                         ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                        "The table structure cannot be extracted from a {} format file:\n{}\nYou can specify the structure manually",
+                        "The table structure cannot be extracted from a {} format file:\n{}\n.You can specify the structure manually",
                         *format_name,
                         exception_message);
 
                 throw Exception(
                     ErrorCodes::CANNOT_DETECT_FORMAT,
-                    "The data format cannot be detected by the contents of the files:\n{}\nYou can specify the format manually",
+                    "The data format cannot be detected by the contents of the files:\n{}\n.You can specify the format manually",
                     exception_message);
             }
 
@@ -274,7 +274,7 @@ try
                         throw Exception(
                             ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                             "The table structure cannot be extracted from a {} format file. "
-                            "Error: {}. You can specify the structure manually",
+                            "Error:\n{}.\nYou can specify the structure manually",
                             *format_name,
                             exception_message);
                     }
@@ -473,7 +473,7 @@ try
                 throw Exception(
                     ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
                     "The table structure cannot be extracted from a {} format file. "
-                    "Error: {}. You can specify the structure manually",
+                    "Error:\n{}.\nYou can specify the structure manually",
                     *format_name,
                     exception_messages);
             }
