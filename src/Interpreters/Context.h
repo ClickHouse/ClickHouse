@@ -70,6 +70,7 @@ class IUserDefinedSQLObjectsStorage;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
+class AsynchronousMetrics;
 class BackgroundSchedulePool;
 class MergeList;
 class MovesList;
@@ -994,6 +995,9 @@ public:
     void clearCaches() const;
 
     /// -----------------------------------------------------------------------------------------------------
+
+    void setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_);
+    AsynchronousMetrics * getAsynchronousMetrics() const;
 
     ThreadPool & getPrefetchThreadpool() const;
 
