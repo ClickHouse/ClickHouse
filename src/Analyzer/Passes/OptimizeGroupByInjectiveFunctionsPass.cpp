@@ -40,6 +40,9 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_injective_functions_in_group_by)
+            return;
+
         auto * query = node->as<QueryNode>();
         if (!query)
             return;
@@ -72,55 +75,42 @@ private:
         new_group_by_keys.reserve(grouping_set.size());
         for (auto & group_by_elem : grouping_set)
         {
-            if (auto const * function_node = group_by_elem->as<FunctionNode>())
+            std::queue<QueryTreeNodePtr> nodes_to_process;
+            nodes_to_process.push(group_by_elem);
+
+            while (!nodes_to_process.empty())
             {
-                bool can_be_eliminated = false;
-                if (possibly_injective_function_names.contains(function_node->getFunctionName()))
+                auto node_to_process = nodes_to_process.front();
+                nodes_to_process.pop();
+
+                auto const * function_node = node_to_process->as<FunctionNode>();
+                if (!function_node)
                 {
-                    can_be_eliminated = canBeEliminated(function_node, context);
+                    // Constant aggregation keys are removed in PlannerExpressionAnalysis.cpp
+                    new_group_by_keys.push_back(node_to_process);
+                    continue;
                 }
-                else
-                {
-                    auto function = function_node->getFunctionOrThrow();
-                    can_be_eliminated = function->isInjective(function_node->getArgumentColumns());
-                }
+
+                // Aggregate functions are not allowed in GROUP BY clause
+                auto function = function_node->getFunctionOrThrow();
+                bool can_be_eliminated = function->isInjective(function_node->getArgumentColumns());
 
                 if (can_be_eliminated)
                 {
                     for (auto const & argument : function_node->getArguments())
                     {
+                        // We can skip constants here because aggregation key is already not a constant.
                         if (argument->getNodeType() != QueryTreeNodeType::CONSTANT)
-                            new_group_by_keys.push_back(argument);
+                            nodes_to_process.push(argument);
                     }
                 }
                 else
-                    new_group_by_keys.push_back(group_by_elem);
+                    new_group_by_keys.push_back(node_to_process);
             }
-            else
-                new_group_by_keys.push_back(group_by_elem);
         }
 
         grouping_set = std::move(new_group_by_keys);
     }
-
-    bool canBeEliminated(const FunctionNode * function_node, const ContextPtr & context)
-    {
-        const auto & function_arguments = function_node->getArguments().getNodes();
-        auto const * dict_name_arg = function_arguments[0]->as<ConstantNode>();
-        if (!dict_name_arg || !isString(dict_name_arg->getResultType()))
-            return false;
-        auto dict_name = dict_name_arg->getValue().safeGet<String>();
-
-        const auto & dict_ptr = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
-
-        auto const * attr_name_arg = function_arguments[1]->as<ConstantNode>();
-        if (!attr_name_arg || !isString(attr_name_arg->getResultType()))
-            return false;
-        auto attr_name = attr_name_arg->getValue().safeGet<String>();
-
-        return dict_ptr->isInjective(attr_name);
-    }
-
 };
 
 }
