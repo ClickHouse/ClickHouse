@@ -4,6 +4,10 @@
 #include "Interpreters/Context.h"
 #include "ObjectStorageVFSGCThread.h"
 
+#if USE_AZURE_BLOB_STORAGE
+#    include <azure/storage/common/storage_exception.hpp>
+#endif
+
 namespace DB
 {
 namespace ErrorCodes
@@ -21,10 +25,11 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     bool enable_gc_)
     : DiskObjectStorage(name_, object_key_prefix_, std::move(metadata_storage_), std::move(object_storage_), config, config_prefix)
     , enable_gc(enable_gc_)
+    , object_storage_type(object_storage->getType())
     , settings(MultiVersion<VFSSettings>{std::make_unique<VFSSettings>(config, config_prefix, name)})
 {
-    if (object_storage->getType() != ObjectStorageType::S3)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS supports only 's3' disk type");
+    if (object_storage_type != ObjectStorageType::S3 && object_storage_type != ObjectStorageType::Azure)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS supports only 's3' or 'azure_blob_storage' disk type");
     if (send_metadata)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS doesn't support send_metadata");
     zookeeper()->createAncestors(settings.get()->log_item);
@@ -133,10 +138,19 @@ bool DiskObjectStorageVFS::tryDownloadMetadata(std::string_view remote_from, con
     {
         buf->eof();
     }
+    // TODO myrrc this works only for s3 and azure
 #if USE_AWS_S3
-    catch (const S3Exception & e) // TODO myrrc this works only for s3
+    catch (const S3Exception & e)
     {
         if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
+            return false;
+        throw;
+    }
+#endif
+#if USE_AZURE_BLOB_STORAGE
+    catch (const Azure::Storage::StorageException & e)
+    {
+        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
             return false;
         throw;
     }
@@ -208,10 +222,21 @@ String DiskObjectStorageVFS::lockPathToFullPath(std::string_view path) const
 
 StoredObject DiskObjectStorageVFS::getMetadataObject(std::string_view remote) const
 {
-    // TODO myrrc this works only for S3. Must also recheck encrypted disk replication
+    // TODO myrrc this works only for S3 and Azure. Must also recheck encrypted disk replication
     // We must include disk name as two disks with different names might use same object storage bucket
     // TODO myrrc replace with vfs_disk_id
-    String remote_key = fmt::format("vfs/_{}_{}", name, remote);
+    String remote_key;
+    switch (object_storage_type)
+    {
+        case ObjectStorageType::S3:
+            remote_key = fmt::format("vfs/_{}_{}", name, remote);
+            break;
+        case ObjectStorageType::Azure:
+            remote_key = fmt::format("vfs_{}_{}", name, remote);
+            break;
+        default:
+            std::unreachable();
+    }
     return StoredObject{ObjectStorageKey::createAsRelative(object_key_prefix, std::move(remote_key)).serialize()};
 }
 }

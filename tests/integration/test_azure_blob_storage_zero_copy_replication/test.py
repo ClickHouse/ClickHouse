@@ -2,7 +2,9 @@ import logging
 import pytest
 from helpers.cluster import ClickHouseCluster
 from test_storage_azure_blob_storage.test import azure_query
+from itertools import product
 import os
+import time
 
 
 logging.getLogger().setLevel(logging.INFO)
@@ -13,8 +15,6 @@ NODE2 = "node2"
 TABLE_NAME = "blob_storage_table"
 CONTAINER_NAME = "cont"
 CLUSTER_NAME = "test_cluster"
-
-drop_table_statement = f"DROP TABLE {TABLE_NAME} ON CLUSTER {CLUSTER_NAME} SYNC"
 
 
 def generate_cluster_def(port):
@@ -46,6 +46,16 @@ def generate_cluster_def(port):
                     </main>
                 </volumes>
             </blob_storage_policy>
+            <hybrid>
+                <volumes>
+                    <main>
+                        <disk>default</disk>
+                    </main>
+                    <external>
+                        <disk>blob_storage_disk</disk>
+                    </external>
+                </volumes>
+            </hybrid>
         </policies>
     </storage_configuration>
 </clickhouse>
@@ -118,10 +128,28 @@ def get_large_objects_count(blob_container_client, large_size_threshold=100):
     )
 
 
+def wait_for_large_objects_count(blob_container_client, expected, size=100, timeout=30):
+    while timeout > 0:
+        if (
+            get_large_objects_count(blob_container_client, large_size_threshold=size)
+            == expected
+        ):
+            return
+        timeout -= 1
+        time.sleep(1)
+    assert (
+        get_large_objects_count(blob_container_client, large_size_threshold=size)
+        == expected
+    )
+
+
 def test_zero_copy_replication(started_cluster):
     cluster, testing_vfs = started_cluster
     node1 = cluster.instances[NODE1]
     node2 = cluster.instances[NODE2]
+
+    for node in [node1, node2]:
+        node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
     create_table(node1, TABLE_NAME, 1)
 
     blob_container_client = cluster.blob_service_client.get_container_client(
@@ -144,7 +172,7 @@ def test_zero_copy_replication(started_cluster):
 
     # Based on version 21.x - should be only one file with size 100+ (checksums.txt), used by both nodes
     # if testing vfs, the extra file is snapshot
-    assert get_large_objects_count(blob_container_client) == 1 + testing_vfs
+    wait_for_large_objects_count(blob_container_client, 1 + testing_vfs)
 
     azure_query(node2, f"INSERT INTO {TABLE_NAME} VALUES {values2}")
     node1.query(f"SYSTEM SYNC REPLICA {TABLE_NAME}")
@@ -158,5 +186,46 @@ def test_zero_copy_replication(started_cluster):
         == values1 + "," + values2
     )
 
-    assert get_large_objects_count(blob_container_client) == 2 + testing_vfs
-    node1.query(drop_table_statement)
+    wait_for_large_objects_count(blob_container_client, 2 + testing_vfs)
+
+
+def test_zero_copy_with_partition_move(started_cluster):
+    cluster, testing_vfs = started_cluster
+    node1 = cluster.instances[NODE1]
+    node2 = cluster.instances[NODE2]
+
+    for node in [node1, node2]:
+        node.query(f"DROP TABLE IF EXISTS move_test")
+    node1.query(
+        f"""
+        CREATE TABLE move_test ON CLUSTER {CLUSTER_NAME} (EventDate Date, CounterID UInt32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/move_test', '{{replica}}')
+        PARTITION BY CounterID
+        ORDER BY (CounterID, EventDate)
+        SETTINGS storage_policy='hybrid'
+        """
+    )
+
+    num_partitions = 10
+    num_elements = 20
+    partitions = range(num_partitions)
+
+    for i in partitions:
+        node1.query(
+            f"INSERT INTO move_test SELECT toDate('2023-01-01') + toIntervalDay(number), {i} from system.numbers limit {num_elements}"
+        )
+
+    node2.query("SYSTEM SYNC REPLICA move_test")
+
+    for node, i in product([node1, node2], partitions):
+        node.query(
+            f"ALTER TABLE move_test MOVE PARTITION '{i}' TO DISK 'blob_storage_disk'"
+        )
+
+    if testing_vfs:
+        assert node1.contains_in_log("Metadata: uploading")
+        assert node2.contains_in_log("Metadata: downloading")
+
+    desired = num_partitions * num_elements
+    for node in [node1, node2]:
+        assert int(node.query("SELECT count() FROM move_test").strip()) == desired

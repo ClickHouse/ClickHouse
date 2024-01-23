@@ -47,6 +47,7 @@ private:
     std::optional<ObjectStorageVFSGCThread> garbage_collector;
 
     const bool enable_gc; // In certain conditions we don't want a GC e.g. when running from clickhouse-disks
+    const ObjectStorageType object_storage_type;
     MultiVersion<VFSSettings> settings;
 
     ZooKeeperWithFaultInjection::Ptr zookeeper();

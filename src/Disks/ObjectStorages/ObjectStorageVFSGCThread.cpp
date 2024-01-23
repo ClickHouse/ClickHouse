@@ -8,6 +8,10 @@
 #include "IO/ReadHelpers.h"
 #include "IO/S3Common.h"
 
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/storage/common/storage_exception.hpp>
+#endif
+
 namespace ProfileEvents
 {
 extern const Event VFSGcRunsCompleted;
@@ -161,10 +165,19 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpoin
         else if (next_snapshot_exists())
             return log_already_processed();
     }
+    // TODO myrrc this works only for s3 and azure
 #if USE_AWS_S3
-    catch (const S3Exception & e) // TODO myrrc this works only for s3
+    catch (const S3Exception & e)
     {
         if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY && next_snapshot_exists())
+            return log_already_processed();
+        throw;
+    }
+#endif
+#if USE_AZURE_BLOB_STORAGE
+    catch (const Azure::Storage::StorageException & e)
+    {
+        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound && next_snapshot_exists())
             return log_already_processed();
         throw;
     }
