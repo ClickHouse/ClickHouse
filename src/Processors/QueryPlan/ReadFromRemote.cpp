@@ -156,9 +156,9 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         -> QueryPipelineBuilder
     {
         auto current_settings = my_context->getSettingsRef();
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
-            current_settings).getSaturated(
-                current_settings.max_execution_time);
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings)
+                            .getSaturated(current_settings.max_execution_time);
+
         std::vector<ConnectionPoolWithFailover::TryResult> try_results;
         try
         {
@@ -357,6 +357,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ParallelReplicasReadingCoordinatorPtr coordinator_,
     Block header_,
     QueryProcessingStage::Enum stage_,
+    StorageID main_table_,
     ContextMutablePtr context_,
     ThrottlerPtr throttler_,
     Scalars scalars_,
@@ -368,6 +369,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , query_ast(query_ast_)
     , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
+    , main_table(std::move(main_table_))
     , context(context_)
     , throttler(throttler_)
     , scalars(scalars_)
