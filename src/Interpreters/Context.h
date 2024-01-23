@@ -373,25 +373,6 @@ protected:
 
         QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
 
-        QueryFactoriesInfo & operator=(QueryFactoriesInfo rhs)
-        {
-            swap(rhs);
-            return *this;
-        }
-
-        void swap(QueryFactoriesInfo & rhs)
-        {
-            std::swap(aggregate_functions, rhs.aggregate_functions);
-            std::swap(aggregate_function_combinators, rhs.aggregate_function_combinators);
-            std::swap(database_engines, rhs.database_engines);
-            std::swap(data_type_families, rhs.data_type_families);
-            std::swap(dictionaries, rhs.dictionaries);
-            std::swap(formats, rhs.formats);
-            std::swap(functions, rhs.functions);
-            std::swap(storages, rhs.storages);
-            std::swap(table_functions, rhs.table_functions);
-        }
-
         std::unordered_set<std::string> aggregate_functions;
         std::unordered_set<std::string> aggregate_function_combinators;
         std::unordered_set<std::string> database_engines;
@@ -727,7 +708,7 @@ public:
         TableFunction
     };
 
-    const QueryFactoriesInfo & getQueryFactoriesInfo() const { return query_factories_info; }
+    QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
     /// For table functions s3/file/url/hdfs/input we can use structure from

@@ -1644,6 +1644,11 @@ void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_proje
         "{}.{}", qualified_projection_name.storage_id.getFullTableName(), backQuoteIfNeed(qualified_projection_name.projection_name)));
 }
 
+Context::QueryFactoriesInfo Context::getQueryFactoriesInfo() const
+{
+    return query_factories_info;
+}
+
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
     if (isGlobalContext())
