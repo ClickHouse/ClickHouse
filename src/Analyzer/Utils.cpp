@@ -326,17 +326,17 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
     }
 }
 
-QueryTreeNodes extractTrueTableExpressions(const QueryTreeNodePtr & tree)
+QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
 {
     QueryTreeNodes result;
 
-    std::deque<QueryTreeNodePtr> nodes_to_process;
+    QueryTreeNodes nodes_to_process;
     nodes_to_process.push_back(tree);
 
     while (!nodes_to_process.empty())
     {
-        auto node_to_process = std::move(nodes_to_process.front());
-        nodes_to_process.pop_front();
+        auto node_to_process = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
 
         auto node_type = node_to_process->getNodeType();
 
@@ -349,31 +349,31 @@ QueryTreeNodes extractTrueTableExpressions(const QueryTreeNodePtr & tree)
             }
             case QueryTreeNodeType::QUERY:
             {
-                nodes_to_process.push_front(node_to_process->as<QueryNode>()->getJoinTree());
+                nodes_to_process.push_back(node_to_process->as<QueryNode>()->getJoinTree());
                 break;
             }
             case QueryTreeNodeType::UNION:
             {
                 for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
-                    nodes_to_process.push_front(union_node);
+                    nodes_to_process.push_back(union_node);
                 break;
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
                 for (const auto & argument_node : node_to_process->as<TableFunctionNode>()->getArgumentsNode()->getChildren())
-                    nodes_to_process.push_front(argument_node);
+                    nodes_to_process.push_back(argument_node);
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
             {
-                nodes_to_process.push_front(node_to_process->as<ArrayJoinNode>()->getTableExpression());
+                nodes_to_process.push_back(node_to_process->as<ArrayJoinNode>()->getTableExpression());
                 break;
             }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
-                nodes_to_process.push_front(join_node.getRightTableExpression());
-                nodes_to_process.push_front(join_node.getLeftTableExpression());
+                nodes_to_process.push_back(join_node.getRightTableExpression());
+                nodes_to_process.push_back(join_node.getLeftTableExpression());
                 break;
             }
             default:

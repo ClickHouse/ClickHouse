@@ -1,4 +1,3 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
@@ -75,7 +74,7 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
-    auto nodes = extractTrueTableExpressions(query_tree);
+    auto nodes = extractAllTableReferences(query_tree);
     IQueryTreeNode::ReplacementMap replacement_map;
 
     for (auto & node : nodes)
@@ -90,9 +89,6 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
 
         if (auto table_expression_modifiers = table_node.getTableExpressionModifiers())
             replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
-
-        if (node->hasAlias())
-            replacement_table_expression->setAlias(node->getAlias() + "_replacement");
 
         replacement_map.emplace(node.get(), std::move(replacement_table_expression));
     }
