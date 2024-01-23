@@ -342,6 +342,7 @@ public:
         }
 
         void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
+        Block getBlock(const MergeTreeData & data) const;
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 

@@ -322,6 +322,7 @@ void executeQuery(
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
+    const StorageID & main_table,
     SelectStreamFactory & stream_factory,
     const ASTPtr & query_ast,
     ContextPtr context,
@@ -413,6 +414,7 @@ void executeQueryWithParallelReplicas(
         std::move(coordinator),
         stream_factory.header,
         stream_factory.processed_stage,
+        main_table,
         new_context,
         getThrottler(new_context),
         std::move(scalars),

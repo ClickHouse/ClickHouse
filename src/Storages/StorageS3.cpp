@@ -1488,24 +1488,12 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'session_token', 'format', 'compression')
         /// with optional headers() function
 
-        if (engine_args.empty() || engine_args.size() > 6)
+        size_t count = StorageURL::evalArgsAndCollectHeaders(engine_args, configuration.headers_from_ast, local_context);
+
+        if (count == 0 || count > 6)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage S3 requires 1 to 5 arguments: "
                             "url, [NOSIGN | access_key_id, secret_access_key], name of used format and [compression_method]");
-
-        auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers_from_ast, local_context);
-        if (header_it != engine_args.end())
-            engine_args.erase(header_it);
-
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
-
-        /// Size -> argument indexes
-        static std::unordered_map<size_t, std::unordered_map<std::string_view, size_t>> size_to_engine_args
-        {
-            {1, {{}}},
-            {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}}}
-        };
 
         std::unordered_map<std::string_view, size_t> engine_args_to_idx;
         bool no_sign_request = false;
@@ -1514,7 +1502,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         /// - s3(source, format)
         /// - s3(source, NOSIGN)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or not.
-        if (engine_args.size() == 2)
+        if (count == 2)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(engine_args[1], "format/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -1524,10 +1512,10 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         }
         /// For 3 arguments we support 2 possible variants:
         /// - s3(source, format, compression_method)
-        /// - s3(source, access_key_id, access_key_id)
+        /// - s3(source, access_key_id, secret_access_key)
         /// - s3(source, NOSIGN, format)
         /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or format name.
-        else if (engine_args.size() == 3)
+        else if (count == 3)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(engine_args[1], "format/access_key_id/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -1545,7 +1533,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         /// - s3(source, access_key_id, secret_access_key, format)
         /// - s3(source, NOSIGN, format, compression_method)
         /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN or not.
-        else if (engine_args.size() == 4)
+        else if (count == 4)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id/NOSIGN");
             if (boost::iequals(second_arg, "NOSIGN"))
@@ -1569,7 +1557,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         /// For 5 arguments we support 2 possible variants:
         /// - s3(source, access_key_id, secret_access_key, session_token, format)
         /// - s3(source, access_key_id, secret_access_key, format, compression)
-        else if (engine_args.size() == 5)
+        else if (count == 5)
         {
             auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "session_token/format");
             if (fourth_arg == "auto" || FormatFactory::instance().getAllFormats().contains(fourth_arg))
@@ -1581,9 +1569,9 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}};
             }
         }
-        else
+        else if (count == 6)
         {
-            engine_args_to_idx = size_to_engine_args[engine_args.size()];
+            engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"compression_method", 5}};
         }
 
         /// This argument is always the first

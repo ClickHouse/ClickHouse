@@ -76,8 +76,8 @@
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
-#include <IO/Resource/registerSchedulerNodes.h>
-#include <IO/Resource/registerResourceManagers.h>
+#include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
+#include <Common/Scheduler/Nodes/registerResourceManagers.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include "MetricsTransmitter.h"
@@ -1740,6 +1740,18 @@ try
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
     LoadTaskPtrs load_metadata_tasks;
+
+    // Make sure that if exception is thrown during startup async, new async loading jobs are not going to be called.
+    // This is important for the case when exception is thrown from loading of metadata with `async_load_databases = false`
+    // to avoid simultaneously running table startups and destructing databases.
+    SCOPE_EXIT_SAFE(
+        LOG_INFO(log, "Stopping AsyncLoader.");
+
+        // Waits for all currently running jobs to finish and do not run any other pending jobs.
+        // Pending jobs will be canceled and destructed later by `load_metadata_tasks` dtor.
+        global_context->getAsyncLoader().stop();
+    );
+
     try
     {
         auto & database_catalog = DatabaseCatalog::instance();
@@ -2003,6 +2015,12 @@ try
                 LOG_WARNING(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
             else
                 LOG_INFO(log, "Closed all listening sockets.");
+
+            /// Wait for unfinished backups and restores.
+            /// This must be done after closing listening sockets (no more backups/restores) but before ProcessList::killAllQueries
+            /// (because killAllQueries() will cancel all running backups/restores).
+            if (server_settings.shutdown_wait_backups_and_restores)
+                global_context->waitAllBackupsAndRestores();
 
             /// Killing remaining queries.
             if (!server_settings.shutdown_wait_unfinished_queries)
