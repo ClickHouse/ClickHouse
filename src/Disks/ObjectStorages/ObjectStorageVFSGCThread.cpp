@@ -9,7 +9,7 @@
 #include "IO/S3Common.h"
 
 #if USE_AZURE_BLOB_STORAGE
-#include <azure/storage/common/storage_exception.hpp>
+#    include <azure/storage/common/storage_exception.hpp>
 #endif
 
 namespace ProfileEvents
@@ -21,7 +21,6 @@ extern const Event VFSGcTotalMicroseconds;
 extern const Event VFSGcCumulativeSnapshotBytesRead;
 extern const Event VFSGcCumulativeLogItemsRead;
 }
-using namespace ProfileEvents;
 
 namespace DB
 {
@@ -74,13 +73,13 @@ void ObjectStorageVFSGCThread::run() const
     bool successful_run = false, skip_run = false;
     SCOPE_EXIT({
         if (successful_run)
-            ProfileEvents::increment(VFSGcRunsCompleted);
+            ProfileEvents::increment(ProfileEvents::VFSGcRunsCompleted);
         else
         {
-            ProfileEvents::increment(skip_run ? VFSGcRunsSkipped : VFSGcRunsException);
+            ProfileEvents::increment(skip_run ? ProfileEvents::VFSGcRunsSkipped : ProfileEvents::VFSGcRunsException);
             storage.zookeeper()->remove(settings->gc_lock_path);
         };
-        ProfileEvents::increment(VFSGcTotalMicroseconds, stop_watch.elapsedMicroseconds());
+        ProfileEvents::increment(ProfileEvents::VFSGcTotalMicroseconds, stop_watch.elapsedMicroseconds());
     });
 
     Strings log_items_batch = storage.zookeeper()->getChildren(settings->log_base_node);
@@ -137,7 +136,7 @@ bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t start_logpointe
 
 void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const
 {
-    ProfileEvents::increment(VFSGcCumulativeLogItemsRead, end_logpointer - start_logpointer);
+    ProfileEvents::increment(ProfileEvents::VFSGcCumulativeLogItemsRead, end_logpointer - start_logpointer);
 
     auto & object_storage = *storage.object_storage;
     const bool should_have_previous_snapshot = start_logpointer > 0;
@@ -196,7 +195,7 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpoin
     if (should_have_previous_snapshot)
     {
         obsolete.emplace_back(std::move(old_snapshot));
-        ProfileEvents::increment(VFSGcCumulativeSnapshotBytesRead, old_snapshot_buf.count());
+        ProfileEvents::increment(ProfileEvents::VFSGcCumulativeSnapshotBytesRead, old_snapshot_buf.count());
     }
 
     if (!invalid.empty()) // TODO myrrc remove after testing
