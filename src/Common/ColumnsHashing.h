@@ -56,7 +56,7 @@ struct HashMethodOneNumber
     const char * vec;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
-    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr local_ctx [[maybe_unused]]  = nullptr) : Base(key_columns[0])
+    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr method_ctx [[maybe_unused]]  = nullptr) : Base(key_columns[0])
     {
         if constexpr (nullable)
         {
@@ -116,7 +116,7 @@ struct HashMethodString
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
-    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr local_ctx[[maybe_unused]]  = nullptr) : Base(key_columns[0])
+    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr method_ctx[[maybe_unused]]  = nullptr) : Base(key_columns[0])
     {
         const IColumn * column;
         if constexpr (nullable)
@@ -164,7 +164,7 @@ struct HashMethodFixedString
     size_t n;
     const ColumnFixedString::Chars * chars;
 
-    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr local_ctx[[maybe_unused]]  = nullptr) : Base(key_columns[0])
+    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr method_ctx[[maybe_unused]]  = nullptr) : Base(key_columns[0])
     {
         const IColumn * column;
         if constexpr (nullable)
@@ -295,7 +295,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     HashMethodSingleLowCardinalityColumn(
-        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context, HashMethodThreadContextPtr local_ctx[[maybe_unused]]  = nullptr)
+        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context, HashMethodThreadContextPtr method_ctx[[maybe_unused]]  = nullptr)
         : Base({getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, context)
     {
         const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
@@ -558,7 +558,7 @@ struct HashMethodKeysFixed
         return true;
     }
 
-    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &, HashMethodThreadContextPtr local_ctx[[maybe_unused]]  = nullptr)
+    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &, HashMethodThreadContextPtr method_ctx[[maybe_unused]]  = nullptr)
         : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
     {
         if constexpr (has_low_cardinality)
@@ -713,7 +713,7 @@ struct HashMethodSerialized
     ColumnRawPtrs key_columns;
     size_t keys_size;
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr local_ctx[[maybe_unused]] = nullptr)
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr method_ctx[[maybe_unused]] = nullptr)
         : key_columns(key_columns_), keys_size(key_columns_.size()) {}
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
@@ -733,7 +733,7 @@ class AdaptiveHashMethodThreadContext : public HashMethodThreadContext
 public:
     AdaptiveHashMethodThreadContext() = default;
     ~AdaptiveHashMethodThreadContext() override = default;
-    
+
     // a shared state to control working mode, whether it is high or low base cardinality.
     AdaptiveKeysHolder::State shared_keys_holder_state;
 
@@ -761,12 +761,12 @@ struct HashMethodKeysAdaptive
 
     ColumnRawPtrs key_columns;
     size_t keys_size;
-    std::shared_ptr<AdaptiveHashMethodThreadContext> local_ctx = nullptr;
+    std::shared_ptr<AdaptiveHashMethodThreadContext> method_ctx = nullptr;
     Columns full_key_columns;
 
     mutable PaddedPODArray<UInt64> value_ids;
 
-    HashMethodKeysAdaptive(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr local_ctx_)
+    HashMethodKeysAdaptive(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr method_ctx_)
         : key_columns(key_columns_), keys_size(key_columns_.size())
     {
         /// Need to convert a low cardinality column into a full one.
@@ -774,46 +774,46 @@ struct HashMethodKeysAdaptive
         {
             full_key_columns.emplace_back(col->convertToFullColumnIfLowCardinality());
         }
-    
-        local_ctx = std::dynamic_pointer_cast<AdaptiveHashMethodThreadContext>(local_ctx_);
-        if (!local_ctx)
+
+        method_ctx = std::dynamic_pointer_cast<AdaptiveHashMethodThreadContext>(method_ctx_);
+        if (!method_ctx)
             return;
 
         // Initialize value_id_generators.
-        if (local_ctx->value_id_generators.empty())
+        if (method_ctx->value_id_generators.empty())
         {
-            local_ctx->shared_keys_holder_state.pool = std::make_shared<Arena>();
+            method_ctx->shared_keys_holder_state.pool = std::make_shared<Arena>();
             UInt32 max_value_id_bits = max_value_id_number_bits/key_columns.size();
             for (size_t i = 0, n = key_columns.size(); i < n; ++i)
             {
-                local_ctx->value_id_generators.emplace_back(HashValueIdGeneratorFactory::instance().getGenerator(
-                    &(local_ctx->shared_keys_holder_state), max_value_id_bits, full_key_columns[i].get()));
+                method_ctx->value_id_generators.emplace_back(HashValueIdGeneratorFactory::instance().getGenerator(
+                    &(method_ctx->shared_keys_holder_state), max_value_id_bits, full_key_columns[i].get()));
             }
         }
 
-        if (local_ctx->shared_keys_holder_state.cached_values.size() >= max_value_id_number)
+        if (method_ctx->shared_keys_holder_state.cached_values.size() >= max_value_id_number)
         {
-            local_ctx->shared_keys_holder_state.hash_mode = AdaptiveKeysHolder::State::HASH;
+            method_ctx->shared_keys_holder_state.hash_mode = AdaptiveKeysHolder::State::HASH;
             for (size_t i = 0; i < keys_size; ++i)
             {
-                local_ctx->value_id_generators[i]->release();
+                method_ctx->value_id_generators[i]->release();
             }
         }
-        if (local_ctx->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+        if (method_ctx->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
             value_ids.clear();
             value_ids.resize_fill(key_columns[0]->size(), 0);
             for (size_t i = 0;
-                 i < keys_size && local_ctx->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID;
+                 i < keys_size && method_ctx->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID;
                  ++i)
-                local_ctx->value_id_generators[i]->computeValueId(full_key_columns[i].get(), &value_ids[0]);
+                method_ctx->value_id_generators[i]->computeValueId(full_key_columns[i].get(), &value_ids[0]);
         }
 
-        if (local_ctx->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+        if (method_ctx->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
             rows_state_refs.resize(max_value_id_number);
             auto rows = key_columns[0]->size();
-            auto & cached_values = local_ctx->shared_keys_holder_state.cached_values;
+            auto & cached_values = method_ctx->shared_keys_holder_state.cached_values;
             for (size_t i = 0; i < rows; ++i)
             {
                 auto & value_id = value_ids[i];
@@ -821,10 +821,10 @@ struct HashMethodKeysAdaptive
                 if (key_holder)
                     continue;
                 auto serialized_keys
-                    = serializeKeysToPoolContiguous(i, keys_size, key_columns, *local_ctx->shared_keys_holder_state.pool);
+                    = serializeKeysToPoolContiguous(i, keys_size, key_columns, *method_ctx->shared_keys_holder_state.pool);
                 auto hash = ::DefaultHash<StringRef>()(serialized_keys);
                 auto & state_ref = cached_values[value_id];
-                state_ref = AdaptiveKeysHolder::StateRef(serialized_keys, value_id, hash, &local_ctx->shared_keys_holder_state);
+                state_ref = AdaptiveKeysHolder::StateRef(serialized_keys, value_id, hash, &method_ctx->shared_keys_holder_state);
                 key_holder = &state_ref;
             }
         }
@@ -834,7 +834,7 @@ struct HashMethodKeysAdaptive
 
     ALWAYS_INLINE AdaptiveKeysHolder getKeyHolder(size_t row, Arena & pool)
     {
-        if (local_ctx && local_ctx->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+        if (method_ctx && method_ctx->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
             return getKeyHolderFromCacheValues(row);
         }
@@ -850,7 +850,7 @@ struct HashMethodKeysAdaptive
     {
         auto & value_id = value_ids[row];
         auto & key_holder = rows_state_refs[value_id];
-        return AdaptiveKeysHolder{key_holder->serialized_keys, key_holder, local_ctx->shared_keys_holder_state.pool.get()};
+        return AdaptiveKeysHolder{key_holder->serialized_keys, key_holder, method_ctx->shared_keys_holder_state.pool.get()};
     }
 
     static HashMethodContextPtr createContext(const HashMethodContext::Settings & settings[[maybe_unused]])

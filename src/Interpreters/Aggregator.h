@@ -618,7 +618,7 @@ struct AggregationMethodSerialized
     explicit AggregationMethodSerialized(const Other & other) : data(other.data)
     {
     }
-    
+
     HashMethodThreadContextPtr createContext() const
     {
         return std::make_shared<HashMethodThreadContext>();
@@ -662,7 +662,7 @@ struct AggregationMethodAdaptive
 
     using State = ColumnsHashing::HashMethodKeysAdaptive<typename Data::value_type, Mapped>;
     using StateNoCache = ColumnsHashing::HashMethodKeysAdaptive<typename Data::value_type, Mapped>;
-    
+
     HashMethodThreadContextPtr createContext() const
     {
         return State::createThreadContext();
@@ -741,7 +741,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>>                   keys128;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>>                   keys256;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>>                serialized;
-    std::unique_ptr<AggregationMethodAdaptive<AggregateDataWithAdaptiveKeys>>                        adaptive;
+    std::unique_ptr<AggregationMethodAdaptive<AggregateDataWithAdaptiveKeys>>                adaptive;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>> key32_two_level;
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>> key64_two_level;
@@ -752,7 +752,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>>           keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>>           keys256_two_level;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>        serialized_two_level;
-    std::unique_ptr<AggregationMethodAdaptive<AggregateDataWithAdaptiveKeysTwoLevel>>                adaptive_two_level;
+    std::unique_ptr<AggregationMethodAdaptive<AggregateDataWithAdaptiveKeysTwoLevel>>        adaptive_two_level;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>>   key64_hash64;
     std::unique_ptr<AggregationMethodString<AggregatedDataWithStringKeyHash64>>              key_string_hash64;
@@ -868,7 +868,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     };
     Type type = Type::EMPTY;
 
-    HashMethodThreadContextPtr local_context;
+    HashMethodThreadContextPtr method_context;
 
     AggregatedDataVariants() : aggregates_pools(1, std::make_shared<Arena>()), aggregates_pool(aggregates_pools.back().get()) {}
     bool empty() const { return type == Type::EMPTY; }
