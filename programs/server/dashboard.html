@@ -5,6 +5,7 @@
     <title>ClickHouse Dashboard</title>
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
     <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
     <style>
         :root {
             --color: black;
@@ -484,7 +485,6 @@
   *
   * TODO:
   * - zoom on the graphs should work on touch devices;
-  * - compress the state for URL's #hash;
   * - footer with "about" or a link to source code;
   * - allow to configure a table on a server to save the dashboards;
   * - if a query returned one value, display this value instead of a diagram;
@@ -1384,7 +1384,7 @@ document.getElementById('params').onsubmit = function(event) {
 function saveState() {
     const state = { host, user, queries, params, search_query, customized };
     history.pushState(state, '',
-        window.location.pathname + (window.location.search || '') + '#' + btoa(JSON.stringify(state)));
+        window.location.pathname + (window.location.search || '') + '#' + LZString.compressToEncodedURIComponent(JSON.stringify(state)));
 }
 
 async function searchQueries() {
@@ -1450,7 +1450,7 @@ window.onpopstate = function(event) {
 if (window.location.hash) {
     try {
         let search_query_, customized_;
-        ({host, user, queries, params, search_query_, customized_} = JSON.parse(atob(window.location.hash.substring(1))));
+        ({host, user, queries, params, search_query_, customized_} = JSON.parse(LZString.decompressFromEncodedURIComponent(window.location.hash.substring(1))));
         // For compatibility with old URLs' hashes
         search_query = search_query_ !== undefined ? search_query_ : search_query;
         customized = customized_ !== undefined ? customized_ : true;
