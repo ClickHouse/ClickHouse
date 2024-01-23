@@ -89,7 +89,7 @@ private:
         {
             if (!attach)
                 throw;
-            configuration.is_broken = true;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
             return configuration;
         }
     }
@@ -104,11 +104,10 @@ private:
         const bool updated = base_configuration.update(local_context);
         auto new_keys = getDataFiles(base_configuration, local_context);
 
-        if (!updated && !base_configuration.is_broken && new_keys == Storage::getConfiguration().keys)
+        if (!updated && new_keys == Storage::getConfiguration().keys)
             return;
 
         Storage::useConfiguration(getConfigurationForDataRead(base_configuration, local_context, new_keys));
-        base_configuration.is_broken = false;
     }
 
     Configuration base_configuration;

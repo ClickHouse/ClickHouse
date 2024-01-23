@@ -29,7 +29,7 @@ StoragePtr StorageIceberg::create(
     {
         if (!attach)
             throw;
-        configuration.is_broken = true;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     return std::make_shared<StorageIceberg>(
@@ -74,21 +74,15 @@ void StorageIceberg::updateConfigurationImpl(ContextPtr local_context)
     const bool updated = base_configuration.update(local_context);
     auto new_metadata = parseIcebergMetadata(base_configuration, local_context);
 
-    if (!current_metadata)
-        current_metadata = parseIcebergMetadata(base_configuration, local_context);
-
-    /// Check if nothing was changed.
-    if (!updated && !base_configuration.is_broken && new_metadata->getVersion() == current_metadata->getVersion())
-        return;
-
-    if (new_metadata->getVersion() != current_metadata->getVersion())
+    if (!current_metadata || new_metadata->getVersion() != current_metadata->getVersion())
         current_metadata = std::move(new_metadata);
+    else if (!updated)
+        return;
 
     auto updated_configuration{base_configuration};
     /// If metadata wasn't changed, we won't list data files again.
     updated_configuration.keys = current_metadata->getDataFiles();
     StorageS3::useConfiguration(updated_configuration);
-    base_configuration.is_broken = false;
 }
 
 }
