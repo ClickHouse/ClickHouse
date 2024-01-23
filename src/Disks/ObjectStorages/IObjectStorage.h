@@ -23,6 +23,7 @@
 #include <Disks/DirectoryIterator.h>
 #include <Common/ThreadPool.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
+#include <Common/Exception.h>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -32,6 +33,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
