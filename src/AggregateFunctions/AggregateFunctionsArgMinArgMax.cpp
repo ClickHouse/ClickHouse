@@ -66,7 +66,7 @@ private:
     using Base = IAggregateFunctionDataHelper<AggregateFunctionArgMinMaxData<ValueData>, AggregateFunctionArgMinMax<ValueData, isMin>>;
 
 public:
-    AggregateFunctionArgMinMax(const DataTypes & argument_types_)
+    explicit AggregateFunctionArgMinMax(const DataTypes & argument_types_)
         : Base(argument_types_, {}, argument_types_[0])
         , type_val(this->argument_types[1])
         , serialization_res(this->argument_types[0]->getDefaultSerialization())
