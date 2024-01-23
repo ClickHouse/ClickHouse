@@ -160,7 +160,7 @@ static void setLazyExecutionInfo(
 
     std::cout << "xxx Node info uir " << node_info.used_in_result << ", parents: " << node_info.parents.size() << ", type " << ActionsDAG::typeToString(node->type) << ", result name:" << node->result_name << std::endl;
     /// If node is used in result or it doesn't have parents, we can't enable lazy execution.
-    if (node_info.used_in_result || node_info.parents.empty() || (node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ALIAS))
+    if (node_info.parents.empty() || (node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ALIAS))
     {
         std::cout << " can't be lazy executed: stack:" << StackTrace().toString() << std::endl;
         lazy_execution_info.can_be_lazy_executed = false;
