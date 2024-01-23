@@ -37,7 +37,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE_ENGINE;
 }
@@ -216,11 +215,8 @@ LoadTaskPtr DatabaseOrdinary::startupTableAsync(
                 logAboutProgress(log, ++tables_started, total_tables_to_startup, startup_watch);
             }
             else
-            {
-                // This might happen if synchronous metadata loading failed and server is going to shutdown.
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist during startup",
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {}.{} doesn't exist during startup",
                     backQuote(name.database), backQuote(name.table));
-            }
         });
 
     return startup_table[name.table] = makeLoadTask(async_loader, {job});
