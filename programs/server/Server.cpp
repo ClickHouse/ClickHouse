@@ -1740,6 +1740,18 @@ try
     LOG_INFO(log, "Loading metadata from {}", path_str);
 
     LoadTaskPtrs load_metadata_tasks;
+
+    // Make sure that if exception is thrown during startup async, new async loading jobs are not going to be called.
+    // This is important for the case when exception is thrown from loading of metadata with `async_load_databases = false`
+    // to avoid simultaneously running table startups and destructing databases.
+    SCOPE_EXIT_SAFE(
+        LOG_INFO(log, "Stopping AsyncLoader.");
+
+        // Waits for all currently running jobs to finish and do not run any other pending jobs.
+        // Pending jobs will be canceled and destructed later by `load_metadata_tasks` dtor.
+        global_context->getAsyncLoader().stop();
+    );
+
     try
     {
         auto & database_catalog = DatabaseCatalog::instance();
@@ -1888,6 +1900,7 @@ try
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
+        global_context->setAsynchronousMetrics(&async_metrics);
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();

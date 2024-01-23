@@ -561,6 +561,14 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
             break;
+        case Type::RELOAD_ASYNCHRONOUS_METRICS:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
+            auto * asynchronous_metrics = system_context->getAsynchronousMetrics();
+            if (asynchronous_metrics)
+                asynchronous_metrics->update(std::chrono::system_clock::now(), /*force_update*/ true);
+            break;
+        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -1223,6 +1231,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_USERS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_USERS);
+            break;
+        }
+        case Type::RELOAD_ASYNCHRONOUS_METRICS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
             break;
         }
         case Type::STOP_MERGES:
