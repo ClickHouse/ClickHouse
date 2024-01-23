@@ -119,6 +119,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_group_by_all)
         buffer << ", is_group_by_all: " << is_group_by_all;
 
+    if (is_order_by_all)
+        buffer << ", is_order_by_all: " << is_order_by_all;
+
     std::string group_by_type;
     if (is_group_by_with_rollup)
         group_by_type = "rollup";
@@ -257,6 +260,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs) const
         is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
         is_group_by_all == rhs_typed.is_group_by_all &&
+        is_order_by_all == rhs_typed.is_order_by_all &&
         cte_name == rhs_typed.cte_name &&
         projection_columns == rhs_typed.projection_columns &&
         settings_changes == rhs_typed.settings_changes;
@@ -288,6 +292,7 @@ void QueryNode::updateTreeHashImpl(HashState & state) const
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
+    state.update(is_order_by_all);
 
     state.update(settings_changes.size());
 
@@ -306,18 +311,19 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 {
     auto result_query_node = std::make_shared<QueryNode>(context);
 
-    result_query_node->is_subquery = is_subquery;
-    result_query_node->is_cte = is_cte;
-    result_query_node->is_distinct = is_distinct;
-    result_query_node->is_limit_with_ties = is_limit_with_ties;
-    result_query_node->is_group_by_with_totals = is_group_by_with_totals;
-    result_query_node->is_group_by_with_rollup = is_group_by_with_rollup;
-    result_query_node->is_group_by_with_cube = is_group_by_with_cube;
+    result_query_node->is_subquery                    = is_subquery;
+    result_query_node->is_cte                         = is_cte;
+    result_query_node->is_distinct                    = is_distinct;
+    result_query_node->is_limit_with_ties             = is_limit_with_ties;
+    result_query_node->is_group_by_with_totals        = is_group_by_with_totals;
+    result_query_node->is_group_by_with_rollup        = is_group_by_with_rollup;
+    result_query_node->is_group_by_with_cube          = is_group_by_with_cube;
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
-    result_query_node->is_group_by_all = is_group_by_all;
-    result_query_node->cte_name = cte_name;
-    result_query_node->projection_columns = projection_columns;
-    result_query_node->settings_changes = settings_changes;
+    result_query_node->is_group_by_all                = is_group_by_all;
+    result_query_node->is_order_by_all                = is_order_by_all;
+    result_query_node->cte_name                       = cte_name;
+    result_query_node->projection_columns             = projection_columns;
+    result_query_node->settings_changes               = settings_changes;
 
     return result_query_node;
 }
