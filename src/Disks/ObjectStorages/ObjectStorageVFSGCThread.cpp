@@ -144,7 +144,7 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpoin
     StoredObject old_snapshot = getSnapshotObject(start_logpointer - 1);
     auto old_snapshot_uncompressed_buf = should_have_previous_snapshot
         ? object_storage.readObject(old_snapshot)
-        : std::unique_ptr<ReadBufferFromFileBase>(std::make_unique<ReadBufferFromEmptyFile>());
+        : std::unique_ptr<ReadBufferFromFileBase>(std::make_unique<ReadBufferFromEmptyFile>(""));
     Lz4InflatingReadBuffer old_snapshot_buf{std::move(old_snapshot_uncompressed_buf)};
 
     auto next_snapshot_exists = [&] { return object_storage.exists(getSnapshotObject(end_logpointer)); };
