@@ -464,6 +464,25 @@ class ClickhouseIntegrationTestsRunner:
             skip_list_tests = json.load(skip_list_file)
         return list(sorted(skip_list_tests))
 
+    def _get_fdbkeeper_tests_skip_list(self, repo_path):
+        skip_list_file_path = "{}/tests/integration/fdbkeeper_skip.json".format(
+            repo_path
+        )
+        if (
+            not os.path.isfile(skip_list_file_path)
+            or os.path.getsize(skip_list_file_path) == 0
+        ):
+            raise Exception(
+                "There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(
+                    skip_list_file_path
+                )
+            )
+
+        skip_list_tests = []
+        with open(skip_list_file_path, "r") as skip_list_file:
+            skip_list_tests = json.load(skip_list_file)
+        return list(sorted(skip_list_tests))
+
     def group_test_by_file(self, tests):
         result = {}
         for test in tests:
@@ -853,6 +872,15 @@ class ClickhouseIntegrationTestsRunner:
                 if stringhash(group) % self.run_by_hash_total == self.run_by_hash_num:
                     all_filtered_by_hash_tests += tests_in_group
             all_tests = all_filtered_by_hash_tests
+
+        if os.path.isfile(os.path.join(repo_path, "tests/config/config.d/fdbkeeper.xml")):
+            fdbkeeper_skip_tests = self._get_fdbkeeper_tests_skip_list(repo_path)
+            all_tests = list(
+                filter(
+                    lambda test: not has_test(fdbkeeper_skip_tests, test),
+                    all_tests,
+                )
+            )
 
         parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
         logging.info(
