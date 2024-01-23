@@ -63,6 +63,17 @@ public:
         ARRAY_JOIN,
         FUNCTION,
     };
+    static std::string typeToString(ActionType type)
+    {
+        switch (type)
+        {
+            case ActionType::INPUT: return "INPUT";
+            case ActionType::COLUMN: return "COLUMN";
+            case ActionType::ALIAS: return "ALIAS";
+            case ActionType::ARRAY_JOIN: return "ARRAY_JOIN";
+            case ActionType::FUNCTION: return "FUNCTION";
+        }
+    }
 
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;

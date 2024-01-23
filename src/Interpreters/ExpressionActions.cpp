@@ -1,4 +1,5 @@
 #include <Interpreters/Set.h>
+#include "Common/StackTrace.h"
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -157,9 +158,11 @@ static void setLazyExecutionInfo(
 
     const ActionsDAGReverseInfo::NodeInfo & node_info = reverse_info.nodes_info[reverse_info.reverse_index.at(node)];
 
+    std::cout << "xxx Node info uir " << node_info.used_in_result << ", parents: " << node_info.parents.size() << ", type " << ActionsDAG::typeToString(node->type) << ", result name:" << node->result_name << std::endl;
     /// If node is used in result or it doesn't have parents, we can't enable lazy execution.
     if (node_info.used_in_result || node_info.parents.empty() || (node->type != ActionsDAG::ActionType::FUNCTION && node->type != ActionsDAG::ActionType::ALIAS))
     {
+        std::cout << " can't be lazy executed: stack:" << StackTrace().toString() << std::endl;
         lazy_execution_info.can_be_lazy_executed = false;
         return;
     }

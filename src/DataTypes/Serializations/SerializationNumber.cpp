@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnFunction.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadHelpers.h>
@@ -136,7 +137,29 @@ void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & is
 template <typename T>
 void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
+    if (std::string(column.getFamilyName()) == "Function")
+    {
+        const auto * col = checkAndGetColumn<ColumnFunction>(column);
+        auto res = col->reduce();
+        std::cout << "xxx function column, get result " << res.type->getName() << std::endl;
+        const typename ColumnVector<T>::Container & x = typeid_cast<const ColumnVector<T> &>(*(res.column)).getData();
+
+        if (const size_t size = x.size(); limit == 0 || offset + limit > size)
+            limit = size - offset;
+
+        if (limit == 0)
+            return;
+
+        if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
+            for (size_t i = offset; i < offset + limit; ++i)
+                writeBinaryLittleEndian(x[i], ostr);
+        else
+            ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::ValueType) * limit);
+
+        return;
+    }
     const typename ColumnVector<T>::Container & x = typeid_cast<const ColumnVector<T> &>(column).getData();
+
     if (const size_t size = x.size(); limit == 0 || offset + limit > size)
         limit = size - offset;
 
