@@ -13,8 +13,6 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
-static Poco::Logger * log = &Poco::Logger::get("MergeTreeDataPartCloner");
-
 namespace DistinctPartitionExpression
 {
 std::unique_ptr<WriteBufferFromFileBase> updatePartitionFile(
@@ -182,7 +180,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneSourcePart(
     }
 
     LOG_DEBUG(
-        log,
+        &Poco::Logger::get("MergeTreeDataPartCloner"),
         "Clone {} part {} to {}{}",
         src_flushed_tmp_part ? "flushed" : "",
         src_part_storage->getFullPath(),
