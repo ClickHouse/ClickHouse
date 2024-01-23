@@ -9,7 +9,6 @@
 #include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
-#include "Databases/DatabaseOrdinary.h"
 #include <Storages/StorageMaterializedView.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
