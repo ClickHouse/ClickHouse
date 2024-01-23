@@ -1,5 +1,6 @@
--- Tags: no-random-merge-tree-settings
-
+-- Tags: no-random-merge-tree-settings, no-replicated-database
+-- Tag no-replicated-database: Old syntax is not allowed
+-- The test use replicated table to test serialize and deserialize column with settings declaration on zookeeper
 -- Tests column-level settings for MergeTree* tables
 
 DROP TABLE IF EXISTS tab;
@@ -66,5 +67,3 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1; -- {serverError UNKNOWN_SETTING}
-
-SELECT '--- ';

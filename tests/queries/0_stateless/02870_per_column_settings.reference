@@ -16,4 +16,3 @@ CREATE TABLE default.tab\n(\n    `id` UInt64,\n    `long_string` String SETTINGS
 (8,8)	8
 (9,9)	9
 --- 
---- 
