@@ -695,7 +695,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 if (req.log_entries().empty())
                     break;
 
-                /// comitting/preprocessing of local logs can take some time
+                /// committing/preprocessing of local logs can take some time
                 /// and we don't want election to start during that time so we
                 /// set serving requests to avoid elections on timeout
                 raft_instance->setServingRequest(true);
