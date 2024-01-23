@@ -126,6 +126,13 @@ struct ModuloImpl
     {
         if constexpr (std::is_floating_point_v<ResultType>)
         {
+            if constexpr (std::is_floating_point_v<A>)
+                if (isNaN(a) || a > std::numeric_limits<IntegerAType>::max() || a < std::numeric_limits<IntegerAType>::lowest())
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
+
+            if constexpr (std::is_floating_point_v<B>)
+                if (isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
             /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
             return static_cast<ResultType>(a) - trunc(static_cast<ResultType>(a) / static_cast<ResultType>(b)) * static_cast<ResultType>(b);
         }
@@ -133,7 +140,20 @@ struct ModuloImpl
         {
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
-            if constexpr (!std::numeric_limits<IntegerBType>::is_signed && std::numeric_limits<IntegerAType>::is_signed)
+            if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
+            {
+                using CastA = std::conditional_t<std::is_same_v<IntegerAType, UInt8>, uint8_t, IntegerAType>;
+                using CastB = std::conditional_t<std::is_same_v<IntegerBType, UInt8>, uint8_t, IntegerBType>;
+
+                CastA int_a(a);
+                CastB int_b(b);
+
+                if constexpr (is_big_int_v<IntegerBType> && sizeof(IntegerAType) <= sizeof(IntegerBType))
+                    return static_cast<Result>(static_cast<CastB>(int_a) % int_b);
+                else
+                    return static_cast<Result>(int_a % static_cast<CastA>(int_b));
+            }
+            else if constexpr (!std::numeric_limits<IntegerBType>::is_signed && std::numeric_limits<IntegerAType>::is_signed)
             {
                 if (a < 0)
                 {
