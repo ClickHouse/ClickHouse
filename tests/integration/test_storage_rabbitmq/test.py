@@ -3156,7 +3156,7 @@ def test_block_based_formats_1(rabbitmq_cluster):
     )
 
     instance.query(
-        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;"
+        "INSERT INTO test.rabbitmq SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0, output_format_pretty_color=1;"
     )
     insert_messages = []
 

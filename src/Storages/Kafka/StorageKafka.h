@@ -20,7 +20,7 @@ namespace DB
 {
 
 class StorageSystemKafkaConsumers;
-class ReadFromStorageKafkaStep;
+class ReadFromStorageKafka;
 
 struct StorageKafkaInterceptors;
 
@@ -88,7 +88,7 @@ public:
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
 private:
-    friend class ReadFromStorageKafkaStep;
+    friend class ReadFromStorageKafka;
 
     // Configuration and state
     std::unique_ptr<KafkaSettings> kafka_settings;

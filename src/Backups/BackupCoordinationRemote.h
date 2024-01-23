@@ -30,7 +30,8 @@ public:
         const Strings & all_hosts_,
         const String & current_host_,
         bool plain_backup_,
-        bool is_internal_);
+        bool is_internal_,
+        QueryStatusPtr process_list_element_);
 
     ~BackupCoordinationRemote() override;
 
