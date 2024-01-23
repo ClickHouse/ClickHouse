@@ -1,0 +1,33 @@
+=== Test Streaming from subquery ===
+started
+0
+0
+1
+
+****************
+Killing process
+Removing FIFO
+****************
+
+=== Test Regular Union Stream ===
+started
+started
+0
+0
+1
+
+****************
+Killing process
+Removing FIFO
+****************
+
+=== Test Stream Union Stream ===
+started
+from-left
+from-right
+
+****************
+Killing process
+Removing FIFO
+****************
+
