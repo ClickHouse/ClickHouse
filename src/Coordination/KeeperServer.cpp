@@ -208,6 +208,11 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         return sm_commit_exec_in_progress_;
     }
 
+    void setServingRequest(bool value)
+    {
+        serving_req_ = value;
+    }
+
     using nuraft::raft_server::raft_server;
 
     // peers are initially marked as responding because at least one cycle
@@ -687,6 +692,14 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 if (req.get_type() != nuraft::msg_type::append_entries_request)
                     break;
 
+                if (req.log_entries().empty())
+                    break;
+
+                /// committing/preprocessing of local logs can take some time
+                /// and we don't want election to start during that time so we
+                /// set serving requests to avoid elections on timeout
+                raft_instance->setServingRequest(true);
+                SCOPE_EXIT(raft_instance->setServingRequest(false));
                 /// maybe we got snapshot installed
                 if (state_machine->last_commit_index() >= last_log_idx_on_disk && !raft_instance->isCommitInProgress())
                     preprocess_logs();
