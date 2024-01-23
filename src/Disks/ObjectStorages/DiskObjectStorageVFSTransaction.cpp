@@ -7,7 +7,7 @@
 namespace DB
 {
 DiskObjectStorageVFSTransaction::DiskObjectStorageVFSTransaction(DiskObjectStorageVFS & disk_)
-    // nullptr passed as we prohibit send_metadata in VFS disk constructor
+    // nullptr as we prohibit send_metadata in VFS disk constructor
     : DiskObjectStorageTransaction(*disk_.object_storage, *disk_.metadata_storage, nullptr), disk(disk_)
 {
 }
@@ -40,6 +40,7 @@ void DiskObjectStorageVFSTransaction::removeSharedFileIfExists(const String & pa
     addStoredObjectsOp({}, metadata_storage.getStorageObjects(path));
 }
 
+const int pers_seq = zkutil::CreateMode::PersistentSequential;
 struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectStorageOperation
 {
     DiskObjectStorageVFS & disk;
@@ -58,12 +59,15 @@ struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectSto
     void execute(MetadataTransactionPtr tx) override
     {
         RemoveRecursiveObjectStorageOperation::execute(tx);
+
         StoredObjects unlink;
         for (auto && [_, unlink_by_path] : objects_to_remove_by_path)
             std::ranges::move(unlink_by_path.objects, std::back_inserter(unlink));
+
         const String entry = VFSLogItem::getSerialised({}, std::move(unlink));
         LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
-        disk.zookeeper()->create(disk.settings.log_item, entry, zkutil::CreateMode::PersistentSequential);
+
+        disk.zookeeper()->create(disk.settings.get()->log_item, entry, pers_seq);
     }
 };
 
@@ -90,12 +94,15 @@ struct RemoveManyObjectStorageVFSOperation final : RemoveManyObjectStorageOperat
     void execute(MetadataTransactionPtr tx) override
     {
         RemoveManyObjectStorageOperation::execute(tx);
+
         StoredObjects unlink;
         for (auto && [objects, _] : objects_to_remove)
             std::ranges::move(objects, std::back_inserter(unlink));
+
         const String entry = VFSLogItem::getSerialised({}, std::move(unlink));
         LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
-        disk.zookeeper()->create(disk.settings.log_item, entry, zkutil::CreateMode::PersistentSequential);
+
+        disk.zookeeper()->create(disk.settings.get()->log_item, entry, pers_seq);
     }
 
     void finalize() override { }
@@ -178,9 +185,11 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
     void execute(MetadataTransactionPtr tx) override
     {
         CopyFileObjectStorageOperation::execute(tx);
+
         const String entry = VFSLogItem::getSerialised(std::move(created_objects), {});
         LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
-        disk.zookeeper()->create(disk.settings.log_item, entry, zkutil::CreateMode::PersistentSequential);
+
+        disk.zookeeper()->create(disk.settings.get()->log_item, entry, pers_seq);
     }
 };
 
@@ -215,7 +224,7 @@ void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, 
     auto callback = [entry_captured = std::move(entry), &disk_captured = disk]
     {
         LOG_TRACE(disk_captured.log, "Executing {}", entry_captured);
-        disk_captured.zookeeper()->create(disk_captured.settings.log_item, entry_captured, zkutil::CreateMode::PersistentSequential);
+        disk_captured.zookeeper()->create(disk_captured.settings.get()->log_item, entry_captured, pers_seq);
     };
 
     operations_to_execute.emplace_back(

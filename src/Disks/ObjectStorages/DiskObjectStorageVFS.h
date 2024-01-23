@@ -1,4 +1,5 @@
 #pragma once
+#include "Common/MultiVersion.h"
 #include "Common/ZooKeeper/ZooKeeperWithFaultInjection.h"
 #include "DiskObjectStorage.h"
 #include "ObjectStorageVFSGCThread.h"
@@ -46,9 +47,7 @@ private:
     std::optional<ObjectStorageVFSGCThread> garbage_collector;
 
     const bool enable_gc; // In certain conditions we don't want a GC e.g. when running from clickhouse-disks
-    VFSSettings settings;
-    double keeper_fault_injection_probability{0};
-    UInt64 keeper_fault_injection_seed{0};
+    MultiVersion<VFSSettings> settings;
 
     ZooKeeperWithFaultInjection::Ptr zookeeper();
 
