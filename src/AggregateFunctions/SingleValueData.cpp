@@ -631,6 +631,28 @@ void SingleValueDataFixed<T>::compileCreate(llvm::IRBuilderBase & builder, llvm:
 template <typename T>
 llvm::Value * SingleValueDataFixed<T>::compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr)
 {
+    llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+    auto * has_value_value = getHasValueFromAggregateDataPtr(b, aggregate_data_ptr);
+
+    auto * head = b.GetInsertBlock();
+    auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
+    auto * if_not_has_value = llvm::BasicBlock::Create(head->getContext(), "if_not_has_value", head->getParent());
+
+    b.CreateCondBr(has_value_value, join_block, if_not_has_value);
+
+    /// If not has_value we set the value to 0 (the default) and return that. This is important to keep compatibility
+    /// between JIT and not JIT calls
+    b.SetInsertPoint(if_not_has_value);
+    b.CreateMemSet(
+        getValuePtrFromAggregateDataPtr(b, aggregate_data_ptr),
+        llvm::ConstantInt::get(b.getInt8Ty(), 0),
+        sizeof(SingleValueDataFixed<T>),
+        llvm::assumeAligned(alignof(SingleValueDataFixed<T>)));
+    b.CreateBr(join_block);
+
+    b.SetInsertPoint(join_block);
+
     return getValueFromAggregateDataPtr(builder, aggregate_data_ptr);
 }
 
@@ -663,13 +685,9 @@ void SingleValueDataFixed<T>::compileAny(llvm::IRBuilderBase & builder, llvm::Va
     auto * head = b.GetInsertBlock();
     auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
     auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
-    auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
 
     auto * has_value_value = getHasValueFromAggregateDataPtr(b, aggregate_data_ptr);
-    b.CreateCondBr(has_value_value, if_should_not_change, if_should_change);
-
-    b.SetInsertPoint(if_should_not_change);
-    b.CreateBr(join_block);
+    b.CreateCondBr(has_value_value, join_block, if_should_change);
 
     b.SetInsertPoint(if_should_change);
     compileSetValueFromNumber(builder, aggregate_data_ptr, value_to_check);
@@ -687,17 +705,13 @@ void SingleValueDataFixed<T>::compileAnyMerge(
     auto * head = b.GetInsertBlock();
     auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
     auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
-    auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
 
     auto * has_value_dst = getHasValueFromAggregateDataPtr(b, aggregate_data_dst_ptr);
     auto * has_value_src = getHasValueFromAggregateDataPtr(b, aggregate_data_src_ptr);
-    b.CreateCondBr(b.CreateAnd(b.CreateNot(has_value_dst), has_value_src), if_should_change, if_should_not_change);
+    b.CreateCondBr(b.CreateAnd(b.CreateNot(has_value_dst), has_value_src), if_should_change, join_block);
 
     b.SetInsertPoint(if_should_change);
     compileSetValueFromAggregation(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
-    b.CreateBr(join_block);
-
-    b.SetInsertPoint(if_should_not_change);
     b.CreateBr(join_block);
 
     b.SetInsertPoint(join_block);
@@ -718,16 +732,12 @@ void SingleValueDataFixed<T>::compileAnyLastMerge(
     auto * head = b.GetInsertBlock();
     auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
     auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
-    auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
 
     auto * has_value_src = getHasValueFromAggregateDataPtr(b, aggregate_data_src_ptr);
-    b.CreateCondBr(has_value_src, if_should_change, if_should_not_change);
+    b.CreateCondBr(has_value_src, if_should_change, join_block);
 
     b.SetInsertPoint(if_should_change);
     compileSetValueFromAggregation(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
-    b.CreateBr(join_block);
-
-    b.SetInsertPoint(if_should_not_change);
     b.CreateBr(join_block);
 
     b.SetInsertPoint(join_block);
@@ -746,7 +756,6 @@ void SingleValueDataFixed<T>::compileMinMax(llvm::IRBuilderBase & builder, llvm:
 
     auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
     auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
-    auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
 
     constexpr auto is_signed = std::numeric_limits<T>::is_signed;
 
@@ -767,13 +776,10 @@ void SingleValueDataFixed<T>::compileMinMax(llvm::IRBuilderBase & builder, llvm:
             should_change_after_comparison = b.CreateFCmpOGT(value_to_check, value);
     }
 
-    b.CreateCondBr(b.CreateOr(b.CreateNot(has_value_value), should_change_after_comparison), if_should_change, if_should_not_change);
+    b.CreateCondBr(b.CreateOr(b.CreateNot(has_value_value), should_change_after_comparison), if_should_change, join_block);
 
     b.SetInsertPoint(if_should_change);
     compileSetValueFromNumber(builder, aggregate_data_ptr, value_to_check);
-    b.CreateBr(join_block);
-
-    b.SetInsertPoint(if_should_not_change);
     b.CreateBr(join_block);
 
     b.SetInsertPoint(join_block);
@@ -797,7 +803,6 @@ void SingleValueDataFixed<T>::compileMinMaxMerge(
 
     auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
     auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
-    auto * if_should_not_change = llvm::BasicBlock::Create(head->getContext(), "if_should_not_change", head->getParent());
 
     constexpr auto is_signed = std::numeric_limits<T>::is_signed;
 
@@ -820,15 +825,10 @@ void SingleValueDataFixed<T>::compileMinMaxMerge(
     }
 
     b.CreateCondBr(
-        b.CreateAnd(has_value_src, b.CreateOr(b.CreateNot(has_value_dst), should_change_after_comparison)),
-        if_should_change,
-        if_should_not_change);
+        b.CreateAnd(has_value_src, b.CreateOr(b.CreateNot(has_value_dst), should_change_after_comparison)), if_should_change, join_block);
 
     b.SetInsertPoint(if_should_change);
     compileSetValueFromAggregation(builder, aggregate_data_dst_ptr, aggregate_data_src_ptr);
-    b.CreateBr(join_block);
-
-    b.SetInsertPoint(if_should_not_change);
     b.CreateBr(join_block);
 
     b.SetInsertPoint(join_block);
