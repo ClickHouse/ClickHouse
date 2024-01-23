@@ -127,7 +127,6 @@ try
         IReadBufferIterator::Data iterator_data;
         std::vector<std::pair<NamesAndTypesList, String>> schemas_for_union_mode;
         std::string exception_messages;
-        SchemaReaderPtr schema_reader;
         size_t max_rows_to_read = format_settings ? format_settings->max_rows_to_read_for_schema_inference
                                                   : context->getSettingsRef().input_format_max_rows_to_read_for_schema_inference;
         size_t max_bytes_to_read = format_settings ? format_settings->max_bytes_to_read_for_schema_inference
@@ -226,6 +225,8 @@ try
                 exception_messages += exception_message;
                 continue;
             }
+
+            SchemaReaderPtr schema_reader;
 
             if (format_name)
             {
@@ -417,12 +418,11 @@ try
         if (!format_name)
             throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
 
-        /// If we got all schemas from cache, schema_reader can be uninitialized.
-        /// But we still need some stateless methods of ISchemaReader,
-        /// let's initialize it with empty buffer.
+        /// We need some stateless methods of ISchemaReader, but during reading schema we
+        /// could not even create a schema reader (for example when we got schema from cache).
+        /// Let's create stateless schema reader from empty read buffer.
         EmptyReadBuffer empty;
-        if (!schema_reader)
-            schema_reader = FormatFactory::instance().getSchemaReader(*format_name, empty, context, format_settings);
+        SchemaReaderPtr stateless_schema_reader = FormatFactory::instance().getSchemaReader(*format_name, empty, context, format_settings);
 
         if (mode == SchemaInferenceMode::UNION)
         {
@@ -449,7 +449,7 @@ try
                             /// If types are not the same, try to transform them according
                             /// to the format to find common type.
                             auto new_type_copy = type;
-                            schema_reader->transformTypesFromDifferentFilesIfNeeded(it->second, new_type_copy);
+                            stateless_schema_reader->transformTypesFromDifferentFilesIfNeeded(it->second, new_type_copy);
 
                             /// If types are not the same after transform, we cannot do anything, throw an exception.
                             if (!it->second->equals(*new_type_copy))
@@ -495,7 +495,7 @@ try
         /// It will allow to execute simple data loading with query
         /// "INSERT INTO table SELECT * FROM ..."
         const auto & insertion_table = context->getInsertionTable();
-        if (schema_reader && !schema_reader->hasStrictOrderOfColumns() && !insertion_table.empty())
+        if (!stateless_schema_reader->hasStrictOrderOfColumns() && !insertion_table.empty())
         {
             auto storage = DatabaseCatalog::instance().getTable(insertion_table, context);
             auto metadata = storage->getInMemoryMetadataPtr();

@@ -673,7 +673,7 @@ std::optional<String> FormatFactory::tryGetFormatFromFileDescriptor(int fd)
 #elif defined(OS_DARWIN)
     char file_path[PATH_MAX] = {'\0'};
     if (fcntl(fd, F_GETPATH, file_path) != -1)
-        return tryGetFormatFromFileName(file_path, false);
+        return tryGetFormatFromFileName(file_path);
     return std::nullopt;
 #else
     (void)fd;
