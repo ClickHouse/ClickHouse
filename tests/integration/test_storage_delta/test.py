@@ -448,7 +448,9 @@ def test_restart_broken(started_cluster):
 
     instance.restart_clickhouse()
 
-    assert "NoSuchBucket" in instance.query_and_get_error(f"SELECT count() FROM {TABLE_NAME}")
+    assert "NoSuchBucket" in instance.query_and_get_error(
+        f"SELECT count() FROM {TABLE_NAME}"
+    )
 
     minio_client.make_bucket(bucket)
 
