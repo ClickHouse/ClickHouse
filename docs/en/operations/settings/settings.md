@@ -5200,4 +5200,10 @@ This query setting overwrites its server setting equivalent, see [max_table_size
 
 ## iceberg_engine_ignore_schema_evolution {#iceberg_engine_ignore_schema_evolution}
 
-Allow to ignore schema evolution in Iceberg table engine and read all data using latest schema saved on storage creation.
+Allow to ignore schema evolution in Iceberg table engine and read all data using schema specified by the user on table creation or latest schema parsed from metadata on table creation.
+
+:::note
+Enabling this setting can lead to incorrect result as in case of evolved schema all data files will be read using the same schema.
+:::
+
+Default value: 'false'.
