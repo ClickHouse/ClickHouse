@@ -187,7 +187,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType, typename ValueSetter>
-    void getItemsByTwoKeyColumnsShortCircuitImpl(
+    size_t getItemsByTwoKeyColumnsShortCircuitImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetter && set_value,
@@ -201,7 +201,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType,typename ValueSetter>
-    void getItemsShortCircuitImpl(
+    size_t getItemsShortCircuitImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetter && set_value,

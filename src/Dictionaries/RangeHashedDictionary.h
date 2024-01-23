@@ -253,7 +253,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    void getItemsShortCircuitImpl(
+    size_t getItemsShortCircuitImpl(
         const Attribute & attribute,
         const Columns & key_columns,
         ValueSetter && set_value,
@@ -498,6 +498,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnOrDefaultShortCir
     modified_key_columns.back() = castColumnAccurate(column_to_cast, dict_struct.range_min->type);
 
     size_t keys_size = key_columns.front()->size();
+    size_t keys_found = 0;
     bool is_attribute_nullable = attribute.is_value_nullable.has_value();
 
     ColumnUInt8::MutablePtr col_null_map_to;
@@ -521,7 +522,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnOrDefaultShortCir
         {
             auto * out = column.get();
 
-            getItemsShortCircuitImpl<ValueType, false>(
+            keys_found = getItemsShortCircuitImpl<ValueType, false>(
                 attribute,
                 modified_key_columns,
                 [&](size_t, const Array & value, bool)
@@ -535,7 +536,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnOrDefaultShortCir
             auto * out = column.get();
 
             if (is_attribute_nullable)
-                getItemsShortCircuitImpl<ValueType, true>(
+                keys_found = getItemsShortCircuitImpl<ValueType, true>(
                     attribute,
                     modified_key_columns,
                     [&](size_t row, StringRef value, bool is_null)
@@ -545,7 +546,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnOrDefaultShortCir
                     },
                     default_mask);
             else
-                getItemsShortCircuitImpl<ValueType, false>(
+                keys_found = getItemsShortCircuitImpl<ValueType, false>(
                     attribute,
                     modified_key_columns,
                     [&](size_t, StringRef value, bool)
@@ -559,7 +560,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnOrDefaultShortCir
             auto & out = column->getData();
 
             if (is_attribute_nullable)
-                getItemsShortCircuitImpl<ValueType, true>(
+                keys_found = getItemsShortCircuitImpl<ValueType, true>(
                     attribute,
                     modified_key_columns,
                     [&](size_t row, const auto value, bool is_null)
@@ -569,7 +570,7 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnOrDefaultShortCir
                     },
                     default_mask);
             else
-                getItemsShortCircuitImpl<ValueType, false>(
+                keys_found = getItemsShortCircuitImpl<ValueType, false>(
                     attribute,
                     modified_key_columns,
                     [&](size_t row, const auto value, bool)
@@ -577,6 +578,8 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnOrDefaultShortCir
                         out[row] = value;
                     },
                     default_mask);
+
+            out.resize(keys_found);
         }
 
         result = std::move(column);
@@ -584,9 +587,11 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type>::getColumnOrDefaultShortCir
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 
-    result = result->filter(default_mask, found_count);
     if (is_attribute_nullable)
-        result = ColumnNullable::create(result, col_null_map_to->filter(default_mask, found_count));
+    {
+        vec_null_map_to->resize(keys_found);
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
+    }
 
     return result;
 }
@@ -1000,7 +1005,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
 
 template <DictionaryKeyType dictionary_key_type>
 template <typename AttributeType, bool is_nullable, typename ValueSetter>
-void RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
+size_t RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
     const Attribute & attribute,
     const Columns & key_columns,
     ValueSetter && set_value,
@@ -1104,6 +1109,7 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsShortCircuitImpl(
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
+    return keys_found;
 }
 
 template <DictionaryKeyType dictionary_key_type>

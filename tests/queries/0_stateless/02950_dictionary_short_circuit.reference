@@ -3,15 +3,21 @@ Flat dictionary
 ('zero','zero')
 \N
 \N
+1
+\N
 Hashed dictionary
 ('zero','zero')
 ('zero','zero')
 \N
 \N
+1
+\N
 Hashed array dictionary
 ('zero','zero')
 ('zero','zero')
 \N
+\N
+1
 \N
 Range hashed dictionary
 \N
@@ -21,10 +27,14 @@ Cache dictionary
 ('zero','zero')
 \N
 \N
+1
+\N
 Direct dictionary
 ('zero','zero')
 ('zero','zero')
 \N
+\N
+1
 \N
 IP TRIE dictionary
 NP

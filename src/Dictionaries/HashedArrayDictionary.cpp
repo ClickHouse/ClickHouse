@@ -808,6 +808,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
     ColumnPtr result;
 
     bool is_attribute_nullable = attribute.is_index_null.has_value();
+    size_t keys_found = 0;
 
     ColumnUInt8::MutablePtr col_null_map_to;
     ColumnUInt8::Container * vec_null_map_to = nullptr;
@@ -830,7 +831,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
         {
             auto * out = column.get();
 
-            getItemsShortCircuitImpl<ValueType, false>(
+            keys_found = getItemsShortCircuitImpl<ValueType, false>(
                 attribute,
                 keys_object,
                 [&](const size_t, const Array & value, bool) { out->insert(value); },
@@ -841,7 +842,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
             auto * out = column.get();
 
             if (is_attribute_nullable)
-                getItemsShortCircuitImpl<ValueType, true>(
+                keys_found = getItemsShortCircuitImpl<ValueType, true>(
                     attribute,
                     keys_object,
                     [&](size_t row, StringRef value, bool is_null)
@@ -851,7 +852,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
                     },
                     default_mask);
             else
-                getItemsShortCircuitImpl<ValueType, false>(
+                keys_found = getItemsShortCircuitImpl<ValueType, false>(
                     attribute,
                     keys_object,
                     [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
@@ -862,7 +863,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
             auto & out = column->getData();
 
             if (is_attribute_nullable)
-                getItemsShortCircuitImpl<ValueType, true>(
+                keys_found = getItemsShortCircuitImpl<ValueType, true>(
                     attribute,
                     keys_object,
                     [&](size_t row, const auto value, bool is_null)
@@ -872,11 +873,13 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
                     },
                     default_mask);
             else
-                getItemsShortCircuitImpl<ValueType, false>(
+                keys_found = getItemsShortCircuitImpl<ValueType, false>(
                     attribute,
                     keys_object,
                     [&](size_t row, const auto value, bool) { out[row] = value; },
                     default_mask);
+
+            out.resize(keys_found);
         }
 
         result = std::move(column);
@@ -885,7 +888,10 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (is_attribute_nullable)
-        result = ColumnNullable::create(result, col_null_map_to->filter(default_mask, found_count));
+    {
+        vec_null_map_to->resize(keys_found);
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
+    }
 
     return result;
 }
@@ -942,7 +948,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 template <typename AttributeType, bool is_nullable, typename ValueSetter>
-void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitImpl(
+size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitImpl(
     const Attribute & attribute,
     DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
     ValueSetter && set_value,
@@ -985,6 +991,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
+    return keys_found;
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
@@ -1036,7 +1043,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 template <typename AttributeType, bool is_nullable, typename ValueSetter>
-void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitImpl(
+size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitImpl(
     const Attribute & attribute,
     const KeyIndexToElementIndex & key_index_to_element_index,
     ValueSetter && set_value,
@@ -1045,6 +1052,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
     const auto & attribute_containers = std::get<AttributeContainerShardsType<AttributeType>>(attribute.containers);
     const size_t keys_size = key_index_to_element_index.size();
     size_t shard = 0;
+    size_t keys_found = 0;
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
@@ -1061,6 +1069,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
 
         if (element_index != -1)
         {
+            keys_found++;
             const auto & attribute_container = attribute_containers[shard];
 
             size_t found_element_index = static_cast<size_t>(element_index);
@@ -1072,6 +1081,8 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
                 set_value(key_index, element, false);
         }
     }
+
+    return keys_found;
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>

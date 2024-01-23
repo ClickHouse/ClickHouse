@@ -5,17 +5,19 @@ CREATE TABLE dictionary_source_table
 (
     id UInt64,
     v1 String,
-    v2 Nullable(String)
+    v2 Nullable(String),
+    v3 Nullable(UInt64)
 ) ENGINE=TinyLog;
 
-INSERT INTO dictionary_source_table VALUES (0, 'zero', 'zero'), (1, 'one', NULL);
+INSERT INTO dictionary_source_table VALUES (0, 'zero', 'zero', 0), (1, 'one', NULL, 1);
 
 DROP DICTIONARY IF EXISTS flat_dictionary;
 CREATE DICTIONARY flat_dictionary
 (
     id UInt64,
     v1 String,
-    v2 Nullable(String) DEFAULT NULL
+    v2 Nullable(String) DEFAULT NULL,
+    v3 Nullable(UInt64)
 )
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'dictionary_source_table'))
@@ -27,6 +29,8 @@ SELECT dictGetOrDefault('flat_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), intD
 FROM dictionary_source_table;
 SELECT dictGetOrDefault('flat_dictionary', 'v2', id+1, intDiv(NULL, id))
 FROM dictionary_source_table;
+SELECT dictGetOrDefault('flat_dictionary', 'v3', id+1, intDiv(NULL, id))
+FROM dictionary_source_table;
 DROP DICTIONARY flat_dictionary;
 
 
@@ -35,7 +39,8 @@ CREATE DICTIONARY hashed_dictionary
 (
     id UInt64,
     v1 String,
-    v2 Nullable(String) DEFAULT NULL
+    v2 Nullable(String) DEFAULT NULL,
+    v3 Nullable(UInt64)
 )
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'dictionary_source_table'))
@@ -47,6 +52,8 @@ SELECT dictGetOrDefault('hashed_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), in
 FROM dictionary_source_table;
 SELECT dictGetOrDefault('hashed_dictionary', 'v2', id+1, intDiv(NULL, id))
 FROM dictionary_source_table;
+SELECT dictGetOrDefault('hashed_dictionary', 'v3', id+1, intDiv(NULL, id))
+FROM dictionary_source_table;
 DROP DICTIONARY hashed_dictionary;
 
 
@@ -55,7 +62,8 @@ CREATE DICTIONARY hashed_array_dictionary
 (
     id UInt64,
     v1 String,
-    v2 Nullable(String) DEFAULT NULL
+    v2 Nullable(String) DEFAULT NULL,
+    v3 Nullable(UInt64)
 )
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'dictionary_source_table'))
@@ -66,6 +74,8 @@ SELECT 'Hashed array dictionary';
 SELECT dictGetOrDefault('hashed_array_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), intDiv(1, id)))
 FROM dictionary_source_table;
 SELECT dictGetOrDefault('hashed_array_dictionary', 'v2', id+1, intDiv(NULL, id))
+FROM dictionary_source_table;
+SELECT dictGetOrDefault('hashed_array_dictionary', 'v3', id+1, intDiv(NULL, id))
 FROM dictionary_source_table;
 DROP DICTIONARY hashed_array_dictionary;
 
@@ -107,7 +117,8 @@ CREATE DICTIONARY cache_dictionary
 (
     id UInt64,
     v1 String,
-    v2 Nullable(String) DEFAULT NULL
+    v2 Nullable(String) DEFAULT NULL,
+    v3 Nullable(UInt64)
 )
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'dictionary_source_table'))
@@ -119,29 +130,9 @@ SELECT dictGetOrDefault('cache_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), int
 FROM dictionary_source_table;
 SELECT dictGetOrDefault('cache_dictionary', 'v2', id+1, intDiv(NULL, id))
 FROM dictionary_source_table;
+SELECT dictGetOrDefault('cache_dictionary', 'v3', id+1, intDiv(NULL, id))
+FROM dictionary_source_table;
 DROP DICTIONARY cache_dictionary;
-
-
--- DROP DICTIONARY IF EXISTS ssd_cache_dictionary;
--- CREATE DICTIONARY ssd_cache_dictionary
--- (
---     id UInt64,
---     v1 String,
---     v2 Nullable(String) DEFAULT NULL
--- )
--- PRIMARY KEY id
--- SOURCE(CLICKHOUSE(TABLE 'dictionary_source_table'))
--- LIFETIME(MIN 0 MAX 0)
--- LAYOUT(SSD_CACHE(PATH '/var/lib/clickhouse/user_files/test_dict'));
--- -- LAYOUT(SSD_CACHE(PATH '/fasttest-workspace/db-fasttest/user_files/test_dict'));
--- -- LAYOUT(SSD_CACHE(PATH '/home/ubuntu/custom/user_files/test_dict'));
-
--- SELECT 'SSD Cache dictionary';
--- SELECT dictGetOrDefault('ssd_cache_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), intDiv(1, id)))
--- FROM dictionary_source_table;
--- SELECT dictGetOrDefault('ssd_cache_dictionary', 'v2', id+1, intDiv(NULL, id))
--- FROM dictionary_source_table;
--- DROP DICTIONARY ssd_cache_dictionary;
 
 
 DROP DICTIONARY IF EXISTS direct_dictionary;
@@ -149,7 +140,8 @@ CREATE DICTIONARY direct_dictionary
 (
     id UInt64,
     v1 String,
-    v2 Nullable(String) DEFAULT NULL
+    v2 Nullable(String) DEFAULT NULL,
+    v3 Nullable(UInt64)
 )
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'dictionary_source_table'))
@@ -159,6 +151,8 @@ SELECT 'Direct dictionary';
 SELECT dictGetOrDefault('direct_dictionary', ('v1', 'v2'), 0, (intDiv(1, id), intDiv(1, id)))
 FROM dictionary_source_table;
 SELECT dictGetOrDefault('direct_dictionary', 'v2', id+1, intDiv(NULL, id))
+FROM dictionary_source_table;
+SELECT dictGetOrDefault('direct_dictionary', 'v3', id+1, intDiv(NULL, id))
 FROM dictionary_source_table;
 DROP DICTIONARY direct_dictionary;
 

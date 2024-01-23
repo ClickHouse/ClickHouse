@@ -165,6 +165,7 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
     const auto & ids = getColumnVectorData(this, key_columns.front(), backup_storage);
 
     auto size = ids.size();
+    size_t keys_found = 0;
 
     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, attribute_type);
 
@@ -194,7 +195,7 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
         {
             auto * out = column.get();
 
-            getItemsShortCircuitImpl<ValueType, false>(
+            keys_found = getItemsShortCircuitImpl<ValueType, false>(
                 attribute,
                 ids,
                 [&](size_t, const Array & value, bool) { out->insert(value); },
@@ -205,7 +206,7 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
             auto * out = column.get();
 
             if (is_attribute_nullable)
-                getItemsShortCircuitImpl<ValueType, true>(
+                keys_found = getItemsShortCircuitImpl<ValueType, true>(
                     attribute,
                     ids,
                     [&](size_t row, StringRef value, bool is_null)
@@ -215,7 +216,7 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
                     },
                     default_mask);
             else
-                getItemsShortCircuitImpl<ValueType, false>(
+                keys_found = getItemsShortCircuitImpl<ValueType, false>(
                     attribute,
                     ids,
                     [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
@@ -224,7 +225,6 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
         else
         {
             auto & out = column->getData();
-            size_t keys_found;
 
             if (is_attribute_nullable)
                 keys_found = getItemsShortCircuitImpl<ValueType, true>(
@@ -252,7 +252,10 @@ ColumnPtr FlatDictionary::getColumnOrDefaultShortCircuit(
     callOnDictionaryAttributeType(attribute.type, type_call);
 
     if (attribute.is_nullable_set)
-        result = ColumnNullable::create(result, col_null_map_to->filter(default_mask, found_count));
+    {
+        vec_null_map_to->resize(keys_found);
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
+    }
 
     return result;
 }
