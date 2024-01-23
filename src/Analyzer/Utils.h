@@ -108,6 +108,6 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 /// Resolves function node as aggregate function with given name.
 /// Arguments and parameters are taken from the node.
-void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name, const DataTypes & argument_types);
+void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);
 
 }

@@ -528,16 +528,16 @@ private:
     bool has_function = false;
 };
 
-inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode * function_node)
+inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_node, const String & function_name)
 {
     Array parameters;
-    for (const auto & param : function_node->getParameters())
+    for (const auto & param : function_node.getParameters())
     {
         auto * constant = param->as<ConstantNode>();
         parameters.push_back(constant->getValue());
     }
 
-    const auto & function_node_argument_nodes = function_node->getArguments().getNodes();
+    const auto & function_node_argument_nodes = function_node.getArguments().getNodes();
 
     DataTypes argument_types;
     argument_types.reserve(function_node_argument_nodes.size());
@@ -547,7 +547,7 @@ inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode * function_nod
 
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
-    return AggregateFunctionFactory::instance().get(function_node->getFunctionName(), action, argument_types, parameters, properties);
+    return AggregateFunctionFactory::instance().get(function_name, action, argument_types, parameters, properties);
 }
 
 }
@@ -628,11 +628,11 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
     {
         if (name == "nothing")
             return;
-        function_node->resolveAsAggregateFunction(resolveAggregateFunction(function_node));
+        function_node->resolveAsAggregateFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
     }
     else if (function_node->isWindowFunction())
     {
-        function_node->resolveAsWindowFunction(resolveAggregateFunction(function_node));
+        function_node->resolveAsWindowFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
     }
 }
 
@@ -691,19 +691,9 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
     function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
 }
 
-void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name, const DataTypes & argument_types)
+void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name)
 {
-    chassert(function_node.isAggregateFunction());
-    auto old_aggregate_function = function_node.getAggregateFunction();
-
-    AggregateFunctionProperties properties;
-    auto aggregate_function = AggregateFunctionFactory::instance().get(
-        function_name,
-        function_node.getNullsAction(),
-        argument_types,
-        old_aggregate_function->getParameters(),
-        properties);
-
+    auto aggregate_function = resolveAggregateFunction(function_node, function_name);
     function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 }
 

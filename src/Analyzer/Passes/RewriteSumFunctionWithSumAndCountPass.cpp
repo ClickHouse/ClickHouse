@@ -78,11 +78,11 @@ public:
 
         const auto lhs = std::make_shared<FunctionNode>("sum");
         lhs->getArguments().getNodes().push_back(func_plus_minus_nodes[column_id]);
-        resolveAggregateFunctionNodeByName(*lhs, lhs->getFunctionName(), {column_type});
+        resolveAggregateFunctionNodeByName(*lhs, lhs->getFunctionName());
 
         const auto rhs_count = std::make_shared<FunctionNode>("count");
         rhs_count->getArguments().getNodes().push_back(func_plus_minus_nodes[column_id]);
-        resolveAggregateFunctionNodeByName(*rhs_count, rhs_count->getFunctionName(), {column_type});
+        resolveAggregateFunctionNodeByName(*rhs_count, rhs_count->getFunctionName());
 
         const auto rhs = std::make_shared<FunctionNode>("multiply");
         rhs->getArguments().getNodes().push_back(func_plus_minus_nodes[literal_id]);

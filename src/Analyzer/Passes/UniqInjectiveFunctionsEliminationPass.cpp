@@ -68,15 +68,7 @@ public:
         if (!replaced_argument)
             return;
 
-        const auto & function_node_argument_nodes = function_node->getArguments().getNodes();
-
-        DataTypes argument_types;
-        argument_types.reserve(function_node_argument_nodes.size());
-
-        for (const auto & function_node_argument : function_node_argument_nodes)
-            argument_types.emplace_back(function_node_argument->getResultType());
-
-        resolveAggregateFunctionNodeByName(*function_node, function_node->getFunctionName(), argument_types);
+        resolveAggregateFunctionNodeByName(*function_node, function_node->getFunctionName());
     }
 };
 

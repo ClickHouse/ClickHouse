@@ -177,7 +177,7 @@ public:
         if (match_subquery_with_distinct() || match_subquery_with_group_by())
         {
             function_node->getArguments().getNodes().clear();
-            resolveAggregateFunctionNodeByName(*function_node, "count", {});
+            resolveAggregateFunctionNodeByName(*function_node, "count");
         }
     }
 };

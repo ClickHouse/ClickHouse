@@ -296,7 +296,7 @@ public:
                     resolveOrdinaryFunctionNodeByName(*function_node_not, "not", getContext());
 
                     function_arguments_nodes = {std::move(function_node_not)};
-                    resolveAggregateFunctionNodeByName(*function_node, "sum", {column.type});
+                    resolveAggregateFunctionNodeByName(*function_node, "sum");
                 }
                 else if (function_name == "isNull")
                 {

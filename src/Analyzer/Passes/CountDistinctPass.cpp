@@ -80,7 +80,7 @@ public:
         auto result_type = function_node->getResultType();
 
         function_node->getArguments().getNodes().clear();
-        resolveAggregateFunctionNodeByName(*function_node, "count", {});
+        resolveAggregateFunctionNodeByName(*function_node, "count");
     }
 };
 

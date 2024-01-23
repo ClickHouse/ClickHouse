@@ -67,7 +67,7 @@ public:
             function_node_arguments_nodes[0] = std::move(function_node_arguments_nodes[1]);
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNodeByName(*function_node, "countIf", {function_node_arguments_nodes[0]->getResultType()});
+            resolveAggregateFunctionNodeByName(*function_node, "countIf");
 
             if (constant_value_literal.get<UInt64>() != 1)
             {
@@ -115,7 +115,7 @@ public:
             function_node_arguments_nodes[0] = nested_if_function_arguments_nodes[0];
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNodeByName(*function_node, "countIf", {function_node_arguments_nodes[0]->getResultType()});
+            resolveAggregateFunctionNodeByName(*function_node, "countIf");
 
             if (if_true_condition_value != 1)
             {
@@ -144,7 +144,7 @@ public:
             function_node_arguments_nodes[0] = std::move(not_function);
             function_node_arguments_nodes.resize(1);
 
-            resolveAggregateFunctionNodeByName(*function_node, "countIf", {function_node_arguments_nodes[0]->getResultType()});
+            resolveAggregateFunctionNodeByName(*function_node, "countIf");
 
             if (if_false_condition_value != 1)
             {
