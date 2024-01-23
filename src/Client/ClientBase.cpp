@@ -632,9 +632,9 @@ try
             }
             else if (query_with_output->out_file)
             {
-                const auto & format_name = FormatFactory::instance().getFormatFromFileName(out_file);
-                if (!format_name.empty())
-                    current_format = format_name;
+                auto format_name = FormatFactory::instance().tryGetFormatFromFileName(out_file);
+                if (format_name)
+                    current_format = *format_name;
             }
         }
 
