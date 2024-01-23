@@ -49,6 +49,7 @@ private:
     VFSSettings settings;
     double keeper_fault_injection_probability{0};
     UInt64 keeper_fault_injection_seed{0};
+    const ObjectStorageType object_storage_type;
 
     ZooKeeperWithFaultInjection::Ptr zookeeper();
 
