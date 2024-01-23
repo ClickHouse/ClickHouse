@@ -2884,3 +2884,10 @@ This also allows a mix of resolver types can be used.
 ### disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
 
 By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
+
+## max_materialized_views_count_for_table {#max_materialized_views_count_for_table}
+
+A limit on the number of materialized views attached to a table.
+Note that only directly dependent views are considered here, and the creation of one view on top of another view is not considered.
+
+Default value: `0`.

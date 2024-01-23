@@ -26,22 +26,21 @@
 
 #include <base/sort.h>
 
-#include <Storages/buildQueryTreeForShard.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Freeze.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/MergeTree/extractZkPathFromCreateQuery.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LeaderElection.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreePartitionCompatibilityVerifier.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
@@ -53,9 +52,11 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ZeroCopyLock.h>
+#include <Storages/MergeTree/extractZkPathFromCreateQuery.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/buildQueryTreeForShard.h>
 
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
@@ -704,13 +705,13 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     if (settings->allow_remote_fs_zero_copy_replication)
     {
         auto disks = getStoragePolicy()->getDisks();
-        std::set<DataSourceType> disk_types_for_zero_copy;
+        std::set<std::string> disk_types_for_zero_copy;
         for (auto & disk : disks)
         {
             if (!disk->supportZeroCopyReplication())
                 continue;
 
-            disk_types_for_zero_copy.insert(disk->getDataSourceDescription().type);
+            disk_types_for_zero_copy.insert(disk->getDataSourceDescription().toString());
         }
 
         const auto table_shared_id_ = getTableSharedID();
@@ -733,9 +734,9 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
             }
         }
 
-        for (const auto & disk_type: disk_types_for_zero_copy)
+        for (const auto & disk_type : disk_types_for_zero_copy)
         {
-            auto zero_copy = fmt::format("zero_copy_{}", toString(disk_type));
+            auto zero_copy = fmt::format("zero_copy_{}", disk_type);
             auto zero_copy_path = fs::path(settings->remote_fs_zero_copy_zookeeper_path.toString()) / zero_copy;
             futures.push_back(zookeeper->asyncTryCreateNoThrow(zero_copy_path, String(), zkutil::CreateMode::Persistent));
             futures.push_back(zookeeper->asyncTryCreateNoThrow(zero_copy_path / table_shared_id_, String(), zkutil::CreateMode::Persistent));
@@ -2713,16 +2714,48 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
                 .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || ((our_zero_copy_enabled || source_zero_copy_enabled) && part_desc->src_table_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
-            auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
-                part_desc->src_table_part,
-                TMP_PREFIX + "clone_",
-                part_desc->new_part_info,
-                metadata_snapshot,
-                clone_params,
-                getContext()->getReadSettings(),
-                getContext()->getWriteSettings());
-            part_desc->res_part = std::move(res_part);
-            part_desc->temporary_part_lock = std::move(temporary_part_lock);
+
+            const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
+            const auto src_partition_expression = source_table->getInMemoryMetadataPtr()->getPartitionKeyAST();
+
+            const auto is_partition_exp_different = queryToStringNullable(my_partition_expression) != queryToStringNullable(src_partition_expression);
+
+            if (is_partition_exp_different)
+            {
+                auto [new_partition, new_min_max_index] = createPartitionAndMinMaxIndexFromSourcePart(
+                    part_desc->src_table_part, metadata_snapshot, getContext());
+
+                auto partition_id = new_partition.getID(*this);
+
+                auto [res_part, temporary_part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+                    part_desc->src_table_part,
+                    new_partition,
+                    partition_id,
+                    new_min_max_index,
+                    TMP_PREFIX + "clone_",
+                    metadata_snapshot,
+                    clone_params,
+                    getContext(),
+                    part_desc->new_part_info.min_block,
+                    part_desc->new_part_info.max_block);
+
+                part_desc->res_part = std::move(res_part);
+                part_desc->temporary_part_lock = std::move(temporary_part_lock);
+            }
+            else
+            {
+                auto [res_part, temporary_part_lock] = cloneAndLoadDataPartOnSameDisk(
+                    part_desc->src_table_part,
+                    TMP_PREFIX + "clone_",
+                    part_desc->new_part_info,
+                    metadata_snapshot,
+                    clone_params,
+                    getContext()->getReadSettings(),
+                    getContext()->getWriteSettings());
+
+                part_desc->res_part = std::move(res_part);
+                part_desc->temporary_part_lock = std::move(temporary_part_lock);
+            }
         }
         else if (!part_desc->replica.empty())
         {
@@ -5385,9 +5418,7 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
 
     if (local_context->getSettingsRef().allow_experimental_analyzer)
     {
-        QueryTreeNodePtr modified_query_tree = query_info.query_tree->clone();
-        rewriteJoinToGlobalJoin(modified_query_tree);
-        modified_query_tree = buildQueryTreeForShard(query_info, modified_query_tree);
+        auto modified_query_tree = buildQueryTreeForShard(query_info, query_info.query_tree);
 
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(
             modified_query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
@@ -5410,6 +5441,7 @@ void StorageReplicatedMergeTree::readParallelReplicasImpl(
 
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
+        getStorageID(),
         select_stream_factory,
         modified_query_ast,
         local_context,
@@ -7853,10 +7885,21 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
-    String partition_id = getPartitionIDFromQuery(partition, query_context);
+    String partition_id = src_data.getPartitionIDFromQuery(partition, query_context);
 
     /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
     DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id);
+
+    bool attach_empty_partition = !replace && src_all_parts.empty();
+    if (attach_empty_partition)
+        return;
+
+    const auto my_partition_expression = metadata_snapshot->getPartitionKeyAST();
+    const auto src_partition_expression = source_metadata_snapshot->getPartitionKeyAST();
+    const auto is_partition_exp_different = queryToStringNullable(my_partition_expression) != queryToStringNullable(src_partition_expression);
+
+    if (is_partition_exp_different && !src_all_parts.empty())
+        MergeTreePartitionCompatibilityVerifier::verify(src_data, /* destination_storage */ *this, src_all_parts);
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
@@ -7912,6 +7955,18 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                                 "Cannot replace partition '{}' because part '{}"
                                 "' has inconsistent granularity with table", partition_id, src_part->name);
 
+            IMergeTreeDataPart::MinMaxIndex min_max_index = *src_part->minmax_idx;
+            MergeTreePartition merge_tree_partition = src_part->partition;
+
+            if (is_partition_exp_different)
+            {
+                auto [new_partition, new_min_max_index] = createPartitionAndMinMaxIndexFromSourcePart(src_part, metadata_snapshot, query_context);
+
+                merge_tree_partition = new_partition;
+                min_max_index = new_min_max_index;
+                partition_id = merge_tree_partition.getID(*this);
+            }
+
             String hash_hex = src_part->checksums.getTotalChecksumHex();
             const bool is_duplicated_part = replaced_parts.contains(hash_hex);
             replaced_parts.insert(hash_hex);
@@ -7930,27 +7985,52 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 continue;
             }
 
-            UInt64 index = lock->getNumber();
-            MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
-
             bool zero_copy_enabled = storage_settings_ptr->allow_remote_fs_zero_copy_replication
                 || dynamic_cast<const MergeTreeData *>(source_table.get())->getSettings()->allow_remote_fs_zero_copy_replication;
+
+            UInt64 index = lock->getNumber();
+
             IDataPartStorage::ClonePartParams clone_params
             {
                 .copy_instead_of_hardlink = storage_settings_ptr->always_use_copy_instead_of_hardlinks || (zero_copy_enabled && src_part->isStoredOnRemoteDiskWithZeroCopySupport()),
                 .metadata_version_to_write = metadata_snapshot->getMetadataVersion()
             };
-            auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
-                src_part,
-                TMP_PREFIX,
-                dst_part_info,
-                metadata_snapshot,
-                clone_params,
-                query_context->getReadSettings(),
-                query_context->getWriteSettings());
+
+            if (is_partition_exp_different)
+            {
+                auto [dst_part, part_lock] = cloneAndLoadPartOnSameDiskWithDifferentPartitionKey(
+                    src_part,
+                    merge_tree_partition,
+                    partition_id,
+                    min_max_index,
+                    TMP_PREFIX,
+                    metadata_snapshot,
+                    clone_params,
+                    query_context,
+                    index,
+                    index);
+
+                dst_parts.emplace_back(dst_part);
+                dst_parts_locks.emplace_back(std::move(part_lock));
+            }
+            else
+            {
+                MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
+
+                auto [dst_part, part_lock] = cloneAndLoadDataPartOnSameDisk(
+                    src_part,
+                    TMP_PREFIX,
+                    dst_part_info,
+                    metadata_snapshot,
+                    clone_params,
+                    query_context->getReadSettings(),
+                    query_context->getWriteSettings());
+
+                dst_parts.emplace_back(dst_part);
+                dst_parts_locks.emplace_back(std::move(part_lock));
+            }
+
             src_parts.emplace_back(src_part);
-            dst_parts.emplace_back(dst_part);
-            dst_parts_locks.emplace_back(std::move(part_lock));
             ephemeral_locks.emplace_back(std::move(*lock));
             block_id_paths.emplace_back(block_id_path);
             part_checksums.emplace_back(hash_hex);
@@ -9096,7 +9176,7 @@ zkutil::EphemeralNodeHolderPtr StorageReplicatedMergeTree::lockSharedDataTempora
     String id = part_id;
     boost::replace_all(id, "/", "_");
 
-    String zc_zookeeper_path = getZeroCopyPartPath(*getSettings(), toString(disk->getDataSourceDescription().type), getTableSharedID(),
+    String zc_zookeeper_path = getZeroCopyPartPath(*getSettings(), disk->getDataSourceDescription().toString(), getTableSharedID(),
         part_name, zookeeper_path)[0];
 
     String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
@@ -9608,7 +9688,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::tryToFetchIfShared
     if (!(disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication))
         return nullptr;
 
-    String replica = getSharedDataReplica(part, data_source_description.type);
+    String replica = getSharedDataReplica(part, data_source_description);
 
     /// We can't fetch part when none replicas have this part on a same type remote disk
     if (replica.empty())
@@ -9618,7 +9698,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::tryToFetchIfShared
 }
 
 String StorageReplicatedMergeTree::getSharedDataReplica(
-    const IMergeTreeDataPart & part, DataSourceType data_source_type) const
+    const IMergeTreeDataPart & part, const DataSourceDescription & data_source_description) const
 {
     String best_replica;
 
@@ -9626,7 +9706,7 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     if (!zookeeper)
         return "";
 
-    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), toString(data_source_type), getTableSharedID(), part.name,
+    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), data_source_description.toString(), getTableSharedID(), part.name,
             zookeeper_path);
 
     std::set<String> replicas;
@@ -9783,7 +9863,7 @@ std::optional<String> StorageReplicatedMergeTree::getZeroCopyPartPath(const Stri
     if (!disk || !disk->supportZeroCopyReplication())
         return std::nullopt;
 
-    return getZeroCopyPartPath(*getSettings(), toString(disk->getDataSourceDescription().type), getTableSharedID(), part_name, zookeeper_path)[0];
+    return getZeroCopyPartPath(*getSettings(), disk->getDataSourceDescription().toString(), getTableSharedID(), part_name, zookeeper_path)[0];
 }
 
 bool StorageReplicatedMergeTree::waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait)
@@ -10199,7 +10279,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
             std::tie(can_remove, files_not_to_remove) = StorageReplicatedMergeTree::unlockSharedDataByID(
                 id, table_uuid, part_info,
                 detached_replica_name,
-                toString(disk->getDataSourceDescription().type),
+                disk->getDataSourceDescription().toString(),
                 std::make_shared<ZooKeeperWithFaultInjection>(zookeeper), local_context->getReplicatedMergeTreeSettings(),
                 &Poco::Logger::get("StorageReplicatedMergeTree"),
                 detached_zookeeper_path,

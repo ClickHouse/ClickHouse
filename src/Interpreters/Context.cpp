@@ -59,7 +59,7 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/GSSAcceptor.h>
-#include <IO/ResourceManagerFactory.h>
+#include <Common/Scheduler/ResourceManagerFactory.h>
 #include <Backups/BackupsWorker.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -238,6 +238,7 @@ struct ContextSharedPart : boost::noncopyable
     String dictionaries_lib_path TSA_GUARDED_BY(mutex);      /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path TSA_GUARDED_BY(mutex);          /// Path to the directory with user provided scripts.
     String filesystem_caches_path TSA_GUARDED_BY(mutex);     /// Path to the directory with filesystem caches.
+    String filesystem_cache_user TSA_GUARDED_BY(mutex);
     ConfigurationPtr config TSA_GUARDED_BY(mutex);           /// Global configuration settings.
     String tmp_path TSA_GUARDED_BY(mutex);                   /// Path to the temporary files that occur when processing the request.
 
@@ -620,6 +621,7 @@ struct ContextSharedPart : boost::noncopyable
         const auto & caches = FileCacheFactory::instance().getAll();
         for (const auto & [_, cache] : caches)
             cache->cache->deactivateBackgroundOperations();
+        FileCacheFactory::instance().clear();
 
         {
             // Disk selector might not be initialized if there was some error during
@@ -891,6 +893,12 @@ String Context::getFilesystemCachesPath() const
     return shared->filesystem_caches_path;
 }
 
+String Context::getFilesystemCacheUser() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->filesystem_cache_user;
+}
+
 Strings Context::getWarnings() const
 {
     Strings common_warnings;
@@ -996,6 +1004,12 @@ void Context::setFilesystemCachesPath(const String & path)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem caches path must be absolute: {}", path);
 
     shared->filesystem_caches_path = path;
+}
+
+void Context::setFilesystemCacheUser(const String & user)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->filesystem_cache_user = user;
 }
 
 static void setupTmpPath(Poco::Logger * log, const std::string & path)
@@ -2540,15 +2554,22 @@ BackupsWorker & Context::getBackupsWorker() const
         const auto & config = getConfigRef();
         const bool allow_concurrent_backups = config.getBool("backups.allow_concurrent_backups", true);
         const bool allow_concurrent_restores = config.getBool("backups.allow_concurrent_restores", true);
+        const bool test_inject_sleep = config.getBool("backups.test_inject_sleep", false);
 
         const auto & settings_ref = getSettingsRef();
         UInt64 backup_threads = config.getUInt64("backup_threads", settings_ref.backup_threads);
         UInt64 restore_threads = config.getUInt64("restore_threads", settings_ref.restore_threads);
 
-        shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
+        shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores, test_inject_sleep);
     });
 
     return *shared->backups_worker;
+}
+
+void Context::waitAllBackupsAndRestores() const
+{
+    if (shared->backups_worker)
+        shared->backups_worker->waitAll();
 }
 
 

@@ -48,6 +48,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     const String & source_file_path_,
     const FileCache::Key & cache_key_,
     FileCachePtr cache_,
+    const FileCacheUserInfo & user_,
     ImplementationBufferCreator implementation_buffer_creator_,
     const ReadSettings & settings_,
     const String & query_id_,
@@ -70,6 +71,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , implementation_buffer_creator(implementation_buffer_creator_)
     , query_id(query_id_)
     , current_buffer_id(getRandomASCIIString(8))
+    , user(user_)
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
@@ -127,12 +129,12 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
 
     if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
-        file_segments = cache->get(cache_key, file_offset_of_buffer_end, size, settings.filesystem_cache_segments_batch_size);
+        file_segments = cache->get(cache_key, file_offset_of_buffer_end, size, settings.filesystem_cache_segments_batch_size, user.user_id);
     }
     else
     {
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
-        file_segments = cache->getOrSet(cache_key, file_offset_of_buffer_end, size, file_size.value(), create_settings, settings.filesystem_cache_segments_batch_size);
+        file_segments = cache->getOrSet(cache_key, file_offset_of_buffer_end, size, file_size.value(), create_settings, settings.filesystem_cache_segments_batch_size, user);
     }
     return !file_segments->empty();
 }
@@ -166,7 +168,7 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
 
-    auto path = file_segment.getPathInLocalCache();
+    auto path = file_segment.getPath();
     if (cache_file_reader)
     {
         chassert(cache_file_reader->getFileName() == path);
