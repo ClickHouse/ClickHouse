@@ -77,7 +77,7 @@ void fillJemallocBins(MutableColumns & res_columns)
 
 void fillJemallocBins(MutableColumns &)
 {
-    LOG_INFO(&Poco::Logger::get("StorageSystemJemallocBins"), "jemalloc is not enabled");
+    LOG_INFO(getLogger("StorageSystemJemallocBins"), "jemalloc is not enabled");
 }
 
 #endif // USE_JEMALLOC

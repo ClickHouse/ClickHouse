@@ -25,7 +25,7 @@ public:
     explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, bool attach, Args && ...args)
         : Storage(getConfigurationForDataRead(configuration_, context_, {}, attach), context_, std::forward<Args>(args)...)
         , base_configuration(configuration_)
-        , log(&Poco::Logger::get(getName())) {} // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
+        , log(getLogger(getName())) {} // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
 
     template <class ...Args>
     static StoragePtr create(const Configuration & configuration_, ContextPtr context_, bool attach, Args && ...args)
@@ -78,7 +78,7 @@ private:
                 configuration.keys = keys;
 
             LOG_TRACE(
-                &Poco::Logger::get("DataLake"),
+                getLogger("DataLake"),
                 "New configuration path: {}, keys: {}",
                 configuration.getPath(), fmt::join(configuration.keys, ", "));
 
@@ -112,7 +112,7 @@ private:
 
     Configuration base_configuration;
     std::mutex configuration_update_mutex;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 

@@ -235,8 +235,9 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
     /// MemoryTracker until the exception will be logged.
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-    /// Poco::Logger::get can allocate memory too
-    tryLogCurrentExceptionImpl(&Poco::Logger::get(log_name), start_of_message);
+    /// getLogger can allocate memory too
+    auto logger = getLogger(log_name);
+    tryLogCurrentExceptionImpl(logger.get(), start_of_message);
 }
 
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message)
@@ -251,7 +252,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     tryLogCurrentExceptionImpl(logger, start_of_message);
 }
 
-void tryLogCurrentException(const LoggerPtr & logger, const std::string & start_of_message)
+void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message)
 {
     tryLogCurrentException(logger.get(), start_of_message);
 }
@@ -516,7 +517,7 @@ void tryLogException(std::exception_ptr e, const char * log_name, const std::str
     }
 }
 
-void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::string & start_of_message)
+void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string & start_of_message)
 {
     try
     {
@@ -526,11 +527,6 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
     {
         tryLogCurrentException(logger, start_of_message);
     }
-}
-
-void tryLogException(std::exception_ptr e, const LoggerPtr & logger, const std::string & start_of_message)
-{
-    tryLogException(e, logger.get(), start_of_message);
 }
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)

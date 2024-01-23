@@ -65,9 +65,9 @@ FileSegment::FileSegment(
     , queue_iterator(queue_iterator_)
     , cache(cache_)
 #ifdef ABORT_ON_LOGICAL_ERROR
-    , log(&Poco::Logger::get(fmt::format("FileSegment({}) : {}", key_.toString(), range().toString())))
+    , log(getLogger(fmt::format("FileSegment({}) : {}", key_.toString(), range().toString())))
 #else
-    , log(&Poco::Logger::get("FileSegment"))
+    , log(getLogger("FileSegment"))
 #endif
 {
     /// On creation, file segment state can be EMPTY, DOWNLOADED, DOWNLOADING.

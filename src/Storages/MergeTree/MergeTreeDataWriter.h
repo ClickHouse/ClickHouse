@@ -92,7 +92,7 @@ public:
     /// For insertion.
     static TemporaryPart writeProjectionPart(
         const MergeTreeData & data,
-        Poco::Logger * log,
+        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part);
@@ -100,7 +100,7 @@ public:
     /// For mutation: MATERIALIZE PROJECTION.
     static TemporaryPart writeTempProjectionPart(
         const MergeTreeData & data,
-        Poco::Logger * log,
+        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
@@ -127,7 +127,7 @@ private:
         bool is_temp,
         IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,
-        Poco::Logger * log,
+        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection);
 

@@ -85,7 +85,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , boundary_alignment(settings.boundary_alignment)
     , load_metadata_threads(settings.load_metadata_threads)
     , write_cache_per_user_directory(settings.write_cache_per_user_id_directory)
-    , log(&Poco::Logger::get("FileCache(" + cache_name + ")"))
+    , log(getLogger("FileCache(" + cache_name + ")"))
     , metadata(settings.base_path, settings.background_download_queue_size_limit, settings.background_download_threads, write_cache_per_user_directory)
 {
     if (settings.cache_policy == "LRU")

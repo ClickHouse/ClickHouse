@@ -168,7 +168,7 @@ public:
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
-        Poco::Logger * log,
+        LoggerPtr log,
         std::optional<Indexes> & indexes);
 
     AnalysisResultPtr selectRangesToRead(
@@ -217,7 +217,7 @@ private:
         const MergeTreeData & data,
         const Names & real_column_names,
         bool sample_factor_column_queried,
-        Poco::Logger * log,
+        LoggerPtr log,
         std::optional<Indexes> & indexes);
 
     int getSortDirection() const

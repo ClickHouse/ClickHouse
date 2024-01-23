@@ -8,7 +8,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/LoggingFormatStringHelpers.h>
-#include <Common/LoggerPtr.h>
+#include <Common/Logger.h>
 
 namespace Poco { class Logger; }
 
@@ -22,7 +22,6 @@ namespace
 {
     [[maybe_unused]] const ::Poco::Logger * getLoggerHelper(const LoggerPtr & logger) { return logger.get(); }
     [[maybe_unused]] const ::Poco::Logger * getLoggerHelper(const ::Poco::Logger * logger) { return logger; }
-    [[maybe_unused]] const ::Poco::Logger * getLoggerHelper(const std::atomic<::Poco::Logger *> & logger) { return logger.load(); }
     [[maybe_unused]] std::unique_ptr<LogToStrImpl> getLoggerHelper(std::unique_ptr<LogToStrImpl> && logger) { return logger; }
     [[maybe_unused]] std::unique_ptr<LogFrequencyLimiterIml> getLoggerHelper(std::unique_ptr<LogFrequencyLimiterIml> && logger) { return logger; }
     [[maybe_unused]] LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }

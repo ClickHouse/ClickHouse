@@ -269,7 +269,7 @@ private:
     FileCache * cache;
     std::condition_variable cv;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state

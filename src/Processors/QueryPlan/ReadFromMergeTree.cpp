@@ -1281,7 +1281,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         data,
         real_column_names,
         sample_factor_column_queried,
-        log.get(),
+        log,
         indexes);
 }
 
@@ -1476,7 +1476,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const MergeTreeData & data,
     const Names & real_column_names,
     bool sample_factor_column_queried,
-    Poco::Logger * log,
+    LoggerPtr log,
     std::optional<Indexes> & indexes)
 {
     auto updated_query_info_with_filter_dag = query_info;
@@ -1508,7 +1508,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
     const MergeTreeData & data,
     const Names & real_column_names,
     bool sample_factor_column_queried,
-    Poco::Logger * log,
+    LoggerPtr log,
     std::optional<Indexes> & indexes)
 {
     AnalysisResult result;

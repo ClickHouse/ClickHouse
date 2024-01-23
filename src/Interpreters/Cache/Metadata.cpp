@@ -153,7 +153,7 @@ std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) co
     return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), user);
 }
 
-Poco::Logger * KeyMetadata::logger() const
+LoggerPtr KeyMetadata::logger() const
 {
     return cache_metadata->log;
 }
@@ -167,7 +167,7 @@ CacheMetadata::CacheMetadata(
     , cleanup_queue(std::make_shared<CleanupQueue>())
     , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
     , write_cache_per_user_directory(write_cache_per_user_directory_)
-    , log(&Poco::Logger::get("CacheMetadata"))
+    , log(getLogger("CacheMetadata"))
     , download_threads_num(background_download_threads_)
 {
 }

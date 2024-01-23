@@ -115,7 +115,7 @@ void buildScatterSelector(
     if (max_parts && partitions_count >= max_parts && !throw_on_limit)
     {
         const auto & client_info = context->getClientInfo();
-        Poco::Logger * log = &Poco::Logger::get("MergeTreeDataWriter");
+        LoggerPtr log = getLogger("MergeTreeDataWriter");
 
         LOG_WARNING(log, "INSERT query from initial_user {} (query ID: {}) inserted a block "
                          "that created parts in {} partitions. This is being logged "
@@ -335,7 +335,7 @@ Block MergeTreeDataWriter::mergeBlock(
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, /*block_size_bytes=*/0, &Poco::Logger::get("MergeTreeDataWriter"));
+                    false, block_size + 1, /*block_size_bytes=*/0, getLogger("MergeTreeDataWriter"));
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
@@ -591,7 +591,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         auto projection_block = projection.calculate(block, context);
         if (projection_block.rows())
         {
-            auto proj_temp_part = writeProjectionPart(data, log.get(), projection_block, projection, new_data_part.get());
+            auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, new_data_part.get());
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part.part));
             for (auto & stream : proj_temp_part.streams)
                 temp_part.streams.emplace_back(std::move(stream));
@@ -618,7 +618,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     bool is_temp,
     IMergeTreeDataPart * parent_part,
     const MergeTreeData & data,
-    Poco::Logger * log,
+    LoggerPtr log,
     Block block,
     const ProjectionDescription & projection)
 {
@@ -729,7 +729,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
     const MergeTreeData & data,
-    Poco::Logger * log,
+    LoggerPtr log,
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part)
@@ -748,7 +748,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
 /// projection part merges.
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
     const MergeTreeData & data,
-    Poco::Logger * log,
+    LoggerPtr log,
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
