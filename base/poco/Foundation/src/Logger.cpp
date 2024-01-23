@@ -20,12 +20,43 @@
 #include "Poco/NumberParser.h"
 #include "Poco/String.h"
 
+#include <mutex>
+
+namespace
+{
+
+std::atomic<bool> is_logging_infrastructure_destroyed{false};
+
+class LoggerMutex
+{
+public:
+	void lock()
+	{
+		mutex.lock();
+	}
+
+	void unlock()
+	{
+		mutex.unlock();
+	}
+
+	~LoggerMutex()
+	{
+		is_logging_infrastructure_destroyed.store(true, std::memory_order_release);
+	}
+
+private:
+	std::mutex mutex;
+};
+
+LoggerMutex logger_mutex;
+
+}
 
 namespace Poco {
 
 
 Logger::LoggerMap* Logger::_pLoggerMap = 0;
-Mutex Logger::_mapMtx;
 const std::string Logger::ROOT;
 
 
@@ -73,7 +104,7 @@ void Logger::setProperty(const std::string& name, const std::string& value)
 		setChannel(LoggingRegistry::defaultRegistry().channelForName(value));
 	else if (name == "level")
 		setLevel(value);
-	else 
+	else
 		Channel::setProperty(name, value);
 }
 
@@ -112,14 +143,14 @@ void Logger::dump(const std::string& msg, const void* buffer, std::size_t length
 
 void Logger::setLevel(const std::string& name, int level)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<LoggerMutex> lock(logger_mutex);
 
 	if (_pLoggerMap)
 	{
 		std::string::size_type len = name.length();
 		for (LoggerMap::iterator it = _pLoggerMap->begin(); it != _pLoggerMap->end(); ++it)
 		{
-			if (len == 0 || 
+			if (len == 0 ||
 				(it->first.compare(0, len, name) == 0 && (it->first.length() == len || it->first[len] == '.')))
 			{
 				it->second->setLevel(level);
@@ -131,7 +162,7 @@ void Logger::setLevel(const std::string& name, int level)
 
 void Logger::setChannel(const std::string& name, Channel* pChannel)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<LoggerMutex> lock(logger_mutex);
 
 	if (_pLoggerMap)
 	{
@@ -150,7 +181,7 @@ void Logger::setChannel(const std::string& name, Channel* pChannel)
 
 void Logger::setProperty(const std::string& loggerName, const std::string& propertyName, const std::string& value)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<LoggerMutex> lock(logger_mutex);
 
 	if (_pLoggerMap)
 	{
@@ -280,13 +311,44 @@ void Logger::formatDump(std::string& message, const void* buffer, std::size_t le
 }
 
 
+namespace
+{
+
+struct LoggerDeleter
+{
+	void operator()(Poco::Logger * logger)
+	{
+		if (is_logging_infrastructure_destroyed.load(std::memory_order_acquire))
+		{
+			logger->release();
+			return;
+		}
+
+		Logger::destroy(logger->name());
+	}
+};
+
+inline LoggerPtr makeLoggerPtr(Logger & logger)
+{
+	logger.duplicate();
+	return std::shared_ptr<Logger>(&logger, LoggerDeleter());
+}
+
+}
+
 Logger& Logger::get(const std::string& name)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<LoggerMutex> lock(logger_mutex);
 
 	return unsafeGet(name);
 }
 
+LoggerPtr Logger::getShared(const std::string & name)
+{
+	std::lock_guard<LoggerMutex> lock(logger_mutex);
+
+	return makeLoggerPtr(unsafeGet(name));
+}
 
 Logger& Logger::unsafeGet(const std::string& name)
 {
@@ -310,18 +372,21 @@ Logger& Logger::unsafeGet(const std::string& name)
 
 Logger& Logger::create(const std::string& name, Channel* pChannel, int level)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<LoggerMutex> lock(logger_mutex);
 
-	if (find(name)) throw ExistsException();
-	Logger* pLogger = new Logger(name, pChannel, level);
-	add(pLogger);
-	return *pLogger;
+	return unsafeCreate(name, pChannel, level);
 }
 
+LoggerPtr Logger::createShared(const std::string & name, Channel * pChannel, int level)
+{
+	std::lock_guard<LoggerMutex> lock(logger_mutex);
+
+	return makeLoggerPtr(unsafeCreate(name, pChannel, level));
+}
 
 Logger& Logger::root()
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<LoggerMutex> lock(logger_mutex);
 
 	return unsafeGet(ROOT);
 }
@@ -329,7 +394,7 @@ Logger& Logger::root()
 
 Logger* Logger::has(const std::string& name)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<LoggerMutex> lock(logger_mutex);
 
 	return find(name);
 }
@@ -337,7 +402,7 @@ Logger* Logger::has(const std::string& name)
 
 void Logger::shutdown()
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<LoggerMutex> lock(logger_mutex);
 
 	if (_pLoggerMap)
 	{
@@ -365,15 +430,15 @@ Logger* Logger::find(const std::string& name)
 
 void Logger::destroy(const std::string& name)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<LoggerMutex> lock(logger_mutex);
 
 	if (_pLoggerMap)
 	{
 		LoggerMap::iterator it = _pLoggerMap->find(name);
 		if (it != _pLoggerMap->end())
 		{
-			it->second->release();
-			_pLoggerMap->erase(it);
+			if (it->second->release() == 1)
+				_pLoggerMap->erase(it);
 		}
 	}
 }
@@ -381,7 +446,7 @@ void Logger::destroy(const std::string& name)
 
 void Logger::names(std::vector<std::string>& names)
 {
-	Mutex::ScopedLock lock(_mapMtx);
+	std::lock_guard<LoggerMutex> lock(logger_mutex);
 
 	names.clear();
 	if (_pLoggerMap)
@@ -393,6 +458,14 @@ void Logger::names(std::vector<std::string>& names)
 	}
 }
 
+Logger& Logger::unsafeCreate(const std::string & name, Channel * pChannel, int level)
+{
+	if (find(name)) throw ExistsException();
+	Logger* pLogger = new Logger(name, pChannel, level);
+	add(pLogger);
+
+	return *pLogger;
+}
 
 Logger& Logger::parent(const std::string& name)
 {
