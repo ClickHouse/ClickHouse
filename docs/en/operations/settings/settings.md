@@ -5197,3 +5197,7 @@ The value 0 means that you can delete all tables without any restrictions.
 :::note
 This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
 :::
+
+## iceberg_engine_ignore_schema_evolution {#iceberg_engine_ignore_schema_evolution}
+
+Allow to ignore schema evolution in Iceberg table engine and read all data using latest schema saved on storage creation.
