@@ -457,3 +457,57 @@ def test_restart_broken(started_cluster):
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+
+def test_restart_broken_table_function(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = "broken"
+    TABLE_NAME = "test_restart_broken"
+
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
+
+    parquet_data_path = create_initial_data_file(
+        started_cluster,
+        instance,
+        "SELECT number, toString(number) FROM numbers(100)",
+        TABLE_NAME,
+    )
+
+    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        AS deltaLake(s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{bucket}/')"""
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    s3_objects = list_s3_objects(minio_client, bucket, prefix="")
+    assert (
+        len(
+            list(
+                minio_client.remove_objects(
+                    bucket,
+                    [DeleteObject(obj) for obj in s3_objects],
+                )
+            )
+        )
+        == 0
+    )
+    minio_client.remove_bucket(bucket)
+
+    instance.restart_clickhouse()
+
+    assert "NoSuchBucket" in instance.query_and_get_error(
+        f"SELECT count() FROM {TABLE_NAME}"
+    )
+
+    minio_client.make_bucket(bucket)
+
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
