@@ -2,10 +2,12 @@
 
 #include <memory>
 #include <Common/SharedMutex.h>
-#include <Storages/IStorage.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <rocksdb/status.h>
+#include <Storages/IStorage.h>
 #include <Storages/RocksDB/EmbeddedRocksDBSink.h>
+#include <Storages/RocksDB/EmbeddedRocksDBBulkSink.h>
+#include <Storages/RocksDB/RocksDBSettings.h>
 
 
 namespace rocksdb
@@ -27,6 +29,7 @@ class Context;
 class StorageEmbeddedRocksDB final : public IStorage, public IKeyValueEntity, WithContext
 {
     friend class EmbeddedRocksDBSink;
+    friend class EmbeddedRocksDBBulkSink;
     friend class ReadFromEmbeddedRocksDB;
 public:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
@@ -34,6 +37,7 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool attach,
         ContextPtr context_,
+        RocksDBSettings settings_,
         const String & primary_key_,
         Int32 ttl_ = 0,
         String rocksdb_dir_ = "",
@@ -97,7 +101,12 @@ public:
 
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
 
+    const RocksDBSettings & getSettings() const { return settings; }
+
+    void setSettings(RocksDBSettings settings_) { settings = std::move(settings_); }
+
 private:
+    RocksDBSettings settings;
     const String primary_key;
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
     RocksDBPtr rocksdb_ptr;
