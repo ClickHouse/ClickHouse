@@ -11,17 +11,15 @@
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/PODArray.h>
 #include <Common/PODArray_fwd.h>
-#include "Arena.h"
-#include "Exception.h"
-#include "ThreadStatus.h"
 #include "config.h"
-#include "typeid_cast.h"
+#include "logger_useful.h"
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -30,9 +28,6 @@
 #if USE_MULTITARGET_CODE
 #    include <immintrin.h>
 #endif
-
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {

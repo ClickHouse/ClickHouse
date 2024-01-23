@@ -11,6 +11,7 @@
 #include <Common/assert_cast.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/PODArray.h>
+#include "ColumnsHashingImpl.h"
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -55,7 +56,7 @@ struct HashMethodOneNumber
     const char * vec;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
-    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, UInt64 id[[maybe_unused]]  = 0) : Base(key_columns[0])
+    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr local_ctx [[maybe_unused]]  = nullptr) : Base(key_columns[0])
     {
         if constexpr (nullable)
         {
@@ -115,7 +116,7 @@ struct HashMethodString
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
-    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, UInt64 id[[maybe_unused]]  = 0) : Base(key_columns[0])
+    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr local_ctx[[maybe_unused]]  = nullptr) : Base(key_columns[0])
     {
         const IColumn * column;
         if constexpr (nullable)
@@ -163,7 +164,7 @@ struct HashMethodFixedString
     size_t n;
     const ColumnFixedString::Chars * chars;
 
-    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, UInt64 id[[maybe_unused]]  = 0) : Base(key_columns[0])
+    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr local_ctx[[maybe_unused]]  = nullptr) : Base(key_columns[0])
     {
         const IColumn * column;
         if constexpr (nullable)
@@ -294,7 +295,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 
     HashMethodSingleLowCardinalityColumn(
-        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context, UInt64 id[[maybe_unused]]  = 0)
+        const ColumnRawPtrs & key_columns_low_cardinality, const Sizes & key_sizes, const HashMethodContextPtr & context, HashMethodThreadContextPtr local_ctx[[maybe_unused]]  = nullptr)
         : Base({getLowCardinalityColumn(key_columns_low_cardinality[0]).getDictionary().getNestedNotNullableColumn().get()}, key_sizes, context)
     {
         const auto * column = &getLowCardinalityColumn(key_columns_low_cardinality[0]);
@@ -557,7 +558,7 @@ struct HashMethodKeysFixed
         return true;
     }
 
-    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &, UInt64 id[[maybe_unused]]  = 0)
+    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &, HashMethodThreadContextPtr local_ctx[[maybe_unused]]  = nullptr)
         : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
     {
         if constexpr (has_low_cardinality)
@@ -712,7 +713,7 @@ struct HashMethodSerialized
     ColumnRawPtrs key_columns;
     size_t keys_size;
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, UInt64 id[[maybe_unused]] = 0)
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr local_ctx[[maybe_unused]] = nullptr)
         : key_columns(key_columns_), keys_size(key_columns_.size()) {}
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
@@ -725,22 +726,19 @@ struct HashMethodSerialized
     }
 };
 
-/// Each Aggregator creates one context. This context is shared among threads.
-class AdaptiveHashMethodContext : public HashMethodContext
+/// AggregatorThreadContext is accessed by only one thread at the same time.
+/// The purpose of this is to avoid lock competition
+class AdaptiveHashMethodThreadContext : public HashMethodThreadContext
 {
 public:
-    /// AggregatorThreadContext is accessed by only one thread at the same time.
-    /// The purpose of this is to avoid lock competition
-    struct AggregatorThreadContext
-    {
-        // a shared state to control working mode, whether it is high or low base cardinality.
-        AdaptiveKeysHolder::State shared_keys_holder_state;
+    AdaptiveHashMethodThreadContext() = default;
+    ~AdaptiveHashMethodThreadContext() override = default;
+    
+    // a shared state to control working mode, whether it is high or low base cardinality.
+    AdaptiveKeysHolder::State shared_keys_holder_state;
 
-        using HashValueIdGenerators = std::vector<std::unique_ptr<IHashValueIdGenerator>>;
-        HashValueIdGenerators value_id_generators;
-    };
-    std::mutex mutex;
-    std::unordered_map<UInt64, AggregatorThreadContext> aggregator_contexts;
+    using HashValueIdGenerators = std::vector<std::unique_ptr<IHashValueIdGenerator>>;
+    HashValueIdGenerators value_id_generators;
 };
 
 /// In HashMethodSerialized, serializing multiple keys into a string is a lot of overhead.
@@ -763,76 +761,59 @@ struct HashMethodKeysAdaptive
 
     ColumnRawPtrs key_columns;
     size_t keys_size;
-    HashMethodContextPtr ctx;
+    std::shared_ptr<AdaptiveHashMethodThreadContext> local_ctx = nullptr;
     Columns full_key_columns;
-    AdaptiveHashMethodContext::AggregatorThreadContext * aggregator_context = nullptr;
 
     mutable PaddedPODArray<UInt64> value_ids;
 
-    /// - variant_index is the address of a AggregatedDataVariant. bound each AggregatedDataVariant with a AggregatorThreadContext.
-    HashMethodKeysAdaptive(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & ctx_, UInt64 variant_index)
-        : key_columns(key_columns_), keys_size(key_columns_.size()), ctx(ctx_)
+    HashMethodKeysAdaptive(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &, HashMethodThreadContextPtr local_ctx_)
+        : key_columns(key_columns_), keys_size(key_columns_.size())
     {
-        if (!variant_index)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "variant_index is zero");
-
         /// Need to convert a low cardinality column into a full one.
         for (const auto & col : key_columns_)
         {
             full_key_columns.emplace_back(col->convertToFullColumnIfLowCardinality());
         }
-
-        auto * adaptive_ctx = static_cast<DB::ColumnsHashing::AdaptiveHashMethodContext *>(ctx.get());
-        {
-            /// Find the corresponding AggregatorThreadContext.
-            std::lock_guard lock(adaptive_ctx->mutex);
-            auto it = adaptive_ctx->aggregator_contexts.find(variant_index);
-            if (it == adaptive_ctx->aggregator_contexts.end())
-            {
-                adaptive_ctx->aggregator_contexts[variant_index] = AdaptiveHashMethodContext::AggregatorThreadContext();
-                aggregator_context = &adaptive_ctx->aggregator_contexts[variant_index];
-                aggregator_context->shared_keys_holder_state.pool = std::make_shared<Arena>();
-            }
-            else
-            {
-                aggregator_context = &it->second;
-            }
-        }
+    
+        local_ctx = std::dynamic_pointer_cast<AdaptiveHashMethodThreadContext>(local_ctx_);
+        if (!local_ctx)
+            return;
 
         // Initialize value_id_generators.
-        if (aggregator_context->value_id_generators.empty())
+        if (local_ctx->value_id_generators.empty())
         {
+            local_ctx->shared_keys_holder_state.pool = std::make_shared<Arena>();
             UInt32 max_value_id_bits = max_value_id_number_bits/key_columns.size();
             for (size_t i = 0, n = key_columns.size(); i < n; ++i)
             {
-                aggregator_context->value_id_generators.emplace_back(HashValueIdGeneratorFactory::instance().getGenerator(
-                    &(aggregator_context->shared_keys_holder_state), max_value_id_bits, full_key_columns[i].get()));
+                local_ctx->value_id_generators.emplace_back(HashValueIdGeneratorFactory::instance().getGenerator(
+                    &(local_ctx->shared_keys_holder_state), max_value_id_bits, full_key_columns[i].get()));
             }
         }
 
-        if (aggregator_context->shared_keys_holder_state.cached_values.size() >= max_value_id_number)
+        if (local_ctx->shared_keys_holder_state.cached_values.size() >= max_value_id_number)
         {
-            aggregator_context->shared_keys_holder_state.hash_mode = AdaptiveKeysHolder::State::HASH;
+            local_ctx->shared_keys_holder_state.hash_mode = AdaptiveKeysHolder::State::HASH;
             for (size_t i = 0; i < keys_size; ++i)
             {
-                aggregator_context->value_id_generators[i]->release();
+                local_ctx->value_id_generators[i]->release();
             }
         }
-        if (aggregator_context->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+        if (local_ctx->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
             value_ids.clear();
             value_ids.resize_fill(key_columns[0]->size(), 0);
             for (size_t i = 0;
-                 i < keys_size && aggregator_context->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID;
+                 i < keys_size && local_ctx->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID;
                  ++i)
-                aggregator_context->value_id_generators[i]->computeValueId(full_key_columns[i].get(), &value_ids[0]);
+                local_ctx->value_id_generators[i]->computeValueId(full_key_columns[i].get(), &value_ids[0]);
         }
 
-        if (aggregator_context->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+        if (local_ctx->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
             rows_state_refs.resize(max_value_id_number);
             auto rows = key_columns[0]->size();
-            auto & cached_values = aggregator_context->shared_keys_holder_state.cached_values;
+            auto & cached_values = local_ctx->shared_keys_holder_state.cached_values;
             for (size_t i = 0; i < rows; ++i)
             {
                 auto & value_id = value_ids[i];
@@ -840,10 +821,10 @@ struct HashMethodKeysAdaptive
                 if (key_holder)
                     continue;
                 auto serialized_keys
-                    = serializeKeysToPoolContiguous(i, keys_size, key_columns, *aggregator_context->shared_keys_holder_state.pool);
+                    = serializeKeysToPoolContiguous(i, keys_size, key_columns, *local_ctx->shared_keys_holder_state.pool);
                 auto hash = ::DefaultHash<StringRef>()(serialized_keys);
                 auto & state_ref = cached_values[value_id];
-                state_ref = AdaptiveKeysHolder::StateRef(serialized_keys, value_id, hash, &aggregator_context->shared_keys_holder_state);
+                state_ref = AdaptiveKeysHolder::StateRef(serialized_keys, value_id, hash, &local_ctx->shared_keys_holder_state);
                 key_holder = &state_ref;
             }
         }
@@ -853,7 +834,7 @@ struct HashMethodKeysAdaptive
 
     ALWAYS_INLINE AdaptiveKeysHolder getKeyHolder(size_t row, Arena & pool)
     {
-        if (aggregator_context->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
+        if (local_ctx && local_ctx->shared_keys_holder_state.hash_mode == AdaptiveKeysHolder::State::VALUE_ID)
         {
             return getKeyHolderFromCacheValues(row);
         }
@@ -869,15 +850,18 @@ struct HashMethodKeysAdaptive
     {
         auto & value_id = value_ids[row];
         auto & key_holder = rows_state_refs[value_id];
-        return AdaptiveKeysHolder{key_holder->serialized_keys, key_holder, aggregator_context->shared_keys_holder_state.pool.get()};
+        return AdaptiveKeysHolder{key_holder->serialized_keys, key_holder, local_ctx->shared_keys_holder_state.pool.get()};
     }
 
     static HashMethodContextPtr createContext(const HashMethodContext::Settings & settings[[maybe_unused]])
     {
-        return std::make_shared<AdaptiveHashMethodContext>();
+        return nullptr;
     }
 
-
+    static HashMethodThreadContextPtr createThreadContext()
+    {
+        return std::make_shared<AdaptiveHashMethodThreadContext>();
+    }
 };
 
 /// For the case when there is one string key.

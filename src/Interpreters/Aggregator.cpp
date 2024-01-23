@@ -402,6 +402,7 @@ void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
             (NAME) = constructWithReserveIfPossible<decltype(NAME)::element_type>(*size_hint); \
         else \
             (NAME) = std::make_unique<decltype(NAME)::element_type>(); \
+            local_context = (NAME)->createContext(); \
         break;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
@@ -843,7 +844,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         }
 
         /// Fallback case.
-        if (is_all_number_or_string && has_string && 1ul < params.keys_size && params.keys_size <= max_adaptive_aggregating_keys
+        if (is_all_number_or_string && has_string && 1 < params.keys_size && params.keys_size <= max_adaptive_aggregating_keys
             && params.enable_adaptive_aggregation_method)
         {
             return AggregatedDataVariants::Type::adaptive;
@@ -933,7 +934,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
             return AggregatedDataVariants::Type::key_string;
     }
 
-    if (is_all_number_or_string && params.keys_size <= max_adaptive_aggregating_keys
+    if (is_all_number_or_string && 1 < params.keys_size && params.keys_size <= max_adaptive_aggregating_keys
         && params.enable_adaptive_aggregation_method)
     {
         return AggregatedDataVariants::Type::adaptive;
@@ -1094,13 +1095,13 @@ void NO_INLINE Aggregator::executeImpl(
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, reinterpret_cast<UInt64>(&result));
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, result.local_context);
         executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, reinterpret_cast<UInt64>(&result));
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, result.local_context);
         executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
     }
 }
@@ -3048,7 +3049,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, reinterpret_cast<UInt64>(&result));
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache, result.local_context);
 
         if (!no_more_keys)
             mergeStreamsImplCase<false>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
@@ -3059,7 +3060,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, reinterpret_cast<UInt64>(&result));
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache, result.local_context);
 
         if (!no_more_keys)
             mergeStreamsImplCase<false>(aggregates_pool, state, data, overflow_row, row_begin, row_end, aggregate_columns_data, arena_for_keys);
@@ -3436,7 +3437,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     const Block & source,
     std::vector<Block> & destinations) const
 {
-    typename Method::State state(key_columns, key_sizes, aggregation_state_cache, reinterpret_cast<UInt64>(&result));
+    typename Method::State state(key_columns, key_sizes, aggregation_state_cache, result.local_context);
 
     size_t rows = source.rows();
     size_t columns = source.columns();

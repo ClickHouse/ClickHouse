@@ -185,6 +185,9 @@ using AggregatedDataWithNullableStringKeyTwoLevel = AggregationDataWithNullKeyTw
         TwoLevelHashMapWithSavedHash<StringRef, AggregateDataPtr, DefaultHash<StringRef>,
         TwoLevelHashTableGrower<>, HashTableAllocator, HashTableWithNullKey>>;
 
+using ColumnsHashing::HashMethodThreadContext;
+using ColumnsHashing::HashMethodThreadContextPtr;
+
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,
@@ -204,6 +207,11 @@ struct AggregationMethodOneNumber
     template <typename Other>
     explicit AggregationMethodOneNumber(const Other & other) : data(other.data)
     {
+    }
+
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
     }
 
     /// To use one `Method` in different threads, use different `State`.
@@ -270,6 +278,11 @@ struct AggregationMethodString
 
     explicit AggregationMethodString(size_t size_hint) : data(size_hint) { }
 
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
+    }
+
     template <bool use_cache>
     using StateImpl = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, /*place_string_to_arena=*/ true, use_cache>;
 
@@ -305,6 +318,11 @@ struct AggregationMethodStringNoCache
     template <typename Other>
     explicit AggregationMethodStringNoCache(const Other & other) : data(other.data)
     {
+    }
+
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
     }
 
     template <bool use_cache>
@@ -353,6 +371,11 @@ struct AggregationMethodFixedString
     {
     }
 
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
+    }
+
     template <bool use_cache>
     using StateImpl = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, /*place_string_to_arena=*/ true, use_cache>;
 
@@ -387,6 +410,11 @@ struct AggregationMethodFixedStringNoCache
     template <typename Other>
     explicit AggregationMethodFixedStringNoCache(const Other & other) : data(other.data)
     {
+    }
+
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
     }
 
     template <bool use_cache>
@@ -431,6 +459,11 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     template <typename Other>
     explicit AggregationMethodSingleLowCardinalityColumn(const Other & other) : Base(other) {}
+
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
+    }
 
     template <bool use_cache>
     using StateImpl = ColumnsHashing::HashMethodSingleLowCardinalityColumn<BaseStateImpl<use_cache>, Mapped, use_cache>;
@@ -478,6 +511,11 @@ struct AggregationMethodKeysFixed
     template <typename Other>
     explicit AggregationMethodKeysFixed(const Other & other) : data(other.data)
     {
+    }
+
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
     }
 
     template <bool use_cache>
@@ -580,6 +618,11 @@ struct AggregationMethodSerialized
     explicit AggregationMethodSerialized(const Other & other) : data(other.data)
     {
     }
+    
+    HashMethodThreadContextPtr createContext() const
+    {
+        return std::make_shared<HashMethodThreadContext>();
+    }
 
     template <bool use_cache>
     using StateImpl = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped>;
@@ -619,6 +662,11 @@ struct AggregationMethodAdaptive
 
     using State = ColumnsHashing::HashMethodKeysAdaptive<typename Data::value_type, Mapped>;
     using StateNoCache = ColumnsHashing::HashMethodKeysAdaptive<typename Data::value_type, Mapped>;
+    
+    HashMethodThreadContextPtr createContext() const
+    {
+        return State::createThreadContext();
+    }
 
     static const bool low_cardinality_optimization = false;
     static const bool one_key_nullable_optimization = false;
@@ -819,6 +867,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     #undef M
     };
     Type type = Type::EMPTY;
+
+    HashMethodThreadContextPtr local_context;
 
     AggregatedDataVariants() : aggregates_pools(1, std::make_shared<Arena>()), aggregates_pool(aggregates_pools.back().get()) {}
     bool empty() const { return type == Type::EMPTY; }
@@ -1380,7 +1430,7 @@ private:
     std::vector<bool> is_aggregate_function_compiled;
 
     // Limit the max keys of adaptive aggregation. Avoid overflow the value id range.
-    static constexpr auto max_adaptive_aggregating_keys = 4l;
+    static constexpr auto max_adaptive_aggregating_keys = 4;
 
     /** Try to compile aggregate functions.
       */
