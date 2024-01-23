@@ -69,14 +69,14 @@ void handle_error_code([[maybe_unused]] const std::string & msg, int code, bool 
 Exception::MessageMasked::MessageMasked(const std::string & msg_)
     : msg(msg_)
 {
-    if (auto * masker = SensitiveDataMasker::getInstance())
+    if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
 
 Exception::MessageMasked::MessageMasked(std::string && msg_)
     : msg(std::move(msg_))
 {
-    if (auto * masker = SensitiveDataMasker::getInstance())
+    if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
 

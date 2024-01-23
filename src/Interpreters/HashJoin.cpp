@@ -1717,18 +1717,14 @@ Block HashJoin::joinBlockImpl(
         for (size_t i = 0; i < required_right_keys.columns(); ++i)
         {
             const auto & right_key = required_right_keys.getByPosition(i);
-            // renamed ???
-            if (!block.findByName(right_key.name))
-            {
-                /// asof column is already in block.
-                if (join_features.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
-                    continue;
+            /// asof column is already in block.
+            if (join_features.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
+                continue;
 
-                const auto & left_column = block.getByName(required_right_keys_sources[i]);
-                const auto & right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
-                auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column);
-                block.insert(std::move(right_col));
-            }
+            const auto & left_column = block.getByName(required_right_keys_sources[i]);
+            const auto & right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
+            auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column);
+            block.insert(std::move(right_col));
         }
     }
     else if (has_required_right_keys)
@@ -1738,19 +1734,16 @@ Block HashJoin::joinBlockImpl(
         {
             const auto & right_key = required_right_keys.getByPosition(i);
             auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
-            if (!block.findByName(right_col_name))
-            {
-                /// asof column is already in block.
-                if (join_features.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
-                    continue;
+            /// asof column is already in block.
+            if (join_features.is_asof_join && right_key.name == table_join->getOnlyClause().key_names_right.back())
+                continue;
 
-                const auto & left_column = block.getByName(required_right_keys_sources[i]);
-                auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, &added_columns.filter);
-                block.insert(std::move(right_col));
+            const auto & left_column = block.getByName(required_right_keys_sources[i]);
+            auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, &added_columns.filter);
+            block.insert(std::move(right_col));
 
-                if constexpr (join_features.need_replication)
-                    right_keys_to_replicate.push_back(block.getPositionByName(right_col_name));
-            }
+            if constexpr (join_features.need_replication)
+                right_keys_to_replicate.push_back(block.getPositionByName(right_col_name));
         }
     }
 
@@ -2009,12 +2002,14 @@ struct AdderNonJoined
 /// Based on:
 ///   - map offsetInternal saved in used_flags for single disjuncts
 ///   - flags in BlockWithFlags for multiple disjuncts
-template <bool multiple_disjuncts>
 class NotJoinedHash final : public NotJoinedBlocks::RightColumnsFiller
 {
 public:
-    NotJoinedHash(const HashJoin & parent_, UInt64 max_block_size_)
-        : parent(parent_), max_block_size(max_block_size_), current_block_start(0)
+    NotJoinedHash(const HashJoin & parent_, UInt64 max_block_size_, bool multiple_disjuncts_)
+        : parent(parent_)
+        , max_block_size(max_block_size_)
+        , multiple_disjuncts(multiple_disjuncts_)
+        , current_block_start(0)
     {
         if (parent.data == nullptr)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
@@ -2040,7 +2035,7 @@ public:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness '{}' (must be on of: ANY, ALL, ASOF)", parent.strictness);
         }
 
-        if constexpr (!multiple_disjuncts)
+        if (!multiple_disjuncts)
         {
             fillNullsFromBlocks(columns_right, rows_added);
         }
@@ -2051,6 +2046,7 @@ public:
 private:
     const HashJoin & parent;
     UInt64 max_block_size;
+    bool multiple_disjuncts;
 
     size_t current_block_start;
 
@@ -2116,7 +2112,7 @@ private:
     {
         size_t rows_added = 0;
 
-        if constexpr (multiple_disjuncts)
+        if (multiple_disjuncts)
         {
             if (!used_position.has_value())
                 used_position = parent.data->blocks.begin();
@@ -2206,23 +2202,23 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
+    size_t left_columns_count = left_sample_block.columns();
 
     bool multiple_disjuncts = !table_join->oneDisjunct();
+    if (!multiple_disjuncts)
+    {
+        /// With multiple disjuncts, all keys are in sample_block_with_columns_to_add, so invariant is not held
+        size_t expected_columns_count = left_columns_count + required_right_keys.columns() + sample_block_with_columns_to_add.columns();
+        if (expected_columns_count != result_sample_block.columns())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of columns in result sample block: {} instead of {} ({} + {} + {})",
+                            result_sample_block.columns(), expected_columns_count,
+                            left_columns_count, required_right_keys.columns(), sample_block_with_columns_to_add.columns());
+        }
+    }
 
-    if (multiple_disjuncts)
-    {
-        /// ... calculate `left_columns_count` ...
-        size_t left_columns_count = left_sample_block.columns();
-        auto non_joined = std::make_unique<NotJoinedHash<true>>(*this, max_block_size);
-        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
-    }
-    else
-    {
-        size_t left_columns_count = left_sample_block.columns();
-        assert(left_columns_count == result_sample_block.columns() - required_right_keys.columns() - sample_block_with_columns_to_add.columns());
-        auto non_joined = std::make_unique<NotJoinedHash<false>>(*this, max_block_size);
-        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
-    }
+    auto non_joined = std::make_unique<NotJoinedHash>(*this, max_block_size, multiple_disjuncts);
+    return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
 }
 
 void HashJoin::reuseJoinedData(const HashJoin & join)

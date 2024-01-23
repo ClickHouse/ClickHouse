@@ -399,7 +399,7 @@ public:
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
 
 private:
-    template<bool> friend class NotJoinedHash;
+    friend class NotJoinedHash;
 
     friend class JoinSource;
 
