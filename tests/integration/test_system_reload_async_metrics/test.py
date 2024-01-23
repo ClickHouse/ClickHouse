@@ -29,7 +29,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_DIR = os.path.join(SCRIPT_DIR, "configs")
 
 
-def test_query_cache_size_is_runtime_configurable(start_cluster):
+def test_system_reload_async_metrics(start_cluster):
     node.query("SYSTEM DROP QUERY CACHE")
 
     res1 = node.query(

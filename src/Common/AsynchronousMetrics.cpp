@@ -272,7 +272,7 @@ void AsynchronousMetrics::start()
 {
     /// Update once right now, to make metrics available just after server start
     /// (without waiting for asynchronous_metrics_update_period_s).
-    update(std::chrono::system_clock::now(), false);
+    update(std::chrono::system_clock::now());
     thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
 }
 
