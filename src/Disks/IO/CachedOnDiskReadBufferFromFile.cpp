@@ -560,8 +560,9 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
             ProfileEvents::FileSegmentPredownloadMicroseconds, predownload_watch.elapsedMicroseconds());
     });
 
-    OpenTelemetry::SpanHolder span{
-        fmt::format("CachedOnDiskReadBufferFromFile::predownload(key={}, size={})", file_segment.key().toString(), bytes_to_predownload)};
+    OpenTelemetry::SpanHolder span("CachedOnDiskReadBufferFromFile::predownload");
+    span.addAttribute("clickhouse.key", file_segment.key().toString());
+    span.addAttribute("clickhouse.size", bytes_to_predownload);
 
     if (bytes_to_predownload)
     {
