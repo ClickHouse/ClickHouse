@@ -623,7 +623,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 }
                 else
                 {
-                    result_data.deserializeAndInsertFromArena(pair->getKey().data);
+                    std::ignore = result_data.deserializeAndInsertFromArena(pair->getKey().data);
                 }
                 if (all_nullable)
                     null_map.push_back(0);
