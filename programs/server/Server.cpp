@@ -1900,6 +1900,7 @@ try
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
+        global_context->setAsynchronousMetrics(&async_metrics);
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
