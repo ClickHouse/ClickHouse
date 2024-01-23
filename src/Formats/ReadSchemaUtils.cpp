@@ -349,31 +349,35 @@ try
                 if (!format_name)
                 {
                     std::unordered_map<String, NamesAndTypesList> format_to_schema;
-                    for (const auto & format_to_detect : getSimilarFormatsSetForDetection())
+                    const auto & formats_set_to_detect = getSimilarFormatsSetForDetection();
+                    for (size_t i = 0; i != formats_set_to_detect.size(); ++i)
                     {
                         try
                         {
                             schema_reader = FormatFactory::instance().getSchemaReader(
-                                format_to_detect, support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
+                                formats_set_to_detect[i], support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
                             schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                             auto tmp_names_and_types = schema_reader->readSchema();
                             /// If schema was inferred successfully for this format, remember it and try next format.
                             if (!tmp_names_and_types.empty())
-                                format_to_schema[format_to_detect] = tmp_names_and_types;
+                                format_to_schema[formats_set_to_detect[i]] = tmp_names_and_types;
                         }
                         catch (...) // NOLINT(bugprone-empty-catch)
                         {
                             /// Try next format.
                         }
 
-                        if (support_buf_recreation)
+                        if (i != formats_set_to_detect.size() - 1)
                         {
-                            read_buffer_iterator.setPreviousReadBuffer(std::move(iterator_data.buf));
-                            iterator_data.buf = read_buffer_iterator.recreateLastReadBuffer();
-                        }
-                        else
-                        {
-                            peekable_buf->rollbackToCheckpoint();
+                            if (support_buf_recreation)
+                            {
+                                read_buffer_iterator.setPreviousReadBuffer(std::move(iterator_data.buf));
+                                iterator_data.buf = read_buffer_iterator.recreateLastReadBuffer();
+                            }
+                            else
+                            {
+                                peekable_buf->rollbackToCheckpoint();
+                            }
                         }
                     }
 
