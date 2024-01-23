@@ -87,12 +87,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         {
             auto table_name = main_table.getQualifiedName();
 
-            ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, log, &table_name);
+            ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, /* insert= */ false, log, &table_name);
             connection_establisher.run(result, fail_message);
         }
         else
         {
-            ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, log, nullptr);
+            ConnectionEstablisher connection_establisher(pool, &timeouts, current_settings, /* insert= */ false, log, nullptr);
             connection_establisher.run(result, fail_message);
         }
 
@@ -221,6 +221,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 current_settings,
                 pool_mode,
                 main_table.getQualifiedName(),
+                /* insert= */ false,
                 std::move(async_callback),
                 skip_unavailable_endpoints,
                 priority_func);

@@ -62,18 +62,21 @@ public:
 
     /// The same as getMany(), but return std::vector<TryResult>.
     std::vector<TryResult> getManyForTableFunction(const ConnectionTimeouts & timeouts,
-                                                   const Settings & settings, PoolMode pool_mode);
+                                                   const Settings & settings,
+                                                   PoolMode pool_mode);
 
     using Base = PoolWithFailoverBase<IConnectionPool>;
     using TryResult = Base::TryResult;
 
-    /// The same as getMany(), but check that replication delay for table_to_check is acceptable.
-    /// Delay threshold is taken from settings.
+    /// The same as getMany(), but check that:
+    /// - replication delay for table_to_check is acceptable (delay threshold is taken from settings)
+    /// - replica is not read only in case of @insert == true
     std::vector<TryResult> getManyChecked(
         const ConnectionTimeouts & timeouts,
         const Settings & settings,
         PoolMode pool_mode,
         const QualifiedTableName & table_to_check,
+        bool insert,
         AsyncCallback async_callback = {},
         std::optional<bool> skip_unavailable_endpoints = std::nullopt,
         GetPriorityForLoadBalancing::Func priority_func = {});
@@ -117,6 +120,7 @@ private:
             const ConnectionTimeouts & timeouts,
             std::string & fail_message,
             const Settings & settings,
+            bool insert,
             const QualifiedTableName * table_to_check = nullptr,
             AsyncCallback async_callback = {});
 

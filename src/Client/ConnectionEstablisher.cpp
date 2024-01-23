@@ -8,6 +8,7 @@ namespace ProfileEvents
     extern const Event DistributedConnectionUsable;
     extern const Event DistributedConnectionMissingTable;
     extern const Event DistributedConnectionStaleReplica;
+    extern const Event DistributedConnectionReadOnlyReplica;
 }
 
 namespace DB
@@ -25,9 +26,10 @@ ConnectionEstablisher::ConnectionEstablisher(
     ConnectionPoolPtr pool_,
     const ConnectionTimeouts * timeouts_,
     const Settings & settings_,
+    bool insert_,
     LoggerPtr log_,
     const QualifiedTableName * table_to_check_)
-    : pool(std::move(pool_)), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_)
+    : pool(std::move(pool_)), timeouts(timeouts_), settings(settings_), insert(insert_), log(log_), table_to_check(table_to_check_)
 {
 }
 
@@ -70,6 +72,16 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
         result.is_usable = true;
 
+        bool is_readonly = table_status_it->second.is_readonly;
+        if (insert && is_readonly)
+        {
+            result.is_up_to_date = false;
+
+            LOG_TRACE(log, "Table {}.{} is readonly on server {}", table_to_check->database, table_to_check->table, result.entry->getDescription());
+            ProfileEvents::increment(ProfileEvents::DistributedConnectionReadOnlyReplica);
+            return;
+        }
+
         const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
         if (!max_allowed_delay)
         {
@@ -87,6 +99,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
             LOG_TRACE(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), table_to_check->database, table_to_check->table, delay);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
+            return;
         }
     }
     catch (const Exception & e)
@@ -111,10 +124,11 @@ ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     ConnectionPoolPtr pool_,
     const ConnectionTimeouts * timeouts_,
     const Settings & settings_,
+    bool insert_,
     LoggerPtr log_,
     const QualifiedTableName * table_to_check_)
     : AsyncTaskExecutor(std::make_unique<Task>(*this))
-    , connection_establisher(std::move(pool_), timeouts_, settings_, log_, table_to_check_)
+    , connection_establisher(std::move(pool_), timeouts_, settings_, insert_, log_, table_to_check_)
 {
     epoll.add(timeout_descriptor.getDescriptor());
 }

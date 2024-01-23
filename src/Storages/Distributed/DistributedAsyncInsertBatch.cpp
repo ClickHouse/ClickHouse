@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTITIONS;
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Can the batch be split and send files from batch one-by-one instead?
@@ -232,7 +233,10 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                 insert_settings.applyChanges(settings_changes);
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-                connection = parent.pool->get(timeouts);
+                auto result = parent.pool->getManyChecked(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName(), /* insert= */ true);
+                if (result.empty() || result.front().entry.isNull())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection");
+                connection = std::move(result.front().entry);
                 compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
                 LOG_DEBUG(parent.log, "Sending a batch of {} files to {} ({} rows, {} bytes).",
@@ -289,7 +293,10 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
                 parent.storage.getContext()->getOpenTelemetrySpanLog());
 
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
-            auto connection = parent.pool->get(timeouts);
+            auto result = parent.pool->getManyChecked(timeouts, insert_settings, PoolMode::GET_ONE, parent.storage.remote_storage.getQualifiedName(), /* insert= */ true);
+            if (result.empty() || result.front().entry.isNull())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection");
+            auto connection = std::move(result.front().entry);
             bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
 
             RemoteInserter remote(*connection, timeouts,

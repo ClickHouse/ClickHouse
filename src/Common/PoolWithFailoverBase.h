@@ -81,6 +81,7 @@ public:
         bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica
                                     /// Depends on max_replica_delay_for_distributed_queries setting
         UInt32 delay = 0; /// Helps choosing the "least stale" option when all replicas are stale.
+        bool is_readonly = false;   /// Table is in read-only mode, INSERT can ignore such replicas.
     };
 
     struct PoolState;
