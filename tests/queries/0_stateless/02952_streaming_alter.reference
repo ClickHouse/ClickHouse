@@ -1,0 +1,9 @@
+started 0
+0 0
+== Alter table: add column c ==
+0 0
+1 1
+== Alter table: drop column c ==
+0 0
+== Alter table: drop column b ==
+NOT_FOUND_COLUMN_IN_BLOCK
