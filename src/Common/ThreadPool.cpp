@@ -440,14 +440,15 @@ bool ThreadPoolImpl<Thread>::finished() const
 template <typename Thread>
 void ThreadPoolImpl<Thread>::threadPoolHousekeep()
 {
-    while (true) {
+    while (true)
+    {
         {
             std::unique_lock<std::mutex> lock(threads_mutex);
 
             // Wait for notification or timeout
             if (threads_cv.wait_for(lock, std::chrono::seconds(5), [this]{ return desired_pool_size != current_pool_size; }))
             {
-                if (desired_pool_size == 0 && current_pool_size > 0) // shutdown
+                if (desired_pool_size == 0 && current_pool_size > 0)  // shutdown
                 {
 
                     /// Wait for all currently running jobs to finish (we don't wait for all scheduled jobs here like the function wait() does).
@@ -463,7 +464,7 @@ void ThreadPoolImpl<Thread>::threadPoolHousekeep()
                     break;
                 }
 
-                while (desired_pool_size > threads.size())
+                if (desired_pool_size > threads.size())
                 {
                     try
                     {
@@ -472,13 +473,13 @@ void ThreadPoolImpl<Thread>::threadPoolHousekeep()
                     }
                     catch (DB::Exception & e)
                     {
-                        LOG_ERROR(&Poco::Logger::get("ThreadPool"),
+                        LOG_ERROR(&Poco::Logger::get("threadPoolHousekeep"),
                             "ThreadPoolImpl createThreadNoLock failed: {}", e.what());
                         break;
                     }
                     catch (...)
                     {
-                        LOG_ERROR(&Poco::Logger::get("ThreadPool"),
+                        LOG_ERROR(&Poco::Logger::get("threadPoolHousekeep"),
                             "ThreadPoolImpl createThreadNoLock failed: unknown exception");
                         break;
                     }
@@ -495,6 +496,8 @@ void ThreadPoolImpl<Thread>::threadPoolHousekeep()
                 // TODO: check if we have to shrink the pool
             }
         }
+        if (finished())
+            break;
     }
 }
 
@@ -542,7 +545,11 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                     if (!first_exception)
                         first_exception = exception_from_job;
                     if (shutdown_on_exception)
+                    {
                         shutdown = true;
+                        desired_pool_size = 0;
+                        threads_cv.notify_all();
+                    }
                     exception_from_job = {};
                 }
 
