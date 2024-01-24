@@ -626,7 +626,7 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
     }
     else if (function_node->isAggregateFunction())
     {
-        if (name == "nothing")
+        if (name == "nothing" || name == "nothingUInt64" || name == "nothingNull")
             return;
         function_node->resolveAsAggregateFunction(resolveAggregateFunction(function_node));
     }
