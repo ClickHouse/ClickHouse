@@ -221,8 +221,7 @@ public:
         ReadFromFormatInfo info_,
         std::shared_ptr<StorageS3Queue> storage_,
         ContextPtr context_,
-        size_t max_block_size_,
-        size_t )
+        size_t max_block_size_)
         : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
         , info(std::move(info_))
         , storage(std::move(storage_))
@@ -269,7 +268,7 @@ void StorageS3Queue::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    size_t)
 {
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
     {
@@ -291,8 +290,7 @@ void StorageS3Queue::read(
         read_from_format_info,
         std::move(this_ptr),
         local_context,
-        max_block_size,
-        num_streams);
+        max_block_size);
 
     query_plan.addStep(std::move(reading));
 }

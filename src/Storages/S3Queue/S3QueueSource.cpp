@@ -28,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int S3_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 StorageS3QueueSource::S3QueueKeyWithInfo::S3QueueKeyWithInfo(
