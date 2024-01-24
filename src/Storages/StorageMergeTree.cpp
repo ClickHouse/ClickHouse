@@ -319,9 +319,6 @@ void StorageMergeTree::checkTableCanBeDropped(ContextPtr query_context) const
 void StorageMergeTree::drop()
 {
     shutdown(true);
-    /// In case there is read-only disk we cannot allow to call dropAllData(), but dropping tables is allowed.
-    if (isStaticStorage())
-        return;
     dropAllData();
 }
 
