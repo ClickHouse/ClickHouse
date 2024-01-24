@@ -99,7 +99,8 @@ void ObjectStorageVFSGCThread::run()
     const size_t end_logpointer_parsed = parseFromString<size_t>(end_str.substr(4));
     const size_t end_logpointer = std::min(end_logpointer_parsed, start_logpointer + settings->batch_max_size);
 
-    if (last_start_logpointer > start_logpointer)
+    const bool reconcile = last_start_logpointer > start_logpointer;
+    if (reconcile)
         reconcileLogWithSnapshot(start_logpointer);
     else
         last_start_logpointer = start_logpointer;
@@ -108,7 +109,7 @@ void ObjectStorageVFSGCThread::run()
         return;
 
     LOG_DEBUG(log, "Processing range [{};{}]", start_logpointer, end_logpointer);
-    updateSnapshotWithLogEntries(start_logpointer, end_logpointer);
+    updateSnapshotWithLogEntries(start_logpointer, end_logpointer, reconcile);
     removeBatch(start_logpointer, end_logpointer);
     LOG_DEBUG(log, "Removed lock for [{};{}]", start_logpointer, end_logpointer);
     successful_run = true;
@@ -119,7 +120,7 @@ void ObjectStorageVFSGCThread::reconcileLogWithSnapshot(size_t start_logpointer)
 {
     LOG_WARNING(log, "Local start logpointer ({}) > batch start logpointer ({})", last_start_logpointer, start_logpointer);
 
-    // If batch start logpointer > 0, this means
+    // If batch start logpointer > 0:
     // - Zookeeper was lost
     // - Some other replica was also lost and restarted with last_start_logpointer = 0
     // - This replica won garbage collection and wrote new snapshot
@@ -138,18 +139,19 @@ void ObjectStorageVFSGCThread::reconcileLogWithSnapshot(size_t start_logpointer)
 
     const std::string_view snapshot_name = snapshots[0].relative_path;
     const size_t snapshot_logpointer = parseFromString<size_t>(snapshot_name);
-    // TODO myrrc If this is wrong, everything is too broken to continue
-    chassert(snapshot_logpointer >= local_last_start_logpointer);
 
-    // TODO myrrc what if start_logpointer = 0? Code below won't search for snapshot
-    const String new_snapshot_name = fmt::format("{}", start_logpointer - 1);
+    // TODO myrrc If this is wrong, everything is too broken to continue
+    chassert(snapshot_logpointer >= last_start_logpointer);
 
     const StoredObject snapshot_object{fs::path(snapshots_folder) / snapshot_name};
-    const StoredObject new_snapshot_object{fs::path(snapshots_folder) / new_snapshot_name};
-
+    const StoredObject new_snapshot_object{fs::path(snapshots_folder) / "0"};
     LOG_INFO(log, "Found snapshot {}, renaming to {}", snapshot_object, new_snapshot_object);
 
+    // If we fail copying object, we don't update last_start_logpointer and try again on next run
     storage.object_storage->copyObject(snapshot_object, new_snapshot_object, {}, {});
+    last_start_logpointer = start_logpointer;
+
+    // TODO myrrc If we fail removing old snapshot, we'll have garbage in snapshots folder
     storage.object_storage->removeObject(snapshot_object);
 }
 
@@ -179,15 +181,14 @@ bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t start_logpointe
     return delta < wait_ms;
 }
 
-
-void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const
+void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer, bool reconciled) const
 {
-    ProfileEvents::increment(ProfileEvents::VFSGcCumulativeLogItemsRead, end_logpointer - start_logpointer);
-
+    // TODO myrrc maybe we should always have a snapshot, even for logpointer 0 (an empty one)
+    // This could also help us in migrations
     auto & object_storage = *storage.object_storage;
-    const bool should_have_previous_snapshot = start_logpointer > 0;
+    const bool should_have_previous_snapshot = start_logpointer > 0 || reconciled;
 
-    StoredObject old_snapshot = getSnapshotObject(start_logpointer - 1);
+    StoredObject old_snapshot = getSnapshotObject(reconciled ? 0 : (start_logpointer - 1));
     auto old_snapshot_uncompressed_buf = should_have_previous_snapshot
         ? object_storage.readObject(old_snapshot)
         : std::unique_ptr<ReadBufferFromFileBase>(std::make_unique<ReadBufferFromEmptyFile>(""));
@@ -238,6 +239,8 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpoin
     Lz4DeflatingWriteBuffer new_snapshot_buf{std::move(new_snapshot_uncompressed_buf), settings->snapshot_lz4_compression_level};
 
     auto [obsolete, invalid] = getBatch(start_logpointer, end_logpointer).mergeWithSnapshot(old_snapshot_buf, new_snapshot_buf, log);
+    ProfileEvents::increment(ProfileEvents::VFSGcCumulativeLogItemsRead, end_logpointer - start_logpointer);
+
     if (should_have_previous_snapshot)
     {
         obsolete.emplace_back(std::move(old_snapshot));
