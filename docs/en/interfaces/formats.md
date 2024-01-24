@@ -279,7 +279,7 @@ the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quo
 
 `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
 
-In cases where it is challenging or not possible to deploy format output configuration for the template format to a directory on all nodes in a cluste, or if the format is trivial then `format_schema_rows_template` can be used to pass the template string directly in the query, rather than a path to the file which contains it.
+In cases where it is challenging or not possible to deploy format output configuration for the template format to a directory on all nodes in a cluster, or if the format is trivial then `format_schema_rows_template` can be used to pass the template string directly in the query, rather than a path to the file which contains it.
 
 The `format_template_rows_between_delimiter` setting specifies the delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
 
