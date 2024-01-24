@@ -104,7 +104,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
         && (destination_data_source_description.is_encrypted == encrypted_in_backup))
     {
         LOG_TRACE(log, "Copying {} from AzureBlobStorage to disk {}", path_in_backup, destination_disk->getName());
-        auto write_blob_function = [&](const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes) -> size_t
+        auto write_blob_function = [&](const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> &) -> size_t
         {
             /// Object storage always uses mode `Rewrite` because it simulates append using metadata and different files.
             if (blob_path.size() != 2 || mode != WriteMode::Rewrite)
@@ -123,7 +123,6 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                 /* dest_path */ blob_path[0],
                 settings,
                 read_settings,
-                object_attributes,
                 threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupRDAzure"),
                 /* for_disk_azure_blob_storage= */ true);
 
@@ -180,7 +179,6 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(const String & path_in_backu
                 fs::path(configuration.blob_path) / path_in_backup,
                 settings,
                 read_settings,
-                {},
                 threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
             return; /// copied!
         }
@@ -204,14 +202,13 @@ void BackupWriterAzureBlobStorage::copyFile(const String & destination, const St
        /* dest_path */ destination,
        settings,
        read_settings,
-       {},
        threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"),
        /* for_disk_azure_blob_storage= */ true);
 }
 
 void BackupWriterAzureBlobStorage::copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length)
 {
-    copyDataToAzureBlobStorageFile(create_read_buffer, start_pos, length, client, configuration.container, path_in_backup, settings, {},
+    copyDataToAzureBlobStorageFile(create_read_buffer, start_pos, length, client, configuration.container, path_in_backup, settings,
                      threadPoolCallbackRunner<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
 }
 

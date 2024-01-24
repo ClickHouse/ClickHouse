@@ -47,10 +47,9 @@ namespace
             MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & client_,
             size_t offset_,
             size_t total_size_,
-            const String & dest_container_,
+            const String & dest_container_for_logging_,
             const String & dest_blob_,
             MultiVersion<AzureObjectStorageSettings> settings_,
-            const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunner<void> schedule_,
             bool for_disk_azure_blob_storage_,
             const Poco::Logger * log_)
@@ -58,10 +57,9 @@ namespace
             , client(client_)
             , offset (offset_)
             , total_size (total_size_)
-            , dest_container(dest_container_)
+            , dest_container_for_logging(dest_container_for_logging_)
             , dest_blob(dest_blob_)
             , settings(settings_)
-            , object_metadata(object_metadata_)
             , schedule(schedule_)
             , for_disk_azure_blob_storage(for_disk_azure_blob_storage_)
             , log(log_)
@@ -76,10 +74,9 @@ namespace
         MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & client;
         size_t offset;
         size_t total_size;
-        const String & dest_container;
+        const String & dest_container_for_logging;
         const String & dest_blob;
         MultiVersion<AzureObjectStorageSettings> settings;
-        const std::optional<std::map<String, String>> & object_metadata;
         ThreadPoolCallbackRunner<void> schedule;
         bool for_disk_azure_blob_storage;
         const Poco::Logger * log;
@@ -208,7 +205,7 @@ namespace
 
         void uploadPart(size_t part_offset, size_t part_size)
         {
-            LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, Size: {}", dest_container, dest_blob, part_size);
+            LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, Size: {}", dest_container_for_logging, dest_blob, part_size);
 
             if (!part_size)
             {
@@ -287,7 +284,7 @@ namespace
 
             std::lock_guard lock(bg_tasks_mutex); /// Protect bg_tasks from race
             task.block_id = block_id;
-            LOG_TRACE(log, "Writing part finished. Container: {}, Blob: {}, block_id: {}, Parts: {}", dest_container, dest_blob, block_id, bg_tasks.size());
+            LOG_TRACE(log, "Writing part finished. Container: {}, Blob: {}, block_id: {}, Parts: {}", dest_container_for_logging, dest_blob, block_id, bg_tasks.size());
         }
 
         String processUploadPartRequest(UploadPartTask & task)
@@ -331,14 +328,13 @@ void copyDataToAzureBlobStorageFile(
     size_t offset,
     size_t size,
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & dest_client,
-    const String & dest_container,
+    const String & dest_container_for_logging,
     const String & dest_blob,
     MultiVersion<AzureObjectStorageSettings> settings,
-    const std::optional<std::map<String, String>> & object_metadata,
     ThreadPoolCallbackRunner<void> schedule,
     bool for_disk_azure_blob_storage)
 {
-    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container, dest_blob, settings, object_metadata, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyDataToAzureBlobStorageFile")};
+    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyDataToAzureBlobStorageFile")};
     helper.performCopy();
 }
 
@@ -346,15 +342,14 @@ void copyDataToAzureBlobStorageFile(
 void copyAzureBlobStorageFile(
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & src_client,
     MultiVersion<Azure::Storage::Blobs::BlobContainerClient> & dest_client,
-    const String & src_container,
+    const String & src_container_for_logging,
     const String & src_blob,
     size_t offset,
     size_t size,
-    const String & dest_container,
+    const String & dest_container_for_logging,
     const String & dest_blob,
     MultiVersion<AzureObjectStorageSettings> settings,
     const ReadSettings & read_settings,
-    const std::optional<std::map<String, String>> & object_metadata,
     ThreadPoolCallbackRunner<void> schedule,
     bool for_disk_azure_blob_storage)
 {
@@ -390,14 +385,14 @@ void copyAzureBlobStorageFile(
     }
     else
     {
-        LOG_TRACE(&Poco::Logger::get("copyAzureBlobStorageFile"), "Reading from Container: {}, Blob: {}", src_container, src_blob);
+        LOG_TRACE(&Poco::Logger::get("copyAzureBlobStorageFile"), "Reading from Container: {}, Blob: {}", src_container_for_logging, src_blob);
         auto create_read_buffer = [&]
         {
             return std::make_unique<ReadBufferFromAzureBlobStorage>(src_client.get(), src_blob, read_settings, settings.get()->max_single_read_retries,
             settings.get()->max_single_download_retries);
         };
 
-        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container, dest_blob, settings, object_metadata, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyAzureBlobStorageFile")};
+        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, for_disk_azure_blob_storage, &Poco::Logger::get("copyAzureBlobStorageFile")};
         helper.performCopy();
     }
 }
