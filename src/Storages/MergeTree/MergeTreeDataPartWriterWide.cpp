@@ -760,7 +760,7 @@ void MergeTreeDataPartWriterWide::adjustLastMarkIfNeedAndFlushToDisk(size_t new_
     /// We can adjust marks only if we computed granularity for blocks.
     /// Otherwise we cannot change granularity because it will differ from
     /// other columns
-    if (compute_granularity && settings.can_use_adaptive_granularity)
+//    if (compute_granularity && settings.can_use_adaptive_granularity)
     {
         if (getCurrentMark() != index_granularity.getMarksCount() - 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
