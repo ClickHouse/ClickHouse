@@ -2343,12 +2343,12 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed)
         if (auto * identifier_node = node->as<IdentifierNode>(); identifier_node != nullptr)
             if (Poco::toUpper(identifier_node->getIdentifier().getFullName()) == "ALL" || Poco::toUpper(identifier_node->getAlias()) == "ALL")
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                    "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+                    "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_all_argument` and try again");
 
         if (auto * function_node = node->as<FunctionNode>(); function_node != nullptr)
             if (Poco::toUpper(function_node->getAlias()) == "ALL")
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_all_argument` and try again");
 
         auto sort_node = std::make_shared<SortNode>(node, all_node->getSortDirection(), all_node->getNullsSortDirection());
         list_node->getNodes().push_back(sort_node);
@@ -7133,7 +7133,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasHaving() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING");
 
-    if (settings.enable_order_by_all && query_node_typed.isOrderByAll())
+    if (settings.enable_all_argument && query_node_typed.isOrderByAll())
         expandOrderByAll(query_node_typed);
 
     /// Initialize aliases in query node scope

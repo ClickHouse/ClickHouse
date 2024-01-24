@@ -790,12 +790,12 @@ void expandOrderByAll(ASTSelectQuery * select_query)
         if (auto * identifier = expr->as<ASTIdentifier>(); identifier != nullptr)
             if (Poco::toUpper(identifier->name()) == "ALL" || Poco::toUpper(identifier->alias) == "ALL")
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_all_argument` and try again");
 
         if (auto * function = expr->as<ASTFunction>(); function != nullptr)
             if (Poco::toUpper(function->alias) == "ALL")
                 throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
-                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_order_by_all` and try again");
+                                "Cannot use ORDER BY ALL to sort a column with name 'all', please disable setting `enable_all_argument` and try again");
 
         auto elem = std::make_shared<ASTOrderByElement>();
         elem->direction = all_elem->direction;
@@ -1324,7 +1324,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         expandGroupByAll(select_query);
 
     // expand ORDER BY ALL
-    if (settings.enable_order_by_all && select_query->order_by_all)
+    if (settings.enable_all_argument && select_query->order_by_all)
         expandOrderByAll(select_query);
 
     /// Remove unneeded columns according to 'required_result_columns'.

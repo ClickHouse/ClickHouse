@@ -168,6 +168,7 @@ class IColumn;
     M(UInt64, aggregation_memory_efficient_merge_threads, 0, "Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. 0 means - same as 'max_threads'.", 0) \
     M(Bool, enable_memory_bound_merging_of_aggregation_results, true, "Enable memory bound merging strategy for aggregation.", 0) \
     M(Bool, enable_positional_arguments, true, "Enable positional arguments in ORDER BY, GROUP BY and LIMIT BY", 0) \
+    M(Bool, enable_all_argument, true, "Enable ALL argument in ORDER BY", 0)\
     M(Bool, enable_extended_results_for_datetime_functions, false, "Enable date functions like toLastDayOfMonth return Date32 results (instead of Date results) for Date32/DateTime64 arguments.", 0) \
     M(Bool, allow_nonconst_timezone_arguments, false, "Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()", 0) \
     \
@@ -856,7 +857,6 @@ class IColumn;
     M(UInt64, cache_warmer_threads, 4, "Only available in ClickHouse Cloud", 0) \
     M(Int64, ignore_cold_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
     M(Int64, prefer_warmed_unmerged_parts_seconds, 0, "Only available in ClickHouse Cloud", 0) \
-    M(Bool, enable_order_by_all, true, "Enable sorting expression ORDER BY ALL.", 0)\
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
@@ -923,6 +923,7 @@ class IColumn;
     MAKE_OBSOLETE(M, Bool, allow_experimental_undrop_table_query, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_s3queue, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
+    MAKE_OBSOLETE(M, Bool, enable_all_argument, true) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 

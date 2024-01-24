@@ -8,19 +8,18 @@ sidebar_label: ORDER BY
 The `ORDER BY` clause contains
 
 - a list of expressions, e.g. `ORDER BY visits, search_phrase`,
-- a list of numbers referring to columns in the `SELECT` clause, e.g. `ORDER BY 2, 1`, or
-- `ALL` which means all columns of the `SELECT` clause, e.g. `ORDER BY ALL`.
+- a list of numbers referring to positions of expressions in the `SELECT` clause, e.g. `ORDER BY 2, 1`, or
+- `ALL` which means all expressions of the `SELECT` clause, e.g. `ORDER BY ALL`.
 
-To disable sorting by column numbers, set setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments) = 0.
-To disable sorting by `ALL`, set setting [enable_order_by_all](../../../operations/settings/settings.md#enable-order-by-all) = 0.
+To disable sorting by expression positions, set setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments) = 0.
+To disable sorting by `ALL`, set setting [enable_all_argument](../../../operations/settings/settings.md#enable-all-argument) = 0.
 
-The `ORDER BY` clause can be attributed by a `DESC` (descending) or `ASC` (ascending) modifier which determines the sorting direction.
+The sorting direction of an `ORDER BY` expression can be specified using the `DESC` (descending) or `ASC` (ascending) modifiers, e.g. `ORDER BY visits DESC, search_phrase ASC`.
 Unless an explicit sort order is specified, `ASC` is used by default.
-The sorting direction applies to a single expression, not to the entire list, e.g. `ORDER BY Visits DESC, SearchPhrase`.
 Also, sorting is performed case-sensitively.
 
 Rows with identical values for a sort expressions are returned in an arbitrary and non-deterministic order.
-If the `ORDER BY` clause is omitted in a `SELECT` statement, the row order is also arbitrary and non-deterministic.
+If a `SELECT` statement has no `ORDER BY` clause, then the row order is also arbitrary and non-deterministic.
 
 ## Sorting of Special Values
 
