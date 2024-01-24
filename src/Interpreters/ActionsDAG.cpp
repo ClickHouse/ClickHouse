@@ -2542,10 +2542,16 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                     {
                         if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
                         {
-                            auto index_hint_filter_dag = buildFilterActionsDAG(index_hint->getActions()->getOutputs(),
-                                node_name_to_input_node_column,
-                                context,
-                                false /*single_output_condition_node*/);
+                            ActionsDAGPtr index_hint_filter_dag;
+                            const auto & index_hint_args = index_hint->getActions()->getOutputs();
+
+                            if (index_hint_args.empty())
+                                index_hint_filter_dag = std::make_shared<ActionsDAG>();
+                            else
+                                index_hint_filter_dag = buildFilterActionsDAG(index_hint_args,
+                                    node_name_to_input_node_column,
+                                    context,
+                                    false /*single_output_condition_node*/);
 
                             auto index_hint_function_clone = std::make_shared<FunctionIndexHint>();
                             index_hint_function_clone->setActions(std::move(index_hint_filter_dag));

@@ -11,6 +11,8 @@
 #include <Common/atomicRename.h>
 #include <Common/PoolId.h>
 #include <Common/logger_useful.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/hex.h>
 
 #include <Core/Defines.h>
@@ -463,6 +465,14 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->children.push_back(column_declaration->ttl);
         }
 
+        if (!column.settings.empty())
+        {
+            auto settings = std::make_shared<ASTSetQuery>();
+            settings->is_standalone = false;
+            settings->changes = column.settings;
+            column_declaration->settings = std::move(settings);
+        }
+
         columns_list->children.push_back(column_declaration_ptr);
     }
 
@@ -669,6 +679,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (col_decl.ttl)
             column.ttl = col_decl.ttl;
+
+        if (col_decl.settings)
+        {
+            column.settings = col_decl.settings->as<ASTSetQuery &>().changes;
+            MergeTreeColumnSettings::validate(column.settings);
+        }
 
         res.add(std::move(column));
     }

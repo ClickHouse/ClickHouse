@@ -38,7 +38,7 @@ void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, Atomic
 {
     if (total && (processed % PRINT_MESSAGE_EACH_N_OBJECTS == 0 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS)))
     {
-        LOG_INFO(log, "Processed: {}%", processed * 100.0 / total);
+        LOG_INFO(log, "Processed: {}%", static_cast<Int64>(processed * 1000.0 / total) * 0.1);
         watch.restart();
     }
 }
@@ -575,30 +575,24 @@ void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, std::excepti
     // Update dependent jobs
     for (const auto & dpt : dependent)
     {
-        if (auto dpt_info = scheduled_jobs.find(dpt); dpt_info != scheduled_jobs.end())
-        {
-            dpt_info->second.dependencies_left--;
-            if (!dpt_info->second.isBlocked())
-                enqueue(dpt_info->second, dpt, lock);
+        auto dpt_info = scheduled_jobs.find(dpt);
+        if (dpt_info == scheduled_jobs.end())
+            continue;
+        dpt_info->second.dependencies_left--;
+        if (!dpt_info->second.isBlocked())
+            enqueue(dpt_info->second, dpt, lock);
 
-            if (status != LoadStatus::OK)
-            {
-                std::exception_ptr cancel;
-                NOEXCEPT_SCOPE({
-                    ALLOW_ALLOCATIONS_IN_SCOPE;
-                    if (dpt->dependency_failure)
-                        dpt->dependency_failure(dpt, job, cancel);
-                });
-                // Recurse into dependent job if it should be canceled
-                if (cancel)
-                    finish(dpt, LoadStatus::CANCELED, cancel, lock);
-            }
-        }
-        else
+        if (status != LoadStatus::OK)
         {
-            // Job has already been canceled. Do not enter twice into the same job during finish recursion.
-            // This happens in {A<-B; A<-C; B<-D; C<-D} graph for D if A is failed or canceled.
-            chassert(status == LoadStatus::CANCELED);
+            std::exception_ptr cancel;
+            NOEXCEPT_SCOPE({
+                ALLOW_ALLOCATIONS_IN_SCOPE;
+                if (dpt->dependency_failure)
+                    dpt->dependency_failure(dpt, job, cancel);
+            });
+            // Recurse into dependent job if it should be canceled
+            if (cancel)
+                finish(dpt, LoadStatus::CANCELED, cancel, lock);
         }
     }
 

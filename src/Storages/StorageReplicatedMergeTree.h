@@ -316,7 +316,7 @@ public:
     MutableDataPartPtr tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
     /// Get best replica having this partition on a same type remote disk
-    String getSharedDataReplica(const IMergeTreeDataPart & part, DataSourceType data_source_type) const;
+    String getSharedDataReplica(const IMergeTreeDataPart & part, const DataSourceDescription & data_source_description) const;
 
     inline const String & getReplicaName() const { return replica_name; }
 
