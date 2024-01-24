@@ -25,6 +25,8 @@
 #include <Functions/FunctionFactory.h>
 #include <type_traits>
 
+#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
+
 namespace DB
 {
 namespace ErrorCodes
@@ -45,9 +47,28 @@ using namespace GatherUtils;
   * For better performance, try to use branch free code for numeric types(i.e. cond ? a : b --> !!cond * a + !cond * b), except floating point types because of Inf or NaN.
 */
 
-template <typename ArrayCond, typename ArrayA, typename ArrayB, typename ArrayResult, typename ResultType>
-inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, ArrayResult & res)
+template <typename ResultType>
+struct is_native_int_or_decimal // NOLINT(readability-identifier-naming)
 {
+    static constexpr bool value = std::is_integral_v<ResultType> || (is_decimal<ResultType> && sizeof(ResultType) <= 8);
+};
+
+#define BRANCHLESS_IF_FLOAT(TYPE, vc, va, vb, vr) \
+    using UIntType = typename NumberTraits::Construct<false, false, sizeof(TYPE)>::Type; \
+    using IntType = typename NumberTraits::Construct<true, false, sizeof(TYPE)>::Type; \
+    auto mask = static_cast<UIntType>(static_cast<IntType>(vc) - 1); \
+    auto new_a = static_cast<ResultType>(va); \
+    auto new_b = static_cast<ResultType>(vb); \
+    auto tmp = (~mask & (*reinterpret_cast<UIntType *>(&new_a))) | (mask & (*reinterpret_cast<UIntType *>(&new_b))); \
+    (vr) = *(reinterpret_cast<ResultType *>(&tmp));
+
+template <typename ResultType>
+inline constexpr bool is_native_int_or_decimal_v = is_native_int_or_decimal<ResultType>::value;
+
+template <typename ArrayCond, typename ArrayA, typename ArrayB, typename ArrayResult, typename ResultType>
+NO_INLINE void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, ArrayResult & res)
+{
+
     size_t size = cond.size();
     bool a_is_short = a.size() < size;
     bool b_is_short = b.size() < size;
@@ -57,14 +78,17 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
         size_t a_index = 0, b_index = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            if constexpr (std::is_integral_v<ResultType> || ((is_decimal<ResultType> && sizeof(ResultType) <= 8)))
-            {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
-                a_index += !!cond[i];
-                b_index += !cond[i];
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHLESS_IF_FLOAT(ResultType, cond[i], a[a_index], b[b_index], res[i])
             }
             else
-                res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[b_index++]);
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b[b_index]);
+
+            a_index += !!cond[i];
+            b_index += !cond[i];
         }
     }
     else if (a_is_short)
@@ -72,13 +96,16 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
         size_t a_index = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            if constexpr (std::is_integral_v<ResultType> || ((is_decimal<ResultType> && sizeof(ResultType) <= 8)))
-            {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b[i]);
-                a_index += !!cond[i];
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHLESS_IF_FLOAT(ResultType, cond[i], a[a_index], b[i], res[i])
             }
             else
-                res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b[i]);
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b[i]);
+
+            a_index += !!cond[i];
         }
     }
     else if (b_is_short)
@@ -86,29 +113,38 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
         size_t b_index = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            if constexpr (std::is_integral_v<ResultType> || ((is_decimal<ResultType> && sizeof(ResultType) <= 8)))
-            {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
-                b_index += !cond[i];
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHLESS_IF_FLOAT(ResultType, cond[i], a[i], b[b_index], res[i])
             }
             else
-                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[b_index++]);
+                res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[b_index]);
+
+            b_index += !cond[i];
         }
     }
     else
     {
         for (size_t i = 0; i < size; ++i)
         {
-            if constexpr (std::is_integral_v<ResultType> || ((is_decimal<ResultType> && sizeof(ResultType) <= 8)))
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[i]);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHLESS_IF_FLOAT(ResultType, cond[i], a[i], b[i], res[i])
+            }
             else
+            {
                 res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
+            }
         }
     }
 }
 
 template <typename ArrayCond, typename ArrayA, typename B, typename ArrayResult, typename ResultType>
-inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, ArrayResult & res)
+NO_INLINE void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, ArrayResult & res)
 {
     size_t size = cond.size();
     bool a_is_short = a.size() < size;
@@ -117,21 +153,28 @@ inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Ar
         size_t a_index = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            if constexpr (std::is_integral_v<ResultType> || ((is_decimal<ResultType> && sizeof(ResultType) <= 8)))
-            {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a[a_index]) + (!cond[i]) * static_cast<ResultType>(b);
-                a_index += !!cond[i];
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHLESS_IF_FLOAT(ResultType, cond[i], a[a_index], b, res[i])
             }
             else
-                res[i] = cond[i] ? static_cast<ResultType>(a[a_index++]) : static_cast<ResultType>(b);
+                res[i] = cond[i] ? static_cast<ResultType>(a[a_index]) : static_cast<ResultType>(b);
+
+            a_index += !!cond[i];
         }
     }
     else
     {
         for (size_t i = 0; i < size; ++i)
         {
-            if constexpr (std::is_integral_v<ResultType> || ((is_decimal<ResultType> && sizeof(ResultType) <= 8)))
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHLESS_IF_FLOAT(ResultType, cond[i], a[i], b, res[i])
+            }
             else
                 res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
         }
@@ -139,7 +182,7 @@ inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Ar
 }
 
 template <typename ArrayCond, typename A, typename ArrayB, typename ArrayResult, typename ResultType>
-inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, ArrayResult & res)
+NO_INLINE void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, ArrayResult & res)
 {
     size_t size = cond.size();
     bool b_is_short = b.size() < size;
@@ -148,21 +191,28 @@ inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, Ar
         size_t b_index = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            if constexpr (std::is_integral_v<ResultType> || ((is_decimal<ResultType> && sizeof(ResultType) <= 8)))
-            {
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[b_index]);
-                b_index += !cond[i];
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHLESS_IF_FLOAT(ResultType, cond[i], a, b[b_index], res[i])
             }
             else
-                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[b_index++]);
+                res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[b_index]);
+
+            b_index += !cond[i];
         }
     }
     else
     {
         for (size_t i = 0; i < size; ++i)
         {
-            if constexpr (std::is_integral_v<ResultType> || ((is_decimal<ResultType> && sizeof(ResultType) <= 8)))
+            if constexpr (is_native_int_or_decimal_v<ResultType>)
                 res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[i]);
+            else if constexpr (std::is_floating_point_v<ResultType>)
+            {
+                BRANCHLESS_IF_FLOAT(ResultType, cond[i], a, b[i], res[i])
+            }
             else
                 res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
         }
