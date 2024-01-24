@@ -94,7 +94,7 @@ std::pair<String, StoragePtr> createTableFromAST(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid storage definition in metadata file: "
                                                            "it's a bug or result of manual intervention in metadata files");
 
-            if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(ast_create_query.storage->engine->name))
+            if (!StorageFactory::instance().getStorageFeatures(ast_create_query.storage->engine->name).supports_schema_inference)
                 throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Missing definition of columns.");
             /// Leave columns empty.
         }

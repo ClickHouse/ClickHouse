@@ -253,4 +253,13 @@ AccessType StorageFactory::getSourceAccessType(const String & table_engine) cons
     return it->second.features.source_access_type;
 }
 
+
+const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const String & storage_name) const
+{
+    auto it = storages.find(storage_name);
+    if (it == storages.end())
+        throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", storage_name);
+    return it->second.features;
+}
+
 }
