@@ -576,12 +576,12 @@ bool InterpreterDropQuery::supportsTransactions() const
 {
     /// Enable only for truncate table with MergeTreeData engine
 
-    auto & drop = current_query_ptr->as<ASTDropQuery &>();
+    auto & drop = query_ptr->as<ASTDropQuery &>();
 
     return drop.cluster.empty()
             && !drop.temporary
             && drop.kind == ASTDropQuery::Kind::Truncate
-            && drop.table;
+            && drop.database_and_tables;
 }
 
 void registerInterpreterDropQuery(InterpreterFactory & factory)
