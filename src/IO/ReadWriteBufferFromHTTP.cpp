@@ -4,8 +4,8 @@
 
 namespace ProfileEvents
 {
-extern const Event ReadBufferSeekCancelConnection;
-extern const Event ReadWriteBufferFromHTTPPreservedSessions;
+    extern const Event ReadBufferSeekCancelConnection;
+    extern const Event ReadWriteBufferFromHTTPPreservedSessions;
 }
 
 namespace DB
