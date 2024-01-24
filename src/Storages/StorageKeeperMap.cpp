@@ -779,6 +779,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
             &Poco::Logger::get(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
             [&] { return getClient(); },
             WithRetries::KeeperSettings::fromContext(backup_entries_collector.getContext()),
+            backup_entries_collector.getContext()->getProcessListElement(),
             [](WithRetries::FaultyKeeper &) {}
         );
 
@@ -810,6 +811,7 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
         &Poco::Logger::get(fmt::format("StorageKeeperMapRestore ({})", getStorageID().getNameForLogs())),
         [&] { return getClient(); },
         WithRetries::KeeperSettings::fromContext(restorer.getContext()),
+        restorer.getContext()->getProcessListElement(),
         [](WithRetries::FaultyKeeper &) {}
     );
 

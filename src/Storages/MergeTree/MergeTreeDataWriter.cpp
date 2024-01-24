@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Columns/ColumnConst.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Exception.h>
 #include <Disks/createVolume.h>
@@ -314,7 +315,12 @@ Block MergeTreeDataWriter::mergeBlock(
     IColumn::Permutation *& permutation,
     const MergeTreeData::MergingParams & merging_params)
 {
+    OpenTelemetry::SpanHolder span("MergeTreeDataWriter::mergeBlock");
+
     size_t block_size = block.rows();
+
+    span.addAttribute("clickhouse.rows", block_size);
+    span.addAttribute("clickhouse.columns", block.columns());
 
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
     {
@@ -350,6 +356,8 @@ Block MergeTreeDataWriter::mergeBlock(
     auto merging_algorithm = get_merging_algorithm();
     if (!merging_algorithm)
         return block;
+
+    span.addAttribute("clickhouse.merging_algorithm", merging_algorithm->getName());
 
     Chunk chunk(block.getColumns(), block_size);
 

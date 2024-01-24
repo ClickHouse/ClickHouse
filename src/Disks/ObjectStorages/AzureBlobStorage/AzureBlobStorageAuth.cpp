@@ -65,8 +65,14 @@ AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::Abstr
     }
     else
     {
-        storage_url = config.getString(config_prefix + ".connection_string");
+        if (config.has(config_prefix + ".connection_string"))
+            storage_url = config.getString(config_prefix + ".connection_string");
+        else if (config.has(config_prefix + ".endpoint"))
+            storage_url = config.getString(config_prefix + ".endpoint");
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `connection_string` or `endpoint` in config");
     }
+
     String container_name = config.getString(config_prefix + ".container_name", "default-container");
     validateContainerName(container_name);
     std::optional<bool> container_already_exists {};
@@ -100,11 +106,12 @@ template <class T>
 std::unique_ptr<T> getAzureBlobStorageClientWithAuth(
     const String & url, const String & container_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
+    std::string connection_str;
     if (config.has(config_prefix + ".connection_string"))
-    {
-        String connection_str = config.getString(config_prefix + ".connection_string");
+        connection_str = config.getString(config_prefix + ".connection_string");
+
+    if (!connection_str.empty())
         return getClientWithConnectionString<T>(connection_str, container_name);
-    }
 
     if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name"))
     {
@@ -125,14 +132,15 @@ std::unique_ptr<BlobContainerClient> getAzureBlobContainerClient(
 {
     auto endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
     auto container_name = endpoint.container_name;
-    auto final_url = endpoint.storage_account_url
-        + (endpoint.storage_account_url.back() == '/' ? "" : "/")
-        + container_name;
+    auto final_url = container_name.empty()
+        ? endpoint.storage_account_url
+        : (std::filesystem::path(endpoint.storage_account_url) / container_name).string();
 
     if (endpoint.container_already_exists.value_or(false))
         return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
 
-    auto blob_service_client = getAzureBlobStorageClientWithAuth<BlobServiceClient>(endpoint.storage_account_url, container_name, config, config_prefix);
+    auto blob_service_client = getAzureBlobStorageClientWithAuth<BlobServiceClient>(
+        endpoint.storage_account_url, container_name, config, config_prefix);
 
     try
     {
