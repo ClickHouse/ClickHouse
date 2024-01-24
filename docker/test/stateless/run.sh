@@ -99,6 +99,16 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     > /etc/clickhouse-server2/config.d/filesystem_caches_path.xml.tmp
     mv /etc/clickhouse-server2/config.d/filesystem_caches_path.xml.tmp /etc/clickhouse-server2/config.d/filesystem_caches_path.xml
 
+    sudo cat /etc/clickhouse-server1/config.d/filesystem_caches_path.xml \
+    | sed "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_1/</custom_cached_disks_base_directory>|" \
+    > /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp
+    mv /etc/clickhouse-server1/config.d/filesystem_caches_path.xml.tmp /etc/clickhouse-server1/config.d/filesystem_caches_path.xml
+
+    sudo cat /etc/clickhouse-server2/config.d/filesystem_caches_path.xml \
+    | sed "s|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches/</custom_cached_disks_base_directory>|<custom_cached_disks_base_directory replace=\"replace\">/var/lib/clickhouse/filesystem_caches_2/</custom_cached_disks_base_directory>|" \
+    > /etc/clickhouse-server2/config.d/filesystem_caches_path.xml.tmp
+    mv /etc/clickhouse-server2/config.d/filesystem_caches_path.xml.tmp /etc/clickhouse-server2/config.d/filesystem_caches_path.xml
+
     mkdir -p /var/run/clickhouse-server1
     sudo chown clickhouse:clickhouse /var/run/clickhouse-server1
     sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server1/config.xml --daemon \
@@ -239,10 +249,13 @@ stop_logs_replication
 successfuly_saved=0
 for table in query_log zookeeper_log trace_log transactions_info_log
 do
-    clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst || successfuly_saved=$((successfuly_saved+$?))
+    clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst
+    successfuly_saved=$?
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst || successfuly_saved=$((successfuly_saved+$?))
-        clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst || successfuly_saved=$((successfuly_saved+$?))
+        clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst
+        successfuly_saved=$((successfuly_saved | $?))
+        clickhouse-client -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst
+        successfuly_saved=$((successfuly_saved | $?))
     fi
 done
 

@@ -440,7 +440,9 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
 FileSegment::State FileSegment::wait(size_t offset)
 {
-    OpenTelemetry::SpanHolder span{fmt::format("FileSegment::wait({})", key().toString())};
+    OpenTelemetry::SpanHolder span("FileSegment::wait");
+    span.addAttribute("clickhouse.key", key().toString());
+    span.addAttribute("clickhouse.offset", offset);
 
     auto lock = lockFileSegment();
 

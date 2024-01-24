@@ -6,7 +6,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
-#include <IO/ResourceGuard.h>
+#include <Common/Scheduler/ResourceGuard.h>
 
 
 namespace ProfileEvents
