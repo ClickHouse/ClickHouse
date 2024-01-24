@@ -130,11 +130,15 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     , queue_size(queue_size_ ? std::max(queue_size_, max_threads) : 0 /* zero means the queue is unlimited */)
     , shutdown_on_exception(shutdown_on_exception_)
 {
-    std::lock_guard lock(mutex);
-    jobs.reserve(max_free_threads);
-    LOG_ERROR(&Poco::Logger::get("ThreadPoolImpl"),
-                  "ThreadPoolImpl constructor [Instance Address: {}]: max_threads = {}, max_free_threads = {}, queue_size = {}, StackTrace: {}",
-                  static_cast<void*>(this), max_threads, max_free_threads, queue_size, StackTrace().toString());
+    // LOG_ERROR(&Poco::Logger::get("ThreadPoolImpl"),
+    //               "ThreadPoolImpl constructor [Instance Address: {}]: max_threads = {}, max_free_threads = {}, queue_size = {}, StackTrace: {}",
+    //               static_cast<void*>(this), max_threads, max_free_threads, queue_size, StackTrace().toString());
+
+    // TODO: actually it seems like for a global pool one thread is not enough for a very dynamic thread pool expansion
+    housekeepeing_thread = std::thread(&ThreadPoolImpl<Thread>::threadPoolHousekeep, this);
+
+    // jobs.reserve(max_free_threads);
+
     // while (threads.size() < max_free_threads)
     // {
     //     try
@@ -162,20 +166,11 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
     queue_size = queue_size ? std::max(queue_size, max_threads) : 0;
     jobs.reserve(queue_size);
 
+    desired_pool_size = std::min(max_threads, scheduled_jobs);
+
     if (need_start_threads)
     {
-        /// Start new threads while there are more scheduled jobs in the queue and the limit `max_threads` is not reached.
-        while (!shutdown && threads.size() < std::min(max_threads, scheduled_jobs))
-        {
-            try
-            {
-                createThreadNoLock();
-            }
-            catch (...)
-            {
-                break; /// failed to start more threads
-            }
-        }
+        threads_cv.notify_one();
     }
     else if (need_finish_free_threads)
     {
@@ -195,12 +190,10 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
 {
     std::lock_guard lock(mutex);
-    bool need_finish_free_threads = (value < max_free_threads);
-
     max_free_threads = std::min(value, max_threads);
 
-    if (need_finish_free_threads)
-    {
+    if (current_pool_size > scheduled_jobs + max_free_threads) {
+        desired_pool_size = std::min(max_threads, scheduled_jobs + max_free_threads);
         /// Wake up free threads so they can finish themselves.
         new_job_or_shutdown.notify_all();
     }
@@ -275,7 +268,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             }
             throw DB::Exception(DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
                 "Cannot schedule a task: {} (threads={}, jobs={})", reason,
-                threads.size(), scheduled_jobs);
+                current_pool_size, scheduled_jobs);
         }
         else
             return false;
@@ -311,23 +304,10 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
 
         /// Check if there are enough threads to process job.
-        if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
+        if (desired_pool_size < std::min(max_threads, scheduled_jobs + 1))
         {
-            // while (threads.size() < std::min(max_threads, scheduled_jobs + 1) )
-            // {
-                try
-                {
-                    createThreadNoLock();
-                }
-                catch (DB::Exception & e)
-                {
-                    on_error(e.what());
-                }
-                catch (...)
-                {
-                    on_error("can not start new thread");
-                }
-                // }
+            desired_pool_size = std::min(max_threads, scheduled_jobs + 1);
+            threads_cv.notify_one();
         }
 
         Stopwatch watch3;
@@ -400,10 +380,9 @@ ThreadPoolImpl<Thread>::~ThreadPoolImpl()
     /// Note: should not use logger from here,
     /// because it can be an instance of GlobalThreadPool that is a global variable
     /// and the destruction order of global variables is unspecified.
-    LOG_ERROR(&Poco::Logger::get("ThreadPoolImpl"),
-                  "ThreadPoolImpl destructor [Instance Address: {}]: threads.size() = {}",
-                  static_cast<void*>(this), threads.size());
-
+    // LOG_ERROR(&Poco::Logger::get("ThreadPoolImpl"),
+    //               "ThreadPoolImpl destructor [Instance Address: {}]: threads.size() = {}",
+    //               static_cast<void*>(this), threads.size());
 
     finalize();
     onDestroy();
@@ -418,20 +397,12 @@ void ThreadPoolImpl<Thread>::finalize()
         /// We don't want threads to remove themselves from `threads` anymore, otherwise `thread.join()` will go wrong below in this function.
         threads_remove_themselves = false;
     }
+    desired_pool_size = 0;
+    threads_cv.notify_all();
 
     /// Wake up threads so they can finish themselves.
     new_job_or_shutdown.notify_all();
-
-    /// Wait for all currently running jobs to finish (we don't wait for all scheduled jobs here like the function wait() does).
-    for (auto & thread : threads)
-    {
-        thread.join();
-        ProfileEvents::increment(
-            std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks
-        );
-    }
-
-    threads.clear();
+    housekeepeing_thread.join();
 }
 
 template <typename Thread>
@@ -467,12 +438,77 @@ bool ThreadPoolImpl<Thread>::finished() const
 }
 
 template <typename Thread>
+void ThreadPoolImpl<Thread>::threadPoolHousekeep()
+{
+    while (true) {
+        {
+            std::unique_lock<std::mutex> lock(threads_mutex);
+
+            // Wait for notification or timeout
+            if (threads_cv.wait_for(lock, std::chrono::seconds(5), [this]{ return desired_pool_size != current_pool_size; }))
+            {
+                if (desired_pool_size == 0 && current_pool_size > 0) // shutdown
+                {
+
+                    /// Wait for all currently running jobs to finish (we don't wait for all scheduled jobs here like the function wait() does).
+                    for (auto & thread : threads)
+                    {
+                        thread.join();
+                        ProfileEvents::increment(
+                            std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks
+                        );
+                    }
+
+                    threads.clear();
+                    break;
+                }
+
+                while (desired_pool_size > threads.size())
+                {
+                    try
+                    {
+                        createThreadNoLock();
+                        current_pool_size = threads.size();
+                    }
+                    catch (DB::Exception & e)
+                    {
+                        LOG_ERROR(&Poco::Logger::get("ThreadPool"),
+                            "ThreadPoolImpl createThreadNoLock failed: {}", e.what());
+                        break;
+                    }
+                    catch (...)
+                    {
+                        LOG_ERROR(&Poco::Logger::get("ThreadPool"),
+                            "ThreadPoolImpl createThreadNoLock failed: unknown exception");
+                        break;
+                    }
+                }
+                // todo: check if we have to shrink the pool
+                //  else if (threads.size() > desired_pool_size) {
+                //     // We have to wake up threads so they can finish themselves.
+                //     new_job_or_shutdown.notify_all();
+                // }
+            }
+            else
+            {
+                // timer expired
+                // TODO: check if we have to shrink the pool
+            }
+        }
+    }
+}
+
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     CurrentMetrics::Increment metric_pool_threads(metric_threads);
 
     bool job_is_done = false;
+    bool thread_is_not_needed_anymore = false;
+    bool thread_should_remove_itself = false;
+
     std::exception_ptr exception_from_job;
 
     /// We'll run jobs in this worker while there are scheduled jobs and until some special event occurs (e.g. shutdown, or decreasing the number of max_threads).
@@ -517,39 +553,49 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                     new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
             }
 
-            new_job_or_shutdown.wait(lock, [&] { return !jobs.empty() || shutdown || threads.size() > std::min(max_threads, scheduled_jobs + max_free_threads); });
+            new_job_or_shutdown.wait(lock, [&] { return !jobs.empty() || shutdown || desired_pool_size < current_pool_size; });
 
-            if (jobs.empty() || threads.size() > std::min(max_threads, scheduled_jobs + max_free_threads))
+            if (jobs.empty() || desired_pool_size < current_pool_size )
             {
                 // We enter here if:
                 //  - either this thread is not needed anymore due to max_free_threads excess;
                 //  - or shutdown happened AND all jobs are already handled.
-                if (threads_remove_themselves)
-                {
-                    thread_it->detach();
-                    threads.erase(thread_it);
-                    ProfileEvents::increment(
-                        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks
-                    );
-                }
-                return;
+
+                thread_is_not_needed_anymore = true; // we will remove this thread from the pool after leaving the critical section
+                thread_should_remove_itself = threads_remove_themselves; // we will not be able to access thread_should_remove_itself after leaving the critical section
             }
-
-            /// boost::priority_queue does not provide interface for getting non-const reference to an element
-            /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority.
-            job_data = std::move(const_cast<JobWithPriority &>(jobs.top()));
-            jobs.pop();
-
-            /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
-            if (shutdown)
+            else
             {
-                job_is_done = true;
-                continue;
-            }
+                /// boost::priority_queue does not provide interface for getting non-const reference to an element
+                /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority.
+                job_data = std::move(const_cast<JobWithPriority &>(jobs.top()));
+                jobs.pop();
 
+                /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
+                if (shutdown)
+                {
+                    job_is_done = true;
+                    continue;
+                }
+            }
             ProfileEvents::increment(
                 std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolWorkerLockHoldingMicroseconds : ProfileEvents::LocalThreadPoolWorkerLockHoldingMicroseconds,
                 watch.elapsedMicroseconds());
+        }
+
+        if (thread_is_not_needed_anymore)
+        {
+            if (thread_should_remove_itself)
+            {
+                std::lock_guard lock(threads_mutex);
+                thread_it->detach();
+                threads.erase(thread_it);
+                ProfileEvents::increment(
+                    std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolShrinks : ProfileEvents::LocalThreadPoolShrinks
+                );
+                current_pool_size--;
+            }
+            return;
         }
 
         ALLOW_ALLOCATIONS_IN_SCOPE;

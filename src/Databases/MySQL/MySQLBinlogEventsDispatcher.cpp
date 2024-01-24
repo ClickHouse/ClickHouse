@@ -1,6 +1,8 @@
 #include "MySQLBinlogEventsDispatcher.h"
 #include <boost/algorithm/string/join.hpp>
 #include <Common/logger_useful.h>
+#include <Common/ThreadPool.h>
+
 
 namespace DB::ErrorCodes
 {

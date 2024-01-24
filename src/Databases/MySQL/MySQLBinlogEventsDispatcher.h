@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Databases/MySQL/MySQLBinlog.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Poco/Logger.h>
 #include <base/unit.h>
 

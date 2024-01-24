@@ -130,9 +130,17 @@ private:
     const bool shutdown_on_exception = true;
 
     boost::heap::priority_queue<JobWithPriority> jobs;
+
     std::list<Thread> threads;
+    mutable std::mutex threads_mutex; // used only for threads list manipulations
+    std::thread housekeepeing_thread; // thread that maintains the number of the threads in pool close to desired (asynchronously)
+    std::atomic<size_t> desired_pool_size = 0;
+    std::atomic<size_t> current_pool_size = 0;
+    std::condition_variable threads_cv;
+
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
+
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
@@ -144,6 +152,8 @@ private:
 
     void finalize();
     void onDestroy();
+
+    void threadPoolHousekeep();
 };
 
 
