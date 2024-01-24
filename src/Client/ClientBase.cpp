@@ -1997,6 +1997,9 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
         IParser::Pos token_iterator(tokens, max_parser_depth);
         if (!token_iterator.isValid())
             return MultiQueryProcessingStage::QUERIES_END;
+
+        // Skip leading insignificant tokens (comments and spaces)
+        this_query_begin = token_iterator->begin;
     }
 
     this_query_end = this_query_begin;
