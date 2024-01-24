@@ -881,18 +881,12 @@ void FileCache::iterate(IterateFunc && func, const UserID & user_id)
 void FileCache::removeKey(const Key & key, const UserID & user_id)
 {
     assertInitialized();
-#ifdef ABORT_ON_LOGICAL_ERROR
-    assertCacheCorrectness();
-#endif
     metadata.removeKey(key, /* if_exists */false, /* if_releasable */true, user_id);
 }
 
 void FileCache::removeKeyIfExists(const Key & key, const UserID & user_id)
 {
     assertInitialized();
-#ifdef ABORT_ON_LOGICAL_ERROR
-    assertCacheCorrectness();
-#endif
     metadata.removeKey(key, /* if_exists */true, /* if_releasable */true, user_id);
 }
 
