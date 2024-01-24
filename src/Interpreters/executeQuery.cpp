@@ -257,7 +257,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
     element.query_views.insert(access_info.views.begin(), access_info.views.end());
 
-    const auto & factories_info = context_ptr->getQueryFactoriesInfo();
+    const auto factories_info = context_ptr->getQueryFactoriesInfo();
     element.used_aggregate_functions = factories_info.aggregate_functions;
     element.used_aggregate_function_combinators = factories_info.aggregate_function_combinators;
     element.used_database_engines = factories_info.database_engines;
