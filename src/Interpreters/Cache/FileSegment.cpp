@@ -339,8 +339,6 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
     if (!size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing zero size is not allowed");
 
-    const auto file_segment_path = getPath();
-
     {
         auto lock = lockFileSegment();
         assertIsDownloaderUnlocked("write", lock);
