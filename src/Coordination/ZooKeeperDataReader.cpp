@@ -105,7 +105,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
         Coordination::read(node.acl_id, in);
 
         /// Deserialize stat
-        Coordination::read(node.stat.czxid, in);
+        Coordination::read(node.src/Coordination/ZooKeeperDataReader.cppstat.czxid, in);
         Coordination::read(node.stat.mzxid, in);
         /// For some reason ZXID specified in filename can be smaller
         /// then actual zxid from nodes. In this case we will use zxid from nodes.

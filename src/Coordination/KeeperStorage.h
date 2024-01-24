@@ -35,40 +35,144 @@ public:
     /// New fields should be added to the struct only if it's really necessary
     struct Node
     {
-        /// to reduce size of the Node struct we use a custom Stat without dataLength
-        struct Stat
-        {
-            int64_t czxid{0};
-            int64_t mzxid{0};
-            int64_t ctime{0};
-            int64_t mtime{0};
-            int32_t version{0};
-            int32_t cversion{0};
-            int32_t aversion{0};
-            int32_t numChildren{0}; /// NOLINT
-            int64_t ephemeralOwner{0}; /// NOLINT
-            int64_t pzxid{0};
-
-            bool operator==(const Stat &) const = default;
-        };
-
+        int64_t czxid{0};
+        int64_t mzxid{0};
+        int64_t pzxid{0};
         uint64_t acl_id = 0; /// 0 -- no ACL by default
-        Stat stat{};
-        int32_t seq_num = 0;
+
+        mutable struct
+        {
+            bool has_cached_digest : 1;
+            int64_t ctime : 7;
+        } has_cached_digest_and_ctime{false, 0};
+
+        struct
+        {
+            bool is_ephemeral : 1;
+            int64_t mtime : 7;
+        } is_ephemeral_and_mtime{false, 0};
+
+
+        union
+        {
+            int64_t ephemeral_owner;
+            struct
+            {
+                int32_t seq_num;
+                int32_t num_children;
+            } children_info;
+        } ephemeral_or_children_data{0};
+
+        char * data{nullptr};
+        uint32_t data_size{0};
+
+        int32_t version{0};
+        int32_t cversion{0};
+        int32_t aversion{0};
 
         /// we cannot use `std::optional<uint64_t> because we want to
         /// pack the boolean with seq_num above
-        mutable bool has_cached_digest = false;
         mutable uint64_t cached_digest = 0;
+
+        ~Node()
+        {
+            if (data_size)
+                delete [] data;
+        }
+
+        Node() = default;
+
+        Node & operator=(const Node & other)
+        {
+            if (this == &other)
+                return *this;
+
+            czxid = other.czxid;
+            mzxid = other.mzxid;
+            pzxid = other.pzxid;
+            acl_id = other.acl_id;
+            has_cached_digest_and_ctime = other.has_cached_digest_and_ctime;
+            is_ephemeral_and_mtime = other.is_ephemeral_and_mtime;
+            ephemeral_or_children_data = other.ephemeral_or_children_data;
+            data_size = other.data_size;
+            version = other.version;
+            cversion = other.cversion;
+            aversion = other.aversion;
+
+            if (data_size != 0)
+            {
+                data = new char[data_size];
+                memcpy(data, other.data, data_size);
+            }
+            return *this;
+        }
+
+        Node(const Node & other)
+        {
+            *this = other;
+        }
+
+        bool isEphemeral() const
+        {
+
+            return is_ephemeral_and_mtime.is_ephemeral;
+        }
+
+        int64_t ephemeralOwner() const
+        {
+            return isEphemeral() ? ephemeral_or_children_data.ephemeral_owner : 0;
+        }
+
+        int32_t numChildren() const
+        {
+            return ephemeral_or_children_data.children_info.num_children;
+        }
+
+        void increaseNumChildren()
+        {
+            ++ephemeral_or_children_data.children_info.num_children;
+        }
+
+        int32_t seqNum() const
+        {
+            return ephemeral_or_children_data.children_info.seq_num;
+        }
+
+        void increaseSeqNum()
+        {
+            ++ephemeral_or_children_data.children_info.seq_num;
+        }
+
+        int64_t ctime() const
+        {
+            return has_cached_digest_and_ctime.ctime;
+        }
+
+        void setCtime(uint64_t ctime)
+        {
+            has_cached_digest_and_ctime.ctime = ctime;
+        }
+
+        int64_t mtime() const
+        {
+            return is_ephemeral_and_mtime.mtime;
+        }
+
+        void setMtime(uint64_t mtime)
+        {
+            is_ephemeral_and_mtime.mtime = mtime;
+        }
+
+        void copyStats(const Coordination::Stat & stat);
 
         void setResponseStat(Coordination::Stat & response_stat) const;
 
         /// Object memory size
         uint64_t sizeInBytes() const;
 
-        void setData(String new_data);
+        void setData(const String & new_data);
 
-        const auto & getData() const noexcept { return data; }
+        StringRef getData() const noexcept { return {data, data_size}; }
 
         void addChild(StringRef child_path);
 
@@ -87,7 +191,6 @@ public:
         // (e.g. we don't need to copy list of children)
         void shallowCopy(const Node & other);
     private:
-        String data;
         ChildrenSet children{};
     };
 
@@ -177,7 +280,7 @@ public:
     //  - quickly commit the changes to the storage
     struct CreateNodeDelta
     {
-        KeeperStorage::Node::Stat stat;
+        Coordination::Stat stat;
         Coordination::ACLs acls;
         String data;
     };
@@ -342,7 +445,7 @@ public:
     bool createNode(
         const std::string & path,
         String data,
-        const KeeperStorage::Node::Stat & stat,
+        const Coordination::Stat & stat,
         Coordination::ACLs node_acls);
 
     // Remove node in the storage
