@@ -1176,6 +1176,14 @@ void IMergeTreeDataPart::loadRowsCount()
         auto buf = metadata_manager->read("count.txt");
         readIntText(rows_count, *buf);
         assertEOF(*buf);
+
+        if (!index_granularity.empty() && rows_count < index_granularity.getTotalRows() && index_granularity_info.fixed_index_granularity)
+        {
+            /// Adjust last granule size to match the number of rows in the part in case of fixed index_granularity.
+            index_granularity.popMark();
+            index_granularity.appendMark(rows_count % index_granularity_info.fixed_index_granularity);
+            chassert(rows_count == index_granularity.getTotalRows());
+        }
     };
 
     if (index_granularity.empty())
