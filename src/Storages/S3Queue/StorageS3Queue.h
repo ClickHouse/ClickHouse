@@ -91,6 +91,7 @@ private:
     std::shared_ptr<StorageS3QueueSource> createSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageS3Queue::FileIterator> file_iterator,
+        size_t processing_id,
         size_t max_block_size,
         ContextPtr local_context);
 

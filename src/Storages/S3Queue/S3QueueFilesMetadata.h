@@ -80,6 +80,15 @@ public:
 
     void deactivateCleanupTask();
 
+    bool isShardedProcessing() const { return getProcessingThreadsNum() > 1 && mode == S3QueueMode::ORDERED; }
+
+    size_t getProcessingThreadsNum() const { return shards_num * threads_per_shard; }
+
+    size_t getProcessingThreadForPath(const std::string & path) const;
+
+    /// shard_id must be in range [0, shards_num - 1]
+    size_t getIdForProcessingThread(size_t thread_id, size_t shard_id) const { return shard_id * threads_per_shard + thread_id; }
+
 private:
     const S3QueueMode mode;
     const UInt64 max_set_size;
@@ -87,6 +96,8 @@ private:
     const UInt64 max_loading_retries;
     const size_t min_cleanup_interval_ms;
     const size_t max_cleanup_interval_ms;
+    const size_t shards_num;
+    const size_t threads_per_shard;
 
     const fs::path zookeeper_processing_path;
     const fs::path zookeeper_processed_path;
@@ -117,8 +128,7 @@ private:
 
     struct NodeMetadata
     {
-        std::string file_path;
-        UInt64 last_processed_timestamp = 0;
+        std::string file_path; UInt64 last_processed_timestamp = 0;
         std::string last_exception;
         UInt64 retries = 0;
         std::string processing_id; /// For ephemeral processing node.

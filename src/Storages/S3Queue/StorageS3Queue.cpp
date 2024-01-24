@@ -75,14 +75,8 @@ namespace
         return zkutil::extractZooKeeperPath(result_zk_path, true);
     }
 
-    void checkAndAdjustSettings(S3QueueSettings & s3queue_settings, const Settings & settings, Poco::Logger * log)
+    void checkAndAdjustSettings(S3QueueSettings & s3queue_settings, const Settings & settings)
     {
-        if (s3queue_settings.mode == S3QueueMode::ORDERED && s3queue_settings.s3queue_processing_threads_num > 1)
-        {
-            LOG_WARNING(log, "Parallel processing is not yet supported for Ordered mode");
-            s3queue_settings.s3queue_processing_threads_num = 1;
-        }
-
         if (!s3queue_settings.s3queue_processing_threads_num)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `s3queue_processing_threads_num` cannot be set to zero");
@@ -99,6 +93,13 @@ namespace
                             "Setting `s3queue_cleanup_interval_min_ms` ({}) must be less or equal to `s3queue_cleanup_interval_max_ms` ({})",
                             s3queue_settings.s3queue_cleanup_interval_min_ms, s3queue_settings.s3queue_cleanup_interval_max_ms);
         }
+
+        if (s3queue_settings.s3queue_current_shard_num >= s3queue_settings.s3queue_total_shards_num)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting `s3queue_current_shard_num` ({}) cannot exceed `{}` (`s3queue_total_shards_num` - 1)",
+                            s3queue_settings.s3queue_current_shard_num, s3queue_settings.s3queue_total_shards_num);
+
+        ///TODO: Add a test with different total_shards_settings for same keeper path - exception must be thrown.
     }
 }
 
@@ -134,7 +135,7 @@ StorageS3Queue::StorageS3Queue(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "S3Queue url must either end with '/' or contain globs");
     }
 
-    checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef(), log);
+    checkAndAdjustSettings(*s3queue_settings, context_->getSettingsRef());
 
     configuration.update(context_);
     FormatFactory::instance().checkFormatName(configuration.format);
@@ -221,13 +222,12 @@ public:
         std::shared_ptr<StorageS3Queue> storage_,
         ContextPtr context_,
         size_t max_block_size_,
-        size_t num_streams_)
+        size_t )
         : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
         , info(std::move(info_))
         , storage(std::move(storage_))
         , context(std::move(context_))
         , max_block_size(max_block_size_)
-        , num_streams(num_streams_)
     {
     }
 
@@ -236,7 +236,6 @@ private:
     std::shared_ptr<StorageS3Queue> storage;
     ContextPtr context;
     size_t max_block_size;
-    size_t num_streams;
 
     std::shared_ptr<StorageS3Queue::FileIterator> iterator;
 
@@ -301,11 +300,15 @@ void StorageS3Queue::read(
 void ReadFromS3Queue::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipes pipes;
-    const size_t adjusted_num_streams = std::min<size_t>(num_streams, storage->s3queue_settings->s3queue_processing_threads_num);
+    const size_t adjusted_num_streams = storage->s3queue_settings->s3queue_processing_threads_num;
 
     createIterator(nullptr);
     for (size_t i = 0; i < adjusted_num_streams; ++i)
-        pipes.emplace_back(storage->createSource(info, iterator, max_block_size, context));
+        pipes.emplace_back(storage->createSource(
+                               info,
+                               iterator,
+                               storage->files_metadata->getIdForProcessingThread(i, storage->s3queue_settings->s3queue_current_shard_num),
+                               max_block_size, context));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -320,6 +323,7 @@ void ReadFromS3Queue::initializePipeline(QueryPipelineBuilder & pipeline, const 
 std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
     const ReadFromFormatInfo & info,
     std::shared_ptr<StorageS3Queue::FileIterator> file_iterator,
+    size_t processing_id,
     size_t max_block_size,
     ContextPtr local_context)
 {
@@ -359,7 +363,7 @@ std::shared_ptr<StorageS3QueueSource> StorageS3Queue::createSource(
     auto s3_queue_log = s3queue_settings->s3queue_enable_logging_to_s3queue_log ? local_context->getS3QueueLog() : nullptr;
     return std::make_shared<StorageS3QueueSource>(
         getName(), info.source_header, std::move(internal_source),
-        files_metadata, after_processing, file_deleter, info.requested_virtual_columns,
+        files_metadata, processing_id, after_processing, file_deleter, info.requested_virtual_columns,
         local_context, shutdown_called, table_is_being_dropped, s3_queue_log, getStorageID(), log);
 }
 
@@ -463,7 +467,8 @@ bool StorageS3Queue::streamToViews()
     for (size_t i = 0; i < s3queue_settings->s3queue_processing_threads_num; ++i)
     {
         auto source = createSource(
-            read_from_format_info, file_iterator, DBMS_DEFAULT_BUFFER_SIZE, s3queue_context);
+            read_from_format_info, file_iterator, files_metadata->getIdForProcessingThread(i, s3queue_settings->s3queue_current_shard_num),
+            DBMS_DEFAULT_BUFFER_SIZE, s3queue_context);
 
         pipes.emplace_back(std::move(source));
     }

@@ -38,12 +38,15 @@ public:
     class FileIterator : public IIterator
     {
     public:
-        FileIterator(std::shared_ptr<S3QueueFilesMetadata> metadata_, std::unique_ptr<GlobIterator> glob_iterator_, std::atomic<bool> & shutdown_called_);
+        FileIterator(
+            std::shared_ptr<S3QueueFilesMetadata> metadata_,
+            std::unique_ptr<GlobIterator> glob_iterator_,
+            std::atomic<bool> & shutdown_called_);
 
         /// Note:
         /// List results in s3 are always returned in UTF-8 binary order.
         /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
-        KeyWithInfoPtr next() override;
+        KeyWithInfoPtr next(size_t idx) override;
 
         size_t estimatedKeysCount() override;
 
@@ -52,6 +55,11 @@ public:
         const std::unique_ptr<GlobIterator> glob_iterator;
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
+        Poco::Logger * log;
+
+        const bool sharded_processing;
+        std::unordered_map<size_t, std::deque<KeyWithInfoPtr>> sharded_keys;
+        std::mutex sharded_keys_mutex;
     };
 
     StorageS3QueueSource(
@@ -59,6 +67,7 @@ public:
         const Block & header_,
         std::unique_ptr<StorageS3Source> internal_source_,
         std::shared_ptr<S3QueueFilesMetadata> files_metadata_,
+        size_t processing_id_,
         const S3QueueAction & action_,
         RemoveFileFunc remove_file_func_,
         const NamesAndTypesList & requested_virtual_columns_,
@@ -80,6 +89,7 @@ public:
 private:
     const String name;
     const S3QueueAction action;
+    const size_t processing_id;
     const std::shared_ptr<S3QueueFilesMetadata> files_metadata;
     const std::shared_ptr<StorageS3Source> internal_source;
     const NamesAndTypesList requested_virtual_columns;
