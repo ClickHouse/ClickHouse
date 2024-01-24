@@ -80,9 +80,10 @@ ObjectStoragePtr ObjectStorageFactory::create(
 }
 
 #if USE_AWS_S3
-static S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config,
-                        const std::string & config_prefix,
-                        const ContextPtr & context)
+namespace
+{
+
+S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context)
 {
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     S3::URI uri(endpoint);
@@ -92,6 +93,23 @@ static S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config,
         uri.key.push_back('/');
 
     return uri;
+}
+
+void checkS3Capabilities(
+    S3ObjectStorage & storage, const S3Capabilities s3_capabilities, const String & name, const String & key_with_trailing_slash)
+{
+    /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
+    if (s3_capabilities.support_batch_delete && !checkBatchRemove(storage, key_with_trailing_slash))
+    {
+        LOG_WARNING(
+            &Poco::Logger::get("S3ObjectStorage"),
+            "Storage for disk {} does not support batch delete operations, "
+            "so `s3_capabilities.support_batch_delete` was automatically turned off during the access check. "
+            "To remove this message set `s3_capabilities.support_batch_delete` for the disk to `false`.",
+            name);
+        storage.setCapabilitiesSupportBatchDelete(false);
+    }
+}
 }
 
 void registerS3ObjectStorage(ObjectStorageFactory & factory)
@@ -116,20 +134,8 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
 
         /// NOTE: should we still perform this check for clickhouse-disks?
         if (!skip_access_check)
-        {
-            /// If `support_batch_delete` is turned on (default), check and possibly switch it off.
-            if (s3_capabilities.support_batch_delete && !checkBatchRemove(*object_storage, uri.key))
-            {
-                LOG_WARNING(
-                    &Poco::Logger::get("S3ObjectStorage"),
-                    "Storage for disk {} does not support batch delete operations, "
-                    "so `s3_capabilities.support_batch_delete` was automatically turned off during the access check. "
-                    "To remove this message set `s3_capabilities.support_batch_delete` for the disk to `false`.",
-                    name
-                );
-                object_storage->setCapabilitiesSupportBatchDelete(false);
-            }
-        }
+            checkS3Capabilities(*object_storage, s3_capabilities, name, uri.key);
+
         return object_storage;
     });
 }
@@ -143,7 +149,7 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool skip_access_check) -> ObjectStoragePtr
     {
         /// send_metadata changes the filenames (includes revision), while
         /// s3_plain do not care about this, and expect that the file name
@@ -159,8 +165,14 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         auto client = getClient(config, config_prefix, context, *settings);
         auto key_generator = getKeyGenerator(disk_type, uri, config, config_prefix);
 
-        return std::make_shared<S3PlainObjectStorage>(
+        auto object_storage = std::make_shared<S3ObjectStorage>(
             std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
+
+        /// NOTE: should we still perform this check for clickhouse-disks?
+        if (!skip_access_check)
+            checkS3Capabilities(*object_storage, s3_capabilities, name, uri.key);
+
+        return object_storage;
     });
 }
 #endif
