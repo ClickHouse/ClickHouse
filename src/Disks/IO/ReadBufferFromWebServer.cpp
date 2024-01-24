@@ -56,15 +56,15 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
     const auto & settings = context->getSettingsRef();
     const auto & server_settings = context->getServerSettings();
 
+    auto connection_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings.keep_alive_timeout);
+    connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings.http_connection_timeout, Poco::Timespan(20, 0)));
+    connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings.http_receive_timeout, Poco::Timespan(20, 0)));
+
     auto res = std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
-        ConnectionTimeouts(std::max(Poco::Timespan(settings.http_connection_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
-                           settings.http_send_timeout,
-                           std::max(Poco::Timespan(settings.http_receive_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
-                           settings.tcp_keep_alive_timeout,
-                           server_settings.keep_alive_timeout),
+        connection_timeouts,
         credentials,
         0,
         buf_size,

@@ -72,11 +72,13 @@ public:
 
     ObjectStorageIteratorPtr iterate(const std::string & path_prefix) const override;
 
-    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
-
     std::string getName() const override { return "AzureObjectStorage"; }
 
-    std::string getCommonKeyPrefix() const override { return ""; } /// No namespaces in azure.
+    ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
+
+    std::string getCommonKeyPrefix() const override { return ""; }
+
+    std::string getDescription() const override { return client.get()->GetUrl(); }
 
     bool exists(const StoredObject & object) const override;
 
@@ -154,8 +156,6 @@ private:
     const String container;
 
     Poco::Logger * log;
-
-    DataSourceDescription data_source_description;
 };
 
 }
