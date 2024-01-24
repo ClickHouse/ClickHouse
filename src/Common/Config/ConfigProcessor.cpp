@@ -80,7 +80,7 @@ ConfigProcessor::ConfigProcessor(
     if (log_to_console && !hasLogger("ConfigProcessor"))
     {
         channel_ptr = new Poco::ConsoleChannel;
-        log = getLogger("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
+        log = createLogger("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
     }
     else
     {

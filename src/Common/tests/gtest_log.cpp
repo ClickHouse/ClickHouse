@@ -27,7 +27,7 @@ TEST(Logger, TestLog)
 
         std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
-        auto log = getLogger("TestLogger", my_channel.get());
+        auto log = createLogger("TestLogger", my_channel.get());
         log->setLevel("test");
         LOG_TEST(log, "Hello World");
 
@@ -40,7 +40,7 @@ TEST(Logger, TestLog)
         {
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
-            auto log = getLogger(std::string{level} + "_Logger", my_channel.get());
+            auto log = createLogger(std::string{level} + "_Logger", my_channel.get());
             log->setLevel(level);
             LOG_TEST(log, "Hello World");
 
@@ -84,7 +84,7 @@ TEST(Logger, SideEffects)
 {
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     auto my_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(oss));
-    auto log = getLogger("Logger", my_channel.get());
+    auto log = createLogger("Logger", my_channel.get());
     log->setLevel("trace");
 
     /// Ensure that parameters are evaluated only once

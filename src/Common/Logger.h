@@ -28,7 +28,7 @@ LoggerPtr getLogger(const std::string & name);
   * If Logger already exists, throws exception.
   * Logger is destroyed, when last shared ptr that refers to Logger with specified name is destroyed.
   */
-LoggerPtr getLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level = Poco::Message::PRIO_INFORMATION);
+LoggerPtr createLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level = Poco::Message::PRIO_INFORMATION);
 
 /** Create raw Poco::Logger that will not be destroyed before program termination.
   * This can be used in cases when specific Logger instance can be singletone.

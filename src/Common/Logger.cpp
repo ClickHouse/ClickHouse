@@ -6,7 +6,7 @@ LoggerPtr getLogger(const std::string & name)
     return Poco::Logger::getShared(name);
 }
 
-LoggerPtr getLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level)
+LoggerPtr createLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level)
 {
     return Poco::Logger::createShared(name, channel, level);
 }

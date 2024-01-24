@@ -25,31 +25,17 @@
 namespace
 {
 
-std::atomic<bool> is_logging_infrastructure_destroyed{false};
-
-class LoggerMutex
+std::mutex & getLoggerMutex()
 {
-public:
-	void lock()
+	auto get_logger_mutex_placeholder_memory = []()
 	{
-		mutex.lock();
-	}
+		static char buffer[sizeof(std::mutex)]{};
+		return buffer;
+	};
 
-	void unlock()
-	{
-		mutex.unlock();
-	}
-
-	~LoggerMutex()
-	{
-		is_logging_infrastructure_destroyed.store(true, std::memory_order_release);
-	}
-
-private:
-	std::mutex mutex;
-};
-
-LoggerMutex logger_mutex;
+	static std::mutex * logger_mutex = new (get_logger_mutex_placeholder_memory()) std::mutex();
+	return *logger_mutex;
+}
 
 }
 
@@ -143,7 +129,7 @@ void Logger::dump(const std::string& msg, const void* buffer, std::size_t length
 
 void Logger::setLevel(const std::string& name, int level)
 {
-	std::lock_guard<LoggerMutex> lock(logger_mutex);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	if (_pLoggerMap)
 	{
@@ -162,7 +148,7 @@ void Logger::setLevel(const std::string& name, int level)
 
 void Logger::setChannel(const std::string& name, Channel* pChannel)
 {
-	std::lock_guard<LoggerMutex> lock(logger_mutex);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	if (_pLoggerMap)
 	{
@@ -181,7 +167,7 @@ void Logger::setChannel(const std::string& name, Channel* pChannel)
 
 void Logger::setProperty(const std::string& loggerName, const std::string& propertyName, const std::string& value)
 {
-	std::lock_guard<LoggerMutex> lock(logger_mutex);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	if (_pLoggerMap)
 	{
@@ -318,12 +304,6 @@ struct LoggerDeleter
 {
 	void operator()(Poco::Logger * logger)
 	{
-		if (is_logging_infrastructure_destroyed.load(std::memory_order_acquire))
-		{
-			logger->release();
-			return;
-		}
-
 		Logger::destroy(logger->name());
 	}
 };
@@ -338,14 +318,14 @@ inline LoggerPtr makeLoggerPtr(Logger & logger)
 
 Logger& Logger::get(const std::string& name)
 {
-	std::lock_guard<LoggerMutex> lock(logger_mutex);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	return unsafeGet(name);
 }
 
 LoggerPtr Logger::getShared(const std::string & name)
 {
-	std::lock_guard<LoggerMutex> lock(logger_mutex);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	return makeLoggerPtr(unsafeGet(name));
 }
@@ -372,21 +352,21 @@ Logger& Logger::unsafeGet(const std::string& name)
 
 Logger& Logger::create(const std::string& name, Channel* pChannel, int level)
 {
-	std::lock_guard<LoggerMutex> lock(logger_mutex);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	return unsafeCreate(name, pChannel, level);
 }
 
 LoggerPtr Logger::createShared(const std::string & name, Channel * pChannel, int level)
 {
-	std::lock_guard<LoggerMutex> lock(logger_mutex);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	return makeLoggerPtr(unsafeCreate(name, pChannel, level));
 }
 
 Logger& Logger::root()
 {
-	std::lock_guard<LoggerMutex> lock(logger_mutex);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	return unsafeGet(ROOT);
 }
@@ -394,7 +374,7 @@ Logger& Logger::root()
 
 Logger* Logger::has(const std::string& name)
 {
-	std::lock_guard<LoggerMutex> lock(logger_mutex);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	return find(name);
 }
@@ -402,7 +382,7 @@ Logger* Logger::has(const std::string& name)
 
 void Logger::shutdown()
 {
-	std::lock_guard<LoggerMutex> lock(logger_mutex);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	if (_pLoggerMap)
 	{
@@ -430,7 +410,7 @@ Logger* Logger::find(const std::string& name)
 
 void Logger::destroy(const std::string& name)
 {
-	std::lock_guard<LoggerMutex> lock(logger_mutex);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	if (_pLoggerMap)
 	{
@@ -446,7 +426,7 @@ void Logger::destroy(const std::string& name)
 
 void Logger::names(std::vector<std::string>& names)
 {
-	std::lock_guard<LoggerMutex> lock(logger_mutex);
+	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
 	names.clear();
 	if (_pLoggerMap)
