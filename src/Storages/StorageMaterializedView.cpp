@@ -4,6 +4,7 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -125,6 +126,9 @@ StorageMaterializedView::StorageMaterializedView(
     }
     else
     {
+        const String & engine = query.storage->engine->name;
+        const auto & storage_features = StorageFactory::instance().getStorageFeatures(engine);
+
         /// We will create a query to create an internal table.
         auto create_context = Context::createCopy(local_context);
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
@@ -134,6 +138,22 @@ StorageMaterializedView::StorageMaterializedView(
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
+        if (storage_features.supports_skipping_indices)
+        {
+            if (query.columns_list->indices)
+                new_columns_list->set(new_columns_list->indices, query.columns_list->indices->ptr());
+            if (query.columns_list->constraints)
+                new_columns_list->set(new_columns_list->constraints, query.columns_list->constraints->ptr());
+            if (query.columns_list->primary_key)
+                new_columns_list->set(new_columns_list->primary_key, query.columns_list->primary_key->ptr());
+            if (query.columns_list->primary_key_from_columns)
+                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->primary_key_from_columns->ptr());
+        }
+        if (storage_features.supports_projections)
+        {
+            if (query.columns_list->projections)
+                new_columns_list->set(new_columns_list->projections, query.columns_list->projections->ptr());
+        }
 
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
         manual_create_query->set(manual_create_query->storage, query.storage->ptr());
