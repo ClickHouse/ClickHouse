@@ -66,7 +66,7 @@ template <typename ResultType>
 inline constexpr bool is_native_int_or_decimal_v = is_native_int_or_decimal<ResultType>::value;
 
 template <typename ArrayCond, typename ArrayA, typename ArrayB, typename ArrayResult, typename ResultType>
-NO_INLINE void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, ArrayResult & res)
+inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, ArrayResult & res)
 {
 
     size_t size = cond.size();
@@ -144,7 +144,7 @@ NO_INLINE void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const 
 }
 
 template <typename ArrayCond, typename ArrayA, typename B, typename ArrayResult, typename ResultType>
-NO_INLINE void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, ArrayResult & res)
+inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, ArrayResult & res)
 {
     size_t size = cond.size();
     bool a_is_short = a.size() < size;
@@ -182,7 +182,7 @@ NO_INLINE void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b,
 }
 
 template <typename ArrayCond, typename A, typename ArrayB, typename ArrayResult, typename ResultType>
-NO_INLINE void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, ArrayResult & res)
+inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, ArrayResult & res)
 {
     size_t size = cond.size();
     bool b_is_short = b.size() < size;
