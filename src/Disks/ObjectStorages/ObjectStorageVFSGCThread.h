@@ -25,7 +25,7 @@ private:
     void run();
     bool skipRun(size_t batch_size, size_t start_logpointer) const;
     void reconcileLogWithSnapshot(size_t start_logpointer);
-    void updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer, bool reconciled) const;
+    void updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const;
     VFSLogItem getBatch(size_t start_logpointer, size_t end_logpointer) const;
     void removeBatch(size_t start_logpointer, size_t end_logpointer) const;
     String getNode(size_t id) const;

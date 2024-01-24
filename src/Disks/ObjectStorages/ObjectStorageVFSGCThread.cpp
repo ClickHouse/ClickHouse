@@ -4,10 +4,8 @@
 #include "DiskObjectStorageVFS.h"
 #include "IO/Lz4DeflatingWriteBuffer.h"
 #include "IO/Lz4InflatingReadBuffer.h"
-#include "IO/ReadBufferFromEmptyFile.h"
 #include "IO/ReadHelpers.h"
 #include "IO/S3Common.h"
-
 #if USE_AZURE_BLOB_STORAGE
 #    include <azure/storage/common/storage_exception.hpp>
 #endif
@@ -99,8 +97,7 @@ void ObjectStorageVFSGCThread::run()
     const size_t end_logpointer_parsed = parseFromString<size_t>(end_str.substr(4));
     const size_t end_logpointer = std::min(end_logpointer_parsed, start_logpointer + settings->batch_max_size);
 
-    const bool reconcile = last_start_logpointer > start_logpointer;
-    if (reconcile)
+    if (last_start_logpointer > start_logpointer)
         reconcileLogWithSnapshot(start_logpointer);
     else
         last_start_logpointer = start_logpointer;
@@ -108,8 +105,14 @@ void ObjectStorageVFSGCThread::run()
     if ((skip_run = skipRun(batch_size, start_logpointer)))
         return;
 
+    if (start_logpointer == 0)
+    {
+        // try writing an empty snapshot for logpointer 0 (we may find that someone has already written,
+        // that's fine TODO myrrc
+    }
+
     LOG_DEBUG(log, "Processing range [{};{}]", start_logpointer, end_logpointer);
-    updateSnapshotWithLogEntries(start_logpointer, end_logpointer, reconcile);
+    updateSnapshotWithLogEntries(start_logpointer, end_logpointer);
     removeBatch(start_logpointer, end_logpointer);
     LOG_DEBUG(log, "Removed lock for [{};{}]", start_logpointer, end_logpointer);
     successful_run = true;
@@ -141,7 +144,7 @@ void ObjectStorageVFSGCThread::reconcileLogWithSnapshot(size_t start_logpointer)
     const size_t snapshot_logpointer = parseFromString<size_t>(snapshot_name);
 
     // TODO myrrc If this is wrong, everything is too broken to continue
-    chassert(snapshot_logpointer >= last_start_logpointer);
+    chassert(snapshot_logpointer + 1 >= last_start_logpointer);
 
     const StoredObject snapshot_object{fs::path(snapshots_folder) / snapshot_name};
     const StoredObject new_snapshot_object{fs::path(snapshots_folder) / "0"};
@@ -181,17 +184,13 @@ bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t start_logpointe
     return delta < wait_ms;
 }
 
-void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer, bool reconciled) const
+void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const
 {
-    // TODO myrrc maybe we should always have a snapshot, even for logpointer 0 (an empty one)
-    // This could also help us in migrations
-    auto & object_storage = *storage.object_storage;
-    const bool should_have_previous_snapshot = start_logpointer > 0 || reconciled;
+    IObjectStorage & object_storage = *storage.object_storage;
 
-    StoredObject old_snapshot = getSnapshotObject(reconciled ? 0 : (start_logpointer - 1));
-    auto old_snapshot_uncompressed_buf = should_have_previous_snapshot
-        ? object_storage.readObject(old_snapshot)
-        : std::unique_ptr<ReadBufferFromFileBase>(std::make_unique<ReadBufferFromEmptyFile>(""));
+    const size_t start_logpointer_regarding_zero = start_logpointer == 0 ? 0 : (start_logpointer - 1);
+    StoredObject old_snapshot = getSnapshotObject(start_logpointer_regarding_zero);
+    auto old_snapshot_uncompressed_buf = object_storage.readObject(old_snapshot);
     Lz4InflatingReadBuffer old_snapshot_buf{std::move(old_snapshot_uncompressed_buf)};
 
     auto next_snapshot_exists = [&] { return object_storage.exists(getSnapshotObject(end_logpointer)); };
@@ -200,16 +199,13 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpoin
         LOG_INFO(
             log,
             "Snapshot for {} doesn't exist but found snapshot for {}, discarding this batch",
-            should_have_previous_snapshot ? start_logpointer - 1 : 0,
+            start_logpointer_regarding_zero,
             end_logpointer);
     };
 
     try
     {
-        if (should_have_previous_snapshot)
-            old_snapshot_buf.eof(); // throws if file not found
-        else if (next_snapshot_exists())
-            return log_already_processed();
+        old_snapshot_buf.eof(); // throws if file not found
     }
     // TODO myrrc this works only for s3 and azure
 #if USE_AWS_S3
@@ -239,13 +235,10 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpoin
     Lz4DeflatingWriteBuffer new_snapshot_buf{std::move(new_snapshot_uncompressed_buf), settings->snapshot_lz4_compression_level};
 
     auto [obsolete, invalid] = getBatch(start_logpointer, end_logpointer).mergeWithSnapshot(old_snapshot_buf, new_snapshot_buf, log);
-    ProfileEvents::increment(ProfileEvents::VFSGcCumulativeLogItemsRead, end_logpointer - start_logpointer);
+    obsolete.emplace_back(std::move(old_snapshot));
 
-    if (should_have_previous_snapshot)
-    {
-        obsolete.emplace_back(std::move(old_snapshot));
-        ProfileEvents::increment(ProfileEvents::VFSGcCumulativeSnapshotBytesRead, old_snapshot_buf.count());
-    }
+    ProfileEvents::increment(ProfileEvents::VFSGcCumulativeLogItemsRead, end_logpointer - start_logpointer);
+    ProfileEvents::increment(ProfileEvents::VFSGcCumulativeSnapshotBytesRead, old_snapshot_buf.count());
 
     if (!invalid.empty()) // TODO myrrc remove after testing
     {
