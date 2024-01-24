@@ -904,7 +904,7 @@ public:
     /// Returns a pointer to the Logger with the given name if it
     /// exists, or a null pointer otherwise.
 
-    static void destroy(const std::string & name);
+    static bool destroy(const std::string & name);
     /// Destroys the logger with the specified name. Does nothing
     /// if the logger is not found.
     ///

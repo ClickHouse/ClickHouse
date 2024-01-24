@@ -304,7 +304,10 @@ struct LoggerDeleter
 {
 	void operator()(Poco::Logger * logger)
 	{
-		Logger::destroy(logger->name());
+		if (Logger::destroy(logger->name()))
+			return;
+
+		logger->release();
 	}
 };
 
@@ -408,7 +411,7 @@ Logger* Logger::find(const std::string& name)
 }
 
 
-void Logger::destroy(const std::string& name)
+bool Logger::destroy(const std::string& name)
 {
 	std::lock_guard<std::mutex> lock(getLoggerMutex());
 
@@ -419,8 +422,12 @@ void Logger::destroy(const std::string& name)
 		{
 			if (it->second->release() == 1)
 				_pLoggerMap->erase(it);
+
+			return true;
 		}
 	}
+
+	return false;
 }
 
 
