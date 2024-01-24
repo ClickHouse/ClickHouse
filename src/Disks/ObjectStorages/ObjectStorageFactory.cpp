@@ -165,7 +165,7 @@ void registerS3PlainObjectStorage(ObjectStorageFactory & factory)
         auto client = getClient(config, config_prefix, context, *settings);
         auto key_generator = getKeyGenerator(disk_type, uri, config, config_prefix);
 
-        auto object_storage = std::make_shared<S3ObjectStorage>(
+        auto object_storage = std::make_shared<S3PlainObjectStorage>(
             std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
 
         /// NOTE: should we still perform this check for clickhouse-disks?
