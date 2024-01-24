@@ -254,7 +254,7 @@ TEST_F(FDBCoroutineTest, CancelUncancelable)
 {
     auto delay = [](std::chrono::system_clock::duration d) -> Task<void>
     {
-        co_await fdb_delay(0.1); /// Make following code runing on fdb thread
+        co_await fdb_delay(0.1); /// Make following code running on fdb thread
         std::this_thread::sleep_for(d);
         co_return;
     };

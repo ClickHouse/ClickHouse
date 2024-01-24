@@ -4,14 +4,6 @@
 #include "KeeperConst.h"
 #include "KeeperSession.h"
 
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-}
-
 namespace DB::FoundationDB
 {
 KeeperSession::KeeperSession(KeeperKeys & keys_, FDBTransaction * tr) : keys(keys_), log(&Poco::Logger::get("FDBKeeperSession"))

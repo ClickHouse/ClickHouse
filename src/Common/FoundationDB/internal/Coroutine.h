@@ -159,7 +159,7 @@ struct TaskPromiseType<TTask> : public TaskPromiseTypeBase
             }
             catch (...)
             {
-                tryLogCurrentException(this->log, "Unexpect exception in callback");
+                tryLogCurrentException(this->log, "Unexpected exception in callback");
             }
         }
         return {};
@@ -190,7 +190,7 @@ struct TaskPromiseType<TTask> : public TaskPromiseTypeBase
             }
             catch (...)
             {
-                tryLogCurrentException(this->log, "Unexpect exception in callback");
+                tryLogCurrentException(this->log, "Unexpected exception in callback");
             }
         }
         return {};
