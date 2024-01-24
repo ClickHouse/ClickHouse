@@ -6,7 +6,7 @@
 
 #include <Common/EventFD.h>
 
-#include <Processors/Chunk.h>
+#include <Core/Block.h>
 
 #include <Storages/Streaming/Subscription_fwd.h>
 
@@ -28,7 +28,7 @@ public:
     StreamSubscriptionPtr subscribe();
 
     // push new chunk to all subscriptions
-    void pushChunk(Chunk chunk);
+    void pushToAll(Block block);
 
 private:
     // Lock required for all changes with subscriptions:

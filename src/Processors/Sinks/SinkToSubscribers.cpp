@@ -9,7 +9,8 @@ SinkToSubscribers::SinkToSubscribers(const Block & header_, StreamSubscriptionMa
 
 void SinkToSubscribers::consume(Chunk chunk)
 {
-    subscription_manager.pushChunk(std::move(chunk));
+    Block block = getHeader().cloneWithColumns(chunk.detachColumns());
+    subscription_manager.pushToAll(std::move(block));
 }
 
 }

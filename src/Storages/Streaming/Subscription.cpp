@@ -1,8 +1,6 @@
 #include <mutex>
 #include <utility>
 
-#include <Processors/Chunk.h>
-
 #include <Storages/Streaming/Subscription.h>
 
 namespace DB
@@ -10,54 +8,54 @@ namespace DB
 
 #if defined(OS_LINUX)
 
-void StreamSubscription::push(Chunk chunk)
+void StreamSubscription::push(Block block)
 {
     {
         std::unique_lock guard(mutex);
-        ready_chunks.emplace_back(std::move(chunk));
+        ready_blocks.emplace_back(std::move(block));
     }
-    new_chunks_event.write(1);
+    new_blocks_event.write(1);
 }
 
-std::list<Chunk> StreamSubscription::extractAll()
+BlocksList StreamSubscription::extractAll()
 {
     if (is_disabled.load())
         return {};
 
-    new_chunks_event.read();
+    new_blocks_event.read();
 
     std::unique_lock guard(mutex);
-    return std::exchange(ready_chunks, {});
+    return std::exchange(ready_blocks, {});
 }
 
 std::optional<int> StreamSubscription::fd() const
 {
-    return new_chunks_event.fd;
+    return new_blocks_event.fd;
 }
 
 void StreamSubscription::disable()
 {
     is_disabled.store(true);
-    new_chunks_event.write(1);
+    new_blocks_event.write(1);
 }
 
 #else
 
-void StreamSubscription::push(Chunk chunk)
+void StreamSubscription::push(Block block)
 {
     std::unique_lock guard(mutex);
-    ready_chunks.emplace_back(std::move(chunk));
-    empty_chunks.notify_one();
+    ready_blocks.emplace_back(std::move(block));
+    empty_blocks.notify_one();
 }
 
-std::list<Chunk> StreamSubscription::extractAll()
+BlocksList StreamSubscription::extractAll()
 {
     std::unique_lock guard(mutex);
 
-    while (ready_chunks.empty() && !is_disabled.load())
-        empty_chunks.wait(guard);
+    while (ready_blocks.empty() && !is_disabled.load())
+        empty_blocks.wait(guard);
 
-    return std::exchange(ready_chunks, {});
+    return std::exchange(ready_blocks, {});
 }
 
 std::optional<int> StreamSubscription::fd() const
@@ -69,7 +67,7 @@ void StreamSubscription::disable()
 {
     std::unique_lock guard(mutex);
     is_disabled.store(true);
-    empty_chunks.notify_one();
+    empty_blocks.notify_one();
 }
 
 #endif

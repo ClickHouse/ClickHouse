@@ -20,7 +20,7 @@ public:
     SubscriptionSource(Block storage_sample_, StreamSubscriptionPtr subscription_);
     ~SubscriptionSource() override = default;
 
-    String getName() const override { return "Subscription"; }
+    String getName() const override { return "SubscriptionSource"; }
 
     Status prepare() override;
     int schedule() override;
@@ -32,13 +32,18 @@ public:
     void onCancel() override;
 
 protected:
+    /// Converts block from subscription to output header metadata chunk.
+    /// It is possible for sinks to change chunk somehow before pushing it to subscribers
+    /// or it can be an alter table metadata change
+    Chunk ProjectBlock(Block block) const;
+
     std::optional<Chunk> tryGenerate() override;
 
 private:
     StreamSubscriptionPtr subscription;
     std::optional<int> fd;
 
-    std::list<Chunk> subscriber_chunks;
+    BlocksList cached_data;
 
     Poco::Logger * log = &Poco::Logger::get("SubscriptionSource");
 };

@@ -29,7 +29,7 @@ StreamSubscriptionPtr StreamSubscriptionManager::subscribe()
     return subscription;
 }
 
-void StreamSubscriptionManager::pushChunk(Chunk chunk)
+void StreamSubscriptionManager::pushToAll(Block block)
 {
     auto lock = lockShared();
 
@@ -44,7 +44,7 @@ void StreamSubscriptionManager::pushChunk(Chunk chunk)
             continue;
         }
 
-        locked_sub->push(chunk.clone());
+        locked_sub->push(block);
     }
 
     if (need_clean)

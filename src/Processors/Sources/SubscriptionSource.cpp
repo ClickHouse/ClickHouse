@@ -20,7 +20,7 @@ IProcessor::Status SubscriptionSource::prepare()
 
     // if needs to generate new chunk and we have not any cached data
     // fallback to Async to wait on subscription if possible
-    if (base_status == Status::Ready && subscriber_chunks.empty() && fd.has_value())
+    if (base_status == Status::Ready && cached_data.empty() && fd.has_value())
         return Status::Async;
 
     return base_status;
@@ -31,20 +31,20 @@ std::optional<Chunk> SubscriptionSource::tryGenerate()
     if (isCancelled())
         return std::nullopt;
 
-    if (subscriber_chunks.empty())
+    if (cached_data.empty())
     {
-        LOG_DEBUG(log, "extracting new chunk batch");
-        auto new_chunks = subscription->extractAll();
-        subscriber_chunks.splice(subscriber_chunks.end(), new_chunks);
+        LOG_DEBUG(log, "extracting new batch");
+        auto new_blocks = subscription->extractAll();
+        cached_data.splice(cached_data.end(), new_blocks);
     }
 
-    LOG_DEBUG(log, "cached chunks size: {}", subscriber_chunks.size());
+    LOG_DEBUG(log, "cached blocks size: {}", cached_data.size());
 
-    if (!subscriber_chunks.empty())
+    if (!cached_data.empty())
     {
-        Chunk new_chunk = std::move(subscriber_chunks.front());
-        subscriber_chunks.pop_front();
-        return new_chunk;
+        Block new_block = std::move(cached_data.front());
+        cached_data.pop_front();
+        return ProjectBlock(std::move(new_block));
     }
 
     return Chunk();
@@ -70,6 +70,17 @@ void SubscriptionSource::onCancel()
 {
     LOG_DEBUG(log, "query is cancelled, disabling subscription");
     subscription->disable();
+}
+
+Chunk SubscriptionSource::ProjectBlock(Block block) const
+{
+    const Block& header = getPort().getHeader();
+    Block projection;
+
+    for (const auto& header_column : header.getColumnsWithTypeAndName())
+        projection.insert(block.getByName(header_column.name));
+
+    return Chunk(projection.getColumns(), projection.rows());
 }
 
 }

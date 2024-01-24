@@ -7,7 +7,7 @@
 
 #include <Common/EventFD.h>
 
-#include <Processors/Chunk.h>
+#include <Core/Block.h>
 
 namespace DB
 {
@@ -15,8 +15,8 @@ namespace DB
 class StreamSubscription
 {
 public:
-    void push(Chunk chunk);
-    std::list<Chunk> extractAll();
+    void push(Block block);
+    BlocksList extractAll();
 
     // returns event_fd's native handle for unix systems
     // otherwise returns nullopt
@@ -28,15 +28,15 @@ public:
 private:
     // data
     std::mutex mutex;
-    std::list<Chunk> ready_chunks;
+    BlocksList ready_blocks;
 
     // synchronization
     std::atomic<bool> is_disabled{false};
 
 #if defined(OS_LINUX)
-    EventFD new_chunks_event;
+    EventFD new_blocks_event;
 #else
-    std::condition_variable empty_chunks;
+    std::condition_variable empty_blocks;
 #endif
 };
 
