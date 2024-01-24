@@ -106,7 +106,7 @@ public:
 
     void commit() override
     {
-        /// Nothing to commit.
+        /// TODO: rewrite with transactions
     }
 
     bool supportsChmod() const override { return false; }
