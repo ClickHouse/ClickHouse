@@ -261,7 +261,7 @@ struct NumIfImpl
         auto col_res = ColVecResult::create(size);
         ArrayResult & res = col_res->getData();
 
-        /// TODO 这里是否可避免分支跳转
+        /// TODO cast a and b only once
         for (size_t i = 0; i < size; ++i)
             res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
         return col_res;
@@ -1185,7 +1185,7 @@ public:
             }
             else
             {
-                /// TODO 这里不物化行不行？
+                /// TODO why materialize condition
                 materialized_cond_col = cond_const_col->convertToFullColumn();
                 cond_col = typeid_cast<const ColumnUInt8 *>(&*materialized_cond_col);
             }
