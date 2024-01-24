@@ -1922,7 +1922,7 @@ Possible values:
 - Positive integer.
 - 0 — Asynchronous insertions are disabled.
 
-Default value: `100000`.
+Default value: `1000000`.
 
 ### async_insert_max_query_number {#async-insert-max-query-number}
 
