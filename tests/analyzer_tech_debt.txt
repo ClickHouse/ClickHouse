@@ -27,8 +27,9 @@
 00917_multiple_joins_denny_crane
 02725_agg_projection_resprect_PK
 02763_row_policy_storage_merge_alias
-02784_parallel_replicas_automatic_decision_join
 02818_parameterized_view_with_cte_multiple_usage
+# Check after constants refactoring
+02901_parallel_replicas_rollup
 # Flaky. Please don't delete them without fixing them:
 01287_max_execution_speed
 02003_WithMergeableStateAfterAggregationAndLimit_LIMIT_BY_LIMIT_OFFSET

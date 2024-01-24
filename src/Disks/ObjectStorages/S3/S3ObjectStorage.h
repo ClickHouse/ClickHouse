@@ -59,13 +59,8 @@ private:
         , client(std::move(client_))
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
+        , log(&Poco::Logger::get(logger_name))
     {
-        data_source_description.type = DataSourceType::S3;
-        data_source_description.description = uri_.endpoint;
-        data_source_description.is_cached = false;
-        data_source_description.is_encrypted = false;
-
-        log = &Poco::Logger::get(logger_name);
     }
 
 public:
@@ -75,14 +70,13 @@ public:
     {
     }
 
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        return data_source_description;
-    }
-
     std::string getName() const override { return "S3ObjectStorage"; }
 
     std::string getCommonKeyPrefix() const override { return uri.key; }
+
+    std::string getDescription() const override { return uri.endpoint; }
+
+    ObjectStorageType getType() const override { return ObjectStorageType::S3; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -186,7 +180,6 @@ private:
     S3Capabilities s3_capabilities;
 
     Poco::Logger * log;
-    DataSourceDescription data_source_description;
 };
 
 /// Do not encode keys, store as-is, and do not require separate disk for metadata.
@@ -200,10 +193,9 @@ public:
 
     template <class ...Args>
     explicit S3PlainObjectStorage(Args && ...args)
-        : S3ObjectStorage("S3PlainObjectStorage", std::forward<Args>(args)...)
-    {
-        data_source_description.type = DataSourceType::S3_Plain;
-    }
+        : S3ObjectStorage("S3PlainObjectStorage", std::forward<Args>(args)...) {}
+
+    ObjectStorageType getType() const override { return ObjectStorageType::S3_Plain; }
 
     /// Notes:
     /// - supports BACKUP to this disk
