@@ -1076,15 +1076,22 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
 {
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
+    bool is_replicated_database_internal = database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal;
+    bool from_path = create.attach_from_path.has_value();
+    bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal
-        && !internal)
+    if (is_replicated_database_internal && !internal)
     {
         if (create.uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table UUID is not specified in DDL log");
     }
 
-    bool from_path = create.attach_from_path.has_value();
+    if (create.refresh_strategy && database->getEngineName() != "Atomic" && !internal && !is_replicated_database_internal && !is_on_cluster)
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Refreshable materialized view requires Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+            /// TODO: Support Replicated databases, only with Shared/ReplicatedMergeTree.
+            ///       Figure out how to make the refreshed data appear all at once on other
+            ///       replicas; maybe a replicated SYSTEM SYNC REPLICA query before the rename?
 
     if (database->getUUID() != UUIDHelpers::Nil)
     {
@@ -1108,7 +1115,6 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     }
     else
     {
-        bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         bool has_uuid = create.uuid != UUIDHelpers::Nil || create.to_inner_uuid != UUIDHelpers::Nil;
         if (has_uuid && !is_on_cluster && !internal)
         {
@@ -1120,13 +1126,6 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} UUID specified, but engine of database {} is not Atomic", kind, create.getDatabase());
         }
-
-        if (create.refresh_strategy && database->getEngineName() != "Atomic")
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized view requires Atomic database engine, but database {} has engine {}", create.getDatabase(), database->getEngineName());
-                /// TODO: Support Replicated databases, only with Shared/ReplicatedMergeTree.
-                ///       Figure out how to make the refreshed data appear all at once on other
-                ///       replicas; maybe a replicated SYSTEM SYNC REPLICA query before the rename?
 
         /// The database doesn't support UUID so we'll ignore it. The UUID could be set here because of either
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
