@@ -1225,8 +1225,8 @@ public:
         TypeIndex left_id = left_type->getTypeId();
         TypeIndex right_id = right_type->getTypeId();
 
-        /// TODO map类型是否有优化空间
-        /// TODO 对nullable类型是否有优化空间
+        /// TODO optimize for map type
+        /// TODO optimize for nullable type
         if (!(callOnBasicTypes<true, true, true, false>(left_id, right_id, call)
             || (res = executeTyped<UUID, UUID>(cond_col, arguments, result_type, input_rows_count))
             || (res = executeString(cond_col, arguments, result_type))
