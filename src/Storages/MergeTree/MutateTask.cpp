@@ -2176,6 +2176,9 @@ bool MutateTask::prepare()
     ctx->need_sync = needSyncPart(ctx->source_part->rows_count, ctx->source_part->getBytesOnDisk(), *data_settings);
     ctx->execute_ttl_type = ExecuteTTLType::NONE;
 
+    if (ctx->mutating_pipeline_builder.initialized())
+        ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
+    
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
     if (!isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
