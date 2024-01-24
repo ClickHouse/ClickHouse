@@ -92,7 +92,7 @@ class Runner:
             return
         self._cwd = value
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> str:
         return self.run(*args, **kwargs)
 
 

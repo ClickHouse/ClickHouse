@@ -491,9 +491,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         prepareTable();
 
         ColumnsWithTypeAndName log_element_columns;
-        auto log_element_names_and_types = LogElement::getNamesAndTypes();
+        auto log_element_names_and_types = LogElement::getColumnsDescription();
 
-        for (const auto & name_and_type : log_element_names_and_types)
+        for (const auto & name_and_type : log_element_names_and_types.getAll())
             log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
 
         Block block(std::move(log_element_columns));
@@ -635,22 +635,11 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     create->setTable(table_id.table_name);
 
     auto new_columns_list = std::make_shared<ASTColumns>();
+    auto ordinary_columns = LogElement::getColumnsDescription();
+    auto alias_columns = LogElement::getNamesAndAliases();
+    ordinary_columns.setAliases(alias_columns);
 
-    if (const char * custom_column_list = LogElement::getCustomColumnList())
-    {
-        ParserColumnDeclarationList parser;
-        const Settings & settings = getContext()->getSettingsRef();
-
-        ASTPtr columns_list_raw = parseQuery(parser, custom_column_list, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
-        new_columns_list->set(new_columns_list->columns, columns_list_raw);
-    }
-    else
-    {
-        auto ordinary_columns = LogElement::getNamesAndTypes();
-        auto alias_columns = LogElement::getNamesAndAliases();
-
-        new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
-    }
+    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
 
     create->set(create->columns_list, new_columns_list);
 
@@ -671,7 +660,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     if (endsWith(engine.name, "MergeTree"))
     {
         auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
-        storage_settings->loadFromQuery(*create->storage, getContext());
+        storage_settings->loadFromQuery(*create->storage, getContext(), false);
     }
 
     return create;

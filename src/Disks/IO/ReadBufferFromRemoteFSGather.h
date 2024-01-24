@@ -53,7 +53,7 @@ public:
     bool isContentCached(size_t offset, size_t size) override;
 
 private:
-    SeekableReadBufferPtr createImplementationBuffer(const StoredObject & object);
+    std::unique_ptr<ReadBufferFromFileBase> createImplementationBuffer(const StoredObject & object);
 
     bool nextImpl() override;
 
@@ -80,7 +80,7 @@ private:
 
     StoredObject current_object;
     size_t current_buf_idx = 0;
-    SeekableReadBufferPtr current_buf;
+    std::unique_ptr<ReadBufferFromFileBase> current_buf;
 
     Poco::Logger * log;
 };

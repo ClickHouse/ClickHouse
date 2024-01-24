@@ -657,6 +657,43 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 
 Array elements set to `NULL` are handled as normal values.
 
+## arrayShingles
+
+Generates an array of "shingles", i.e. consecutive sub-arrays with specified length of the input array.
+
+**Syntax**
+
+``` sql
+arrayShingles(array, length)
+```
+
+**Arguments**
+
+- `array` — Input array [Array](../../sql-reference/data-types/array.md).
+- `length` — The length of each shingle.
+
+**Returned value**
+
+- An array of generated shingles.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayShingles([1,2,3,4], 3) as res;
+```
+
+Result:
+
+``` text
+┌─res───────────────┐
+│ [[1,2,3],[2,3,4]] │
+└───────────────────┘
+```
+
 ## arraySort(\[func,\] arr, …) {#sort}
 
 Sorts the elements of the `arr` array in ascending order. If the `func` function is specified, sorting order is determined by the result of the `func` function applied to the elements of the array. If `func` accepts multiple arguments, the `arraySort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arraySort` description.

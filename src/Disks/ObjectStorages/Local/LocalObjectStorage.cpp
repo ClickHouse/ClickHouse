@@ -1,6 +1,5 @@
 #include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
 
-#include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
@@ -28,14 +27,10 @@ LocalObjectStorage::LocalObjectStorage(String key_prefix_)
     : key_prefix(std::move(key_prefix_))
     , log(&Poco::Logger::get("LocalObjectStorage"))
 {
-    data_source_description.type = DataSourceType::Local;
     if (auto block_device_id = tryGetBlockDeviceId("/"); block_device_id.has_value())
-        data_source_description.description = *block_device_id;
+        description = *block_device_id;
     else
-        data_source_description.description = "/";
-
-    data_source_description.is_cached = false;
-    data_source_description.is_encrypted = false;
+        description = "/";
 }
 
 bool LocalObjectStorage::exists(const StoredObject & object) const

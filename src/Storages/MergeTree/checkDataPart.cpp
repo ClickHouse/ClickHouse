@@ -348,7 +348,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             if (!data_part_storage.isDirectory(file_name))
             {
                 auto remote_path = data_part_storage.getRemotePath(file_name);
-                cache.removePathIfExists(remote_path);
+                cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
             }
         }
 
