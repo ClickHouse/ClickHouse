@@ -121,6 +121,12 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
     metadata_storage.object_storage->removeObject(object);
 }
 
+void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
+{
+    for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
+        metadata_storage.object_storage->removeObject(StoredObject(it->path()));
+}
+
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string &)
 {
     /// Noop. It is an Object Storage not a filesystem.

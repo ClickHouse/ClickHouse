@@ -101,6 +101,7 @@ public:
     void createDirectoryRecursive(const std::string & path) override;
 
     void unlinkFile(const std::string & path) override;
+    void removeDirectory(const std::string & path) override;
 
     UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
