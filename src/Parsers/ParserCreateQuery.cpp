@@ -1551,6 +1551,29 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (comment)
         query->set(query->comment, comment);
 
+    if (query->columns_list && query->columns_list->primary_key)
+    {
+        /// If engine is not set will use default one
+        if (!query->storage)
+            query->set(query->storage, std::make_shared<ASTStorage>());
+        else if (query->storage->primary_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
+
+        query->storage->primary_key = query->columns_list->primary_key;
+
+    }
+
+    if (query->columns_list && (query->columns_list->primary_key_from_columns))
+    {
+        /// If engine is not set will use default one
+        if (!query->storage)
+            query->set(query->storage, std::make_shared<ASTStorage>());
+        else if (query->storage->primary_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
+
+        query->storage->primary_key = query->columns_list->primary_key_from_columns;
+    }
+
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
