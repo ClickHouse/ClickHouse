@@ -360,8 +360,7 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
-                for (const auto & argument_node : node_to_process->as<TableFunctionNode>()->getArgumentsNode()->getChildren())
-                    nodes_to_process.push_back(argument_node);
+                // Arguments of table function can't contain TableNodes.
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
