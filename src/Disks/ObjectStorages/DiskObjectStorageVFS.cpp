@@ -220,23 +220,17 @@ String DiskObjectStorageVFS::lockPathToFullPath(std::string_view path) const
     return fs::path(traits.locks_node) / lock_path;
 }
 
+std::string_view DiskObjectStorageVFS::getMetadataObjectPrefix() const
+{
+    // https://aws.amazon.com/premiumsupport/knowledge-center/s3-object-key-naming-pattern/
+    return object_storage_type == ObjectStorageType::S3 ? "vfs/" : "vfs_";
+}
+
 StoredObject DiskObjectStorageVFS::getMetadataObject(std::string_view remote) const
 {
-    // TODO myrrc this works only for S3 and Azure. Must also recheck encrypted disk replication
+    // TODO myrrc this works only for S3 and Azure.
     // We must include disk name as two disks with different names might use same object storage bucket
-    // TODO myrrc replace with vfs_disk_id
-    String remote_key;
-    switch (object_storage_type)
-    {
-        case ObjectStorageType::S3:
-            remote_key = fmt::format("vfs/_{}_{}", name, remote);
-            break;
-        case ObjectStorageType::Azure:
-            remote_key = fmt::format("vfs_{}_{}", name, remote);
-            break;
-        default:
-            std::unreachable();
-    }
+    String remote_key = fmt::format("{}{}{}", getMetadataObjectPrefix(), name, remote);
     return StoredObject{ObjectStorageKey::createAsRelative(object_key_prefix, std::move(remote_key)).serialize()};
 }
 }

@@ -55,7 +55,7 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
 }
 
 const int ephemeral = zkutil::CreateMode::Ephemeral;
-void ObjectStorageVFSGCThread::run() const
+void ObjectStorageVFSGCThread::run()
 {
     Stopwatch stop_watch;
 
@@ -96,7 +96,13 @@ void ObjectStorageVFSGCThread::run() const
     // We also must use a signed type for logpointers.
     const auto [start_str, end_str] = std::ranges::minmax(std::move(log_items_batch));
     const size_t start_logpointer = parseFromString<size_t>(start_str.substr(4)); // log- is a prefix
-    const size_t end_logpointer = std::min(parseFromString<size_t>(end_str.substr(4)), start_logpointer + settings->batch_max_size);
+    const size_t end_logpointer_parsed = parseFromString<size_t>(end_str.substr(4));
+    const size_t end_logpointer = std::min(end_logpointer_parsed, start_logpointer + settings->batch_max_size);
+
+    if (last_start_logpointer > start_logpointer)
+        reconcileLogWithSnapshot(start_logpointer);
+    else
+        last_start_logpointer = start_logpointer;
 
     if ((skip_run = skipRun(batch_size, start_logpointer)))
         return;
@@ -106,6 +112,45 @@ void ObjectStorageVFSGCThread::run() const
     removeBatch(start_logpointer, end_logpointer);
     LOG_DEBUG(log, "Removed lock for [{};{}]", start_logpointer, end_logpointer);
     successful_run = true;
+}
+
+constexpr std::string_view SNAPSHOTS_PATH = "/snapshots";
+void ObjectStorageVFSGCThread::reconcileLogWithSnapshot(size_t start_logpointer)
+{
+    LOG_WARNING(log, "Local start logpointer ({}) > batch start logpointer ({})", last_start_logpointer, start_logpointer);
+
+    // If batch start logpointer > 0, this means
+    // - Zookeeper was lost
+    // - Some other replica was also lost and restarted with last_start_logpointer = 0
+    // - This replica won garbage collection and wrote new snapshot
+    // - Now you have multiple snapshots in folder
+    // TODO myrrc I don't see how we could reconcile local state in this case
+    chassert(start_logpointer == 0);
+
+    const String snapshots_folder = storage.getMetadataObject(SNAPSHOTS_PATH).remote_path;
+    RelativePathsWithMetadata snapshots;
+    if (storage.object_storage->listObjects(snapshots_folder, snapshots, 1); snapshots.empty())
+    {
+        LOG_ERROR(log, "Did not find any snapshots in {}, previous state is gone", snapshots_folder);
+        last_start_logpointer = start_logpointer;
+        return;
+    }
+
+    const std::string_view snapshot_name = snapshots[0].relative_path;
+    const size_t snapshot_logpointer = parseFromString<size_t>(snapshot_name);
+    // TODO myrrc If this is wrong, everything is too broken to continue
+    chassert(snapshot_logpointer >= local_last_start_logpointer);
+
+    // TODO myrrc what if start_logpointer = 0? Code below won't search for snapshot
+    const String new_snapshot_name = fmt::format("{}", start_logpointer - 1);
+
+    const StoredObject snapshot_object{fs::path(snapshots_folder) / snapshot_name};
+    const StoredObject new_snapshot_object{fs::path(snapshots_folder) / new_snapshot_name};
+
+    LOG_INFO(log, "Found snapshot {}, renaming to {}", snapshot_object, new_snapshot_object);
+
+    storage.object_storage->copyObject(snapshot_object, new_snapshot_object, {}, {});
+    storage.object_storage->removeObject(snapshot_object);
 }
 
 bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t start_logpointer) const
@@ -133,6 +178,7 @@ bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t start_logpointe
 
     return delta < wait_ms;
 }
+
 
 void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const
 {
@@ -249,6 +295,7 @@ String ObjectStorageVFSGCThread::getNode(size_t id) const
 
 StoredObject ObjectStorageVFSGCThread::getSnapshotObject(size_t logpointer) const
 {
-    return storage.getMetadataObject(fmt::format("{}", logpointer));
+    // We need a separate folder to quickly get snapshot with unknown logpointer on reconciliation
+    return storage.getMetadataObject(fmt::format("{}/{}", SNAPSHOTS_PATH, logpointer));
 }
 }

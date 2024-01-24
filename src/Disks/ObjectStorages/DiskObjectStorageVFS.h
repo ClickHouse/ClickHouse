@@ -55,6 +55,7 @@ private:
 
     DiskTransactionPtr createObjectStorageTransaction() final;
     String lockPathToFullPath(std::string_view path) const;
+    std::string_view getMetadataObjectPrefix() const;
     StoredObject getMetadataObject(std::string_view remote) const;
 };
 }
