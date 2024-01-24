@@ -34,7 +34,7 @@ BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
     : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderAzureBlobStorage"))
-    , data_source_description{DataSourceType::AzureBlobStorage, configuration_.container, false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.container, false, false}
     , configuration(configuration_)
 {
     auto client_ptr = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
@@ -99,7 +99,8 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
     LOG_INFO(&Poco::Logger::get("BackupReaderAzureBlobStorage"), "Enter copyFileToDisk");
 
     auto destination_data_source_description = destination_disk->getDataSourceDescription();
-    if ((destination_data_source_description.type == DataSourceType::AzureBlobStorage)
+    if ((destination_data_source_description.type == DataSourceType::ObjectStorage)
+        && (destination_data_source_description.object_storage_type == ObjectStorageType::Azure)
         && (destination_data_source_description.is_encrypted == encrypted_in_backup))
     {
         LOG_TRACE(log, "Copying {} from AzureBlobStorage to disk {}", path_in_backup, destination_disk->getName());
@@ -144,7 +145,7 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
     : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterAzureBlobStorage"))
-    , data_source_description{DataSourceType::AzureBlobStorage, configuration_.container, false, false}
+    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::Azure, MetadataStorageType::None, configuration_.container, false, false}
     , configuration(configuration_)
 {
     auto client_ptr = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
