@@ -4,7 +4,7 @@ set(ENABLE_SSL 1 CACHE INTERNAL "")
 # TODO: Making SSL dependent on ENABLE_LIBRARIES is desirable but needs fixing dependent libs + tests.
 # option(ENABLE_SSL "Enable ssl" ${ENABLE_LIBRARIES})
 
-if(NOT ENABLE_SSL)
+if (NOT ENABLE_SSL)
   message(STATUS "Not using openssl")
   return()
 endif()
@@ -20,21 +20,21 @@ add_definitions(-DOPENSSL_NO_SCTP -DOPENSSL_NO_KTLS -DOPENSSLDIR="${OPENSSLDIR}"
 target_compile_options(global-group INTERFACE "-Wno-deprecated-declarations")
 target_compile_options(global-group INTERFACE "-Wno-poison-system-directories")
 
-if(ARCH_AMD64)
+if (ARCH_AMD64)
     set(PLATFORM_DIRECTORY linux_x86_64)
     add_definitions(-DAES_ASM -DBSAES_ASM -DCMLL_ASM -DECP_NISTZ256_ASM -DGHASH_ASM -DKECCAK1600_ASM -DMD5_ASM -DOPENSSL_BN_ASM_GF2m -DOPENSSL_BN_ASM_MONT -DOPENSSL_BN_ASM_MONT5 -DOPENSSL_CPUID_OBJ -DOPENSSL_IA32_SSE2 -DPOLY1305_ASM -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DVPAES_ASM -DWHIRLPOOL_ASM -DX25519_ASM -DL_ENDIAN)
-elseif(ARCH_AARCH64)
+elseif (ARCH_AARCH64)
     set(PLATFORM_DIRECTORY linux_aarch64)
     add_definitions(-DECP_NISTZ256_ASM -DKECCAK1600_ASM -DOPENSSL_BN_ASM_MONT -DOPENSSL_CPUID_OBJ -DPOLY1305_ASM -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DVPAES_ASM -DOPENSSL_USE_NODELETE -DL_ENDIAN)
-elseif(ARCH_PPC64LE)
+elseif (ARCH_PPC64LE)
     set(PLATFORM_DIRECTORY linux_ppc64le)
     add_definitions(-DAES_ASM -DECP_NISTP521_ASM -DECP_NISTZ256_ASM -DKECCAK1600_ASM -DOPENSSL_BN_ASM_MONT -DOPENSSL_CPUID_OBJ -DPOLY1305_ASM -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DVPAES_ASM -DX25519_ASM -DL_ENDIAN)
-elseif(ARCH_S390X)
+elseif (ARCH_S390X)
     set(PLATFORM_DIRECTORY linux_s390x)
     add_definitions(-DAES_ASM -DAES_CTR_ASM -DAES_XTS_ASM -DGHASH_ASM -DKECCAK1600_ASM -DOPENSSL_BN_ASM_MONT -DOPENSSL_CPUID_OBJ -DPOLY1305_ASM -DS390X_EC_ASM -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DB_ENDIAN)
-elseif(ARCH_RISCV64)
+elseif (ARCH_RISCV64)
     set(PLATFORM_DIRECTORY linux_riscv64)
-    add_definitions(-DOPENSSL_BN_ASM_MONT -DOPENSSL_CPUID_OBJ -DL_ENDIAN) # no clue if this works, platform files were copypasted from aarch64
+    add_definitions(-DL_ENDIAN)
 endif()
 
 file(STRINGS "${PLATFORM_DIRECTORY}/include/openssl/opensslv.h" OPENSSL_VERSION_STR
@@ -65,12 +65,12 @@ set(LIB_SOVERSION ${VERSION_MAJOR})
 
 enable_language(ASM)
 
-if(COMPILER_CLANG)
+if (COMPILER_CLANG)
     add_definitions(-Wno-unused-command-line-argument)
 endif()
 
-if(ARCH_AMD64)
-    if(OS_DARWIN)
+if (ARCH_AMD64)
+    if (OS_DARWIN)
         set(OPENSSL_SYSTEM "macosx")
     endif()
 
@@ -110,7 +110,7 @@ if(ARCH_AMD64)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-x86_64.s) # This is not a mistake
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/whrlpool/asm/wp-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp-x86_64.s)
-elseif(ARCH_AARCH64)
+elseif (ARCH_AARCH64)
     macro(perl_generate_asm FILE_IN FILE_OUT)
         add_custom_command(OUTPUT ${FILE_OUT}
             COMMAND /usr/bin/env perl ${FILE_IN} "linux64" ${FILE_OUT})
@@ -129,7 +129,7 @@ elseif(ARCH_AARCH64)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-armv8.S) # This is not a mistake
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/modes/asm/aes-gcm-armv8_64.pl ${OPENSSL_BINARY_DIR}/crypto/modes/asm/aes-gcm-armv8_64.S)
-elseif(ARCH_PPC64LE)
+elseif (ARCH_PPC64LE)
     macro(perl_generate_asm FILE_IN FILE_OUT)
         add_custom_command(OUTPUT ${FILE_OUT}
             COMMAND /usr/bin/env perl ${FILE_IN} "linux64v2" ${FILE_OUT})
@@ -156,7 +156,7 @@ elseif(ARCH_PPC64LE)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-ppc.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-ppc.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512p8-ppc.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha512p8-ppc.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512p8-ppc.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha256p8-ppc.s)
-elseif(ARCH_S390X)
+elseif (ARCH_S390X)
     macro(perl_generate_asm FILE_IN FILE_OUT)
         add_custom_command(OUTPUT ${FILE_OUT}
             COMMAND /usr/bin/env perl ${FILE_IN} "linux64" ${FILE_OUT})
@@ -1078,7 +1078,7 @@ set(CRYPTO_SRC ${CRYPTO_SRC}
     ${OPENSSL_SOURCE_DIR}/providers/prov_running.c
 )
 
-if(ARCH_AMD64)
+if (ARCH_AMD64)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         ${OPENSSL_SOURCE_DIR}/crypto/bn/asm/x86_64-gcc.c
         ${OPENSSL_SOURCE_DIR}/crypto/bn/rsaz_exp.c
@@ -1117,7 +1117,7 @@ if(ARCH_AMD64)
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-x86_64.s
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-x86_64.s
         ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp-x86_64.s)
-elseif(ARCH_AARCH64)
+elseif (ARCH_AARCH64)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cbc.c
         ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_core.c
@@ -1145,7 +1145,7 @@ elseif(ARCH_AARCH64)
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/modes/asm/aes-gcm-armv8_64.S)
-elseif(ARCH_PPC64LE)
+elseif (ARCH_PPC64LE)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cbc.c
         ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_core.c
@@ -1185,7 +1185,7 @@ elseif(ARCH_PPC64LE)
         ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
         ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
     )
-elseif(ARCH_S390X)
+elseif (ARCH_S390X)
     set(CRYPTO_SRC ${CRYPTO_SRC}
         ${OPENSSL_SOURCE_DIR}/crypto/s390xcap.c
         ${OPENSSL_BINARY_DIR}/crypto/aes/aesv8-armx.S
@@ -1207,6 +1207,25 @@ elseif(ARCH_S390X)
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-s390x.S
         ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
         ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
+    )
+elseif (ARCH_RISCV64)
+    set(CRYPTO_SRC ${CRYPTO_SRC}
+        ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cbc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_core.c
+        ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_asm.c
+        ${OPENSSL_SOURCE_DIR}/crypto/chacha/chacha_enc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600.c
+        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
+        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_dgst.c
+        ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistp521.c
+        ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistp256.c
+        ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistp224.c
+        ${OPENSSL_SOURCE_DIR}/crypto/ec/ecp_nistz256.c
+        ${OPENSSL_SOURCE_DIR}/crypto/camellia/camellia.c
+        ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_cbc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/mem_clr.c
+        ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_enc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
     )
 endif()
 
@@ -1261,7 +1280,7 @@ set(SSL_SRC
     ${OPENSSL_SOURCE_DIR}/ssl/statem/statem_srvr.c
 )
 
-if(ENABLE_OPENSSL_DYNAMIC)
+if (ENABLE_OPENSSL_DYNAMIC)
     add_library(crypto SHARED ${CRYPTO_SRC})
     set_target_properties(crypto PROPERTIES VERSION "${LIB_VERSION}" SOVERSION "${LIB_SOVERSION}")
     set_target_properties(crypto PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/programs)
