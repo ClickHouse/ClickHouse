@@ -90,6 +90,7 @@
 
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
+#include <base/defines.h>
 
 #include <algorithm>
 #include <atomic>
@@ -7080,6 +7081,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
+    chassert(!isStaticStorage());
+
     /// Check that the storage policy contains the disk where the src_part is located.
     bool does_storage_policy_allow_same_disk = false;
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
