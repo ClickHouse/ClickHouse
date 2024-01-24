@@ -67,7 +67,7 @@ struct RemoveRecursiveObjectStorageVFSOperation final : RemoveRecursiveObjectSto
         const String entry = VFSLogItem::getSerialised({}, std::move(unlink));
         LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
 
-        disk.zookeeper()->create(disk.settings.get()->log_item, entry, pers_seq);
+        disk.zookeeper()->create(disk.traits.log_item, entry, pers_seq);
     }
 };
 
@@ -102,7 +102,7 @@ struct RemoveManyObjectStorageVFSOperation final : RemoveManyObjectStorageOperat
         const String entry = VFSLogItem::getSerialised({}, std::move(unlink));
         LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
 
-        disk.zookeeper()->create(disk.settings.get()->log_item, entry, pers_seq);
+        disk.zookeeper()->create(disk.traits.log_item, entry, pers_seq);
     }
 
     void finalize() override { }
@@ -189,7 +189,7 @@ struct CopyFileObjectStorageVFSOperation final : CopyFileObjectStorageOperation
         const String entry = VFSLogItem::getSerialised(std::move(created_objects), {});
         LOG_TRACE(disk.log, "{}: Executing {}", getInfoForLog(), entry);
 
-        disk.zookeeper()->create(disk.settings.get()->log_item, entry, pers_seq);
+        disk.zookeeper()->create(disk.traits.log_item, entry, pers_seq);
     }
 };
 
@@ -224,7 +224,7 @@ void DiskObjectStorageVFSTransaction::addStoredObjectsOp(StoredObjects && link, 
     auto callback = [entry_captured = std::move(entry), &disk_captured = disk]
     {
         LOG_TRACE(disk_captured.log, "Executing {}", entry_captured);
-        disk_captured.zookeeper()->create(disk_captured.settings.get()->log_item, entry_captured, pers_seq);
+        disk_captured.zookeeper()->create(disk_captured.traits.log_item, entry_captured, pers_seq);
     };
 
     operations_to_execute.emplace_back(

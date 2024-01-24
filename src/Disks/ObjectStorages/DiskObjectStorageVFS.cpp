@@ -26,13 +26,14 @@ DiskObjectStorageVFS::DiskObjectStorageVFS(
     : DiskObjectStorage(name_, object_key_prefix_, std::move(metadata_storage_), std::move(object_storage_), config, config_prefix)
     , enable_gc(enable_gc_)
     , object_storage_type(object_storage->getType())
-    , settings(MultiVersion<VFSSettings>{std::make_unique<VFSSettings>(config, config_prefix, name)})
+    , traits(VFSTraits{name}) // TODO myrrc disk_vfs_id = disk_name implies disk name consistency across replicas
+    , settings(MultiVersion<VFSSettings>{std::make_unique<VFSSettings>(config, config_prefix)})
 {
     if (object_storage_type != ObjectStorageType::S3 && object_storage_type != ObjectStorageType::Azure)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS supports only 's3' or 'azure_blob_storage' disk type");
     if (send_metadata)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "VFS doesn't support send_metadata");
-    zookeeper()->createAncestors(settings.get()->log_item);
+    zookeeper()->createAncestors(traits.log_item);
 
     log = &Poco::Logger::get("DiskVFS(" + name + ")");
 }
@@ -85,7 +86,6 @@ void DiskObjectStorageVFS::applyNewSettings(
     auto settings_new_version = std::make_unique<VFSSettings>(
         config,
         config_prefix,
-        name,
         context_settings.insert_keeper_fault_injection_probability,
         context_settings.insert_keeper_fault_injection_seed);
     LOG_DEBUG(log, "New VFS settings: {}", *settings_new_version);
@@ -217,7 +217,7 @@ String DiskObjectStorageVFS::lockPathToFullPath(std::string_view path) const
 {
     String lock_path{path};
     std::ranges::replace(lock_path, '/', '_');
-    return fs::path(settings.get()->locks_node) / lock_path;
+    return fs::path(traits.locks_node) / lock_path;
 }
 
 StoredObject DiskObjectStorageVFS::getMetadataObject(std::string_view remote) const

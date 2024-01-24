@@ -32,8 +32,7 @@ extern const int LOGICAL_ERROR;
 ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storage_, BackgroundSchedulePool & pool)
     : storage(storage_), log(&Poco::Logger::get(fmt::format("VFSGC({})", storage_.getName())))
 {
-    // We won't change base path for disk in runtime
-    storage.zookeeper()->createAncestors(storage.settings.get()->gc_lock_path);
+    storage.zookeeper()->createAncestors(storage.traits.gc_lock_path);
 
     LOG_INFO(log, "GC started");
 
@@ -61,7 +60,7 @@ void ObjectStorageVFSGCThread::run() const
     Stopwatch stop_watch;
 
     using enum Coordination::Error;
-    if (auto code = storage.zookeeper()->tryCreate(settings->gc_lock_path, "", ephemeral); code == ZNODEEXISTS)
+    if (auto code = storage.zookeeper()->tryCreate(storage.traits.gc_lock_path, "", ephemeral); code == ZNODEEXISTS)
     {
         LOG_DEBUG(log, "Failed to acquire lock, sleeping");
         return;
@@ -77,12 +76,12 @@ void ObjectStorageVFSGCThread::run() const
         else
         {
             ProfileEvents::increment(skip_run ? ProfileEvents::VFSGcRunsSkipped : ProfileEvents::VFSGcRunsException);
-            storage.zookeeper()->remove(settings->gc_lock_path);
+            storage.zookeeper()->remove(storage.traits.gc_lock_path);
         };
         ProfileEvents::increment(ProfileEvents::VFSGcTotalMicroseconds, stop_watch.elapsedMicroseconds());
     });
 
-    Strings log_items_batch = storage.zookeeper()->getChildren(settings->log_base_node);
+    Strings log_items_batch = storage.zookeeper()->getChildren(storage.traits.log_base_node);
     const size_t batch_size = log_items_batch.size();
     if ((skip_run = log_items_batch.empty()))
     {
@@ -126,7 +125,8 @@ bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t start_logpointe
     storage.zookeeper()->exists(getNode(start_logpointer), &stat);
 
     using ms = std::chrono::milliseconds;
-    const auto delta = std::chrono::duration_cast<ms>(std::chrono::system_clock::now().time_since_epoch()).count() - stat.mtime;
+    using clock = std::chrono::system_clock;
+    const auto delta = std::chrono::duration_cast<ms>(clock::now().time_since_epoch()).count() - stat.mtime;
 
     if (delta < wait_ms)
         LOG_DEBUG(log, "Skipped run due to insufficient batch size ({} < {}) and time ({} < {})", batch_size, min_size, delta, wait_ms);
@@ -236,7 +236,7 @@ void ObjectStorageVFSGCThread::removeBatch(size_t start_logpointer, size_t end_l
     Coordination::Requests requests(log_batch_length + 1);
     for (size_t i = 0; i < log_batch_length; ++i)
         requests[i] = zkutil::makeRemoveRequest(getNode(start_logpointer + i), 0);
-    requests[log_batch_length] = zkutil::makeRemoveRequest(settings->gc_lock_path, 0);
+    requests[log_batch_length] = zkutil::makeRemoveRequest(storage.traits.gc_lock_path, 0);
 
     storage.zookeeper()->multi(requests);
 }
@@ -244,7 +244,7 @@ void ObjectStorageVFSGCThread::removeBatch(size_t start_logpointer, size_t end_l
 String ObjectStorageVFSGCThread::getNode(size_t id) const
 {
     // Zookeeper's sequential node is 10 digits with padding zeros
-    return fmt::format("{}{:010}", settings->log_item, id);
+    return fmt::format("{}{:010}", storage.traits.log_item, id);
 }
 
 StoredObject ObjectStorageVFSGCThread::getSnapshotObject(size_t logpointer) const
