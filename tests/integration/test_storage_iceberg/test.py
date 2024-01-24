@@ -564,8 +564,8 @@ def test_restart_broken(started_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
-    bucket = "broken"
-    TABLE_NAME = "test_restart_broken"
+    bucket = "broken2"
+    TABLE_NAME = "test_restart_broken_table_function"
 
     if not minio_client.bucket_exists(bucket):
         minio_client.make_bucket(bucket)
