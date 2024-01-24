@@ -600,7 +600,7 @@ def test_schema_inference_with_globs(started_cluster):
     )
 
     assert (
-        "Cannot extract table structure from JSONCompactEachRow format file" in result
+        "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
     )
 
 
@@ -1044,7 +1044,7 @@ def test_union_schema_inference_mode(started_cluster):
     error = node.query_and_get_error(
         "desc hdfs('hdfs://hdfs1:9000/test_union_schema_inference*.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
     )
-    assert "Cannot extract table structure" in error
+    assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in error
 
 
 def test_format_detection(started_cluster):

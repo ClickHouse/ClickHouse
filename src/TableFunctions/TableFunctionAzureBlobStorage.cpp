@@ -58,7 +58,7 @@ void TableFunctionAzureBlobStorage::parseArgumentsImpl(ASTs & engine_args, const
         configuration.blobs_paths = {configuration.blob_path};
 
         if (configuration.format == "auto")
-            configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path);
+            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.blob_path).value_or("auto");
     }
     else
     {

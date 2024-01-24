@@ -1702,29 +1702,32 @@ namespace
                     return {nullptr, std::nullopt, format};
                 }
 
-                /// S3 file iterator could get new keys after new iteration, if format is unknown we can try to determine it by new file names.
-                if (!format && read_keys.size() > prev_read_keys_size)
+                /// S3 file iterator could get new keys after new iteration
+                if (read_keys.size() > prev_read_keys_size)
                 {
-                    for (auto it = read_keys.begin() + prev_read_keys_size; it != read_keys.end(); ++it)
+                    /// If format is unknown we can try to determine it by new file names.
+                    if (!format)
                     {
-                        if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName((*it)->key))
+                        for (auto it = read_keys.begin() + prev_read_keys_size; it != read_keys.end(); ++it)
                         {
-                            format = format_from_file_name;
-                            break;
+                            if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName((*it)->key))
+                            {
+                                format = format_from_file_name;
+                                break;
+                            }
                         }
                     }
-                }
 
-                /// S3 file iterator could get new keys after new iteration, check them in schema cache if schema inference mode is default.
-                if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT && read_keys.size() > prev_read_keys_size)
-                {
-                    auto columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end());
+                    /// Check new files in schema cache if schema inference mode is default.
+                    if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+                    {
+                        auto columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end());
+                        if (columns_from_cache)
+                            return {nullptr, columns_from_cache, format};
+                    }
+
                     prev_read_keys_size = read_keys.size();
-                    if (columns_from_cache)
-                        return {nullptr, columns_from_cache, format};
                 }
-
-                prev_read_keys_size = read_keys.size();
 
                 if (getContext()->getSettingsRef().s3_skip_empty_files && current_key_with_info->info && current_key_with_info->info->size == 0)
                     continue;

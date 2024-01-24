@@ -226,10 +226,12 @@ try
                 continue;
             }
 
-            SchemaReaderPtr schema_reader;
+            std::unique_ptr<PeekableReadBuffer> peekable_buf; /// Can be used in format detection. Should be destroyed after schema reader.
 
             if (format_name)
             {
+                SchemaReaderPtr schema_reader;
+
                 try
                 {
                     schema_reader = FormatFactory::instance().getSchemaReader(*format_name, *iterator_data.buf, context, format_settings);
@@ -296,7 +298,6 @@ try
                 /// to high memory usage as it will save all the read data from the beginning of the file,
                 /// especially it will be noticeable for formats like Parquet/ORC/Arrow that do seeks to the
                 /// end of file.
-                std::unique_ptr<PeekableReadBuffer> peekable_buf;
                 bool support_buf_recreation = read_buffer_iterator.supportsLastReadBufferRecreation();
                 if (!support_buf_recreation)
                 {
@@ -310,7 +311,7 @@ try
                 {
                     try
                     {
-                        schema_reader = FormatFactory::instance().getSchemaReader(format_to_detect, support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
+                        SchemaReaderPtr schema_reader = FormatFactory::instance().getSchemaReader(format_to_detect, support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
                         schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                         names_and_types = schema_reader->readSchema();
                         if (names_and_types.empty())
@@ -355,7 +356,7 @@ try
                     {
                         try
                         {
-                            schema_reader = FormatFactory::instance().getSchemaReader(
+                            SchemaReaderPtr schema_reader = FormatFactory::instance().getSchemaReader(
                                 formats_set_to_detect[i], support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
                             schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                             auto tmp_names_and_types = schema_reader->readSchema();

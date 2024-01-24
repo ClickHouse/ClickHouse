@@ -1380,7 +1380,7 @@ def test_schema_inference_from_globs(started_cluster):
     )
 
     assert (
-        "Cannot extract table structure from JSONCompactEachRow format file" in result
+        "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
     )
 
     url_filename = "test{0,1,2,3}.jsoncompacteachrow"
@@ -1390,7 +1390,7 @@ def test_schema_inference_from_globs(started_cluster):
     )
 
     assert (
-        "Cannot extract table structure from JSONCompactEachRow format file" in result
+        "CANNOT_EXTRACT_TABLE_STRUCTURE" in result
     )
 
 
@@ -2193,7 +2193,7 @@ def test_union_schema_inference_mode(started_cluster):
         error = instance.query_and_get_error(
             f"desc {engine}('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_union_schema_inference{{1,2,3,4}}.jsonl') settings schema_inference_mode='union', describe_compact_output=1 format TSV"
         )
-        assert "Cannot extract table structure" in error
+        assert "CANNOT_EXTRACT_TABLE_STRUCTURE" in error
 
 
 def test_s3_format_detection(started_cluster):

@@ -1147,7 +1147,7 @@ void registerStorageHDFS(StorageFactory & factory)
         }
 
         if (format_name == "auto")
-            format_name = FormatFactory::instance().getFormatFromFileName(url);
+            format_name = FormatFactory::instance().tryGetFormatFromFileName(url).value_or("auto");
 
         String compression_method;
         if (engine_args.size() == 3)

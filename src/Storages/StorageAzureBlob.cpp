@@ -144,7 +144,7 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
         configuration.blobs_paths = {configuration.blob_path};
 
         if (configuration.format == "auto")
-            configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path);
+            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.blob_path).value_or("auto");
 
         return configuration;
     }
@@ -237,7 +237,7 @@ StorageAzureBlob::Configuration StorageAzureBlob::getConfiguration(ASTs & engine
     configuration.blobs_paths = {configuration.blob_path};
 
     if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.blob_path);
+        configuration.format = FormatFactory::instance().tryGetFormatFromFileName(configuration.blob_path).value_or("auto");
 
     return configuration;
 }
@@ -1316,10 +1316,28 @@ namespace
         Data next() override
         {
             /// For default mode check cached columns for currently read keys on first iteration.
-            if (first && getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+            if (first)
             {
-                if (auto cached_columns = tryGetColumnsFromCache(read_keys.begin(), read_keys.end()))
-                    return {nullptr, cached_columns, format};
+                /// If format is unknown we iterate through all currently read keys on first iteration and
+                /// try to determine format by file name.
+                if (!format)
+                {
+                    for (const auto & key : read_keys)
+                    {
+                        if (auto format_from_path = FormatFactory::instance().tryGetFormatFromFileName(key.relative_path))
+                        {
+                            format = format_from_path;
+                            break;
+                        }
+                    }
+                }
+
+                /// For default mode check cached columns for currently read keys on first iteration.
+                if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+                {
+                    if (auto cached_columns = tryGetColumnsFromCache(read_keys.begin(), read_keys.end()))
+                        return {nullptr, cached_columns, format};
+                }
             }
 
             current_path_with_metadata = file_iterator->next();
@@ -1345,15 +1363,33 @@ namespace
 
             first = false;
 
-            /// AzureBlobStorage file iterator could get new keys after new iteration, check them in schema cache if schema inference mode is default.
-            if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT && read_keys.size() > prev_read_keys_size)
+            /// AzureBlobStorage file iterator could get new keys after new iteration.
+            if (read_keys.size() > prev_read_keys_size)
             {
-                auto columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end());
+                /// If format is unknown we can try to determine it by new file names.
+                if (!format)
+                {
+                    for (auto it = read_keys.begin() + prev_read_keys_size; it != read_keys.end(); ++it)
+                    {
+                        if (auto format_from_file_name = FormatFactory::instance().tryGetFormatFromFileName((*it).relative_path))
+                        {
+                            format = format_from_file_name;
+                            break;
+                        }
+                    }
+                }
+                /// Check new files in schema cache if schema inference mode is default.
+                if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::DEFAULT)
+                {
+                    auto columns_from_cache = tryGetColumnsFromCache(read_keys.begin() + prev_read_keys_size, read_keys.end());
+                    if (columns_from_cache)
+                        return {nullptr, columns_from_cache, format};
+                }
+
                 prev_read_keys_size = read_keys.size();
-                if (columns_from_cache)
-                    return {nullptr, columns_from_cache, format};
             }
-            else if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
+
+            if (getContext()->getSettingsRef().schema_inference_mode == SchemaInferenceMode::UNION)
             {
                 RelativePathsWithMetadata paths = {current_path_with_metadata};
                 if (auto columns_from_cache = tryGetColumnsFromCache(paths.begin(), paths.end()))
@@ -1520,7 +1556,7 @@ ColumnsDescription StorageAzureBlob::getTableStructureFromData(
     const std::optional<FormatSettings> & format_settings,
     const DB::ContextPtr & ctx)
 {
-    return getTableStructureAndFormatFromDataImpl(std::nullopt, object_storage, configuration, format_settings, ctx).first;
+    return getTableStructureAndFormatFromDataImpl(configuration.format, object_storage, configuration, format_settings, ctx).first;
 }
 
 SchemaCache & StorageAzureBlob::getSchemaCache(const ContextPtr & ctx)
