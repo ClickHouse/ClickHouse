@@ -1,0 +1,7 @@
+Files before DROP TABLE
+format_version.txt
+
+Files after DETACH TABLE
+format_version.txt
+
+Files after DROP TABLE
