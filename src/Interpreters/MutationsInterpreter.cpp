@@ -833,7 +833,11 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            if (materialize_ttl_recalculate_only)
+            /*
+             * If `ttl_only_drop_parts` is set, then we don't need to read all columns because
+             * there will be no partial pruning.
+             * */
+            if (materialize_ttl_recalculate_only || source.getMergeTreeData()->getSettings()->ttl_only_drop_parts)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
