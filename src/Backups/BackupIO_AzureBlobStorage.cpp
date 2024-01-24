@@ -11,6 +11,7 @@
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 #include <Disks/IDisk.h>
+#include <Disks/DiskType.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -143,7 +144,7 @@ BackupWriterAzureBlobStorage::BackupWriterAzureBlobStorage(
     const WriteSettings & write_settings_,
     const ContextPtr & context_)
     : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterAzureBlobStorage"))
-    , data_source_description{DataSourceType::AzureBlobStorage,configuration_.container, false, false}
+    , data_source_description{DataSourceType::AzureBlobStorage, configuration_.container, false, false}
     , configuration(configuration_)
 {
     auto client_ptr = StorageAzureBlob::createClient(configuration, /* is_read_only */ false);
