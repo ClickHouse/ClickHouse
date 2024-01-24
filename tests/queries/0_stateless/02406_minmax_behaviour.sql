@@ -141,3 +141,6 @@ SELECT maxIf(number::Nullable(String), number < 10) as number from numbers(10, 1
 
 SELECT min(n::Nullable(String)) from (Select if(number < 15 and number % 2 == 1, number * 2, NULL) as n from numbers(10, 20));
 SELECT max(n::Nullable(String)) from (Select if(number < 15 and number % 2 == 1, number * 2, NULL) as n from numbers(10, 20));
+
+SELECT max(number::Nullable(Decimal64(3))) from numbers(11) settings max_block_size=10;
+SELECT min(-number::Nullable(Decimal64(3))) from numbers(11) settings max_block_size=10;

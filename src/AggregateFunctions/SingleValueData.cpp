@@ -400,7 +400,7 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
         if (index >= row_end)
             return;
 
-        setIfSmaller(column, index, arena);
+        setIfGreater(column, index, arena);
 
         for (size_t i = index + 1; i < row_end; i++)
             if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0))
