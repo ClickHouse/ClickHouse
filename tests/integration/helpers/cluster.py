@@ -3776,7 +3776,9 @@ class ClickHouseInstance:
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
-    def start_clickhouse(self, start_wait_sec=60, retry_start=True, expected_to_fail=False):
+    def start_clickhouse(
+        self, start_wait_sec=60, retry_start=True, expected_to_fail=False
+    ):
         if not self.stay_alive:
             raise Exception(
                 "ClickHouse can be started again only with stay_alive=True instance"
@@ -3874,7 +3876,9 @@ class ClickHouseInstance:
                 ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
                 user="root",
             )
-        raise Exception("ClickHouse server is still running, but was expected to shutdown. Check logs.")
+        raise Exception(
+            "ClickHouse server is still running, but was expected to shutdown. Check logs."
+        )
 
     def restart_clickhouse(self, stop_start_wait_sec=60, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
