@@ -84,17 +84,10 @@ namespace
 
         struct UploadPartTask
         {
-            char *data = nullptr;
-            size_t size = 0;
-            std::string block_id;
+            std::unique_ptr<ReadBuffer> read_buffer = nullptr;
+            std::vector<std::string> block_ids;
             bool is_finished = false;
             std::exception_ptr exception;
-
-            ~UploadPartTask()
-            {
-                if (data != nullptr)
-                    free(data);
-            }
         };
 
         size_t normal_part_size;
@@ -108,56 +101,11 @@ namespace
 
         void calculatePartSize()
         {
-            if (!total_size)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
-
-            auto max_part_number = settings.get()->max_part_number;
-            auto min_upload_part_size = settings.get()->min_upload_part_size;
             auto max_upload_part_size = settings.get()->max_upload_part_size;
-
-            if (!max_part_number)
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_part_number must not be 0");
-            else if (!min_upload_part_size)
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "min_upload_part_size must not be 0");
-            else if (max_upload_part_size < min_upload_part_size)
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be less than min_upload_part_size");
-
-            size_t part_size = min_upload_part_size;
-            size_t num_parts = (total_size + part_size - 1) / part_size;
-
-            if (num_parts > max_part_number)
-            {
-                part_size = (total_size + max_part_number - 1) / max_part_number;
-                num_parts = (total_size + part_size - 1) / part_size;
-            }
-
-            if (part_size > max_upload_part_size)
-            {
-                part_size = max_upload_part_size;
-                num_parts = (total_size + part_size - 1) / part_size;
-            }
-
-            if (num_parts < 1 || num_parts > max_part_number || part_size < min_upload_part_size || part_size > max_upload_part_size)
-            {
-                String msg;
-                if (num_parts < 1)
-                    msg = "Number of parts is zero";
-                else if (num_parts > max_part_number)
-                    msg = fmt::format("Number of parts exceeds {}", num_parts, max_part_number);
-                else if (part_size < min_upload_part_size)
-                    msg = fmt::format("Size of a part is less than {}", part_size, min_upload_part_size);
-                else
-                    msg = fmt::format("Size of a part exceeds {}", part_size, max_upload_part_size);
-
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "{} while writing {} bytes to AzureBlobStorage. Check max_part_number = {}, "
-                    "min_upload_part_size = {}, max_upload_part_size = {}",
-                    msg, total_size, max_part_number, min_upload_part_size, max_upload_part_size);
-            }
-
+            if (!max_upload_part_size)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be 0");
             /// We've calculated the size of a normal part (the final part can be smaller).
-            normal_part_size = part_size;
+            normal_part_size = max_upload_part_size;
         }
 
     public:
@@ -238,18 +186,13 @@ namespace
 
                 try
                 {
-                    auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
-                    task->data = new char[part_size];
-                    task->size = part_size;
-                    size_t n = read_buffer->read(task->data,part_size);
-                    if (n != part_size)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size");
+                    task->read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
 
                     schedule([this, task, task_finish_notify]()
                     {
                         try
                         {
-                            processUploadTask(*task);
+                            processUploadPartRequest(*task);
                         }
                         catch (...)
                         {
@@ -267,38 +210,35 @@ namespace
             else
             {
                 UploadPartTask task;
-                auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
-                task.data = new char[part_size];
-                size_t n = read_buffer->read(task.data,part_size);
-                if (n != part_size)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size");
-                task.size = part_size;
-                processUploadTask(task);
-                block_ids.emplace_back(task.block_id);
+                task.read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
+                processUploadPartRequest(task);
+                block_ids.insert(block_ids.end(),task.block_ids.begin(), task.block_ids.end());
             }
         }
 
-        void processUploadTask(UploadPartTask & task)
-        {
-            auto block_id = processUploadPartRequest(task);
-
-            std::lock_guard lock(bg_tasks_mutex); /// Protect bg_tasks from race
-            task.block_id = block_id;
-            LOG_TRACE(log, "Writing part finished. Container: {}, Blob: {}, block_id: {}, Parts: {}", dest_container_for_logging, dest_blob, block_id, bg_tasks.size());
-        }
-
-        String processUploadPartRequest(UploadPartTask & task)
+        void processUploadPartRequest(UploadPartTask & task)
         {
             ProfileEvents::increment(ProfileEvents::AzureUploadPart);
             if (for_disk_azure_blob_storage)
                 ProfileEvents::increment(ProfileEvents::DiskAzureUploadPart);
 
             auto block_blob_client = client.get()->GetBlockBlobClient(dest_blob);
-            task.block_id = getRandomASCIIString(64);
-            Azure::Core::IO::MemoryBodyStream memory(reinterpret_cast<const uint8_t *>(task.data), task.size);
-            block_blob_client.StageBlock(task.block_id, memory);
 
-            return task.block_id;
+            while (!task.read_buffer->eof())
+            {
+                  auto size = task.read_buffer->available();
+                  if (size > 0)
+                  {
+                      auto block_id = getRandomASCIIString(64);
+                      Azure::Core::IO::MemoryBodyStream memory(reinterpret_cast<const uint8_t *>(task.read_buffer->position()), size);
+                      block_blob_client.StageBlock(block_id, memory);
+                      task.block_ids.emplace_back(block_id);
+                      task.read_buffer->ignore(size);
+                      LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, block_id: {}", dest_container_for_logging, dest_blob, block_id);
+                  }
+            }
+            std::lock_guard lock(bg_tasks_mutex); /// Protect bg_tasks from race
+            LOG_TRACE(log, "Writing part finished. Container: {}, Blob: {}, Parts: {}", dest_container_for_logging, dest_blob, bg_tasks.size());
         }
 
 
@@ -316,7 +256,7 @@ namespace
             {
                 if (task.exception)
                     std::rethrow_exception(task.exception);
-                block_ids.emplace_back(task.block_id);
+                block_ids.insert(block_ids.end(),task.block_ids.begin(), task.block_ids.end());
             }
         }
     };

@@ -24,18 +24,14 @@ struct AzureObjectStorageSettings
         int max_single_read_retries_,
         int max_single_download_retries_,
         int list_object_keys_size_,
-        size_t min_upload_part_size_,
         size_t max_upload_part_size_,
-        size_t max_part_number_,
         bool use_native_copy_)
         : max_single_part_upload_size(max_single_part_upload_size_)
         , min_bytes_for_seek(min_bytes_for_seek_)
         , max_single_read_retries(max_single_read_retries_)
         , max_single_download_retries(max_single_download_retries_)
         , list_object_keys_size(list_object_keys_size_)
-        , min_upload_part_size(min_upload_part_size_)
         , max_upload_part_size(max_upload_part_size_)
-        , max_part_number(max_part_number_)
         , use_native_copy(use_native_copy_)
     {
     }
