@@ -68,16 +68,12 @@ namespace
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
         client_configuration.requestTimeoutMs = 60 * 60 * 1000;
-
-        S3::ClientSettings client_settings{
-            .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
-            .disable_checksum = local_settings.s3_disable_checksum,
-            .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
-        };
+        client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(request_settings.retry_attempts);
 
         return S3::ClientFactory::instance().create(
             client_configuration,
-            client_settings,
+            s3_uri.is_virtual_hosted_style,
+            local_settings.s3_disable_checksum,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
             settings.auth_settings.server_side_encryption_customer_key_base64,
@@ -126,7 +122,7 @@ BackupReaderS3::BackupReaderS3(
     const ContextPtr & context_)
     : BackupReaderDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupReaderS3"))
     , s3_uri(s3_uri_)
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
+    , data_source_description{DataSourceType::S3, s3_uri.endpoint, false, false}
     , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()))
 {
     auto & request_settings = s3_settings.request_settings;
@@ -150,7 +146,7 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
 {
     auto objects = listObjects(*client, s3_uri, file_name);
     if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
+        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist");
     return objects[0].GetSize();
 }
 
@@ -216,7 +212,7 @@ BackupWriterS3::BackupWriterS3(
     const ContextPtr & context_)
     : BackupWriterDefault(read_settings_, write_settings_, &Poco::Logger::get("BackupWriterS3"))
     , s3_uri(s3_uri_)
-    , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false}
+    , data_source_description{DataSourceType::S3, s3_uri.endpoint, false, false}
     , s3_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()))
 {
     auto & request_settings = s3_settings.request_settings;
@@ -303,7 +299,7 @@ UInt64 BackupWriterS3::getFileSize(const String & file_name)
 {
     auto objects = listObjects(*client, s3_uri, file_name);
     if (objects.empty())
-        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist", file_name);
+        throw Exception(ErrorCodes::S3_ERROR, "Object {} must exist");
     return objects[0].GetSize();
 }
 

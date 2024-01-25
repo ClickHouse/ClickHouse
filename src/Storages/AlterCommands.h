@@ -44,7 +44,6 @@ struct AlterCommand
         MODIFY_SETTING,
         RESET_SETTING,
         MODIFY_QUERY,
-        MODIFY_REFRESH,
         RENAME_COLUMN,
         REMOVE_TTL,
         MODIFY_DATABASE_SETTING,
@@ -64,8 +63,7 @@ struct AlterCommand
         /// Other properties
         COMMENT,
         CODEC,
-        TTL,
-        SETTINGS
+        TTL
     };
 
     Type type = UNKNOWN;
@@ -138,26 +136,20 @@ struct AlterCommand
     /// For ADD and MODIFY
     ASTPtr codec = nullptr;
 
-    /// For MODIFY SETTING or MODIFY COLUMN MODIFY SETTING
+    /// For MODIFY SETTING
     SettingsChanges settings_changes;
 
-    /// For RESET SETTING or MODIFY COLUMN RESET SETTING
+    /// For RESET SETTING
     std::set<String> settings_resets;
 
     /// For MODIFY_QUERY
     ASTPtr select = nullptr;
-
-    /// For MODIFY_REFRESH
-    ASTPtr refresh = nullptr;
 
     /// Target column name
     String rename_to;
 
     /// What to remove from column (or TTL)
     RemoveProperty to_remove = RemoveProperty::NO_PROPERTY;
-
-    /// Is this MODIFY COLUMN MODIFY SETTING or MODIFY COLUMN column with settings declaration)
-    bool append_column_setting = false;
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 

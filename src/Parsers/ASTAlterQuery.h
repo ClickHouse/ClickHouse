@@ -23,8 +23,6 @@ namespace DB
 
 class ASTAlterCommand : public IAST
 {
-    friend class ASTAlterQuery;
-
 public:
     enum Type
     {
@@ -42,7 +40,6 @@ public:
         MODIFY_SETTING,
         RESET_SETTING,
         MODIFY_QUERY,
-        MODIFY_REFRESH,
         REMOVE_TTL,
         REMOVE_SAMPLE_BY,
 
@@ -74,7 +71,6 @@ public:
 
         DELETE,
         UPDATE,
-        APPLY_DELETED_MASK,
 
         NO_TYPE,
 
@@ -91,88 +87,83 @@ public:
      *  This field is not used in the DROP query
      *  In MODIFY query, the column name and the new type are stored here
      */
-    IAST * col_decl = nullptr;
+    ASTPtr col_decl;
 
     /** The ADD COLUMN and MODIFY COLUMN query here optionally stores the name of the column following AFTER
      * The DROP query stores the column name for deletion here
      * Also used for RENAME COLUMN.
      */
-    IAST * column = nullptr;
+    ASTPtr column;
 
     /** For MODIFY ORDER BY
      */
-    IAST * order_by = nullptr;
+    ASTPtr order_by;
 
     /** For MODIFY SAMPLE BY
      */
-    IAST * sample_by = nullptr;
+    ASTPtr sample_by;
 
     /** The ADD INDEX query stores the IndexDeclaration there.
      */
-    IAST * index_decl = nullptr;
+    ASTPtr index_decl;
 
     /** The ADD INDEX query stores the name of the index following AFTER.
      *  The DROP INDEX query stores the name for deletion.
      *  The MATERIALIZE INDEX query stores the name of the index to materialize.
      *  The CLEAR INDEX query stores the name of the index to clear.
      */
-    IAST * index = nullptr;
+    ASTPtr index;
 
     /** The ADD CONSTRAINT query stores the ConstraintDeclaration there.
     */
-    IAST * constraint_decl = nullptr;
+    ASTPtr constraint_decl;
 
     /** The DROP CONSTRAINT query stores the name for deletion.
     */
-    IAST * constraint = nullptr;
+    ASTPtr constraint;
 
     /** The ADD PROJECTION query stores the ProjectionDeclaration there.
      */
-    IAST * projection_decl = nullptr;
+    ASTPtr projection_decl;
 
     /** The ADD PROJECTION query stores the name of the projection following AFTER.
      *  The DROP PROJECTION query stores the name for deletion.
      *  The MATERIALIZE PROJECTION query stores the name of the projection to materialize.
      *  The CLEAR PROJECTION query stores the name of the projection to clear.
      */
-    IAST * projection = nullptr;
+    ASTPtr projection;
 
-    IAST * statistic_decl = nullptr;
+    ASTPtr statistic_decl;
 
     /** Used in DROP PARTITION, ATTACH PARTITION FROM, UPDATE, DELETE queries.
      *  The value or ID of the partition is stored here.
      */
-    IAST * partition = nullptr;
+    ASTPtr partition;
 
     /// For DELETE/UPDATE WHERE: the predicate that filters the rows to delete/update.
-    IAST * predicate = nullptr;
+    ASTPtr predicate;
 
     /// A list of expressions of the form `column = expr` for the UPDATE command.
-    IAST * update_assignments = nullptr;
+    ASTPtr update_assignments;
 
     /// A column comment
-    IAST * comment = nullptr;
+    ASTPtr comment;
 
     /// For MODIFY TTL query
-    IAST * ttl = nullptr;
+    ASTPtr ttl;
 
     /// FOR MODIFY_SETTING
-    IAST * settings_changes = nullptr;
+    ASTPtr settings_changes;
 
     /// FOR RESET_SETTING
-    IAST * settings_resets = nullptr;
+    ASTPtr settings_resets;
 
     /// For MODIFY_QUERY
-    IAST * select = nullptr;
+    ASTPtr select;
 
-    /// In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
-    IAST * values = nullptr;
-
-    /// Target column name
-    IAST * rename_to = nullptr;
-
-    /// For MODIFY REFRESH
-    ASTPtr refresh;
+    /** In ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live views is stored here
+     */
+    ASTPtr values;
 
     bool detach = false;        /// true for DETACH PARTITION
 
@@ -215,6 +206,9 @@ public:
     String to_database;
     String to_table;
 
+    /// Target column name
+    ASTPtr rename_to;
+
     /// Which property user want to remove
     String remove_property;
 
@@ -224,8 +218,6 @@ public:
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-
-    void forEachPointerToChild(std::function<void(void**)> f) override;
 };
 
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
@@ -273,7 +265,10 @@ protected:
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override;
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&command_list));
+    }
 };
 
 }

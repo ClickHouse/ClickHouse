@@ -440,8 +440,6 @@ template <typename T> inline bool isFloat(const T & data_type) { return WhichDat
 template <typename T> inline bool isNativeNumber(const T & data_type) { return WhichDataType(data_type).isNativeNumber(); }
 template <typename T> inline bool isNumber(const T & data_type) { return WhichDataType(data_type).isNumber(); }
 
-template <typename T> inline bool isEnum8(const T & data_type) { return WhichDataType(data_type).isEnum8(); }
-template <typename T> inline bool isEnum16(const T & data_type) { return WhichDataType(data_type).isEnum16(); }
 template <typename T> inline bool isEnum(const T & data_type) { return WhichDataType(data_type).isEnum(); }
 
 template <typename T> inline bool isDate(const T & data_type) { return WhichDataType(data_type).isDate(); }

@@ -37,9 +37,8 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = DELETE;
-        res.predicate = command->predicate->clone();
-        if (command->partition)
-            res.partition = command->partition->clone();
+        res.predicate = command->predicate;
+        res.partition = command->partition;
         return res;
     }
     else if (command->type == ASTAlterCommand::UPDATE)
@@ -47,9 +46,8 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = UPDATE;
-        res.predicate = command->predicate->clone();
-        if (command->partition)
-            res.partition = command->partition->clone();
+        res.predicate = command->predicate;
+        res.partition = command->partition;
         for (const ASTPtr & assignment_ast : command->update_assignments->children)
         {
             const auto & assignment = assignment_ast->as<ASTAssignment &>();
@@ -61,24 +59,12 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         }
         return res;
     }
-    else if (command->type == ASTAlterCommand::APPLY_DELETED_MASK)
-    {
-        MutationCommand res;
-        res.ast = command->ptr();
-        res.type = APPLY_DELETED_MASK;
-        if (command->predicate)
-            res.predicate = command->predicate->clone();
-        if (command->partition)
-            res.partition = command->partition->clone();
-        return res;
-    }
     else if (command->type == ASTAlterCommand::MATERIALIZE_INDEX)
     {
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MATERIALIZE_INDEX;
-        if (command->partition)
-            res.partition = command->partition->clone();
+        res.partition = command->partition;
         res.predicate = nullptr;
         res.index_name = command->index->as<ASTIdentifier &>().name();
         return res;
@@ -88,8 +74,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MATERIALIZE_STATISTIC;
-        if (command->partition)
-            res.partition = command->partition->clone();
+        res.partition = command->partition;
         res.predicate = nullptr;
         res.statistic_columns = command->statistic_decl->as<ASTStatisticDeclaration &>().getColumnNames();
         return res;
@@ -99,8 +84,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MATERIALIZE_PROJECTION;
-        if (command->partition)
-            res.partition = command->partition->clone();
+        res.partition = command->partition;
         res.predicate = nullptr;
         res.projection_name = command->projection->as<ASTIdentifier &>().name();
         return res;
@@ -110,8 +94,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MATERIALIZE_COLUMN;
-        if (command->partition)
-            res.partition = command->partition->clone();
+        res.partition = command->partition;
         res.column_name = getIdentifierName(command->column);
         return res;
     }
@@ -132,7 +115,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MutationCommand::Type::DROP_COLUMN;
         res.column_name = getIdentifierName(command->column);
         if (command->partition)
-            res.partition = command->partition->clone();
+            res.partition = command->partition;
         if (command->clear_column)
             res.clear = true;
 
@@ -145,7 +128,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MutationCommand::Type::DROP_INDEX;
         res.column_name = command->index->as<ASTIdentifier &>().name();
         if (command->partition)
-            res.partition = command->partition->clone();
+            res.partition = command->partition;
         if (command->clear_index)
             res.clear = true;
         return res;
@@ -156,7 +139,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.ast = command->ptr();
         res.type = MutationCommand::Type::DROP_STATISTIC;
         if (command->partition)
-            res.partition = command->partition->clone();
+            res.partition = command->partition;
         if (command->clear_index)
             res.clear = true;
         res.statistic_columns = command->statistic_decl->as<ASTStatisticDeclaration &>().getColumnNames();
@@ -169,7 +152,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MutationCommand::Type::DROP_PROJECTION;
         res.column_name = command->projection->as<ASTIdentifier &>().name();
         if (command->partition)
-            res.partition = command->partition->clone();
+            res.partition = command->partition;
         if (command->clear_projection)
             res.clear = true;
         return res;
@@ -188,8 +171,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         MutationCommand res;
         res.ast = command->ptr();
         res.type = MATERIALIZE_TTL;
-        if (command->partition)
-            res.partition = command->partition->clone();
+        res.partition = command->partition;
         return res;
     }
     else

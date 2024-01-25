@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 
 #include <aws/core/client/CoreErrors.h>
+#include <aws/core/client/DefaultRetryStrategy.h>
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
@@ -14,6 +15,7 @@
 
 #include <Poco/Net/NetException.h>
 
+#include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
@@ -27,7 +29,6 @@
 
 #include <base/sleep.h>
 
-#include <algorithm>
 
 namespace ProfileEvents
 {
@@ -36,9 +37,6 @@ namespace ProfileEvents
 
     extern const Event DiskS3WriteRequestsErrors;
     extern const Event DiskS3ReadRequestsErrors;
-
-    extern const Event S3Clients;
-    extern const Event TinyS3Clients;
 }
 
 namespace DB
@@ -48,7 +46,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_REDIRECTS;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace S3
@@ -106,19 +103,6 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
     assert_cast<const Client::RetryStrategy &>(*client_config.retryStrategy);
 }
 
-void validateCredentials(const Aws::Auth::AWSCredentials& auth_credentials)
-{
-    if (auth_credentials.GetAWSAccessKeyId().empty())
-    {
-        return;
-    }
-    /// Follow https://docs.aws.amazon.com/IAM/latest/APIReference/API_AccessKey.html
-    if (!std::all_of(auth_credentials.GetAWSAccessKeyId().begin(), auth_credentials.GetAWSAccessKeyId().end(), isWordCharASCII))
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Access key id has an invalid character");
-    }
-}
-
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
     const HTTPHeaderEntries & extra_headers
@@ -141,12 +125,12 @@ std::unique_ptr<Client> Client::create(
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
     const PocoHTTPClientConfiguration & client_configuration,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads,
-    const ClientSettings & client_settings)
+    bool use_virtual_addressing,
+    bool disable_checksum)
 {
     verifyClientConfiguration(client_configuration);
-    validateCredentials(credentials_provider->GetAWSCredentials());
     return std::unique_ptr<Client>(
-        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, client_settings));
+        new Client(max_redirects_, std::move(sse_kms_config_), credentials_provider, client_configuration, sign_payloads, use_virtual_addressing, disable_checksum));
 }
 
 std::unique_ptr<Client> Client::clone() const
@@ -176,12 +160,14 @@ Client::Client(
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider_,
     const PocoHTTPClientConfiguration & client_configuration_,
     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy sign_payloads_,
-    const ClientSettings & client_settings_)
-    : Aws::S3::S3Client(credentials_provider_, client_configuration_, sign_payloads_, client_settings_.use_virtual_addressing)
+    bool use_virtual_addressing_,
+    bool disable_checksum_)
+    : Aws::S3::S3Client(credentials_provider_, client_configuration_, sign_payloads_, use_virtual_addressing_)
     , credentials_provider(credentials_provider_)
     , client_configuration(client_configuration_)
     , sign_payloads(sign_payloads_)
-    , client_settings(client_settings_)
+    , use_virtual_addressing(use_virtual_addressing_)
+    , disable_checksum(disable_checksum_)
     , max_redirects(max_redirects_)
     , sse_kms_config(std::move(sse_kms_config_))
     , log(&Poco::Logger::get("S3Client"))
@@ -216,19 +202,18 @@ Client::Client(
 
     cache = std::make_shared<ClientCache>();
     ClientCacheRegistry::instance().registerClient(cache);
-
-    ProfileEvents::increment(ProfileEvents::S3Clients);
 }
 
 Client::Client(
     const Client & other, const PocoHTTPClientConfiguration & client_configuration_)
     : Aws::S3::S3Client(other.credentials_provider, client_configuration_, other.sign_payloads,
-                        other.client_settings.use_virtual_addressing)
+                        other.use_virtual_addressing)
     , initial_endpoint(other.initial_endpoint)
     , credentials_provider(other.credentials_provider)
     , client_configuration(client_configuration_)
     , sign_payloads(other.sign_payloads)
-    , client_settings(other.client_settings)
+    , use_virtual_addressing(other.use_virtual_addressing)
+    , disable_checksum(other.disable_checksum)
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , provider_type(other.provider_type)
@@ -238,22 +223,6 @@ Client::Client(
 {
     cache = std::make_shared<ClientCache>(*other.cache);
     ClientCacheRegistry::instance().registerClient(cache);
-
-    ProfileEvents::increment(ProfileEvents::TinyS3Clients);
-}
-
-
-Client::~Client()
-{
-    try
-    {
-        ClientCacheRegistry::instance().unregisterClient(cache.get());
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-        throw;
-    }
 }
 
 Aws::Auth::AWSCredentials Client::getCredentials() const
@@ -448,7 +417,7 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
     }
 
-    if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
+    if (outcome.IsSuccess() && provider_type == ProviderType::GCS)
     {
         /// For GCS we will try to compose object at the end, otherwise we cannot do a native copy
         /// for the object (e.g. for backups)
@@ -546,7 +515,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
-    if (client_settings.disable_checksum)
+    if (disable_checksum)
         request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
@@ -604,9 +573,6 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         auto new_uri = getURIFromError(error);
         if (!new_uri)
             return result;
-
-        if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
-            new_uri->addRegionToURI(request.getRegionOverride());
 
         const auto & current_uri_override = request.getURIOverride();
         /// we already tried with this URI
@@ -705,9 +671,9 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
     if (api_mode == ApiMode::GCS)
     {
         /// some GCS requests don't like S3 specific headers that the client sets
-        /// all "x-amz-*" headers have to be either converted or deleted
-        /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
         httpRequest->DeleteHeader("x-amz-api-version");
+        httpRequest->DeleteHeader("amz-sdk-invocation-id");
+        httpRequest->DeleteHeader("amz-sdk-request");
     }
 }
 
@@ -883,7 +849,8 @@ ClientFactory & ClientFactory::instance()
 
 std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const PocoHTTPClientConfiguration & cfg_,
-    ClientSettings client_settings,
+    bool is_virtual_hosted_style,
+    bool disable_checksum,
     const String & access_key_id,
     const String & secret_access_key,
     const String & server_side_encryption_customer_key_base64,
@@ -922,17 +889,14 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
 
     client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(client_configuration.s3_retry_attempts);
 
-    /// Use virtual addressing if endpoint is not specified.
-    if (client_configuration.endpointOverride.empty())
-        client_settings.use_virtual_addressing = true;
-
     return Client::create(
         client_configuration.s3_max_redirects,
         std::move(sse_kms_config),
         credentials_provider,
         client_configuration, // Client configuration.
         Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-        client_settings
+        is_virtual_hosted_style || client_configuration.endpointOverride.empty(), /// Use virtual addressing if endpoint is not specified.
+        disable_checksum
     );
 }
 

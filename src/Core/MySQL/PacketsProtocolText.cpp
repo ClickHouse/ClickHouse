@@ -1,15 +1,14 @@
 #include <Core/MySQL/PacketsProtocolText.h>
-
-#include <Core/MySQL/MySQLUtils.h>
 #include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Common/assert_cast.h>
-#include <Core/MySQL/IMySQLWritePacket.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypesDecimal.h>
+#include "Common/assert_cast.h"
+#include "Core/MySQL/IMySQLWritePacket.h"
+#include "DataTypes/DataTypeLowCardinality.h"
+#include "DataTypes/DataTypesDecimal.h"
 
+#include "MySQLUtils.h"
 
 namespace DB
 {

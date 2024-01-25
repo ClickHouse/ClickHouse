@@ -13,7 +13,6 @@
 #include <Columns/ColumnMap.h>
 #include <IO/WriteHelpers.h>
 #include <Common/config_version.h>
-#include <Common/formatReadable.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -448,7 +447,6 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 std::move(dest_buf),
                 method,
                 /*level*/ 3,
-                /*zstd_window_log*/ 0,
                 source.size(),
                 /*existing_memory*/ source.data());
             chassert(compressed_buf->position() == source.data());

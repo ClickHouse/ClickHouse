@@ -302,8 +302,7 @@ def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
         node1.query(
             """ALTER TABLE {name} MODIFY TTL now()-3600 TO DISK 'jbod1', d1 TO DISK 'external'""".format(
                 name=name
-            ),
-            settings={"allow_suspicious_ttl_expressions": 1},
+            )
         )
 
         wait_expire_1 = 12

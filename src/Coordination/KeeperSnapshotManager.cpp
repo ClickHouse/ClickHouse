@@ -74,10 +74,7 @@ namespace
 
         /// Serialize ACL
         writeBinary(node.acl_id, out);
-        /// Write is_sequential for backwards compatibility
-        if (version < SnapshotVersion::V6)
-            writeBinary(false, out);
-
+        writeBinary(node.is_sequental, out);
         /// Serialize stat
         writeBinary(node.stat.czxid, out);
         writeBinary(node.stat.mzxid, out);
@@ -87,15 +84,16 @@ namespace
         writeBinary(node.stat.cversion, out);
         writeBinary(node.stat.aversion, out);
         writeBinary(node.stat.ephemeralOwner, out);
-        if (version < SnapshotVersion::V6)
-            writeBinary(static_cast<int32_t>(node.getData().size()), out);
+        writeBinary(node.stat.dataLength, out);
         writeBinary(node.stat.numChildren, out);
         writeBinary(node.stat.pzxid, out);
 
         writeBinary(node.seq_num, out);
 
-        if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
-            writeBinary(node.sizeInBytes(), out);
+        if (version >= SnapshotVersion::V4)
+        {
+            writeBinary(node.size_bytes, out);
+        }
     }
 
     void readNode(KeeperStorage::Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
@@ -131,11 +129,7 @@ namespace
 
         acl_map.addUsage(node.acl_id);
 
-        if (version < SnapshotVersion::V6)
-        {
-            bool is_sequential = false;
-            readBinary(is_sequential, in);
-        }
+        readBinary(node.is_sequental, in);
 
         /// Deserialize stat
         readBinary(node.stat.czxid, in);
@@ -146,19 +140,14 @@ namespace
         readBinary(node.stat.cversion, in);
         readBinary(node.stat.aversion, in);
         readBinary(node.stat.ephemeralOwner, in);
-        if (version < SnapshotVersion::V6)
-        {
-            int32_t data_length = 0;
-            readBinary(data_length, in);
-        }
+        readBinary(node.stat.dataLength, in);
         readBinary(node.stat.numChildren, in);
         readBinary(node.stat.pzxid, in);
         readBinary(node.seq_num, in);
 
-        if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
+        if (version >= SnapshotVersion::V4)
         {
-            uint64_t size_bytes = 0;
-            readBinary(size_bytes, in);
+            readBinary(node.size_bytes, in);
         }
     }
 
@@ -365,7 +354,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
 
     const auto is_node_empty = [](const auto & node)
     {
-        return node.getData().empty() && node.stat == KeeperStorage::Node::Stat{};
+        return node.getData().empty() && node.stat == Coordination::Stat{};
     };
 
     for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
@@ -409,6 +398,9 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                         "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
                         error_msg);
             }
+
+            // we always ignore the written size for this node
+            node.recalculateSize();
         }
 
         storage.container.insertOrReplace(path, node);
@@ -425,7 +417,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         {
             auto parent_path = parentNodePath(itr.key);
             storage.container.updateValue(
-                parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseNodeName(path)); });
+                parent_path, [version, path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseNodeName(path), /*update_size*/ version < SnapshotVersion::V4); });
         }
     }
 

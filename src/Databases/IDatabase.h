@@ -139,7 +139,7 @@ class IDatabase : public std::enable_shared_from_this<IDatabase>
 {
 public:
     IDatabase() = delete;
-    explicit IDatabase(String database_name_);
+    explicit IDatabase(String database_name_) : database_name(std::move(database_name_)) {}
 
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
@@ -420,7 +420,7 @@ public:
     /// Creates a table restored from backup.
     virtual void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms);
 
-    virtual ~IDatabase();
+    virtual ~IDatabase() = default;
 
 protected:
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const

@@ -51,10 +51,10 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
 void AggregateFunctionFactory::registerNullsActionTransformation(const String & source_ignores_nulls, const String & target_respect_nulls)
 {
     if (!aggregate_functions.contains(source_ignores_nulls))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Source aggregation '{}' not found", source_ignores_nulls);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Source aggregation '{}' not found");
 
     if (!aggregate_functions.contains(target_respect_nulls))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Target aggregation '{}' not found", target_respect_nulls);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Target aggregation '{}' not found");
 
     if (!respect_nulls.emplace(source_ignores_nulls, target_respect_nulls).second)
         throw Exception(

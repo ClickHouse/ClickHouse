@@ -176,8 +176,6 @@ private:
     /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.
     DistributedAsyncInsertDirectoryQueue & getDirectoryQueue(const DiskPtr & disk, const std::string & name);
 
-    /// Parse the address corresponding to the directory name of the directory queue
-    Cluster::Addresses parseAddresses(const std::string & name) const;
 
     /// Return list of metrics for all created monitors
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
@@ -272,8 +270,6 @@ private:
     {
         std::shared_ptr<DistributedAsyncInsertDirectoryQueue> directory_queue;
         ConnectionPoolPtr connection_pool;
-        Cluster::Addresses addresses;
-        size_t clusters_version;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     mutable std::mutex cluster_nodes_mutex;

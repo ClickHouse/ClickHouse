@@ -42,7 +42,7 @@ To analyze the `trace_log` system table:
 
 - Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting-started/install.md#install-from-deb-packages).
 
-- Allow introspection functions by the [allow_introspection_functions](../../operations/settings/settings.md#allow_introspection_functions) setting.
+- Allow introspection functions by the [allow_introspection_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting.
 
     For security reasons, introspection functions are disabled by default.
 

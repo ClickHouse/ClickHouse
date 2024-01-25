@@ -2,14 +2,17 @@
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <TableFunctions/TableFunctionFile.h>
 
+#include "Parsers/IAST_fwd.h"
 #include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageFile.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Formats/FormatFactory.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 
 
 namespace DB

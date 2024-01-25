@@ -167,7 +167,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
 
     /// Don't preprocess anything until the first commit when we will manually pre_commit and commit
     /// all needed logs
-    if (!keeper_context->localLogsPreprocessed())
+    if (!keeper_context->local_logs_preprocessed)
         return result;
 
     auto request_for_session = parseRequest(data, /*final=*/false);
@@ -394,8 +394,8 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
     request_for_session->log_idx = log_idx;
 
-    if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
-        return nullptr;
+    if (!keeper_context->local_logs_preprocessed)
+        preprocess(*request_for_session);
 
     auto try_push = [this](const KeeperStorage::ResponseForSession& response)
     {
@@ -512,7 +512,7 @@ void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraf
 void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
     /// Don't rollback anything until the first commit because nothing was preprocessed
-    if (!keeper_context->localLogsPreprocessed())
+    if (!keeper_context->local_logs_preprocessed)
         return;
 
     auto request_for_session = parseRequest(data, true);

@@ -71,8 +71,7 @@ struct HashedDictionaryConfiguration
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 class HashedDictionary final : public IDictionary
 {
-    using DictionaryParallelLoaderType = HashedDictionaryParallelLoader<dictionary_key_type, HashedDictionary<dictionary_key_type, sparse, sharded>>;
-    friend class HashedDictionaryParallelLoader<dictionary_key_type, HashedDictionary<dictionary_key_type, sparse, sharded>>;
+    friend class HashedDictionaryParallelLoader<dictionary_key_type, sparse, sharded>;
 
 public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
@@ -988,7 +987,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsImpl(
         auto key = keys_extractor.extractCurrentKey();
         auto shard = getShard(key);
 
-        const auto & container = attribute_containers[shard];
+        const auto & container = attribute_containers[getShard(key)];
         const auto it = container.find(key);
 
         if (it != container.end())
@@ -1021,11 +1020,11 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        std::optional<DictionaryParallelLoaderType> parallel_loader;
+        std::optional<HashedDictionaryParallelLoader<dictionary_key_type, sparse, sharded>> parallel_loader;
         if constexpr (sharded)
             parallel_loader.emplace(*this);
 
-        QueryPipeline pipeline(source_ptr->loadAll());
+        QueryPipeline pipeline = QueryPipeline(source_ptr->loadAll());
 
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
         Block block;

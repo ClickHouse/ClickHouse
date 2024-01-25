@@ -1,4 +1,3 @@
-SET output_format_pretty_color=1;
 SELECT * FROM numbers(10) FORMAT Pretty;
 SELECT * FROM numbers(10) FORMAT PrettyCompact;
 SELECT * FROM numbers(10) FORMAT PrettyCompactMonoBlock;

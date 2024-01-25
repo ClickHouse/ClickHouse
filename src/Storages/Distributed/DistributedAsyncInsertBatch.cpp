@@ -5,7 +5,6 @@
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/CurrentMetrics.h>
-#include <base/defines.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
 
@@ -164,22 +163,6 @@ void DistributedAsyncInsertBatch::deserialize()
     readText(in);
 }
 
-bool DistributedAsyncInsertBatch::valid()
-{
-    chassert(!files.empty());
-
-    bool res = true;
-    for (const auto & file : files)
-    {
-        if (!fs::exists(file))
-        {
-            LOG_WARNING(parent.log, "File {} does not exists, likely due abnormal shutdown", file);
-            res = false;
-        }
-    }
-    return res;
-}
-
 void DistributedAsyncInsertBatch::writeText(WriteBuffer & out)
 {
     for (const auto & file : files)
@@ -218,6 +201,14 @@ void DistributedAsyncInsertBatch::sendBatch()
     {
         for (const auto & file : files)
         {
+            /// In case of recovery it is possible that some of files will be
+            /// missing, if server had been restarted abnormally
+            if (recovered && !fs::exists(file))
+            {
+                LOG_WARNING(parent.log, "File {} does not exists, likely due abnormal shutdown", file);
+                continue;
+            }
+
             ReadBufferFromFile in(file);
             const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 

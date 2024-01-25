@@ -7,6 +7,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include "HTTPHandler.h"
+#include "NotFoundHandler.h"
 #include "StaticRequestHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "InterserverIOHTTPHandler.h"
@@ -159,12 +160,6 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     dashboard_handler->allowGetAndHeadRequest();
     factory.addPathToHints("/dashboard");
     factory.addHandler(dashboard_handler);
-
-    auto binary_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
-    binary_handler->attachNonStrictPath("/binary");
-    binary_handler->allowGetAndHeadRequest();
-    factory.addPathToHints("/binary");
-    factory.addHandler(binary_handler);
 
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");
