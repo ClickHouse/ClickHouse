@@ -201,10 +201,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, std::move(object_columns));
 
-    if (supportsBlockNumberColumn(global_ctx) && !global_ctx->storage_columns.contains(BlockNumberColumn::name))
+    if (supportsBlockNumberColumn(global_ctx))
     {
-        global_ctx->storage_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
-        global_ctx->all_column_names.emplace_back(BlockNumberColumn::name);
+        if (!global_ctx->storage_columns.contains(BlockNumberColumn::name))
+            global_ctx->storage_columns.emplace_back(NameAndTypePair{BlockNumberColumn::name,BlockNumberColumn::type});
+        if (std::find(global_ctx->all_column_names.begin(), global_ctx->all_column_names.end(), BlockNumberColumn::name) == global_ctx->all_column_names.end())
+            global_ctx->all_column_names.emplace_back(BlockNumberColumn::name);
     }
 
     extractMergingAndGatheringColumns(
