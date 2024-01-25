@@ -93,34 +93,9 @@ void HTTPSession::setTimeout(const Poco::Timespan& timeout)
 
 void HTTPSession::setTimeout(const Poco::Timespan& connectionTimeout, const Poco::Timespan& sendTimeout, const Poco::Timespan& receiveTimeout)
 {
-     try
-     {
-         _connectionTimeout = connectionTimeout;
-
-         if (_sendTimeout.totalMicroseconds() != sendTimeout.totalMicroseconds()) {
-             _sendTimeout = sendTimeout;
-
-             if (connected())
-                 _socket.setSendTimeout(_sendTimeout);
-         }
-
-         if (_receiveTimeout.totalMicroseconds() != receiveTimeout.totalMicroseconds()) {
-             _receiveTimeout = receiveTimeout;
-
-             if (connected())
-                 _socket.setReceiveTimeout(_receiveTimeout);
-         }
-     }
-     catch (NetException &)
-     {
-#ifndef NDEBUG
-         throw;
-#else
-         // mute exceptions in release
-         // just in case when changing settings on socket is not allowed
-         // however it should be OK for timeouts
-#endif
-     }
+	 _connectionTimeout = connectionTimeout;
+	 _sendTimeout = sendTimeout;
+	 _receiveTimeout = receiveTimeout;
 }
 
 

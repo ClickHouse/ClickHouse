@@ -1,17 +1,16 @@
 #include "CachedOnDiskReadBufferFromFile.h"
-#include <algorithm>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
-#include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Interpreters/Context.h>
-#include <base/hex.h>
 #include <base/scope_guard.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/assert_cast.h>
+#include <IO/BoundedReadBuffer.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <base/hex.h>
+#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents
@@ -29,9 +28,6 @@ extern const Event CachedReadBufferReadFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
 extern const Event CachedReadBufferCreateBufferMicroseconds;
-
-extern const Event CachedReadBufferReadFromCacheHits;
-extern const Event CachedReadBufferReadFromCacheMisses;
 }
 
 namespace DB
@@ -48,7 +44,6 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     const String & source_file_path_,
     const FileCache::Key & cache_key_,
     FileCachePtr cache_,
-    const FileCacheUserInfo & user_,
     ImplementationBufferCreator implementation_buffer_creator_,
     const ReadSettings & settings_,
     const String & query_id_,
@@ -71,7 +66,6 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , implementation_buffer_creator(implementation_buffer_creator_)
     , query_id(query_id_)
     , current_buffer_id(getRandomASCIIString(8))
-    , user(user_)
     , allow_seeks_after_first_read(allow_seeks_after_first_read_)
     , use_external_buffer(use_external_buffer_)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
@@ -120,40 +114,29 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
     cache_log->add(std::move(elem));
 }
 
-bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
-{
-    chassert(!file_segments || file_segments->empty());
-    size_t size = getRemainingSizeToRead();
-    if (!size)
-        return false;
-
-    if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
-    {
-        file_segments = cache->get(cache_key, file_offset_of_buffer_end, size, settings.filesystem_cache_segments_batch_size, user.user_id);
-    }
-    else
-    {
-        CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
-        file_segments = cache->getOrSet(cache_key, file_offset_of_buffer_end, size, file_size.value(), create_settings, settings.filesystem_cache_segments_batch_size, user);
-    }
-    return !file_segments->empty();
-}
-
-void CachedOnDiskReadBufferFromFile::initialize()
+void CachedOnDiskReadBufferFromFile::initialize(size_t offset, size_t size)
 {
     if (initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Caching buffer already initialized");
 
     implementation_buffer.reset();
 
+    if (settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    {
+        file_segments = cache->get(cache_key, offset, size);
+    }
+    else
+    {
+        CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
+        file_segments = cache->getOrSet(cache_key, offset, size, file_size.value(), create_settings);
+    }
+
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
      * interval (no holes). Each segment in returned list has state: DOWNLOADED, DOWNLOADING or EMPTY.
      */
-    if (!nextFileSegmentsBatch())
+    if (file_segments->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "List of file segments cannot be empty");
-
-    chassert(!file_segments->empty());
 
     LOG_TEST(
         log,
@@ -168,7 +151,7 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
 
-    auto path = file_segment.getPath();
+    auto path = file_segment.getPathInLocalCache();
     if (cache_file_reader)
     {
         chassert(cache_file_reader->getFileName() == path);
@@ -179,13 +162,13 @@ CachedOnDiskReadBufferFromFile::getCacheReadBuffer(const FileSegment & file_segm
     }
 
     ReadSettings local_read_settings{settings};
+    /// Do not allow to use asynchronous version of LocalFSReadMethod.
     local_read_settings.local_fs_method = LocalFSReadMethod::pread;
 
     if (use_external_buffer)
         local_read_settings.local_fs_buffer_size = 0;
 
-    cache_file_reader
-        = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
+    cache_file_reader = createReadBufferFromFileBase(path, local_read_settings, std::nullopt, std::nullopt, file_segment.getFlagsForLocalRead());
 
     if (getFileSizeFromReadBuffer(*cache_file_reader) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read from an empty cache file: {}", path);
@@ -529,11 +512,11 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     cache_file_reader.reset();
 
     file_segments->popFront();
-    if (file_segments->empty() && !nextFileSegmentsBatch())
+    if (file_segments->empty())
         return false;
 
     current_file_segment = &file_segments->front();
-    current_file_segment->increasePriority();
+    current_file_segment->use();
     implementation_buffer = getImplementationBuffer(*current_file_segment);
 
     LOG_TEST(
@@ -560,9 +543,8 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
             ProfileEvents::FileSegmentPredownloadMicroseconds, predownload_watch.elapsedMicroseconds());
     });
 
-    OpenTelemetry::SpanHolder span("CachedOnDiskReadBufferFromFile::predownload");
-    span.addAttribute("clickhouse.key", file_segment.key().toString());
-    span.addAttribute("clickhouse.size", bytes_to_predownload);
+    OpenTelemetry::SpanHolder span{
+        fmt::format("CachedOnDiskReadBufferFromFile::predownload(key={}, size={})", file_segment.key().toString(), bytes_to_predownload)};
 
     if (bytes_to_predownload)
     {
@@ -706,7 +688,6 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
 
 bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
 {
-    chassert(!file_segments->empty());
     auto & file_segment = file_segments->front();
     const auto & current_read_range = file_segment.range();
     auto current_state = file_segment.state();
@@ -807,9 +788,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         return false;
 
     if (!initialized)
-        initialize();
+        initialize(file_offset_of_buffer_end, getTotalSizeToRead());
 
-    if (file_segments->empty() && !nextFileSegmentsBatch())
+    if (file_segments->empty())
         return false;
 
     const size_t original_buffer_size = internal_buffer.size();
@@ -818,9 +799,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     SCOPE_EXIT({
         try
         {
-            /// Save state of current file segment before it is completed. But we'll use it only if exception happened.
-            if (std::uncaught_exceptions() > 0)
-                nextimpl_step_log_info = getInfoForLog();
+            /// Save state of current file segment before it is completed.
+            nextimpl_step_log_info = getInfoForLog();
 
             if (file_segments->empty())
                 return;
@@ -862,38 +842,24 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     else
     {
         implementation_buffer = getImplementationBuffer(file_segments->front());
-        file_segments->front().increasePriority();
+        file_segments->front().use();
     }
 
     chassert(!internal_buffer.empty());
 
-    auto & file_segment = file_segments->front();
-    const auto & current_read_range = file_segment.range();
-
-    if (use_external_buffer && read_type == ReadType::CACHED)
-    {
-        /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
-        /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
-        if (settings.local_fs_buffer_size < internal_buffer.size())
-            internal_buffer.resize(settings.local_fs_buffer_size);
-
-        /// It would make sense to reduce buffer size to what is left to read (when we read the last segment) regardless of the read_type.
-        /// But we have to use big enough buffers when we [pre]download segments to amortize netw and FileCache overhead (space reservation and relevant locks).
-        if (file_segments->size() == 1)
-        {
-            const size_t remaining_size_to_read
-                = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
-            const size_t new_buf_size = std::min(internal_buffer.size(), remaining_size_to_read);
-            chassert((internal_buffer.size() >= nextimpl_working_buffer_offset + new_buf_size) && (new_buf_size > 0));
-            internal_buffer.resize(nextimpl_working_buffer_offset + new_buf_size);
-        }
-    }
+    /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
+    /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
+    if (use_external_buffer && read_type == ReadType::CACHED && settings.local_fs_buffer_size < internal_buffer.size())
+        internal_buffer.resize(settings.local_fs_buffer_size);
 
     // Pass a valid external buffer for implementation_buffer to read into.
     // We then take it back with another swap() after reading is done.
     // (If we get an exception in between, we'll be left with an invalid internal_buffer. That's ok, as long as
     // the caller doesn't try to use this CachedOnDiskReadBufferFromFile after it threw an exception.)
     swap(*implementation_buffer);
+
+    auto & file_segment = file_segments->front();
+    const auto & current_read_range = file_segment.range();
 
     LOG_TEST(
         log,
@@ -972,13 +938,11 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         if (read_type == ReadType::CACHED)
         {
-            ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheHits);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMicroseconds, elapsed);
         }
         else
         {
-            ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromCacheMisses);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, size);
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceMicroseconds, elapsed);
         }
@@ -1034,7 +998,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         /// file_segemnt->range().right, so resize is also needed.
         if (file_segments->size() == 1)
         {
-            size_t remaining_size_to_read = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
+            size_t remaining_size_to_read
+                = std::min(current_read_range.right, read_until_position - 1) - file_offset_of_buffer_end + 1;
             size = std::min(size, remaining_size_to_read);
             chassert(implementation_buffer->buffer().size() >= nextimpl_working_buffer_offset + size);
             implementation_buffer->buffer().resize(nextimpl_working_buffer_offset + size);
@@ -1101,8 +1066,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     /// Release buffer a little bit earlier.
     if (read_until_position == file_offset_of_buffer_end)
         implementation_buffer.reset();
-    else if (file_offset_of_buffer_end > current_read_range.right)
-        completeFileSegmentAndGetNext();
 
     return result;
 }
@@ -1196,7 +1159,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     return new_pos;
 }
 
-size_t CachedOnDiskReadBufferFromFile::getRemainingSizeToRead()
+size_t CachedOnDiskReadBufferFromFile::getTotalSizeToRead()
 {
     /// Last position should be guaranteed to be set, as at least we always know file size.
     if (!read_until_position)
@@ -1263,53 +1226,4 @@ String CachedOnDiskReadBufferFromFile::getInfoForLog()
         current_file_segment_info);
 }
 
-bool CachedOnDiskReadBufferFromFile::isSeekCheap()
-{
-    return !initialized || read_type == ReadType::CACHED;
-}
-
-static bool isRangeContainedInSegments(size_t left, size_t right, const FileSegmentsHolderPtr & file_segments)
-{
-    if (!FileSegment::Range{file_segments->front().range().left, file_segments->back().range().right}.contains({left, right}))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Requested range is not contained in the segments: left={}, right={}, file_segments={}",
-            left,
-            right,
-            file_segments->toString());
-
-    if (!file_segments->front().range().contains(left))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are redundant segments at the beginning of file_segments");
-
-    const auto end_of_intersection
-        = std::ranges::find_if(*file_segments, [right](const auto & segment) { return segment->range().left > right; });
-
-    return std::all_of(
-        file_segments->begin(),
-        end_of_intersection,
-        [right](const auto & segment)
-        {
-            if (right <= segment->range().right)
-            {
-                /// We need only a prefix of the last segment (I assume the case when file_segments size is 1 is common enough)
-                return right < segment->getCurrentWriteOffset();
-            }
-            return segment->state() == FileSegment::State::DOWNLOADED;
-        });
-}
-
-bool CachedOnDiskReadBufferFromFile::isContentCached(size_t offset, size_t size)
-{
-    if (!initialized)
-        initialize();
-
-    if (file_segments->empty())
-        return false;
-
-    /// We don't hold all the segments simultaneously, if there are more than `filesystem_cache_segments_batch_size` of them.
-    /// So we need to take minimum of the following two values to determine the intersection between [offset, offset + size - 1]
-    /// and the range covered by this segment currently.
-    const auto right_boundary = std::min(file_segments->back().range().right, read_until_position - 1);
-    return isRangeContainedInSegments(offset, std::min(offset + size - 1, right_boundary), file_segments);
-}
 }

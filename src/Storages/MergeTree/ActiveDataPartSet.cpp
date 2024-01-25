@@ -39,38 +39,6 @@ bool ActiveDataPartSet::add(const MergeTreePartInfo & part_info, const String & 
     return outcome == AddPartOutcome::Added;
 }
 
-void ActiveDataPartSet::checkIntersectingParts(const MergeTreePartInfo & part_info) const
-{
-    auto it = part_info_to_name.lower_bound(part_info);
-    /// Let's go left.
-    while (it != part_info_to_name.begin())
-    {
-        --it;
-        if (!part_info.contains(it->first))
-        {
-            if (!part_info.isDisjoint(it->first))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the ZooKeeper data.", part_info.getPartNameForLogs(), it->first.getPartNameForLogs());
-            ++it;
-            break;
-        }
-    }
-    /// Let's go to the right.
-    while (it != part_info_to_name.end() && part_info.contains(it->first))
-    {
-        assert(part_info != it->first);
-        ++it;
-    }
-
-    if (it != part_info_to_name.end() && !part_info.isDisjoint(it->first))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects next part {}. It is a bug or a result of manual intervention in the ZooKeeper data.", part_info.getPartNameForLogs(), it->first.getPartNameForLogs());
-
-}
-
-void ActiveDataPartSet::checkIntersectingParts(const String & name) const
-{
-    auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
-    checkIntersectingParts(part_info);
-}
 
 bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
 {
@@ -208,8 +176,7 @@ ActiveDataPartSet::getContainingPartImpl(const MergeTreePartInfo & part_info) co
     return part_info_to_name.end();
 }
 
-
-std::vector<std::map<MergeTreePartInfo, String>::const_iterator> ActiveDataPartSet::getPartsCoveredByImpl(const MergeTreePartInfo & part_info) const
+Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info) const
 {
     auto it_middle = part_info_to_name.lower_bound(part_info);
     auto begin = it_middle;
@@ -240,26 +207,10 @@ std::vector<std::map<MergeTreePartInfo, String>::const_iterator> ActiveDataPartS
         ++end;
     }
 
-    std::vector<std::map<MergeTreePartInfo, String>::const_iterator> covered;
-    for (auto it = begin; it != end; ++it)
-        covered.push_back(it);
-
-    return covered;
-}
-
-Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info) const
-{
     Strings covered;
-    for (const auto & it : getPartsCoveredByImpl(part_info))
+    for (auto it = begin; it != end; ++it)
         covered.push_back(it->second);
-    return covered;
-}
 
-std::vector<MergeTreePartInfo> ActiveDataPartSet::getPartInfosCoveredBy(const MergeTreePartInfo & part_info) const
-{
-    std::vector<MergeTreePartInfo> covered;
-    for (const auto & it : getPartsCoveredByImpl(part_info))
-        covered.push_back(it->first);
     return covered;
 }
 

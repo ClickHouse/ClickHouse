@@ -1,5 +1,4 @@
 #include <string>
-#include <mutex>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
@@ -44,7 +43,6 @@ namespace CurrentMetrics
     extern const Metric TablesToDropQueueSize;
     extern const Metric DatabaseCatalogThreads;
     extern const Metric DatabaseCatalogThreadsActive;
-    extern const Metric DatabaseCatalogThreadsScheduled;
 }
 
 namespace DB
@@ -198,18 +196,15 @@ void DatabaseCatalog::createBackgroundTasks()
     if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && unused_dir_cleanup_period_sec)
     {
         auto cleanup_task_holder
-            = getContext()->getSchedulePool().createTask("DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
+            = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this]() { this->cleanupStoreDirectoryTask(); });
         cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
     }
 
-    auto drop_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
-    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(drop_task_holder));
-
-    auto reload_disks_task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalogReloadDisksTask", [this](){ this->reloadDisksTask(); });
-    reload_disks_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(reload_disks_task_holder));
+    auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
+    drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
 }
 
-void DatabaseCatalog::startupBackgroundTasks()
+void DatabaseCatalog::startupBackgroundCleanup()
 {
     /// And it has to be done after all databases are loaded, otherwise cleanup_task may remove something that should not be removed
     if (cleanup_task)
@@ -331,7 +326,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     if (!table_id)
     {
         if (exception)
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot find table: StorageID is empty"));
+            exception->emplace(ErrorCodes::UNKNOWN_TABLE, "Cannot find table: StorageID is empty");
         return {};
     }
 
@@ -353,9 +348,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
-
-        /// Wait for table to be started because we are going to return StoragePtr
-        db_and_table.first->waitTableStarted(table_id.getTableName());
 
 #if USE_LIBPQXX
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
@@ -1028,7 +1020,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
     LOG_INFO(log, "Found {} partially dropped tables. Will load them and retry removal.", dropped_metadata.size());
 
-    ThreadPool pool(CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive, CurrentMetrics::DatabaseCatalogThreadsScheduled);
+    ThreadPool pool(CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive);
     for (const auto & elem : dropped_metadata)
     {
         pool.scheduleOrThrowOnError([&]()
@@ -1049,17 +1041,9 @@ String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) co
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 {
-    auto database = getDatabase(table_id.getDatabaseName());
-    auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
-
-    if (!database_ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get metadata path from database {}", table_id.getDatabaseName());
-
-    auto metadata_path = database_ptr->getMetadataPath();
-    if (metadata_path.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty metadata path in database {}", table_id.getDatabaseName());
-
-    return metadata_path + escapeForFileName(table_id.getTableName()) + ".sql";
+    return getContext()->getPath() + "metadata/" +
+           escapeForFileName(table_id.getDatabaseName()) + "/" +
+           escapeForFileName(table_id.getTableName()) + ".sql";
 }
 
 void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay)
@@ -1590,37 +1574,6 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
                                                 unused_dir, disk->getName(), disk->getPath()));
         return false;
     }
-}
-
-void DatabaseCatalog::reloadDisksTask()
-{
-    std::set<String> disks;
-    {
-        std::lock_guard lock{reload_disks_mutex};
-        disks.swap(disks_to_reload);
-    }
-
-    for (auto & database : getDatabases())
-    {
-        auto it = database.second->getTablesIterator(getContext());
-        while (it->isValid())
-        {
-            auto table = it->table();
-            table->initializeDiskOnConfigChange(disks);
-            it->next();
-        }
-    }
-
-    std::lock_guard lock{reload_disks_mutex};
-    if (!disks_to_reload.empty()) /// during reload, another disks configuration change
-        (*reload_disks_task)->scheduleAfter(DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC * 1000);
-}
-
-void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
-{
-    std::lock_guard lock{reload_disks_mutex};
-    disks_to_reload.insert(new_added_disks.begin(), new_added_disks.end());
-    (*reload_disks_task)->schedule();
 }
 
 static void maybeUnlockUUID(UUID uuid)

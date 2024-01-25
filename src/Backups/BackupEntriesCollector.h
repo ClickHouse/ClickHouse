@@ -22,9 +22,6 @@ class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 struct StorageID;
 enum class AccessEntityType;
-class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
-
 
 /// Collects backup entries for all databases and tables which should be put to a backup.
 class BackupEntriesCollector : private boost::noncopyable
@@ -34,8 +31,7 @@ public:
                            const BackupSettings & backup_settings_,
                            std::shared_ptr<IBackupCoordination> backup_coordination_,
                            const ReadSettings & read_settings_,
-                           const ContextPtr & context_,
-                           ThreadPool & threadpool_);
+                           const ContextPtr & context_);
     ~BackupEntriesCollector();
 
     /// Collects backup entries and returns the result.
@@ -47,7 +43,6 @@ public:
     std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
     const ReadSettings & getReadSettings() const { return read_settings; }
     ContextPtr getContext() const { return context; }
-    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return global_zookeeper_retries_info; }
 
     /// Adds a backup entry which will be later returned by run().
     /// These function can be called by implementations of IStorage::backupData() in inherited storage classes.
@@ -94,21 +89,15 @@ private:
     void makeBackupEntriesForTablesData();
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
 
-    void addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry);
-
     void runPostTasks();
 
     Strings setStage(const String & new_stage, const String & message = "");
-
-    /// Throws an exception if the BACKUP query was cancelled.
-    void checkIsQueryCancelled() const;
 
     const ASTBackupQuery::Elements backup_query_elements;
     const BackupSettings backup_settings;
     std::shared_ptr<IBackupCoordination> backup_coordination;
     const ReadSettings read_settings;
     ContextPtr context;
-    QueryStatusPtr process_list_element;
 
     /// The time a BACKUP ON CLUSTER or RESTORE ON CLUSTER command will wait until all the nodes receive the BACKUP (or RESTORE) query and start working.
     /// This setting is similar to `distributed_ddl_task_timeout`.
@@ -180,9 +169,6 @@ private:
     BackupEntries backup_entries;
     std::queue<std::function<void()>> post_tasks;
     std::vector<size_t> access_counters;
-
-    ThreadPool & threadpool;
-    std::mutex mutex;
 };
 
 }

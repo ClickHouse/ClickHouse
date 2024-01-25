@@ -201,7 +201,7 @@ void LocalConnection::sendQuery(
     catch (...)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+        state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
     }
 }
 
@@ -251,12 +251,10 @@ void LocalConnection::finishQuery()
     else if (state->pushing_async_executor)
     {
         state->pushing_async_executor->finish();
-        state->pushing_async_executor.reset();
     }
     else if (state->pushing_executor)
     {
         state->pushing_executor->finish();
-        state->pushing_executor.reset();
     }
 
     state->io.onFinish();
@@ -311,7 +309,7 @@ bool LocalConnection::poll(size_t)
         catch (...)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+            state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
         }
     }
 

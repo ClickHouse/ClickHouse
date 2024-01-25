@@ -7,7 +7,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Common/logger_useful.h>
 #include <Storages/BlockNumberColumn.h>
-#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -82,13 +81,12 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
-    const Statistics & stats_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
-           indices_to_recalc_, stats_to_recalc_, marks_file_extension_,
+           indices_to_recalc_, marks_file_extension_,
            default_codec_, settings_, index_granularity_)
 {
     const auto & columns = metadata_snapshot->getColumns();
@@ -144,22 +142,13 @@ void MergeTreeDataPartWriterWide::addStreams(
         auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
-        const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
-
-        UInt64 max_compress_block_size = 0;
-        if (column_desc)
-            if (const auto * value = column_desc->settings.tryGet("max_compress_block_size"))
-                max_compress_block_size = value->safeGet<UInt64>();
-        if (!max_compress_block_size)
-            max_compress_block_size = settings.max_compress_block_size;
-
-        column_streams[stream_name] = std::make_unique<Stream<false>>(
+        column_streams[stream_name] = std::make_unique<Stream>(
             stream_name,
             data_part->getDataPartStoragePtr(),
             stream_name, DATA_FILE_EXTENSION,
             stream_name, marks_file_extension,
             compression_codec,
-            max_compress_block_size,
+            settings.max_compress_block_size,
             marks_compression_codec,
             settings.marks_compress_block_size,
             settings.query_write_settings);
@@ -302,7 +291,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
         calculateAndSerializePrimaryIndex(primary_key_block, granules_to_write);
 
     calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
-    calculateAndSerializeStatistics(block);
 
     shiftCurrentMark(granules_to_write);
 }
@@ -319,7 +307,7 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
 
 void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark)
 {
-    auto & stream = *column_streams[stream_with_mark.stream_name];
+    Stream & stream = *column_streams[stream_with_mark.stream_name];
     WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
     writeBinaryLittleEndian(stream_with_mark.mark.offset_in_compressed_file, marks_out);
@@ -333,13 +321,6 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
     WrittenOffsetColumns & offset_columns)
 {
     StreamsWithMarks result;
-    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
-    UInt64 min_compress_block_size = 0;
-    if (column_desc)
-        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
-            min_compress_block_size = value->safeGet<UInt64>();
-    if (!min_compress_block_size)
-        min_compress_block_size = settings.min_compress_block_size;
     data_part->getSerialization(column.name)->enumerateStreams([&] (const ISerialization::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
@@ -349,10 +330,10 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
         if (is_offsets && offset_columns.contains(stream_name))
             return;
 
-        auto & stream = *column_streams[stream_name];
+        Stream & stream = *column_streams[stream_name];
 
         /// There could already be enough data to compress into the new block.
-        if (stream.compressed_hashing.offset() >= min_compress_block_size)
+        if (stream.compressed_hashing.offset() >= settings.min_compress_block_size)
             stream.compressed_hashing.next();
 
         StreamNameAndMark stream_with_mark;
@@ -690,8 +671,6 @@ void MergeTreeDataPartWriterWide::fillChecksums(IMergeTreeDataPart::Checksums & 
         fillPrimaryIndexChecksums(checksums);
 
     fillSkipIndicesChecksums(checksums);
-
-    fillStatisticsChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterWide::finish(bool sync)
@@ -704,8 +683,6 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
         finishPrimaryIndexSerialization(sync);
 
     finishSkipIndicesSerialization(sync);
-
-    finishStatisticsSerialization(sync);
 }
 
 void MergeTreeDataPartWriterWide::writeFinalMark(

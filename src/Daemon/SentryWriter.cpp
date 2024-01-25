@@ -14,7 +14,7 @@
 #include <Core/ServerUUID.h>
 
 #include "config.h"
-#include <Common/config_version.h>
+#include "config_version.h"
 
 #if USE_SENTRY && !defined(CLICKHOUSE_KEEPER_STANDALONE_BUILD)
 
@@ -169,9 +169,11 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
             };
 
             StackTrace::Frames frames;
+            StackTrace::symbolize(stack_trace.getFramePointers(), offset, stack_size, frames);
 
-            auto sentry_add_stack_trace = [&](const StackTrace::Frame & current_frame)
+            for (ssize_t i = stack_size - 1; i >= offset; --i)
             {
+                const StackTrace::Frame & current_frame = frames[i];
                 sentry_value_t sentry_frame = sentry_value_new_object();
                 UInt64 frame_ptr = reinterpret_cast<UInt64>(current_frame.virtual_addr);
 
@@ -188,9 +190,7 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
                     sentry_value_set_by_key(sentry_frame, "lineno", sentry_value_new_int32(static_cast<int32_t>(current_frame.line.value())));
 
                 sentry_value_append(sentry_frames, sentry_frame);
-            };
-
-            StackTrace::forEachFrame(stack_trace.getFramePointers(), offset, stack_size, sentry_add_stack_trace, /* fatal= */ true);
+            }
         }
 
         /// Prepare data for https://develop.sentry.dev/sdk/event-payloads/threads/

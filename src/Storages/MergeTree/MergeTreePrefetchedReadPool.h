@@ -48,16 +48,15 @@ private:
         size_t required_readers_num = 0;
     };
 
-    class PrefetchedReaders
+    class PrefetechedReaders
     {
     public:
-        PrefetchedReaders() = default;
-        PrefetchedReaders(MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & pool_);
+        PrefetechedReaders() = default;
+        PrefetechedReaders(MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & pool_);
 
         void wait();
         MergeTreeReadTask::Readers get();
         bool valid() const { return is_valid; }
-        ~PrefetchedReaders();
 
     private:
         bool is_valid = false;
@@ -76,19 +75,14 @@ private:
 
         ~ThreadTask()
         {
-            if (readers_future && readers_future->valid())
-                readers_future->wait();
-        }
-
-        bool isValidReadersFuture() const
-        {
-            return readers_future && readers_future->valid();
+            if (readers_future.valid())
+                readers_future.wait();
         }
 
         InfoPtr read_info;
         MarkRanges ranges;
         Priority priority;
-        std::unique_ptr<PrefetchedReaders> readers_future;
+        PrefetechedReaders readers_future;
     };
 
     struct TaskHolder

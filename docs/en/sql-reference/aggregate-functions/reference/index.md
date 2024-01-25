@@ -88,7 +88,6 @@ ClickHouse-specific aggregate functions:
 - [quantileTDigestWeighted](/docs/en/sql-reference/aggregate-functions/reference/quantiletdigestweighted.md)
 - [quantileBFloat16](/docs/en/sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16)
 - [quantileBFloat16Weighted](/docs/en/sql-reference/aggregate-functions/reference/quantilebfloat16.md#quantilebfloat16weighted)
-- [quantileDDSketch](/docs/en/sql-reference/aggregate-functions/reference/quantileddsketch.md#quantileddsketch)
 - [simpleLinearRegression](/docs/en/sql-reference/aggregate-functions/reference/simplelinearregression.md)
 - [stochasticLinearRegression](/docs/en/sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 - [stochasticLogisticRegression](/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)

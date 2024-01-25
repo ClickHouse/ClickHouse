@@ -170,7 +170,7 @@ std::shared_ptr<const IDictionary> StorageDictionary::getDictionary() const
     return getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, getContext());
 }
 
-void StorageDictionary::shutdown(bool)
+void StorageDictionary::shutdown()
 {
     removeDictionaryConfigurationFromRepository();
 }

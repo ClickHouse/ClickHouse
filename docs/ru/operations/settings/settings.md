@@ -2249,7 +2249,7 @@ SELECT * FROM test_table
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
-Включает или отключает режим, при котором входящие данные разбиваются на части, парсинг каждой из которых осуществляется параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TSKV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+Включает или отключает режим, при котором входящие данные разбиваются на части, парсинг каждой из которых осуществляется параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 
 Возможные значения:
 
@@ -2260,7 +2260,7 @@ SELECT * FROM test_table
 
 ## output_format_parallel_formatting {#output-format-parallel-formatting}
 
-Включает или отключает режим, при котором исходящие данные форматируются параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TSKV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+Включает или отключает режим, при котором исходящие данные форматируются параллельно с сохранением исходного порядка. Поддерживается только для форматов [TSV](../../interfaces/formats.md#tabseparated), [TKSV](../../interfaces/formats.md#tskv), [CSV](../../interfaces/formats.md#csv) и [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 
 Возможные значения:
 
@@ -2796,17 +2796,6 @@ SELECT TOP 3 name, value FROM system.settings;
 3. │ max_block_size          │ 65505   │
    └─────────────────────────┴─────────┘
 ```
-### output_format_pretty_color {#output_format_pretty_color}
-
-Включает/выключает управляющие последовательности ANSI в форматах Pretty. 
-
-Возможные значения:
-
--   `0` — выключена. Не исползует ANSI последовательности в форматах Pretty.
--   `1` — включена. Исползует ANSI последовательности с исключением форматов `NoEscapes`.
--   `auto` - включена если `stdout` является терминалом с исключением форматов `NoEscapes`.
-
-Значение по умолчанию: `auto`
 
 ## system_events_show_zero_values {#system_events_show_zero_values}
 

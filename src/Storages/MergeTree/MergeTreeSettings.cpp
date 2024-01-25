@@ -44,7 +44,7 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
     }
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context)
 {
     if (storage_def.settings)
     {
@@ -64,7 +64,7 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr conte
                         auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
                         if (ast && isDiskFunction(ast))
                         {
-                            auto disk_name = getOrCreateDiskFromDiskAST(ast, context, is_attach);
+                            auto disk_name = getOrCreateDiskFromDiskAST(ast, context);
                             LOG_TRACE(&Poco::Logger::get("MergeTreeSettings"), "Created custom disk {}", disk_name);
                             value = disk_name;
                         }
@@ -212,35 +212,4 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
             merge_selecting_sleep_slowdown_factor);
     }
 }
-
-void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
-{
-    static const MergeTreeSettings merge_tree_settings;
-    static const std::set<String> allowed_column_level_settings =
-    {
-        "min_compress_block_size",
-        "max_compress_block_size"
-    };
-
-    for (const auto & change : changes)
-    {
-        if (!allowed_column_level_settings.contains(change.name))
-            throw Exception(
-                ErrorCodes::UNKNOWN_SETTING,
-                "Setting {} is unknown or not supported at column level, supported settings: {}",
-                change.name,
-                fmt::join(allowed_column_level_settings, ", "));
-        merge_tree_settings.checkCanSet(change.name, change.value);
-    }
-}
-
-
-std::vector<String> MergeTreeSettings::getAllRegisteredNames() const
-{
-    std::vector<String> all_settings;
-    for (const auto & setting_field : all())
-        all_settings.push_back(setting_field.getName());
-    return all_settings;
-}
-
 }

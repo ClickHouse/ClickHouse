@@ -66,13 +66,10 @@ void registerInputFormatHiveText(FormatFactory & factory)
 
 void registerFileSegmentationEngineHiveText(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngineCreator(
+    factory.registerFileSegmentationEngine(
         "HiveText",
-        [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine {
-            return [settings] (ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
-            {
-                return fileSegmentationEngineCSVImpl(in, memory, min_bytes, 0, max_rows, settings);
-            };
+        [](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows) -> std::pair<bool, size_t> {
+            return fileSegmentationEngineCSVImpl(in, memory, min_bytes, 0, max_rows);
         });
 }
 

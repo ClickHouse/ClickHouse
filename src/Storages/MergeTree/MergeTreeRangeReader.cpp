@@ -18,10 +18,6 @@
 #include <emmintrin.h>
 #endif
 
-#if USE_MULTITARGET_CODE
-#include <immintrin.h>
-#endif
-
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
 #      pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -1257,107 +1253,6 @@ static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second
             "does not match second filter size ({})", bytes_in_first_filter, second_filter_size);
 }
 
-DECLARE_AVX512VBMI2_SPECIFIC_CODE(
-inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
-{
-    constexpr size_t AVX512_VEC_SIZE_IN_BYTES = 64;
-
-    while (first_begin + AVX512_VEC_SIZE_IN_BYTES <= first_end)
-    {
-        UInt64 mask = bytes64MaskToBits64Mask(first_begin);
-        __m512i src = _mm512_loadu_si512(reinterpret_cast<void *>(first_begin));
-        __m512i dst = _mm512_mask_expandloadu_epi8(src, static_cast<__mmask64>(mask), reinterpret_cast<const void *>(second_begin));
-        _mm512_storeu_si512(reinterpret_cast<void *>(first_begin), dst);
-
-        first_begin += AVX512_VEC_SIZE_IN_BYTES;
-        second_begin += std::popcount(mask);
-    }
-
-    for (/* empty */; first_begin < first_end; ++first_begin)
-    {
-        if (*first_begin)
-        {
-            *first_begin = *second_begin++;
-        }
-    }
-}
-)
-
-/* The BMI2 intrinsic, _pdep_u64 (unsigned __int64 a, unsigned __int64 mask), works
- * by copying contiguous low-order bits from unsigned 64-bit integer a to destination
- * at the corresponding bit locations specified by mask. To implement the column
- * combination with the intrinsic, 8 contiguous bytes would be loaded from second_begin
- * as a UInt64 and act the first operand, meanwhile the mask should be constructed from
- * first_begin so that the bytes to be replaced (non-zero elements) are mapped to 0xFF
- * at the exact bit locations and 0x00 otherwise.
- *
- * The construction of mask employs the SSE intrinsic, mm_cmpeq_epi8(__m128i a, __m128i
- * b), which compares packed 8-bit integers in first_begin and packed 0s and outputs
- * 0xFF for equality and 0x00 for inequality. The result's negation then creates the
- * desired bit masks for _pdep_u64.
- *
- * The below example visualizes how this optimization applies to the combination of
- * two quadwords from first_begin and second_begin.
- *
- *                                      Addr  high                           low
- *                                      <----------------------------------------
- * first_begin............................0x00 0x11 0x12 0x00 0x00 0x13 0x14 0x15
- *     |      mm_cmpeq_epi8(src, 0)        |    |    |    |    |    |    |    |
- *     v                                   v    v    v    v    v    v    v    v
- *  inv_mask..............................0xFF 0x00 0x00 0xFF 0xFF 0x00 0x00 0x00
- *     |      (negation)                   |    |    |    |    |    |    |    |
- *     v                                   v    v    v    v    v    v    v    v
- *    mask-------------------------+......0x00 0xFF 0xFF 0x00 0x00 0xFF 0xFF 0xFF
- *                                 |            |    |              |    |    |
- *                                 v            v    v              v    v    v
- *    dst = pdep_u64(second_begin, mask)..0x00 0x05 0x04 0x00 0x00 0x03 0x02 0x01
- *                        ^                     ^    ^              ^    ^    ^
- *                        |                     |    |              |    |    |
- *                        |                     |    +---------+    |    |    |
- *     +------------------+                     +---------+    |    |    |    |
- *     |                                                  |    |    |    |    |
- * second_begin...........................0x00 0x00 0x00 0x05 0x04 0x03 0x02 0x01
- *
- * References:
- * 1. https://www.felixcloutier.com/x86/pdep
- * 2. https://www.felixcloutier.com/x86/pcmpeqb:pcmpeqw:pcmpeqd
- */
-DECLARE_AVX2_SPECIFIC_CODE(
-inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
-{
-    constexpr size_t XMM_VEC_SIZE_IN_BYTES = 16;
-    const __m128i zero16 = _mm_setzero_si128();
-
-    while (first_begin + XMM_VEC_SIZE_IN_BYTES <= first_end)
-    {
-        __m128i src = _mm_loadu_si128(reinterpret_cast<__m128i *>(first_begin));
-        __m128i inv_mask = _mm_cmpeq_epi8(src, zero16);
-
-        UInt64 masks[] = {
-            ~static_cast<UInt64>(_mm_extract_epi64(inv_mask, 0)),
-            ~static_cast<UInt64>(_mm_extract_epi64(inv_mask, 1)),
-        };
-
-        for (const auto & mask: masks)
-        {
-            UInt64 dst = _pdep_u64(unalignedLoad<UInt64>(second_begin), mask);
-            unalignedStore<UInt64>(first_begin, dst);
-
-            first_begin += sizeof(UInt64);
-            second_begin += std::popcount(mask) / 8;
-        }
-    }
-
-    for (/* empty */; first_begin < first_end; ++first_begin)
-    {
-        if (*first_begin)
-        {
-            *first_begin = *second_begin++;
-        }
-    }
-}
-)
-
 /// Second filter size must be equal to number of 1s in the first filter.
 /// The result has size equal to first filter size and contains 1s only where both filters contain 1s.
 static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
@@ -1400,25 +1295,12 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     auto & first_data = typeid_cast<ColumnUInt8 *>(mut_first.get())->getData();
     const auto * second_data = second_descr.data->data();
 
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512VBMI2))
+    for (auto & val : first_data)
     {
-        TargetSpecific::AVX512VBMI2::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
-    }
-    else if (isArchSupported(TargetArch::AVX2))
-    {
-        TargetSpecific::AVX2::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
-    }
-    else
-#endif
-    {
-        for (auto & val : first_data)
+        if (val)
         {
-            if (val)
-            {
-                val = *second_data;
-                ++second_data;
-            }
+            val = *second_data;
+            ++second_data;
         }
     }
 

@@ -35,7 +35,6 @@ public:
                                       " - cluster, url, access_key_id, secret_access_key, format\n"
                                       " - cluster, url, access_key_id, secret_access_key, format, structure\n"
                                       " - cluster, url, access_key_id, secret_access_key, format, structure, compression_method\n"
-                                      " - cluster, url, access_key_id, secret_access_key, session_token, format, structure, compression_method\n"
                                       "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
     String getName() const override

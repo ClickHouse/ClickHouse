@@ -36,7 +36,6 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -213,7 +212,7 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
         {
             auto rc = index->add(static_cast<uint32_t>(index->size()), &column_array_data_float_data[column_array_offsets[current_row - 1]]);
             if (!rc)
-                throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, rc.error.release());
+                throw Exception(ErrorCodes::INCORRECT_DATA, rc.error.release());
 
             ProfileEvents::increment(ProfileEvents::USearchAddCount);
             ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, rc.visited_members);
@@ -244,7 +243,7 @@ void MergeTreeIndexAggregatorUSearch<Metric>::update(const Block & block, size_t
         {
             auto rc = index->add(static_cast<uint32_t>(index->size()), item.data());
             if (!rc)
-                throw Exception::createRuntime(ErrorCodes::INCORRECT_DATA, rc.error.release());
+                throw Exception(ErrorCodes::INCORRECT_DATA, rc.error.release());
 
             ProfileEvents::increment(ProfileEvents::USearchAddCount);
             ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, rc.visited_members);
@@ -366,11 +365,6 @@ MergeTreeIndexConditionPtr MergeTreeIndexUSearch::createIndexCondition(const Sel
 {
     return std::make_shared<MergeTreeIndexConditionUSearch>(index, query, distance_function, context);
 };
-
-MergeTreeIndexConditionPtr MergeTreeIndexUSearch::createIndexCondition(const ActionsDAGPtr &, ContextPtr) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeIndexAnnoy cannot be created with ActionsDAG");
-}
 
 MergeTreeIndexPtr usearchIndexCreator(const IndexDescription & index)
 {

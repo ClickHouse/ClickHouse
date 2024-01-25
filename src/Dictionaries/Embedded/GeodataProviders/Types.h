@@ -2,8 +2,6 @@
 
 #include <base/types.h>
 
-namespace DB
-{
 
 using RegionID = UInt32;
 using RegionDepth = UInt8;
@@ -18,5 +16,3 @@ enum class RegionType : Int8
     Area = 5,
     City = 6,
 };
-
-}

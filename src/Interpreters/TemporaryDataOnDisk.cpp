@@ -14,11 +14,6 @@
 #include <Core/Defines.h>
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
 
-namespace ProfileEvents
-{
-    extern const Event ExternalProcessingFilesTotal;
-}
-
 namespace DB
 {
 
@@ -102,16 +97,9 @@ FileSegmentsHolderPtr TemporaryDataOnDisk::createCacheFile(size_t max_file_size)
     if (!file_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDiskScope has no cache");
 
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
-
     const auto key = FileSegment::Key::random();
-    auto holder = file_cache->set(
-        key, 0, std::max(10_MiB, max_file_size),
-        CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true), FileCache::getCommonUser());
-
-    chassert(holder->size() == 1);
-    holder->back().getKeyMetadata()->createBaseDirectory();
-
+    auto holder = file_cache->set(key, 0, std::max(10_MiB, max_file_size), CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true));
+    fs::create_directories(file_cache->getPathInLocalCache(key));
     return holder;
 }
 
@@ -132,7 +120,7 @@ TemporaryFileOnDiskHolder TemporaryDataOnDisk::createRegularFile(size_t max_file
     {
         disk = volume->getDisk();
     }
-    /// We do not increment ProfileEvents::ExternalProcessingFilesTotal here because it is incremented in TemporaryFileOnDisk constructor.
+
     return std::make_unique<TemporaryFileOnDisk>(disk, current_metric_scope);
 }
 
@@ -379,7 +367,7 @@ String TemporaryFileStream::getPath() const
     if (file)
         return file->getAbsolutePath();
     if (segment_holder && !segment_holder->empty())
-        return segment_holder->front().getPath();
+        return segment_holder->front().getPathInLocalCache();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryFileStream has no file");
 }

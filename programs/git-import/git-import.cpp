@@ -16,7 +16,6 @@
 #include <Common/SipHash.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ShellCommand.h>
-#include <Common/re2.h>
 #include <base/find_symbols.h>
 
 #include <IO/copyData.h>
@@ -24,6 +23,15 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
+
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+#include <re2/re2.h>
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
 static constexpr auto documentation = R"(
 A tool to extract information from Git repository for analytics.

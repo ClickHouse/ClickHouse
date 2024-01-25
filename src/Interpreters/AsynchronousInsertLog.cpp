@@ -1,6 +1,5 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 
-#include <base/getFQDNOrHostName.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -15,7 +14,7 @@
 namespace DB
 {
 
-ColumnsDescription AsynchronousInsertLogElement::getColumnsDescription()
+NamesAndTypesList AsynchronousInsertLogElement::getNamesAndTypes()
 {
     auto type_status = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -32,9 +31,8 @@ ColumnsDescription AsynchronousInsertLogElement::getColumnsDescription()
             {"Preprocessed", static_cast<Int8>(DataKind::Preprocessed)},
         });
 
-    return ColumnsDescription
+    return
     {
-        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
@@ -60,7 +58,6 @@ void AsynchronousInsertLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
     auto event_date = DateLUT::instance().toDayNum(event_time).toUnderType();
     columns[i++]->insert(event_date);
     columns[i++]->insert(event_time);

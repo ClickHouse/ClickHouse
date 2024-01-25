@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import argparse
-import glob
-import logging
+import subprocess
 import os
-import random
-import shlex
+import getpass
+import glob
+import argparse
+import logging
 import signal
-import string
 import subprocess
 import sys
-
-from integration_test_images import get_docker_env
+import string
+import random
+import shlex
 
 
 def random_str(length=6):
@@ -335,11 +335,30 @@ if __name__ == "__main__":
     if args.docker_compose_images_tags is not None:
         for img_tag in args.docker_compose_images_tags:
             [image, tag] = img_tag.split(":")
-            env_tag = get_docker_env(image, tag)
-            if env_tag:
-                env_tags += env_tag
+            if image == "clickhouse/dotnet-client":
+                env_tags += "-e {}={} ".format("DOCKER_DOTNET_CLIENT_TAG", tag)
+            elif image == "clickhouse/integration-helper":
+                env_tags += "-e {}={} ".format("DOCKER_HELPER_TAG", tag)
+            elif image == "clickhouse/integration-test":
+                env_tags += "-e {}={} ".format("DOCKER_BASE_TAG", tag)
+            elif image == "clickhouse/kerberized-hadoop":
+                env_tags += "-e {}={} ".format("DOCKER_KERBERIZED_HADOOP_TAG", tag)
+            elif image == "clickhouse/kerberos-kdc":
+                env_tags += "-e {}={} ".format("DOCKER_KERBEROS_KDC_TAG", tag)
+            elif image == "clickhouse/mysql-golang-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_GOLANG_CLIENT_TAG", tag)
+            elif image == "clickhouse/mysql-java-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_JAVA_CLIENT_TAG", tag)
+            elif image == "clickhouse/mysql-js-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_JS_CLIENT_TAG", tag)
+            elif image == "clickhouse/mysql-php-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
+            elif image == "clickhouse/nginx-dav":
+                env_tags += "-e {}={} ".format("DOCKER_NGINX_DAV_TAG", tag)
+            elif image == "clickhouse/postgresql-java-client":
+                env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
             else:
-                logging.info("Unknown image %s", image)
+                logging.info("Unknown image %s" % (image))
 
     # create named volume which will be used inside to store images and other docker related files,
     # to avoid redownloading it every time
@@ -409,7 +428,6 @@ if __name__ == "__main__":
         f"--volume={args.library_bridge_binary}:/clickhouse-library-bridge "
         f"--volume={args.base_configs_dir}:/clickhouse-config "
         f"--volume={args.cases_dir}:/ClickHouse/tests/integration "
-        f"--volume={args.utils_dir}/backupview:/ClickHouse/utils/backupview "
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
         f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_analyzer} -e PYTHONUNBUFFERED=1 "

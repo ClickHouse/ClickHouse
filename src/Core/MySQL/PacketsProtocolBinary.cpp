@@ -1,20 +1,24 @@
-#include <Core/MySQL/PacketsProtocolBinary.h>
-
-#include <base/DayNum.h>
-#include <base/types.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <Common/LocalDate.h>
-#include <Common/LocalDateTime.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
-#include <Core/MySQL/MySQLUtils.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <Formats/FormatSettings.h>
-#include <IO/WriteBufferFromString.h>
+#include <Core/MySQL/PacketsProtocolBinary.h>
+#include "Common/LocalDate.h"
+#include "Common/LocalDateTime.h"
+#include "Columns/ColumnLowCardinality.h"
+#include "Columns/ColumnNullable.h"
+#include "Columns/ColumnVector.h"
+#include "Columns/ColumnsDateTime.h"
+#include "Core/DecimalFunctions.h"
+#include "DataTypes/DataTypeDateTime64.h"
+#include "DataTypes/DataTypeLowCardinality.h"
+#include "DataTypes/DataTypeNullable.h"
+#include "DataTypes/DataTypesNumber.h"
+#include "Formats/FormatSettings.h"
+#include "IO/WriteBufferFromString.h"
+#include "MySQLUtils.h"
+#include "base/DayNum.h"
+#include "base/Decimal.h"
+#include "base/types.h"
 
 namespace DB
 {
@@ -29,18 +33,14 @@ ResultSetRow::ResultSetRow(const Serializations & serializations_, const DataTyp
     FormatSettings format_settings;
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        ColumnPtr col = columns[i]->convertToFullIfNeeded();
-        if (col->isNullable())
+        ColumnPtr col = MySQLUtils::getBaseColumn(columns, i);
+        if (col->isNullAt(row_num))
         {
-            if (columns[i]->isNullAt(row_num))
-            {
-                // See https://dev.mysql.com/doc/dev/mysql-server/8.1.0/page_protocol_binary_resultset.html#sect_protocol_binary_resultset_row
-                size_t byte = (i + 2) / 8;
-                int bit = 1 << ((i + 2) % 8);
-                null_bitmap[byte] |= bit;
-                continue; // NULLs are stored in the null bitmap only
-            }
-            col = assert_cast<const ColumnNullable &>(*col).getNestedColumnPtr();
+            // See https://dev.mysql.com/doc/dev/mysql-server/8.1.0/page_protocol_binary_resultset.html#sect_protocol_binary_resultset_row
+            size_t byte = (i + 2) / 8;
+            int bit = 1 << ((i + 2) % 8);
+            null_bitmap[byte] |= bit;
+            continue; // NULLs are stored in the null bitmap only
         }
 
         DataTypePtr data_type = removeLowCardinalityAndNullable(data_types[i]);
@@ -145,13 +145,9 @@ void ResultSetRow::writePayloadImpl(WriteBuffer & buffer) const
     buffer.write(null_bitmap.data(), null_bitmap_size);
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        ColumnPtr col = columns[i]->convertToFullIfNeeded();
-        if (col->isNullable())
-        {
-            if (columns[i]->isNullAt(row_num))
-                continue;
-            col = assert_cast<const ColumnNullable &>(*col).getNestedColumnPtr();
-        }
+        ColumnPtr col = MySQLUtils::getBaseColumn(columns, i);
+        if (col->isNullAt(row_num))
+            continue;
 
         DataTypePtr data_type = removeLowCardinalityAndNullable(data_types[i]);
         TypeIndex type_index = data_type->getTypeId();

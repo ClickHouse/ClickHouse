@@ -185,7 +185,7 @@ protected:
     /// Adjust some settings after command line options and config had been processed.
     void adjustSettings();
 
-    void initTTYBuffer(ProgressOption progress);
+    void initTtyBuffer(ProgressOption progress);
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
@@ -322,8 +322,7 @@ protected:
 
     bool cancelled = false;
 
-    /// Does log_comment has specified by user?
-    bool has_log_comment = false;
+    bool logging_initialized = false;
 };
 
 }

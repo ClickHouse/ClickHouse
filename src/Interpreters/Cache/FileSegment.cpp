@@ -54,7 +54,7 @@ FileSegment::FileSegment(
         bool background_download_enabled_,
         FileCache * cache_,
         std::weak_ptr<KeyMetadata> key_metadata_,
-        Priority::IteratorPtr queue_iterator_)
+        Priority::Iterator queue_iterator_)
     : file_key(key_)
     , segment_range(offset_, offset_ + size_ - 1)
     , segment_kind(settings.kind)
@@ -85,7 +85,7 @@ FileSegment::FileSegment(
         case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
-            chassert(fs::file_size(getPath()) == size_);
+            chassert(fs::file_size(getPathInLocalCache()) == size_);
             chassert(queue_iterator);
             chassert(key_metadata.lock());
             break;
@@ -115,17 +115,9 @@ FileSegment::State FileSegment::state() const
     return download_state;
 }
 
-String FileSegment::getPath() const
+String FileSegment::getPathInLocalCache() const
 {
     return getKeyMetadata()->getFileSegmentPath(*this);
-}
-
-String FileSegment::tryGetPath() const
-{
-    auto metadata = tryGetKeyMetadata();
-    if (!metadata)
-        return "";
-    return metadata->getFileSegmentPath(*this);
 }
 
 FileSegmentGuard::Lock FileSegment::lockFileSegment() const
@@ -154,13 +146,13 @@ size_t FileSegment::getReservedSize() const
     return reserved_size;
 }
 
-FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
+FileSegment::Priority::Iterator FileSegment::getQueueIterator() const
 {
     auto lock = lockFileSegment();
     return queue_iterator;
 }
 
-void FileSegment::setQueueIterator(Priority::IteratorPtr iterator)
+void FileSegment::setQueueIterator(Priority::Iterator iterator)
 {
     auto lock = lockFileSegment();
     if (queue_iterator)
@@ -182,7 +174,7 @@ void FileSegment::setDownloadedSize(size_t delta)
 {
     auto lock = lockFileSegment();
     downloaded_size += delta;
-    assert(downloaded_size == std::filesystem::file_size(getPath()));
+    assert(downloaded_size == std::filesystem::file_size(getPathInLocalCache()));
 }
 
 bool FileSegment::isDownloaded() const
@@ -339,7 +331,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
     if (!size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing zero size is not allowed");
 
-    const auto file_segment_path = getPath();
+    const auto file_segment_path = getPathInLocalCache();
 
     {
         auto lock = lockFileSegment();
@@ -424,9 +416,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
 
 FileSegment::State FileSegment::wait(size_t offset)
 {
-    OpenTelemetry::SpanHolder span("FileSegment::wait");
-    span.addAttribute("clickhouse.key", key().toString());
-    span.addAttribute("clickhouse.offset", offset);
+    OpenTelemetry::SpanHolder span{fmt::format("FileSegment::wait({})", key().toString())};
 
     auto lock = lockFileSegment();
 
@@ -490,7 +480,7 @@ bool FileSegment::reserve(size_t size_to_reserve, FileCacheReserveStat * reserve
 
     bool is_file_segment_size_exceeded;
     {
-        auto lock = lockFileSegment();
+        auto lock = segment_guard.lock();
 
         assertNotDetachedUnlocked(lock);
         assertIsDownloaderUnlocked("reserve", lock);
@@ -533,7 +523,7 @@ bool FileSegment::reserve(size_t size_to_reserve, FileCacheReserveStat * reserve
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat, getKeyMetadata()->user);
+    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat);
 
     if (!reserved)
         setDownloadFailedUnlocked(lockFileSegment());
@@ -556,7 +546,7 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
     }
 
     chassert(downloaded_size > 0);
-    chassert(fs::file_size(getPath()) == downloaded_size);
+    chassert(fs::file_size(getPathInLocalCache()) == downloaded_size);
 }
 
 void FileSegment::setDownloadFailed()
@@ -656,7 +646,7 @@ void FileSegment::complete()
         case State::DOWNLOADED:
         {
             chassert(current_downloaded_size == range().size());
-            chassert(current_downloaded_size == fs::file_size(getPath()));
+            chassert(current_downloaded_size == fs::file_size(getPathInLocalCache()));
             chassert(!cache_writer);
             chassert(!remote_file_reader);
             break;
@@ -678,13 +668,15 @@ void FileSegment::complete()
 
             if (is_last_holder)
             {
-                bool added_to_download_queue = false;
                 if (background_download_enabled && remote_file_reader)
                 {
-                    added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
-                }
+                    LOG_TEST(
+                        log, "Submitting file segment for background download "
+                        "(having {}/{})", downloaded_size, range().size());
 
-                if (!added_to_download_queue)
+                    locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
+                }
+                else
                 {
                     locked_key->shrinkFileSegmentToDownloadedSize(offset(), segment_lock);
                     setDetachedState(segment_lock); /// See comment below.
@@ -783,7 +775,7 @@ bool FileSegment::assertCorrectness() const
 
 bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const
 {
-    auto check_iterator = [this](const Priority::IteratorPtr & it)
+    auto check_iterator = [this](const Priority::Iterator & it)
     {
         UNUSED(this);
         if (!it)
@@ -791,9 +783,9 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
 
         const auto & entry = it->getEntry();
         UNUSED(entry);
-        chassert(entry->size == reserved_size);
-        chassert(entry->key == key());
-        chassert(entry->offset == offset());
+        chassert(entry.size == reserved_size);
+        chassert(entry.key == key());
+        chassert(entry.offset == offset());
     };
 
     if (download_state == State::DOWNLOADED)
@@ -802,7 +794,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) cons
         chassert(downloaded_size == reserved_size);
         chassert(downloaded_size == range().size());
         chassert(downloaded_size > 0);
-        chassert(std::filesystem::file_size(getPath()) > 0);
+        chassert(std::filesystem::file_size(getPathInLocalCache()) > 0);
         chassert(queue_iterator);
         check_iterator(queue_iterator);
     }
@@ -843,27 +835,23 @@ void FileSegment::assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock)
     }
 }
 
-FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
+FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
 {
     auto lock = file_segment->lockFileSegment();
-    auto key_metadata = file_segment->tryGetKeyMetadata();
-    return Info{
-        .key = file_segment->key(),
-        .offset = file_segment->offset(),
-        .path = file_segment->tryGetPath(),
-        .range_left = file_segment->range().left,
-        .range_right = file_segment->range().right,
-        .kind = file_segment->segment_kind,
-        .state = file_segment->download_state,
-        .size = file_segment->range().size(),
-        .downloaded_size = file_segment->downloaded_size,
-        .cache_hits = file_segment->hits_count,
-        .references = static_cast<uint64_t>(file_segment.use_count()),
-        .is_unbound = file_segment->is_unbound,
-        .queue_entry_type = file_segment->queue_iterator ? file_segment->queue_iterator->getType() : QueueEntryType::None,
-        .user_id = key_metadata->user.user_id,
-        .user_weight = key_metadata->user.weight.value(),
-    };
+
+    auto snapshot = std::make_shared<FileSegment>(
+        file_segment->key(),
+        file_segment->offset(),
+        file_segment->range().size(),
+        State::DETACHED,
+        CreateFileSegmentSettings(file_segment->getKind(), file_segment->is_unbound));
+
+    snapshot->hits_count = file_segment->getHitsCount();
+    snapshot->downloaded_size = file_segment->getDownloadedSize();
+    snapshot->download_state = file_segment->download_state.load();
+    snapshot->ref_count = file_segment.use_count();
+
+    return snapshot;
 }
 
 bool FileSegment::isDetached() const
@@ -895,6 +883,7 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
 {
     setDownloadState(State::DETACHED, lock);
     key_metadata.reset();
+    cache = nullptr;
     queue_iterator = nullptr;
     try
     {
@@ -917,7 +906,7 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
     setDetachedState(lock);
 }
 
-void FileSegment::increasePriority()
+void FileSegment::use()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentUseMicroseconds);
 
@@ -931,12 +920,12 @@ void FileSegment::increasePriority()
     if (it)
     {
         auto cache_lock = cache->lockCache();
-        hits_count = it->increasePriority(cache_lock);
+        hits_count = it->use(cache_lock);
     }
 }
 
-FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_)
-    : file_segments(std::move(file_segments_))
+FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_, bool complete_on_dtor_)
+    : file_segments(std::move(file_segments_)), complete_on_dtor(complete_on_dtor_)
 {
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheHoldFileSegments, file_segments.size());
     ProfileEvents::increment(ProfileEvents::FilesystemCacheHoldFileSegments, file_segments.size());
@@ -945,6 +934,9 @@ FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_)
 FileSegmentsHolder::~FileSegmentsHolder()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentHolderCompleteMicroseconds);
+
+    if (!complete_on_dtor)
+        return;
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)

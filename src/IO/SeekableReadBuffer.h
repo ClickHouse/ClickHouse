@@ -44,6 +44,12 @@ public:
 
     virtual String getInfoForLog() { return ""; }
 
+    /// NOTE: This method should be thread-safe against seek(), since it can be
+    /// used in CachedOnDiskReadBufferFromFile from multiple threads (because
+    /// it first releases the buffer, and then do logging, and so other thread
+    /// can already call seek() which will lead to data-race).
+    virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented"); }
+
     /// If true, setReadUntilPosition() guarantees that eof will be reported at the given position.
     virtual bool supportsRightBoundedReads() const { return false; }
 
@@ -84,11 +90,7 @@ public:
 
     /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).
     /// Sometimes however seek is basically free because underlying read buffer wasn't yet initialised (or re-initialised after reset).
-    virtual bool isSeekCheap() { return false; }
-
-    /// For tables that have an external storage (like S3) as their main storage we'd like to distinguish whether we're reading from this storage or from a local cache.
-    /// It allows to reuse all the optimisations done for reading from local tables when reading from cache.
-    virtual bool isContentCached([[maybe_unused]] size_t offset, [[maybe_unused]] size_t size) { return false; }
+    virtual bool seekIsCheap() { return false; }
 };
 
 

@@ -16,15 +16,11 @@ namespace DB
 class LocalObjectStorage : public IObjectStorage
 {
 public:
-    explicit LocalObjectStorage(String key_prefix_);
+    LocalObjectStorage();
+
+    DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
     std::string getName() const override { return "LocalObjectStorage"; }
-
-    ObjectStorageType getType() const override { return ObjectStorageType::Local; }
-
-    std::string getCommonKeyPrefix() const override { return key_prefix; }
-
-    std::string getDescription() const override { return description; }
 
     bool exists(const StoredObject & object) const override;
 
@@ -82,16 +78,15 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    std::string generateBlobNameForPath(const std::string & path) override;
 
     bool isRemote() const override { return false; }
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
 private:
-    String key_prefix;
     Poco::Logger * log;
-    std::string description;
+    DataSourceDescription data_source_description;
 };
 
 }

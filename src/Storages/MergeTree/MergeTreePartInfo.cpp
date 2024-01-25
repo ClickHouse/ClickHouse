@@ -300,33 +300,6 @@ void MergeTreePartInfo::deserialize(ReadBuffer & in)
     readBoolText(use_leagcy_max_level, in);
 }
 
-bool MergeTreePartInfo::areAllBlockNumbersCovered(const MergeTreePartInfo & blocks_range, std::vector<MergeTreePartInfo> candidates)
-{
-    if (candidates.empty())
-        return false;
-
-    std::sort(candidates.begin(), candidates.end());
-
-    /// First doesn't cover left border
-    if (candidates[0].min_block != blocks_range.min_block)
-        return false;
-
-    int64_t current_right_block = candidates[0].min_block - 1;
-
-    for (const auto & candidate : candidates)
-    {
-        if (current_right_block + 1 != candidate.min_block)
-            return false;
-
-        current_right_block = candidate.max_block;
-    }
-
-    if (current_right_block != blocks_range.max_block)
-        return false;
-
-    return true;
-}
-
 DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
     const DiskPtr & disk, std::string_view dir_name, MergeTreeDataFormatVersion format_version)
 {
@@ -394,10 +367,9 @@ DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
     return part_info;
 }
 
-void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo & part)
+void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo& part)
 {
     // Both class are aggregates so it's ok.
     static_cast<MergeTreePartInfo &>(*this) = part;
 }
-
 }

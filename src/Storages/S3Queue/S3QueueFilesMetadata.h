@@ -70,7 +70,7 @@ public:
     using FileStatuses = std::unordered_map<std::string, FileStatusPtr>;
 
     /// Set file as processing, if it is not alreaty processed, failed or processing.
-    ProcessingNodeHolderPtr trySetFileAsProcessing(const std::string & path);
+    std::pair<ProcessingNodeHolderPtr, FileStatusPtr> trySetFileAsProcessing(const std::string & path);
 
     FileStatusPtr getFileStatus(const std::string & path);
 
@@ -112,8 +112,8 @@ private:
         AlreadyProcessed,
         AlreadyFailed,
     };
-    std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForOrderedMode(const std::string & path, const FileStatusPtr & file_status);
-    std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForUnorderedMode(const std::string & path, const FileStatusPtr & file_status);
+    std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForOrderedMode(const std::string & path);
+    std::pair<SetFileProcessingResult, ProcessingNodeHolderPtr> trySetFileAsProcessingForUnorderedMode(const std::string & path);
 
     struct NodeMetadata
     {
@@ -153,18 +153,14 @@ public:
         const std::string & processing_id_,
         const std::string & path_,
         const std::string & zk_node_path_,
-        FileStatusPtr file_status_,
         zkutil::ZooKeeperPtr zk_client_);
 
     ~ProcessingNodeHolder();
-
-    FileStatusPtr getFileStatus() { return file_status; }
 
 private:
     bool remove(Coordination::Requests * requests = nullptr, Coordination::Responses * responses = nullptr);
 
     zkutil::ZooKeeperPtr zk_client;
-    FileStatusPtr file_status;
     std::string path;
     std::string zk_node_path;
     std::string processing_id;

@@ -20,11 +20,9 @@
 namespace DB
 {
 
-ColumnsDescription StorageSystemS3Queue::getColumnsDescription()
+NamesAndTypesList StorageSystemS3Queue::getNamesAndTypes()
 {
-    /// TODO: Fill in all the comments
-    return ColumnsDescription
-    {
+    return {
         {"zookeeper_path", std::make_shared<DataTypeString>()},
         {"file_name", std::make_shared<DataTypeString>()},
         {"rows_processed", std::make_shared<DataTypeUInt64>()},

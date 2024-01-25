@@ -1,6 +1,5 @@
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 
-#include <Common/iota.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -79,11 +78,9 @@ QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String
     return function_node;
 }
 
-FunctionNodePtr createResolvedAggregateFunction(
-    const String & name, const QueryTreeNodePtr & argument, const Array & parameters = {}, NullsAction action = NullsAction::EMPTY)
+FunctionNodePtr createResolvedAggregateFunction(const String & name, const QueryTreeNodePtr & argument, const Array & parameters = {})
 {
     auto function_node = std::make_shared<FunctionNode>(name);
-    function_node->setNullsAction(action);
 
     if (!parameters.empty())
     {
@@ -95,7 +92,11 @@ FunctionNodePtr createResolvedAggregateFunction(
     function_node->getArguments().getNodes() = { argument };
 
     AggregateFunctionProperties properties;
-    auto aggregate_function = AggregateFunctionFactory::instance().get(name, action, {argument->getResultType()}, parameters, properties);
+    auto aggregate_function = AggregateFunctionFactory::instance().get(
+        name,
+        { argument->getResultType() },
+        parameters,
+        properties);
     function_node->resolveAsAggregateFunction(std::move(aggregate_function));
 
     return function_node;
@@ -185,7 +186,7 @@ FunctionNodePtr createFusedQuantilesNode(std::vector<QueryTreeNodePtr *> & nodes
     {
         /// Sort nodes and parameters in ascending order of quantile level
         std::vector<size_t> permutation(nodes.size());
-        iota(permutation.data(), permutation.size(), size_t(0));
+        std::iota(permutation.begin(), permutation.end(), 0);
         std::sort(permutation.begin(), permutation.end(), [&](size_t i, size_t j) { return parameters[i].get<Float64>() < parameters[j].get<Float64>(); });
 
         std::vector<QueryTreeNodePtr *> new_nodes;

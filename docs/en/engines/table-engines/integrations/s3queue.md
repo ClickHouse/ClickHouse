@@ -4,14 +4,21 @@ sidebar_position: 181
 sidebar_label: S3Queue
 ---
 
-# S3Queue Table Engine
+# [experimental] S3Queue Table Engine
 This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) engines, but provides S3-specific features.
+
+:::note
+This table engine is experimental. To use it, set `allow_experimental_s3queue` to 1 by using the `SET` command:
+```sql
+SET allow_experimental_s3queue=1
+```
+:::
 
 ## Create Table {#creating-a-table}
 
 ``` sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
-    ENGINE = S3Queue(path, [NOSIGN, | aws_access_key_id, aws_secret_access_key,] format, [compression])
+    ENGINE = S3Queue(path [, NOSIGN | aws_access_key_id, aws_secret_access_key,] format, [compression])
     [SETTINGS]
     [mode = 'unordered',]
     [after_processing = 'keep',]
