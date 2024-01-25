@@ -68,8 +68,8 @@ DataTypePtr throwOrReturn(const DataTypes & types, std::string_view message_suff
     throw Exception(error_code, "There is no supertype for types {} {}", getExceptionMessagePrefix(types), message_suffix);
 }
 
-template <typename ThrowOrReturnFunc>
-DataTypePtr getNumericType(const TypeIndexSet & types, ThrowOrReturnFunc throwOrReturnFunc)
+template <LeastSupertypeOnError on_error>
+DataTypePtr getNumericType(const TypeIndexSet & types)
 {
     bool all_numbers = true;
 
@@ -120,7 +120,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types, ThrowOrReturnFunc throwOr
     if (max_bits_of_signed_integer || max_bits_of_unsigned_integer || max_mantissa_bits_of_floating)
     {
         if (!all_numbers)
-            return throwOrReturnFunc(types, "because some of them are numbers and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+            return throwOrReturn<on_error>(types, "because some of them are numbers and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
         /// If there are signed and unsigned types of same bit-width, the result must be signed number with at least one more bit.
         /// Example, common of Int32, UInt32 = Int64.
@@ -135,7 +135,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types, ThrowOrReturnFunc throwOr
             if (min_bit_width_of_integer != 64)
                 ++min_bit_width_of_integer;
             else
-                return throwOrReturnFunc(types,
+                return throwOrReturn<on_error>(types,
                     "because some of them are signed integers and some are unsigned integers,"
                     " but there is no signed integer type, that can exactly represent all required unsigned integer values",
                     ErrorCodes::NO_COMMON_TYPE);
@@ -150,7 +150,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types, ThrowOrReturnFunc throwOr
             else if (min_mantissa_bits <= 53)
                 return std::make_shared<DataTypeFloat64>();
             else
-                return throwOrReturnFunc(types,
+                return throwOrReturn<on_error>(types,
                     " because some of them are integers and some are floating point,"
                     " but there is no floating point type, that can exactly represent all required integers", ErrorCodes::NO_COMMON_TYPE);
         }
@@ -171,7 +171,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types, ThrowOrReturnFunc throwOr
             else if (min_bit_width_of_integer <= 256)
                 return std::make_shared<DataTypeInt256>();
             else
-                return throwOrReturnFunc(types,
+                return throwOrReturn<on_error>(types,
                     " because some of them are signed integers and some are unsigned integers,"
                     " but there is no signed integer type, that can exactly represent all required unsigned integer values", ErrorCodes::NO_COMMON_TYPE);
         }
@@ -191,7 +191,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types, ThrowOrReturnFunc throwOr
             else if (min_bit_width_of_integer <= 256)
                 return std::make_shared<DataTypeUInt256>();
             else
-                return throwOrReturnFunc(types,
+                return throwOrReturn<on_error>(types,
                     " but as all data types are unsigned integers, we must have found maximum unsigned integer type", ErrorCodes::NO_COMMON_TYPE);
         }
     }
@@ -383,7 +383,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!all_maps)
                 return throwOrReturn<on_error>(types, "because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-            DataTypePtr keys_common_type = getLeastSupertype<on_error>(key_types);
+            auto keys_common_type = getLeastSupertype<on_error>(key_types);
 
             auto values_common_type = getLeastSupertype<on_error>(value_types);
             /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype for keys or values,
@@ -425,7 +425,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 return getLeastSupertype<on_error>(nested_types);
             else
             {
-                DataTypePtr nested_type = getLeastSupertype<on_error>(nested_types);
+                auto nested_type = getLeastSupertype<on_error>(nested_types);
 
                 /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
                 /// nested_type will be nullptr, we should return nullptr in this case.
@@ -459,8 +459,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         if (have_nullable)
         {
             auto nested_type = getLeastSupertype<on_error>(nested_types);
-            if (isVariant(nested_type))
-                return nested_type;
             /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
             /// nested_type will be nullptr, we should return nullptr in this case.
             if (!nested_type)
@@ -628,8 +626,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     {
         /// First, if we have signed integers, try to convert all UInt64 to Int64 if possible.
         convertUInt64toInt64IfPossible(types, type_ids);
-        auto throw_or_return = [&](const TypeIndexSet &, std::string_view message_suffix, int error_code){ return throwOrReturn<on_error>(types, message_suffix, error_code); };
-        auto numeric_type = getNumericType(type_ids, throw_or_return);
+        auto numeric_type = getNumericType<on_error>(type_ids);
         if (numeric_type)
             return numeric_type;
     }
@@ -708,8 +705,7 @@ DataTypePtr getLeastSupertype(const TypeIndexSet & types)
         return std::make_shared<DataTypeString>();
     }
 
-    auto throw_or_return = [](const TypeIndexSet & type_ids, std::string_view message_suffix, int error_code){ return throwOrReturn<on_error>(type_ids, message_suffix, error_code); };
-    auto numeric_type = getNumericType(types, throw_or_return);
+    auto numeric_type = getNumericType<on_error>(types);
     if (numeric_type)
         return numeric_type;
 
