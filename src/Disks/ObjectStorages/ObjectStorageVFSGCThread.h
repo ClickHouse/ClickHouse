@@ -20,10 +20,10 @@ private:
     Poco::Logger * const log;
     BackgroundSchedulePoolTaskHolder task;
     std::shared_ptr<const VFSSettings> settings;
-    size_t last_start_logpointer{0};
 
     void run();
-    bool skipRun(size_t batch_size, size_t start_logpointer) const;
+    bool skipRun(size_t batch_size, size_t start_logpointer, size_t end_logpointer) const;
+    void tryWriteSnapshotForZero() const;
     void reconcileLogWithSnapshot(size_t start_logpointer);
     void updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const;
     VFSLogItem getBatch(size_t start_logpointer, size_t end_logpointer) const;

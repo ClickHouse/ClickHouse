@@ -15,7 +15,7 @@ namespace ProfileEvents
 extern const Event VFSGcRunsCompleted;
 extern const Event VFSGcRunsException;
 extern const Event VFSGcRunsSkipped;
-extern const Event VFSGcTotalMicroseconds;
+extern const Event VFSGcTotalMicroseconds; // TODO myrrc switch to seconds?
 extern const Event VFSGcCumulativeSnapshotBytesRead;
 extern const Event VFSGcCumulativeLogItemsRead;
 }
@@ -52,13 +52,13 @@ ObjectStorageVFSGCThread::ObjectStorageVFSGCThread(DiskObjectStorageVFS & storag
     task->activateAndSchedule();
 }
 
-const int ephemeral = zkutil::CreateMode::Ephemeral;
+const int EPHEMERAL = zkutil::CreateMode::Ephemeral;
 void ObjectStorageVFSGCThread::run()
 {
     Stopwatch stop_watch;
 
     using enum Coordination::Error;
-    if (auto code = storage.zookeeper()->tryCreate(storage.traits.gc_lock_path, "", ephemeral); code == ZNODEEXISTS)
+    if (auto code = storage.zookeeper()->tryCreate(storage.traits.gc_lock_path, "", EPHEMERAL); code == ZNODEEXISTS)
     {
         LOG_DEBUG(log, "Failed to acquire lock, sleeping");
         return;
@@ -97,19 +97,10 @@ void ObjectStorageVFSGCThread::run()
     const size_t end_logpointer_parsed = parseFromString<size_t>(end_str.substr(4));
     const size_t end_logpointer = std::min(end_logpointer_parsed, start_logpointer + settings->batch_max_size);
 
-    if (last_start_logpointer > start_logpointer)
-        reconcileLogWithSnapshot(start_logpointer);
-    else
-        last_start_logpointer = start_logpointer;
-
-    if ((skip_run = skipRun(batch_size, start_logpointer)))
+    if ((skip_run = skipRun(batch_size, start_logpointer, end_logpointer)))
         return;
-
     if (start_logpointer == 0)
-    {
-        // try writing an empty snapshot for logpointer 0 (we may find that someone has already written,
-        // that's fine TODO myrrc
-    }
+        tryWriteSnapshotForZero();
 
     LOG_DEBUG(log, "Processing range [{};{}]", start_logpointer, end_logpointer);
     updateSnapshotWithLogEntries(start_logpointer, end_logpointer);
@@ -158,13 +149,19 @@ void ObjectStorageVFSGCThread::reconcileLogWithSnapshot(size_t start_logpointer)
     storage.object_storage->removeObject(snapshot_object);
 }
 
-bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t start_logpointer) const
+bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t start_logpointer, size_t end_logpointer) const
 {
-    const UInt64 min_size = settings->batch_min_size;
+    // We have snapshot with name "0" either if 1. No items have been processed (needed for migrations),
+    // 2. We processed a batch of single item with logpointer 0.
+    // Skip as otherwise we'd read from 0 and write to 0 at same time which would lead to file corruption.
+    if (start_logpointer == 0 && end_logpointer == 0)
+        return true;
+
+    const size_t min_size = settings->batch_min_size;
     if (batch_size >= min_size)
         return false;
 
-    const Int64 wait_ms = settings->batch_can_wait_ms;
+    const size_t wait_ms = settings->batch_can_wait_ms;
     if (!wait_ms)
     {
         LOG_DEBUG(log, "Skipped run due to insufficient batch size: {} < {}", batch_size, min_size);
@@ -176,12 +173,23 @@ bool ObjectStorageVFSGCThread::skipRun(size_t batch_size, size_t start_logpointe
 
     using ms = std::chrono::milliseconds;
     using clock = std::chrono::system_clock;
-    const auto delta = std::chrono::duration_cast<ms>(clock::now().time_since_epoch()).count() - stat.mtime;
+    const size_t delta = std::chrono::duration_cast<ms>(clock::now().time_since_epoch()).count() - stat.mtime;
 
     if (delta < wait_ms)
         LOG_DEBUG(log, "Skipped run due to insufficient batch size ({} < {}) and time ({} < {})", batch_size, min_size, delta, wait_ms);
 
     return delta < wait_ms;
+}
+
+void ObjectStorageVFSGCThread::tryWriteSnapshotForZero() const
+{
+    // On start, we may or may not have snapshot for state before processing first log item
+    const StoredObject object = getSnapshotObject(0);
+    if (storage.object_storage->exists(object))
+        return;
+    LOG_DEBUG(log, "Didn't find snapshot for 0, writing empty file");
+    auto buf = storage.object_storage->writeObject(object, WriteMode::Rewrite);
+    Lz4DeflatingWriteBuffer{std::move(buf), settings->snapshot_lz4_compression_level}.finalize();
 }
 
 void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(size_t start_logpointer, size_t end_logpointer) const

@@ -1,7 +1,13 @@
 #include "VFSSettings.h"
+#include "Common/Exception.h"
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
 VFSTraits::VFSTraits(std::string_view disk_vfs_id)
     : base_node(fmt::format("/vfs_log/{}", disk_vfs_id))
     , locks_node(base_node + "/locks")
@@ -24,5 +30,11 @@ VFSSettings::VFSSettings(
     , keeper_fault_injection_probability(keeper_fault_injection_probability_)
     , keeper_fault_injection_seed(keeper_fault_injection_seed_)
 {
+    if (gc_sleep_ms == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "gc_sleep_ms == 0");
+    if (batch_min_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "batch_min_size == 0");
+    if (batch_max_size <= batch_min_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "batch_max_size ({}) <= batch_min_size ({})", batch_max_size, batch_min_size);
 }
 }
