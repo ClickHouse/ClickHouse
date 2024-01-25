@@ -1076,7 +1076,6 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
         if constexpr (IsDataTypeDateOrDateTime<FromDataType>)
         {
             auto datetime_arg = arguments[0];
-            auto timezone_arg = arguments[1];
 
             const DateLUTImpl * time_zone = nullptr;
             const ColumnConst * time_zone_column = nullptr;
@@ -1089,14 +1088,13 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
             else /// When we have a column for timezone
             {
                 datetime_arg.column = datetime_arg.column->convertToFullColumnIfConst();
-                timezone_arg.column = timezone_arg.column->convertToFullColumnIfConst();
 
                 if constexpr (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
                     time_zone = &DateLUT::instance();
                 /// For argument of Date or DateTime type, second argument with time zone could be specified.
                 if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
                 {
-                    if ((time_zone_column = checkAndGetColumnConst<ColumnString>(timezone_arg.column.get())))
+                    if ((time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get())))
                     {
                         auto non_null_args = createBlockWithNestedColumns(arguments);
                         time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
@@ -1133,7 +1131,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
                 ColumnUInt8::MutablePtr null_map = copyNullMap(datetime_arg.column);
 
                 if (!null_map && arguments.size() > 1)
-                    null_map = copyNullMap(timezone_arg.column);
+                    null_map = copyNullMap(arguments[1].column);
 
                 if (null_map)
                 {
@@ -1141,8 +1139,8 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
                     {
                         if (!time_zone_column && arguments.size() > 1)
                         {
-                            if (!timezone_arg.column.get()->getDataAt(i).toString().empty())
-                                time_zone = &DateLUT::instance(timezone_arg.column.get()->getDataAt(i).toString());
+                            if (!arguments[1].column.get()->getDataAt(i).toString().empty())
+                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
@@ -1158,8 +1156,8 @@ struct ConvertImpl<FromDataType, DataTypeString, Name, ConvertDefaultBehaviorTag
                     {
                         if (!time_zone_column && arguments.size() > 1)
                         {
-                            if (!timezone_arg.column.get()->getDataAt(i).toString().empty())
-                                time_zone = &DateLUT::instance(timezone_arg.column.get()->getDataAt(i).toString());
+                            if (!arguments[1].column.get()->getDataAt(i).toString().empty())
+                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
