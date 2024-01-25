@@ -1072,12 +1072,13 @@ def _configure_jobs(
 
         if batches_to_do:
             jobs_to_do.append(job)
-            jobs_params[job] = {
-                "batches": batches_to_do,
-                "num_batches": num_batches,
-            }
-        else:
+        elif not job_config.run_by_label:
+            # treat job as being skipped only if it's controlled by digest
             jobs_to_skip.append(job)
+        jobs_params[job] = {
+            "batches": batches_to_do,
+            "num_batches": num_batches,
+        }
 
     ## c. check CI controlling labels and commit messages
     if pr_info.labels:
@@ -1136,7 +1137,7 @@ def _configure_jobs(
                 f"NOTE: Only specific job(s) were requested by commit message tokens: [{jobs_to_do_requested}]"
             )
             jobs_to_do = list(
-                set(job for job in jobs_to_do_requested if job in jobs_to_do)
+                set(job for job in jobs_to_do_requested if job not in jobs_to_skip)
             )
 
     return {
