@@ -219,6 +219,36 @@ inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, Ar
     }
 }
 
+template <typename ArrayCond, typename A, typename B, typename ArrayResult, typename ResultType>
+inline void fillConstantConstant(const ArrayCond & cond, A a, B b, ArrayResult & res)
+{
+    size_t size = cond.size();
+    if constexpr (std::is_same_v<ResultType, Int8> || std::is_same_v<ResultType, UInt8> || is_over_big_int<ResultType>)
+    {
+        alignas(64) const ResultType ab[2] = {static_cast<ResultType>(a), static_cast<ResultType>(b)};
+        for (size_t i = 0; i < size; ++i)
+        {
+            /// Introduce memory access to avoid branch miss
+            res[i] = ab[!cond[i]];
+        }
+    }
+    else if constexpr (std::is_same_v<ResultType, Decimal32> || std::is_same_v<ResultType, Decimal64>)
+    {
+        ResultType new_a = static_cast<ResultType>(a);
+        ResultType new_b = static_cast<ResultType>(b);
+        for (size_t i = 0; i < size; ++i)
+        {
+            /// Reuse new_a and new_b to achieve auto-vectorization
+            res[i] = cond[i] ? new_a : new_b;
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
+    }
+}
+
 template <typename A, typename B, typename ResultType>
 struct NumIfImpl
 {
@@ -261,9 +291,7 @@ struct NumIfImpl
         auto col_res = ColVecResult::create(size);
         ArrayResult & res = col_res->getData();
 
-        /// TODO cast a and b only once
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
+        fillConstantConstant<ArrayCond, A, B, ArrayResult, ResultType>(cond, a, b, res);
         return col_res;
     }
 };
@@ -312,8 +340,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
         auto col_res = ColVecResult::create(size, scale);
         ArrayResult & res = col_res->getData();
 
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
+        fillConstantConstant<ArrayCond, A, B, ArrayResult, ResultType>(cond, a, b, res);
         return col_res;
     }
 };
