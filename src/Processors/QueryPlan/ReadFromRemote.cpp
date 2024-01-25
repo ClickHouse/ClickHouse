@@ -256,6 +256,9 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     /// parallel replicas custom key case
     if (shard.shard_filter_generator)
     {
+        if (!priority_func_factory.has_value())
+            priority_func_factory = GetPriorityForLoadBalancing(LoadBalancing::ROUND_ROBIN, randomSeed());
+
         for (size_t i = 0; i < shard.shard_info.per_replica_pools.size(); ++i)
         {
             auto query = shard.query->clone();
@@ -272,9 +275,6 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
 
             const String query_string = formattedAST(query);
 
-            if (!priority_func_factory.has_value())
-                priority_func_factory = GetPriorityForLoadBalancing(LoadBalancing::ROUND_ROBIN, randomSeed());
-
             GetPriorityForLoadBalancing::Func priority_func
                 = priority_func_factory->getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, shard.shard_info.pool->getPoolSize());
 
@@ -288,7 +288,7 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
                 external_tables,
                 stage,
                 std::nullopt,
-                priority_func);
+                std::move(priority_func));
             remote_query_executor->setLogger(log);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
 
