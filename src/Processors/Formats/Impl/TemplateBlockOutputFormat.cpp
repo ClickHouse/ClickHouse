@@ -226,14 +226,14 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         }
         else
         {
-            if (!settings.template_settings.row_format_schema.empty())
-            {
-                throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_row or format_schema_rows_template, but not both");
-            }
             row_format = ParsedTemplateFormatString(
                 FormatSchemaInfo(settings.template_settings.row_format, "Template", false,
                         settings.schema.is_server, settings.schema.format_schema_path),
                 idx_by_name);
+            if (!settings.template_settings.row_format_schema.empty())
+            {
+                throw Exception(DB::ErrorCodes::INVALID_TEMPLATE_FORMAT, "Expected either format_template_row or format_schema_rows_template, but not both");
+            }
         }
         return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
     });
