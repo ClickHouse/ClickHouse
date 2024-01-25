@@ -1204,18 +1204,12 @@ public:
 
         if (cond_const_col)
         {
-            if (arg_then.type->equals(*arg_else.type))
-            {
-                return cond_const_col->getValue<UInt8>()
-                    ? arg_then.column
-                    : arg_else.column;
-            }
+            UInt8 value = cond_const_col->getValue<UInt8>();
+            const ColumnWithTypeAndName & arg = value ? arg_then : arg_else;
+            if (arg.type->equals(*result_type))
+                return arg.column;
             else
-            {
-                /// TODO why materialize condition
-                materialized_cond_col = cond_const_col->convertToFullColumn();
-                cond_col = typeid_cast<const ColumnUInt8 *>(&*materialized_cond_col);
-            }
+                return castColumn(arg, result_type);
         }
 
         if (!cond_col)
