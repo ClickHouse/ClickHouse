@@ -118,7 +118,7 @@ public:
             types_of_branches.emplace_back(arg);
         });
 
-        if (context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_when_no_common_type_in_if)
+        if (context->getSettingsRef().allow_experimental_variant_type && context->getSettingsRef().use_variant_as_common_type)
             return getLeastSupertypeOrVariant(types_of_branches);
 
         return getLeastSupertype(types_of_branches);

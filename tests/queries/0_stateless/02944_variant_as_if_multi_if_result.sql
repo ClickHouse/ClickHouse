@@ -1,6 +1,6 @@
 set allow_experimental_analyzer=0; -- The result type for if function with constant is different with analyzer.
 set allow_experimental_variant_type=1;
-set use_variant_when_no_common_type_in_if=1;
+set use_variant_as_common_type=1;
 
 select toTypeName(res), if(1, [1,2,3], 'str_1') as res;
 select toTypeName(res), if(1, [1,2,3], 'str_1'::Nullable(String)) as res;

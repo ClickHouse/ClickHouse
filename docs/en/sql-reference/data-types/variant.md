@@ -47,10 +47,10 @@ SELECT toTypeName(variant) as type_name, 'Hello, World!'::Variant(UInt64, String
 └────────────────────────────────────────┴───────────────┘
 ```
 
-Using functions `if/multiIf` when arguments doesn't have common type (setting `use_variant_when_no_common_type_in_if` should be enabled for it):
+Using functions `if/multiIf` when arguments doesn't have common type (setting `use_variant_as_common_type` should be enabled for it):
 
 ```sql
-SET use_variant_when_no_common_type_in_if = 1;
+SET use_variant_as_common_type = 1;
 SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
 ```
 
@@ -65,7 +65,7 @@ SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
 ```
 
 ```sql
-SET use_variant_when_no_common_type_in_if = 1;
+SET use_variant_as_common_type = 1;
 SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL) AS variant FROM numbers(4);
 ```
 
