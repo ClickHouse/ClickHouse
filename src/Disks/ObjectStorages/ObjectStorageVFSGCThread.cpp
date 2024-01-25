@@ -5,6 +5,10 @@
 #include "IO/Lz4DeflatingWriteBuffer.h"
 #include "IO/Lz4InflatingReadBuffer.h"
 #include "IO/ReadHelpers.h"
+#include "IO/S3Common.h"
+#if USE_AZURE_BLOB_STORAGE
+#    include <azure/storage/common/storage_exception.hpp>
+#endif
 
 namespace ProfileEvents
 {
@@ -171,7 +175,10 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(Logpointer start, Lo
     }
     catch (Exception & e)
     {
-        populate_old_snapshot(reconcileLogWithSnapshot(start_regarding_zero, end, std::move(e)));
+        const Logpointer new_start = reconcileLogWithSnapshot(start_regarding_zero, end, std::move(e));
+        if (new_start == end)
+            return;
+        populate_old_snapshot(new_start);
     }
 
     const StoredObject new_snapshot = getSnapshotObject(end);
@@ -197,9 +204,34 @@ void ObjectStorageVFSGCThread::updateSnapshotWithLogEntries(Logpointer start, Lo
     object_storage.removeObjects(obsolete);
 }
 
+static void check404(Exception && e)
+{
+    // TODO myrrc this works only for s3 and azure
+    if (false)
+    {
+    }
+#if USE_AWS_S3
+    else if (auto * e_s3 = typeid_cast<S3Exception *>(&e))
+    {
+        if (e_s3->getS3ErrorCode() != Aws::S3::S3Errors::NO_SUCH_KEY)
+            throw std::move(e);
+    }
+#endif
+#if USE_AZURE_BLOB_STORAGE
+    else if (auto * e_azure = typeid_cast<Azure::Storage::StorageException *>(&e))
+    {
+        if (e_azure->StatusCode != Azure::Core::Http::HttpStatusCode::NotFound)
+            throw std::move(e);
+    }
+#endif
+    else
+        throw std::move(e);
+}
+
 constexpr std::string_view SNAPSHOTS_PATH = "/snapshots";
 Logpointer ObjectStorageVFSGCThread::reconcileLogWithSnapshot(Logpointer start, Logpointer end, Exception && e) const
 {
+    check404(std::move(e));
     LOG_WARNING(log, "Snapshot for {} not found", start);
 
     const String snapshots_folder = storage.getMetadataObject(SNAPSHOTS_PATH).remote_path;
@@ -209,41 +241,26 @@ Logpointer ObjectStorageVFSGCThread::reconcileLogWithSnapshot(Logpointer start, 
         LOG_ERROR(log, "Did not find any snapshots in {}", snapshots_folder);
         throw std::move(e);
     }
+    std::vector<Logpointer> candidates;
+    std::ranges::transform(
+        std::move(snapshots), std::back_inserter(candidates), [](auto & obj) { return parseFromString<Logpointer>(obj.relative_path); });
+    std::ranges::sort(candidates);
 
-    if (std::ranges::any_of(snapshots, [end](const auto & target) { return target.relative_path == toString(end); }))
+    if (std::ranges::count(candidates, end) > 0)
     {
-        LOG_INFO(log, "Found snapshot for {}, discarding this batch (leftover from previous GC run)", end);
+        LOG_INFO(log, "Found leftover from previous GC run, discarding this batch");
         return end;
     }
 
-    LOG_WARNING(log, "Local start logpointer ({}) > batch start logpointer ({})", last_start_logpointer, start_logpointer);
+    // Zookeeper lost without backups thus sequential counter reset but we have snapshot, first GC run
+    if (const Logpointer greatest_end = *candidates.rbegin(); start == 0 && greatest_end > 0)
+    {
+        LOG_INFO(log, "batch start = 0 but found snapshot with {}, using it", greatest_end);
+        return greatest_end;
+    }
 
-    // If batch start logpointer > 0:
-    // - Zookeeper was lost
-    // - Some other replica was also lost and restarted with last_start_logpointer = 0
-    // - This replica won garbage collection and wrote new snapshot
-    // - Now you have multiple snapshots in folder
-    // TODO myrrc I don't see how we could reconcile local state in this case
-    chassert(start == 0);
-
-    const std::string_view snapshot_name = snapshots[0].relative_path;
-    const size_t snapshot_logpointer = parseFromString<size_t>(snapshot_name);
-
-    // TODO myrrc If this is wrong, everything is too broken to continue
-    chassert(snapshot_logpointer + 1 >= start);
-
-    const StoredObject snapshot_object{fs::path(snapshots_folder) / snapshot_name};
-    const StoredObject new_snapshot_object{fs::path(snapshots_folder) / "0"};
-    LOG_INFO(log, "Found snapshot {}, renaming to {}", snapshot_object, new_snapshot_object);
-
-    // If we fail copying object, we don't update last_start_logpointer and try again on next run
-    storage.object_storage->copyObject(snapshot_object, new_snapshot_object, {}, {});
-    start = start;
-
-    // TODO myrrc If we fail removing old snapshot, we'll have garbage in snapshots folder
-    storage.object_storage->removeObject(snapshot_object);
+    return start;
 }
-
 
 VFSLogItem ObjectStorageVFSGCThread::getBatch(size_t start_logpointer, size_t end_logpointer) const
 {
