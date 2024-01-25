@@ -1,7 +1,4 @@
-Files before DROP TABLE
-format_version.txt
-
+data after INSERT	1
+data after ATTACH	1
+Files before DETACH TABLE
 Files after DETACH TABLE
-format_version.txt
-
-Files after DROP TABLE
