@@ -238,6 +238,39 @@ const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
+void ColumnArray::deserializeAndInsertManyFromArena(PaddedPODArray<const char *> & positions,
+    const DeserializeFilter * filter,
+    const DeserializeOffsets * deserialize_offsets)
+{
+    // if (deserialize_offsets)
+    // {
+        deserializeAndInsertManyFromArenaImpl<ColumnArray>(positions, filter, deserialize_offsets);
+    //     return;
+    // }
+
+    // size_t positions_size = positions.size();
+    // auto & array_offsets = getOffsets();
+
+    // size_t old_size = array_offsets.size();
+    // array_offsets.resize(old_size + positions_size);
+
+    // for (size_t i = 0; i < positions_size; ++i)
+    // {
+    //     size_t insert_index = old_size + i;
+    //     if (filter && (*filter)[i]) {
+    //         array_offsets[insert_index] = array_offsets[insert_index - 1];
+    //         continue;
+    //     }
+
+    //     auto & position = positions[i];
+    //     size_t array_size = unalignedLoad<size_t>(position);
+    //     position += sizeof(array_size);
+    //     array_offsets[insert_index] = array_offsets[insert_index - 1] + array_size;
+    // }
+
+    // getData().deserializeAndInsertManyFromArena(positions, filter, &array_offsets);
+}
+
 const char * ColumnArray::skipSerializedInArena(const char * pos) const
 {
     size_t array_size = unalignedLoad<size_t>(pos);
