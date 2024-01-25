@@ -1,4 +1,5 @@
-set allow_experimental_analyzer=0; -- The result type for if function with constant is different with analyzer.
+set allow_experimental_analyzer=0; -- The result type for if function with constant is different with analyzer. It wil be fixed after refactoring around constants in analyzer.
+
 set allow_experimental_variant_type=1;
 set use_variant_as_common_type=1;
 
@@ -62,4 +63,14 @@ select toTypeName(res), multiIf(number % 3 == 0, range(number + 1), number % 3 =
 select toTypeName(res), multiIf(number % 3 == 0, range(number + 1), number % 3 == 1, number,  ('str_' || toString(number))::Nullable(String)) as res from numbers(6);
 select toTypeName(res), multiIf(number % 3 == 0, range(number + 1), number % 3 == 1, number, ('str_' || toString(number))::LowCardinality(String)) as res from numbers(6);
 select toTypeName(res), multiIf(number % 3 == 0, range(number + 1), number % 3 == 1, number, ('str_' || toString(number))::LowCardinality(Nullable(String))) as res from numbers(6);
+
+
+select toTypeName(res), array(1, 'str_1', 2, 'str_2') as res;
+select toTypeName(res), array([1, 2, 3], ['str_1', 'str_2', 'str_3']) as res;
+select toTypeName(res), array(array([1, 2, 3], ['str_1', 'str_2', 'str_3']), [1, 2, 3]) as res;
+select toTypeName(res), array([1, 2, 3], [[1, 2, 3]]) as res;
+
+select toTypeName(res), map('a', 1, 'b', 'str_1') as res;
+select toTypeName(res), map('a', 1, 'b', map('c', 2, 'd', 'str_1')) as res;
+select toTypeName(res), map('a', 1, 'b', [1, 2, 3], 'c', [[4, 5, 6]]) as res;
 

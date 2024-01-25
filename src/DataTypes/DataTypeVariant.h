@@ -37,7 +37,6 @@ public:
 
     MutableColumnPtr createColumn() const override;
 
-    ColumnPtr createColumnConst(size_t size, const Field & field) const override;
     Field getDefault() const override;
 
     bool equals(const IDataType & rhs) const override;

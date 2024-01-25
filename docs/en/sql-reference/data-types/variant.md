@@ -47,7 +47,7 @@ SELECT toTypeName(variant) as type_name, 'Hello, World!'::Variant(UInt64, String
 └────────────────────────────────────────┴───────────────┘
 ```
 
-Using functions `if/multiIf` when arguments doesn't have common type (setting `use_variant_as_common_type` should be enabled for it):
+Using functions `if/multiIf` when arguments don't have common type (setting `use_variant_as_common_type` should be enabled for it):
 
 ```sql
 SET use_variant_as_common_type = 1;
@@ -76,6 +76,34 @@ SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) =
 │ Hello, World! │
 │ ᴺᵁᴸᴸ          │
 └───────────────┘
+```
+
+Using functions 'array/map' if array elements/map values don't have common type (setting `use_variant_as_common_type` should be enabled for it):
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT array(range(number), number, 'str_' || toString(number)) as array_of_variants FROM numbers(3);
+```
+
+```text
+┌─array_of_variants─┐
+│ [[],0,'str_0']    │
+│ [[0],1,'str_1']   │
+│ [[0,1],2,'str_2'] │
+└───────────────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as map_of_variants FROM numbers(3);
+```
+
+```text
+┌─map_of_variants───────────────┐
+│ {'a':[],'b':0,'c':'str_0'}    │
+│ {'a':[0],'b':1,'c':'str_1'}   │
+│ {'a':[0,1],'b':2,'c':'str_2'} │
+└───────────────────────────────┘
 ```
 
 ## Reading Variant nested types as subcolumns

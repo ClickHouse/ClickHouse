@@ -59,25 +59,6 @@ DataTypePtr throwOrReturn(const DataTypes & types, std::string_view message_suff
     if constexpr (on_error == LeastSupertypeOnError::String)
         return std::make_shared<DataTypeString>();
 
-    if constexpr (on_error == LeastSupertypeOnError::Variant && std::is_same_v<DataTypes, std::vector<DataTypePtr>>)
-    {
-        DataTypes variants;
-        for (const auto & type : types)
-        {
-            if (isVariant(type))
-            {
-                const DataTypes & nested_variants = assert_cast<const DataTypeVariant &>(*type).getVariants();
-                variants.insert(variants.end(), nested_variants.begin(), nested_variants.end());
-            }
-            else
-            {
-                variants.push_back(removeNullableOrLowCardinalityNullable(type));
-            }
-        }
-
-        return std::make_shared<DataTypeVariant>(variants);
-    }
-
     if constexpr (on_error == LeastSupertypeOnError::Null)
         return nullptr;
 
@@ -402,17 +383,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             if (!all_maps)
                 return throwOrReturn<on_error>(types, "because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-            DataTypePtr keys_common_type;
-            if constexpr (on_error == LeastSupertypeOnError::Variant)
-            {
-                keys_common_type = getLeastSupertype<LeastSupertypeOnError::Null>(key_types);
-                if (!keys_common_type)
-                    return throwOrReturn<on_error>(types, "", ErrorCodes::NO_COMMON_TYPE);
-            }
-            else
-            {
-                keys_common_type = getLeastSupertype<on_error>(key_types);
-            }
+            DataTypePtr keys_common_type = getLeastSupertype<on_error>(key_types);
 
             auto values_common_type = getLeastSupertype<on_error>(value_types);
             /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype for keys or values,
@@ -454,17 +425,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 return getLeastSupertype<on_error>(nested_types);
             else
             {
-                DataTypePtr nested_type;
-                if constexpr (on_error == LeastSupertypeOnError::Variant)
-                {
-                    nested_type = getLeastSupertype<LeastSupertypeOnError::Null>(nested_types);
-                    if (!nested_type)
-                        return throwOrReturn<on_error>(types, "", ErrorCodes::NO_COMMON_TYPE);
-                }
-                else
-                {
-                    nested_type = getLeastSupertype<on_error>(nested_types);
-                }
+                DataTypePtr nested_type = getLeastSupertype<on_error>(nested_types);
 
                 /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
                 /// nested_type will be nullptr, we should return nullptr in this case.
@@ -684,7 +645,28 @@ DataTypePtr getLeastSupertypeOrString(const DataTypes & types)
 
 DataTypePtr getLeastSupertypeOrVariant(const DataTypes & types)
 {
-    return getLeastSupertype<LeastSupertypeOnError::Variant>(types);
+    auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types);
+    if (common_type)
+        return common_type;
+
+    /// Create Variant with provided arguments as variants.
+    DataTypes variants;
+    for (const auto & type : types)
+    {
+        /// Nested Variant types are not supported. If we have Variant type
+        /// we use all its variants in the result Variant.
+        if (isVariant(type))
+        {
+            const DataTypes & nested_variants = assert_cast<const DataTypeVariant &>(*type).getVariants();
+            variants.insert(variants.end(), nested_variants.begin(), nested_variants.end());
+        }
+        else
+        {
+            variants.push_back(removeNullableOrLowCardinalityNullable(type));
+        }
+    }
+
+    return std::make_shared<DataTypeVariant>(variants);
 }
 
 DataTypePtr tryGetLeastSupertype(const DataTypes & types)
