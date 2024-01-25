@@ -379,27 +379,28 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
+            const auto user_id = FileCache::getCommonUser().user_id;
 
             if (query.filesystem_cache_name.empty())
             {
                 auto caches = FileCacheFactory::instance().getAll();
                 for (const auto & [_, cache_data] : caches)
-                    cache_data->cache->removeAllReleasable(FileCache::getCommonUser().user_id);
+                    cache_data->cache->removeAllReleasable(user_id);
             }
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
                 if (query.key_to_drop.empty())
                 {
-                    cache->removeAllReleasable(FileCache::getCommonUser().user_id);
+                    cache->removeAllReleasable(user_id);
                 }
                 else
                 {
                     auto key = FileCacheKey::fromKeyString(query.key_to_drop);
                     if (query.offset_to_drop.has_value())
-                        cache->removeFileSegment(key, query.offset_to_drop.value(), FileCache::getCommonUser().user_id);
+                        cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
                     else
-                        cache->removeKey(key, FileCache::getCommonUser().user_id);
+                        cache->removeKey(key, user_id);
                 }
             }
             break;

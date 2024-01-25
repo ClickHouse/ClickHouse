@@ -7,7 +7,6 @@
 #include <Disks/IVolume.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/FileCache.h>
 
 
 namespace CurrentMetrics
@@ -26,6 +25,8 @@ using TemporaryDataOnDiskPtr = std::unique_ptr<TemporaryDataOnDisk>;
 
 class TemporaryFileStream;
 using TemporaryFileStreamPtr = std::unique_ptr<TemporaryFileStream>;
+
+class FileCache;
 
 /*
  * Used to account amount of temporary data written to disk.
