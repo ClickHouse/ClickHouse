@@ -17,6 +17,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(primary_key_name)
+[ SETTINGS optimize_for_bulk_insert = (0|1)]
 ```
 
 Engine parameters:
@@ -28,6 +29,10 @@ Engine parameters:
 - `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `rocksdb key`.
 - columns other than the primary key will be serialized in binary as `rocksdb` value in corresponding order.
 - queries with key `equals` or `in` filtering will be optimized to multi keys lookup from `rocksdb`.
+
+Engine settings:
+
+- `optimize_for_bulk_insert` – Table is optimized for bulk insertions (insert pipeline will create SST files and import to rocksdb database instead of writing to memtables).
 
 Example:
 
