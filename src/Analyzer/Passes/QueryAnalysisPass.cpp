@@ -1396,7 +1396,7 @@ private:
     /// Lambdas that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> lambdas_in_resolve_process;
 
-    std::unordered_set<String> cte_in_resolve_process;
+    std::unordered_set<std::string_view> cte_in_resolve_process;
 
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;
@@ -3778,6 +3778,19 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     {
         auto full_name = identifier_lookup.identifier.getFullName();
         auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
+
+        /// CTE may reference table expressions with the same name, e.g.:
+        ///
+        /// WITH test1 AS (SELECT * FROM test1) SELECT * FROM test1;
+        ///
+        /// Since we don't support recursive CTEs, `test1` identifier inside of CTE
+        /// references to table <default database name>.test1.
+        /// This means that the example above is equivalent to the following query:
+        ///
+        /// SELECT * FROM test1;
+        ///
+        /// To accomplish this behaviour it's not allowed to resolve identifiers to
+        /// CTE that is being resolved.
         if (cte_query_node_it != scope.cte_name_to_query_node.end()
             && !cte_in_resolve_process.contains(full_name))
         {
@@ -5713,7 +5726,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
 
                     if (resolved_as_cte)
                     {
-                        auto cte_node = resolved_identifier_node;
                         resolved_identifier_node = resolved_identifier_node->clone();
                         subquery_node = resolved_identifier_node->as<QueryNode>();
                         union_node = resolved_identifier_node->as<UnionNode>();
@@ -7474,6 +7486,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope)
 {
     auto & union_node_typed = union_node->as<UnionNode &>();
+
+    if(union_node_typed.isCTE())
+        cte_in_resolve_process.insert(union_node_typed.getCTEName());
+
     auto & queries_nodes = union_node_typed.getQueries().getNodes();
 
     for (auto & query_node : queries_nodes)
@@ -7497,6 +7513,9 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                 scope.scope_node->formatASTForErrorMessage());
         }
     }
+
+    if(union_node_typed.isCTE())
+        cte_in_resolve_process.erase(union_node_typed.getCTEName());
 }
 
 }
