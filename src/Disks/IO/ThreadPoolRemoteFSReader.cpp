@@ -26,7 +26,6 @@ namespace ProfileEvents
     extern const Event ThreadpoolReaderSubmitReadSynchronously;
     extern const Event ThreadpoolReaderSubmitReadSynchronouslyBytes;
     extern const Event ThreadpoolReaderSubmitReadSynchronouslyMicroseconds;
-    extern const Event ThreadpoolReaderSubmitLookupInCacheMicroseconds;
     extern const Event AsynchronousReaderIgnoredBytes;
 }
 
@@ -84,13 +83,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         reader.seek(request.offset, SEEK_SET);
     }
 
-    bool is_content_cached = false;
-    {
-        ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderSubmitLookupInCacheMicroseconds);
-        is_content_cached = reader.isContentCached(request.offset, request.size);
-    }
-
-    if (is_content_cached)
+    if (reader.isContentCached(request.offset, request.size))
     {
         std::promise<Result> promise;
         std::future<Result> future = promise.get_future();

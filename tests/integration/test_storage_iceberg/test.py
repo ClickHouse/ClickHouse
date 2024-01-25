@@ -470,9 +470,7 @@ def test_schema_inference(started_cluster, format_version):
 
         create_iceberg_table(instance, TABLE_NAME, format)
 
-        res = instance.query(
-            f"DESC {TABLE_NAME} FORMAT TSVRaw", settings={"print_pretty_type_names": 0}
-        )
+        res = instance.query(f"DESC {TABLE_NAME} FORMAT TSVRaw")
         expected = TSV(
             [
                 ["intC", "Nullable(Int32)"],

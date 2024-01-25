@@ -120,6 +120,7 @@ int64_t deserializeStorageData(KeeperStorage & storage, ReadBuffer & in, Poco::L
         Coordination::read(node.stat.pzxid, in);
         if (!path.empty())
         {
+            node.stat.dataLength = static_cast<Int32>(node.getData().length());
             node.seq_num = node.stat.cversion;
             storage.container.insertOrReplace(path, node);
 

@@ -12,7 +12,6 @@
 #include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Disks/IDiskTransaction.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 
 namespace DB
 {
@@ -305,7 +304,6 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard() const { return nullptr; }
 
     virtual void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
-    virtual void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
 
     /// Rename part.
     /// Ideally, new_root_path should be the same as current root (but it is not true).

@@ -5,15 +5,33 @@ import logging
 import os
 import sys
 import subprocess
+import atexit
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
+
+from github import Github
 
 from build_download_helper import download_unit_tests
-from docker_images_helper import pull_image, get_docker_image
-from env_helper import REPORT_PATH, TEMP_PATH
-from report import ERROR, FAILURE, FAIL, OK, SUCCESS, JobReport, TestResults, TestResult
+from clickhouse_helper import (
+    ClickHouseHelper,
+    prepare_tests_results_for_clickhouse,
+)
+from commit_status_helper import (
+    RerunHelper,
+    get_commit,
+    post_commit_status,
+    update_mergeable_check,
+)
+from docker_pull_helper import get_image_with_version
+from env_helper import TEMP_PATH, REPORTS_PATH
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
+from report import ERROR, FAILURE, FAIL, OK, SUCCESS, TestResults, TestResult
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from upload_result_helper import upload_results
+
 
 IMAGE_NAME = "clickhouse/unit-test"
 
@@ -156,17 +174,26 @@ def main():
 
     stopwatch = Stopwatch()
 
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    check_name = sys.argv[1]
 
     temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
 
-    docker_image = pull_image(get_docker_image(IMAGE_NAME))
+    pr_info = PRInfo()
 
-    download_unit_tests(check_name, REPORT_PATH, TEMP_PATH)
+    gh = Github(get_best_robot_token(), per_page=100)
+    commit = get_commit(gh, pr_info.sha)
+
+    atexit.register(update_mergeable_check, gh, pr_info, check_name)
+
+    rerun_helper = RerunHelper(commit, check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
+    docker_image = get_image_with_version(REPORTS_PATH, IMAGE_NAME)
+
+    download_unit_tests(check_name, REPORTS_PATH, TEMP_PATH)
 
     tests_binary = temp_path / "unit_tests_dbms"
     os.chmod(tests_binary, 0o777)
@@ -192,18 +219,33 @@ def main():
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {TEMP_PATH}", shell=True)
 
+    s3_helper = S3Helper()
     state, description, test_results = process_results(test_output)
-    additional_files = [run_log_path] + [
-        p for p in test_output.iterdir() if not p.is_dir()
-    ]
-    JobReport(
-        description=description,
-        test_results=test_results,
-        status=state,
-        start_time=stopwatch.start_time_str,
-        duration=stopwatch.duration_seconds,
-        additional_files=additional_files,
-    ).dump()
+
+    ch_helper = ClickHouseHelper()
+
+    report_url = upload_results(
+        s3_helper,
+        pr_info.number,
+        pr_info.sha,
+        test_results,
+        [run_log_path] + [p for p in test_output.iterdir() if not p.is_dir()],
+        check_name,
+    )
+    print(f"::notice ::Report url: {report_url}")
+    post_commit_status(commit, state, report_url, description, check_name, pr_info)
+
+    prepared_events = prepare_tests_results_for_clickhouse(
+        pr_info,
+        test_results,
+        state,
+        stopwatch.duration_seconds,
+        stopwatch.start_time_str,
+        report_url,
+        check_name,
+    )
+
+    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     if state == "failure":
         sys.exit(1)

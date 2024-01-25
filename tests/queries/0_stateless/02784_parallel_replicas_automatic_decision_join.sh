@@ -64,11 +64,12 @@ function run_query_with_pure_parallel_replicas () {
         --query_id "${1}_pure" \
         --max_parallel_replicas 3 \
         --prefer_localhost_replica 1 \
+        --use_hedged_requests 0 \
         --cluster_for_parallel_replicas "parallel_replicas" \
         --allow_experimental_parallel_reading_from_replicas 1 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
         --parallel_replicas_min_number_of_rows_per_replica "$2" \
-    |& grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }' | sort -n -k2 -b | grep -Pv "\t0 estimated parallel replicas"
+    |& grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }'
 }
 
 query_id_base="02784_automatic_parallel_replicas_join-$CLICKHOUSE_DATABASE"

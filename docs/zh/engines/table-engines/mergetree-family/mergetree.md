@@ -364,9 +364,6 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 | [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [empty](../../../sql-reference/functions/array-functions.md#function-empty) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [has](../../../sql-reference/functions/array-functions.md#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            | ✔        |
-| [hasAny](../../../sql-reference/functions/array-functions.md#function-hasAny)                                 | ✗           | ✗      | ✔          | ✔          | ✔            | ✗        |
-| [hasAll](../../../sql-reference/functions/array-functions.md#function-hasAll)                                 | ✗           | ✗      | ✗          | ✗          | ✔            | ✗        |
 | hasToken                                                     | ✗           | ✗      | ✗          | ✔          | ✗            |
 
 常量参数小于 ngram 大小的函数不能使用 `ngrambf_v1` 进行查询优化。

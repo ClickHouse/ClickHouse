@@ -45,7 +45,7 @@ $ cat /var/lib/clickhouse/user_files/test1.csv
     1,"file1"
     11,"file11"
 
-$ cat /var/lib/clickhouse/user_files/test2.csv
+$ cat /var/lib/clickhouse/user_files/test1.csv
     2,"file2"
     22,"file22"
 ```

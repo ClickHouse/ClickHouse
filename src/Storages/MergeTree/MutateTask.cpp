@@ -51,6 +51,7 @@ static bool checkOperationIsNotCanceled(ActionBlocker & merges_blocker, MergeLis
     return true;
 }
 
+
 /** Split mutation commands into two parts:
 *   First part should be executed by mutations interpreter.
 *   Other is just simple drop/renames, so they can be executed without interpreter.
@@ -78,8 +79,7 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
-                || command.type == MutationCommand::Type::UPDATE
-                || command.type == MutationCommand::Type::APPLY_DELETED_MASK)
+                || command.type == MutationCommand::Type::UPDATE)
             {
                 for_interpreter.push_back(command);
                 for (const auto & [column_name, expr] : command.column_to_update_expression)
@@ -202,8 +202,7 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::MATERIALIZE_PROJECTION
                 || command.type == MutationCommand::Type::MATERIALIZE_TTL
                 || command.type == MutationCommand::Type::DELETE
-                || command.type == MutationCommand::Type::UPDATE
-                || command.type == MutationCommand::Type::APPLY_DELETED_MASK)
+                || command.type == MutationCommand::Type::UPDATE)
             {
                 for_interpreter.push_back(command);
             }
@@ -258,12 +257,15 @@ getColumnsForNewDataPart(
     NameToNameMap renamed_columns_from_to;
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
+    if (source_part->supportLightweightDeleteMutate())
+        system_columns.push_back(LightweightDeleteDescription::FILTER_COLUMN);
 
-    const auto & deleted_mask_column = LightweightDeleteDescription::FILTER_COLUMN;
-    bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
-
-    bool deleted_mask_updated = false;
-    bool has_delete_command = false;
+    /// Preserve system columns that have persisted values in the source_part
+    for (const auto & column : system_columns)
+    {
+        if (part_columns.has(column.name) && !storage_columns.contains(column.name))
+            storage_columns.emplace_back(column);
+    }
 
     NameSet storage_columns_set;
     for (const auto & [name, _] : storage_columns)
@@ -275,36 +277,28 @@ getColumnsForNewDataPart(
         {
             for (const auto & [column_name, _] : command.column_to_update_expression)
             {
-                if (column_name == deleted_mask_column.name
-                    && supports_lightweight_deletes
-                    && !storage_columns_set.contains(deleted_mask_column.name))
-                    deleted_mask_updated = true;
+                /// Allow to update and persist values of system column
+                auto column = system_columns.tryGetByName(column_name);
+                if (column && !storage_columns.contains(column_name))
+                    storage_columns.emplace_back(column_name, column->type);
             }
         }
 
-        if (command.type == MutationCommand::DELETE || command.type == MutationCommand::APPLY_DELETED_MASK)
-            has_delete_command = true;
-
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
+        {
             continue;
+        }
 
         if (command.type == MutationCommand::DROP_COLUMN)
+        {
             removed_columns.insert(command.column_name);
+        }
 
         if (command.type == MutationCommand::RENAME_COLUMN)
         {
             renamed_columns_to_from.emplace(command.rename_to, command.column_name);
             renamed_columns_from_to.emplace(command.column_name, command.rename_to);
-        }
-    }
-
-    if (!storage_columns_set.contains(deleted_mask_column.name))
-    {
-        if (deleted_mask_updated || (part_columns.has(deleted_mask_column.name) && !has_delete_command))
-        {
-            storage_columns.push_back(deleted_mask_column);
-            storage_columns_set.insert(deleted_mask_column.name);
         }
     }
 
@@ -879,7 +873,6 @@ void finalizeMutatedPart(
     /// All information about sizes is stored in checksums.
     /// It doesn't make sense to touch filesystem for sizes.
     new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
-    new_data_part->setBytesUncompressedOnDisk(new_data_part->checksums.getTotalSizeUncompressedOnDisk());
     /// Also use information from checksums
     new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
@@ -1364,7 +1357,6 @@ private:
         NameSet removed_stats;
         /// A stat file need to be renamed iff the column is renamed.
         NameToNameMap renamed_stats;
-
         for (const auto & command : ctx->for_file_renames)
         {
             if (command.type == MutationCommand::DROP_INDEX)
@@ -1538,8 +1530,7 @@ private:
 
         for (auto & command_for_interpreter : ctx->for_interpreter)
         {
-            if (command_for_interpreter.type == MutationCommand::DELETE
-                || command_for_interpreter.type == MutationCommand::APPLY_DELETED_MASK)
+            if (command_for_interpreter.type == MutationCommand::DELETE)
             {
                 has_delete = true;
                 break;
@@ -1661,8 +1652,6 @@ private:
         ctx->new_data_part->version.setCreationTID(tid, nullptr);
         ctx->new_data_part->storeVersionMetadata();
 
-        auto settings = ctx->source_part->storage.getSettings();
-
         NameSet hardlinked_files;
 
         /// NOTE: Renames must be done in order
@@ -1702,18 +1691,9 @@ private:
 
             if (it->isFile())
             {
-                if (settings->always_use_copy_instead_of_hardlinks)
-                {
-                    ctx->new_data_part->getDataPartStorage().copyFileFrom(
-                        ctx->source_part->getDataPartStorage(), it->name(), destination);
-                }
-                else
-                {
-                    ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
-                        ctx->source_part->getDataPartStorage(), it->name(), destination);
-
-                    hardlinked_files.insert(it->name());
-                }
+                ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
+                    ctx->source_part->getDataPartStorage(), file_name, destination);
+                hardlinked_files.insert(file_name);
             }
             else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
             {
@@ -1725,20 +1705,11 @@ private:
 
                 for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
                 {
-                    if (settings->always_use_copy_instead_of_hardlinks)
-                    {
-                        projection_data_part_storage_dst->copyFileFrom(
-                            *projection_data_part_storage_src, p_it->name(), p_it->name());
-                    }
-                    else
-                    {
-                        auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
+                    auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
+                    projection_data_part_storage_dst->createHardLinkFrom(
+                        *projection_data_part_storage_src, p_it->name(), p_it->name());
 
-                        projection_data_part_storage_dst->createHardLinkFrom(
-                            *projection_data_part_storage_src, p_it->name(), p_it->name());
-
-                        hardlinked_files.insert(file_name_with_projection_prefix);
-                    }
+                    hardlinked_files.insert(file_name_with_projection_prefix);
                 }
             }
         }
@@ -1946,9 +1917,6 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
             return true;
     }
 
-    if (command.type == MutationCommand::APPLY_DELETED_MASK && !part->hasLightweightDelete())
-        return true;
-
     if (canSkipConversionToNullable(part, command))
         return true;
 
@@ -2005,20 +1973,19 @@ bool MutateTask::prepare()
         IDataPartStorage::ClonePartParams clone_params
         {
             .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
-            .copy_instead_of_hardlink = settings_ptr->always_use_copy_instead_of_hardlinks,
-            .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
-            .keep_metadata_version = true,
+            .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks), .keep_metadata_version = true
         };
-        MergeTreeData::MutableDataPartPtr part;
-        scope_guard lock;
+        auto [part, lock] = ctx->data->cloneAndLoadDataPartOnSameDisk(
+            ctx->source_part,
+            prefix,
+            ctx->future_part->part_info,
+            ctx->metadata_snapshot,
+            clone_params,
+            ctx->context->getReadSettings(),
+            ctx->context->getWriteSettings());
+        part->getDataPartStorage().beginTransaction();
 
-        {
-            std::tie(part, lock) = ctx->data->cloneAndLoadDataPartOnSameDisk(
-                ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings());
-            part->getDataPartStorage().beginTransaction();
-            ctx->temporary_directory_lock = std::move(lock);
-        }
-
+        ctx->temporary_directory_lock = std::move(lock);
         promise.set_value(std::move(part));
         return false;
     }

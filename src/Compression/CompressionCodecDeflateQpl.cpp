@@ -11,7 +11,6 @@
 #include "libaccel_config.h"
 #include <Common/MemorySanitizer.h>
 #include <base/scope_guard.h>
-#include <base/getPageSize.h>
 #include <immintrin.h>
 
 

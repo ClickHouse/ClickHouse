@@ -47,6 +47,7 @@
 #include <Common/Exception.h>
 #include <Core/AccurateComparison.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/toFixedString.h>
@@ -59,6 +60,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Common/IPv6ToBinary.h>
+#include "DataTypes/IDataType.h"
 #include <Core/Types.h>
 
 
@@ -215,18 +217,6 @@ struct ConvertImpl
 
                     vec_to[i].items[1] = vec_from[i].toUnderType().items[0];
                     vec_to[i].items[0] = vec_from[i].toUnderType().items[1];
-
-                    continue;
-                }
-
-                if constexpr (std::is_same_v<FromDataType, DataTypeIPv6> && std::is_same_v<ToDataType, DataTypeUInt128>)
-                {
-                    static_assert(
-                        std::is_same_v<DataTypeUInt128::FieldType, DataTypeUUID::FieldType::UnderlyingType>,
-                        "UInt128 and IPv6 types must be same");
-
-                    vec_to[i].items[1] = std::byteswap(vec_from[i].toUnderType().items[0]);
-                    vec_to[i].items[0] = std::byteswap(vec_from[i].toUnderType().items[1]);
 
                     continue;
                 }
@@ -1411,10 +1401,10 @@ inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuff
 template <>
 inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
 {
-    time_t time = 0;
-    if (!tryReadDateTimeText(time, rb, *time_zone))
+    time_t tmp = 0;
+    if (!tryReadDateTimeText(tmp, rb, *time_zone))
         return false;
-    convertFromTime<DataTypeDateTime>(x, time);
+    x = static_cast<UInt32>(tmp);
     return true;
 }
 
@@ -1695,6 +1685,7 @@ struct ConvertThroughParsing
                                     break;
                                 }
                             }
+
                             parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
                         } while (false);
                     }
@@ -3288,6 +3279,7 @@ private:
         {
             /// In case when converting to Nullable type, we apply different parsing rule,
             /// that will not throw an exception but return NULL in case of malformed input.
+
             FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionName, ConvertFromStringExceptionMode::Null>::create();
             return createFunctionAdaptor(function, from_type);
         }

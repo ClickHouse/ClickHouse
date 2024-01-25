@@ -8,12 +8,14 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Utils.h>
-#include <Analyzer/HashUtils.h>
 
 #include <Storages/IStorage.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/ComparisonGraph.h>
+#include "Analyzer/HashUtils.h"
+#include "Analyzer/IQueryTreeNode.h"
+#include "Interpreters/ComparisonGraph.h"
+#include "base/types.h"
 
 namespace DB
 {

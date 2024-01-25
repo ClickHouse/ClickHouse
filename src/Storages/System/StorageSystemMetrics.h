@@ -16,7 +16,9 @@ class StorageSystemMetrics final : public IStorageSystemOneBlock<StorageSystemMe
 public:
     std::string getName() const override { return "SystemMetrics"; }
 
-    static ColumnsDescription getColumnsDescription();
+    static NamesAndTypesList getNamesAndTypes();
+
+    static NamesAndAliases getNamesAndAliases();
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

@@ -65,14 +65,14 @@ public:
 protected:
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;
+
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
     /// Returns actual serialization in part, which can differ from table metadata.
     SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
-    /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
-    bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
+
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
@@ -86,13 +86,13 @@ protected:
     /// Actual serialization of columns in part.
     Serializations serializations;
 
-    UncompressedCache * const uncompressed_cache;
-    MarkCache * const mark_cache;
+    UncompressedCache * uncompressed_cache;
+    MarkCache * mark_cache;
 
     MergeTreeReaderSettings settings;
 
-    const StorageSnapshotPtr storage_snapshot;
-    const MarkRanges all_mark_ranges;
+    StorageSnapshotPtr storage_snapshot;
+    MarkRanges all_mark_ranges;
 
     /// Position and level (of nesting).
     using ColumnNameLevel = std::optional<std::pair<String, size_t>>;

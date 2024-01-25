@@ -10,14 +10,12 @@
 #include <base/sleep.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 
 
 namespace ProfileEvents
 {
 extern const Event SleepFunctionCalls;
 extern const Event SleepFunctionMicroseconds;
-extern const Event SleepFunctionElapsedMicroseconds;
 }
 
 namespace DB
@@ -45,20 +43,15 @@ class FunctionSleep : public IFunction
 {
 private:
     UInt64 max_microseconds;
-    QueryStatusPtr query_status;
-
 public:
     static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionSleep<variant>>(
-            context->getSettingsRef().function_sleep_max_microseconds_per_block,
-            context->getProcessListElementSafe());
+        return std::make_shared<FunctionSleep<variant>>(context->getSettingsRef().function_sleep_max_microseconds_per_block);
     }
 
-    FunctionSleep(UInt64 max_microseconds_, QueryStatusPtr query_status_)
+    FunctionSleep(UInt64 max_microseconds_)
         : max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
-        , query_status(query_status_)
     {
     }
 
@@ -135,23 +128,9 @@ public:
                         "The maximum sleep time is {} microseconds. Requested: {} microseconds per block (of size {})",
                         max_microseconds, microseconds, size);
 
-                UInt64 elapsed = 0;
-                while (elapsed < microseconds)
-                {
-                    UInt64 sleep_time = microseconds - elapsed;
-                    if (query_status)
-                        sleep_time = std::min(sleep_time, /* 1 second */ static_cast<UInt64>(1000000));
-
-                    sleepForMicroseconds(sleep_time);
-                    elapsed += sleep_time;
-
-                    if (query_status && !query_status->checkTimeLimit())
-                        break;
-                }
-
+                sleepForMicroseconds(microseconds);
                 ProfileEvents::increment(ProfileEvents::SleepFunctionCalls, count);
                 ProfileEvents::increment(ProfileEvents::SleepFunctionMicroseconds, microseconds);
-                ProfileEvents::increment(ProfileEvents::SleepFunctionElapsedMicroseconds, elapsed);
             }
         }
 

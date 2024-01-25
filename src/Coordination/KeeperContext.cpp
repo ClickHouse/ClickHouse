@@ -59,8 +59,6 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
         }
     }
 
-    updateKeeperMemorySoftLimit(config);
-
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
@@ -375,45 +373,6 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
     }
 
     feature_flags.logFlags(&Poco::Logger::get("KeeperContext"));
-}
-
-void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
-{
-    if (config.hasProperty("keeper_server.max_memory_usage_soft_limit"))
-        memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
-}
-
-bool KeeperContext::setShutdownCalled()
-{
-    std::unique_lock lock(local_logs_preprocessed_cv_mutex);
-    if (!shutdown_called.exchange(true))
-    {
-        lock.unlock();
-        local_logs_preprocessed_cv.notify_all();
-        return true;
-    }
-
-    return false;
-}
-
-void KeeperContext::setLocalLogsPreprocessed()
-{
-    {
-        std::lock_guard lock(local_logs_preprocessed_cv_mutex);
-        local_logs_preprocessed = true;
-    }
-    local_logs_preprocessed_cv.notify_all();
-}
-
-bool KeeperContext::localLogsPreprocessed() const
-{
-    return local_logs_preprocessed;
-}
-
-void KeeperContext::waitLocalLogsPreprocessedOrShutdown()
-{
-    std::unique_lock lock(local_logs_preprocessed_cv_mutex);
-    local_logs_preprocessed_cv.wait(lock, [this]{ return shutdown_called || local_logs_preprocessed; });
 }
 
 }

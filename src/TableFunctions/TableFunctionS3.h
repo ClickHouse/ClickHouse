@@ -22,15 +22,11 @@ public:
     static constexpr auto signature = " - url\n"
                                       " - url, format\n"
                                       " - url, format, structure\n"
-                                      " - url, format, structure, compression_method\n"
                                       " - url, access_key_id, secret_access_key\n"
-                                      " - url, access_key_id, secret_access_key, session_token\n"
+                                      " - url, format, structure, compression_method\n"
                                       " - url, access_key_id, secret_access_key, format\n"
-                                      " - url, access_key_id, secret_access_key, session_token, format\n"
                                       " - url, access_key_id, secret_access_key, format, structure\n"
-                                      " - url, access_key_id, secret_access_key, session_token, format, structure\n"
                                       " - url, access_key_id, secret_access_key, format, structure, compression_method\n"
-                                      " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method\n"
                                       "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
     static size_t getMaxNumberOfArguments() { return 6; }

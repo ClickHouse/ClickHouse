@@ -24,7 +24,7 @@ TimerDescriptor::TimerDescriptor(int clockid, int flags)
         throw Exception(ErrorCodes::CANNOT_CREATE_TIMER, "Cannot create timer_fd descriptor");
 
     if (-1 == fcntl(timer_fd, F_SETFL, O_NONBLOCK))
-        throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot set O_NONBLOCK for timer_fd");
+        throwFromErrno("Cannot set O_NONBLOCK for timer_fd", ErrorCodes::CANNOT_FCNTL);
 }
 
 TimerDescriptor::TimerDescriptor(TimerDescriptor && other) noexcept : timer_fd(other.timer_fd)
@@ -57,7 +57,7 @@ void TimerDescriptor::reset() const
     spec.it_value.tv_nsec = 0;
 
     if (-1 == timerfd_settime(timer_fd, 0 /*relative timer */, &spec, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_TIMER_PERIOD, "Cannot reset timer_fd");
+        throwFromErrno("Cannot reset timer_fd", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
 
     /// Drain socket.
     /// It may be possible that alarm happened and socket is readable.
@@ -78,7 +78,7 @@ void TimerDescriptor::drain() const
                 break;
 
             if (errno != EINTR)
-                throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot drain timer_fd");
+                throwFromErrno("Cannot drain timer_fd", ErrorCodes::CANNOT_READ_FROM_SOCKET);
         }
     }
 }
@@ -94,7 +94,7 @@ void TimerDescriptor::setRelative(uint64_t usec) const
     spec.it_value.tv_nsec = (usec % TIMER_PRECISION) * 1'000;
 
     if (-1 == timerfd_settime(timer_fd, 0 /*relative timer */, &spec, nullptr))
-        throw ErrnoException(ErrorCodes::CANNOT_SET_TIMER_PERIOD, "Cannot set time for timer_fd");
+        throwFromErrno("Cannot set time for timer_fd", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
 }
 
 void TimerDescriptor::setRelative(Poco::Timespan timespan) const

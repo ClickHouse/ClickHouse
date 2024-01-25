@@ -153,8 +153,6 @@ protected:
     ContextMutablePtr context;
     Poco::Logger * log;
 
-    std::optional<std::string> config_host_name; /// host_name from config
-
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
     std::string queue_dir;      /// dir with queue of queries
