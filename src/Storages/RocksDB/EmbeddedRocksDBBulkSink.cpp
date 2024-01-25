@@ -42,6 +42,7 @@ static const IColumn::Permutation & getAscendingPermutation(const IColumn & colu
 
 static rocksdb::Status buildSSTFile(const String & path, const ColumnString & keys, const ColumnString & values, const std::optional<IColumn::Permutation> & perm_ = {})
 {
+    /// rocksdb::SstFileWriter requires keys to be sorted in ascending order
     IColumn::Permutation calculated_perm;
     const IColumn::Permutation & perm = perm_ ? *perm_ : getAscendingPermutation(keys, calculated_perm);
 
@@ -63,6 +64,7 @@ static rocksdb::Status buildSSTFile(const String & path, const ColumnString & ke
         if (!status.ok() && !status.IsInvalidArgument())
             return status;
     }
+
     sst_file_writer.Finish();
     return rocksdb::Status::OK();
 }
@@ -80,13 +82,8 @@ EmbeddedRocksDBBulkSink::EmbeddedRocksDBBulkSink(
     serializations = getHeader().getSerializations();
     /// If max_insert_threads > 1 we may have multiple EmbeddedRocksDBBulkSink and getContext()->getCurrentQueryId() is not guarantee to
     /// to have a distinct path
-    insert_directory_queue = fs::path(storage.getDataPaths()[0]) / (getContext()->getCurrentQueryId() + "_" + getRandomASCIIString(8));
+    insert_directory_queue = fs::path(storage.getDataPaths()[0]) / (getContext()->getCurrentQueryId() + "-" + getRandomASCIIString(8));
     fs::create_directory(insert_directory_queue);
-
-    // serialized_key_column = ColumnString::create();
-    // serialized_value_column = ColumnString::create();
-    // writer_key = std::make_unique<WriteBufferFromVector<ColumnString::Chars>>(serialized_key_column->getChars());
-    // writer_value = std::make_unique<WriteBufferFromVector<ColumnString::Chars>>(serialized_value_column->getChars());
 }
 
 EmbeddedRocksDBBulkSink::~EmbeddedRocksDBBulkSink()
@@ -100,21 +97,21 @@ void EmbeddedRocksDBBulkSink::consume(Chunk chunk)
     auto rows = chunk.getNumRows();
     const auto columns = chunk.detachColumns();
 
+    /// Convert chunk to rocksdb key-value pairs
     auto serialized_key_column = ColumnString::create();
     auto serialized_value_column = ColumnString::create();
+
     {
         auto & serialized_key_data = serialized_key_column->getChars();
         auto & serialized_key_offsets = serialized_key_column->getOffsets();
         auto & serialized_value_data = serialized_value_column->getChars();
         auto & serialized_value_offsets = serialized_value_column->getOffsets();
+
         serialized_key_offsets.reserve(rows);
         serialized_value_offsets.reserve(rows);
-        // serialized_key_offsets.clear();
-        // serialized_value_offsets.clear();
-        // serialized_key_data.clear();
-        // serialized_value_data.clear();
         WriteBufferFromVector<ColumnString::Chars> writer_key(serialized_key_data);
         WriteBufferFromVector<ColumnString::Chars> writer_value(serialized_value_data);
+
         for (size_t i = 0; i < rows; ++i)
         {
             for (size_t idx = 0; idx < columns.size(); ++idx)
@@ -124,14 +121,17 @@ void EmbeddedRocksDBBulkSink::consume(Chunk chunk)
             serialized_key_offsets.emplace_back(writer_key.count());
             serialized_value_offsets.emplace_back(writer_value.count());
         }
+
         writer_key.finalize();
         writer_value.finalize();
     }
 
+    /// Build SST file from key-value pairs
     auto path = getTemporarySSTFilePath();
     if (auto status = buildSSTFile(path, *serialized_key_column, *serialized_value_column); !status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 
+    /// Ingest the SST file
     rocksdb::IngestExternalFileOptions ingest_options;
     ingest_options.move_files = true; /// The temporary file is on the same disk, so move (or hardlink) file will be faster than copy
     if (auto status = storage.rocksdb_ptr->IngestExternalFile({path}, rocksdb::IngestExternalFileOptions()); !status.ok())

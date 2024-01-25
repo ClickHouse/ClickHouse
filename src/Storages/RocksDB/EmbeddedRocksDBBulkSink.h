@@ -34,10 +34,11 @@ public:
     ~EmbeddedRocksDBBulkSink() override;
 
     void consume(Chunk chunk) override;
+
     String getName() const override { return "EmbeddedRocksDBBulkSink"; }
 
 private:
-
+    /// Get a unique path to write temporary SST file
     String getTemporarySSTFilePath();
 
     std::atomic_size_t file_counter = 0;
@@ -46,11 +47,6 @@ private:
     size_t primary_key_pos = 0;
     Serializations serializations;
     String insert_directory_queue;
-
-    // /// Columns to hold key-value pairs, reused for all `consume` calls
-    // /// to reduce memory re-allocations
-    // ColumnString::MutablePtr serialized_key_column;
-    // ColumnString::MutablePtr serialized_value_column;
 };
 
 }
