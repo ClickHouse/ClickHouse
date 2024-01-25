@@ -841,8 +841,8 @@ class ExpressionLayer : public Layer
 {
 public:
 
-    explicit ExpressionLayer(bool is_table_function_, bool allow_trailing_commas_ = false)
-        : Layer(false, false)
+    explicit ExpressionLayer(bool allow_alias_, bool is_table_function_, bool allow_trailing_commas_ = false)
+            : Layer(allow_alias_, /* allow_alias_without_as_keyword */ false)
     {
         is_table_function = is_table_function_;
         allow_trailing_commas = allow_trailing_commas_;
@@ -2341,13 +2341,13 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
+    auto start = std::make_unique<ExpressionLayer>(/* allow_alias */ true, /* is_table_function */ false, allow_trailing_commas);
     return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 
 bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto start = std::make_unique<ExpressionLayer>(true);
+    auto start = std::make_unique<ExpressionLayer>(/* allow_alias */ false, /* is_table_function */ true);
     return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
 

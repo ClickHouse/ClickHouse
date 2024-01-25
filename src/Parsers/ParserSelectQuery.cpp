@@ -67,10 +67,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_next("NEXT");
     ParserKeyword s_interpolate("INTERPOLATE");
 
-    ParserNotEmptyExpressionList exp_list(false);
+    ParserNotEmptyExpressionList exp_list(/*allow_alias_without_as_keyword*/ false, /*allow_trailing_commas*/ true);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(/*allow_alias_without_as_keyword*/ true, /*allow_trailing_commas*/ true);
-    ParserExpressionWithOptionalAlias exp_elem(false);
+    ParserExpressionWithOptionalAlias exp_elem(/* allow_alias_without_as_keyword_ */ false, /* is_table_function */ false, /* allow_trailing_commas */ true);
     ParserOrderByExpressionList order_list;
     ParserGroupingSetsExpressionList grouping_sets_list;
     ParserInterpolateExpressionList interpolate_list;
