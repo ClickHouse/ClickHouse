@@ -64,8 +64,7 @@ def test_attach_part(table_name, backup_name, storage_policy, min_bytes_for_wide
 
     node.query(
         f"""
-    -- NOTE: DROP DATABASE cannot be done w/o this due to metadata leftovers
-    set force_remove_data_recursively_on_drop=1;
+    detach table ordinary_db.{table_name};
     drop database ordinary_db sync;
     """
     )

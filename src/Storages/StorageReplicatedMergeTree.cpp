@@ -1085,6 +1085,10 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperIfTableShutDown() c
 
 void StorageReplicatedMergeTree::drop()
 {
+    /// In case there is read-only/write-once disk we do not allow DROP, use DETACH instead.
+    if (isStaticStorage())
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
+
     /// There is also the case when user has configured ClickHouse to wrong ZooKeeper cluster
     /// or metadata of staled replica were removed manually,
     /// in this case, has_metadata_in_zookeeper = false, and we also permit to drop the table.
