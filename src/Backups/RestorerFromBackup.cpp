@@ -89,7 +89,7 @@ RestorerFromBackup::RestorerFromBackup(
     , process_list_element(context->getProcessListElement())
     , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
-    , log(&Poco::Logger::get("RestorerFromBackup"))
+    , log(getLogger("RestorerFromBackup"))
     , tables_dependencies("RestorerFromBackup")
 {
 }

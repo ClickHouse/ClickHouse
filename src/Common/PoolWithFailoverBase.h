@@ -58,7 +58,7 @@ public:
             NestedPools nested_pools_,
             time_t decrease_error_period_,
             size_t max_error_cap_,
-            Poco::Logger * log_)
+            LoggerPtr log_)
         : nested_pools(std::move(nested_pools_))
         , decrease_error_period(decrease_error_period_)
         , max_error_cap(max_error_cap_)
@@ -159,7 +159,7 @@ protected:
     /// The time when error counts were last decreased.
     time_t last_error_decrease_time = 0;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 

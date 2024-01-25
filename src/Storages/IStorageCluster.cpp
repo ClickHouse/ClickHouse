@@ -32,7 +32,7 @@ namespace DB
 IStorageCluster::IStorageCluster(
     const String & cluster_name_,
     const StorageID & table_id_,
-    Poco::Logger * log_,
+    LoggerPtr log_,
     bool structure_argument_was_provided_)
     : IStorage(table_id_)
     , log(log_)
@@ -54,7 +54,7 @@ public:
         ASTPtr query_to_send_,
         QueryProcessingStage::Enum processed_stage_,
         ClusterPtr cluster_,
-        Poco::Logger * log_,
+        LoggerPtr log_,
         ContextPtr context_)
         : SourceStepWithFilter(DataStream{.header = std::move(sample_block)})
         , storage(std::move(storage_))
@@ -71,7 +71,7 @@ private:
     ASTPtr query_to_send;
     QueryProcessingStage::Enum processed_stage;
     ClusterPtr cluster;
-    Poco::Logger * log;
+    LoggerPtr log;
     ContextPtr context;
 
     std::optional<RemoteQueryExecutor::Extension> extension;

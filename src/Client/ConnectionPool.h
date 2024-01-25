@@ -76,7 +76,7 @@ public:
             Priority priority_ = Priority{1})
        : IConnectionPool(host_, port_),
         Base(max_connections_,
-        &Poco::Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
+        getLogger("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         default_database(default_database_),
         user(user_),
         password(password_),
