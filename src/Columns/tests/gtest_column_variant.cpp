@@ -677,6 +677,7 @@ TEST(ColumnVariant, ScatterGeneral)
     selector.push_back(1);
     selector.push_back(2);
     selector.push_back(1);
+
     auto columns = column->scatter(3, selector);
     ASSERT_EQ(columns[0]->size(), 3);
     ASSERT_EQ((*columns[0])[0].get<UInt64>(), 42);
